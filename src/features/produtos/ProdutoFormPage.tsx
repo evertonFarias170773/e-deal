@@ -1,0 +1,717 @@
+"use client";
+
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, Eye, ImagePlus, Plus, Search, X } from "lucide-react";
+import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { useAppToast } from "@/components/common/AppToast";
+import { PageHeader } from "@/components/common/PageHeader";
+import { StatusBadge } from "@/components/common/StatusBadge";
+import { formatCurrency } from "@/lib/formatters/currency";
+import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
+import { getTiposByVariacao, variacoesMock } from "@/lib/mocks/variacoes.mock";
+import type {
+  Produto,
+  ProdutoCategoria,
+  ProdutoFormState,
+  ProdutoFoto,
+  ProdutoNivelSeguranca,
+  ProdutoVariacaoDetalhada,
+  VariacaoGlobal
+} from "@/features/produtos/types";
+
+type ProdutoFormPageProps = {
+  mode: "new" | "edit";
+  produto?: Produto;
+};
+
+type FormMessage = {
+  tone: "success" | "warning" | "danger" | "info";
+  title: string;
+  description: string;
+};
+
+const niveisSeguranca: ProdutoNivelSeguranca[] = ["baixo", "medio", "alto", "antifraude", "controle visual"];
+
+function normalize(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
+  const router = useRouter();
+  const { showToast } = useAppToast();
+  const [form, setForm] = useState<ProdutoFormState>(() => createInitialState(produto));
+  const [message, setMessage] = useState<FormMessage | null>(null);
+  const [errorFields, setErrorFields] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [newFotoUrl, setNewFotoUrl] = useState("");
+  const [isVariationModalOpen, setIsVariationModalOpen] = useState(false);
+  const [variationSearch, setVariationSearch] = useState("");
+  const [selectedVariationId, setSelectedVariationId] = useState<number | null>(null);
+  const [newVariationObrigatoria, setNewVariationObrigatoria] = useState(false);
+  const [newVariationMultipla, setNewVariationMultipla] = useState(false);
+  const [openOptionsVariationId, setOpenOptionsVariationId] = useState<number | null>(null);
+
+  const title = mode === "new" ? "Novo produto" : `Editar produto #${produto?.id_produto}`;
+  const subtitle =
+    mode === "new"
+      ? "Cadastre visualmente um produto mockado para validar catalogo, Maestro, fotos e variacoes."
+      : "Atualize visualmente os dados do produto mockado, sem persistir em banco real.";
+  const criticalChanged = Boolean(
+    produto &&
+      (Number(form.valorUnt) !== produto.valorUnt ||
+        Number(form.valorFixo) !== produto.valorFixo ||
+        Number(form.valor_custo) !== produto.valor_custo ||
+        Number(form.peso) !== produto.peso ||
+        form.prazo !== produto.prazo)
+  );
+  const filteredVariationBank = useMemo(() => {
+    const search = normalize(variationSearch);
+    const linkedIds = new Set(form.variacoes.map((vinculo) => vinculo.id_variacao));
+
+    return variacoesMock.filter((variacao) => {
+      const matchesSearch = normalize(`${variacao.nome} ${variacao.descricao}`).includes(search);
+      return variacao.is_ativo && !linkedIds.has(variacao.id_variacao) && matchesSearch;
+    });
+  }, [form.variacoes, variationSearch]);
+
+  useEffect(() => {
+    if (window.location.hash) {
+      const target = document.querySelector(window.location.hash);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
+
+  function updateField<K extends keyof ProdutoFormState>(field: K, value: ProdutoFormState[K]) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrorFields((current) => current.filter((item) => item !== field));
+  }
+
+  function addFoto() {
+    if (!newFotoUrl.trim()) {
+      showToast({ type: "warning", title: "Informe uma URL", description: "Adicione uma URL mockada para inserir a foto." });
+      return;
+    }
+
+    const foto: ProdutoFoto = {
+      id: `foto_mock_${Date.now()}`,
+      idProduto: Number(form.id_produto) || 0,
+      nomeProduto: form.nomeReal || "Produto mockado",
+      imagensURL: newFotoUrl.trim(),
+      principal: form.fotos.length === 0
+    };
+
+    updateField("fotos", [...form.fotos, foto]);
+    setNewFotoUrl("");
+    showToast({ type: "info", title: "Foto adicionada", description: "URL incluida apenas no formulario mockado." });
+  }
+
+  function setFotoPrincipal(id: string) {
+    updateField(
+      "fotos",
+      form.fotos.map((foto) => ({ ...foto, principal: foto.id === id }))
+    );
+    showToast({ type: "info", title: "Foto principal marcada", description: "Alteracao visual aplicada no mock." });
+  }
+
+  function removeFoto(id: string) {
+    const nextFotos = form.fotos.filter((foto) => foto.id !== id);
+    updateField(
+      "fotos",
+      nextFotos.map((foto, index) => ({ ...foto, principal: foto.principal || index === 0 }))
+    );
+    showToast({ type: "warning", title: "Foto removida", description: "Remocao aplicada apenas no formulario mockado." });
+  }
+
+  function openVariationModal() {
+    setSelectedVariationId(null);
+    setNewVariationObrigatoria(false);
+    setNewVariationMultipla(false);
+    setVariationSearch("");
+    setIsVariationModalOpen(true);
+  }
+
+  function linkVariationToProduct() {
+    const variacao = variacoesMock.find((item) => item.id_variacao === selectedVariationId);
+
+    if (!variacao) {
+      showToast({ type: "warning", title: "Selecione uma variação", description: "Escolha uma variação existente do banco mockado." });
+      return;
+    }
+
+    const vinculo: ProdutoVariacaoDetalhada = {
+      id: `pv_mock_${Date.now()}`,
+      id_produto: Number(form.id_produto) || 0,
+      id_variacao: variacao.id_variacao,
+      is_obrigatorio: newVariationObrigatoria,
+      is_multiplo: newVariationMultipla,
+      variacao,
+      tipos: getTiposByVariacao(variacao.id_variacao)
+    };
+
+    updateField("variacoes", [...form.variacoes, vinculo]);
+    updateField("is_variacao", true);
+    setIsVariationModalOpen(false);
+    showToast({
+      type: "success",
+      title: "Variação vinculada ao produto com sucesso.",
+      description: "Foi criado apenas um vínculo mockado em produto_variacoes."
+    });
+  }
+
+  function updateVariacao(index: number, field: "is_obrigatorio" | "is_multiplo", value: boolean) {
+    const variacoes = form.variacoes.map((variacao, currentIndex) =>
+      currentIndex === index ? { ...variacao, [field]: value } : variacao
+    );
+    updateField("variacoes", variacoes);
+  }
+
+  function removeVariacao(index: number) {
+    const shouldRemove = window.confirm(
+      "Esta ação remove a variação apenas deste produto. A variação continuará disponível no banco de variações."
+    );
+
+    if (!shouldRemove) {
+      return;
+    }
+
+    updateField("variacoes", form.variacoes.filter((_, currentIndex) => currentIndex !== index));
+    showToast({
+      type: "warning",
+      title: "Variação removida deste produto.",
+      description: "A variação global não foi apagada."
+    });
+  }
+
+  async function handleMockSave() {
+    const missingFields = [
+      !form.id_produto ? "id_produto" : null,
+      !form.nomeReal ? "nomeReal" : null,
+      !form.categoria ? "categoria" : null,
+      !form.formato ? "formato" : null,
+      !form.prazo ? "prazo" : null
+    ].filter(Boolean) as string[];
+
+    if (missingFields.length) {
+      setErrorFields(missingFields);
+      setMessage({
+        tone: "danger",
+        title: "Campos obrigatorios ausentes",
+        description: "Preencha codigo, produto, categoria, formato e prazo antes de salvar."
+      });
+      showToast({ type: "error", title: "Nao foi possivel salvar", description: "Revise os campos destacados antes de continuar." });
+      return;
+    }
+
+    setIsSaving(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 850));
+
+    const successTitle = mode === "edit" ? "Produto atualizado com sucesso." : "Produto criado com sucesso.";
+    const redirectTarget = mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos";
+    setMessage({
+      tone: "success",
+      title: successTitle,
+      description: "Alteracao aplicada apenas na interface mockada. Nenhum banco real foi atualizado."
+    });
+    showToast({
+      type: "success",
+      title: successTitle,
+      description: mode === "edit" ? "Redirecionando para o detalhe do produto..." : "Redirecionando para a lista de produtos..."
+    });
+
+    window.setTimeout(() => {
+      router.push(redirectTarget);
+    }, 1200);
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={title}
+        subtitle={subtitle}
+        context="Produtos / Catalogo"
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Link href={mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos"} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
+            </Link>
+            <button type="button" onClick={handleMockSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
+              {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
+            </button>
+          </div>
+        }
+      />
+
+      {message ? <FormAlert message={message} /> : null}
+      {mode === "edit" ? (
+        <div className="rounded-3xl border border-sky-200 bg-sky-50 p-5 text-sky-800">
+          <h2 className="font-semibold">Codigo operacional protegido</h2>
+          <p className="mt-1 text-sm">
+            O campo id_produto e a chave operacional do catalogo. Nesta tela ele fica somente leitura para evitar impacto em propostas, fotos, variacoes e Maestro.
+          </p>
+        </div>
+      ) : null}
+      {criticalChanged ? (
+        <div className="rounded-3xl border border-orange-200 bg-orange-50 p-5 text-orange-800">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <h2 className="font-semibold">Alteracao critica de produto</h2>
+              <p className="mt-1 text-sm">
+                Preco, custo, peso ou prazo impactam Maestro, propostas, margem, frete e producao. Nesta etapa a alteracao e apenas visual/mockada.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatusCard title="Codigo" value={`#${form.id_produto || "novo"}`} />
+        <StatusCard title="Valor unitario" value={formatCurrency(Number(form.valorUnt) || 0)} />
+        <StatusCard title="Prazo" value={form.prazo || "Nao definido"} />
+        <StatusCard title="Fotos / variacoes" value={`${form.fotos.length} / ${form.variacoes.length}`} />
+      </section>
+
+      <FormSection title="Dados principais" description="Identificacao do produto na tabela futura produtos.">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="id_produto">
+            <input value={form.id_produto} readOnly={mode === "edit"} onChange={(event) => updateField("id_produto", event.target.value)} className={`${getInputClass(errorFields.includes("id_produto"))} ${mode === "edit" ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""}`} />
+          </Field>
+          <Field label="Nome real">
+            <input value={form.nomeReal} onChange={(event) => updateField("nomeReal", event.target.value)} className={getInputClass(errorFields.includes("nomeReal"))} />
+          </Field>
+          <Field label="Categoria">
+            <select value={form.categoria} onChange={(event) => updateField("categoria", event.target.value as ProdutoCategoria)} className={getInputClass(errorFields.includes("categoria"))}>
+              {produtoCategoriasMock.map((categoria) => (
+                <option key={categoria} value={categoria}>{categoria}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Formato">
+            <input value={form.formato} onChange={(event) => updateField("formato", event.target.value)} className={getInputClass(errorFields.includes("formato"))} placeholder="25x2cm, A6, PVC 0,76mm" />
+          </Field>
+          <div className="md:col-span-2 xl:col-span-4">
+            <Field label="Descricao">
+              <textarea value={form.descricao} onChange={(event) => updateField("descricao", event.target.value)} className={`${inputClass} min-h-28 resize-y`} />
+            </Field>
+          </div>
+        </div>
+      </FormSection>
+
+      <FormSection title="Valores" description="Valores comerciais e custo interno usados por propostas e Maestro.">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Valor unitario">
+            <input value={form.valorUnt} onChange={(event) => updateField("valorUnt", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Valor fixo">
+            <input value={form.valorFixo} onChange={(event) => updateField("valorFixo", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Valor custo">
+            <input value={form.valor_custo} onChange={(event) => updateField("valor_custo", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Produto ativo">
+            <select value={form.ativo ? "SIM" : "NAO"} onChange={(event) => updateField("ativo", event.target.value === "SIM")} className={inputClass}>
+              <option value="SIM">Ativo</option>
+              <option value="NAO">Inativo</option>
+            </select>
+          </Field>
+        </div>
+      </FormSection>
+
+      <FormSection title="Producao" description="Dados usados em prazo, frete, OS e planejamento.">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Peso">
+            <input value={form.peso} onChange={(event) => updateField("peso", event.target.value)} className={inputClass} placeholder="0.006" />
+          </Field>
+          <Field label="Prazo">
+            <input value={form.prazo} onChange={(event) => updateField("prazo", event.target.value)} className={getInputClass(errorFields.includes("prazo"))} placeholder="3 dias uteis" />
+          </Field>
+          <Toggle label="Produto de estoque" checked={form.is_estoque} onChange={(value) => updateField("is_estoque", value)} />
+          <Toggle label="Possui variacoes" checked={form.is_variacao} onChange={(value) => updateField("is_variacao", value)} />
+        </div>
+      </FormSection>
+
+      <FormSection title="Seguranca e personalizacao" description="Informacoes consultivas e tecnicas para venda e producao.">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Nivel de seguranca">
+            <select value={form.nivelSeg} onChange={(event) => updateField("nivelSeg", event.target.value as ProdutoNivelSeguranca)} className={inputClass}>
+              {niveisSeguranca.map((nivel) => (
+                <option key={nivel} value={nivel}>{nivel}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Frase consultiva">
+            <input value={form.fraseCons} onChange={(event) => updateField("fraseCons", event.target.value)} className={inputClass} />
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="Personalizacao">
+              <textarea value={form.personalizacao} onChange={(event) => updateField("personalizacao", event.target.value)} className={`${inputClass} min-h-28 resize-y`} />
+            </Field>
+          </div>
+        </div>
+      </FormSection>
+
+      <FormSection title="Apelidos para IA/Maestro" description="Termos informais usados para reconhecer o produto em buscas e no Maestro.">
+        <Field label="Apelidos separados por virgula">
+          <textarea value={form.apelidos} onChange={(event) => updateField("apelidos", event.target.value)} className={`${inputClass} min-h-28 resize-y`} placeholder="triband, pulseira tri band, pulseirinha" />
+        </Field>
+      </FormSection>
+
+      <FormSection
+        id="fotos"
+        title="Fotos"
+        description="Galeria visual usando mocks de fotosProdutos. URLs sao adicionadas apenas na tela."
+        action={<AddFotoInput value={newFotoUrl} onChange={setNewFotoUrl} onAdd={addFoto} />}
+      >
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {form.fotos.map((foto) => (
+            <div key={foto.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
+              <img src={foto.imagensURL} alt={foto.nomeProduto} className="h-40 w-full object-cover" />
+              <div className="space-y-3 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm font-semibold text-slate-900">{foto.nomeProduto}</p>
+                  {foto.principal ? <StatusBadge status="PRINCIPAL" tone="success" /> : null}
+                </div>
+                <ActionsMenu
+                  label="Acoes"
+                  items={[
+                    { label: "Marcar principal", onClick: () => setFotoPrincipal(foto.id), disabled: foto.principal },
+                    { label: "Remover foto", destructive: true, onClick: () => removeFoto(foto.id) }
+                  ]}
+                />
+              </div>
+            </div>
+          ))}
+          {!form.fotos.length ? (
+            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
+              Nenhuma foto adicionada. Use uma URL mockada para validar a galeria.
+            </div>
+          ) : null}
+        </div>
+      </FormSection>
+
+      <FormSection
+        id="variacoes"
+        title="Variações do produto"
+        description="Vínculos com variações globais reutilizáveis. As opções vêm de tipos_variacoes."
+        action={<AddButton label="Adicionar variação" onClick={openVariationModal} />}
+      >
+        <div className="space-y-4">
+          {form.variacoes.map((variacao, index) => (
+            <div key={variacao.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid gap-4 lg:grid-cols-[1fr_170px_170px_120px_auto] lg:items-start">
+                <div>
+                  <p className="font-semibold text-slate-950">{variacao.variacao.nome}</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">{variacao.variacao.descricao}</p>
+                </div>
+                <Toggle label="Obrigatória" checked={variacao.is_obrigatorio} onChange={(value) => updateVariacao(index, "is_obrigatorio", value)} />
+                <Toggle label="Múltipla escolha" checked={variacao.is_multiplo} onChange={(value) => updateVariacao(index, "is_multiplo", value)} />
+                <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+                  {variacao.tipos.length} opções
+                </div>
+                <ActionsMenu
+                  label="Ações"
+                  items={[
+                    {
+                      label: openOptionsVariationId === variacao.id_variacao ? "Ocultar opções" : "Ver opções",
+                      onClick: () =>
+                        setOpenOptionsVariationId((current) =>
+                          current === variacao.id_variacao ? null : variacao.id_variacao
+                        )
+                    },
+                    { label: "Remover vínculo", destructive: true, onClick: () => removeVariacao(index) }
+                  ]}
+                />
+              </div>
+              {openOptionsVariationId === variacao.id_variacao ? (
+                <VariationOptionsList variacao={variacao} />
+              ) : null}
+            </div>
+          ))}
+          {!form.variacoes.length ? (
+            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
+              Nenhuma variação vinculada a este produto. Use "Adicionar variação" para escolher uma variação global existente.
+            </div>
+          ) : null}
+        </div>
+      </FormSection>
+
+      {isVariationModalOpen ? (
+        <VariationLinkModal
+          search={variationSearch}
+          onSearch={setVariationSearch}
+          variations={filteredVariationBank}
+          selectedVariationId={selectedVariationId}
+          onSelect={setSelectedVariationId}
+          obrigatoria={newVariationObrigatoria}
+          onObrigatoria={setNewVariationObrigatoria}
+          multipla={newVariationMultipla}
+          onMultipla={setNewVariationMultipla}
+          onClose={() => setIsVariationModalOpen(false)}
+          onSave={linkVariationToProduct}
+        />
+      ) : null}
+
+      <div className="sticky bottom-4 z-20 rounded-3xl border border-[#d7e5e8] bg-white/95 p-4 shadow-xl shadow-slate-900/10 backdrop-blur">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold text-slate-700">
+            Produto #{form.id_produto || "novo"} | {form.nomeReal || "nome nao definido"}
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={() => router.push(mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
+            <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Voltar ao topo</button>
+            <button type="button" onClick={handleMockSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+              {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const inputClass =
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]";
+
+function getInputClass(hasError: boolean) {
+  return hasError ? `${inputClass} border-red-300 bg-red-50 focus:border-red-400 focus:ring-red-100` : inputClass;
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function FormSection({ id, title, description, action, children }: { id?: string; title: string; description: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-24 rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{description}</p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function FormAlert({ message }: { message: FormMessage }) {
+  const styles = {
+    success: "border-teal-200 bg-teal-50 text-teal-800",
+    warning: "border-orange-200 bg-orange-50 text-orange-800",
+    danger: "border-red-200 bg-red-50 text-red-800",
+    info: "border-sky-200 bg-sky-50 text-sky-800"
+  };
+
+  return (
+    <div className={`rounded-3xl border p-5 ${styles[message.tone]}`}>
+      <div className="flex gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+        <div>
+          <h2 className="font-semibold">{message.title}</h2>
+          <p className="mt-1 text-sm">{message.description}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusCard({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-2 truncate text-lg font-bold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)} className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${checked ? "border-teal-200 bg-teal-50 text-teal-700" : "border-slate-200 bg-white text-slate-600"}`}>
+      {label}: {checked ? "Sim" : "Nao"}
+    </button>
+  );
+}
+
+function VariationOptionsList({ variacao }: { variacao: ProdutoVariacaoDetalhada }) {
+  return (
+    <div className="mt-4 rounded-3xl border border-[#d7e5e8] bg-white p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <Eye className="h-4 w-4 text-[#0f9f9a]" />
+        Opções de {variacao.variacao.nome}
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        {variacao.tipos.map((tipo) => (
+          <div key={tipo.id} className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
+            <p className="font-semibold text-slate-950">{tipo.variacao}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Valor extra {formatCurrency(tipo.v_extra)} | peso {tipo.peso.toLocaleString("pt-BR")}g | ref {tipo.ref}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VariationLinkModal({
+  search,
+  onSearch,
+  variations,
+  selectedVariationId,
+  onSelect,
+  obrigatoria,
+  onObrigatoria,
+  multipla,
+  onMultipla,
+  onClose,
+  onSave
+}: {
+  search: string;
+  onSearch: (value: string) => void;
+  variations: VariacaoGlobal[];
+  selectedVariationId: number | null;
+  onSelect: (value: number) => void;
+  obrigatoria: boolean;
+  onObrigatoria: (value: boolean) => void;
+  multipla: boolean;
+  onMultipla: (value: boolean) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[70] bg-slate-950/50 p-4" role="dialog" aria-modal="true">
+      <div className="mx-auto flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Banco de variações</p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-950">Adicionar variação existente</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Esta ação cria apenas um vínculo mockado em produto_variacoes. A variação global não será duplicada.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 p-2 text-slate-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <Search className="h-4 w-4 text-[#0f9f9a]" />
+            <input
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              className="w-full bg-transparent text-sm text-slate-900 outline-none"
+              placeholder="Buscar por nome ou descrição da variação"
+            />
+          </label>
+
+          <div className="grid gap-3">
+            {variations.map((variacao) => {
+              const isSelected = selectedVariationId === variacao.id_variacao;
+              const optionsCount = getTiposByVariacao(variacao.id_variacao).length;
+
+              return (
+                <button
+                  key={variacao.id_variacao}
+                  type="button"
+                  onClick={() => onSelect(variacao.id_variacao)}
+                  className={`rounded-3xl border p-4 text-left transition ${
+                    isSelected
+                      ? "border-[#0f9f9a] bg-[#dff8f6] text-[#0b7774]"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{variacao.nome}</p>
+                      <p className="mt-1 text-sm opacity-80">{variacao.descricao}</p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                      {optionsCount} opções
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+            {!variations.length ? (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
+                Nenhuma variação disponível com a busca atual ou todas já estão vinculadas ao produto.
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Toggle label="Obrigatória neste produto" checked={obrigatoria} onChange={onObrigatoria} />
+            <Toggle label="Permite múltipla escolha" checked={multipla} onChange={onMultipla} />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">
+            Cancelar
+          </button>
+          <button type="button" onClick={onSave} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white">
+            Salvar vínculo mockado
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="inline-flex items-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-2.5 text-sm font-semibold text-[#0b2f4a] hover:bg-[#f3f7f8]">
+      <Plus className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}
+
+function AddFotoInput({ value, onChange, onAdd }: { value: string; onChange: (value: string) => void; onAdd: () => void }) {
+  return (
+    <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-96 sm:flex-row">
+      <input value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} placeholder="https://placehold.co/900x600?text=Produto" />
+      <button type="button" onClick={onAdd} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-2.5 text-sm font-semibold text-[#0b2f4a] hover:bg-[#f3f7f8]">
+        <ImagePlus className="h-4 w-4" />
+        Adicionar
+      </button>
+    </div>
+  );
+}
+
+function createInitialState(produto?: Produto): ProdutoFormState {
+  return {
+    id_produto: produto?.id_produto.toString() ?? "",
+    nomeReal: produto?.nomeReal ?? "",
+    categoria: produto?.categoria ?? "Pulseiras",
+    formato: produto?.formato ?? "",
+    valorUnt: produto?.valorUnt.toString() ?? "0",
+    valorFixo: produto?.valorFixo.toString() ?? "0",
+    valor_custo: produto?.valor_custo.toString() ?? "0",
+    peso: produto?.peso.toString() ?? "0",
+    prazo: produto?.prazo ?? "",
+    nivelSeg: produto?.nivelSeg ?? "medio",
+    fraseCons: produto?.fraseCons ?? "",
+    descricao: produto?.descricao ?? "",
+    personalizacao: produto?.personalizacao ?? "",
+    apelidos: produto?.apelidos.join(", ") ?? "",
+    ativo: produto?.ativo ?? true,
+    is_estoque: produto?.is_estoque ?? false,
+    is_variacao: produto?.is_variacao ?? false,
+    fotos: produto?.fotos ?? [],
+    variacoes: produto?.variacoes ?? []
+  };
+}

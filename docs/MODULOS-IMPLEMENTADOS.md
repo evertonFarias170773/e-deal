@@ -1,0 +1,411 @@
+# Módulos Implementados
+
+## Login
+
+Status: mockado inicial.
+
+Rotas:
+
+- `/login`
+
+Componentes principais:
+
+- `LoginForm`
+- `AuthProvider`
+- `AuthGuard`
+
+Mocks usados:
+
+- `usuarios.mock.ts`
+
+Pendências:
+
+- integrar Supabase Auth futuramente;
+- fluxo real de recuperação/redefinição de senha.
+
+## Layout autenticado
+
+Status: implementado como base visual.
+
+Componentes principais:
+
+- `AppLayout`
+- `Sidebar`
+- `MobileSidebar`
+- `Topbar`
+- `GlobalSearch`
+- `CompanySwitcher`
+- `UserMenu`
+
+Mocks usados:
+
+- `empresas.mock.ts`
+- `global-search.mock.ts`
+- `usuarios.mock.ts`
+
+Pendências:
+
+- integrar permissões reais;
+- aplicar menu por perfil/setor;
+- persistir empresa selecionada se necessário.
+
+## Dashboard
+
+Status: mockado inicial aprovado.
+
+Rotas:
+
+- `/dashboard`
+
+Componentes principais:
+
+- `DashboardPage`
+- `DashboardCharts`
+- `SummaryCard`
+- `ResponsiveList`
+
+Mocks usados:
+
+- `dashboard.mock.ts`
+- `empresas.mock.ts`
+
+Funcionalidades:
+
+- cards por empresa;
+- gráficos mockados;
+- atividades recentes;
+- filtro por empresa, incluindo `Todas`.
+
+Pendências:
+
+- ligar indicadores a dados reais;
+- definir indicadores finais por perfil;
+- integrar financeiro, fiscal e produção.
+
+## Cadastros
+
+Status: módulo com listagem, detalhe e edição conectados ao Supabase em modo read-only, mantendo mock como fallback.
+
+Rotas:
+
+- `/cadastros`
+- `/cadastros/novo`
+- `/cadastros/[id]`
+- `/cadastros/[id]/editar`
+
+Componentes principais:
+
+- `CadastrosListPage`
+- `CadastroDetailPage`
+- `CadastroFormPage`
+- `ActionsMenu`
+- `AppToast`
+
+Mocks usados:
+
+- `cadastros.mock.ts`
+- `empresas.mock.ts`
+
+Funcionalidades:
+
+- listagem com filtros;
+- tabela desktop;
+- cards mobile;
+- detalhe separado da edição;
+- novo cadastro com etapa inicial;
+- validação mockada de ID e CPF/CNPJ;
+- consulta CNPJ mockada;
+- formulário completo;
+- edição com dados reais para visualização, mas salvamento ainda simulado;
+- endereços;
+- contatos;
+- vínculos comerciais;
+- toast no salvamento.
+- retorno para lista no novo cadastro e para detalhe na edição;
+- ações mockadas com feedback visual;
+- menu de ações por clique, com posicionamento para cima quando próximo ao fim da tela.
+- primeira integração read-only do projeto com Supabase;
+- listagem lendo `public.clientes`;
+- detalhe lendo `public.clientes`, `public.enderecos`, `public.contatos` e `public.clientes_socios`;
+- fallback mantido para `cadastrosMock` quando a leitura não estiver disponível.
+- primeira escrita real liberada apenas para `public.clientes.obs`;
+- `UPDATE` usando `id_cliente` como chave operacional;
+- payload de escrita real restrito a `obs`;
+- bloqueio de qualquer mudança em outros campos nesta fase;
+- confirmação explícita antes de gravar no Supabase;
+- sucesso exibido somente após confirmação do Supabase;
+- `enderecos`, `contatos`, `clientes_socios` e campos sensíveis permanecem bloqueados para escrita;
+- nenhum `INSERT` ou `DELETE` implementado.
+
+Pendências:
+
+- revisar campos finais com operação;
+- validar responsividade fina com usuários em dispositivos reais;
+- planejar escrita real com muito cuidado antes de qualquer `UPDATE`;
+- validar RLS, confirmação de gravação e comportamento de erro antes de habilitar persistência.
+
+## Produtos
+
+Status: módulo mockado inicial implementado como segunda tela operacional completa.
+
+Rotas:
+
+- `/produtos`
+- `/produtos/novo`
+- `/produtos/[id]`
+- `/produtos/[id]/editar`
+
+Componentes principais:
+
+- `ProdutosListPage`
+- `ProdutoDetailPage`
+- `ProdutoFormPage`
+- `ActionsMenu`
+- `AppToast`
+
+Mocks usados:
+
+- `produtos.mock.ts`
+- `variacoes.mock.ts`
+- `global-search.mock.ts`
+
+Funcionalidades:
+
+- listagem com filtros por busca, categoria, status, variações, fotos e estoque;
+- tabela desktop;
+- cards mobile;
+- detalhe separado da edição;
+- novo produto mockado;
+- edição mockada com `id_produto` somente leitura;
+- alerta visual ao alterar preço, custo, peso ou prazo;
+- galeria visual de fotos com URL mockada, remoção e foto principal;
+- banco mockado de variações globais reutilizáveis;
+- vínculo visual de variações existentes ao produto via `produto_variacoes`;
+- visualização de opções/modelos vindos de `tipos_variacoes`;
+- configuração por produto de obrigatória e múltipla escolha;
+- remoção apenas do vínculo da variação com o produto;
+- conceito registrado de que Produtos apenas consome/vincula variações globais mantidas futuramente em Configurações;
+- preparação conceitual para `produtos_proposta_variacao`, que salvará no orçamento a opção/modelo escolhido na proposta;
+- card de uso no Maestro com apelidos;
+- toast no salvamento e ações mockadas;
+- retorno para lista no novo produto e para detalhe na edição.
+
+Pendências:
+
+- revisar campos finais com operação;
+- validar responsividade fina em dispositivos reais;
+- preparar futuro service de Produtos para Supabase;
+- conectar futuramente à tabela `produtos`;
+- integrar futuramente `produto_variacoes` e `fotosProdutos`;
+- definir permissões reais para custo, preço, prazo e inativação.
+
+## Orçamentos
+
+Status: módulo mockado inicial implementado com fluxo comercial completo.
+
+Rotas:
+
+- `/orcamentos`
+- `/orcamentos/novo`
+- `/orcamentos/[id]`
+- `/orcamentos/[id]/editar`
+
+Componentes principais:
+
+- `OrcamentosListPage`
+- `OrcamentoDetailPage`
+- `OrcamentoFormPage`
+- `ActionsMenu`
+- `AppToast`
+
+Mocks usados:
+
+- `propostas.mock.ts`
+- `cadastros.mock.ts`
+- `produtos.mock.ts`
+- `variacoes.mock.ts`
+- `empresas.mock.ts`
+
+Funcionalidades:
+
+- listagem com filtros por proposta, cliente, documento, status, empresa, vendedor e período;
+- tabela desktop;
+- cards mobile;
+- detalhe separado da edição;
+- nova proposta mockada;
+- edição mockada;
+- busca de cliente por `id_cliente`, nome ou documento;
+- vendedor herdado do cadastro do cliente, com edição apenas para admin/gerente;
+- login mockado com perfis distintos: `everton@ideal.local` (admin/gerente) e `caroline@ideal.local` (vendedor comum);
+- status exibido como badge somente leitura;
+- seleção de cliente com contatos, endereços, crédito/risco, vendedor padrão, bônus e vínculos comerciais;
+- adição visual de contato e endereço novos apenas na proposta mockada;
+- seleção obrigatória de endereço quando houver múltiplos endereços;
+- comprador/autorizado a partir de vínculos comerciais;
+- produtos da proposta com tags rápidas, quantidade, valores, prazo, peso, descrição editável e subtotal;
+- seleção visual de variações/opções do produto, com valor extra e peso extra mockados;
+- validação de variações obrigatórias antes do salvamento;
+- desconto individual por item em percentual ou valor;
+- fretes mockados com `id_int`, transportadora, serviço, valor, prazo, observação, escolhido e peso usado;
+- aviso visual quando o peso da proposta muda e as cotações podem precisar ser atualizadas;
+- resumo visual com subtotal bruto, descontos individuais, acréscimo de tabela especial/bônus, desconto geral permitido por perfil, frete, total e peso;
+- proposta informal copiável para WhatsApp;
+- PDF mockado via toast;
+- placeholder de cobranças futuras via toast;
+- salvamento com loading, toast e retorno para lista/detalhe.
+
+Pendências:
+
+- validar campos finais com operação comercial;
+- preparar futuro service de Propostas para Supabase;
+- integrar futuramente `propostas`, `produtos_proposta`, `produtos_proposta_variacao`, `cotacao_frete`, `desconto_proposta` e `pagamentos_v2`;
+- gerar PDF real via backend/Edge Function segura;
+- gerar cobranças reais no módulo Cobranças/Pagamentos;
+- revisar regras oficiais de cálculo antes de conectar dados reais.
+
+## Cobranças e Pagamentos
+
+Status: módulo mockado inicial implementado com foco em conferência financeira, criação pela proposta e liberação para pedido.
+
+Última validação relevante:
+
+- data: `2026-05-22`;
+- módulo afetado: `Cobranças e Pagamentos`;
+- resumo da alteração: ajuste fino do fluxo de proposta/cobrança, removendo forma de pagamento do resumo comercial, corrigindo textos financeiros e alinhando `já cobrado`/`saldo` aos mocks válidos;
+- motivo da decisão: manter a proposta focada em valores comerciais e deixar a escolha de pagamento para o modal de criação de cobrança, com cálculo financeiro visual coerente.
+
+Rotas:
+
+- `/cobrancas`
+- `/cobrancas/nova`
+- `/cobrancas/[id]`
+- `/pagamento/[token]`
+
+Componentes principais:
+
+- `CobrancasList`
+- `CobrancaDetail`
+- `CriarCobrancaForm`
+- `PropostaCobrancaSelector`
+- `EmpresaRecebedoraSelector`
+- `FormaPagamentoSelector`
+- `PixMockPanel`
+- `BoletoMockPanel`
+- `CartaoMockPanel`
+- `CartaoParceladoMockPanel`
+- `FaturadoCreditoMockPanel`
+- `CobrancaActionsMenu`
+- `CobrancaStatusBadge`
+- `CobrancaResumoCard`
+- `CobrancaHistoricoPanel`
+
+Mocks usados:
+
+- `pagamentos.mock.ts`
+- `propostas.mock.ts`
+- `cadastros.mock.ts`
+- `empresas.mock.ts`
+
+Funcionalidades:
+
+- listagem com filtros por busca, tipo, status, empresa e período;
+- tabela desktop e cards mobile;
+- menu de ações por linha com ver cobrança, abrir proposta, ver cliente, ver financeiro da proposta, confirmar pagamento mockado, liberar para pedido, analisar crédito e cancelar cobrança;
+- criação principal da cobrança dentro da proposta, na área `Criar e ver cobranças`, usando `id_int` e modal centralizado;
+- campo obrigatório `os_ideal` no mock de criação;
+- empresa recebedora herdada da proposta, sem nova escolha no fluxo principal;
+- seleção visual de forma de pagamento com PIX, boleto, cartão, cartão parcelado e faturado;
+- bloqueio visual de boleto e cartão para propostas da empresa Birô;
+- geração mockada de `token_publico`, `pix_copia_cola`, `url_cobranca`, `linha_digitavel`, `url_pdf` e `cartao_checkout_url`;
+- simulação de cartão parcelado com parcelas, taxa, valor final e valor por parcela, mantendo status financeiro principal em `A_RECEBER`;
+- simulação de faturado com análise de crédito, aprovação automática quando houver limite (`A_VENCER` + `confirmado=true`) e solicitação ao financeiro via `propostas_chat` quando não houver;
+- lista apresentada como conferência financeira de cobranças para o financeiro;
+- cálculo visual de liberação para pedido por `id_int`, com estados como aguardando pagamento, aguardando crédito, parcialmente aprovada, pronta para liberar e liberada para pedido;
+- nomenclatura financeira operacional com `Aguardando pagamento`, `Parcialmente paga`, `Liberada para pedido` e `Aguardando análise de crédito`;
+- ação de liberação escondida para propostas já liberadas, substituída por estado desabilitado de pedido futuro no mock;
+- bloco da proposta com resumo financeiro, valor já cobrado, saldo restante, abertura do modal e lista resumida das cobranças geradas;
+- cálculo visual de `já cobrado` e `saldo restante` considerando cobranças válidas e alertando discretamente se o mock exceder o total;
+- card-resumo de cobranças no detalhe da proposta sincronizado com o estado local mockado já criado;
+- modal de criação simplificado com cabeçalho compacto da proposta, dados essenciais, botões simples de forma de pagamento, campos condicionais mínimos e rodapé com `Cancelar`/`Gerar cobrança`;
+- remoção de simulações técnicas extensas dentro do modal (PIX, boleto, checkout, cálculos de taxa e prévias longas), mantendo o foco operacional;
+- lista extensa de cobranças mantida fora do modal, em bloco próprio da proposta;
+- detalhe completo da cobrança com proposta, cliente, `os_ideal`, status, confirmado, condição comercial, links, histórico e campos específicos do método;
+- página pública mockada por `token_publico` com botão de simular pagamento;
+- confirmação e cancelamento mockados persistidos em estado local do navegador;
+- integração do módulo com Orçamentos para gerar e acompanhar cobrança diretamente no detalhe da proposta;
+- validação manual concluída para OS Ideal obrigatório, empresa herdada da proposta, bloqueio visual do Birô, geração mockada de PIX/boleto/cartão/faturado e conferência da lista financeira com liberação por proposta.
+
+Pendências:
+
+- validar nomes finais de campos e ações com operação financeira;
+- revisar regra oficial de vencimento, atraso, baixa parcial, reserva de limite e cancelamento antes da integração real;
+- preparar futuro service de Financeiro para Supabase;
+- integrar futuramente `pagamentos_v2`, `boletos`, `propostas_chat` e análise real de crédito;
+- trocar URLs/documentos fictícios por retorno seguro de backend/Edge Function;
+- definir regra oficial de liberação da proposta quando houver múltiplas cobranças e pedido parcial.
+
+## Contas a Receber / Gestão Financeira
+
+Status: primeira entrega mockada implementada como carteira financeira.
+
+Última validação relevante:
+
+- data: `2026-05-22`;
+- módulo afetado: `Contas a Receber / Gestão Financeira`;
+- resumo da alteração: ajuste da rota `/contas-a-receber` para visão de carteira aprovada, com quatro cards principais, filtros por empresa/tipo/status/período e vencido como condição visual derivada;
+- motivo da decisão: deixar o financeiro com visão rápida de vencimentos aprovados e manter cobranças `A_RECEBER` principalmente no Módulo 08.
+
+Rotas:
+
+- `/contas-a-receber`
+
+Componentes principais:
+
+- `ContasReceberPage`
+- `SummaryCard`
+- `ResponsiveList`
+- `ActionsMenu`
+- `StatusBadge`
+- `AppToast`
+
+Mocks usados:
+
+- `contas-receber.mock.ts`
+
+Funcionalidades:
+
+- quatro cards principais: `A vencer`, `Vencidos`, `Vencem hoje` e `Vencem até o fechamento`;
+- filtros por busca, empresa, tipo, status visual e período com data inicial/final;
+- abas `Carteira`, `Boletos e depósitos`, `Vencimentos`, `Cartões e faturado` e `Previsão de caixa`;
+- carteira com recebíveis aprovados/futuros e históricos, sem listar `A_RECEBER` por padrão;
+- lista de boletos, depósitos e outros recebíveis inspirada em `boletos`;
+- agrupamento de vencimentos em vencidos, vencem hoje, próximos 7 dias e próximos 30 dias;
+- visão separada de cartões aprovados, cartão parcelado como tipo e faturado aprovado/pendente;
+- previsão de caixa simples por semana, empresa, recebidos x a receber e vencidos, baseada nos filtros ativos;
+- status `Vencido` exibido como condição visual derivada de `A_VENCER` com vencimento anterior à data atual;
+- ações mockadas com toast para confirmar recebimento, cancelar recebível, prorrogar vencimento, copiar linha digitável e abrir PDF mockado;
+- responsividade com tabelas no desktop e cards no mobile;
+- ausência de botão `Criar cobrança`, preservando a criação no contexto da proposta pelo Módulo 08.
+
+Pendências:
+
+- validar com o financeiro as colunas finais da carteira e dos boletos;
+- definir regra oficial de conciliação, baixa parcial, juros, multa, prorrogação e cancelamento;
+- decidir se haverá detalhe próprio de recebível, boleto e depósito;
+- preparar futuro service de Contas a Receber para Supabase sem misturar com criação de cobrança.
+
+## Demais módulos
+
+Status: pendentes/em breve.
+
+Módulos no menu:
+
+- Maestro
+- Cobranças
+- Contas a receber
+- Notas fiscais
+- Pedidos
+- OS / Produção
+- Expedição
+- Relatórios
+- Configurações

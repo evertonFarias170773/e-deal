@@ -1,0 +1,87 @@
+---
+description: Padrão de listagens, tabelas, filtros, cards mobile e ações do ERP
+alwaysApply: true
+---
+
+# Skill 02 - Listagens, Tabelas, Filtros e Cards do ERP
+
+Use este padrão sempre que criar ou alterar páginas de listagem do ERP: clientes, propostas, pedidos, pagamentos, boletos, contas a receber, lista a faturar, NF-e, NFS-e, produtos, relatórios e ordens de serviço.
+
+## Definição Obrigatória Antes de Implementar
+
+Antes de criar qualquer listagem, defina: nome da listagem, objetivo operacional, usuário principal, fonte de dados (tabela, view ou RPC), filtros obrigatórios, colunas desktop, campos do card mobile, ação principal, ações secundárias, ações perigosas, status e cores, estado vazio, loading, erro e paginação/performance.
+
+## Estrutura da Página
+
+- Cabeçalho com título curto, subtítulo claro, contexto da área e ação principal à direita no desktop.
+- No mobile, manter a ação principal fixa ou claramente visível.
+- Usar cards de resumo quando houver valor operacional ou financeiro: totais, status, valores e alertas.
+- Filtros principais visíveis no desktop; filtros avançados recolhíveis.
+- No mobile, mostrar busca principal e botão "Filtros", abrindo filtros em bottom sheet ou drawer.
+- Conteúdo deve ser tabela no desktop e cards no mobile. Nunca espremer tabela larga no celular.
+- Toda listagem precisa ter loading skeleton, estado vazio, tratamento de erro e paginação ou carregamento controlado.
+
+## Busca e Filtros
+
+- Use placeholders específicos, nunca apenas "Pesquisar". Exemplos: "Buscar por cliente, CPF/CNPJ ou ID", "Buscar por OS, proposta ou cliente", "Buscar por número da NF-e ou cliente".
+- Use debounce para busca automática leve; use botão de buscar quando a consulta for pesada.
+- Envie filtros para o backend em listas grandes. Evite filtrar milhares de registros só no client.
+- Mostre filtros aplicados como chips removíveis e sempre ofereça "Limpar filtros".
+- Filtros comuns: texto, id/referência, cliente, empresa, status, período, atendente/vendedor, cobrança, pagamento, CPF/CNPJ e número fiscal.
+
+## Tabela Desktop
+
+- Use tabela para dados densos no desktop, com cabeçalho fixo quando a lista for longa.
+- Alinhe colunas de forma consistente: valores monetários à direita, datas centralizadas ou alinhadas, ações à direita.
+- Status sempre como badge, nunca texto solto.
+- Use separação clara entre linhas, zebra suave ou hover discreto.
+- Permita clique na linha para abrir detalhe quando fizer sentido.
+- Prioridade 1: identificador, cliente, status, valor e ação principal.
+- Prioridade 2: empresa, data, atendente e tipo.
+- Prioridade 3: complementos, observações e números auxiliares. Ocultar em notebook/tablet quando necessário.
+
+## Cards Mobile
+
+- Cada linha deve virar card no mobile.
+- Topo: identificador/ref e status badge.
+- Corpo: cliente, empresa, valor, data principal e informação secundária.
+- Rodapé: ação principal, quando realmente necessária, e menu "Mais" ou "Ações".
+- Cards de resumo devem virar scroll horizontal no mobile; não empilhe muitos cards antes da lista.
+
+## Ações por Linha
+
+- Toda tabela operacional deve ter uma coluna final chamada "Ações".
+- O padrão é 1 linha = 1 botão/menu de ações. Não espalhe vários ícones soltos por linha.
+- Opcionalmente, exiba uma ação principal isolada somente quando ela for o foco da tela.
+- Nunca dependa apenas de ícone sem texto, especialmente para ações críticas.
+- Ações perigosas exigem confirmação: cancelar nota, excluir rascunho, cancelar pagamento, excluir item, cancelar OS/proposta/cobrança.
+
+## Menu Padrão de Ações
+
+- Desktop: menu alinhado à direita da linha, abrindo por hover e também por clique para acessibilidade; deve fechar ao tirar o mouse ou clicar fora.
+- Mobile: abrir como bottom sheet ou drawer inferior; não depender de hover.
+- Visual: fundo claro, cantos arredondados, sombra suave, divisores discretos, ícone pequeno à esquerda, texto claro à direita e hover suave.
+- Ações destrutivas ficam no final, separadas por divisor e com destaque vermelho quando apropriado.
+- Exemplos de ações por módulo: clientes (ver, editar, criar proposta, WhatsApp, histórico, inativar), propostas/pedidos (abrir, imprimir OS, alterar situação, observações, duplicar, financeiro, emitir NF-e/NFS-e, gerar OS, cancelar), boletos (ver cobrança, WhatsApp, PDF, linha digitável, confirmar, atualizar, cancelar), fiscal (abrir, validar, preparar envio, emitir, atualizar, baixar DANFE/DANFSE/XML, clonar, cancelar, excluir rascunho), OS (abrir, imprimir, alterar etapa, observação, anexar, ver origem, financeiro, cancelar).
+
+## Status, Valores e Datas
+
+- Status devem ser badges com rótulo humano: `A_RECEBER` vira "A receber", `PAID` vira "Pago", `ERRO_AUTORIZACAO` vira "Rejeitada".
+- Cores: verde para pago/autorizado/aprovado; amarelo ou azul suave para a vencer/pendente; azul para aguardando/processando; vermelho para vencido/rejeitado/erro; cinza escuro para cancelado/denegada; cinza para rascunho.
+- Valores financeiros no padrão brasileiro: `R$ 1.234,56`. Nunca mostrar `1234.56`.
+- Datas no padrão brasileiro: `21/05/2026` ou `21/05/2026 14:28` quando a hora for relevante.
+- Use timezone `America/Sao_Paulo` na exibição e considere dia inteiro em filtros de período.
+
+## Estados, Performance e Navegação
+
+- Loading: skeleton de tabela no desktop e skeleton de cards no mobile; evitar spinner solto.
+- Vazio geral: "Nenhum registro encontrado. Ajuste os filtros ou crie um novo registro para começar."
+- Vazio com filtros: "Nenhum resultado com os filtros atuais. Tente limpar os filtros ou alterar a busca."
+- Erro: "Não foi possível carregar os dados. Tente novamente em alguns segundos." com botão "Tentar novamente" e detalhe técnico recolhido.
+- Use paginação para listas operacionais grandes, com limite inicial de 25, 50 ou 100 registros e total quando disponível.
+- Colunas ordenáveis importantes: ID, data, valor, cliente, status e vencimento. No mobile, ordenação fica dentro de "Filtros".
+- Desktop deve funcionar com sidebar fixa e conteúdo fluido; mobile deve usar drawer, topbar com menu e conteúdo 100%.
+
+## Diretriz Final
+
+O sistema antigo é referência operacional, não visual. Preserve produtividade, densidade de informação, velocidade para operadores, facilidade de encontrar registros e ações rápidas. Melhore responsividade, filtros, organização visual, badges, menus de ação, cards mobile, estados vazios, feedback de erro e performance.

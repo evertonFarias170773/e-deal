@@ -1,0 +1,42 @@
+---
+description: Regras permanentes de seguranca para Supabase/Postgres
+alwaysApply: true
+---
+
+# Supabase / Postgres Safety
+
+Esta regra vale sempre que a tarefa envolver Supabase, Postgres, banco de dados, SQL, migrations, RLS, policies, triggers, functions/RPCs, tabelas, views, pagamentos, notas fiscais, clientes ou propostas.
+
+## Regras obrigatorias
+
+- Ler primeiro, alterar depois.
+- Fazer `SELECT` antes de qualquer `UPDATE`.
+- Nunca alterar banco, schema, RLS, triggers, functions/RPCs ou migrations sem aprovacao explicita do usuario.
+- Nunca executar `DROP`, `TRUNCATE`, `DELETE`, `UPDATE` sem `WHERE`, `ALTER TABLE` destrutivo, migrations automaticas em producao ou qualquer acao que possa apagar/recriar dados/estruturas sem confirmacao clara.
+- Nunca fingir sucesso quando a operacao real falhar.
+- Sempre bloquear qualquer mudanca que afete dados importantes sem autorizacao expressa.
+
+## Antes de qualquer alteracao no banco
+
+Apresentar obrigatoriamente:
+
+1. Objetivo.
+2. Objetos impactados.
+3. SQL de diagnostico.
+4. Riscos.
+5. Plano de rollback.
+6. Confirmacao de backup recente.
+7. Pedido de aprovacao explicita.
+
+## Modo padrao
+
+- Leitura primeiro.
+- Diagnostico antes de alteracao.
+- Sandbox antes de producao quando houver risco.
+- Nunca executar mudanca destrutiva sem confirmacao do usuario.
+
+## Guardrails adicionais
+
+- `UPDATE` deve usar `WHERE` seguro e chaves operacionais corretas.
+- Mudancas em RLS/policies/triggers/functions exigem revisao separada e aprovacao explicita.
+- Em caso de duvida, parar e pedir confirmacao antes de prosseguir.

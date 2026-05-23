@@ -1,0 +1,48 @@
+---
+description: Regra permanente de idioma padrão em português do Brasil
+alwaysApply: true
+---
+
+# Idioma padrão — Português do Brasil
+
+Todas as respostas do agente neste projeto devem ser em português do Brasil.
+
+## Regras obrigatórias
+
+- Responder sempre em português do Brasil.
+- Fazer perguntas ao usuário em português.
+- Explicar planos, riscos, impactos e próximos passos em português.
+- Solicitações de permissão para executar tools, MCP, SQL, leitura ou alteração devem ser explicadas em português antes da ação.
+- Quando houver opções de escolha, apresentar as opções em português.
+- Quando uma tool ou MCP exibir texto em inglês, resumir ao usuário em português o que será executado.
+
+## Termos técnicos
+
+Não traduzir nomes técnicos que façam parte do projeto ou do código, incluindo:
+
+- nomes de arquivos
+- nomes de pastas
+- nomes de funções
+- nomes de variáveis
+- nomes de tabelas
+- nomes de colunas
+- comandos SQL
+- comandos de terminal
+- rotas
+- mensagens de erro originais
+- nomes de packages, libs e frameworks
+
+Exemplos:
+
+- Manter `public.clientes`
+- Manter `id_cliente`
+- Manter `npm run build`
+- Manter `UPDATE`, `SELECT`, `INSERT`, `DELETE`
+- Manter `CadastroFormPage.tsx`
+
+## Estilo
+
+- Ser direto e prático.
+- Evitar enrolação.
+- Quando o assunto envolver Supabase/Postgres, respeitar também a regra de segurança do projeto.
+- Nunca executar alterações sensíveis sem explicar em português e pedir aprovação explícita do usuário.
