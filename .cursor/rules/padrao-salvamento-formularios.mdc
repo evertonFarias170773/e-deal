@@ -1,0 +1,29 @@
+---
+description: Padrão de feedback e redirecionamento ao salvar formulários
+alwaysApply: true
+---
+
+# Padrão de Salvamento
+
+Todo formulário deve exibir feedback visual ao salvar.
+
+## Sucesso
+
+- Mostrar estado de loading no botão de ação, como `Salvando...`.
+- Desabilitar temporariamente o botão para evitar duplo envio.
+- Mostrar toast/top notification de sucesso usando o padrão global do projeto.
+- Redirecionar para a tela anterior, detalhe ou listagem mais coerente com o fluxo.
+- Nunca deixar o usuário sem confirmação após salvar.
+
+## Erro
+
+- Manter o usuário na tela.
+- Mostrar mensagem clara e amigável.
+- Destacar campos obrigatórios ou inválidos.
+- Não mostrar erro técnico cru como mensagem principal.
+
+## Regra técnica
+
+- Reutilizar o componente/padrão global de notificação, como `AppToast`.
+- Evitar lógica duplicada de feedback em cada formulário.
+- Em fluxo mockado, simular salvamento sem chamar backend real.

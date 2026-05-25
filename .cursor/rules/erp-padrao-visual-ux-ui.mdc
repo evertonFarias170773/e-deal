@@ -1,0 +1,101 @@
+---
+description: Padrão visual UX/UI para telas, componentes e fluxos do ERP
+alwaysApply: true
+---
+
+# Skill UX/UI - Padrão Visual do ERP
+
+Siga este guia sempre que criar ou alterar telas, componentes, formulários, listas, popups, alertas, páginas administrativas ou fluxos do ERP gráfico/fiscal/comercial.
+
+## Intenção Visual
+
+- A interface deve transmitir organização, segurança, controle, produtividade, modernidade e profissionalismo.
+- O visual deve lembrar um SaaS administrativo moderno: limpo, responsivo, confiável, elegante e adequado para uso intenso durante o dia.
+- Evite aparência infantil, cores em excesso, poluição visual, ícones sem contexto e hierarquia confusa.
+- Use cores por intenção, não por decoração.
+
+## Definição Obrigatória Antes de Implementar
+
+Antes de criar uma tela nova, defina: objetivo da tela, usuário principal, dados exibidos, ações principais, ações críticas, comportamento desktop, comportamento mobile, estados vazios, mensagens de erro e componentes reutilizáveis necessários.
+
+## Estrutura de Páginas
+
+- Cabeçalho com título principal curto, subtítulo explicativo, badge/status quando fizer sentido e ação principal à direita no desktop.
+- No mobile, a ação principal deve ficar fixa ou claramente destacada.
+- Área de filtros/resumo deve conter busca, filtros principais e cards de resumo quando necessário.
+- Conteúdo principal deve ter tabela no desktop, cards no mobile, estados vazios, loading skeleton e mensagens de erro amigáveis.
+- Área de ações deve separar ações primárias, secundárias e perigosas. Ações secundárias ficam em menu; ações perigosas exigem confirmação.
+
+## Textos, Títulos e Linguagem
+
+- Use português brasileiro claro, profissional e direto.
+- Título de página deve ser curto; subtítulo deve explicar a tela em uma frase.
+- Prefira nomes específicos como "Dados do cliente", "Endereço principal", "Resumo financeiro", "Validação fiscal" e "Documentos gerados".
+- Evite títulos genéricos como "Tela de cadastro", "Dados" ou "Informações".
+- Nunca mostre erro técnico cru como mensagem principal. Use mensagem amigável e detalhe técnico recolhido em "Ver detalhes".
+
+## Cores, Status e Badges
+
+- Azul: informação, ação principal e links.
+- Verde: sucesso, autorizado, pago e aprovado.
+- Amarelo/laranja: atenção, pendente e aguardando.
+- Vermelho: erro, bloqueio, rejeição, cancelamento e ação destrutiva.
+- Cinza: neutro, rascunho e desabilitado.
+- Roxo/índigo: IA, automações, recursos especiais ou destaque consultivo.
+- Status importantes sempre devem aparecer como badges curtos, legíveis e consistentes.
+- Padrão: `NOVO`/`RASCUNHO` cinza, `PENDENTE` amarelo, `AGUARDANDO` laranja, `PROCESSANDO` azul, `APROVADO`/`AUTORIZADA`/`PAID` verde, `ERRO`/`REJEITADA`/`BLOQUEADA` vermelho, `CANCELADO`/`DENEGADA` cinza escuro ou vermelho suave.
+
+## Botões e Ações Críticas
+
+- Use apenas uma ação primária por área: "Salvar", "Emitir NF-e", "Criar cobrança".
+- Botões secundários são auxiliares: "Cancelar", "Voltar", "Pré-visualizar".
+- Botões terciários ou links são leves: "Ver detalhes", "Limpar filtros".
+- Botão destrutivo deve ser vermelho, com confirmação e explicação da consequência.
+- Ações fiscais e financeiras exigem confirmação quando alteram estado ou geram documento/cobrança.
+- Ações críticas: emitir NF-e/NFS-e, cancelar nota, excluir rascunho, confirmar/cancelar pagamento, trocar empresa emitente, gerar cobrança e alterar status financeiro.
+
+## Alertas, Toasts e Erros
+
+- Alertas devem ter tipo, título, mensagem, cor e ícone coerentes: sucesso, informação, atenção, erro e bloqueio crítico.
+- Sucesso: "Operação concluída". Informação: contexto editável ou orientação. Atenção: avisos que exigem revisão. Erro: falha recuperável. Bloqueio crítico: impede avanço.
+- Toast deve ser usado apenas para feedback rápido e não crítico, como "Alterações salvas." ou "Status atualizado."
+- Erro fiscal, financeiro ou complexo deve aparecer em alerta/card detalhado, não apenas em toast.
+- Bloqueios críticos devem permanecer visíveis até ação do usuário.
+
+## Modais, Popups e Drawers
+
+- Use modais para decisões importantes, não para qualquer interação.
+- Modal pequeno: confirmação simples. Modal médio: formulário curto, seleção de empresa ou status. Modal grande/drawer: edição completa, detalhes ou análise fiscal/financeira.
+- Se houver muitos campos, prefira página ou drawer lateral em vez de modal grande demais.
+- Modal de confirmação deve ter título claro, texto explicando a ação, resumo do registro afetado, cancelar à esquerda e confirmar à direita.
+- Ação destrutiva em modal deve usar vermelho e explicar se pode ou não ser revertida.
+
+## Cards, Formulários e Edição
+
+- Cards devem agrupar informação relacionada e conter título, descrição curta, conteúdo e ação opcional.
+- Evite cards muito altos ou misturando muitos assuntos.
+- Formulários devem ser organizados por seções: dados principais, fiscais, endereço, valores, observações e configurações avançadas.
+- Campos obrigatórios devem estar claros; campos avançados podem ficar recolhidos.
+- Use máscara e validação para valores financeiros, CPF/CNPJ, CEP e datas em padrão brasileiro.
+- Página de edição deve ter cabeçalho com nome/ref, status, empresa e ação principal, além de abas ou seções como Geral, Itens, Financeiro, Fiscal, Documentos e Histórico.
+- Para NF-e/NFS-e, mostrar ref, empresa emitente, cliente/tomador, status, ambiente e ação permitida de validar/preparar/enviar.
+- Se houver troca de empresa, nunca faça update direto no front: chame RPC segura, avise antes e bloqueie se o documento já estiver autorizado.
+
+## Responsividade, Listas e Filtros
+
+- Desktop: sidebar fixa, tabelas completas, filtros horizontais e ações por linha.
+- Tablet: sidebar recolhível, tabelas simplificadas e filtros em painel.
+- Mobile: sidebar como drawer, tabelas viram cards, filtros em bottom sheet, formulários em uma coluna e botões grandes.
+- Nunca esprema tabela larga no celular, nunca dependa de hover e nunca esconda ação crítica sem alternativa clara.
+- Listas devem ter busca global, filtros principais, ordenação, paginação ou infinite scroll controlado, estado vazio, skeleton loading e ações rápidas.
+- Filtros aplicados devem aparecer como chips e sempre deve existir "Limpar filtros".
+
+## IA e Assistentes
+
+- IA deve aparecer como apoio consultivo, não como dona da ação.
+- A IA pode explicar alertas, sugerir correções, resumir dados e orientar o próximo passo.
+- A IA não deve emitir nota, alterar financeiro, cancelar documentos ou prometer ação executada sem confirmação explícita do usuário.
+
+## Regra Final
+
+Não implemente tela, fluxo ou componente importante sem antes definir a intenção da tela, o comportamento desktop/mobile, os estados de loading/vazio/erro, as ações críticas e a hierarquia visual.

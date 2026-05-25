@@ -1,0 +1,116 @@
+---
+description: Interpreta atalhos do usuário para publicação no Git e deploy na Vercel
+alwaysApply: true
+---
+
+# Atalhos de publicação - Git e Vercel
+
+Esta regra define como interpretar pedidos curtos do usuário relacionados a publicação, commit, push e deploy.
+
+## 1. Atalhos de Git/GitHub
+
+Quando o usuário disser frases como:
+
+- `sobe pra o git`
+- `sobe pro git`
+- `publica no git`
+- `atualiza no git`
+- `manda pro github`
+- `commit e push`
+- `faz commit`
+- `publica o código`
+
+entender como pedido explícito para publicar o trabalho atual no repositório Git já configurado.
+
+### O que fazer no Git
+
+- Verificar `git status`.
+- Mostrar ao usuário quais arquivos foram alterados.
+- Incluir somente arquivos relevantes do projeto.
+- Excluir arquivos sensíveis, backups e dumps.
+- Criar um commit com mensagem curta e coerente.
+- Fazer `push` para o remoto correto quando houver remoto configurado e isso fizer parte do pedido.
+
+### Antes de commitar
+
+Verificar se NÃO estão sendo enviados arquivos sensíveis, por exemplo:
+
+- `.env`
+- `.env.local`
+- `.env.production`
+- `.env.*`
+- chaves ou credenciais da Supabase
+- `service_role key`
+- senhas
+- tokens
+- certificados
+- dumps e backups
+- arquivos `.backup`
+- arquivos `.sql` de backup
+- pastas de backup
+- logs com segredos
+
+Se algum arquivo sensível aparecer no `git status`, avisar o usuário e não incluir no commit.
+
+### Regras do Git
+
+- Não alterar config do Git sem autorização explícita.
+- Não usar comandos destrutivos.
+- Não fazer commit se o usuário não pediu publicação no Git.
+- Não assumir que `push` é obrigatório se o usuário só pediu commit.
+- Se houver dúvida sobre um arquivo, tratar como sensível até confirmar.
+
+## 2. Atalhos de Vercel
+
+Quando o usuário disser frases como:
+
+- `publica na vercel`
+- `faz deploy na vercel`
+- `sobe pra vercel`
+- `atualiza a vercel`
+- `deploy do preview`
+- `deploy produção`
+- `manda pro preview`
+- `publica no preview`
+
+entender como pedido relacionado ao deploy na Vercel, não ao Git.
+
+### O que fazer na Vercel
+
+Antes de orientar ou executar deploy, conferir:
+
+- se o build local passa com `npm run build`;
+- se o projeto está conectado ao repositório correto;
+- se o ambiente é `Preview` ou `Production`;
+- se as variáveis de ambiente necessárias estão configuradas;
+- se a proteção do deployment/preview está ativa quando for ambiente de teste;
+- se existe risco de publicar segredo no front-end.
+
+### Variáveis mínimas esperadas para este projeto
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Nunca solicitar, registrar ou orientar uso de `service_role key` no front-end ou na Vercel para este app.
+
+### Regras de deploy
+
+- Preferir `Preview` para testes.
+- Não fazer deploy de produção sem confirmação explícita.
+- Não confundir `push` no GitHub com deploy, embora um possa disparar o outro quando o projeto estiver conectado.
+- Se o usuário pedir só Git, não tratar como Vercel.
+- Se o usuário pedir só Vercel, não iniciar commit/push sem autorização.
+
+## 3. Diferença importante
+
+- Git/GitHub salva o código no repositório.
+- Vercel publica o app.
+- `push` pode disparar deploy automático na Vercel quando o projeto estiver conectado.
+
+## 4. Segurança e limites
+
+- Não alterar banco, RLS, schema, migrations ou variáveis sem autorização explícita.
+- Não commitar segredos, tokens, chaves ou backups.
+- Não usar comandos destrutivos.
+- Não automatizar publicação quando o usuário não pediu isso de forma clara.
+- Se o pedido estiver ambíguo, pedir confirmação antes de publicar.

@@ -1,0 +1,104 @@
+import type { Cadastro, CadastroContato, CadastroEndereco, CadastroVinculoComercial } from "@/features/cadastros/types";
+import type { Produto, TipoVariacao, VariacaoGlobal } from "@/features/produtos/types";
+
+export type PropostaStatus = "NOVO" | "AGUARDANDO" | "APROVADO" | "CANCELADO";
+
+export type PropostaCobrancaStatus = "NAO_GERADA" | "PENDENTE" | "GERADA" | "PAGA" | "CANCELADA";
+
+export type PropostaVariacaoEscolhida = {
+  id: string;
+  id_variacao: number;
+  variacao: VariacaoGlobal;
+  tipo: TipoVariacao;
+};
+
+export type TipoDescontoProposta = "PERCENTUAL" | "VALOR";
+
+export type PropostaItem = {
+  id: string;
+  id_produto: number;
+  produto: Produto;
+  nome: string;
+  formato: string;
+  descricaoModelo: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorFixo: number;
+  descontoTipo: TipoDescontoProposta;
+  descontoValor: number;
+  subtotalBruto: number;
+  descontoValorCalculado: number;
+  acrescimoBonus: number;
+  subtotal: number;
+  prazo: string;
+  pesoUnitario: number;
+  pesoTotal: number;
+  variacoesEscolhidas: PropostaVariacaoEscolhida[];
+};
+
+export type PropostaFrete = {
+  id: string;
+  id_int: number;
+  transportadora: string;
+  servico: string;
+  valor: number;
+  prazo: string;
+  observacao: string;
+  escolhido: boolean;
+  pesoUsado: number;
+};
+
+export type PropostaResumo = {
+  subtotalBrutoProdutos: number;
+  descontosIndividuais: number;
+  acrescimoBonus: number;
+  subtotalProdutos: number;
+  descontoGeralTipo: TipoDescontoProposta;
+  descontoGeralValor: number;
+  descontoGeral: number;
+  frete: number;
+  valorTotal: number;
+  pesoTotal: number;
+  prazoProducao: string;
+  prazoEntrega: string;
+};
+
+export type Proposta = {
+  id: string;
+  id_int: number;
+  cliente: Cadastro;
+  compradorAutorizado?: CadastroVinculoComercial;
+  contato: CadastroContato;
+  enderecoEntrega: CadastroEndereco;
+  empresa: string;
+  vendedor: string;
+  data: string;
+  status: PropostaStatus;
+  itens: PropostaItem[];
+  fretes: PropostaFrete[];
+  freteEscolhidoId: string;
+  resumo: PropostaResumo;
+  descontoGeralTipo: TipoDescontoProposta;
+  descontoGeralValor: number;
+  formaPagamento: string;
+  cobrancaStatus: PropostaCobrancaStatus;
+  observacoes: string;
+};
+
+export type PropostaFormState = {
+  id_int: string;
+  empresa: string;
+  vendedor: string;
+  status: PropostaStatus;
+  clienteId: string;
+  contatoId: string;
+  enderecoId: string;
+  compradorId: string;
+  itens: PropostaItem[];
+  fretes: PropostaFrete[];
+  freteEscolhidoId: string;
+  descontoGeralTipo: TipoDescontoProposta;
+  descontoGeralValor: string;
+  formaPagamento: string;
+  observacoes: string;
+};

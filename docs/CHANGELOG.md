@@ -1,0 +1,145 @@
+# Changelog
+
+## 2026-05-22
+
+### Criado
+
+- Estrutura inicial mockada com Next.js, TypeScript e TailwindCSS.
+- Login mockado.
+- Layout autenticado.
+- Sidebar desktop e drawer mobile.
+- Topbar com busca global mockada.
+- Seletor de empresa com `Todas`, `Ideal`, `Biro` e `E3`.
+- Dashboard mockado com cards.
+- Gráficos mockados no Dashboard usando Recharts.
+- Listagem de Cadastros mockada.
+- Tela de detalhe de Cadastro.
+- Fluxo de Novo Cadastro com validação inicial.
+- Tela de edição de Cadastro existente.
+- Funções mockadas para validar ID, documento, CPF/CNPJ e consulta CNPJ.
+- Módulo Produtos mockado com lista, detalhe, novo produto e edição.
+- Mock `produtos.mock.ts` com produtos, fotos e variações.
+- Mock `variacoes.mock.ts` com `variacoes`, `tipos_variacoes` e `produto_variacoes`.
+- Módulo Orçamentos/Propostas mockado com lista, detalhe, nova proposta e edição.
+- Mock `propostas.mock.ts` com propostas, itens, variações escolhidas, fretes, resumo e cobrança mockada.
+- Fluxo visual de proposta com cliente, contato, endereço, comprador/autorizado, produtos, frete e resumo.
+- Área de proposta informal copiável para WhatsApp.
+- Módulo Cobranças e Pagamentos mockado com lista de conferência financeira, detalhe, criação principal dentro da proposta e página pública por `token_publico`.
+- Mock `pagamentos.mock.ts` inspirado em `pagamentos_v2`, com `os_ideal`, PIX, boleto, cartão, cartão parcelado e faturado.
+- Painel `Criar e ver cobranças` dentro do detalhe da proposta, como fluxo principal do vendedor.
+- Provider local de cobranças para persistir ações mockadas no navegador sem backend.
+- Painéis específicos para PIX, boleto, cartão, cartão parcelado e faturado/crédito.
+- Página pública mockada com botão de simular pagamento.
+- Galeria visual de fotos de Produtos com URL mockada, remoção e foto principal.
+- Gerenciamento visual de variações de Produtos com obrigatória e múltipla escolha.
+- Card de uso no Maestro em Produto com reconhecimento por apelidos.
+- Componente global `AppToast`.
+- Logo da Ideal na sidebar.
+- Project Rules de UX/UI e listagens.
+- Documentação técnica inicial.
+
+### Alterado
+
+- Sidebar ajustada para padrão claro, com modo expandido/recolhido.
+- Menu lateral deixou de usar fundo escuro como padrão.
+- Menu de ações corrigido para permanecer aberto ao mover o mouse.
+- Menu de ações passou a fechar por clique fora, ESC, ação ou abertura de outro menu.
+- Menu de ações passou a calcular posição e abrir para cima quando necessário.
+- Salvamento de Cadastros passou a usar loading, toast e redirecionamento automático.
+- Edição de Cadastro passou a abrir diretamente o formulário completo.
+- Documento alterado em edição passou a exibir alerta visual.
+- Edição de Cadastro passou a retornar para o detalhe após salvar com toast.
+- Novo Cadastro passou a exibir ação de verificar antes do formulário completo, evitando salvar antes da validação inicial.
+- Detalhe de Cadastro passou a listar todos os endereços, contatos e vínculos comerciais com feedback mockado nas ações.
+- Menu de ações passou a abrir somente por clique, mantendo o posicionamento responsivo e abertura para cima quando necessário.
+- Menu lateral passou a habilitar Produtos.
+- Busca global mockada passou a incluir resultados de Produtos.
+- Variações de Produtos foram refatoradas para usar banco global reutilizável.
+- Produto passou a vincular variações existentes por `produto_variacoes`, sem criar variação exclusiva.
+- Opções/modelos de variação passaram a vir de `tipos_variacoes`, com valor extra e peso mockados.
+- Documentação passou a registrar que variações globais serão mantidas em Configurações.
+- Documentação passou a diferenciar `variacoes`, `tipos_variacoes`, `produto_variacoes` e `produtos_proposta_variacao`.
+- Menu lateral passou a habilitar Orçamentos.
+- Busca global mockada passou a incluir propostas reais do módulo mockado.
+- Nova/Edição de Proposta passou a buscar cliente por ID, nome ou documento.
+- Vendedor da proposta passou a ser herdado do cadastro do cliente, com edição restrita a admin/gerente.
+- Login mockado passou a suportar perfis distintos para validar vendedor bloqueado (vendedor comum) e editável (admin/gerente).
+- Status da proposta passou a ser somente leitura no formulário.
+- Itens da proposta passaram a ter descrição editável, desconto individual e validação de variações obrigatórias.
+- Resumo da proposta passou a considerar acréscimo de tabela especial do cliente, desconto geral por permissão e peso total.
+- Fretes mockados passaram a guardar peso usado na cotação e exibir aviso quando o peso da proposta muda.
+- Contatos e endereços podem ser adicionados visualmente à proposta sem persistência real.
+- Menu lateral passou a habilitar Cobranças.
+- Orçamentos passou a criar e acompanhar cobranças diretamente no detalhe da proposta, em vez de tratar o módulo financeiro como criador isolado.
+- Lista de Cobranças passou a ter foco em conferência financeira, análise de crédito e liberação para pedido.
+- Status financeiros passaram a usar apenas `A_RECEBER`, `A_VENCER`, `PAID` e `CANCELADO`; `CARD_PARCELADO` ficou restrito ao tipo/fluxo.
+- Empresa recebedora passou a ser herdada da proposta no fluxo principal de criação de cobrança.
+- Mock de faturado passou a criar `A_VENCER` com `confirmado=true` quando há limite e crédito pendente quando não há.
+- `StatusBadge` e `humanizeStatus` passaram a suportar `CARD_PARCELADO`, `CONFIRMADO` e `NAO_CONFIRMADO`.
+- Módulo `Cobranças e Pagamentos` teve os mocks de crédito alinhados para a validação visual: `E3` passou a representar faturado com limite disponível e `Birô` passou a representar crédito insuficiente com pendência financeira.
+- Provider local de cobranças passou a usar a chave `erp_ideal_mock_cobrancas_v3` para limpar estados antigos incompatíveis durante a validação manual dos fluxos.
+- Lista `Conferência de cobranças` foi validada visualmente com cenários reais do mock, confirmando `Proposta / OS Ideal`, tipos separados de status, bloqueio de liberação quando há `A_RECEBER`/crédito pendente e liberação após confirmação de todos os pagamentos da proposta `16821`.
+- Fluxo de liberação por proposta passou a distinguir `Pronta para liberar` de `Liberada para pedido`, evitando mostrar sucesso antes do clique final do financeiro.
+- Menu de ações da conferência deixou de exibir `Liberar para pedido` para propostas já liberadas e passou a mostrar apenas o estado futuro desabilitado `Pedido ainda não criado no mock`.
+- A criação da cobrança continua dentro da proposta, mas a interação foi refatorada para modal centralizado por melhor UX e legibilidade.
+- Detalhe da proposta deixou de espremer o fluxo de cobrança na lateral e passou a mostrar um bloco-resumo com abertura de dialog central, lista de cobranças e atualização local após gerar PIX, boleto, cartão ou faturado.
+- Atalho `/cobrancas/nova` passou a reutilizar o mesmo modal centralizado para manter consistência visual entre proposta e financeiro.
+- Card-resumo de `Cobranças` no detalhe da proposta passou a refletir dinamicamente as cobranças mockadas já geradas, evitando inconsistência com a lista real da proposta.
+- Modal `Criar cobrança` foi simplificado para fluxo operacional: conferência de contexto, dados básicos, escolha de forma de pagamento e geração direta da cobrança.
+- Blocos técnicos grandes de simulação foram removidos do modal (PIX, boleto, checkout, cálculo de taxa e detalhamento de parcelas), mantendo esses detalhes apenas no registro gerado/detalhe.
+- Campos condicionais do modal foram reduzidos ao mínimo: vencimento obrigatório para boleto/faturado, parcelas para cartão parcelado e aviso curto de crédito para faturado.
+- Decisão registrada: o vendedor informa apenas dados essenciais; detalhes técnicos de PIX, checkout, boletos, parcelas e webhooks pertencem ao backend e ao detalhe da cobrança após geração.
+- Resumo da proposta deixou de exibir dropdown de forma de pagamento; a escolha da forma de pagamento agora pertence apenas ao modal `Criar cobrança`.
+- Textos de situação financeira passaram a usar `Aguardando pagamento`, `Parcialmente paga`, `Liberada para pedido` e `Aguardando análise de crédito`, evitando o termo ambíguo `Parcialmente aprovada`.
+- Cálculo visual de `Já cobrado` e `Saldo` passou a considerar apenas cobranças válidas, limitar excesso visual a zero e alertar quando o mock exceder o total da proposta.
+- Mocks iniciais da proposta `#16790` foram ajustados para não nascerem com cobranças válidas acima do total da proposta.
+- Provider local de cobranças passou a usar a chave `erp_ideal_mock_cobrancas_v5` para descartar estados antigos incompatíveis com os novos mocks de saldo.
+- Primeira entrega do Módulo 09 — Contas a Receber / Gestão Financeira criada em `/contas-a-receber`, com cards de resumo, filtros, abas, carteira de recebíveis, boletos/depósitos, vencimentos, cartões/faturado e previsão de caixa mockada.
+- Mock `contas-receber.mock.ts` criado com cenários de PIX pago/pendente, boleto a vencer/vencido/vencendo hoje/pago/cancelado, depósito futuro, cartão aprovado futuro, cartão parcelado futuro, faturado aprovado, crédito pendente e proposta com múltiplos pagamentos.
+- Menu lateral passou a habilitar `Contas a receber`, mantendo `Cobranças` como módulo separado.
+- Ações financeiras do Módulo 09 foram implementadas apenas como mock com toast: confirmar recebimento, cancelar recebível, prorrogar vencimento, copiar linha digitável e abrir PDF mockado.
+- Decisão registrada: Contas a Receber é a carteira financeira de vencimentos, boletos, depósitos futuros, cartões futuros, faturados e previsão de caixa. A criação e conferência da cobrança ficam no Módulo 08 — Cobranças.
+- Módulo 09 foi ajustado para visão financeira mais limpa, reduzindo os cards principais para `A vencer`, `Vencidos`, `Vencem hoje` e `Vencem até o fechamento`.
+- Filtros de Contas a Receber passaram a usar empresa, tipo, status visual e período com data inicial/final, afetando cards, listas, abas e previsão de caixa mockada.
+- Carteira principal deixou de listar `A_RECEBER` por padrão; esses registros representam cobranças ainda não liquidadas/aprovadas e pertencem principalmente ao Módulo 08.
+- `Vencido` passou a ser condição visual derivada de `A_VENCER` com vencimento anterior à data atual, sem criar novo status financeiro no mock principal.
+
+## 2026-05-23
+
+### Alterado
+
+- Cadastros passou a ser o primeiro módulo conectado ao Supabase, em modo read-only, sem qualquer operação de escrita.
+- A listagem de Cadastros passou a ler `public.clientes` com fallback automático para `cadastrosMock` quando a leitura falha ou a configuração do app não está presente.
+- O detalhe de Cadastro passou a ler `public.clientes`, `public.enderecos`, `public.contatos` e `public.clientes_socios`, mantendo fallback para mock.
+- A edição de Cadastro passou a abrir com dados reais quando disponíveis, mas continua com salvamento simulado.
+- O feedback visual da edição deixou explícito que nenhuma gravação real ocorre no Supabase.
+- A conexão read-only passou a depender do `.env.local` com `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- A documentação técnica passou a registrar que o MCP do Supabase ajuda o desenvolvimento, mas não substitui a configuração do app Next.js.
+- Ficou registrado como próximo passo a futura análise de escrita real para Cadastros, começando por `UPDATE` controlado, validação de RLS e confirmação explícita antes de gravar.
+- A primeira escrita real do módulo foi liberada apenas para `public.clientes.obs`, usando `id_cliente` como chave operacional.
+- O payload da fase inicial de escrita real ficou restrito a `obs`, com bloqueio de qualquer alteração em outros campos.
+- A confirmação antes de gravar e o sucesso pós-`UPDATE` passaram a ser obrigatórios para a primeira etapa de escrita.
+- Endereços, contatos, vínculos comerciais e demais campos sensíveis permaneceram bloqueados para escrita nesta fase.
+- Nenhum `INSERT` ou `DELETE` foi implementado na fase inicial de escrita real.
+- Criada a matriz viva de segurança de escrita em `docs/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`, com controle por módulo, tabela, campo, operação, status, risco, validação pós-gravação e fase de liberação.
+- A documentação técnica passou a registrar a matriz como referência obrigatória antes de novas fases de escrita.
+- UPDATE real de `public.clientes` foi expandido e validado no Supabase para campos operacionais simples do módulo Cadastros.
+- Chave operacional confirmada como `id_cliente`, com payload enviando somente os campos permitidos alterados.
+- Campos liberados para escrita: `obs`, `fantasia`, `telefone_fixo`, `whatsapp_1`, `whatsapp_2`, `email_contato`, `email`, `email_financeiro` e `site`.
+- `Nome fantasia / Apelido` passou a gravar somente em `fantasia` e `E-mail principal` passou a gravar em `email_contato` e `email`.
+- `apelido`, endereços, contatos, `clientes_socios`, campos fiscais, financeiros, sistêmicos e sensíveis seguem bloqueados para escrita.
+- Sucesso na UI agora depende de confirmação real do Supabase, com validação pós-gravação por `SELECT` em `public.clientes`.
+
+### Pendente
+
+- Conexão com Supabase.
+- Migrations reais.
+- Backend real.
+- Integração com APIs reais de CPF/CNPJ.
+- Contas a receber consolidado e conciliação real.
+- Notas fiscais.
+- Pedidos.
+- OS / Produção.
+- Expedição.
+- Relatórios.
+- Configurações.

@@ -1,0 +1,38 @@
+export type SupabaseValue = string | number | bigint | boolean | null | undefined;
+
+export type SupabasePagamentoV2Row = {
+  id: SupabaseValue;
+  id_pagamento?: SupabaseValue;
+  id_int?: SupabaseValue;
+  os_ideal?: SupabaseValue;
+  id_cliente?: SupabaseValue;
+  cliente?: SupabaseValue;
+  descricao?: SupabaseValue;
+  valor?: SupabaseValue;
+  status?: SupabaseValue;
+  tipo_cobranca?: SupabaseValue;
+  created_at?: SupabaseValue;
+  paid_at?: SupabaseValue;
+  vencimento?: SupabaseValue;
+  confirmado?: SupabaseValue;
+  confirmado_por?: SupabaseValue;
+  aprovado_por?: SupabaseValue;
+  empresa?: SupabaseValue;
+  id_empresa?: SupabaseValue;
+  documento?: SupabaseValue;
+  atendente?: SupabaseValue;
+  token_publico?: SupabaseValue;
+  public_token?: SupabaseValue;
+  url_cobranca?: SupabaseValue;
+  pix_copia_cola?: SupabaseValue;
+  linha_digitavel?: SupabaseValue;
+  url_pdf?: SupabaseValue;
+  motivo_cancela?: SupabaseValue;
+  erro_pagamento?: SupabaseValue;
+  obs_v2?: SupabaseValue;
+  whats_contato?: SupabaseValue;
+  id_fatura?: SupabaseValue;
+  cod_solicitacao_inter?: SupabaseValue;
+  data_confirmacao?: SupabaseValue;
+  n_url_pdf?: SupabaseValue;
+};
