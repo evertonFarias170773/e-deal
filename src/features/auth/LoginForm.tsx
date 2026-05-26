@@ -8,8 +8,8 @@ import { useAuth } from "@/features/auth/AuthProvider";
 export function LoginForm() {
   const router = useRouter();
   const { login } = useAuth();
-  const [email, setEmail] = useState("everton@ideal.local");
-  const [password, setPassword] = useState("mockado123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -82,10 +82,7 @@ export function LoginForm() {
         {isSubmitting ? "Entrando..." : "Entrar no ERP"}
       </button>
 
-      <p className="text-center text-xs text-slate-500">
-        Login mockado para validar a experiencia visual. Use <strong>everton@ideal.local</strong> para admin/gerente ou{" "}
-        <strong>caroline@ideal.local</strong> para vendedor comum.
-      </p>
+      <p className="text-center text-xs text-slate-500">Use seu e-mail e senha cadastrados no Supabase Auth.</p>
     </form>
   );
 }

@@ -2,15 +2,24 @@
 
 import { LogOut, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
 
 export function UserMenu() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  function handleLogout() {
-    logout();
-    router.replace("/login");
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      router.replace("/login");
+    } catch (error) {
+      console.error("[UserMenu] Falha ao sair:", error);
+    } finally {
+      setIsLoggingOut(false);
+    }
   }
 
   if (!user) {
@@ -29,6 +38,7 @@ export function UserMenu() {
       <button
         type="button"
         onClick={handleLogout}
+        disabled={isLoggingOut}
         className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
         aria-label="Sair"
       >

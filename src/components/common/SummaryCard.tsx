@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import type { StatusTone } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +15,7 @@ const toneStyles: Record<StatusTone, string> = {
 type SummaryCardProps = {
   title: string;
   value: string;
-  description: string;
+  description: ReactNode;
   tone?: StatusTone;
   trend?: string;
   icon?: LucideIcon;
@@ -43,7 +44,7 @@ export function SummaryCard({
           </span>
         ) : null}
       </div>
-      <p className="mt-4 text-sm leading-6 text-slate-500">{description}</p>
+      <div className="mt-4 text-sm leading-6 text-slate-500">{description}</div>
       {trend ? (
         <span className={cn("mt-4 inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1", toneStyles[tone])}>
           {trend}

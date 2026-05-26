@@ -62,7 +62,7 @@ export function getDataReferenciaCobranca(
 }
 
 export function getDataReferenciaFaturamento(cobranca: Pick<Cobranca, "paid_at" | "data_confirmacao">) {
-  return cobranca.data_confirmacao || cobranca.paid_at || "";
+  return cobranca.paid_at || cobranca.data_confirmacao || "";
 }
 
 export function isPendenteAprovacao(

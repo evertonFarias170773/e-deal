@@ -1,0 +1,36 @@
+---
+description: Arquitetura modular do ERP Ideal
+alwaysApply: true
+---
+
+# Arquitetura do ERP Ideal
+
+- O projeto usa `Next.js`, `React`, `TypeScript` e `Supabase`.
+- Use `src/app` apenas para rotas e cascas finas.
+- Use `src/features` como local principal dos módulos do ERP.
+- Cada módulo deve concentrar sua própria tela, `components`, `hooks`, `services` e `types`.
+- Componentes genéricos ficam em `src/components/ui`.
+- Componentes de estrutura geral ficam em `src/components/layout` ou `src/components/app-shell`.
+- Constantes globais ficam em `src/constants`.
+- `navigationItems` tem como fonte oficial `src/constants/navigation.ts`.
+- `src/lib/navigation.ts` existe apenas como reexport temporário.
+
+## Regras de implementação
+
+- Não criar lógica pesada diretamente em `page.tsx`.
+- Não colocar queries Supabase diretamente em componentes visuais quando puder usar `services` ou `hooks`.
+- `Contas a Receber` deve usar `public.boletos` como fonte principal.
+- `Cobranças` / `Conferência de pagamentos` deve usar `public.pagamentos_v2` como fonte principal.
+- Não misturar `Contas a Receber` com `Cobranças`.
+- Antes de criar um novo módulo, verificar se já existe uma feature correspondente.
+- Ao criar uma nova rota, criar a rota fina em `src/app` e o módulo em `src/features`.
+
+## Regras de segurança
+
+- Não alterar `Auth`, `Supabase client`, `RLS`, `schema`, `migrations`, `policies`, `env` ou `service_role` sem confirmação explícita.
+- Não fazer escrita real no Supabase sem confirmação explícita.
+
+## Diretriz de edição
+
+- Para alterações pequenas, mexer no menor número possível de arquivos.
+- Para alterações maiores, apresentar plano antes de editar.

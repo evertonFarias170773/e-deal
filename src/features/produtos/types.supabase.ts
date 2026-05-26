@@ -1,0 +1,33 @@
+export type SupabaseValue = string | number | boolean | null | undefined | Array<unknown> | Record<string, unknown>;
+
+export type SupabaseProdutoRow = {
+  id?: SupabaseValue;
+  id_produto?: SupabaseValue;
+  nome?: SupabaseValue;
+  nome_real?: SupabaseValue;
+  categoria?: SupabaseValue;
+  formato?: SupabaseValue;
+  valorUnt?: SupabaseValue;
+  valor_unt?: SupabaseValue;
+  valor_unitario?: SupabaseValue;
+  valorFixo?: SupabaseValue;
+  valor_fixo?: SupabaseValue;
+  valor_custo?: SupabaseValue;
+  peso?: SupabaseValue;
+  prazo?: SupabaseValue;
+  nivelSeg?: SupabaseValue;
+  nivel_seg?: SupabaseValue;
+  fraseCons?: SupabaseValue;
+  frase_cons?: SupabaseValue;
+  descricao?: SupabaseValue;
+  personalizacao?: SupabaseValue;
+  apelidos?: SupabaseValue;
+  ativo?: SupabaseValue;
+  is_estoque?: SupabaseValue;
+  is_variacao?: SupabaseValue;
+  fotos?: SupabaseValue;
+  produto_fotos?: SupabaseValue;
+  variacoes?: SupabaseValue;
+  produto_variacoes?: SupabaseValue;
+  created_at?: SupabaseValue;
+};

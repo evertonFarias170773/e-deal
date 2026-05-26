@@ -9,6 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
     "@tailwindcss/postcss": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",

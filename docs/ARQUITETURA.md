@@ -67,6 +67,10 @@ Módulos atuais:
 - `produtos`
 - `orcamentos`
 
+## Organização modular atual
+
+A organização modular atual do ERP Ideal está documentada em [`docs/ARQUITETURA-MODULAR-ERP-IDEAL.md`](docs/ARQUITETURA-MODULAR-ERP-IDEAL.md), que detalha a estrutura vigente de `src/app`, `src/features`, `src/constants` e as regras específicas dos módulos já padronizados.
+
 ## `src/lib`
 
 Contém utilitários, formatadores, navegação, tipos globais e mocks.

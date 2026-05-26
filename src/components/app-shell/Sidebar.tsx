@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { navigationItems } from "@/lib/navigation";
+import { navigationItems } from "@/constants/navigation";
 import { cn } from "@/lib/utils";
 
 type SidebarProps = {

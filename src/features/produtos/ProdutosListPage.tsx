@@ -10,11 +10,14 @@ import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { produtoCategoriasMock, produtosMock } from "@/lib/mocks/produtos.mock";
+import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
+import { useProdutosReadOnlyData } from "@/features/produtos/hooks/useProdutosReadOnlyData";
 import type { Produto, ProdutoCategoria } from "@/features/produtos/types";
 
 type StatusFilter = "TODOS" | "ATIVO" | "INATIVO";
 type BooleanFilter = "TODOS" | "SIM" | "NAO";
+
+const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 
 function normalize(value: string) {
   return value
@@ -47,6 +50,7 @@ function produtoMatchesSearch(produto: Produto, search: string) {
 export function ProdutosListPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { produtos, source, warnings, isLoading } = useProdutosReadOnlyData();
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState<"TODAS" | ProdutoCategoria>("TODAS");
   const [status, setStatus] = useState<StatusFilter>("TODOS");
@@ -54,8 +58,13 @@ export function ProdutosListPage() {
   const [hasFotos, setHasFotos] = useState<BooleanFilter>("TODOS");
   const [isEstoque, setIsEstoque] = useState<BooleanFilter>("TODOS");
 
+  const categoriaOptions = useMemo(
+    () => Array.from(new Set([...produtoCategoriasMock, ...produtos.map((produto) => produto.categoria)])),
+    [produtos]
+  );
+
   const filteredProdutos = useMemo(() => {
-    return produtosMock.filter((produto) => {
+    return produtos.filter((produto) => {
       const matchesSearch = produtoMatchesSearch(produto, search);
       const matchesCategoria = categoria === "TODAS" || produto.categoria === categoria;
       const matchesStatus =
@@ -77,7 +86,7 @@ export function ProdutosListPage() {
 
       return matchesSearch && matchesCategoria && matchesStatus && matchesVariacoes && matchesFotos && matchesEstoque;
     });
-  }, [categoria, hasFotos, hasVariacoes, isEstoque, search, status]);
+  }, [categoria, hasFotos, hasVariacoes, isEstoque, produtos, search, status]);
 
   const activeFilters = [
     search ? `Busca: ${search}` : null,
@@ -88,10 +97,12 @@ export function ProdutosListPage() {
     isEstoque !== "TODOS" ? `Estoque: ${isEstoque === "SIM" ? "Sim" : "Não"}` : null
   ].filter(Boolean);
 
-  const ativos = produtosMock.filter((produto) => produto.ativo).length;
-  const comVariacoes = produtosMock.filter((produto) => produto.variacoes.length > 0).length;
-  const comFotos = produtosMock.filter((produto) => produto.fotos.length > 0).length;
-  const estoque = produtosMock.filter((produto) => produto.is_estoque).length;
+  const ativos = produtos.filter((produto) => produto.ativo).length;
+  const estoque = produtos.filter((produto) => produto.is_estoque).length;
+  // Enquanto a listagem real não carrega relações de fotos/variações do Supabase,
+  // evitamos misturar números mockados com dados reais.
+  const comVariacoes = source === "supabase" ? 0 : produtos.filter((produto) => produto.variacoes.length > 0).length;
+  const comFotos = source === "supabase" ? 0 : produtos.filter((produto) => produto.fotos.length > 0).length;
 
   function clearFilters() {
     setSearch("");
@@ -123,7 +134,7 @@ export function ProdutosListPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-produtos-source={source}>
       <PageHeader
         title="Produtos"
         subtitle="Gerencie o catalogo usado por propostas, Maestro, producao, fotos e variacoes."
@@ -139,12 +150,20 @@ export function ProdutosListPage() {
         }
       />
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Produtos ativos" value={ativos.toString()} description="Itens disponiveis para uso comercial." tone="success" icon={Package} />
-        <SummaryCard title="Com variacoes" value={comVariacoes.toString()} description="Produtos com escolhas configuraveis." tone="info" icon={SlidersHorizontal} />
-        <SummaryCard title="Com fotos" value={comFotos.toString()} description="Itens preparados para catalogo e Maestro." tone="special" icon={ImageIcon} />
-        <SummaryCard title="Produtos de estoque" value={estoque.toString()} description="Itens marcados para controle futuro de estoque." tone="neutral" icon={Boxes} />
-      </section>
+      {isLoading ? (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-36 animate-pulse rounded-3xl border border-slate-200 bg-white" />
+          ))}
+        </section>
+      ) : (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard title="Produtos ativos" value={ativos.toString()} description="Itens disponiveis para uso comercial." tone="success" icon={Package} />
+          <SummaryCard title="Com variacoes" value={comVariacoes.toString()} description="Produtos com escolhas configuraveis." tone="info" icon={SlidersHorizontal} />
+          <SummaryCard title="Com fotos" value={comFotos.toString()} description="Itens preparados para catalogo e Maestro." tone="special" icon={ImageIcon} />
+          <SummaryCard title="Produtos de estoque" value={estoque.toString()} description="Itens marcados para controle futuro de estoque." tone="neutral" icon={Boxes} />
+        </section>
+      )}
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_170px_150px_170px_150px_170px_auto]">
@@ -160,7 +179,7 @@ export function ProdutosListPage() {
 
           <select value={categoria} onChange={(event) => setCategoria(event.target.value as "TODAS" | ProdutoCategoria)} className={filterClass}>
             <option value="TODAS">Todas categorias</option>
-            {produtoCategoriasMock.map((option) => (
+            {categoriaOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
@@ -210,6 +229,7 @@ export function ProdutosListPage() {
       <ResponsiveList<Produto>
         items={filteredProdutos}
         getKey={(produto) => produto.id}
+        isLoading={isLoading}
         emptyTitle="Nenhum produto encontrado"
         emptyDescription="Tente limpar os filtros ou alterar a busca para localizar outro produto."
         columns={[
@@ -271,18 +291,26 @@ export function ProdutosListPage() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {produto.id_produto}</p>
                 <h3 className="mt-2 font-semibold text-slate-950">{produto.nomeReal}</h3>
-                <p className="mt-1 text-sm text-slate-500">{produto.categoria} - {produto.formato}</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {produto.categoria} - {produto.formato}
+                </p>
               </div>
               <StatusBadge status={produto.ativo ? "ATIVO" : "INATIVO"} tone={produto.ativo ? "success" : "neutral"} />
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
-              <p>Unit.: <strong className="text-slate-900">{formatCurrency(produto.valorUnt)}</strong></p>
+              <p>
+                Unit.: <strong className="text-slate-900">{formatCurrency(produto.valorUnt)}</strong>
+              </p>
               <p>Fixo: {formatCurrency(produto.valorFixo)}</p>
               <p>Prazo: {produto.prazo}</p>
               <p>Fotos: {produto.fotos.length} | Variacoes: {produto.variacoes.length}</p>
             </div>
             <div className="mt-4 flex items-center justify-between gap-3">
-              <button type="button" onClick={() => router.push(`/produtos/${produto.id_produto}`)} className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white">
+              <button
+                type="button"
+                onClick={() => router.push(`/produtos/${produto.id_produto}`)}
+                className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
+              >
                 Ver
               </button>
               <ActionsMenu label="Mais" items={getActions(produto).filter((item) => item.label !== "Ver produto")} />
@@ -290,8 +318,16 @@ export function ProdutosListPage() {
           </article>
         )}
       />
+
+      {!isLoading ? (
+        <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          <p>
+            {source === "supabase"
+              ? `Dados reais carregados em public.produtos (${produtos.length} registros).`
+              : warnings[0] ?? "Fallback mockado ativo. A lista esta usando os produtos mockados atuais."}
+          </p>
+        </section>
+      ) : null}
     </div>
   );
 }
-
-const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";

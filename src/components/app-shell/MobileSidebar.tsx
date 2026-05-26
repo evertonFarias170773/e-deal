@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { navigationItems } from "@/lib/navigation";
+import { navigationItems } from "@/constants/navigation";
 
 type MobileSidebarProps = {
   isOpen: boolean;

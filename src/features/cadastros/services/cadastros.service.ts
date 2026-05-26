@@ -1,11 +1,13 @@
 import { cadastrosMock, getCadastroById } from "@/lib/mocks/cadastros.mock";
 import type { Cadastro } from "@/features/cadastros/types";
+import type { CadastroCategoria } from "@/features/cadastros/types";
 import type {
   SupabaseClienteRow,
   SupabaseClienteSocioRow,
   SupabaseContatoRow,
   SupabaseEnderecoRow
 } from "@/features/cadastros/types.supabase";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   mapSupabaseClienteRowToCadastro,
   mergeSupabaseRelacionamentos
@@ -16,47 +18,21 @@ const CLIENTES_LIST_SELECT = [
   "id_cliente",
   "nome",
   "apelido",
-  "contato",
   "documento",
-  "ins_estadual",
-  "ins_municipal",
-  "data_fundacao",
   "email_contato",
-  "email_financeiro",
   "telefone_fixo",
   "whatsapp_1",
   "whatsapp_2",
   "ativo",
   "restricao",
   "limite_credito",
-  "obs",
-  "data_criacao",
   "fantasia",
   "email",
-  "site",
-  "data_cadastro",
-  "recebe_email",
-  "recebe_whatsapp",
-  "tipo_pessoa",
-  "id_vendedor",
   "nome_vendedor",
-  "nota",
   "categoria",
   "risco_credito",
-  "ultima_compra",
-  "total_compras",
-  "verificado",
-  "data_verificacao",
-  "padrao_pagamento",
-  "empresa_padrao",
-  "tipo_contribuinte",
-  "motivo_erro",
   "cidade_uf",
-  "cpf_invalido",
-  "cpf_erro",
-  "credito",
-  "is_bonus",
-  "percentual_bunus"
+  "credito"
 ].join(", ");
 
 export type CadastrosReadSource = "supabase" | "mock";
@@ -64,6 +40,12 @@ export type CadastrosReadSource = "supabase" | "mock";
 export type CadastrosReadResult = {
   source: CadastrosReadSource;
   cadastros: Cadastro[];
+  totalCount: number;
+  hasNextPage: boolean;
+  pageIndex: number;
+  pageSize: number;
+  loadedCount: number;
+  warnings: string[];
 };
 
 export type CadastroDetailReadResult = {
@@ -78,6 +60,17 @@ function cloneMockCadastros() {
     contatos: [...cadastro.contatos],
     vinculosComerciais: [...cadastro.vinculosComerciais]
   }));
+}
+
+function sortCadastrosByIdClienteDesc(cadastros: Cadastro[]) {
+  return [...cadastros].sort((a, b) => b.idCliente - a.idCliente);
+}
+
+function normalizeSearchTerm(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[%*,]/g, "");
 }
 
 function normalizeIdCliente(value: unknown) {
@@ -204,39 +197,185 @@ function normalizeRelatedCadastro(row: SupabaseClienteRow) {
   };
 }
 
-export async function getCadastrosReadOnlyList(): Promise<CadastrosReadResult> {
-  console.log("[Cadastros][List] select em public.clientes.", {
-    select: CLIENTES_LIST_SELECT
-  });
+type CadastrosListQuery = {
+  pageIndex: number;
+  pageSize?: number;
+  search?: string;
+  categoria?: "TODAS" | CadastroCategoria;
+  status?: "TODOS" | "ATIVO" | "INATIVO" | "RESTRICAO";
+};
 
-  const data = await selectSupabaseRows<SupabaseClienteRow>(
-    "clientes",
-    {
-      select: CLIENTES_LIST_SELECT,
-      order: "data_cadastro.desc",
-      limit: "200"
-    }
-  );
-
-  if (!data || data.length === 0) {
-    console.log("[Cadastros][List] fallback para mock.", {
-      motivo: !data ? "query falhou ou bloqueada" : "retorno vazio",
-      dataSourceFinal: "mock"
-    });
-    return {
-      source: "mock",
-      cadastros: cloneMockCadastros()
-    };
+function buildCadastrosSearchClause(search: string) {
+  const normalized = normalizeSearchTerm(search);
+  if (!normalized) {
+    return "";
   }
 
-  console.log("[Cadastros][List] dados reais aplicados.", {
-    registros: data.length,
-    dataSourceFinal: "supabase"
-  });
+  const digits = normalized.replace(/\D/g, "");
+  const clauses = [
+    `nome.ilike.*${normalized}*`,
+    `fantasia.ilike.*${normalized}*`,
+    `apelido.ilike.*${normalized}*`,
+    `documento.ilike.*${normalized}*`,
+    `email.ilike.*${normalized}*`,
+    `email_contato.ilike.*${normalized}*`,
+    `whatsapp_1.ilike.*${normalized}*`,
+    `whatsapp_2.ilike.*${normalized}*`,
+    `telefone_fixo.ilike.*${normalized}*`,
+    `nome_vendedor.ilike.*${normalized}*`,
+    `cidade_uf.ilike.*${normalized}*`
+  ];
+
+  if (digits) {
+    clauses.unshift(`id_cliente.eq.${digits}`);
+  }
+
+  return clauses.join(",");
+}
+
+function applyMockCadastrosQuery(query: Required<Pick<CadastrosListQuery, "pageIndex">> & CadastrosListQuery) {
+  const pageSize = Math.min(Math.max(query.pageSize ?? 500, 1), 500);
+  const search = normalizeSearchTerm(query.search ?? "");
+  const digits = search.replace(/\D/g, "");
+
+  const filtered = sortCadastrosByIdClienteDesc(
+    cloneMockCadastros().filter((cadastro) => {
+      const searchable = [
+        cadastro.idCliente.toString(),
+        cadastro.nome,
+        cadastro.fantasia ?? "",
+        cadastro.documento,
+        cadastro.whatsapp,
+        cadastro.whatsapp2 ?? "",
+        cadastro.telefoneFixo ?? "",
+        cadastro.email,
+        cadastro.emailFinanceiro ?? "",
+        cadastro.cidadeUf,
+        cadastro.vendedor,
+        cadastro.categoria
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch =
+        !search ||
+        searchable.includes(search.toLowerCase()) ||
+        (digits ? cadastro.idCliente.toString() === digits : false);
+      const matchesCategoria = !query.categoria || query.categoria === "TODAS" || cadastro.categoria === query.categoria;
+      const matchesStatus =
+        !query.status ||
+        query.status === "TODOS" ||
+        (query.status === "ATIVO" && cadastro.ativo && !cadastro.restricao) ||
+        (query.status === "INATIVO" && !cadastro.ativo) ||
+        (query.status === "RESTRICAO" && cadastro.restricao);
+
+      return matchesSearch && matchesCategoria && matchesStatus;
+    })
+  );
+
+  const from = query.pageIndex * pageSize;
+  const to = from + pageSize;
+  const pageItems = filtered.slice(from, to);
+
   return {
-    source: "supabase",
-    cadastros: data.map(mapSupabaseClienteRowToCadastro)
+    source: "mock" as const,
+    cadastros: pageItems,
+    totalCount: filtered.length,
+    hasNextPage: to < filtered.length,
+    pageIndex: query.pageIndex,
+    pageSize,
+    loadedCount: pageItems.length,
+    warnings: ["Fallback mock ativado para a listagem de cadastros."]
   };
+}
+
+export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promise<CadastrosReadResult> {
+  const pageSize = Math.min(Math.max(query.pageSize ?? 500, 1), 500);
+  const from = Math.max(query.pageIndex, 0) * pageSize;
+  const to = from + pageSize - 1;
+  const client = getSupabaseClient();
+
+  if (!client) {
+    console.log("[Cadastros][List] client Supabase ausente - fallback mock ativado.", {
+      pageIndex: query.pageIndex,
+      pageSize
+    });
+    return applyMockCadastrosQuery({ ...query, pageSize });
+  }
+
+  const searchClause = buildCadastrosSearchClause(query.search ?? "");
+
+  try {
+    let request = client
+      .from("clientes")
+      .select(CLIENTES_LIST_SELECT, { count: "exact" })
+      .order("id_cliente", { ascending: false });
+
+    if (query.categoria && query.categoria !== "TODAS") {
+      request = request.eq("categoria", query.categoria);
+    }
+
+    if (query.status === "ATIVO") {
+      request = request.eq("ativo", true).eq("restricao", false);
+    } else if (query.status === "INATIVO") {
+      request = request.eq("ativo", false);
+    } else if (query.status === "RESTRICAO") {
+      request = request.eq("restricao", true);
+    }
+
+    if (searchClause) {
+      request = request.or(searchClause);
+    }
+
+    request = request.range(from, to);
+
+    const { data, error, count } = await request.returns<SupabaseClienteRow[]>();
+
+    if (error) {
+      console.log("[Cadastros][List] erro ao consultar Supabase - fallback mock ativado.", {
+        message: error instanceof Error ? error.message : String(error)
+      });
+      return applyMockCadastrosQuery({ ...query, pageSize });
+    }
+
+    const cadastros = sortCadastrosByIdClienteDesc((data ?? []).map(mapSupabaseClienteRowToCadastro));
+    const totalCount = typeof count === "number" ? count : cadastros.length;
+    const hasNextPage = from + cadastros.length < totalCount;
+
+    console.log("[Cadastros][List] dados reais aplicados.", {
+      registrosPagina: cadastros.length,
+      totalCount,
+      pageIndex: query.pageIndex,
+      pageSize
+    });
+
+    if (!cadastros.length && totalCount === 0) {
+      return {
+        source: "supabase",
+        cadastros: [],
+        totalCount: 0,
+        hasNextPage: false,
+        pageIndex: query.pageIndex,
+        pageSize,
+        loadedCount: 0,
+        warnings: ["Nenhum cadastro encontrado para os filtros atuais."]
+      };
+    }
+
+    return {
+      source: "supabase",
+      cadastros,
+      totalCount,
+      hasNextPage,
+      pageIndex: query.pageIndex,
+      pageSize,
+      loadedCount: cadastros.length,
+      warnings: [`Leitura real aplicada em public.clientes com ${cadastros.length} registros na página atual.`]
+    };
+  } catch (error) {
+    console.log("[Cadastros][List] excecao ao consultar Supabase - fallback mock ativado.", { error });
+    return applyMockCadastrosQuery({ ...query, pageSize });
+  }
 }
 
 export async function getCadastroDetailReadOnly(id: string | number): Promise<CadastroDetailReadResult> {
