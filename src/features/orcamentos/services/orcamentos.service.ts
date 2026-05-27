@@ -49,6 +49,40 @@ function cloneMockList() {
   return propostasMock.map((proposta) => mapMockPropostaToListItem(proposta));
 }
 
+function getErrorMessage(error: unknown) {
+  if (!error) {
+    return null;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === "string" ? message : JSON.stringify(error);
+  }
+
+  return JSON.stringify(error);
+}
+
+function normalizeSmokeIdInt(value: unknown): number | string | null {
+  if (typeof value === "number" || typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "bigint") {
+    const asNumber = Number(value);
+    return Number.isFinite(asNumber) ? asNumber : value.toString();
+  }
+
+  return null;
+}
+
 function buildMockResult(warnings: string[] = [], diagnostics?: Partial<OrcamentosDiagnostics>): OrcamentosReadResult {
   return {
     source: "mock",
@@ -165,7 +199,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
   const env = logSupabaseEnv();
   const client = getSupabaseClient();
   const hasFrom = Boolean(client && typeof client.from === "function");
-  const smokeQuery = hasFrom ? client.from("propostas").select("id_int").limit(5) : null;
+  const smokeQuery = client && hasFrom ? client.from("propostas").select("id_int").limit(5) : null;
   const hasReturns = Boolean(smokeQuery && typeof smokeQuery.returns === "function");
   const clientShape = `from:${hasFrom ? "sim" : "nao"}; returns:${hasReturns ? "sim" : "nao"}`;
   const periodoFilter = buildPeriodoFilter(periodo);
@@ -243,15 +277,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
         ? smokeData.slice(0, 5).map((row) => row?.id_int ?? null)
         : [],
       errorMessage:
-        smokeError instanceof Error
-          ? smokeError.message
-          : typeof smokeError?.message === "string"
-            ? smokeError.message
-            : typeof smokeError === "string"
-              ? smokeError
-            : smokeError
-              ? JSON.stringify(smokeError)
-              : null,
+        getErrorMessage(smokeError),
       status: null,
       statusText: null
     };
@@ -329,14 +355,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
     const { data, error } = await query.returns<SupabasePropostaRow[]>();
 
     if (error) {
-      const supabaseError =
-        error instanceof Error
-          ? error.message
-          : typeof error?.message === "string"
-            ? error.message
-          : typeof error === "string"
-            ? error
-            : "Erro desconhecido no Supabase";
+      const supabaseError = getErrorMessage(error) ?? "Erro desconhecido no Supabase";
       console.log("[Orcamentos][SupabaseError]", {
         message: error instanceof Error ? error.message : String(error),
         name: error instanceof Error ? error.name : "SupabaseError",
@@ -528,7 +547,7 @@ function buildRealResult(rows: SupabasePropostaRow[]): OrcamentosReadResult | nu
         resultKeys: ["data", "error"],
         dataIsArray: true,
         dataCount: rows.length,
-        firstIdInts: rows.slice(0, 5).map((row) => row.id_int ?? null),
+        firstIdInts: rows.slice(0, 5).map((row) => normalizeSmokeIdInt(row.id_int)),
         errorMessage: null,
         status: null,
         statusText: null
@@ -537,7 +556,11 @@ function buildRealResult(rows: SupabasePropostaRow[]): OrcamentosReadResult | nu
   };
 }
 
-function buildEmptyRealResult(rows: SupabasePropostaRow[], periodo: string, fetched: { diagnostics: OrcamentosDiagnostics }) {
+function buildEmptyRealResult(
+  rows: SupabasePropostaRow[],
+  periodo: string,
+  fetched: { diagnostics: Partial<OrcamentosDiagnostics> }
+) {
   const periodoFilter = buildPeriodoFilter(periodo);
 
   return {
@@ -550,8 +573,16 @@ function buildEmptyRealResult(rows: SupabasePropostaRow[], periodo: string, fetc
     ],
     detectedColumns: detectColumns(rows),
     diagnostics: {
-      ...fetched.diagnostics,
       source: "supabase",
+      hasSupabaseUrl: fetched.diagnostics.hasSupabaseUrl ?? Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      hasSupabaseAnonKey:
+        fetched.diagnostics.hasSupabaseAnonKey ?? Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+      clientImportPath: fetched.diagnostics.clientImportPath ?? "@/lib/supabase/client",
+      clientShape: fetched.diagnostics.clientShape ?? "desconhecido",
+      queryExecuted: fetched.diagnostics.queryExecuted ?? true,
+      registrosRetornados: fetched.diagnostics.registrosRetornados ?? rows.length,
+      firstRowColumns: fetched.diagnostics.firstRowColumns ?? detectColumns(rows),
+      supabaseError: fetched.diagnostics.supabaseError ?? null,
       fallbackReason: "sem registros",
       smoke: {
         resultExists: true,
@@ -574,12 +605,12 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
   if (!rows) {
     return buildMockResult([
       "Supabase ausente ou consulta falhou. Fallback mock ativado para a lista de orcamentos."
-    ], fetched.diagnostics);
+    ], fetched.diagnostics as Partial<OrcamentosDiagnostics>);
   }
 
   if (!rows.length) {
     if (periodo !== "all") {
-      return buildEmptyRealResult(rows, periodo, fetched);
+      return buildEmptyRealResult(rows, periodo, fetched as { diagnostics: Partial<OrcamentosDiagnostics> });
     }
 
     return buildMockResult([

@@ -2,6 +2,8 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { cloneMockProdutos, mapSupabaseProdutoRowsToProdutos, type ProdutosReadResult } from "@/features/produtos/mappers";
 import type { SupabaseProdutoRow } from "@/features/produtos/types.supabase";
 
+export type { ProdutosReadResult } from "@/features/produtos/mappers";
+
 type ProdutosDiagnostics = {
   source: "supabase" | "mock";
   queryExecuted: boolean;

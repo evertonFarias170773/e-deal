@@ -81,7 +81,7 @@ export function ContasReceberPage() {
           return;
         }
 
-        setRecebiveis(contasReceberMock);
+        setRecebiveis(contasReceberMock as unknown as BoletoDepositoMock[]);
         setBoletosDepositos(boletosDepositosMock);
         setDataSource("mock");
       } finally {

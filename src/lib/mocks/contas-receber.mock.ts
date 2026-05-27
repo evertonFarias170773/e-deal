@@ -2,7 +2,7 @@ import type { StatusTone } from "@/lib/types";
 
 export type RecebivelStatus = "A_RECEBER" | "A_VENCER" | "PAID" | "CANCELADO";
 export type RecebivelTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" | "E-FATURADO";
-export type BoletoDepositoTipo = "BOLETO" | "DEPOSITO" | "OUTRO_RECEBIVEL";
+export type BoletoDepositoTipo = "BOLETO" | "DEPOSITO" | "CARTAO" | "E-FATURADO" | "OUTRO_RECEBIVEL";
 export type BoletoDepositoStatus = "A_VENCER" | "A_RECEBER" | "PAID" | "CANCELADO" | "VENCIDO";
 
 export type RecebivelMock = {
@@ -367,6 +367,7 @@ export function getTipoRecebivelLabel(tipo: RecebivelTipo | BoletoDepositoTipo) 
     CARD_PARCELADO: "Cartão parcelado",
     "E-FATURADO": "Faturado",
     DEPOSITO: "Depósito futuro",
+    CARTAO: "Cartão",
     OUTRO_RECEBIVEL: "Outro recebível"
   };
 

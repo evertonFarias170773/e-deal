@@ -1,4 +1,4 @@
-export type SupabaseValue = string | number | bigint | boolean | null | undefined;
+export type SupabaseValue = string | number | bigint | boolean | null | undefined | Array<unknown> | Record<string, unknown>;
 
 export type SupabasePropostaRow = Record<string, SupabaseValue> & {
   id?: SupabaseValue;
