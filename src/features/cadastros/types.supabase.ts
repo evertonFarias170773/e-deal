@@ -85,6 +85,31 @@ export type SupabaseClienteSocioRow = {
   data_criacao?: SupabaseNullableValue;
 };
 
+export type SupabaseCadastrosClientesListaRow = {
+  id?: SupabaseNullableValue;
+  id_cliente?: SupabaseNullableValue;
+  id_cliente_text?: SupabaseNullableValue;
+  nome?: SupabaseNullableValue;
+  fantasia?: SupabaseNullableValue;
+  apelido?: SupabaseNullableValue;
+  documento?: SupabaseNullableValue;
+  documento_numeros?: SupabaseNullableValue;
+  tipo_pessoa?: SupabaseNullableValue;
+  cidade_uf?: SupabaseNullableValue;
+  nome_vendedor?: SupabaseNullableValue;
+  whatsapp_1?: SupabaseNullableValue;
+  whatsapp_2?: SupabaseNullableValue;
+  telefone_fixo?: SupabaseNullableValue;
+  credito?: SupabaseNullableValue;
+  limite_credito?: SupabaseNullableValue;
+  risco_credito?: SupabaseNullableValue;
+  data_fundacao?: SupabaseNullableValue;
+  aniversariante_hoje?: SupabaseNullableValue;
+  qtd_pedidos?: SupabaseNullableValue;
+  data_ult_pedido?: SupabaseNullableValue;
+  busca_geral?: SupabaseNullableValue;
+};
+
 export type SupabaseCadastrosAbcClienteRow = {
   posicao?: SupabaseNullableValue;
   id_cliente?: SupabaseNullableValue;

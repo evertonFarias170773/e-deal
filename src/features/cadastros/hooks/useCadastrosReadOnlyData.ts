@@ -8,15 +8,14 @@ import {
 } from "@/features/cadastros/services/cadastros-read.service";
 
 const initialState: CadastrosReadResult = {
-  source: "mock",
+  source: "supabase",
   cadastros: [],
   totalCount: 0,
   hasNextPage: false,
   pageIndex: 0,
   pageSize: 200,
   loadedCount: 0,
-  warnings: [],
-  pedidosResumoByCliente: {}
+  warnings: []
 };
 
 export function useCadastrosReadOnlyData(query: CadastrosListQuery) {

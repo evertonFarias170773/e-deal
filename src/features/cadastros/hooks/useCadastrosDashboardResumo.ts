@@ -7,11 +7,11 @@ import {
 } from "@/features/cadastros/services/cadastros-read.service";
 
 const initialState: CadastrosDashboardResumo = {
-  source: "mock",
+  source: "supabase",
   activeCount: 0,
   topClientes: [],
   topCidades: [],
-  aniversariantesMock: [],
+  aniversariantesHoje: [],
   warnings: []
 };
 

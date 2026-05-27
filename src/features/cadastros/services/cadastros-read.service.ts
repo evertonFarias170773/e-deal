@@ -1,46 +1,55 @@
-import { cadastrosMock } from "@/lib/mocks/cadastros.mock";
-import { propostasMock } from "@/lib/mocks/propostas.mock";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { Cadastro } from "@/features/cadastros/types";
 import type {
+  SupabaseCadastrosClientesListaRow,
   SupabaseCadastrosAbcClienteRow,
-  SupabaseCadastrosAbcCidadeRow,
-  SupabaseClienteRow
+  SupabaseCadastrosAbcCidadeRow
 } from "@/features/cadastros/types.supabase";
-import { mapSupabaseClienteRowToCadastro } from "@/features/cadastros/mappers";
 
 const PAGE_SIZE_MAX = 200;
 
-type SupabasePropostaPageRow = {
-  id_cliente?: unknown;
-  created_at?: unknown;
-  status_interno?: unknown;
-  is_copia?: unknown;
-};
-
 export type CadastrosReadSource = "supabase" | "mock";
 
-export type CadastrosPedidosResumo = {
-  ultimaCompra: string | null;
-  quantidadePedidos: number;
+export type CadastrosListaItem = {
+  id: string;
+  idCliente: number;
+  idClienteText: string;
+  nome: string;
+  fantasia?: string;
+  apelido?: string;
+  documento: string;
+  documentoNumeros: string;
+  tipoPessoa: string;
+  cidadeUf: string;
+  nomeVendedor: string;
+  whatsapp1?: string;
+  whatsapp2?: string;
+  telefoneFixo?: string;
+  credito: number;
+  limiteCredito: number;
+  riscoCredito: string;
+  dataFundacao?: string | null;
+  aniversarianteHoje: boolean;
+  qtdPedidos: number;
+  dataUltPedido: string | null;
+  buscaGeral: string;
 };
 
 export type CadastrosListQuery = {
   pageIndex: number;
   pageSize?: number;
   search?: string;
+  idClienteSearch?: string;
 };
 
 export type CadastrosReadResult = {
   source: CadastrosReadSource;
-  cadastros: Cadastro[];
+  cadastros: CadastrosListaItem[];
   totalCount: number;
   hasNextPage: boolean;
   pageIndex: number;
   pageSize: number;
   loadedCount: number;
   warnings: string[];
-  pedidosResumoByCliente: Record<number, CadastrosPedidosResumo>;
 };
 
 export type CadastrosDashboardClienteResumo = {
@@ -68,7 +77,7 @@ export type CadastrosDashboardResumo = {
   activeCount: number;
   topClientes: CadastrosDashboardClienteResumo[];
   topCidades: CadastrosDashboardCidadeResumo[];
-  aniversariantesMock: string[];
+  aniversariantesHoje: CadastrosListaItem[];
   warnings: string[];
 };
 
@@ -89,25 +98,11 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(normalized) ? normalized : fallback;
 }
 
-function normalizeIdCliente(value: unknown) {
-  const digits = String(value ?? "").replace(/\D/g, "");
-  if (!digits) {
-    return null;
-  }
-
-  const parsed = Number(digits);
-  return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
 function normalizeSearchTerm(value: string) {
   return value
     .trim()
     .replace(/\s+/g, " ")
     .replace(/[%*,]/g, "");
-}
-
-function sortCadastrosByIdClienteDesc(cadastros: Cadastro[]) {
-  return [...cadastros].sort((a, b) => b.idCliente - a.idCliente);
 }
 
 function normalizeRankingPosicao(value: unknown, fallback = 0) {
@@ -120,284 +115,67 @@ function normalizeRankingDate(value: unknown) {
   return text || null;
 }
 
-function buildCadastrosSearchClause(search: string) {
-  const normalized = normalizeSearchTerm(search);
-  if (!normalized) {
-    return "";
+function normalizeBool(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
   }
 
-  const digits = normalized.replace(/\D/g, "");
-  const clauses = [
-    `nome.ilike.*${normalized}*`,
-    `fantasia.ilike.*${normalized}*`,
-    `apelido.ilike.*${normalized}*`,
-    `email.ilike.*${normalized}*`,
-    `email_contato.ilike.*${normalized}*`,
-    `whatsapp_1.ilike.*${normalized}*`,
-    `whatsapp_2.ilike.*${normalized}*`,
-    `telefone_fixo.ilike.*${normalized}*`
-  ];
-
-  if (digits) {
-    clauses.unshift(`id_cliente.eq.${digits}`);
-    clauses.push(`documento.ilike.*${digits}*`);
-  } else {
-    clauses.push(`documento.ilike.*${normalized}*`);
+  if (typeof value === "number") {
+    return value !== 0;
   }
 
-  return clauses.join(",");
-}
-
-function cloneMockCadastros() {
-  return cadastrosMock.map((cadastro) => ({
-    ...cadastro,
-    enderecos: [...cadastro.enderecos],
-    contatos: [...cadastro.contatos],
-    vinculosComerciais: [...cadastro.vinculosComerciais]
-  }));
-}
-
-function buildMockPedidosResumoByCliente(cadastros: Cadastro[]) {
-  const resumoByCliente: Record<number, CadastrosPedidosResumo> = {};
-  const approvedByCliente = new Map<number, string[]>();
-
-  for (const proposta of propostasMock) {
-    if (proposta.status !== "APROVADO") {
-      continue;
-    }
-
-    const idCliente = proposta.cliente.idCliente;
-    const existing = approvedByCliente.get(idCliente) ?? [];
-    existing.push(proposta.data);
-    approvedByCliente.set(idCliente, existing);
+  if (typeof value === "string") {
+    return ["true", "t", "1", "sim", "s", "yes", "y"].includes(value.trim().toLowerCase());
   }
 
-  for (const cadastro of cadastros) {
-    const datas = approvedByCliente.get(cadastro.idCliente) ?? [];
-    const ultimaCompra = datas.reduce<string | null>((current, value) => {
-      if (!current || value > current) {
-        return value;
-      }
-
-      return current;
-    }, null);
-
-    resumoByCliente[cadastro.idCliente] = {
-      ultimaCompra,
-      quantidadePedidos: datas.length
-    };
-  }
-
-  return resumoByCliente;
+  return false;
 }
 
 function buildMockDashboardResumo(): CadastrosDashboardResumo {
-  const baseCadastros = cloneMockCadastros().filter(
-    (cadastro) => cadastro.categoria === "CLIENTE" && cadastro.ativo
-  );
-  const baseCadastrosById = new Map(baseCadastros.map((cadastro) => [cadastro.idCliente, cadastro] as const));
-
-  const activeCount = baseCadastros.length;
-
-  const approvedResumo = new Map<
-    number,
-    {
-      idCliente: number;
-      nome: string;
-      fantasia?: string;
-      cidadeUf: string;
-      valorTotal: number;
-      quantidadePedidos: number;
-      ultimoPedido: string | null;
-    }
-  >();
-
-  for (const proposta of propostasMock) {
-    if (proposta.status !== "APROVADO") {
-      continue;
-    }
-
-    const idCliente = proposta.cliente.idCliente;
-    const cadastroBase = baseCadastrosById.get(idCliente);
-    if (!cadastroBase) {
-      continue;
-    }
-
-    const valorTotal = proposta.resumo.valorTotal;
-    const current =
-      approvedResumo.get(idCliente) ??
-      {
-        idCliente,
-        nome: cadastroBase.nome,
-        fantasia: cadastroBase.fantasia || undefined,
-        cidadeUf: cadastroBase.cidadeUf,
-        valorTotal: 0,
-        quantidadePedidos: 0,
-        ultimoPedido: null
-      };
-
-    current.valorTotal += valorTotal;
-    current.quantidadePedidos += 1;
-    if (!current.ultimoPedido || proposta.data > current.ultimoPedido) {
-      current.ultimoPedido = proposta.data;
-    }
-    approvedResumo.set(idCliente, current);
-  }
-
-  const topClientes = [...approvedResumo.values()]
-    .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidadePedidos - a.quantidadePedidos || a.nome.localeCompare(b.nome))
-    .slice(0, 3)
-    .map((cliente, index) => ({
-      ...cliente,
-      posicao: index + 1
-    }));
-
-  const cidadeResumo = new Map<string, CadastrosDashboardCidadeResumo>();
-  for (const cliente of approvedResumo.values()) {
-    const cidadeUf = cliente.cidadeUf || "Não informado";
-    const current = cidadeResumo.get(cidadeUf) ?? {
-      posicao: 0,
-      cidadeUf,
-      valorTotal: 0,
-      quantidadePedidos: 0,
-      quantidadeClientes: 0,
-      ultimoPedido: null
-    };
-
-    current.valorTotal += cliente.valorTotal;
-    current.quantidadePedidos += cliente.quantidadePedidos;
-    current.quantidadeClientes += 1;
-    if (!current.ultimoPedido || (cliente.ultimoPedido && cliente.ultimoPedido > current.ultimoPedido)) {
-      current.ultimoPedido = cliente.ultimoPedido;
-    }
-    cidadeResumo.set(cidadeUf, current);
-  }
-
-  const topCidades = [...cidadeResumo.values()]
-    .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidadePedidos - a.quantidadePedidos || b.quantidadeClientes - a.quantidadeClientes)
-    .slice(0, 3)
-    .map((cidade, index) => ({
-      ...cidade,
-      posicao: index + 1
-    }));
-
   return {
-    source: "mock",
-    activeCount,
-    topClientes,
-    topCidades,
-    aniversariantesMock: baseCadastros.slice(0, 3).map((cadastro) => cadastro.nome),
-    warnings: ["Fallback mock ativado para os resumos de cadastros."]
+    source: "supabase",
+    activeCount: 0,
+    topClientes: [],
+    topCidades: [],
+    aniversariantesHoje: [],
+    warnings: ["Sem dados para ranking."]
   };
 }
 
-function buildMockListResult(query: Required<Pick<CadastrosListQuery, "pageIndex">> & CadastrosListQuery): CadastrosReadResult {
-  const pageSize = Math.min(Math.max(query.pageSize ?? PAGE_SIZE_MAX, 1), PAGE_SIZE_MAX);
-  const search = normalizeSearchTerm(query.search ?? "");
-  const digits = search.replace(/\D/g, "");
-
-  const filtered = sortCadastrosByIdClienteDesc(
-    cloneMockCadastros().filter((cadastro) => {
-      const baseMatch = cadastro.categoria === "CLIENTE" && cadastro.ativo;
-      if (!baseMatch) {
-        return false;
-      }
-
-      if (!search) {
-        return true;
-      }
-
-      const searchable = [
-        cadastro.idCliente.toString(),
-        cadastro.nome,
-        cadastro.fantasia ?? "",
-        cadastro.documento,
-        cadastro.documento.replace(/\D/g, ""),
-        cadastro.whatsapp,
-        cadastro.whatsapp2 ?? "",
-        cadastro.telefoneFixo ?? "",
-        cadastro.email,
-        cadastro.emailFinanceiro ?? "",
-        cadastro.cidadeUf,
-        cadastro.vendedor
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return searchable.includes(search.toLowerCase()) || (digits ? cadastro.idCliente.toString() === digits : false);
-    })
-  );
-
-  const from = query.pageIndex * pageSize;
-  const to = from + pageSize;
-  const pageItems = filtered.slice(from, to);
-
+function mapClienteListaRow(row: SupabaseCadastrosClientesListaRow): CadastrosListaItem {
+  const idCliente = normalizeRankingPosicao(row.id_cliente, 0);
+  const documentoNumeros = toText(row.documento_numeros) || toText(row.documento).replace(/\D/g, "");
   return {
-    source: "mock",
-    cadastros: pageItems,
-    totalCount: filtered.length,
-    hasNextPage: to < filtered.length,
-    pageIndex: query.pageIndex,
-    pageSize,
-    loadedCount: pageItems.length,
-    warnings: ["Fallback mock ativado para a listagem de cadastros."],
-    pedidosResumoByCliente: buildMockPedidosResumoByCliente(pageItems)
+    id: toText(row.id) || `cad_${idCliente || "0"}`,
+    idCliente,
+    idClienteText: toText(row.id_cliente_text) || idCliente.toString(),
+    nome: toText(row.nome) || "Cliente não informado",
+    fantasia: toText(row.fantasia) || undefined,
+    apelido: toText(row.apelido) || undefined,
+    documento: toText(row.documento) || documentoNumeros,
+    documentoNumeros,
+    tipoPessoa: toText(row.tipo_pessoa) || "",
+    cidadeUf: toText(row.cidade_uf) || "Não informado",
+    nomeVendedor: toText(row.nome_vendedor) || "Não informado",
+    whatsapp1: toText(row.whatsapp_1) || undefined,
+    whatsapp2: toText(row.whatsapp_2) || undefined,
+    telefoneFixo: toText(row.telefone_fixo) || undefined,
+    credito: toNumber(row.credito, 0),
+    limiteCredito: toNumber(row.limite_credito, 0),
+    riscoCredito: toText(row.risco_credito) || "MEDIO",
+    dataFundacao: toText(row.data_fundacao) || null,
+    aniversarianteHoje: normalizeBool(row.aniversariante_hoje),
+    qtdPedidos: normalizeRankingPosicao(row.qtd_pedidos, 0),
+    dataUltPedido: normalizeRankingDate(row.data_ult_pedido),
+    buscaGeral: toText(row.busca_geral)
   };
-}
-
-async function fetchPedidosResumoByCliente(
-  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
-  clienteIds: number[]
-) {
-  if (!clienteIds.length) {
-    return {};
-  }
-
-  const { data, error } = await client
-    .from("propostas")
-    .select("id_cliente, created_at, status_interno, is_copia")
-    .eq("status_interno", "APROVADO")
-    .eq("is_copia", false)
-    .in("id_cliente", clienteIds)
-    .returns<SupabasePropostaPageRow[]>();
-
-  if (error) {
-    throw error;
-  }
-
-  const resumoByCliente: Record<number, CadastrosPedidosResumo> = {};
-  for (const row of data ?? []) {
-    const idCliente = normalizeIdCliente(row.id_cliente);
-    if (!idCliente) {
-      continue;
-    }
-
-    const createdAt = toText(row.created_at);
-    const current = resumoByCliente[idCliente] ?? {
-      ultimaCompra: null,
-      quantidadePedidos: 0
-    };
-
-    current.quantidadePedidos += 1;
-    if (createdAt && (!current.ultimaCompra || createdAt > current.ultimaCompra)) {
-      current.ultimaCompra = createdAt;
-    }
-
-    resumoByCliente[idCliente] = current;
-  }
-
-  return resumoByCliente;
 }
 
 async function fetchDashboardResumoSupabase(
   client: NonNullable<ReturnType<typeof getSupabaseClient>>
 ): Promise<CadastrosDashboardResumo> {
-  const [activeCountResult, clientesViewResult, cidadesViewResult] = await Promise.all([
-    client
-      .from("clientes")
-      .select("id_cliente", { count: "exact", head: true })
-      .eq("categoria", "CLIENTE")
-      .eq("ativo", true),
+  const [activeCountResult, clientesViewResult, cidadesViewResult, aniversariantesResult] = await Promise.all([
+    client.from("vw_cadastros_clientes_lista").select("id", { count: "exact", head: true }),
     client
       .from("vw_cadastros_abc_clientes")
       .select("posicao,id_cliente,cliente,qtd_pedidos,valor_total,ultimo_pedido")
@@ -409,7 +187,13 @@ async function fetchDashboardResumoSupabase(
       .select("posicao,cidade_uf,qtd_pedidos,qtd_clientes,valor_total,ultimo_pedido")
       .lte("posicao", 3)
       .order("posicao", { ascending: true })
-      .returns<SupabaseCadastrosAbcCidadeRow[]>()
+      .returns<SupabaseCadastrosAbcCidadeRow[]>(),
+    client
+      .from("vw_cadastros_clientes_lista")
+      .select("id,id_cliente,id_cliente_text,nome,fantasia,apelido,data_fundacao")
+      .eq("aniversariante_hoje", true)
+      .order("nome", { ascending: true })
+      .returns<SupabaseCadastrosClientesListaRow[]>()
   ]);
 
   if (activeCountResult.error) {
@@ -422,6 +206,10 @@ async function fetchDashboardResumoSupabase(
 
   if (cidadesViewResult.error) {
     throw cidadesViewResult.error;
+  }
+
+  if (aniversariantesResult.error) {
+    throw aniversariantesResult.error;
   }
 
   const topClientes = (clientesViewResult.data ?? []).map((row) => ({
@@ -444,6 +232,8 @@ async function fetchDashboardResumoSupabase(
     ultimoPedido: normalizeRankingDate(row.ultimo_pedido)
   }));
 
+  const aniversariantesHoje = (aniversariantesResult.data ?? []).map((row) => mapClienteListaRow(row));
+
   const hasRankingData = topClientes.length > 0 || topCidades.length > 0;
 
   return {
@@ -451,10 +241,7 @@ async function fetchDashboardResumoSupabase(
     activeCount: activeCountResult.count ?? 0,
     topClientes,
     topCidades,
-    aniversariantesMock: cloneMockCadastros()
-      .filter((cadastro) => cadastro.categoria === "CLIENTE" && cadastro.ativo)
-      .slice(0, 3)
-      .map((cadastro) => cadastro.nome),
+    aniversariantesHoje,
     warnings: hasRankingData ? ["Leitura real aplicada em views read-only de ranking."] : ["Sem dados para ranking."]
   };
 }
@@ -467,37 +254,45 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
   const client = getSupabaseClient();
 
   if (!client) {
-    return buildMockListResult({ ...query, pageIndex, pageSize });
+    return {
+      source: "supabase",
+      cadastros: [],
+      totalCount: 0,
+      hasNextPage: false,
+      pageIndex,
+      pageSize,
+      loadedCount: 0,
+      warnings: ["Supabase indisponível. Nenhum dado foi carregado."]
+    };
   }
 
-  const searchClause = buildCadastrosSearchClause(query.search ?? "");
+  const searchTerm = normalizeSearchTerm(query.search ?? "");
+  const idClienteDigits = normalizeSearchTerm(query.idClienteSearch ?? "").replace(/\D/g, "");
 
   try {
     let request = client
-      .from("clientes")
-      .select("id,id_cliente,nome,apelido,documento,email_contato,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,fantasia,email,nome_vendedor,categoria,risco_credito,cidade_uf,credito", {
+      .from("vw_cadastros_clientes_lista")
+      .select("id,id_cliente,id_cliente_text,nome,fantasia,apelido,documento,documento_numeros,tipo_pessoa,cidade_uf,nome_vendedor,whatsapp_1,whatsapp_2,telefone_fixo,credito,limite_credito,risco_credito,data_fundacao,aniversariante_hoje,qtd_pedidos,data_ult_pedido,busca_geral", {
         count: "exact"
       })
-      .eq("categoria", "CLIENTE")
-      .eq("ativo", true)
       .order("id_cliente", { ascending: false });
 
-    if (searchClause) {
-      request = request.or(searchClause);
+    if (idClienteDigits) {
+      request = request.ilike("id_cliente_text", `${idClienteDigits}%`);
+    }
+
+    if (searchTerm) {
+      request = request.ilike("busca_geral", `%${searchTerm}%`);
     }
 
     request = request.range(from, to);
 
-    const { data, error, count } = await request.returns<SupabaseClienteRow[]>();
+    const { data, error, count } = await request.returns<SupabaseCadastrosClientesListaRow[]>();
     if (error) {
       throw error;
     }
 
-    const cadastros = sortCadastrosByIdClienteDesc((data ?? []).map(mapSupabaseClienteRowToCadastro));
-    const pedidosResumoByCliente = await fetchPedidosResumoByCliente(
-      client,
-      cadastros.map((cadastro) => cadastro.idCliente)
-    );
+    const cadastros = (data ?? []).map(mapClienteListaRow);
     const totalCount = typeof count === "number" ? count : cadastros.length;
 
     return {
@@ -508,12 +303,20 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       pageIndex,
       pageSize,
       loadedCount: cadastros.length,
-      warnings: ["Leitura real aplicada em public.clientes com paginação server-side de 200 registros."],
-      pedidosResumoByCliente
+      warnings: ["Leitura real aplicada em public.vw_cadastros_clientes_lista com paginação server-side de 200 registros."]
     };
   } catch (error) {
-    console.log("[Cadastros][List] erro na leitura real - fallback mock ativado.", { error });
-    return buildMockListResult({ ...query, pageIndex, pageSize });
+    console.log("[Cadastros][List] erro na leitura real - fallback vazio ativado.", { error });
+    return {
+      source: "supabase",
+      cadastros: [],
+      totalCount: 0,
+      hasNextPage: false,
+      pageIndex,
+      pageSize,
+      loadedCount: 0,
+      warnings: ["Não foi possível carregar a lista neste momento."]
+    };
   }
 }
 
@@ -526,7 +329,7 @@ export async function getCadastrosDashboardResumo(): Promise<CadastrosDashboardR
   try {
     return await fetchDashboardResumoSupabase(client);
   } catch (error) {
-    console.log("[Cadastros][Resumo] erro na leitura real - fallback mock ativado.", { error });
+    console.log("[Cadastros][Resumo] erro na leitura real - fallback vazio ativado.", { error });
     return buildMockDashboardResumo();
   }
 }
