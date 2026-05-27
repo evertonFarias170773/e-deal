@@ -76,3 +76,7 @@ Sempre que uma decisão técnica for tomada, atualizar:
 Sempre que um padrão visual ou componente global for criado/alterado, atualizar:
 
 - `PADROES-UX-UI.md`
+
+## Nota de publicação
+
+Commit documental para disparar novo deployment automático na Vercel quando necessário.
