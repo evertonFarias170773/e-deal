@@ -319,7 +319,7 @@ function resolveAggregateNumber(value: unknown, fallback = 0) {
 }
 
 async function fetchPedidosResumoByCliente(
-  client: ReturnType<typeof getSupabaseClient>,
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
   clienteIds: number[]
 ) {
   if (!clienteIds.length) {
@@ -362,7 +362,9 @@ async function fetchPedidosResumoByCliente(
   return resumoByCliente;
 }
 
-async function fetchDashboardResumoSupabase(client: ReturnType<typeof getSupabaseClient>): Promise<CadastrosDashboardResumo> {
+async function fetchDashboardResumoSupabase(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>
+): Promise<CadastrosDashboardResumo> {
   const [activeCountResult, proposalsResult] = await Promise.all([
     client
       .from("clientes")
@@ -430,6 +432,15 @@ async function fetchDashboardResumoSupabase(client: ReturnType<typeof getSupabas
     });
   }
 
+  type TopClienteResumo = {
+    idCliente: number;
+    nome: string;
+    fantasia: string | undefined;
+    cidadeUf: string;
+    valorTotal: number;
+    quantidadePedidos: number;
+  };
+
   const topClientes = proposalRows
     .map((row) => {
       const idCliente = normalizeIdCliente(row.id_cliente);
@@ -454,7 +465,7 @@ async function fetchDashboardResumoSupabase(client: ReturnType<typeof getSupabas
         quantidadePedidos
       };
     })
-    .filter((item): item is CadastrosDashboardClienteResumo => item !== null)
+    .filter((item): item is TopClienteResumo => item !== null)
     .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidadePedidos - a.quantidadePedidos || a.nome.localeCompare(b.nome))
     .slice(0, 3);
 
