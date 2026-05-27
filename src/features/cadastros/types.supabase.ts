@@ -133,3 +133,26 @@ export type SupabaseUsuarioRow = {
   nome?: SupabaseNullableValue;
   email?: SupabaseNullableValue;
 };
+
+export type SupabaseUsuarioVendedorRow = {
+  user_id?: SupabaseNullableValue;
+  nome_usuario?: SupabaseNullableValue;
+  meu_vendedor?: SupabaseNullableValue;
+  id_vendedor?: SupabaseNullableValue;
+  is_vendedor?: SupabaseNullableValue;
+};
+
+export type SupabasePropostaRow = {
+  id: SupabaseNullableValue;
+  id_int?: SupabaseNullableValue;
+  id_cliente?: SupabaseNullableValue;
+  cliente?: SupabaseNullableValue;
+  proposta?: SupabaseNullableValue;
+  valor?: SupabaseNullableValue;
+  valor_total?: SupabaseNullableValue;
+  vendedor?: SupabaseNullableValue;
+  status_interno?: SupabaseNullableValue;
+  empresa?: SupabaseNullableValue;
+  created_at?: SupabaseNullableValue;
+  updated_at?: SupabaseNullableValue;
+};

@@ -31,11 +31,29 @@ export type CadastroVinculoComercial = {
   tipoRelacao: string;
 };
 
+export type CadastroPropostaListItem = {
+  id: string;
+  idInt: number;
+  idCliente: number;
+  cliente: string;
+  proposta: string;
+  valor: number;
+  valorTotal: number;
+  vendedor: string;
+  statusInterno: string;
+  empresa: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Cadastro = {
   id: string;
   idCliente: number;
+  idVendedor?: string | number | null;
   nome: string;
   fantasia?: string;
+  apelido?: string;
+  contato?: string;
   categoria: CadastroCategoria;
   documento: string;
   tipoPessoa: "FISICA" | "JURIDICA";
@@ -59,6 +77,7 @@ export type Cadastro = {
   site?: string;
   empresaPadrao: string;
   observacoes: string;
+  dataCadastro?: string;
   tipoContribuinte?: string;
   inscricaoEstadual?: string;
   inscricaoMunicipal?: string;
@@ -67,6 +86,10 @@ export type Cadastro = {
   is_bonus?: boolean;
   bonusAtivo?: boolean;
   percentualBonus?: number;
+  dataVerificacao?: string;
+  motivoErro?: string;
+  cpfInvalido?: boolean;
+  cpfErro?: string;
   nota?: boolean;
   sendMail?: boolean;
   sendWhats?: boolean;
@@ -77,6 +100,7 @@ export type Cadastro = {
 
 export type CadastroFormState = {
   idCliente: string;
+  idVendedor: string;
   categoria: CadastroCategoria;
   tipoCliente: TipoClienteDocumento;
   documento: string;
@@ -84,6 +108,8 @@ export type CadastroFormState = {
   ativo: boolean;
   nome: string;
   fantasia: string;
+  apelido: string;
+  contato: string;
   tipoContribuinte: string;
   email: string;
   emailFinanceiro: string;
@@ -95,7 +121,13 @@ export type CadastroFormState = {
   whatsapp: string;
   whatsapp2: string;
   empresaPadrao: string;
+  cidadeUf: string;
   dataFundacao: string;
+  dataCadastro: string;
+  dataVerificacao: string;
+  ultimaCompra: string;
+  totalCompras: string;
+  credito: string;
   limiteCredito: string;
   creditoDisponivel: string;
   riscoCredito: "BAIXO" | "MEDIO" | "ALTO";
@@ -105,6 +137,9 @@ export type CadastroFormState = {
   nota: boolean;
   verificado: boolean;
   restricao: boolean;
+  cpfInvalido: boolean;
+  cpfErro: string;
+  motivoErro: string;
   sendMail: boolean;
   sendWhats: boolean;
   observacoes: string;

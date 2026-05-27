@@ -1,11 +1,13 @@
 import { cadastrosMock, getCadastroById } from "@/lib/mocks/cadastros.mock";
-import type { Cadastro } from "@/features/cadastros/types";
+import type { Cadastro, CadastroPropostaListItem } from "@/features/cadastros/types";
 import type { CadastroCategoria } from "@/features/cadastros/types";
 import type {
   SupabaseClienteRow,
   SupabaseClienteSocioRow,
   SupabaseContatoRow,
-  SupabaseEnderecoRow
+  SupabaseEnderecoRow,
+  SupabasePropostaRow,
+  SupabaseUsuarioVendedorRow
 } from "@/features/cadastros/types.supabase";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
@@ -53,6 +55,24 @@ export type CadastroDetailReadResult = {
   cadastro: Cadastro | null;
 };
 
+export type ListPropostasDoCadastroQuery = {
+  idCliente: number;
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+  statusInterno?: string;
+};
+
+export type ListPropostasDoCadastroResult = {
+  source: CadastrosReadSource;
+  propostas: CadastroPropostaListItem[];
+  totalCount: number;
+  hasNextPage: boolean;
+  pageIndex: number;
+  pageSize: number;
+  warnings: string[];
+};
+
 function cloneMockCadastros() {
   return cadastrosMock.map((cadastro) => ({
     ...cadastro,
@@ -81,6 +101,20 @@ function normalizeIdCliente(value: unknown) {
 
   const parsed = Number(digits);
   return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function toNullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toNumber(value: unknown, fallback = 0) {
+  const parsed = toNullableNumber(value);
+  return parsed ?? fallback;
 }
 
 function getSupabaseConfig() {
@@ -484,6 +518,113 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
   };
 }
 
+export async function getCadastroCompleto(idCliente: string | number): Promise<CadastroDetailReadResult> {
+  return getCadastroDetailReadOnly(idCliente);
+}
+
+function mapSupabasePropostaRowToListItem(row: SupabasePropostaRow): CadastroPropostaListItem {
+  return {
+    id: toText(row.id),
+    idInt: toNumber(row.id_int),
+    idCliente: toNumber(row.id_cliente),
+    cliente: toText(row.cliente).trim(),
+    proposta: toText(row.proposta).trim(),
+    valor: toNumber(row.valor),
+    valorTotal: toNumber(row.valor_total),
+    vendedor: toText(row.vendedor).trim(),
+    statusInterno: toText(row.status_interno).trim(),
+    empresa: toText(row.empresa).trim(),
+    createdAt: toText(row.created_at),
+    updatedAt: toText(row.updated_at)
+  };
+}
+
+export async function listPropostasDoCadastro(
+  query: ListPropostasDoCadastroQuery
+): Promise<ListPropostasDoCadastroResult> {
+  const client = getSupabaseClient();
+  const pageSize = Math.min(Math.max(query.pageSize ?? 20, 1), 50);
+  const pageIndex = Math.max(query.pageIndex ?? 0, 0);
+  const from = pageIndex * pageSize;
+  const to = from + pageSize - 1;
+
+  if (!client || !Number.isInteger(query.idCliente) || query.idCliente <= 0) {
+    return {
+      source: "mock",
+      propostas: [],
+      totalCount: 0,
+      hasNextPage: false,
+      pageIndex,
+      pageSize,
+      warnings: ["Leitura de propostas indisponivel: client Supabase ausente ou id_cliente invalido."]
+    };
+  }
+
+  try {
+    let request = client
+      .from("propostas")
+      .select(
+        "id,id_int,id_cliente,cliente,proposta,valor,valor_total,vendedor,status_interno,empresa,created_at,updated_at",
+        { count: "exact" }
+      )
+      .eq("id_cliente", query.idCliente)
+      .order("created_at", { ascending: false, nullsFirst: false });
+
+    const search = normalizeSearchTerm(query.search ?? "");
+    const digitsSearch = search.replace(/\D/g, "");
+    if (search) {
+      const clauses = [`proposta.ilike.*${search}*`];
+      if (digitsSearch) {
+        clauses.unshift(`id_int.eq.${digitsSearch}`);
+      }
+      request = request.or(clauses.join(","));
+    }
+
+    const statusInterno = toText(query.statusInterno).trim();
+    if (statusInterno && statusInterno !== "TODOS") {
+      request = request.eq("status_interno", statusInterno);
+    }
+
+    request = request.range(from, to);
+
+    const { data, error, count } = await request.returns<SupabasePropostaRow[]>();
+    if (error) {
+      return {
+        source: "mock",
+        propostas: [],
+        totalCount: 0,
+        hasNextPage: false,
+        pageIndex,
+        pageSize,
+        warnings: [error.message || "Erro ao ler propostas em public.propostas."]
+      };
+    }
+
+    const propostas = (data ?? []).map(mapSupabasePropostaRowToListItem);
+    const totalCount = typeof count === "number" ? count : propostas.length;
+
+    return {
+      source: "supabase",
+      propostas,
+      totalCount,
+      hasNextPage: from + propostas.length < totalCount,
+      pageIndex,
+      pageSize,
+      warnings: []
+    };
+  } catch (error) {
+    return {
+      source: "mock",
+      propostas: [],
+      totalCount: 0,
+      hasNextPage: false,
+      pageIndex,
+      pageSize,
+      warnings: [error instanceof Error ? error.message : "Falha inesperada ao carregar propostas do cadastro."]
+    };
+  }
+}
+
 export type CadastroObservacoesUpdateResult =
   | {
       success: true;
@@ -529,6 +670,8 @@ export type CadastroOperacionalUpdateResult =
 
 export type CadastroInsertPayload = {
   id_cliente: number;
+  id_vendedor?: string | number | null;
+  nome_vendedor?: string | null;
   categoria: CadastroCategoria;
   nome: string;
   fantasia?: string | null;
@@ -549,17 +692,29 @@ export type CadastroInsertPayload = {
   site?: string | null;
   ativo: boolean;
   restricao: boolean;
+  limite_credito?: number | string | null;
+  credito?: number | string | null;
+  risco_credito?: string | null;
   obs?: string | null;
+  data_cadastro?: string | null;
   recebe_email: boolean;
   recebe_whatsapp: boolean;
-  nome_vendedor?: string | null;
-  id_vendedor?: number | null;
   padrao_pagamento?: string | null;
   empresa_padrao?: string | null;
   cidade_uf?: string | null;
   nota: boolean;
   verificado: boolean;
+  ultima_compra?: string | null;
+  total_compras?: number | string | null;
+  data_verificacao?: string | null;
+  motivo_erro?: string | null;
+  cpf_invalido?: boolean;
+  cpf_erro?: string | null;
+  is_bonus?: boolean;
+  percentual_bunus?: number | string | null;
 };
+
+export type CadastroUpdatePayload = Omit<CadastroInsertPayload, "id_cliente">;
 
 export type CadastroEnderecoInsertPayload = {
   id_cliente: number;
@@ -585,6 +740,37 @@ export type CadastroEnderecoCreateResult =
       status?: number;
     };
 
+export type CadastroContatoInsertPayload = {
+  id_cliente: number;
+  nome_contato: string;
+  cargo: string | null;
+  whats: string | null;
+  e_mail: string | null;
+};
+
+export type CadastroVinculoComercialInsertPayload = {
+  id_cliente_principal: number;
+  id_cliente_socio: number;
+  tipo_relacao: string | null;
+};
+
+export type CadastroRelatedCreateResult = {
+  success: boolean;
+  errorMessage?: string;
+  status?: number;
+};
+
+export type VendedorOption = {
+  nome: string;
+  idVendedor: string | number | null;
+};
+
+export type SearchCadastroVinculoItem = {
+  idCliente: number;
+  nome: string;
+  documento: string;
+};
+
 export type CadastroCreateConflict = {
   kind: "id_cliente" | "documento";
   idCliente: number;
@@ -593,6 +779,23 @@ export type CadastroCreateConflict = {
 };
 
 export type CadastroCreateResult =
+  | {
+      success: true;
+      cadastro: {
+        id: string;
+        idCliente: number;
+        nome: string;
+        categoria: CadastroCategoria;
+      };
+    }
+  | {
+      success: false;
+      errorMessage: string;
+      status?: number;
+      conflict?: CadastroCreateConflict;
+    };
+
+export type CadastroUpdateResult =
   | {
       success: true;
       cadastro: {
@@ -648,13 +851,21 @@ function toNullableText(value: unknown) {
   return text || null;
 }
 
-function toNullableInteger(value: unknown) {
+function toNullableId(value: unknown) {
   if (value === null || value === undefined || value === "") {
     return null;
   }
 
-  const parsed = Number(String(value).replace(/\D/g, ""));
-  return Number.isInteger(parsed) ? parsed : null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+
+  return /^\d+$/.test(text) ? Number(text) : text;
 }
 
 function toBoolean(value: unknown, fallback = false) {
@@ -673,8 +884,64 @@ function toBoolean(value: unknown, fallback = false) {
   return fallback;
 }
 
+function toNullableDecimal(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const normalized = Number(String(value).replace(",", "."));
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
 function normalizeDocumento(value: unknown) {
   return toText(value).replace(/\D/g, "");
+}
+
+function normalizeClienteWritePayload(payload: CadastroInsertPayload | CadastroUpdatePayload) {
+  return {
+    id_vendedor: toNullableId(payload.id_vendedor),
+    nome_vendedor: toNullableText(payload.nome_vendedor),
+    categoria: payload.categoria,
+    nome: toText(payload.nome).trim(),
+    fantasia: toNullableText(payload.fantasia),
+    apelido: toNullableText(payload.apelido),
+    contato: toNullableText(payload.contato),
+    documento: normalizeDocumento(payload.documento),
+    tipo_pessoa: payload.tipo_pessoa,
+    ins_estadual: toNullableText(payload.ins_estadual),
+    ins_municipal: toNullableText(payload.ins_municipal),
+    tipo_contribuinte: toNullableText(payload.tipo_contribuinte),
+    data_fundacao: toNullableText(payload.data_fundacao),
+    email_contato: toNullableText(payload.email_contato),
+    email_financeiro: toNullableText(payload.email_financeiro),
+    email: toNullableText(payload.email),
+    telefone_fixo: toNullableText(payload.telefone_fixo),
+    whatsapp_1: toNullableText(payload.whatsapp_1),
+    whatsapp_2: toNullableText(payload.whatsapp_2),
+    site: toNullableText(payload.site),
+    ativo: toBoolean(payload.ativo, true),
+    restricao: toBoolean(payload.restricao, false),
+    limite_credito: toNullableDecimal(payload.limite_credito),
+    obs: toNullableText(payload.obs),
+    data_cadastro: toNullableText(payload.data_cadastro),
+    recebe_email: toBoolean(payload.recebe_email, false),
+    recebe_whatsapp: toBoolean(payload.recebe_whatsapp, false),
+    padrao_pagamento: toNullableText(payload.padrao_pagamento) || "Pix à vista 3 dias",
+    empresa_padrao: toNullableText(payload.empresa_padrao),
+    cidade_uf: toNullableText(payload.cidade_uf),
+    nota: toBoolean(payload.nota, false),
+    risco_credito: toNullableText(payload.risco_credito),
+    verificado: toBoolean(payload.verificado, false),
+    ultima_compra: toNullableText(payload.ultima_compra),
+    total_compras: toNullableDecimal(payload.total_compras),
+    data_verificacao: toNullableText(payload.data_verificacao),
+    motivo_erro: toNullableText(payload.motivo_erro),
+    cpf_invalido: toBoolean(payload.cpf_invalido, false),
+    cpf_erro: toNullableText(payload.cpf_erro),
+    credito: toNullableDecimal(payload.credito),
+    is_bonus: toBoolean(payload.is_bonus, false),
+    percentual_bunus: toNullableDecimal(payload.percentual_bunus)
+  };
 }
 
 function formatDocumentoFromDigits(value: string) {
@@ -974,38 +1241,12 @@ export async function createCadastro(
     };
   }
 
-  const insertPayload: CadastroInsertPayload = {
+  const insertPayload = {
     id_cliente: idCliente,
-    categoria: payload.categoria,
-    nome: toText(payload.nome).trim(),
-    fantasia: toNullableText(payload.fantasia),
-    apelido: toNullableText(payload.apelido),
-    contato: toNullableText(payload.contato),
-    documento,
-    tipo_pessoa: payload.tipo_pessoa,
-    ins_estadual: toNullableText(payload.ins_estadual),
-    ins_municipal: toNullableText(payload.ins_municipal),
-    tipo_contribuinte: toNullableText(payload.tipo_contribuinte),
-    data_fundacao: toNullableText(payload.data_fundacao),
-    email_contato: toNullableText(payload.email_contato),
-    email_financeiro: toNullableText(payload.email_financeiro),
-    email: toNullableText(payload.email),
-    telefone_fixo: toNullableText(payload.telefone_fixo),
-    whatsapp_1: toNullableText(payload.whatsapp_1),
-    whatsapp_2: toNullableText(payload.whatsapp_2),
-    site: toNullableText(payload.site),
-    ativo: toBoolean(payload.ativo, true),
-    restricao: toBoolean(payload.restricao, false),
-    obs: toNullableText(payload.obs),
-    recebe_email: toBoolean(payload.recebe_email, false),
-    recebe_whatsapp: toBoolean(payload.recebe_whatsapp, false),
-    nome_vendedor: toNullableText(payload.nome_vendedor),
-    id_vendedor: toNullableInteger(payload.id_vendedor),
-    padrao_pagamento: toNullableText(payload.padrao_pagamento) || "Pix à vista 3 dias",
-    empresa_padrao: toNullableText(payload.empresa_padrao),
-    cidade_uf: toNullableText(payload.cidade_uf),
-    nota: toBoolean(payload.nota, false),
-    verificado: toBoolean(payload.verificado, false)
+    ...normalizeClienteWritePayload({
+      ...payload,
+      documento
+    })
   };
 
   const client = getSupabaseClient();
@@ -1034,6 +1275,85 @@ export async function createCadastro(
     return {
       success: false,
       errorMessage: "Supabase nao retornou o registro criado."
+    };
+  }
+
+  return {
+    success: true,
+    cadastro: {
+      id: toText(data.id),
+      idCliente: Number(data.id_cliente) || idCliente,
+      nome: toText(data.nome),
+      categoria: data.categoria as CadastroCategoria
+    }
+  };
+}
+
+export async function updateCadastro(
+  idCliente: number,
+  payload: CadastroUpdatePayload
+): Promise<CadastroUpdateResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      errorMessage: "Cliente Supabase indisponivel para executar o update."
+    };
+  }
+
+  if (!Number.isInteger(idCliente) || idCliente <= 0) {
+    return {
+      success: false,
+      errorMessage: "ID do cliente invalido para update."
+    };
+  }
+
+  const documento = normalizeDocumento(payload.documento);
+  if (!documento) {
+    return {
+      success: false,
+      errorMessage: "Documento obrigatorio para atualizar cadastro."
+    };
+  }
+
+  const existingDocument = await findCadastroByDocumento(documento);
+  if (existingDocument && Number(existingDocument.id_cliente) !== idCliente) {
+    return {
+      success: false,
+      errorMessage: `Já existe um cadastro com este documento: ${documento} - ${toText(existingDocument.nome)}.`,
+      conflict: {
+        kind: "documento",
+        idCliente: Number(existingDocument.id_cliente) || 0,
+        nome: toText(existingDocument.nome),
+        documento: normalizeDocumento(existingDocument.documento)
+      }
+    };
+  }
+
+  const updatePayload = normalizeClienteWritePayload({
+    ...payload,
+    documento
+  });
+
+  const { data, error } = await client
+    .from("clientes")
+    .update(updatePayload)
+    .eq("id_cliente", idCliente)
+    .select("id,id_cliente,nome,categoria")
+    .single();
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel atualizar o cadastro no Supabase.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+
+  if (!data) {
+    return {
+      success: false,
+      errorMessage: "Supabase nao retornou o registro atualizado."
     };
   }
 
@@ -1098,4 +1418,265 @@ export async function createCadastroEndereco(
     success: true,
     enderecoId: toText(data?.id)
   };
+}
+
+export async function createCadastroEnderecos(
+  payload: CadastroEnderecoInsertPayload[]
+): Promise<CadastroRelatedCreateResult> {
+  if (!payload.length) {
+    return { success: true };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      errorMessage: "Cliente Supabase indisponivel para executar o insert de enderecos."
+    };
+  }
+
+  const rows = payload.map((item) => ({
+    id_cliente: Number(item.id_cliente),
+    cep: toNullableText(item.cep),
+    endereco: toNullableText(item.endereco),
+    numero: toNullableText(item.numero),
+    complemento: toNullableText(item.complemento),
+    bairro: toNullableText(item.bairro),
+    cidade: toNullableText(item.cidade),
+    uf: toNullableText(item.uf),
+    tipo_endereco: toNullableText(item.tipo_endereco) || "PRINCIPAL",
+    obs: toNullableText(item.obs)
+  }));
+
+  const { error } = await client.from("enderecos").insert(rows);
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel salvar os enderecos no Supabase.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+
+  return { success: true };
+}
+
+export async function createCadastroContatos(
+  payload: CadastroContatoInsertPayload[]
+): Promise<CadastroRelatedCreateResult> {
+  if (!payload.length) {
+    return { success: true };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      errorMessage: "Cliente Supabase indisponivel para executar o insert de contatos."
+    };
+  }
+
+  const rows = payload.map((item) => ({
+    id_cliente: Number(item.id_cliente),
+    nome_contato: toText(item.nome_contato).trim(),
+    cargo: toNullableText(item.cargo),
+    whats: toNullableText(item.whats),
+    e_mail: toNullableText(item.e_mail)
+  }));
+
+  const { error } = await client.from("contatos").insert(rows);
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel salvar os contatos no Supabase.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+
+  return { success: true };
+}
+
+export async function createCadastroVinculosComerciais(
+  payload: CadastroVinculoComercialInsertPayload[]
+): Promise<CadastroRelatedCreateResult> {
+  if (!payload.length) {
+    return { success: true };
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      errorMessage: "Cliente Supabase indisponivel para executar o insert de vinculos."
+    };
+  }
+
+  const rows = payload.map((item) => ({
+    id_cliente_principal: Number(item.id_cliente_principal),
+    id_cliente_socio: Number(item.id_cliente_socio),
+    tipo_relacao: toNullableText(item.tipo_relacao) || "vinculo_comercial"
+  }));
+
+  const { error } = await client.from("clientes_socios").insert(rows);
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel salvar os vinculos comerciais no Supabase.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+
+  return { success: true };
+}
+
+export async function updateCadastroEndereco(
+  id: string,
+  payload: Omit<CadastroEnderecoInsertPayload, "id_cliente">
+): Promise<CadastroRelatedCreateResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponivel para atualizar endereco." };
+  }
+
+  const { error } = await client
+    .from("enderecos")
+    .update({
+      cep: toNullableText(payload.cep),
+      endereco: toNullableText(payload.endereco),
+      numero: toNullableText(payload.numero),
+      complemento: toNullableText(payload.complemento),
+      bairro: toNullableText(payload.bairro),
+      cidade: toNullableText(payload.cidade),
+      uf: toNullableText(payload.uf),
+      tipo_endereco: toNullableText(payload.tipo_endereco) || "PRINCIPAL",
+      obs: toNullableText(payload.obs)
+    })
+    .eq("id", id);
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel atualizar o endereco.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+  return { success: true };
+}
+
+export async function updateCadastroContato(
+  id: string,
+  payload: Omit<CadastroContatoInsertPayload, "id_cliente">
+): Promise<CadastroRelatedCreateResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponivel para atualizar contato." };
+  }
+
+  const { error } = await client
+    .from("contatos")
+    .update({
+      nome_contato: toText(payload.nome_contato).trim(),
+      cargo: toNullableText(payload.cargo),
+      whats: toNullableText(payload.whats),
+      e_mail: toNullableText(payload.e_mail)
+    })
+    .eq("id", id);
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel atualizar o contato.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+  return { success: true };
+}
+
+export async function updateCadastroVinculoComercial(
+  id: string,
+  payload: Omit<CadastroVinculoComercialInsertPayload, "id_cliente_principal" | "id_cliente_socio">
+): Promise<CadastroRelatedCreateResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponivel para atualizar vinculo comercial." };
+  }
+
+  const { error } = await client
+    .from("clientes_socios")
+    .update({
+      tipo_relacao: toNullableText(payload.tipo_relacao) || "vinculo_comercial"
+    })
+    .eq("id", id);
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel atualizar o vinculo comercial.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+  return { success: true };
+}
+
+export async function listVendedores(): Promise<VendedorOption[]> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return [];
+  }
+
+  const { data, error } = await client
+    .from("usuarios")
+    .select("user_id,nome_usuario,meu_vendedor,id_vendedor,is_vendedor")
+    .eq("is_vendedor", true)
+    .order("nome_usuario", { ascending: true })
+    .returns<SupabaseUsuarioVendedorRow[]>();
+
+  if (error) {
+    return [];
+  }
+
+  return (data ?? [])
+    .map((item) => {
+      const nome = toText(item.meu_vendedor) || toText(item.nome_usuario);
+      const idVendedor = toNullableId(item.id_vendedor) ?? toNullableId(item.user_id);
+
+      return { nome, idVendedor };
+    })
+    .filter((item) => Boolean(item.nome))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+export async function searchCadastrosParaVinculo(query: string): Promise<SearchCadastroVinculoItem[]> {
+  const client = getSupabaseClient();
+  const term = normalizeSearchTerm(query);
+  if (!client || !term) {
+    return [];
+  }
+
+  let request = client
+    .from("clientes")
+    .select("id_cliente,nome,documento")
+    .order("id_cliente", { ascending: false })
+    .limit(12);
+
+  const digits = term.replace(/\D/g, "");
+  if (digits) {
+    request = request.or(
+      `id_cliente.eq.${digits},nome.ilike.*${term}*,documento.ilike.*${digits}*`
+    );
+  } else {
+    request = request.or(`nome.ilike.*${term}*,documento.ilike.*${term}*`);
+  }
+
+  const { data, error } = await request.returns<Array<Pick<SupabaseClienteRow, "id_cliente" | "nome" | "documento">>>();
+  if (error) {
+    return [];
+  }
+
+  return (data ?? [])
+    .map((item) => ({
+      idCliente: Number(item.id_cliente) || 0,
+      nome: toText(item.nome),
+      documento: normalizeDocumento(item.documento)
+    }))
+    .filter((item) => item.idCliente > 0);
 }
