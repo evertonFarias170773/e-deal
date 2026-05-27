@@ -2,7 +2,11 @@ import { cadastrosMock } from "@/lib/mocks/cadastros.mock";
 import { propostasMock } from "@/lib/mocks/propostas.mock";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cadastro } from "@/features/cadastros/types";
-import type { SupabaseClienteRow } from "@/features/cadastros/types.supabase";
+import type {
+  SupabaseCadastrosAbcClienteRow,
+  SupabaseCadastrosAbcCidadeRow,
+  SupabaseClienteRow
+} from "@/features/cadastros/types.supabase";
 import { mapSupabaseClienteRowToCadastro } from "@/features/cadastros/mappers";
 
 const PAGE_SIZE_MAX = 200;
@@ -12,13 +16,6 @@ type SupabasePropostaPageRow = {
   created_at?: unknown;
   status_interno?: unknown;
   is_copia?: unknown;
-};
-
-type SupabasePropostaResumoRow = {
-  id_cliente?: unknown;
-  valor_total_sum?: unknown;
-  valor_sum?: unknown;
-  pedidos?: unknown;
 };
 
 export type CadastrosReadSource = "supabase" | "mock";
@@ -47,19 +44,23 @@ export type CadastrosReadResult = {
 };
 
 export type CadastrosDashboardClienteResumo = {
+  posicao: number;
   idCliente: number;
   nome: string;
   fantasia?: string;
   cidadeUf: string;
   valorTotal: number;
   quantidadePedidos: number;
+  ultimoPedido: string | null;
 };
 
 export type CadastrosDashboardCidadeResumo = {
+  posicao: number;
   cidadeUf: string;
   valorTotal: number;
   quantidadePedidos: number;
   quantidadeClientes: number;
+  ultimoPedido: string | null;
 };
 
 export type CadastrosDashboardResumo = {
@@ -107,6 +108,16 @@ function normalizeSearchTerm(value: string) {
 
 function sortCadastrosByIdClienteDesc(cadastros: Cadastro[]) {
   return [...cadastros].sort((a, b) => b.idCliente - a.idCliente);
+}
+
+function normalizeRankingPosicao(value: unknown, fallback = 0) {
+  const parsed = toNumber(value, Number.NaN);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
+}
+
+function normalizeRankingDate(value: unknown) {
+  const text = toText(value);
+  return text || null;
 }
 
 function buildCadastrosSearchClause(search: string) {
@@ -190,7 +201,15 @@ function buildMockDashboardResumo(): CadastrosDashboardResumo {
 
   const approvedResumo = new Map<
     number,
-    { idCliente: number; nome: string; fantasia?: string; cidadeUf: string; valorTotal: number; quantidadePedidos: number }
+    {
+      idCliente: number;
+      nome: string;
+      fantasia?: string;
+      cidadeUf: string;
+      valorTotal: number;
+      quantidadePedidos: number;
+      ultimoPedido: string | null;
+    }
   >();
 
   for (const proposta of propostasMock) {
@@ -213,37 +232,54 @@ function buildMockDashboardResumo(): CadastrosDashboardResumo {
         fantasia: cadastroBase.fantasia || undefined,
         cidadeUf: cadastroBase.cidadeUf,
         valorTotal: 0,
-        quantidadePedidos: 0
+        quantidadePedidos: 0,
+        ultimoPedido: null
       };
 
     current.valorTotal += valorTotal;
     current.quantidadePedidos += 1;
+    if (!current.ultimoPedido || proposta.data > current.ultimoPedido) {
+      current.ultimoPedido = proposta.data;
+    }
     approvedResumo.set(idCliente, current);
   }
 
   const topClientes = [...approvedResumo.values()]
     .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidadePedidos - a.quantidadePedidos || a.nome.localeCompare(b.nome))
-    .slice(0, 3);
+    .slice(0, 3)
+    .map((cliente, index) => ({
+      ...cliente,
+      posicao: index + 1
+    }));
 
   const cidadeResumo = new Map<string, CadastrosDashboardCidadeResumo>();
   for (const cliente of approvedResumo.values()) {
     const cidadeUf = cliente.cidadeUf || "Não informado";
     const current = cidadeResumo.get(cidadeUf) ?? {
+      posicao: 0,
       cidadeUf,
       valorTotal: 0,
       quantidadePedidos: 0,
-      quantidadeClientes: 0
+      quantidadeClientes: 0,
+      ultimoPedido: null
     };
 
     current.valorTotal += cliente.valorTotal;
     current.quantidadePedidos += cliente.quantidadePedidos;
     current.quantidadeClientes += 1;
+    if (!current.ultimoPedido || (cliente.ultimoPedido && cliente.ultimoPedido > current.ultimoPedido)) {
+      current.ultimoPedido = cliente.ultimoPedido;
+    }
     cidadeResumo.set(cidadeUf, current);
   }
 
   const topCidades = [...cidadeResumo.values()]
     .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidadePedidos - a.quantidadePedidos || b.quantidadeClientes - a.quantidadeClientes)
-    .slice(0, 3);
+    .slice(0, 3)
+    .map((cidade, index) => ({
+      ...cidade,
+      posicao: index + 1
+    }));
 
   return {
     source: "mock",
@@ -309,15 +345,6 @@ function buildMockListResult(query: Required<Pick<CadastrosListQuery, "pageIndex
   };
 }
 
-function resolveAggregateNumber(value: unknown, fallback = 0) {
-  const parsed = toNumber(value, Number.NaN);
-  if (Number.isFinite(parsed)) {
-    return parsed;
-  }
-
-  return fallback;
-}
-
 async function fetchPedidosResumoByCliente(
   client: NonNullable<ReturnType<typeof getSupabaseClient>>,
   clienteIds: number[]
@@ -365,154 +392,70 @@ async function fetchPedidosResumoByCliente(
 async function fetchDashboardResumoSupabase(
   client: NonNullable<ReturnType<typeof getSupabaseClient>>
 ): Promise<CadastrosDashboardResumo> {
-  const [activeCountResult, proposalsResult] = await Promise.all([
+  const [activeCountResult, clientesViewResult, cidadesViewResult] = await Promise.all([
     client
       .from("clientes")
       .select("id_cliente", { count: "exact", head: true })
       .eq("categoria", "CLIENTE")
       .eq("ativo", true),
     client
-      .from("propostas")
-      .select("id_cliente, valor_total_sum:valor_total.sum(), valor_sum:valor.sum(), pedidos:id_int.count()")
-      .eq("status_interno", "APROVADO")
-      .eq("is_copia", false)
-      .not("id_cliente", "is", null)
-      .returns<SupabasePropostaResumoRow[]>()
+      .from("vw_cadastros_abc_clientes")
+      .select("posicao,id_cliente,cliente,qtd_pedidos,valor_total,ultimo_pedido")
+      .lte("posicao", 3)
+      .order("posicao", { ascending: true })
+      .returns<SupabaseCadastrosAbcClienteRow[]>(),
+    client
+      .from("vw_cadastros_abc_cidades")
+      .select("posicao,cidade_uf,qtd_pedidos,qtd_clientes,valor_total,ultimo_pedido")
+      .lte("posicao", 3)
+      .order("posicao", { ascending: true })
+      .returns<SupabaseCadastrosAbcCidadeRow[]>()
   ]);
 
   if (activeCountResult.error) {
     throw activeCountResult.error;
   }
 
-  if (proposalsResult.error) {
-    throw proposalsResult.error;
+  if (clientesViewResult.error) {
+    throw clientesViewResult.error;
   }
 
-  const activeCount = activeCountResult.count ?? 0;
-  const proposalRows = proposalsResult.data ?? [];
-  const proposalClientIds = [...new Set(
-    proposalRows
-      .map((row) => normalizeIdCliente(row.id_cliente))
-      .filter((value): value is number => value !== null)
-  )];
-
-  const clientRowsResult = proposalClientIds.length
-    ? await client
-        .from("clientes")
-        .select("id,id_cliente,nome,fantasia,cidade_uf,categoria,ativo")
-        .eq("categoria", "CLIENTE")
-        .eq("ativo", true)
-        .in("id_cliente", proposalClientIds)
-        .returns<SupabaseClienteRow[]>()
-    : { data: [], error: null };
-
-  if (clientRowsResult.error) {
-    throw clientRowsResult.error;
+  if (cidadesViewResult.error) {
+    throw cidadesViewResult.error;
   }
 
-  const clientById = new Map<
-    number,
-    {
-      nome: string;
-      fantasia?: string;
-      cidadeUf: string;
-    }
-  >();
+  const topClientes = (clientesViewResult.data ?? []).map((row) => ({
+    posicao: normalizeRankingPosicao(row.posicao, 0),
+    idCliente: normalizeRankingPosicao(row.id_cliente, 0),
+    nome: toText(row.cliente) || "Cliente não informado",
+    fantasia: undefined,
+    cidadeUf: "",
+    valorTotal: toNumber(row.valor_total, 0),
+    quantidadePedidos: normalizeRankingPosicao(row.qtd_pedidos, 0),
+    ultimoPedido: normalizeRankingDate(row.ultimo_pedido)
+  }));
 
-  for (const row of clientRowsResult.data ?? []) {
-    const idCliente = normalizeIdCliente(row.id_cliente);
-    if (!idCliente) {
-      continue;
-    }
+  const topCidades = (cidadesViewResult.data ?? []).map((row) => ({
+    posicao: normalizeRankingPosicao(row.posicao, 0),
+    cidadeUf: toText(row.cidade_uf) || "Cidade não informada",
+    valorTotal: toNumber(row.valor_total, 0),
+    quantidadePedidos: normalizeRankingPosicao(row.qtd_pedidos, 0),
+    quantidadeClientes: normalizeRankingPosicao(row.qtd_clientes, 0),
+    ultimoPedido: normalizeRankingDate(row.ultimo_pedido)
+  }));
 
-    clientById.set(idCliente, {
-      nome: toText(row.nome) || `Cliente ${idCliente}`,
-      fantasia: toText(row.fantasia) || undefined,
-      cidadeUf: toText(row.cidade_uf) || "Não informado"
-    });
-  }
-
-  type TopClienteResumo = {
-    idCliente: number;
-    nome: string;
-    fantasia: string | undefined;
-    cidadeUf: string;
-    valorTotal: number;
-    quantidadePedidos: number;
-  };
-
-  const topClientes = proposalRows
-    .map((row) => {
-      const idCliente = normalizeIdCliente(row.id_cliente);
-      if (!idCliente) {
-        return null;
-      }
-
-      const cliente = clientById.get(idCliente);
-      if (!cliente) {
-        return null;
-      }
-
-      const valorTotal = resolveAggregateNumber(row.valor_total_sum, resolveAggregateNumber(row.valor_sum, 0));
-      const quantidadePedidos = resolveAggregateNumber(row.pedidos, 0);
-
-      return {
-        idCliente,
-        nome: cliente.nome,
-        fantasia: cliente.fantasia,
-        cidadeUf: cliente.cidadeUf,
-        valorTotal,
-        quantidadePedidos
-      };
-    })
-    .filter((item): item is TopClienteResumo => item !== null)
-    .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidadePedidos - a.quantidadePedidos || a.nome.localeCompare(b.nome))
-    .slice(0, 3);
-
-  const cidadeResumo = new Map<string, CadastrosDashboardCidadeResumo>();
-  for (const row of proposalRows) {
-    const idCliente = normalizeIdCliente(row.id_cliente);
-    if (!idCliente) {
-      continue;
-    }
-
-    const clienteBase = clientById.get(idCliente);
-    if (!clienteBase) {
-      continue;
-    }
-
-    const cidadeUf = clienteBase.cidadeUf || "Não informado";
-    const valorTotal = resolveAggregateNumber(row.valor_total_sum, resolveAggregateNumber(row.valor_sum, 0));
-    const quantidadePedidos = resolveAggregateNumber(row.pedidos, 0);
-    const current = cidadeResumo.get(cidadeUf) ?? {
-      cidadeUf,
-      valorTotal: 0,
-      quantidadePedidos: 0,
-      quantidadeClientes: 0
-    };
-
-    current.valorTotal += valorTotal;
-    current.quantidadePedidos += quantidadePedidos;
-    current.quantidadeClientes += 1;
-    cidadeResumo.set(cidadeUf, current);
-  }
-
-  const topCidades = [...cidadeResumo.values()]
-    .sort((a, b) => b.valorTotal - a.valorTotal || b.quantidadePedidos - a.quantidadePedidos || b.quantidadeClientes - a.quantidadeClientes)
-    .slice(0, 3);
+  const hasRankingData = topClientes.length > 0 || topCidades.length > 0;
 
   return {
     source: "supabase",
-    activeCount,
+    activeCount: activeCountResult.count ?? 0,
     topClientes,
     topCidades,
     aniversariantesMock: cloneMockCadastros()
       .filter((cadastro) => cadastro.categoria === "CLIENTE" && cadastro.ativo)
       .slice(0, 3)
       .map((cadastro) => cadastro.nome),
-    warnings: [
-      `Leitura real aplicada em public.clientes e public.propostas para os resumos globais.`
-    ]
+    warnings: hasRankingData ? ["Leitura real aplicada em views read-only de ranking."] : ["Sem dados para ranking."]
   };
 }
 

@@ -177,15 +177,18 @@ export function CadastrosListPage() {
                     <div key={cliente.idCliente} className="rounded-2xl bg-slate-50 px-3 py-2">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-sm font-medium text-slate-800">
-                          {index + 1}. {cliente.nome}
+                          {cliente.posicao || index + 1}. {cliente.nome}
                         </span>
                         <span className="text-sm font-semibold text-slate-950">{formatCurrency(cliente.valorTotal)}</span>
                       </div>
-                      <p className="text-xs text-slate-500">{cliente.quantidadePedidos} pedidos</p>
+                      <p className="text-xs text-slate-500">
+                        {cliente.quantidadePedidos} pedidos
+                        {cliente.ultimoPedido ? ` · Último pedido: ${formatDateTime(cliente.ultimoPedido)}` : ""}
+                      </p>
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-slate-500">Sem propostas aprovadas para montar a curva ABC.</p>
+                  <p className="text-sm text-slate-500">Sem dados para ranking.</p>
                 )}
               </div>
             }
@@ -202,17 +205,18 @@ export function CadastrosListPage() {
                     <div key={cidade.cidadeUf} className="rounded-2xl bg-slate-50 px-3 py-2">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-sm font-medium text-slate-800">
-                          {index + 1}. {cidade.cidadeUf}
+                          {cidade.posicao || index + 1}. {cidade.cidadeUf}
                         </span>
                         <span className="text-sm font-semibold text-slate-950">{formatCurrency(cidade.valorTotal)}</span>
                       </div>
                       <p className="text-xs text-slate-500">
                         {cidade.quantidadePedidos} pedidos · {cidade.quantidadeClientes} clientes
+                        {cidade.ultimoPedido ? ` · Último pedido: ${formatDateTime(cidade.ultimoPedido)}` : ""}
                       </p>
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-slate-500">Sem dados suficientes para o ranking de cidades.</p>
+                  <p className="text-sm text-slate-500">Sem dados para ranking.</p>
                 )}
               </div>
             }
