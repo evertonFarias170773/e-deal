@@ -11,18 +11,17 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatDocument } from "@/lib/formatters/document";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
+import { atendentesMock } from "@/lib/mocks/cadastros.mock";
 import {
-  atendentesMock,
-  consultarCnpjMock,
-  onlyDigits,
-  validarCpfCnpj,
-  verificarDocumentoMock,
-  verificarIdClienteMock
-} from "@/lib/mocks/cadastros.mock";
-import {
+  createCadastroEndereco,
+  createCadastro,
+  validateCadastroInitialStep,
   updateCadastroCamposOperacionaisReadOnly,
+  type CadastroEnderecoInsertPayload,
+  type CadastroInsertPayload,
   type CadastroOperacionalUpdatePayload
 } from "@/features/cadastros/services/cadastros.service";
+import { normalizeDocumentDigits, validateDocumentByTipo } from "@/features/cadastros/utils/documento";
 import type {
   Cadastro,
   CadastroCategoria,
@@ -53,6 +52,31 @@ type CadastroSavePreview = {
     value: string;
     columns: string[];
   }>;
+};
+
+type ConsultaDocumentoApiPayload = {
+  nome: string;
+  fantasia: string;
+  documento: string;
+  tipoPessoa: "FISICA" | "JURIDICA";
+  dataFundacao: string;
+  emailContato: string;
+  telefoneFixo: string;
+  cidadeUf: string;
+  insEstadual: string;
+  tipoContribuinte: "CONTRIBUINTE" | "ISENTO" | "";
+  enderecoPreparado: {
+    id_cliente: number;
+    cep: string;
+    endereco: string;
+    numero: string;
+    complemento: string;
+    bairro: string;
+    cidade: string;
+    uf: string;
+    tipo_endereco: "PRINCIPAL";
+    obs: string;
+  } | null;
 };
 
 const CADASTRO_OPERACIONAL_UPDATE_FIELDS = [
@@ -103,7 +127,7 @@ const categoriaLabel: Record<CadastroCategoria, string> = {
 };
 
 const categoriaOptions: CadastroCategoria[] = ["CLIENTE", "FORNECEDOR", "TRANSPORTADORA", "ORGAO_PUBLICO"];
-const paymentOptions = ["Pix a vista 3 dias", "Boleto 14 dias", "Faturado 28 dias", "Cartao", "Empenho / faturado"];
+const paymentOptions = ["Pix à vista 3 dias", "Boleto 14 dias", "Faturado 28 dias", "Cartão", "Empenho / faturado"];
 
 export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const router = useRouter();
@@ -112,8 +136,13 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [form, setForm] = useState<CadastroFormState>(() => createInitialState(cadastro));
   const [isSaving, setIsSaving] = useState(false);
+  const [isInitialChecking, setIsInitialChecking] = useState(false);
   const [errorFields, setErrorFields] = useState<string[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pendingSavePreview, setPendingSavePreview] = useState<CadastroSavePreview | null>(null);
+  const [preparedEnderecoInsertPayload, setPreparedEnderecoInsertPayload] = useState<CadastroEnderecoInsertPayload | null>(
+    null
+  );
   const originalSnapshot = useMemo(() => createInitialState(cadastro), [cadastro]);
   const originalSnapshotRef = useRef(originalSnapshot);
   const originalDocument = cadastro?.documento ?? "";
@@ -121,7 +150,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const title = mode === "new" ? "Novo cadastro" : `Editar cadastro #${cadastro?.idCliente}`;
   const subtitle =
     mode === "new"
-      ? "Valide ID, tipo, documento e atendente antes de preencher o cadastro completo."
+      ? "Preencha os dados principais e salve para criar o cadastro no Supabase."
       : "Atualize os dados carregados nesta tela em modo simulado, sem persistir em banco real.";
 
   const formattedDocument = useMemo(
@@ -131,129 +160,309 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
 
   function updateField<K extends keyof CadastroFormState>(field: K, value: CadastroFormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
+    if (field === "idCliente" || field === "documento" || field === "tipoCliente") {
+      setPreparedEnderecoInsertPayload(null);
+    }
     setErrorFields((current) => current.filter((item) => item !== field));
+    setFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
   }
 
-  function handleInitialValidation() {
+  async function handleInitialValidation() {
     setMessage(null);
+    setFieldErrors({});
+    setErrorFields([]);
+    setPreparedEnderecoInsertPayload(null);
 
-    if (!form.idCliente || !form.documento || !form.atendente) {
-      const fields = [
-        !form.idCliente ? "idCliente" : null,
-        !form.documento ? "documento" : null,
-        !form.atendente ? "atendente" : null
-      ].filter(Boolean) as string[];
-      setErrorFields(fields);
+    if (!form.idCliente) {
+      setErrorFields(["idCliente"]);
+      setFieldErrors({
+        idCliente: "Informe o ID do cliente para continuar."
+      });
       setMessage({
         tone: "danger",
         title: "Campos obrigatorios ausentes",
-        description: "Informe ID do cliente, documento e atendente para continuar."
+        description: "Informe o ID do cliente para continuar."
       });
       showToast({
         type: "error",
         title: "Campos obrigatorios ausentes",
-        description: "Revise os campos destacados antes de continuar."
+        description: "Informe o ID do cliente para continuar."
       });
       return;
     }
 
-    const existingId = verificarIdClienteMock(Number(form.idCliente));
-    if (existingId) {
+    const idCliente = Number(form.idCliente);
+    if (!Number.isInteger(idCliente) || idCliente <= 0) {
+      setErrorFields(["idCliente"]);
+      setFieldErrors({
+        idCliente: "O ID do cliente precisa ser um numero inteiro valido."
+      });
+      setMessage({
+        tone: "danger",
+        title: "ID do cliente invalido",
+        description: "Informe um numero inteiro valido para o ID do cliente."
+      });
+      showToast({
+        type: "error",
+        title: "ID do cliente invalido",
+        description: "Use um numero inteiro para continuar."
+      });
+      return;
+    }
+
+    if (!form.documento) {
+      setErrorFields(["documento"]);
+      setFieldErrors({
+        documento: "Informe um CPF ou CNPJ para continuar."
+      });
+      setMessage({
+        tone: "danger",
+        title: "Documento obrigatorio",
+        description: "Informe um CPF ou CNPJ para continuar."
+      });
+      showToast({
+        type: "error",
+        title: "Documento obrigatorio",
+        description: "Informe um CPF ou CNPJ para continuar."
+      });
+      return;
+    }
+
+    const documentoValidation = validateDocumentByTipo(form.documento, form.tipoCliente);
+    if (!documentoValidation.isValid) {
+      const documentoMessage = documentoValidation.message ?? "Documento invalido. Revise os digitos informados.";
+      setErrorFields(["documento"]);
+      setFieldErrors({
+        documento: documentoMessage
+      });
+      setMessage({
+        tone: "danger",
+        title: "Documento invalido",
+        description: documentoMessage
+      });
+      showToast({
+        type: "error",
+        title: "Documento invalido",
+        description: documentoMessage
+      });
+      return;
+    }
+
+    if (!form.atendente) {
+      setErrorFields(["atendente"]);
+      setMessage({
+        tone: "danger",
+        title: "Atendente obrigatorio",
+        description: "Selecione o atendente para continuar."
+      });
+      showToast({
+        type: "error",
+        title: "Atendente obrigatorio",
+        description: "Selecione o atendente para continuar."
+      });
+      return;
+    }
+
+    setIsInitialChecking(true);
+
+    let validationResult: Awaited<ReturnType<typeof validateCadastroInitialStep>>;
+    try {
+      validationResult = await validateCadastroInitialStep({
+        idCliente,
+        documentoDigits: documentoValidation.digits
+      });
+    } catch (error) {
+      setIsInitialChecking(false);
+      setMessage({
+        tone: "danger",
+        title: "Nao foi possivel validar duplicidades",
+        description: error instanceof Error ? error.message : "Falha ao consultar o Supabase."
+      });
+      showToast({
+        type: "error",
+        title: "Falha na validacao",
+        description: "Falha ao consultar o Supabase."
+      });
+      return;
+    }
+
+    setIsInitialChecking(false);
+
+    if (validationResult.idConflict) {
+      setErrorFields(["idCliente"]);
+      setFieldErrors({
+        idCliente: `Ja existe um cadastro com este ID: ${validationResult.idConflict.idCliente} - ${validationResult.idConflict.nome}.`
+      });
       setMessage({
         tone: "warning",
-        title: "Este ID de cliente ja esta cadastrado.",
-        description: `O ID #${form.idCliente} pertence a ${existingId.nome}.`,
-        actionHref: `/cadastros/${existingId.idCliente}`,
+        title: "ID ja cadastrado",
+        description: `Já existe um cadastro com este ID: ${validationResult.idConflict.idCliente} - ${validationResult.idConflict.nome}.`,
+        actionHref: `/cadastros/${validationResult.idConflict.idCliente}`,
         actionLabel: "Abrir cadastro existente"
       });
       showToast({
         type: "warning",
         title: "ID ja cadastrado",
-        description: "Abra o cadastro existente ou informe outro ID."
+        description: "Informe outro ID para continuar."
       });
       return;
     }
 
-    const existingDocument = verificarDocumentoMock(form.documento);
-    if (existingDocument) {
+    if (validationResult.documentoConflict) {
+      setErrorFields(["documento"]);
+      setFieldErrors({
+        documento: `Ja existe um cadastro com este documento: ID ${validationResult.documentoConflict.idCliente} - ${validationResult.documentoConflict.nome}.`
+      });
       setMessage({
         tone: "warning",
-        title: "Este documento ja esta cadastrado.",
-        description: `${formatDocument(existingDocument.documento)} pertence a ${existingDocument.nome}.`,
-        actionHref: `/cadastros/${existingDocument.idCliente}`,
+        title: "Documento ja cadastrado",
+        description: `Já existe um cadastro com este documento: ID ${validationResult.documentoConflict.idCliente} - ${validationResult.documentoConflict.nome}.`,
+        actionHref: `/cadastros/${validationResult.documentoConflict.idCliente}`,
         actionLabel: "Abrir cadastro existente"
       });
       showToast({
         type: "warning",
         title: "Documento ja cadastrado",
-        description: "Abra o cadastro existente ou informe outro documento."
+        description: "Informe outro documento para continuar."
       });
       return;
     }
 
-    if (!validarCpfCnpj(form.documento, form.tipoCliente)) {
-      setErrorFields(["documento"]);
+    if (!validationResult.success) {
       setMessage({
         tone: "danger",
-        title: "O documento informado nao parece valido.",
-        description: "Confira os numeros antes de continuar."
+        title: "Nao foi possivel validar duplicidades",
+        description: validationResult.errorMessage || "Falha ao consultar o Supabase."
       });
       showToast({
         type: "error",
-        title: "Documento invalido",
-        description: "O documento informado nao parece valido."
+        title: "Falha na validacao",
+        description: validationResult.errorMessage || "Falha ao consultar o Supabase."
       });
       return;
     }
 
-    if (form.tipoCliente === "CNPJ") {
-      const cnpjData = consultarCnpjMock(form.documento);
-      setForm((current) => ({
-        ...current,
-        nome: cnpjData.nome,
-        fantasia: cnpjData.fantasia,
-        email: cnpjData.email,
-        telefoneFixo: cnpjData.telefone,
-        enderecos: [cnpjData.endereco]
-      }));
-      setMessage({
-        tone: "success",
-        title: "Dados de CNPJ preenchidos por consulta mockada.",
-        description: "A consulta automatica real sera integrada futuramente."
+    let consultaMessage = "Dados consultados e formulário liberado para revisão.";
+    let consultaTone: FormMessage["tone"] = "info";
+
+    try {
+      const response = await fetch("/api/cadastros/consultar-documento", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          tipoPessoa: form.tipoCliente,
+          documento: documentoValidation.digits,
+          idCliente
+        })
       });
+
+      const data = (await response.json().catch(() => null)) as
+        | {
+            success?: boolean;
+            payload?: ConsultaDocumentoApiPayload;
+            message?: string;
+          }
+        | null;
+
+      if (!response.ok || !data?.success || !data.payload) {
+        consultaMessage =
+          data?.message ||
+          "Não foi possível consultar os dados externos. Continue com preenchimento manual.";
+        consultaTone = "warning";
+        showToast({
+          type: "warning",
+          title: "Consulta externa indisponível",
+          description: "Continue o preenchimento manual e revise os dados antes de salvar."
+        });
+      } else {
+        const payload = data.payload;
+        const enderecoImportado = payload.enderecoPreparado
+          ? mapPreparedEnderecoToForm(payload.enderecoPreparado)
+          : null;
+
+        setForm((current) => ({
+          ...current,
+          tipoCliente: payload.tipoPessoa === "FISICA" ? "CPF" : "CNPJ",
+          documento: payload.documento || current.documento,
+          nome: payload.nome || current.nome,
+          fantasia: payload.fantasia || current.fantasia,
+          dataFundacao: payload.dataFundacao || current.dataFundacao,
+          email: payload.emailContato || current.email,
+          telefoneFixo: payload.telefoneFixo || current.telefoneFixo,
+          tipoContribuinte: payload.tipoContribuinte || current.tipoContribuinte,
+          inscricaoEstadual: payload.insEstadual || current.inscricaoEstadual,
+          isentoInscricaoEstadual: payload.tipoContribuinte === "ISENTO",
+          enderecos: enderecoImportado ? [enderecoImportado] : current.enderecos
+        }));
+
+        setPreparedEnderecoInsertPayload(payload.enderecoPreparado);
+        consultaMessage = payload.enderecoPreparado
+          ? "Dados da API preenchidos. Revise cliente e endereço antes de salvar."
+          : "Dados da API preenchidos. Revise o cadastro antes de salvar.";
+        consultaTone = "info";
+        showToast({
+          type: "success",
+          title: "Dados importados",
+          description: "Os campos retornados pela consulta externa foram preenchidos."
+        });
+      }
+    } catch {
+      consultaMessage =
+        "Não foi possível consultar os dados externos. Continue com preenchimento manual.";
+      consultaTone = "warning";
       showToast({
-        type: "success",
-        title: "CNPJ validado",
-        description: "Dados preenchidos por consulta mockada."
-      });
-    } else {
-      setMessage({
-        tone: "success",
-        title: "CPF validado.",
-        description: "Consulta automatica sera integrada futuramente."
-      });
-      showToast({
-        type: "success",
-        title: "CPF validado",
-        description: "Consulta automatica sera integrada futuramente."
+        type: "warning",
+        title: "Consulta externa indisponível",
+        description: "Continue o preenchimento manual e revise os dados antes de salvar."
       });
     }
 
     setIsInitialValidated(true);
+    setMessage({
+      tone: consultaTone,
+      title: "Dados iniciais validados",
+      description: consultaMessage
+    });
   }
 
-  async function handleMockSave() {
-    if (!form.nome || !form.documento || !form.atendente) {
-      const fields = [
-        !form.nome ? "nome" : null,
-        !form.documento ? "documento" : null,
-        !form.atendente ? "atendente" : null
-      ].filter(Boolean) as string[];
-      setErrorFields(fields);
+  async function handleCreateCadastro() {
+    setMessage(null);
+    setErrorFields([]);
+
+    const idCliente = Number(form.idCliente);
+    const documentoDigits = normalizeDocumentDigits(form.documento);
+    const inferredTipoPessoa = inferTipoPessoaFromDocumento(form.documento);
+    const contactEmail = form.email.trim();
+    const contactWhatsApp = form.whatsapp.trim();
+    const contactName = form.contatos[0]?.nome?.trim() || form.nome.trim();
+
+    const missingFields = [
+      !form.idCliente ? "idCliente" : null,
+      !Number.isInteger(idCliente) || idCliente <= 0 ? "idCliente" : null,
+      !form.categoria ? "categoria" : null,
+      !form.nome.trim() ? "nome" : null,
+      !documentoDigits ? "documento" : null,
+      !inferredTipoPessoa ? "documento" : null,
+      !contactEmail && !contactWhatsApp ? "email" : null,
+      !contactEmail && !contactWhatsApp ? "whatsapp" : null
+    ].filter(Boolean) as string[];
+
+    if (missingFields.length) {
+      setErrorFields(Array.from(new Set(missingFields)));
       setMessage({
         tone: "danger",
         title: "Campos obrigatorios ausentes",
-        description: "Preencha nome/razao social, documento e atendente antes de salvar."
+        description: "Preencha ID do cliente, nome, documento e pelo menos um contato."
       });
       showToast({
         type: "error",
@@ -263,6 +472,129 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       return;
     }
 
+    setIsSaving(true);
+
+    const insertPayload: CadastroInsertPayload = {
+      id_cliente: idCliente,
+      categoria: form.categoria,
+      nome: form.nome.trim(),
+      fantasia: normalizeOptionalText(form.fantasia),
+      apelido: null,
+      contato: normalizeOptionalText(contactName),
+      documento: documentoDigits,
+      tipo_pessoa: inferredTipoPessoa ?? "JURIDICA",
+      ins_estadual: normalizeOptionalText(form.inscricaoEstadual),
+      ins_municipal: normalizeOptionalText(form.inscricaoMunicipal),
+      tipo_contribuinte: normalizeOptionalText(form.tipoContribuinte),
+      data_fundacao: normalizeOptionalText(form.dataFundacao),
+      email_contato: normalizeOptionalText(contactEmail),
+      email_financeiro: normalizeOptionalText(form.emailFinanceiro),
+      email: normalizeOptionalText(contactEmail),
+      telefone_fixo: normalizeOptionalText(form.telefoneFixo),
+      whatsapp_1: normalizeOptionalText(contactWhatsApp),
+      whatsapp_2: normalizeOptionalText(form.whatsapp2),
+      site: normalizeOptionalText(form.site),
+      ativo: form.ativo,
+      restricao: form.restricao,
+      obs: normalizeOptionalText(form.observacoes),
+      recebe_email: form.sendMail,
+      recebe_whatsapp: form.sendWhats,
+      nome_vendedor: normalizeOptionalText(form.atendente),
+      id_vendedor: null,
+      padrao_pagamento: normalizeOptionalText(form.padraoPagamento) || "Pix à vista 3 dias",
+      empresa_padrao: normalizeOptionalText(form.empresaPadrao),
+      cidade_uf: normalizeOptionalText(
+        form.enderecos[0]?.cidade && form.enderecos[0]?.uf
+          ? `${form.enderecos[0].cidade} - ${form.enderecos[0].uf}`
+          : ""
+      ),
+      nota: form.nota,
+      verificado: form.verificado
+    };
+
+    let result: Awaited<ReturnType<typeof createCadastro>>;
+    try {
+      result = await createCadastro(insertPayload);
+    } catch (error) {
+      setIsSaving(false);
+      setMessage({
+        tone: "danger",
+        title: "Nao foi possivel criar o cadastro.",
+        description: error instanceof Error ? error.message : "Falha inesperada ao executar o insert."
+      });
+      showToast({
+        type: "error",
+        title: "Falha ao criar cadastro",
+        description: "Falha inesperada ao executar o insert."
+      });
+      return;
+    }
+
+    if (!result.success) {
+      setIsSaving(false);
+      setErrorFields(
+        result.conflict?.kind === "id_cliente"
+          ? ["idCliente"]
+          : result.conflict?.kind === "documento"
+            ? ["documento"]
+            : []
+      );
+      setMessage({
+        tone: "danger",
+        title: "Nao foi possivel criar o cadastro.",
+        description: result.errorMessage,
+        actionHref: result.conflict ? `/cadastros/${result.conflict.idCliente}` : undefined,
+        actionLabel: result.conflict ? "Abrir cadastro existente" : undefined
+      });
+      showToast({
+        type: "error",
+        title: "Falha ao criar cadastro",
+        description: result.errorMessage
+      });
+      return;
+    }
+
+    let enderecoWarning: string | null = null;
+    if (form.tipoCliente === "CNPJ" && preparedEnderecoInsertPayload) {
+      const enderecoPayload: CadastroEnderecoInsertPayload = {
+        id_cliente: result.cadastro.idCliente,
+        cep: normalizeOptionalText(form.enderecos[0]?.cep ?? preparedEnderecoInsertPayload.cep),
+        endereco: normalizeOptionalText(form.enderecos[0]?.endereco ?? preparedEnderecoInsertPayload.endereco),
+        numero: normalizeOptionalText(form.enderecos[0]?.numero ?? preparedEnderecoInsertPayload.numero),
+        complemento: normalizeOptionalText(form.enderecos[0]?.complemento ?? preparedEnderecoInsertPayload.complemento),
+        bairro: normalizeOptionalText(form.enderecos[0]?.bairro ?? preparedEnderecoInsertPayload.bairro),
+        cidade: normalizeOptionalText(form.enderecos[0]?.cidade ?? preparedEnderecoInsertPayload.cidade),
+        uf: normalizeOptionalText(form.enderecos[0]?.uf ?? preparedEnderecoInsertPayload.uf),
+        tipo_endereco: "PRINCIPAL",
+        obs: normalizeOptionalText(form.enderecos[0]?.obs ?? preparedEnderecoInsertPayload.obs)
+      };
+
+      const enderecoResult = await createCadastroEndereco(enderecoPayload);
+      if (!enderecoResult.success) {
+        enderecoWarning =
+          "Cadastro criado, mas houve erro ao salvar o endereço. Adicione o endereço manualmente.";
+      }
+    }
+
+    setMessage({
+      tone: enderecoWarning ? "warning" : "success",
+      title: enderecoWarning ? "Cadastro criado com ressalva." : "Cadastro criado com sucesso.",
+      description: enderecoWarning || "Redirecionando para o detalhe do cadastro criado."
+    });
+    showToast({
+      type: enderecoWarning ? "warning" : "success",
+      title: enderecoWarning ? "Cadastro criado com ressalva" : "Cadastro criado com sucesso.",
+      description: enderecoWarning || `Cadastro #${result.cadastro.idCliente} gravado no Supabase.`
+    });
+
+    setIsSaving(false);
+
+    window.setTimeout(() => {
+      router.push(`/cadastros/${result.cadastro.idCliente}`);
+    }, 1000);
+  }
+
+  async function handleMockSave() {
     if (mode === "edit") {
       const original = originalSnapshotRef.current;
       const blockedChanges = getBlockedFieldChanges(form, original);
@@ -304,27 +636,6 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       setPendingSavePreview(preview);
       return;
     }
-
-    setIsSaving(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 850));
-
-    const successTitle = "Cadastro criado com sucesso.";
-    const redirectTarget = "/cadastros";
-
-    setMessage({
-      tone: "success",
-      title: successTitle,
-      description: "Nenhum dado foi enviado para banco, API ou backend real."
-    });
-    showToast({
-      type: "success",
-      title: successTitle,
-      description: "Redirecionando para a lista de cadastros..."
-    });
-
-    window.setTimeout(() => {
-      router.push(redirectTarget);
-    }, 1200);
   }
 
   async function handleConfirmOperationalSave() {
@@ -403,9 +714,10 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
               <button
                 type="button"
                 onClick={handleInitialValidation}
-                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+                disabled={isInitialChecking}
+                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Verificar cadastro
+                {isInitialChecking ? "Validando..." : "Continuar"}
               </button>
             ) : (
               <button
@@ -434,6 +746,9 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
           onUpdate={updateField}
           onContinue={handleInitialValidation}
           errorFields={errorFields}
+          fieldErrors={fieldErrors}
+          isChecking={isInitialChecking}
+          mode={mode}
         />
       ) : (
         <CompleteForm
@@ -441,7 +756,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
           formattedDocument={formattedDocument}
           onUpdate={updateField}
           onCancel={() => router.push("/cadastros")}
-          onSave={handleMockSave}
+          onSave={mode === "new" ? handleCreateCadastro : handleMockSave}
           mode={mode}
           originalDocument={originalDocument}
           isSaving={isSaving}
@@ -524,20 +839,28 @@ function InitialStep({
   formattedDocument,
   onUpdate,
   onContinue,
-  errorFields
+  errorFields,
+  fieldErrors,
+  isChecking,
+  mode
 }: {
   form: CadastroFormState;
   formattedDocument: string;
   onUpdate: <K extends keyof CadastroFormState>(field: K, value: CadastroFormState[K]) => void;
-  onContinue: () => void;
+  onContinue: () => Promise<void>;
   errorFields: string[];
+  fieldErrors: Record<string, string>;
+  isChecking: boolean;
+  mode: "new" | "edit";
 }) {
   return (
     <section className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
       <div className="mb-5">
-        <h2 className="text-lg font-semibold text-slate-950">Verificacao inicial</h2>
+        <h2 className="text-lg font-semibold text-slate-950">Identificação inicial</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Comece com as 5 informacoes principais. O restante sera liberado apos a validacao mockada.
+          {mode === "new"
+            ? "Comece com ID, tipo, documento e atendente para seguir ao formulário completo."
+            : "Comece com as 5 informacoes principais. O restante sera liberado apos a validacao."}
         </p>
       </div>
 
@@ -550,6 +873,7 @@ function InitialStep({
             className={getInputClass(errorFields.includes("idCliente"))}
             placeholder="120018"
           />
+          {fieldErrors.idCliente ? <FieldError message={fieldErrors.idCliente} /> : null}
         </Field>
         <Field label="Tipo de cadastro">
           <select
@@ -577,10 +901,11 @@ function InitialStep({
         <Field label="No do documento">
           <input
             value={formattedDocument}
-            onChange={(event) => onUpdate("documento", onlyDigits(event.target.value))}
+            onChange={(event) => onUpdate("documento", normalizeDocumentDigits(event.target.value))}
             className={getInputClass(errorFields.includes("documento"))}
             placeholder={form.tipoCliente === "CPF" ? "000.000.000-00" : "00.000.000/0000-00"}
           />
+          {fieldErrors.documento ? <FieldError message={fieldErrors.documento} /> : null}
         </Field>
         <Field label="Atendente">
           <select
@@ -608,9 +933,10 @@ function InitialStep({
         <button
           type="button"
           onClick={onContinue}
-          className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white"
+          disabled={isChecking}
+          className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Verificar cadastro
+          {isChecking ? "Validando..." : mode === "new" ? "Continuar" : "Verificar cadastro"}
         </button>
       </div>
     </section>
@@ -641,7 +967,10 @@ function CompleteForm({
   onToast: (toast: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
 }) {
   const companies = mockCompanies.filter((company) => !company.isConsolidated);
-  const documentChanged = mode === "edit" && onlyDigits(form.documento) !== onlyDigits(originalDocument);
+  const documentChanged =
+    mode === "edit" &&
+    normalizeDocumentDigits(form.documento) !== normalizeDocumentDigits(originalDocument);
+  const isNewMode = mode === "new";
 
   function updateEndereco(index: number, field: keyof CadastroEndereco, value: string) {
     const enderecos = form.enderecos.map((endereco, currentIndex) =>
@@ -698,7 +1027,11 @@ function CompleteForm({
             <input
               value={form.idCliente}
               readOnly
-              className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
+              className={
+                errorFields.includes("idCliente")
+                  ? `${inputClass} cursor-not-allowed border-red-300 bg-red-50 text-slate-600`
+                  : `${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`
+              }
             />
           </Field>
           <Field label="Tipo de cadastro">
@@ -715,7 +1048,7 @@ function CompleteForm({
             </select>
           </Field>
           <Field label="CPF/CNPJ">
-            <input value={formattedDocument} onChange={(event) => onUpdate("documento", onlyDigits(event.target.value))} className={getInputClass(errorFields.includes("documento"))} />
+            <input value={formattedDocument} onChange={(event) => onUpdate("documento", normalizeDocumentDigits(event.target.value))} className={getInputClass(errorFields.includes("documento"))} />
           </Field>
           <Field label="Razao social / Nome">
             <input value={form.nome} onChange={(event) => onUpdate("nome", event.target.value)} className={getInputClass(errorFields.includes("nome"))} />
@@ -727,7 +1060,7 @@ function CompleteForm({
             <input value={form.tipoContribuinte} onChange={(event) => onUpdate("tipoContribuinte", event.target.value)} className={inputClass} placeholder="Contribuinte / Isento" />
           </Field>
           <Field label="E-mail principal">
-            <input value={form.email} onChange={(event) => onUpdate("email", event.target.value)} className={inputClass} />
+            <input value={form.email} onChange={(event) => onUpdate("email", event.target.value)} className={getInputClass(errorFields.includes("email"))} />
           </Field>
           <Field label="E-mail financeiro">
             <input value={form.emailFinanceiro} onChange={(event) => onUpdate("emailFinanceiro", event.target.value)} className={inputClass} />
@@ -751,7 +1084,7 @@ function CompleteForm({
             <input value={form.site} onChange={(event) => onUpdate("site", event.target.value)} className={inputClass} />
           </Field>
           <Field label="WhatsApp 1">
-            <input value={form.whatsapp} onChange={(event) => onUpdate("whatsapp", event.target.value)} className={inputClass} />
+            <input value={form.whatsapp} onChange={(event) => onUpdate("whatsapp", event.target.value)} className={getInputClass(errorFields.includes("whatsapp"))} />
           </Field>
           <Field label="WhatsApp 2">
             <input value={form.whatsapp2} onChange={(event) => onUpdate("whatsapp2", event.target.value)} className={inputClass} />
@@ -775,11 +1108,24 @@ function CompleteForm({
 
       <FormSection
         title="Enderecos"
-        description="Enderecos vinculados ao id_cliente. Futuramente serao usados em propostas, frete e notas fiscais."
-        action={<AddButton label="Adicionar endereco" onClick={() => {
-          onUpdate("enderecos", [...form.enderecos, createBlankEndereco()]);
-          onToast({ type: "info", title: "Endereco adicionado", description: "Endereco mockado incluido no formulario." });
-        }} />}
+        description={
+          isNewMode
+            ? "Endereços serão adicionados após criar o cadastro."
+            : "Enderecos vinculados ao id_cliente. Futuramente serao usados em propostas, frete e notas fiscais."
+        }
+        action={
+          isNewMode ? (
+            <span className="text-sm font-medium text-slate-500">Será liberado após salvar o cadastro.</span>
+          ) : (
+            <AddButton
+              label="Adicionar endereco"
+              onClick={() => {
+                onUpdate("enderecos", [...form.enderecos, createBlankEndereco()]);
+                onToast({ type: "info", title: "Endereco adicionado", description: "Endereco incluido no formulario." });
+              }}
+            />
+          )
+        }
       >
         <div className="space-y-4">
           {form.enderecos.map((endereco, index) => (
@@ -809,10 +1155,23 @@ function CompleteForm({
         </div>
       </FormSection>
 
-      <FormSection title="Contatos" description="Pessoas fisicas vinculadas ao cadastro." action={<AddButton label="Adicionar contato" onClick={() => {
-        onUpdate("contatos", [...form.contatos, createBlankContato()]);
-        onToast({ type: "info", title: "Contato adicionado", description: "Contato mockado incluido no formulario." });
-      }} />}>
+      <FormSection
+        title="Contatos"
+        description={isNewMode ? "Contatos serão adicionados após criar o cadastro." : "Pessoas fisicas vinculadas ao cadastro."}
+        action={
+          isNewMode ? (
+            <span className="text-sm font-medium text-slate-500">Será liberado após salvar o cadastro.</span>
+          ) : (
+            <AddButton
+              label="Adicionar contato"
+              onClick={() => {
+                onUpdate("contatos", [...form.contatos, createBlankContato()]);
+                onToast({ type: "info", title: "Contato adicionado", description: "Contato incluido no formulario." });
+              }}
+            />
+          )
+        }
+      >
         <div className="space-y-4">
           {form.contatos.map((contato, index) => (
             <div key={contato.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
@@ -829,10 +1188,27 @@ function CompleteForm({
         </div>
       </FormSection>
 
-      <FormSection title="Vinculos comerciais" description="Cadastros autorizados ou relacionados comercialmente a este cliente." action={<AddButton label="Adicionar vinculo" onClick={() => {
-        onUpdate("vinculosComerciais", [...form.vinculosComerciais, createBlankVinculo()]);
-        onToast({ type: "info", title: "Vinculo comercial adicionado", description: "Vinculo mockado incluido no formulario." });
-      }} />}>
+      <FormSection
+        title="Vinculos comerciais"
+        description={
+          isNewMode
+            ? "Vínculos comerciais serão adicionados após criar o cadastro."
+            : "Cadastros autorizados ou relacionados comercialmente a este cliente."
+        }
+        action={
+          isNewMode ? (
+            <span className="text-sm font-medium text-slate-500">Será liberado após salvar o cadastro.</span>
+          ) : (
+            <AddButton
+              label="Adicionar vinculo"
+              onClick={() => {
+                onUpdate("vinculosComerciais", [...form.vinculosComerciais, createBlankVinculo()]);
+                onToast({ type: "info", title: "Vinculo comercial adicionado", description: "Vinculo incluido no formulario." });
+              }}
+            />
+          )
+        }
+      >
         <div className="space-y-4">
           {form.vinculosComerciais.map((vinculo, index) => (
             <div key={vinculo.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[160px_1fr_1fr_1fr_auto]">
@@ -864,12 +1240,13 @@ function CompleteForm({
           <Field label="Formas de pagamento"><select value={form.padraoPagamento} onChange={(event) => onUpdate("padraoPagamento", event.target.value)} className={inputClass}>{paymentOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
           <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => onUpdate("percentualBonus", event.target.value)} className={inputClass} /></Field>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Toggle label="Bonus" checked={form.bonusAtivo} onChange={(value) => onUpdate("bonusAtivo", value)} />
           <Toggle label="Nota" checked={form.nota} onChange={(value) => onUpdate("nota", value)} />
           <Toggle label="Restricao" checked={form.restricao} onChange={(value) => onUpdate("restricao", value)} />
-          <Toggle label="SendMail" checked={form.sendMail} onChange={(value) => onUpdate("sendMail", value)} />
-          <Toggle label="SendWhats" checked={form.sendWhats} onChange={(value) => onUpdate("sendWhats", value)} />
+          <Toggle label="Verificado" checked={form.verificado} onChange={(value) => onUpdate("verificado", value)} />
+          <Toggle label="Receber e-mail" checked={form.sendMail} onChange={(value) => onUpdate("sendMail", value)} />
+          <Toggle label="Receber WhatsApp" checked={form.sendWhats} onChange={(value) => onUpdate("sendWhats", value)} />
         </div>
       </FormSection>
 
@@ -916,6 +1293,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       {children}
     </label>
   );
+}
+
+function FieldError({ message }: { message: string }) {
+  return <p className="text-xs font-medium text-red-600">{message}</p>;
 }
 
 function FormSection({ title, description, action, children }: { title: string; description: string; action?: ReactNode; children: ReactNode }) {
@@ -969,9 +1350,22 @@ function StatusCard({ title, value }: { title: string; value: string }) {
   );
 }
 
-function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
+function AddButton({
+  label,
+  onClick,
+  disabled
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <button type="button" onClick={onClick} className="inline-flex items-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-2.5 text-sm font-semibold text-[#0b2f4a] hover:bg-[#f3f7f8]">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-2.5 text-sm font-semibold text-[#0b2f4a] hover:bg-[#f3f7f8] disabled:cursor-not-allowed disabled:opacity-50"
+    >
       <Plus className="h-4 w-4" />
       {label}
     </button>
@@ -1011,13 +1405,14 @@ function createInitialState(cadastro?: Cadastro): CadastroFormState {
     limiteCredito: cadastro?.limiteCredito?.toString() ?? "0",
     creditoDisponivel: cadastro?.creditoDisponivel?.toString() ?? "0",
     riscoCredito: cadastro?.riscoCredito ?? "BAIXO",
-    padraoPagamento: cadastro?.padraoPagamento ?? "Pix a vista 3 dias",
+    padraoPagamento: cadastro?.padraoPagamento ?? "Pix à vista 3 dias",
     bonusAtivo: cadastro?.bonusAtivo ?? false,
     percentualBonus: cadastro?.percentualBonus?.toString() ?? "0",
     nota: cadastro?.nota ?? false,
+    verificado: cadastro?.verificado ?? false,
     restricao: cadastro?.restricao ?? false,
-    sendMail: cadastro?.sendMail ?? true,
-    sendWhats: cadastro?.sendWhats ?? true,
+    sendMail: cadastro ? cadastro.sendMail ?? true : false,
+    sendWhats: cadastro ? cadastro.sendWhats ?? true : false,
     observacoes: cadastro?.observacoes ?? "",
     enderecos: cadastro?.enderecos ?? [],
     contatos: cadastro?.contatos ?? [],
@@ -1123,7 +1518,49 @@ function createBlankVinculo(): CadastroVinculoComercial {
   };
 }
 
+function mapPreparedEnderecoToForm(payload: {
+  cep: string;
+  endereco: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  obs: string;
+}): CadastroEndereco {
+  return {
+    id: `end_import_${Date.now()}`,
+    tipo: "principal",
+    cep: payload.cep,
+    endereco: payload.endereco,
+    numero: payload.numero,
+    complemento: payload.complemento,
+    bairro: payload.bairro,
+    cidade: payload.cidade,
+    uf: payload.uf,
+    obs: payload.obs
+  };
+}
+
+function inferTipoPessoaFromDocumento(documento: string): "FISICA" | "JURIDICA" | null {
+  const digits = normalizeDocumentDigits(documento);
+  if (digits.length === 11) {
+    return "FISICA";
+  }
+
+  if (digits.length === 14) {
+    return "JURIDICA";
+  }
+
+  return null;
+}
+
+function normalizeOptionalText(value?: string | null) {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
 function maskDocument(documento: string, tipo: TipoClienteDocumento) {
-  const digits = onlyDigits(documento).slice(0, tipo === "CPF" ? 11 : 14);
+  const digits = normalizeDocumentDigits(documento).slice(0, tipo === "CPF" ? 11 : 14);
   return formatDocument(digits);
 }

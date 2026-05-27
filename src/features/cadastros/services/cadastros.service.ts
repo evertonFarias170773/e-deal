@@ -527,8 +527,268 @@ export type CadastroOperacionalUpdateResult =
       status?: number;
     };
 
+export type CadastroInsertPayload = {
+  id_cliente: number;
+  categoria: CadastroCategoria;
+  nome: string;
+  fantasia?: string | null;
+  apelido?: string | null;
+  contato?: string | null;
+  documento: string;
+  tipo_pessoa: "FISICA" | "JURIDICA";
+  ins_estadual?: string | null;
+  ins_municipal?: string | null;
+  tipo_contribuinte?: string | null;
+  data_fundacao?: string | null;
+  email_contato?: string | null;
+  email_financeiro?: string | null;
+  email?: string | null;
+  telefone_fixo?: string | null;
+  whatsapp_1?: string | null;
+  whatsapp_2?: string | null;
+  site?: string | null;
+  ativo: boolean;
+  restricao: boolean;
+  obs?: string | null;
+  recebe_email: boolean;
+  recebe_whatsapp: boolean;
+  nome_vendedor?: string | null;
+  id_vendedor?: number | null;
+  padrao_pagamento?: string | null;
+  empresa_padrao?: string | null;
+  cidade_uf?: string | null;
+  nota: boolean;
+  verificado: boolean;
+};
+
+export type CadastroEnderecoInsertPayload = {
+  id_cliente: number;
+  cep: string | null;
+  endereco: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  tipo_endereco: "PRINCIPAL";
+  obs: string | null;
+};
+
+export type CadastroEnderecoCreateResult =
+  | {
+      success: true;
+      enderecoId: string;
+    }
+  | {
+      success: false;
+      errorMessage: string;
+      status?: number;
+    };
+
+export type CadastroCreateConflict = {
+  kind: "id_cliente" | "documento";
+  idCliente: number;
+  nome: string;
+  documento: string;
+};
+
+export type CadastroCreateResult =
+  | {
+      success: true;
+      cadastro: {
+        id: string;
+        idCliente: number;
+        nome: string;
+        categoria: CadastroCategoria;
+      };
+    }
+  | {
+      success: false;
+      errorMessage: string;
+      status?: number;
+      conflict?: CadastroCreateConflict;
+    };
+
+export type CadastroInitialValidationParams = {
+  idCliente: number;
+  documentoDigits: string;
+};
+
+export type CadastroInitialValidationResult =
+  | {
+      success: true;
+      idConflict: null;
+      documentoConflict: null;
+    }
+  | {
+      success: false;
+      errorMessage: string;
+      idConflict: null;
+      documentoConflict: null;
+    }
+  | {
+      success: false;
+      errorMessage?: string;
+      idConflict: CadastroCreateConflict;
+      documentoConflict: null;
+    }
+  | {
+      success: false;
+      errorMessage?: string;
+      idConflict: null;
+      documentoConflict: CadastroCreateConflict;
+    };
+
 function toText(value: unknown) {
   return value === null || value === undefined ? "" : String(value);
+}
+
+function toNullableText(value: unknown) {
+  const text = toText(value).trim();
+  return text || null;
+}
+
+function toNullableInteger(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const parsed = Number(String(value).replace(/\D/g, ""));
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function toBoolean(value: unknown, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  if (typeof value === "string") {
+    return ["true", "1", "sim", "s", "yes", "y"].includes(value.trim().toLowerCase());
+  }
+
+  return fallback;
+}
+
+function normalizeDocumento(value: unknown) {
+  return toText(value).replace(/\D/g, "");
+}
+
+function formatDocumentoFromDigits(value: string) {
+  const digits = normalizeDocumento(value);
+  if (digits.length === 11) {
+    return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  }
+
+  if (digits.length === 14) {
+    return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+  }
+
+  return digits;
+}
+
+function mapConflictFromRow(
+  row: Pick<SupabaseClienteRow, "id_cliente" | "nome" | "documento">,
+  kind: CadastroCreateConflict["kind"],
+  fallbackIdCliente: number
+): CadastroCreateConflict {
+  return {
+    kind,
+    idCliente: Number(row.id_cliente) || fallbackIdCliente,
+    nome: toText(row.nome),
+    documento: normalizeDocumento(row.documento)
+  };
+}
+
+async function findCadastroByExactField(field: "id_cliente" | "documento", value: string) {
+  const rows = await selectSupabaseRows<
+    Pick<SupabaseClienteRow, "id" | "id_cliente" | "nome" | "documento">
+  >("clientes", {
+    select: "id,id_cliente,nome,documento",
+    [field]: `eq.${value}`,
+    limit: "1"
+  });
+
+  return rows?.[0] ?? null;
+}
+
+async function findCadastroByDocumento(documentoDigits: string) {
+  const normalized = normalizeDocumento(documentoDigits);
+  if (!normalized) {
+    return null;
+  }
+
+  const variants = Array.from(new Set([normalized, formatDocumentoFromDigits(normalized)]));
+
+  for (const variant of variants) {
+    const row = await findCadastroByExactField("documento", variant);
+    if (row) {
+      return row;
+    }
+  }
+
+  const prefix = normalized.slice(0, Math.min(8, normalized.length));
+  const suffix = normalized.slice(-4);
+  if (!prefix || !suffix) {
+    return null;
+  }
+
+  const candidates = await selectSupabaseRows<
+    Pick<SupabaseClienteRow, "id" | "id_cliente" | "nome" | "documento">
+  >("clientes", {
+    select: "id,id_cliente,nome,documento",
+    or: `documento.ilike.*${prefix}*,documento.ilike.*${suffix}*`,
+    limit: "20"
+  });
+
+  if (!candidates?.length) {
+    return null;
+  }
+
+  return (
+    candidates.find((item) => normalizeDocumento(item.documento) === normalized) ?? null
+  );
+}
+
+export async function validateCadastroInitialStep(
+  params: CadastroInitialValidationParams
+): Promise<CadastroInitialValidationResult> {
+  const config = getSupabaseConfig();
+  if (!config) {
+    return {
+      success: false,
+      errorMessage: "Configuracao Supabase ausente para validar duplicidades.",
+      idConflict: null,
+      documentoConflict: null
+    };
+  }
+
+  const existingId = await findCadastroByExactField("id_cliente", String(params.idCliente));
+  if (existingId) {
+    return {
+      success: false,
+      idConflict: mapConflictFromRow(existingId, "id_cliente", params.idCliente),
+      documentoConflict: null
+    };
+  }
+
+  const existingDocument = await findCadastroByDocumento(params.documentoDigits);
+  if (existingDocument) {
+    return {
+      success: false,
+      idConflict: null,
+      documentoConflict: mapConflictFromRow(existingDocument, "documento", params.idCliente)
+    };
+  }
+
+  return {
+    success: true,
+    idConflict: null,
+    documentoConflict: null
+  };
 }
 
 function normalizeOperationalUpdatePayload(payload: CadastroOperacionalUpdatePayload) {
@@ -655,5 +915,187 @@ export async function updateCadastroObservacoesReadOnly(
   return {
     success: true,
     updatedObservacoes: result.updatedValues.observacoes
+  };
+}
+
+export async function createCadastro(
+  payload: CadastroInsertPayload
+): Promise<CadastroCreateResult> {
+  const config = getSupabaseConfig();
+
+  if (!config) {
+    return {
+      success: false,
+      errorMessage: "Configuracao Supabase ausente no ambiente do app."
+    };
+  }
+
+  const idCliente = Number(payload.id_cliente);
+  if (!Number.isInteger(idCliente) || idCliente <= 0) {
+    return {
+      success: false,
+      errorMessage: "O ID do cliente precisa ser um numero inteiro valido."
+    };
+  }
+
+  const documento = normalizeDocumento(payload.documento);
+  if (!documento) {
+    return {
+      success: false,
+      errorMessage: "O documento precisa ser informado."
+    };
+  }
+
+  const existingId = await findCadastroByExactField("id_cliente", String(idCliente));
+  if (existingId) {
+    return {
+      success: false,
+      errorMessage: `Já existe um cadastro com este ID: ${toText(existingId.id_cliente)} - ${toText(existingId.nome)}.`,
+      conflict: {
+        kind: "id_cliente",
+        idCliente: Number(existingId.id_cliente) || idCliente,
+        nome: toText(existingId.nome),
+        documento: normalizeDocumento(existingId.documento)
+      }
+    };
+  }
+
+  const existingDocument = await findCadastroByExactField("documento", documento);
+  if (existingDocument) {
+    return {
+      success: false,
+      errorMessage: `Já existe um cadastro com este documento: ${documento} - ${toText(existingDocument.nome)}.`,
+      conflict: {
+        kind: "documento",
+        idCliente: Number(existingDocument.id_cliente) || 0,
+        nome: toText(existingDocument.nome),
+        documento: normalizeDocumento(existingDocument.documento)
+      }
+    };
+  }
+
+  const insertPayload: CadastroInsertPayload = {
+    id_cliente: idCliente,
+    categoria: payload.categoria,
+    nome: toText(payload.nome).trim(),
+    fantasia: toNullableText(payload.fantasia),
+    apelido: toNullableText(payload.apelido),
+    contato: toNullableText(payload.contato),
+    documento,
+    tipo_pessoa: payload.tipo_pessoa,
+    ins_estadual: toNullableText(payload.ins_estadual),
+    ins_municipal: toNullableText(payload.ins_municipal),
+    tipo_contribuinte: toNullableText(payload.tipo_contribuinte),
+    data_fundacao: toNullableText(payload.data_fundacao),
+    email_contato: toNullableText(payload.email_contato),
+    email_financeiro: toNullableText(payload.email_financeiro),
+    email: toNullableText(payload.email),
+    telefone_fixo: toNullableText(payload.telefone_fixo),
+    whatsapp_1: toNullableText(payload.whatsapp_1),
+    whatsapp_2: toNullableText(payload.whatsapp_2),
+    site: toNullableText(payload.site),
+    ativo: toBoolean(payload.ativo, true),
+    restricao: toBoolean(payload.restricao, false),
+    obs: toNullableText(payload.obs),
+    recebe_email: toBoolean(payload.recebe_email, false),
+    recebe_whatsapp: toBoolean(payload.recebe_whatsapp, false),
+    nome_vendedor: toNullableText(payload.nome_vendedor),
+    id_vendedor: toNullableInteger(payload.id_vendedor),
+    padrao_pagamento: toNullableText(payload.padrao_pagamento) || "Pix à vista 3 dias",
+    empresa_padrao: toNullableText(payload.empresa_padrao),
+    cidade_uf: toNullableText(payload.cidade_uf),
+    nota: toBoolean(payload.nota, false),
+    verificado: toBoolean(payload.verificado, false)
+  };
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      errorMessage: "Cliente Supabase indisponivel para executar o insert."
+    };
+  }
+
+  const { data, error } = await client
+    .from("clientes")
+    .insert(insertPayload)
+    .select("id,id_cliente,nome,categoria")
+    .single();
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel criar o cadastro no Supabase.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+
+  if (!data) {
+    return {
+      success: false,
+      errorMessage: "Supabase nao retornou o registro criado."
+    };
+  }
+
+  return {
+    success: true,
+    cadastro: {
+      id: toText(data.id),
+      idCliente: Number(data.id_cliente) || idCliente,
+      nome: toText(data.nome),
+      categoria: data.categoria as CadastroCategoria
+    }
+  };
+}
+
+export async function createCadastroEndereco(
+  payload: CadastroEnderecoInsertPayload
+): Promise<CadastroEnderecoCreateResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      errorMessage: "Cliente Supabase indisponivel para executar o insert de endereco."
+    };
+  }
+
+  const idCliente = Number(payload.id_cliente);
+  if (!Number.isInteger(idCliente) || idCliente <= 0) {
+    return {
+      success: false,
+      errorMessage: "ID do cliente invalido para salvar endereco."
+    };
+  }
+
+  const insertPayload = {
+    id_cliente: idCliente,
+    cep: toNullableText(payload.cep),
+    endereco: toNullableText(payload.endereco),
+    numero: toNullableText(payload.numero),
+    complemento: toNullableText(payload.complemento),
+    bairro: toNullableText(payload.bairro),
+    cidade: toNullableText(payload.cidade),
+    uf: toNullableText(payload.uf),
+    tipo_endereco: "PRINCIPAL" as const,
+    obs: toNullableText(payload.obs)
+  };
+
+  const { data, error } = await client
+    .from("enderecos")
+    .insert(insertPayload)
+    .select("id")
+    .single();
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel salvar o endereco no Supabase.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+
+  return {
+    success: true,
+    enderecoId: toText(data?.id)
   };
 }
