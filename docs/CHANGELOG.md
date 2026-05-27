@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-05-27
+
+### Alterado
+
+- Cadastros passou a suportar criação e edição com escrita real em `public.clientes` usando payload whitelist.
+- Novo cadastro passou a salvar dados relacionados em sequência após cliente: `public.enderecos`, `public.contatos` e `public.clientes_socios`.
+- Edição de cadastro passou a executar `UPDATE` em `public.clientes` e `UPDATE/INSERT` controlado dos relacionados sem qualquer `DELETE`.
+- Fluxo de identificação do novo cadastro agora bloqueia documento após validação e exige reinício explícito para alterar CPF/CNPJ.
+- Lista de atendentes/vendedores foi migrada para leitura de `public.usuarios` com filtro `is_vendedor = true`.
+- Consulta CNPJ passou a aplicar fallback de fantasia com razão social quando `nome_fantasia` vier vazio.
+- Vínculos comerciais no formulário passaram a buscar cadastro existente em `public.clientes` (ID, nome ou documento), com bloqueio de auto-vínculo e duplicidade.
+
 ## 2026-05-22
 
 ### Criado

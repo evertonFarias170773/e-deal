@@ -84,7 +84,7 @@ Pendências:
 
 ## Cadastros
 
-Status: módulo com listagem, detalhe e edição conectados ao Supabase em modo read-only, mantendo mock como fallback.
+Status: módulo com listagem, detalhe, criação e edição conectados ao Supabase com escrita controlada por whitelist.
 
 Rotas:
 
@@ -116,7 +116,7 @@ Funcionalidades:
 - validação mockada de ID e CPF/CNPJ;
 - consulta CNPJ mockada;
 - formulário completo;
-- edição com dados reais para visualização, mas salvamento ainda simulado;
+- edição com dados reais e salvamento real controlado por whitelist;
 - endereços;
 - contatos;
 - vínculos comerciais;
@@ -128,21 +128,19 @@ Funcionalidades:
 - listagem lendo `public.clientes`;
 - detalhe lendo `public.clientes`, `public.enderecos`, `public.contatos` e `public.clientes_socios`;
 - fallback mantido para `cadastrosMock` quando a leitura não estiver disponível.
-- primeira escrita real liberada apenas para `public.clientes.obs`;
-- `UPDATE` usando `id_cliente` como chave operacional;
-- payload de escrita real restrito a `obs`;
-- bloqueio de qualquer mudança em outros campos nesta fase;
-- confirmação explícita antes de gravar no Supabase;
-- sucesso exibido somente após confirmação do Supabase;
-- `enderecos`, `contatos`, `clientes_socios` e campos sensíveis permanecem bloqueados para escrita;
-- nenhum `INSERT` ou `DELETE` implementado.
+- escrita real liberada para `INSERT` e `UPDATE` em `public.clientes` com `id_cliente` como chave operacional;
+- escrita real liberada para `INSERT` e `UPDATE` em `public.enderecos`, sem `DELETE`;
+- escrita real liberada para `INSERT` e `UPDATE` em `public.contatos`, sem `DELETE`;
+- escrita real liberada para `INSERT` e `UPDATE` em `public.clientes_socios`, sem `DELETE`;
+- novo cadastro salva cliente principal e depois relacionados em sequência com aviso parcial em caso de falha;
+- edição salva cliente principal e depois aplica `UPDATE/INSERT` em relacionados conforme `id` existente;
+- documento no novo cadastro fica bloqueado após validação, com ação explícita para reiniciar identificação.
 
 Pendências:
 
-- revisar campos finais com operação;
-- validar responsividade fina com usuários em dispositivos reais;
-- planejar escrita real com muito cuidado antes de qualquer `UPDATE`;
-- validar RLS, confirmação de gravação e comportamento de erro antes de habilitar persistência.
+- revisar permissões reais de escrita para ambientes com RLS estrita (principalmente `contatos`);
+- validar UX fina de abas/seções com operação em desktop e mobile;
+- evoluir estratégia de remoção lógica para relacionados já persistidos (sem `DELETE` físico).
 
 ## Produtos
 
