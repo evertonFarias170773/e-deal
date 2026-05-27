@@ -103,6 +103,7 @@ export type CadastroFormState = {
   bonusAtivo: boolean;
   percentualBonus: string;
   nota: boolean;
+  verificado: boolean;
   restricao: boolean;
   sendMail: boolean;
   sendWhats: boolean;
