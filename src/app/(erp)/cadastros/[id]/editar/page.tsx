@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { CadastroFormPage } from "@/features/cadastros/CadastroFormPage";
-import { getCadastroDetailReadOnly } from "@/features/cadastros/services/cadastros.service";
+import { getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 
 type EditarCadastroRouteProps = {
   params: Promise<{
@@ -10,7 +10,7 @@ type EditarCadastroRouteProps = {
 
 export default async function EditarCadastroRoute({ params }: EditarCadastroRouteProps) {
   const { id } = await params;
-  const { cadastro } = await getCadastroDetailReadOnly(id);
+  const { cadastro } = await getCadastroCompleto(id);
 
   if (!cadastro) {
     notFound();

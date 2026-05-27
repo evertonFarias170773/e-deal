@@ -176,10 +176,12 @@ async function consultarCnpj(documentoDigits: string, idCliente: number): Promis
   const telefoneFixo = `${toText(estabelecimento.ddd1)}${toText(estabelecimento.telefone1)}`;
   const insEstadual = findInscricaoEstadualAtiva(estabelecimento.inscricoes_estaduais);
   const tipoContribuinte = insEstadual ? "CONTRIBUINTE" : "ISENTO";
+  const razaoSocial = toText(result.data.razao_social);
+  const nomeFantasia = toText(estabelecimento.nome_fantasia) || razaoSocial;
 
   return {
-    nome: toText(result.data.razao_social),
-    fantasia: toText(estabelecimento.nome_fantasia),
+    nome: razaoSocial,
+    fantasia: nomeFantasia,
     documento: normalizeDocumentDigits(toText(estabelecimento.cnpj)) || documentoDigits,
     tipoPessoa: "JURIDICA",
     dataFundacao: normalizeIsoDate(toText(estabelecimento.data_inicio_atividade)),
