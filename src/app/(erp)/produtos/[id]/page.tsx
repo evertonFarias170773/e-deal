@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { ProdutoDetailPage } from "@/features/produtos/ProdutoDetailPage";
-import { getProdutoById } from "@/lib/mocks/produtos.mock";
+import { ProdutoDetailRouteClient } from "@/features/produtos/ProdutoDetailRouteClient";
 
 type ProdutoDetailRouteProps = {
   params: Promise<{
@@ -10,11 +9,11 @@ type ProdutoDetailRouteProps = {
 
 export default async function ProdutoDetailRoute({ params }: ProdutoDetailRouteProps) {
   const { id } = await params;
-  const produto = getProdutoById(Number(id));
+  const idProduto = Number(id);
 
-  if (!produto) {
+  if (!Number.isFinite(idProduto)) {
     notFound();
   }
 
-  return <ProdutoDetailPage produto={produto} />;
+  return <ProdutoDetailRouteClient idProduto={idProduto} />;
 }

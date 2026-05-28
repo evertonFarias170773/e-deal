@@ -10,7 +10,6 @@ import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
 import { useProdutosReadOnlyData } from "@/features/produtos/hooks/useProdutosReadOnlyData";
 import type { Produto, ProdutoCategoria } from "@/features/produtos/types";
 
@@ -50,7 +49,7 @@ function produtoMatchesSearch(produto: Produto, search: string) {
 export function ProdutosListPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { produtos, source, warnings, isLoading } = useProdutosReadOnlyData();
+  const { produtos, source, warnings, resumo, categorias, isLoading } = useProdutosReadOnlyData();
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState<"TODAS" | ProdutoCategoria>("TODAS");
   const [status, setStatus] = useState<StatusFilter>("TODOS");
@@ -59,8 +58,8 @@ export function ProdutosListPage() {
   const [isEstoque, setIsEstoque] = useState<BooleanFilter>("TODOS");
 
   const categoriaOptions = useMemo(
-    () => Array.from(new Set([...produtoCategoriasMock, ...produtos.map((produto) => produto.categoria)])),
-    [produtos]
+    () => Array.from(new Set([...categorias, ...produtos.map((produto) => produto.categoria)])).filter(Boolean),
+    [categorias, produtos]
   );
 
   const filteredProdutos = useMemo(() => {
@@ -73,8 +72,8 @@ export function ProdutosListPage() {
         (status === "INATIVO" && !produto.ativo);
       const matchesVariacoes =
         hasVariacoes === "TODOS" ||
-        (hasVariacoes === "SIM" && produto.variacoes.length > 0) ||
-        (hasVariacoes === "NAO" && produto.variacoes.length === 0);
+        (hasVariacoes === "SIM" && produto.is_variacao) ||
+        (hasVariacoes === "NAO" && !produto.is_variacao);
       const matchesFotos =
         hasFotos === "TODOS" ||
         (hasFotos === "SIM" && produto.fotos.length > 0) ||
@@ -96,13 +95,6 @@ export function ProdutosListPage() {
     hasFotos !== "TODOS" ? `Fotos: ${hasFotos === "SIM" ? "Sim" : "Não"}` : null,
     isEstoque !== "TODOS" ? `Estoque: ${isEstoque === "SIM" ? "Sim" : "Não"}` : null
   ].filter(Boolean);
-
-  const ativos = produtos.filter((produto) => produto.ativo).length;
-  const estoque = produtos.filter((produto) => produto.is_estoque).length;
-  // Enquanto a listagem real não carrega relações de fotos/variações do Supabase,
-  // evitamos misturar números mockados com dados reais.
-  const comVariacoes = source === "supabase" ? 0 : produtos.filter((produto) => produto.variacoes.length > 0).length;
-  const comFotos = source === "supabase" ? 0 : produtos.filter((produto) => produto.fotos.length > 0).length;
 
   function clearFilters() {
     setSearch("");
@@ -158,10 +150,10 @@ export function ProdutosListPage() {
         </section>
       ) : (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard title="Produtos ativos" value={ativos.toString()} description="Itens disponiveis para uso comercial." tone="success" icon={Package} />
-          <SummaryCard title="Com variacoes" value={comVariacoes.toString()} description="Produtos com escolhas configuraveis." tone="info" icon={SlidersHorizontal} />
-          <SummaryCard title="Com fotos" value={comFotos.toString()} description="Itens preparados para catalogo e Maestro." tone="special" icon={ImageIcon} />
-          <SummaryCard title="Produtos de estoque" value={estoque.toString()} description="Itens marcados para controle futuro de estoque." tone="neutral" icon={Boxes} />
+          <SummaryCard title="Produtos ativos" value={resumo.ativos.toString()} description="Itens disponiveis para uso comercial." tone="success" icon={Package} />
+          <SummaryCard title="Com variacoes" value={resumo.comVariacoes.toString()} description="Produtos marcados com variações no Supabase." tone="info" icon={SlidersHorizontal} />
+          <SummaryCard title="Com fotos" value={resumo.comFotos.toString()} description="Itens com fotos cadastradas em public.fotosProdutos." tone="special" icon={ImageIcon} />
+          <SummaryCard title="Produtos de estoque" value={resumo.estoque.toString()} description="Itens marcados para controle futuro de estoque." tone="neutral" icon={Boxes} />
         </section>
       )}
 
@@ -275,6 +267,7 @@ export function ProdutosListPage() {
               <div className="flex flex-wrap justify-center gap-1">
                 <StatusBadge status={produto.ativo ? "ATIVO" : "INATIVO"} tone={produto.ativo ? "success" : "neutral"} />
                 {produto.is_variacao ? <StatusBadge status="COM VARIACOES" tone="info" /> : null}
+                {produto.is_estoque ? <StatusBadge status="ESTOQUE" tone="special" /> : null}
               </div>
             ),
             align: "center"
@@ -303,7 +296,7 @@ export function ProdutosListPage() {
               </p>
               <p>Fixo: {formatCurrency(produto.valorFixo)}</p>
               <p>Prazo: {produto.prazo}</p>
-              <p>Fotos: {produto.fotos.length} | Variacoes: {produto.variacoes.length}</p>
+              <p>Fotos: {produto.fotos.length} | Variacoes: {produto.is_variacao ? "Sim" : "Nao"} | Estoque: {produto.is_estoque ? "Sim" : "Nao"}</p>
             </div>
             <div className="mt-4 flex items-center justify-between gap-3">
               <button
@@ -322,9 +315,7 @@ export function ProdutosListPage() {
       {!isLoading ? (
         <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
           <p>
-            {source === "supabase"
-              ? `Dados reais carregados em public.produtos (${produtos.length} registros).`
-              : warnings[0] ?? "Fallback mockado ativo. A lista esta usando os produtos mockados atuais."}
+            {warnings[0] ?? `Dados reais carregados em public.produtos (${produtos.length} registros).`}
           </p>
         </section>
       ) : null}

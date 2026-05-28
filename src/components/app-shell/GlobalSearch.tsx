@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
+import { useProdutosReadOnlyData } from "@/features/produtos/hooks/useProdutosReadOnlyData";
 import { globalSearchResultsMock } from "@/lib/mocks/global-search.mock";
+import type { GlobalSearchResult } from "@/lib/types";
 
 function normalize(value: string) {
   return value
@@ -16,6 +18,7 @@ export function GlobalSearch() {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { produtos } = useProdutosReadOnlyData();
 
   const results = useMemo(() => {
     const normalizedQuery = normalize(query.trim());
@@ -24,10 +27,18 @@ export function GlobalSearch() {
       return [];
     }
 
-    return globalSearchResultsMock.filter((result) =>
+    const produtoResults: GlobalSearchResult[] = produtos.map((produto) => ({
+      id: `produto-${produto.id_produto}`,
+      type: "Produto",
+      title: produto.nomeReal,
+      description: `Produto #${produto.id_produto} - ${produto.categoria} - ${produto.formato}`,
+      href: `/produtos/${produto.id_produto}`
+    }));
+
+    return [...globalSearchResultsMock.filter((result) => result.type !== "Produto"), ...produtoResults].filter((result) =>
       normalize(`${result.type} ${result.title} ${result.description}`).includes(normalizedQuery)
     );
-  }, [query]);
+  }, [produtos, query]);
 
   const shouldShowResults = isFocused && query.trim().length > 0;
 
@@ -78,7 +89,7 @@ export function GlobalSearch() {
             </div>
           ) : (
             <div className="rounded-2xl bg-slate-50 px-4 py-5 text-sm text-slate-500">
-              Nenhum resultado mockado encontrado.
+              Nenhum resultado encontrado.
             </div>
           )}
         </div>

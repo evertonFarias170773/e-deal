@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { ProdutoFormPage } from "@/features/produtos/ProdutoFormPage";
-import { getProdutoById } from "@/lib/mocks/produtos.mock";
+import { ProdutoFormRouteClient } from "@/features/produtos/ProdutoFormRouteClient";
 
 type EditarProdutoRouteProps = {
   params: Promise<{
@@ -10,11 +9,11 @@ type EditarProdutoRouteProps = {
 
 export default async function EditarProdutoRoute({ params }: EditarProdutoRouteProps) {
   const { id } = await params;
-  const produto = getProdutoById(Number(id));
+  const idProduto = Number(id);
 
-  if (!produto) {
+  if (!Number.isFinite(idProduto)) {
     notFound();
   }
 
-  return <ProdutoFormPage mode="edit" produto={produto} />;
+  return <ProdutoFormRouteClient idProduto={idProduto} />;
 }
