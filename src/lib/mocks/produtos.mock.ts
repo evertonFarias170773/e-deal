@@ -61,7 +61,32 @@ export const fotosProdutosMock: ProdutoFoto[] = [
   }
 ];
 
-const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
+type ProdutoMockBase = Omit<
+  Produto,
+  | "created_at"
+  | "is_multiplo"
+  | "cod_beneficio"
+  | "ncm"
+  | "descri_ncm"
+  | "cest"
+  | "origem"
+  | "cod_origem"
+  | "cod_bar"
+  | "und_medida"
+  | "cfop_interno"
+  | "cfop_interestadual"
+  | "unidade_comercial"
+  | "unidade_tributavel"
+  | "icms_origem"
+  | "icms_situacao_tributaria"
+  | "pis_situacao_tributaria"
+  | "cofins_situacao_tributaria"
+  | "informacoes_fiscais"
+  | "fotos"
+  | "variacoes"
+>;
+
+const baseProdutos: ProdutoMockBase[] = [
   {
     id: "prod_101",
     id_produto: 101,
@@ -71,7 +96,7 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
     valorUnt: 0.42,
     valorFixo: 80,
     valor_custo: 0.19,
-    peso: 0.004,
+    peso: 4,
     prazo: "3 dias uteis",
     nivelSeg: "medio",
     fraseCons: "Indicada para eventos com controle visual e boa durabilidade.",
@@ -91,7 +116,7 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
     valorUnt: 0.36,
     valorFixo: 70,
     valor_custo: 0.16,
-    peso: 0.003,
+    peso: 3,
     prazo: "2 dias uteis",
     nivelSeg: "controle visual",
     fraseCons: "Boa escolha para eventos rapidos com separacao por cores.",
@@ -111,7 +136,7 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
     valorUnt: 1.65,
     valorFixo: 140,
     valor_custo: 0.84,
-    peso: 0.007,
+    peso: 7,
     prazo: "5 dias uteis",
     nivelSeg: "alto",
     fraseCons: "Melhor opcao para eventos premium ou uso prolongado.",
@@ -131,7 +156,7 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
     valorUnt: 0.28,
     valorFixo: 60,
     valor_custo: 0.11,
-    peso: 0.006,
+    peso: 6,
     prazo: "1 dia util",
     nivelSeg: "medio",
     fraseCons: "Serve para ingressos simples com numeracao e controle basico.",
@@ -151,7 +176,7 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
     valorUnt: 0.48,
     valorFixo: 95,
     valor_custo: 0.2,
-    peso: 0.008,
+    peso: 8,
     prazo: "2 dias uteis",
     nivelSeg: "antifraude",
     fraseCons: "Indicado para eventos que precisam de acabamento e controle superior.",
@@ -171,7 +196,7 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
     valorUnt: 3.9,
     valorFixo: 120,
     valor_custo: 1.75,
-    peso: 0.006,
+    peso: 6,
     prazo: "4 dias uteis",
     nivelSeg: "alto",
     fraseCons: "Ideal para identificacao duravel, carteirinhas e cartoes de acesso.",
@@ -191,7 +216,7 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
     valorUnt: 4.8,
     valorFixo: 150,
     valor_custo: 2.1,
-    peso: 0.018,
+    peso: 18,
     prazo: "5 dias uteis",
     nivelSeg: "alto",
     fraseCons: "Boa para equipes, backstage, feiras e controle visual de acesso.",
@@ -206,6 +231,25 @@ const baseProdutos: Omit<Produto, "fotos" | "variacoes">[] = [
 
 export const produtosMock: Produto[] = baseProdutos.map((produto) => ({
   ...produto,
+  created_at: null,
+  is_multiplo: false,
+  cod_beneficio: "",
+  ncm: "",
+  descri_ncm: "",
+  cest: "",
+  origem: "",
+  cod_origem: null,
+  cod_bar: "",
+  und_medida: "",
+  cfop_interno: "",
+  cfop_interestadual: "",
+  unidade_comercial: "",
+  unidade_tributavel: "",
+  icms_origem: "",
+  icms_situacao_tributaria: "",
+  pis_situacao_tributaria: "",
+  cofins_situacao_tributaria: "",
+  informacoes_fiscais: "",
   fotos: fotosProdutosMock.filter((foto) => foto.idProduto === produto.id_produto),
   variacoes: getProdutoVariacoesByProduto(produto.id_produto)
 }));

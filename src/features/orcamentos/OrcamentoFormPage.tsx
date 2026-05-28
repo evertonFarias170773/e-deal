@@ -19,6 +19,7 @@ import type {
 } from "@/features/orcamentos/types";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import { cadastrosMock } from "@/lib/mocks/cadastros.mock";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
 import { produtosMock } from "@/lib/mocks/produtos.mock";
@@ -456,7 +457,7 @@ export function OrcamentoFormPage({ mode, proposta }: OrcamentoFormPageProps) {
                   </div>
                   <p className="mt-3 text-lg font-bold text-slate-950">{formatCurrency(frete.valor)}</p>
                   <p className="mt-1 text-sm text-slate-500">{frete.observacao}</p>
-                  <p className="mt-2 text-xs text-slate-500">Peso usado na cotação: {frete.pesoUsado.toLocaleString("pt-BR")}g</p>
+                  <p className="mt-2 text-xs text-slate-500">Peso usado na cotação: {formatWeightFromGrams(frete.pesoUsado)}</p>
                 </button>
               ))}
             </div>
@@ -559,7 +560,7 @@ function ProductItemEditor({ item, bonusPercent, hasVariationError, onUpdate, on
               <Field key={variacao.id} label={`${variacao.variacao.nome}${variacao.is_obrigatorio ? " *" : ""}`}>
                 <select value={selected?.tipo.id ?? ""} onChange={(event) => onVariationChange(variacao.id_variacao, event.target.value)} className={`${inputClass} ${isMissing ? "border-red-300 bg-red-50" : ""}`}>
                   <option value="">Selecione</option>
-                  {variacao.tipos.map((tipo) => <option key={tipo.id} value={tipo.id}>{tipo.variacao} (+{formatCurrency(tipo.v_extra)} / {tipo.peso}g)</option>)}
+                  {variacao.tipos.map((tipo) => <option key={tipo.id} value={tipo.id}>{tipo.variacao} (+{formatCurrency(tipo.v_extra)} / {formatWeightFromGrams(tipo.peso, { mode: "g" })})</option>)}
                 </select>
               </Field>
             );
@@ -596,7 +597,7 @@ function ResumoValores({ resumo, bonusPercent }: { resumo: ReturnType<typeof cal
     ["Subtotal produtos", formatCurrency(resumo.subtotalProdutos)],
     ["Desconto geral", `-${formatCurrency(resumo.descontoGeral)}`],
     ["Frete escolhido", formatCurrency(resumo.frete)],
-    ["Peso total", `${resumo.pesoTotal.toLocaleString("pt-BR")}g`]
+    ["Peso total", formatWeightFromGrams(resumo.pesoTotal)]
   ];
   return (
     <div className="space-y-3">

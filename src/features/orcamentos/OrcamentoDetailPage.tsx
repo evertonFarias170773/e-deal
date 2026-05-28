@@ -15,6 +15,7 @@ import { getLiberacaoPedidoLabel, getLiberacaoPedidoStatus } from "@/features/co
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import type { Proposta, PropostaStatus } from "@/features/orcamentos/types";
 import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcamentos/orcamento-utils";
 
@@ -136,7 +137,7 @@ export function OrcamentoDetailPage({ proposta }: OrcamentoDetailPageProps) {
                     <div className="mt-4 flex flex-wrap gap-2">
                       {item.variacoesEscolhidas.map((escolha) => (
                         <span key={escolha.id} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {escolha.variacao.nome}: {escolha.tipo.variacao} (+{formatCurrency(escolha.tipo.v_extra)} / {escolha.tipo.peso}g)
+                          {escolha.variacao.nome}: {escolha.tipo.variacao} (+{formatCurrency(escolha.tipo.v_extra)} / {formatWeightFromGrams(escolha.tipo.peso, { mode: "g" })})
                         </span>
                       ))}
                     </div>
@@ -226,7 +227,7 @@ function ResumoValores({ proposta }: { proposta: Proposta }) {
     ["Acréscimo tabela especial", `+${formatCurrency(proposta.resumo.acrescimoBonus)}`],
     ["Desconto geral", `-${formatCurrency(proposta.resumo.descontoGeral)}`],
     ["Frete", formatCurrency(proposta.resumo.frete)],
-    ["Peso total", `${proposta.resumo.pesoTotal.toLocaleString("pt-BR")}g`],
+    ["Peso total", formatWeightFromGrams(proposta.resumo.pesoTotal)],
     ["Prazo producao", proposta.resumo.prazoProducao],
     ["Prazo entrega", proposta.resumo.prazoEntrega]
   ];

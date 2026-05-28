@@ -87,7 +87,7 @@ export function calculateItemSubtotal(
 
 export function calculateItemWeight(item: Pick<PropostaItem, "quantidade" | "pesoUnitario" | "variacoesEscolhidas">) {
   const variationWeight = item.variacoesEscolhidas.reduce((total, escolha) => total + escolha.tipo.peso * item.quantidade, 0);
-  return item.quantidade * item.pesoUnitario * 1000 + variationWeight;
+  return item.quantidade * item.pesoUnitario + variationWeight;
 }
 
 export function createItemFromProduto(produto: Produto, quantidade = 1000, bonusPercent = 0, autoSelectVariations = true): PropostaItem {

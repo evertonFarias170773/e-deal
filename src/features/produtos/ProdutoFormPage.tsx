@@ -10,6 +10,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
 import { getTiposByVariacao, variacoesMock } from "@/lib/mocks/variacoes.mock";
 import type {
@@ -60,8 +61,8 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   const title = mode === "new" ? "Novo produto" : `Editar produto #${produto?.id_produto}`;
   const subtitle =
     mode === "new"
-      ? "Cadastre visualmente um produto mockado para validar catalogo, Maestro, fotos e variacoes."
-      : "Atualize visualmente os dados do produto mockado, sem persistir em banco real.";
+      ? "Criação real de produtos será liberada em etapa própria. Esta tela permanece simulada."
+      : "Edição real de produtos será liberada em etapa própria. Esta tela permanece simulada, sem persistir em banco real.";
   const criticalChanged = Boolean(
     produto &&
       (Number(form.valorUnt) !== produto.valorUnt ||
@@ -79,6 +80,10 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       return variacao.is_ativo && !linkedIds.has(variacao.id_variacao) && matchesSearch;
     });
   }, [form.variacoes, variationSearch]);
+  const categoriaOptions = useMemo(
+    () => Array.from(new Set([produto?.categoria, ...produtoCategoriasMock].filter(Boolean))) as ProdutoCategoria[],
+    [produto?.categoria]
+  );
 
   useEffect(() => {
     if (window.location.hash) {
@@ -216,7 +221,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     setMessage({
       tone: "success",
       title: successTitle,
-      description: "Alteracao aplicada apenas na interface mockada. Nenhum banco real foi atualizado."
+      description: "Alteracao aplicada apenas na interface simulada. Nenhum banco real foi atualizado."
     });
     showToast({
       type: "success",
@@ -287,7 +292,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           </Field>
           <Field label="Categoria">
             <select value={form.categoria} onChange={(event) => updateField("categoria", event.target.value as ProdutoCategoria)} className={getInputClass(errorFields.includes("categoria"))}>
-              {produtoCategoriasMock.map((categoria) => (
+              {categoriaOptions.map((categoria) => (
                 <option key={categoria} value={categoria}>{categoria}</option>
               ))}
             </select>
@@ -325,8 +330,8 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
 
       <FormSection title="Producao" description="Dados usados em prazo, frete, OS e planejamento.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Peso">
-            <input value={form.peso} onChange={(event) => updateField("peso", event.target.value)} className={inputClass} placeholder="0.006" />
+          <Field label="Peso (g)">
+            <input value={form.peso} onChange={(event) => updateField("peso", event.target.value)} className={inputClass} placeholder="177" />
           </Field>
           <Field label="Prazo">
             <input value={form.prazo} onChange={(event) => updateField("prazo", event.target.value)} className={getInputClass(errorFields.includes("prazo"))} placeholder="3 dias uteis" />
@@ -365,7 +370,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       <FormSection
         id="fotos"
         title="Fotos"
-        description="Galeria visual usando mocks de fotosProdutos. URLs sao adicionadas apenas na tela."
+        description="Galeria simulada. URLs sao adicionadas apenas na tela, sem escrita em public.fotosProdutos."
         action={<AddFotoInput value={newFotoUrl} onChange={setNewFotoUrl} onAdd={addFoto} />}
       >
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -435,7 +440,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           ))}
           {!form.variacoes.length ? (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
-              Nenhuma variação vinculada a este produto. Use "Adicionar variação" para escolher uma variação global existente.
+              Nenhuma variação vinculada a este produto. Use &quot;Adicionar variação&quot; para escolher uma variação global existente.
             </div>
           ) : null}
         </div>
@@ -556,7 +561,7 @@ function VariationOptionsList({ variacao }: { variacao: ProdutoVariacaoDetalhada
           <div key={tipo.id} className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
             <p className="font-semibold text-slate-950">{tipo.variacao}</p>
             <p className="mt-1 text-xs text-slate-500">
-              Valor extra {formatCurrency(tipo.v_extra)} | peso {tipo.peso.toLocaleString("pt-BR")}g | ref {tipo.ref}
+              Valor extra {formatCurrency(tipo.v_extra)} | peso {formatWeightFromGrams(tipo.peso, { mode: "g" })} | ref {tipo.ref}
             </p>
           </div>
         ))}

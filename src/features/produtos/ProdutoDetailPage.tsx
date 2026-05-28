@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import type { Produto } from "@/features/produtos/types";
 
 type ProdutoDetailPageProps = {
@@ -70,7 +71,7 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
         <SummaryCard title="Valor unitario" value={formatCurrency(produto.valorUnt)} description="Base para calculo de propostas." tone="success" icon={BadgeCheck} />
         <SummaryCard title="Valor fixo" value={formatCurrency(produto.valorFixo)} description="Setup ou valor minimo do produto." tone="info" icon={Package} />
         <SummaryCard title="Prazo" value={produto.prazo} description="Prazo comercial usado em orcamentos." tone="warning" icon={Clock} />
-        <SummaryCard title="Peso" value={`${produto.peso.toLocaleString("pt-BR")} kg`} description="Base futura para calculo de frete." tone="neutral" icon={Scale} />
+        <SummaryCard title="Peso" value={formatWeightFromGrams(produto.peso)} description="Base futura para calculo de frete." tone="neutral" icon={Scale} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
@@ -81,7 +82,7 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
             </div>
           ) : (
             <div className="flex h-72 items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500">
-              Produto sem foto mockada
+              Produto sem foto cadastrada
             </div>
           )}
           <div className="mt-4 flex flex-wrap gap-2">
@@ -116,8 +117,9 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
                 <div>
                   <p className="font-semibold text-slate-950">Reconhecimento por apelidos</p>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Se o vendedor digitar termos como {produto.apelidos.slice(0, 3).map((apelido) => `"${apelido}"`).join(", ")},
-                    o Maestro pode sugerir {produto.nomeReal} e usar prazo, fotos, variacoes e valores mockados.
+                    {produto.apelidos.length
+                      ? `Se o vendedor digitar termos como ${produto.apelidos.slice(0, 3).map((apelido) => `"${apelido}"`).join(", ")}, o Maestro pode sugerir ${produto.nomeReal} e usar prazo, fotos, variacoes e valores cadastrados.`
+                      : "Este produto ainda não possui apelidos cadastrados para apoio ao Maestro."}
                   </p>
                 </div>
               </div>
@@ -146,6 +148,35 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
         </DetailCard>
       </section>
 
+      <DetailCard title="Dados fiscais">
+        <InfoGrid
+          items={[
+            ["NCM", formatOptional(produto.ncm)],
+            ["Descrição NCM", formatOptional(produto.descri_ncm)],
+            ["CEST", formatOptional(produto.cest)],
+            ["Origem", formatOptional(produto.origem)],
+            ["Código origem", produto.cod_origem === null ? "Não informado" : produto.cod_origem.toString()],
+            ["Código de barras", formatOptional(produto.cod_bar)],
+            ["Unidade medida", formatOptional(produto.und_medida)],
+            ["CFOP interno", formatOptional(produto.cfop_interno)],
+            ["CFOP interestadual", formatOptional(produto.cfop_interestadual)],
+            ["Unidade comercial", formatOptional(produto.unidade_comercial)],
+            ["Unidade tributável", formatOptional(produto.unidade_tributavel)],
+            ["ICMS origem", formatOptional(produto.icms_origem)],
+            ["ICMS CST", formatOptional(produto.icms_situacao_tributaria)],
+            ["PIS CST", formatOptional(produto.pis_situacao_tributaria)],
+            ["COFINS CST", formatOptional(produto.cofins_situacao_tributaria)],
+            ["Benefício fiscal", formatOptional(produto.cod_beneficio)]
+          ]}
+        />
+        {produto.informacoes_fiscais ? (
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Informações fiscais</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">{produto.informacoes_fiscais}</p>
+          </div>
+        ) : null}
+      </DetailCard>
+
       <DetailCard title="Fotos do produto">
         {produto.fotos.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -160,7 +191,7 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-slate-500">Nenhuma foto mockada cadastrada.</p>
+          <p className="text-sm text-slate-500">Sem fotos cadastradas para este produto.</p>
         )}
       </DetailCard>
 
@@ -202,7 +233,7 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
                         <div key={tipo.id} className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
                           <p className="font-semibold text-slate-950">{tipo.variacao}</p>
                           <p className="mt-1 text-xs text-slate-500">
-                            Valor extra {formatCurrency(tipo.v_extra)} | peso {tipo.peso.toLocaleString("pt-BR")}g | ref {tipo.ref}
+                            Valor extra {formatCurrency(tipo.v_extra)} | peso {formatWeightFromGrams(tipo.peso, { mode: "g" })} | ref {tipo.ref}
                           </p>
                         </div>
                       ))}
@@ -228,6 +259,10 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
       </DetailCard>
     </div>
   );
+}
+
+function formatOptional(value: string) {
+  return value || "Não informado";
 }
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {
