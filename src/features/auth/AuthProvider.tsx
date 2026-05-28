@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { mockCurrentUser, mockSellerUser } from "@/lib/mocks/usuarios.mock";
@@ -58,14 +58,14 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<MockUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [authState, setAuthState] = useState<{ user: MockUser | null; isLoading: boolean }>(() => ({
+    user: null,
+    isLoading: Boolean(getSupabaseClient())
+  }));
 
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) {
-      setUser(null);
-      setIsLoading(false);
       return;
     }
 
@@ -79,8 +79,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("[AuthProvider] Falha ao restaurar sessao:", error.message);
       }
 
-      setUser(mapSessionToUser(data.session));
-      setIsLoading(false);
+      setAuthState({
+        user: mapSessionToUser(data.session),
+        isLoading: false
+      });
     });
 
     const { data: subscription } = client.auth.onAuthStateChange((_event, session) => {
@@ -88,8 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setUser(mapSessionToUser(session));
-      setIsLoading(false);
+      setAuthState({
+        user: mapSessionToUser(session),
+        isLoading: false
+      });
     });
 
     return () => {
@@ -98,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  async function login(email: string, password: string) {
+  const login = useCallback(async (email: string, password: string) => {
     if (!email || !password) {
       throw new Error("Informe e-mail e senha para entrar.");
     }
@@ -122,15 +126,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Nao foi possivel recuperar sessao autenticada.");
     }
 
-    setUser(mappedUser);
-    setIsLoading(false);
-  }
+    setAuthState({
+      user: mappedUser,
+      isLoading: false
+    });
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     const client = getSupabaseClient();
     if (!client) {
-      setUser(null);
-      setIsLoading(false);
+      setAuthState({
+        user: null,
+        isLoading: false
+      });
       return;
     }
 
@@ -139,19 +147,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.message || "Nao foi possivel encerrar sessao.");
     }
 
-    setUser(null);
-    setIsLoading(false);
-  }
+    setAuthState({
+      user: null,
+      isLoading: false
+    });
+  }, []);
 
   const value = useMemo(
     () => ({
-      user,
-      isAuthenticated: Boolean(user),
-      isLoading,
+      user: authState.user,
+      isAuthenticated: Boolean(authState.user),
+      isLoading: authState.isLoading,
       login,
       logout
     }),
-    [isLoading, user]
+    [authState.isLoading, authState.user, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

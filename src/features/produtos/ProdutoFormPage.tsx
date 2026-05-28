@@ -13,11 +13,18 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
 import { getTiposByVariacao, variacoesMock } from "@/lib/mocks/variacoes.mock";
+import {
+  PRODUCT_IMAGES_BUCKET,
+  createProdutoReal,
+  listProdutos,
+  updateProdutoReal,
+  uploadProdutoFotoReal,
+  type ProdutoWriteInput
+} from "@/features/produtos/services/produtos.service";
 import type {
   Produto,
   ProdutoCategoria,
   ProdutoFormState,
-  ProdutoFoto,
   ProdutoNivelSeguranca,
   ProdutoVariacaoDetalhada,
   VariacaoGlobal
@@ -35,12 +42,41 @@ type FormMessage = {
 };
 
 const niveisSeguranca: ProdutoNivelSeguranca[] = ["baixo", "medio", "alto", "antifraude", "controle visual"];
+const fiscalFields = [
+  "cod_beneficio",
+  "ncm",
+  "descri_ncm",
+  "cest",
+  "origem",
+  "cod_origem",
+  "cod_bar",
+  "und_medida",
+  "is_multiplo",
+  "cfop_interno",
+  "cfop_interestadual",
+  "unidade_comercial",
+  "unidade_tributavel",
+  "icms_origem",
+  "icms_situacao_tributaria",
+  "pis_situacao_tributaria",
+  "cofins_situacao_tributaria",
+  "informacoes_fiscais"
+] as const satisfies readonly (keyof ProdutoFormState)[];
 
 function normalize(value: string) {
   return value
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+function parseNumericInput(value: string) {
+  if (!value.trim()) {
+    return null;
+  }
+
+  const parsed = Number(value.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
 export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
@@ -50,19 +86,24 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [newFotoUrl, setNewFotoUrl] = useState("");
+  const [selectedFotoFile, setSelectedFotoFile] = useState<File | null>(null);
+  const [isUploadingFoto, setIsUploadingFoto] = useState(false);
   const [isVariationModalOpen, setIsVariationModalOpen] = useState(false);
   const [variationSearch, setVariationSearch] = useState("");
   const [selectedVariationId, setSelectedVariationId] = useState<number | null>(null);
   const [newVariationObrigatoria, setNewVariationObrigatoria] = useState(false);
   const [newVariationMultipla, setNewVariationMultipla] = useState(false);
   const [openOptionsVariationId, setOpenOptionsVariationId] = useState<number | null>(null);
+  const [fiscalSourceProdutos, setFiscalSourceProdutos] = useState<Produto[]>([]);
+  const [fiscalSourceSearch, setFiscalSourceSearch] = useState("");
+  const [selectedFiscalSourceId, setSelectedFiscalSourceId] = useState("");
+  const [isLoadingFiscalSource, setIsLoadingFiscalSource] = useState(false);
 
   const title = mode === "new" ? "Novo produto" : `Editar produto #${produto?.id_produto}`;
   const subtitle =
     mode === "new"
-      ? "Criação real de produtos será liberada em etapa própria. Esta tela permanece simulada."
-      : "Edição real de produtos será liberada em etapa própria. Esta tela permanece simulada, sem persistir em banco real.";
+      ? "Crie produtos reais em public.produtos com valores, dados fiscais e foto via Storage."
+      : "Edite produto real em public.produtos. Código operacional e exclusões seguem bloqueados.";
   const criticalChanged = Boolean(
     produto &&
       (Number(form.valorUnt) !== produto.valorUnt ||
@@ -84,6 +125,17 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     () => Array.from(new Set([produto?.categoria, ...produtoCategoriasMock].filter(Boolean))) as ProdutoCategoria[],
     [produto?.categoria]
   );
+  const filteredFiscalSourceProdutos = useMemo(() => {
+    const search = normalize(fiscalSourceSearch);
+    return fiscalSourceProdutos.filter((sourceProduto) => {
+      if (produto && sourceProduto.id_produto === produto.id_produto) {
+        return false;
+      }
+
+      const searchable = `${sourceProduto.id_produto} ${sourceProduto.nomeReal} ${sourceProduto.ncm}`;
+      return normalize(searchable).includes(search);
+    });
+  }, [fiscalSourceProdutos, fiscalSourceSearch, produto]);
 
   useEffect(() => {
     if (window.location.hash) {
@@ -92,28 +144,118 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     }
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      setIsLoadingFiscalSource(true);
+      const produtos = await listProdutos({ pageSize: 100 });
+      if (!active) {
+        return;
+      }
+
+      setFiscalSourceProdutos(produtos);
+      setIsLoadingFiscalSource(false);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   function updateField<K extends keyof ProdutoFormState>(field: K, value: ProdutoFormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
     setErrorFields((current) => current.filter((item) => item !== field));
   }
 
-  function addFoto() {
-    if (!newFotoUrl.trim()) {
-      showToast({ type: "warning", title: "Informe uma URL", description: "Adicione uma URL mockada para inserir a foto." });
+  function copyFiscalDataFromProduto() {
+    const sourceProduto = fiscalSourceProdutos.find((item) => item.id_produto.toString() === selectedFiscalSourceId);
+    if (!sourceProduto) {
+      showToast({ type: "warning", title: "Selecione um produto", description: "Escolha o produto base para copiar os dados fiscais." });
       return;
     }
 
-    const foto: ProdutoFoto = {
-      id: `foto_mock_${Date.now()}`,
-      idProduto: Number(form.id_produto) || 0,
-      nomeProduto: form.nomeReal || "Produto mockado",
-      imagensURL: newFotoUrl.trim(),
-      principal: form.fotos.length === 0
-    };
+    if (produto && sourceProduto.id_produto === produto.id_produto) {
+      showToast({ type: "warning", title: "Produto atual bloqueado", description: "Selecione outro produto para copiar os dados fiscais." });
+      return;
+    }
 
-    updateField("fotos", [...form.fotos, foto]);
-    setNewFotoUrl("");
-    showToast({ type: "info", title: "Foto adicionada", description: "URL incluida apenas no formulario mockado." });
+    const confirmed = window.confirm("Copiar os dados fiscais deste produto para o formulário atual?");
+    if (!confirmed) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      cod_beneficio: sourceProduto.cod_beneficio,
+      ncm: sourceProduto.ncm,
+      descri_ncm: sourceProduto.descri_ncm,
+      cest: sourceProduto.cest,
+      origem: sourceProduto.origem,
+      cod_origem: sourceProduto.cod_origem?.toString() ?? "",
+      cod_bar: sourceProduto.cod_bar,
+      und_medida: sourceProduto.und_medida,
+      is_multiplo: sourceProduto.is_multiplo,
+      cfop_interno: sourceProduto.cfop_interno,
+      cfop_interestadual: sourceProduto.cfop_interestadual,
+      unidade_comercial: sourceProduto.unidade_comercial,
+      unidade_tributavel: sourceProduto.unidade_tributavel,
+      icms_origem: sourceProduto.icms_origem,
+      icms_situacao_tributaria: sourceProduto.icms_situacao_tributaria,
+      pis_situacao_tributaria: sourceProduto.pis_situacao_tributaria,
+      cofins_situacao_tributaria: sourceProduto.cofins_situacao_tributaria,
+      informacoes_fiscais: sourceProduto.informacoes_fiscais
+    }));
+    setErrorFields((current) => current.filter((field) => !(fiscalFields as readonly string[]).includes(field)));
+    showToast({
+      type: "success",
+      title: "Dados fiscais copiados",
+      description: "Dados fiscais copiados para o formulário. Salve para gravar."
+    });
+  }
+
+  async function uploadSelectedFoto(targetIdProduto: number, targetNomeProduto: string) {
+    if (!selectedFotoFile) {
+      return null;
+    }
+
+    setIsUploadingFoto(true);
+    const result = await uploadProdutoFotoReal({
+      idProduto: targetIdProduto,
+      nomeProduto: targetNomeProduto,
+      file: selectedFotoFile
+    });
+    setIsUploadingFoto(false);
+
+    if (!result.success || !result.foto) {
+      showToast({ type: "error", title: "Não foi possível enviar a foto", description: result.message });
+      setMessage({
+        tone: "warning",
+        title: "Produto salvo, mas a foto não foi enviada",
+        description: result.message
+      });
+      return null;
+    }
+
+    updateField("fotos", [...form.fotos, { ...result.foto, principal: form.fotos.length === 0 }]);
+    setSelectedFotoFile(null);
+    showToast({ type: "success", title: "Foto enviada", description: `Imagem salva no bucket ${PRODUCT_IMAGES_BUCKET} e registrada em public.fotosProdutos.` });
+    return result.foto;
+  }
+
+  async function addFoto() {
+    if (!selectedFotoFile) {
+      showToast({ type: "warning", title: "Selecione uma imagem", description: "Escolha um arquivo do computador antes de adicionar a foto." });
+      return;
+    }
+
+    const targetIdProduto = Number(form.id_produto);
+    if (mode === "new" && !produto) {
+      showToast({ type: "info", title: "Foto preparada", description: "A imagem será enviada após salvar o novo produto." });
+      return;
+    }
+
+    await uploadSelectedFoto(targetIdProduto, form.nomeReal || `Produto ${targetIdProduto}`);
   }
 
   function setFotoPrincipal(id: string) {
@@ -121,16 +263,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       "fotos",
       form.fotos.map((foto) => ({ ...foto, principal: foto.id === id }))
     );
-    showToast({ type: "info", title: "Foto principal marcada", description: "Alteracao visual aplicada no mock." });
-  }
-
-  function removeFoto(id: string) {
-    const nextFotos = form.fotos.filter((foto) => foto.id !== id);
-    updateField(
-      "fotos",
-      nextFotos.map((foto, index) => ({ ...foto, principal: foto.principal || index === 0 }))
-    );
-    showToast({ type: "warning", title: "Foto removida", description: "Remocao aplicada apenas no formulario mockado." });
+    showToast({ type: "info", title: "Foto principal marcada", description: "Alteração visual aplicada apenas na tela." });
   }
 
   function openVariationModal() {
@@ -193,45 +326,145 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     });
   }
 
-  async function handleMockSave() {
+  function buildProdutoWriteInput(): ProdutoWriteInput {
+    return {
+      id_produto: Number(form.id_produto),
+      nomeReal: form.nomeReal,
+      categoria: form.categoria,
+      formato: form.formato,
+      descricao: form.descricao,
+      personalizacao: form.personalizacao,
+      apelidos: form.apelidos,
+      ativo: form.ativo,
+      is_estoque: form.is_estoque,
+      is_variacao: form.is_variacao,
+      nivelSeg: form.nivelSeg,
+      fraseCons: form.fraseCons,
+      prazo: form.prazo,
+      peso: parseNumericInput(form.peso),
+      valorUnt: parseNumericInput(form.valorUnt),
+      valorFixo: parseNumericInput(form.valorFixo),
+      valor_custo: parseNumericInput(form.valor_custo),
+      cod_beneficio: form.cod_beneficio,
+      ncm: form.ncm,
+      descri_ncm: form.descri_ncm,
+      cest: form.cest,
+      origem: form.origem,
+      cod_origem: parseNumericInput(form.cod_origem),
+      cod_bar: form.cod_bar,
+      und_medida: form.und_medida,
+      is_multiplo: form.is_multiplo,
+      cfop_interno: form.cfop_interno,
+      cfop_interestadual: form.cfop_interestadual,
+      unidade_comercial: form.unidade_comercial,
+      unidade_tributavel: form.unidade_tributavel,
+      icms_origem: form.icms_origem,
+      icms_situacao_tributaria: form.icms_situacao_tributaria,
+      pis_situacao_tributaria: form.pis_situacao_tributaria,
+      cofins_situacao_tributaria: form.cofins_situacao_tributaria,
+      informacoes_fiscais: form.informacoes_fiscais
+    };
+  }
+
+  async function handleSave() {
+    const parsedIdProduto = Number(form.id_produto);
+    const parsedPeso = parseNumericInput(form.peso);
+    const parsedValorUnt = parseNumericInput(form.valorUnt);
+    const parsedValorFixo = parseNumericInput(form.valorFixo);
+    const parsedValorCusto = parseNumericInput(form.valor_custo);
+    const parsedCodOrigem = parseNumericInput(form.cod_origem);
     const missingFields = [
       !form.id_produto ? "id_produto" : null,
-      !form.nomeReal ? "nomeReal" : null,
-      !form.categoria ? "categoria" : null,
-      !form.formato ? "formato" : null,
-      !form.prazo ? "prazo" : null
+      !form.nomeReal.trim() ? "nomeReal" : null
     ].filter(Boolean) as string[];
+    const hasInvalidCodOrigem =
+      typeof parsedCodOrigem === "number" &&
+      (!Number.isInteger(parsedCodOrigem) || parsedCodOrigem < -32768 || parsedCodOrigem > 32767);
 
-    if (missingFields.length) {
-      setErrorFields(missingFields);
+    if (
+      missingFields.length ||
+      !Number.isInteger(parsedIdProduto) ||
+      parsedIdProduto <= 0 ||
+      Number.isNaN(parsedPeso) ||
+      Number.isNaN(parsedValorUnt) ||
+      Number.isNaN(parsedValorFixo) ||
+      Number.isNaN(parsedValorCusto) ||
+      Number.isNaN(parsedCodOrigem) ||
+      hasInvalidCodOrigem
+    ) {
+      const invalidFields = [
+        ...missingFields,
+        !Number.isInteger(parsedIdProduto) || parsedIdProduto <= 0 ? "id_produto" : null,
+        Number.isNaN(parsedPeso) ? "peso" : null,
+        Number.isNaN(parsedValorUnt) ? "valorUnt" : null,
+        Number.isNaN(parsedValorFixo) ? "valorFixo" : null,
+        Number.isNaN(parsedValorCusto) ? "valor_custo" : null,
+        Number.isNaN(parsedCodOrigem) || hasInvalidCodOrigem ? "cod_origem" : null
+      ].filter(Boolean) as string[];
+      setErrorFields(Array.from(new Set(invalidFields)));
       setMessage({
         tone: "danger",
-        title: "Campos obrigatorios ausentes",
-        description: "Preencha codigo, produto, categoria, formato e prazo antes de salvar."
+        title: "Não foi possível salvar",
+        description: "Revise ID, nome e campos numéricos antes de salvar."
       });
-      showToast({ type: "error", title: "Nao foi possivel salvar", description: "Revise os campos destacados antes de continuar." });
+      showToast({ type: "error", title: "Não foi possível salvar", description: "Revise os campos destacados antes de continuar." });
       return;
     }
 
     setIsSaving(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 850));
+    try {
+      const result =
+        mode === "edit" && produto
+          ? await updateProdutoReal(produto.id_produto, buildProdutoWriteInput())
+          : await createProdutoReal(buildProdutoWriteInput());
 
-    const successTitle = mode === "edit" ? "Produto atualizado com sucesso." : "Produto criado com sucesso.";
-    const redirectTarget = mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos";
-    setMessage({
-      tone: "success",
-      title: successTitle,
-      description: "Alteracao aplicada apenas na interface simulada. Nenhum banco real foi atualizado."
-    });
-    showToast({
-      type: "success",
-      title: successTitle,
-      description: mode === "edit" ? "Redirecionando para o detalhe do produto..." : "Redirecionando para a lista de produtos..."
-    });
+      if (!result.success) {
+        const duplicateId = result.message === "Este ID de produto já está sendo usado. Informe outro ID.";
+        setErrorFields(duplicateId ? ["id_produto"] : []);
+        setMessage({
+          tone: "danger",
+          title: "Não foi possível salvar",
+          description: result.message
+        });
+        showToast({ type: "error", title: "Não foi possível salvar", description: result.message });
+        return;
+      }
 
-    window.setTimeout(() => {
-      router.push(redirectTarget);
-    }, 1200);
+      const successTitle = mode === "edit" ? "Produto atualizado com sucesso." : "Produto criado com sucesso.";
+      const redirectTarget = `/produtos/${result.produto?.id_produto ?? produto?.id_produto ?? parsedIdProduto}`;
+      setMessage({
+        tone: "success",
+        title: successTitle,
+        description: "Alteração confirmada no Supabase com whitelist de campos operacionais."
+      });
+      showToast({
+        type: "success",
+        title: successTitle,
+        description: "Redirecionando para o detalhe do produto..."
+      });
+
+      if (selectedFotoFile) {
+        await uploadSelectedFoto(result.produto?.id_produto ?? produto?.id_produto ?? parsedIdProduto, result.produto?.nomeReal ?? form.nomeReal);
+      }
+
+      window.setTimeout(() => {
+        router.push(redirectTarget);
+      }, 900);
+    } catch (error) {
+      console.log("[Produtos][Form] erro inesperado ao salvar produto.", { error });
+      setMessage({
+        tone: "danger",
+        title: "Não foi possível salvar",
+        description: "Ocorreu uma falha inesperada ao comunicar com o Supabase. Tente novamente em alguns segundos."
+      });
+      showToast({
+        type: "error",
+        title: "Não foi possível salvar",
+        description: "Falha inesperada ao comunicar com o Supabase."
+      });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -245,7 +478,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
             <Link href={mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos"} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
               {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
             </Link>
-            <button type="button" onClick={handleMockSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
+            <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
               {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
             </button>
           </div>
@@ -253,6 +486,13 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       />
 
       {message ? <FormAlert message={message} /> : null}
+      <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-900">
+        <h2 className="font-semibold">Escrita real controlada</h2>
+        <p className="mt-1 text-sm">
+          Esta tela salva produtos, valores comerciais, dados fiscais e novas fotos. DELETE físico,
+          exclusão de imagem e alterações de variações continuam bloqueados.
+        </p>
+      </div>
       {mode === "edit" ? (
         <div className="rounded-3xl border border-sky-200 bg-sky-50 p-5 text-sky-800">
           <h2 className="font-semibold">Codigo operacional protegido</h2>
@@ -268,7 +508,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
             <div>
               <h2 className="font-semibold">Alteracao critica de produto</h2>
               <p className="mt-1 text-sm">
-                Preco, custo, peso ou prazo impactam Maestro, propostas, margem, frete e producao. Nesta etapa a alteracao e apenas visual/mockada.
+                Preço, custo, peso, prazo e fiscal impactam operação. Nesta fase eles são salvos por whitelist e com conversão segura.
               </p>
             </div>
           </div>
@@ -282,7 +522,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
         <StatusCard title="Fotos / variacoes" value={`${form.fotos.length} / ${form.variacoes.length}`} />
       </section>
 
-      <FormSection title="Dados principais" description="Identificacao do produto na tabela futura produtos.">
+      <FormSection title="Dados principais" description="Identificação do produto em public.produtos.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="id_produto">
             <input value={form.id_produto} readOnly={mode === "edit"} onChange={(event) => updateField("id_produto", event.target.value)} className={`${getInputClass(errorFields.includes("id_produto"))} ${mode === "edit" ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""}`} />
@@ -308,16 +548,16 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
         </div>
       </FormSection>
 
-      <FormSection title="Valores" description="Valores comerciais e custo interno usados por propostas e Maestro.">
+      <FormSection title="Valores" description="Preços e custo interno liberados nesta fase com conversão numérica segura. Campo vazio vira null.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Valor unitario">
-            <input value={form.valorUnt} onChange={(event) => updateField("valorUnt", event.target.value)} className={inputClass} />
+            <input value={form.valorUnt} onChange={(event) => updateField("valorUnt", event.target.value)} className={getInputClass(errorFields.includes("valorUnt"))} />
           </Field>
           <Field label="Valor fixo">
-            <input value={form.valorFixo} onChange={(event) => updateField("valorFixo", event.target.value)} className={inputClass} />
+            <input value={form.valorFixo} onChange={(event) => updateField("valorFixo", event.target.value)} className={getInputClass(errorFields.includes("valorFixo"))} />
           </Field>
           <Field label="Valor custo">
-            <input value={form.valor_custo} onChange={(event) => updateField("valor_custo", event.target.value)} className={inputClass} />
+            <input value={form.valor_custo} onChange={(event) => updateField("valor_custo", event.target.value)} className={getInputClass(errorFields.includes("valor_custo"))} />
           </Field>
           <Field label="Produto ativo">
             <select value={form.ativo ? "SIM" : "NAO"} onChange={(event) => updateField("ativo", event.target.value === "SIM")} className={inputClass}>
@@ -328,7 +568,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
         </div>
       </FormSection>
 
-      <FormSection title="Producao" description="Dados usados em prazo, frete, OS e planejamento.">
+      <FormSection title="Producao" description="Peso é salvo em gramas. A conversão para kg acontece apenas na exibição.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Peso (g)">
             <input value={form.peso} onChange={(event) => updateField("peso", event.target.value)} className={inputClass} placeholder="177" />
@@ -361,6 +601,107 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
         </div>
       </FormSection>
 
+      <FormSection title="Dados fiscais" description="Campos fiscais do produto. Não há validação SEFAZ nesta etapa.">
+        <div className="mb-5 rounded-3xl border border-sky-200 bg-sky-50 p-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-sky-950">Copiar dados fiscais de outro produto</p>
+              <p className="mt-1 text-sm text-sky-700">
+                A cópia preenche apenas campos fiscais neste formulário. Salve para gravar no Supabase.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1.4fr]">
+                <label className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-white px-4 py-3">
+                  <Search className="h-4 w-4 text-[#0f9f9a]" />
+                  <input
+                    value={fiscalSourceSearch}
+                    onChange={(event) => setFiscalSourceSearch(event.target.value)}
+                    className="w-full bg-transparent text-sm text-slate-900 outline-none"
+                    placeholder="Buscar por código, produto ou NCM"
+                  />
+                </label>
+                <select
+                  value={selectedFiscalSourceId}
+                  onChange={(event) => setSelectedFiscalSourceId(event.target.value)}
+                  className={inputClass}
+                  disabled={isLoadingFiscalSource}
+                >
+                  <option value="">{isLoadingFiscalSource ? "Carregando produtos..." : "Selecione um produto base"}</option>
+                  {filteredFiscalSourceProdutos.map((sourceProduto) => (
+                    <option key={sourceProduto.id_produto} value={sourceProduto.id_produto}>
+                      #{sourceProduto.id_produto} - {sourceProduto.nomeReal}{sourceProduto.ncm ? ` - NCM ${sourceProduto.ncm}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={copyFiscalDataFromProduto}
+              disabled={!selectedFiscalSourceId}
+              className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Copiar dados fiscais
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="NCM">
+            <input value={form.ncm} onChange={(event) => updateField("ncm", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Descrição NCM">
+            <input value={form.descri_ncm} onChange={(event) => updateField("descri_ncm", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="CEST">
+            <input value={form.cest} onChange={(event) => updateField("cest", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Origem">
+            <input value={form.origem} onChange={(event) => updateField("origem", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Código origem">
+            <input value={form.cod_origem} onChange={(event) => updateField("cod_origem", event.target.value)} className={getInputClass(errorFields.includes("cod_origem"))} />
+          </Field>
+          <Field label="Código de barras">
+            <input value={form.cod_bar} onChange={(event) => updateField("cod_bar", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Unidade medida">
+            <input value={form.und_medida} onChange={(event) => updateField("und_medida", event.target.value)} className={inputClass} />
+          </Field>
+          <Toggle label="Produto múltiplo" checked={form.is_multiplo} onChange={(value) => updateField("is_multiplo", value)} />
+          <Field label="CFOP interno">
+            <input value={form.cfop_interno} onChange={(event) => updateField("cfop_interno", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="CFOP interestadual">
+            <input value={form.cfop_interestadual} onChange={(event) => updateField("cfop_interestadual", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Unidade comercial">
+            <input value={form.unidade_comercial} onChange={(event) => updateField("unidade_comercial", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Unidade tributável">
+            <input value={form.unidade_tributavel} onChange={(event) => updateField("unidade_tributavel", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="ICMS origem">
+            <input value={form.icms_origem} onChange={(event) => updateField("icms_origem", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="ICMS CST">
+            <input value={form.icms_situacao_tributaria} onChange={(event) => updateField("icms_situacao_tributaria", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="PIS CST">
+            <input value={form.pis_situacao_tributaria} onChange={(event) => updateField("pis_situacao_tributaria", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="COFINS CST">
+            <input value={form.cofins_situacao_tributaria} onChange={(event) => updateField("cofins_situacao_tributaria", event.target.value)} className={inputClass} />
+          </Field>
+          <Field label="Benefício fiscal">
+            <input value={form.cod_beneficio} onChange={(event) => updateField("cod_beneficio", event.target.value)} className={inputClass} />
+          </Field>
+          <div className="md:col-span-2 xl:col-span-4">
+            <Field label="Informações fiscais">
+              <textarea value={form.informacoes_fiscais} onChange={(event) => updateField("informacoes_fiscais", event.target.value)} className={`${inputClass} min-h-28 resize-y`} />
+            </Field>
+          </div>
+        </div>
+      </FormSection>
+
       <FormSection title="Apelidos para IA/Maestro" description="Termos informais usados para reconhecer o produto em buscas e no Maestro.">
         <Field label="Apelidos separados por virgula">
           <textarea value={form.apelidos} onChange={(event) => updateField("apelidos", event.target.value)} className={`${inputClass} min-h-28 resize-y`} placeholder="triband, pulseira tri band, pulseirinha" />
@@ -370,8 +711,8 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       <FormSection
         id="fotos"
         title="Fotos"
-        description="Galeria simulada. URLs sao adicionadas apenas na tela, sem escrita em public.fotosProdutos."
-        action={<AddFotoInput value={newFotoUrl} onChange={setNewFotoUrl} onAdd={addFoto} />}
+        description={`Envie novas imagens para o bucket ${PRODUCT_IMAGES_BUCKET}, pasta produtos. Exclusão de imagem não está liberada nesta etapa.`}
+        action={<AddFotoInput file={selectedFotoFile} onChange={setSelectedFotoFile} onAdd={addFoto} isUploading={isUploadingFoto} />}
       >
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {form.fotos.map((foto) => (
@@ -385,8 +726,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
                 <ActionsMenu
                   label="Acoes"
                   items={[
-                    { label: "Marcar principal", onClick: () => setFotoPrincipal(foto.id), disabled: foto.principal },
-                    { label: "Remover foto", destructive: true, onClick: () => removeFoto(foto.id) }
+                    { label: "Marcar principal", onClick: () => setFotoPrincipal(foto.id), disabled: foto.principal }
                   ]}
                 />
               </div>
@@ -394,7 +734,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           ))}
           {!form.fotos.length ? (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
-              Nenhuma foto adicionada. Use uma URL mockada para validar a galeria.
+              Nenhuma foto cadastrada. Selecione uma imagem do computador para enviar ao Storage.
             </div>
           ) : null}
         </div>
@@ -470,7 +810,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           <div className="flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={() => router.push(mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
             <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Voltar ao topo</button>
-            <button type="button" onClick={handleMockSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+            <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
               {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
             </button>
           </div>
@@ -685,13 +1025,30 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
-function AddFotoInput({ value, onChange, onAdd }: { value: string; onChange: (value: string) => void; onAdd: () => void }) {
+function AddFotoInput({
+  file,
+  onChange,
+  onAdd,
+  isUploading
+}: {
+  file: File | null;
+  onChange: (value: File | null) => void;
+  onAdd: () => void;
+  isUploading: boolean;
+}) {
   return (
     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-96 sm:flex-row">
-      <input value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} placeholder="https://placehold.co/900x600?text=Produto" />
-      <button type="button" onClick={onAdd} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-2.5 text-sm font-semibold text-[#0b2f4a] hover:bg-[#f3f7f8]">
+      <label className="flex min-h-11 flex-1 items-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => onChange(event.target.files?.[0] ?? null)}
+          className="w-full text-sm file:mr-3 file:rounded-xl file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700"
+        />
+      </label>
+      <button type="button" onClick={onAdd} disabled={!file || isUploading} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-2.5 text-sm font-semibold text-[#0b2f4a] hover:bg-[#f3f7f8] disabled:cursor-not-allowed disabled:opacity-60">
         <ImagePlus className="h-4 w-4" />
-        Adicionar
+        {isUploading ? "Enviando..." : "Adicionar"}
       </button>
     </div>
   );
@@ -706,6 +1063,24 @@ function createInitialState(produto?: Produto): ProdutoFormState {
     valorUnt: produto?.valorUnt.toString() ?? "0",
     valorFixo: produto?.valorFixo.toString() ?? "0",
     valor_custo: produto?.valor_custo.toString() ?? "0",
+    cod_beneficio: produto?.cod_beneficio ?? "",
+    ncm: produto?.ncm ?? "",
+    descri_ncm: produto?.descri_ncm ?? "",
+    cest: produto?.cest ?? "",
+    origem: produto?.origem ?? "",
+    cod_origem: produto?.cod_origem?.toString() ?? "",
+    cod_bar: produto?.cod_bar ?? "",
+    und_medida: produto?.und_medida ?? "",
+    is_multiplo: produto?.is_multiplo ?? false,
+    cfop_interno: produto?.cfop_interno ?? "",
+    cfop_interestadual: produto?.cfop_interestadual ?? "",
+    unidade_comercial: produto?.unidade_comercial ?? "",
+    unidade_tributavel: produto?.unidade_tributavel ?? "",
+    icms_origem: produto?.icms_origem ?? "",
+    icms_situacao_tributaria: produto?.icms_situacao_tributaria ?? "",
+    pis_situacao_tributaria: produto?.pis_situacao_tributaria ?? "",
+    cofins_situacao_tributaria: produto?.cofins_situacao_tributaria ?? "",
+    informacoes_fiscais: produto?.informacoes_fiscais ?? "",
     peso: produto?.peso.toString() ?? "0",
     prazo: produto?.prazo ?? "",
     nivelSeg: produto?.nivelSeg ?? "medio",

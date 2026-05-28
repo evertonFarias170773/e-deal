@@ -23,7 +23,146 @@ export type ProdutosListParams = {
   hasFotos?: boolean;
 };
 
+type ProdutoWriteField =
+  | "id_produto"
+  | "nomeReal"
+  | "categoria"
+  | "formato"
+  | "descricao"
+  | "personalizacao"
+  | "apelidos"
+  | "ativo"
+  | "is_estoque"
+  | "is_variacao"
+  | "nivelSeg"
+  | "fraseCons"
+  | "prazo"
+  | "peso"
+  | "valorUnt"
+  | "valorFixo"
+  | "valor_custo"
+  | "cod_beneficio"
+  | "ncm"
+  | "descri_ncm"
+  | "cest"
+  | "origem"
+  | "cod_origem"
+  | "cod_bar"
+  | "und_medida"
+  | "is_multiplo"
+  | "cfop_interno"
+  | "cfop_interestadual"
+  | "unidade_comercial"
+  | "unidade_tributavel"
+  | "icms_origem"
+  | "icms_situacao_tributaria"
+  | "pis_situacao_tributaria"
+  | "cofins_situacao_tributaria"
+  | "informacoes_fiscais";
+
+export type ProdutoWriteInput = Partial<Record<ProdutoWriteField, string | number | boolean | string[] | null>>;
+
+export type ProdutoWritePayload = Partial<Record<ProdutoWriteField, string | number | boolean | null>>;
+
+export type ProdutoWriteResult = {
+  success: boolean;
+  operation: "INSERT" | "UPDATE" | "DELETE";
+  table: "public.produtos";
+  payload?: ProdutoWritePayload;
+  allowedFields: readonly ProdutoWriteField[];
+  rejectedFields: string[];
+  message: string;
+  produto?: Produto;
+  conflict?: {
+    idProduto: number;
+    nomeReal: string;
+  };
+  blocked?: true;
+  status?: string | number;
+};
+
 const DEFAULT_PAGE_SIZE = 100;
+export const PRODUCT_IMAGES_BUCKET = "e-deal";
+export const PRODUCT_IMAGES_FOLDER = "produtos";
+const PRODUCT_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+export const PRODUTOS_INSERT_FIELD_WHITELIST = [
+  "id_produto",
+  "nomeReal",
+  "categoria",
+  "formato",
+  "descricao",
+  "personalizacao",
+  "apelidos",
+  "ativo",
+  "is_estoque",
+  "is_variacao",
+  "nivelSeg",
+  "fraseCons",
+  "prazo",
+  "peso",
+  "valorUnt",
+  "valorFixo",
+  "valor_custo",
+  "cod_beneficio",
+  "ncm",
+  "descri_ncm",
+  "cest",
+  "origem",
+  "cod_origem",
+  "cod_bar",
+  "und_medida",
+  "is_multiplo",
+  "cfop_interno",
+  "cfop_interestadual",
+  "unidade_comercial",
+  "unidade_tributavel",
+  "icms_origem",
+  "icms_situacao_tributaria",
+  "pis_situacao_tributaria",
+  "cofins_situacao_tributaria",
+  "informacoes_fiscais"
+] as const satisfies readonly ProdutoWriteField[];
+
+export const PRODUTOS_UPDATE_FIELD_WHITELIST = [
+  "nomeReal",
+  "categoria",
+  "formato",
+  "descricao",
+  "personalizacao",
+  "apelidos",
+  "ativo",
+  "is_estoque",
+  "is_variacao",
+  "nivelSeg",
+  "fraseCons",
+  "prazo",
+  "peso",
+  "valorUnt",
+  "valorFixo",
+  "valor_custo",
+  "cod_beneficio",
+  "ncm",
+  "descri_ncm",
+  "cest",
+  "origem",
+  "cod_origem",
+  "cod_bar",
+  "und_medida",
+  "is_multiplo",
+  "cfop_interno",
+  "cfop_interestadual",
+  "unidade_comercial",
+  "unidade_tributavel",
+  "icms_origem",
+  "icms_situacao_tributaria",
+  "pis_situacao_tributaria",
+  "cofins_situacao_tributaria",
+  "informacoes_fiscais"
+] as const satisfies readonly ProdutoWriteField[];
+
+export const PRODUTOS_DELETE_BLOCKED_MESSAGE =
+  "DELETE físico em public.produtos está bloqueado nesta fase. Use inativação controlada em etapa própria.";
 
 export const PRODUTOS_SELECT = [
   "id",
@@ -67,6 +206,86 @@ export const PRODUTOS_SELECT = [
 
 const FOTOS_SELECT = "id,nomeProduto,imagensURL,idProduto";
 const VARIACOES_SELECT = "id,id_produto,id_variacao,nome,is_obrigatorio,is_multiplo";
+
+function normalizeProdutoWriteValue(field: ProdutoWriteField, value: ProdutoWriteInput[ProdutoWriteField]) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (field === "apelidos") {
+    return Array.isArray(value) ? value.map(String).join(", ") : String(value);
+  }
+
+  if (
+    field === "id_produto" ||
+    field === "peso" ||
+    field === "valorUnt" ||
+    field === "valorFixo" ||
+    field === "valor_custo" ||
+    field === "cod_origem"
+  ) {
+    if (typeof value === "string" && !value.trim()) {
+      return null;
+    }
+
+    const parsed = typeof value === "string" ? Number(value.replace(/\./g, "").replace(",", ".")) : Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (field === "ativo" || field === "is_estoque" || field === "is_variacao" || field === "is_multiplo") {
+    return typeof value === "string" ? value === "true" || value === "SIM" : Boolean(value);
+  }
+
+  const text = String(value).trim();
+  return text || null;
+}
+
+function prepareProdutoWritePayload(input: ProdutoWriteInput, allowedFields: readonly ProdutoWriteField[]) {
+  const allowed = new Set<string>(allowedFields);
+  const payload: ProdutoWritePayload = {};
+  const rejectedFields = Object.keys(input).filter((field) => !allowed.has(field));
+
+  for (const field of allowedFields) {
+    if (!Object.prototype.hasOwnProperty.call(input, field)) {
+      continue;
+    }
+
+    payload[field] = normalizeProdutoWriteValue(field, input[field]);
+  }
+
+  return {
+    payload,
+    rejectedFields
+  };
+}
+
+function getSupabaseWriteStatus(error: { code?: string | null; status?: number } | null | undefined) {
+  return error?.status ?? error?.code ?? undefined;
+}
+
+function getProdutoStorageErrorMessage(errorMessage: string) {
+  const normalized = errorMessage.toLowerCase();
+  if (normalized.includes("bucket not found")) {
+    return `Bucket de imagens de produtos não encontrado no Supabase. Confirme se o bucket \`${PRODUCT_IMAGES_BUCKET}\` existe no Storage.`;
+  }
+
+  return errorMessage || `Não foi possível enviar a imagem para o bucket ${PRODUCT_IMAGES_BUCKET}.`;
+}
+
+function sanitizeStorageFileName(fileName: string) {
+  const parts = fileName.split(".");
+  const extension = parts.length > 1 ? parts.pop() : "";
+  const baseName = parts.join(".") || "imagem";
+  const normalizedBaseName = baseName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9-_]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+  const normalizedExtension = extension?.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+
+  return `${normalizedBaseName || "imagem"}${normalizedExtension ? `.${normalizedExtension}` : ""}`;
+}
 
 function buildEmptyResult(warnings: string[] = []): ProdutosReadResult {
   return {
@@ -331,6 +550,354 @@ export async function listCategoriasProdutos(): Promise<string[]> {
   }
 
   return Array.from(new Set((data ?? []).map((row) => row.categoria?.trim()).filter((item): item is string => Boolean(item))));
+}
+
+export function prepareProdutoInsert(input: ProdutoWriteInput): ProdutoWriteResult {
+  const { payload, rejectedFields } = prepareProdutoWritePayload(input, PRODUTOS_INSERT_FIELD_WHITELIST);
+
+  return {
+    success: false,
+    operation: "INSERT",
+    table: "public.produtos",
+    payload,
+    allowedFields: PRODUTOS_INSERT_FIELD_WHITELIST,
+    rejectedFields,
+    message: "INSERT real em public.produtos liberado somente por whitelist."
+  };
+}
+
+export function prepareProdutoUpdate(input: ProdutoWriteInput): ProdutoWriteResult {
+  const { payload, rejectedFields } = prepareProdutoWritePayload(input, PRODUTOS_UPDATE_FIELD_WHITELIST);
+
+  return {
+    success: false,
+    operation: "UPDATE",
+    table: "public.produtos",
+    payload,
+    allowedFields: PRODUTOS_UPDATE_FIELD_WHITELIST,
+    rejectedFields,
+    message: "UPDATE real em public.produtos liberado somente por whitelist."
+  };
+}
+
+export async function produtoIdExists(idProduto: number): Promise<{ exists: boolean; produto?: Pick<Produto, "id_produto" | "nomeReal">; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      exists: false,
+      errorMessage: "Cliente Supabase indisponível para validar ID do produto."
+    };
+  }
+
+  if (!Number.isInteger(idProduto) || idProduto <= 0) {
+    return {
+      exists: false,
+      errorMessage: "ID do produto inválido."
+    };
+  }
+
+  const { data, error } = await client
+    .from("produtos")
+    .select("id_produto,nomeReal")
+    .eq("id_produto", idProduto)
+    .limit(1)
+    .returns<Array<{ id_produto: number | null; nomeReal: string | null }>>();
+
+  if (error) {
+    return {
+      exists: false,
+      errorMessage: error.message || "Não foi possível validar se o ID do produto já existe."
+    };
+  }
+
+  const row = data?.[0];
+  return {
+    exists: Boolean(row),
+    produto: row
+      ? {
+          id_produto: Number(row.id_produto) || idProduto,
+          nomeReal: row.nomeReal ?? ""
+        }
+      : undefined
+  };
+}
+
+export async function createProdutoReal(input: ProdutoWriteInput): Promise<ProdutoWriteResult> {
+  const client = getSupabaseClient();
+  const prepared = prepareProdutoInsert(input);
+  const idProduto = Number(prepared.payload?.id_produto);
+  const nomeReal = String(prepared.payload?.nomeReal ?? "").trim();
+
+  if (!client) {
+    return {
+      ...prepared,
+      message: "Cliente Supabase indisponível para criar produto."
+    };
+  }
+
+  if (!Number.isInteger(idProduto) || idProduto <= 0) {
+    return {
+      ...prepared,
+      message: "Informe um ID de produto válido."
+    };
+  }
+
+  if (!nomeReal) {
+    return {
+      ...prepared,
+      message: "Informe o nome real do produto."
+    };
+  }
+
+  const existingProduto = await produtoIdExists(idProduto);
+  if (existingProduto.errorMessage) {
+    return {
+      ...prepared,
+      message: existingProduto.errorMessage
+    };
+  }
+
+  if (existingProduto.exists) {
+    return {
+      ...prepared,
+      message: "Este ID de produto já está sendo usado. Informe outro ID.",
+      conflict: existingProduto.produto
+        ? {
+            idProduto: existingProduto.produto.id_produto,
+            nomeReal: existingProduto.produto.nomeReal
+          }
+        : undefined
+    };
+  }
+
+  const { data, error } = await client
+    .from("produtos")
+    .insert(prepared.payload)
+    .select(PRODUTOS_SELECT)
+    .single<SupabaseProdutoRow>();
+
+  if (error) {
+    return {
+      ...prepared,
+      message: error.message || "Não foi possível criar o produto no Supabase.",
+      status: getSupabaseWriteStatus(error)
+    };
+  }
+
+  if (!data) {
+    return {
+      ...prepared,
+      message: "Supabase não retornou o produto criado."
+    };
+  }
+
+  const produto = mapSupabaseProdutoRowToProduto(data);
+  if (!produto) {
+    return {
+      ...prepared,
+      message: "Produto criado, mas não foi possível mapear o retorno do Supabase."
+    };
+  }
+
+  return {
+    ...prepared,
+    success: true,
+    produto,
+    message: "Produto criado com sucesso."
+  };
+}
+
+export async function updateProdutoReal(idProduto: number, input: ProdutoWriteInput): Promise<ProdutoWriteResult> {
+  const client = getSupabaseClient();
+  const prepared = prepareProdutoUpdate(input);
+  const nomeReal = Object.prototype.hasOwnProperty.call(prepared.payload ?? {}, "nomeReal")
+    ? String(prepared.payload?.nomeReal ?? "").trim()
+    : null;
+
+  if (!client) {
+    return {
+      ...prepared,
+      message: "Cliente Supabase indisponível para atualizar produto."
+    };
+  }
+
+  if (!Number.isInteger(idProduto) || idProduto <= 0) {
+    return {
+      ...prepared,
+      message: "ID do produto inválido para atualização."
+    };
+  }
+
+  if (nomeReal !== null && !nomeReal) {
+    return {
+      ...prepared,
+      message: "Informe o nome real do produto."
+    };
+  }
+
+  const { data, error } = await client
+    .from("produtos")
+    .update(prepared.payload)
+    .eq("id_produto", idProduto)
+    .select(PRODUTOS_SELECT)
+    .single<SupabaseProdutoRow>();
+
+  if (error) {
+    return {
+      ...prepared,
+      message: error.message || "Não foi possível atualizar o produto no Supabase.",
+      status: getSupabaseWriteStatus(error)
+    };
+  }
+
+  if (!data) {
+    return {
+      ...prepared,
+      message: "Supabase não retornou o produto atualizado."
+    };
+  }
+
+  const produto = mapSupabaseProdutoRowToProduto(data);
+  if (!produto) {
+    return {
+      ...prepared,
+      message: "Produto atualizado, mas não foi possível mapear o retorno do Supabase."
+    };
+  }
+
+  return {
+    ...prepared,
+    success: true,
+    produto,
+    message: "Produto atualizado com sucesso."
+  };
+}
+
+export async function deleteProdutoBlocked(idProduto: number): Promise<ProdutoWriteResult> {
+  // DELETE físico de produto é proibido nesta fase porque o catálogo pode ter vínculos com propostas.
+  return {
+    success: false,
+    blocked: true,
+    operation: "DELETE",
+    table: "public.produtos",
+    payload: {
+      id_produto: idProduto
+    },
+    allowedFields: [],
+    rejectedFields: [],
+    message: PRODUTOS_DELETE_BLOCKED_MESSAGE
+  };
+}
+
+export async function uploadProdutoFotoReal({
+  idProduto,
+  nomeProduto,
+  file
+}: {
+  idProduto: number;
+  nomeProduto: string;
+  file: File;
+}): Promise<{ success: boolean; foto?: ProdutoFoto; message: string; path?: string; publicUrl?: string; status?: string | number }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      success: false,
+      message: "Cliente Supabase indisponível para enviar foto."
+    };
+  }
+
+  if (!Number.isInteger(idProduto) || idProduto <= 0) {
+    return {
+      success: false,
+      message: "Salve ou informe um ID de produto válido antes de enviar a foto."
+    };
+  }
+
+  if (!PRODUCT_IMAGE_MIME_TYPES.includes(file.type)) {
+    return {
+      success: false,
+      message: "Selecione uma imagem JPG, PNG ou WEBP."
+    };
+  }
+
+  const filePath = `${PRODUCT_IMAGES_FOLDER}/${idProduto}/${Date.now()}-${sanitizeStorageFileName(file.name)}`;
+  const uploadResult = await client.storage
+    .from(PRODUCT_IMAGES_BUCKET)
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      contentType: file.type
+    });
+
+  if (uploadResult.error) {
+    console.log("[Produtos][Fotos] upload no Storage falhou.", {
+      bucket: PRODUCT_IMAGES_BUCKET,
+      path: filePath,
+      error: uploadResult.error
+    });
+
+    return {
+      success: false,
+      message: getProdutoStorageErrorMessage(uploadResult.error.message),
+      path: filePath,
+      status: getSupabaseWriteStatus(uploadResult.error)
+    };
+  }
+
+  const publicUrlResult = client.storage
+    .from(PRODUCT_IMAGES_BUCKET)
+    .getPublicUrl(uploadResult.data.path);
+  const publicUrl = publicUrlResult.data.publicUrl;
+
+  if (!publicUrl) {
+    return {
+      success: false,
+      message: "Upload concluído, mas não foi possível gerar a URL pública da imagem.",
+      path: uploadResult.data.path
+    };
+  }
+
+  const fotoPayload = {
+    idProduto,
+    nomeProduto: nomeProduto || `Produto ${idProduto}`,
+    imagensURL: publicUrl
+  };
+
+  const { data, error } = await client
+    .from("fotosProdutos")
+    .insert(fotoPayload)
+    .select(FOTOS_SELECT)
+    .single<SupabaseProdutoFotoRow>();
+
+  if (error) {
+    return {
+      success: false,
+      message: error.message || "Imagem enviada, mas não foi possível registrar a foto em public.fotosProdutos.",
+      path: uploadResult.data.path,
+      publicUrl,
+      status: getSupabaseWriteStatus(error)
+    };
+  }
+
+  const foto = data ? mapSupabaseProdutoFotoRowToFoto(data) : null;
+  if (!foto) {
+    return {
+      success: false,
+      message: "Foto registrada, mas não foi possível mapear o retorno do Supabase.",
+      path: uploadResult.data.path,
+      publicUrl
+    };
+  }
+
+  return {
+    success: true,
+    foto: {
+      ...foto,
+      principal: false
+    },
+    message: "Foto enviada com sucesso.",
+    path: uploadResult.data.path,
+    publicUrl
+  };
 }
 
 export async function getProdutosReadOnlyList(): Promise<ProdutosReadResult> {

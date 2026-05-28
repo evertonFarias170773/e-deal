@@ -56,7 +56,7 @@ export function ProdutoFormRouteClient({ idProduto }: ProdutoFormRouteClientProp
       <section className="rounded-3xl border border-orange-200 bg-orange-50 p-6 text-orange-800">
         <h1 className="text-lg font-semibold">Produto não encontrado</h1>
         <p className="mt-2 text-sm">
-          Não foi possível carregar este produto em public.produtos. A edição real continua bloqueada nesta etapa.
+          Não foi possível carregar este produto em public.produtos. A edição real exige um produto existente.
         </p>
         <Link
           href="/produtos"

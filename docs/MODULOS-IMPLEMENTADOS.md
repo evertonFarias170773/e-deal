@@ -144,7 +144,7 @@ Pendências:
 
 ## Produtos
 
-Status: módulo mockado inicial implementado como segunda tela operacional completa.
+Status: módulo com leitura real de `public.produtos`, escrita real expandida por whitelist e upload de fotos no Storage.
 
 Rotas:
 
@@ -158,6 +158,7 @@ Componentes principais:
 - `ProdutosListPage`
 - `ProdutoDetailPage`
 - `ProdutoFormPage`
+- `produtos.service.ts`
 - `ActionsMenu`
 - `AppToast`
 
@@ -169,14 +170,22 @@ Mocks usados:
 
 Funcionalidades:
 
-- listagem com filtros por busca, categoria, status, variações, fotos e estoque;
+- listagem com filtros por busca, categoria, status, variações, fotos e estoque usando dados reais de `public.produtos`;
 - tabela desktop;
 - cards mobile;
 - detalhe separado da edição;
-- novo produto mockado;
-- edição mockada com `id_produto` somente leitura;
+- novo produto com `INSERT` real controlado por whitelist;
+- validação de `id_produto` manual, obrigatório, numérico e único antes do `INSERT`;
+- edição com `UPDATE` real controlado por whitelist e `id_produto` somente leitura;
+- valores comerciais (`valorUnt`, `valorFixo`, `valor_custo`) editáveis com conversão numérica segura;
+- dados fiscais editáveis no formulário e exibidos no detalhe;
+- upload real de imagens para Supabase Storage no bucket `e-deal`, pasta `produtos/`;
+- tratamento amigável para bucket de imagens inexistente ou erro de permissão no Storage;
+- cópia local de dados fiscais a partir de outro produto real, com confirmação antes de preencher o formulário;
+- registro de foto em `public.fotosProdutos` somente após upload concluído;
+- galeria mantém fotos existentes sem exclusão nesta etapa;
 - alerta visual ao alterar preço, custo, peso ou prazo;
-- galeria visual de fotos com URL mockada, remoção e foto principal;
+- galeria visual de fotos reais, com adição por upload e sem exclusão;
 - banco mockado de variações globais reutilizáveis;
 - vínculo visual de variações existentes ao produto via `produto_variacoes`;
 - visualização de opções/modelos vindos de `tipos_variacoes`;
@@ -185,6 +194,12 @@ Funcionalidades:
 - conceito registrado de que Produtos apenas consome/vincula variações globais mantidas futuramente em Configurações;
 - preparação conceitual para `produtos_proposta_variacao`, que salvará no orçamento a opção/modelo escolhido na proposta;
 - card de uso no Maestro com apelidos;
+- detalhe lendo produto real por `id_produto`;
+- cards de resumo usando contagens reais de `public.produtos` e fotos quando disponíveis;
+- campo `peso` tratado como gramas;
+- service de criação/edição real com whitelist explícita e sem `upsert`;
+- `id`, `created_at` e `id_produto` no `UPDATE` bloqueados;
+- `DELETE` físico de produto explicitamente bloqueado no service e na matriz de segurança;
 - toast no salvamento e ações mockadas;
 - retorno para lista no novo produto e para detalhe na edição.
 
@@ -192,10 +207,11 @@ Pendências:
 
 - revisar campos finais com operação;
 - validar responsividade fina em dispositivos reais;
-- preparar futuro service de Produtos para Supabase;
-- conectar futuramente à tabela `produtos`;
-- integrar futuramente `produto_variacoes` e `fotosProdutos`;
-- definir permissões reais para custo, preço, prazo e inativação.
+- validar a primeira fase de `INSERT`/`UPDATE` real com operação;
+- validar a escrita expandida de valores, fiscal e fotos com operação;
+- revisar se foto principal terá persistência própria;
+- integrar futuramente escrita real de `produto_variacoes`;
+- definir permissões reais para custo, preço, prazo, peso e inativação.
 
 ## Orçamentos
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CreditCard, Landmark, QrCode, ReceiptText, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -94,10 +94,25 @@ export function PropostaCobrancaPanel({
     };
   }, [form.valor, proposta]);
 
-  useEffect(() => {
+  const openModal = useCallback(() => {
+    // Reset do formulário apenas ao abrir o modal para evitar sobrescrever edição em andamento.
     setForm(buildInitialFormState());
     setParcelasCartao(2);
-  }, [proposta, saldoRestante]);
+
+    if (!isControlled) {
+      setInternalModalOpen(true);
+    }
+
+    onOpenModal?.();
+  }, [isControlled, onOpenModal, proposta]);
+
+  const closeModal = useCallback(() => {
+    if (!isControlled) {
+      setInternalModalOpen(false);
+    }
+
+    onCloseModal?.();
+  }, [isControlled, onCloseModal]);
 
   useEffect(() => {
     if (!modalOpen) {
@@ -119,23 +134,7 @@ export function PropostaCobrancaPanel({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [modalOpen]);
-
-  function openModal() {
-    if (!isControlled) {
-      setInternalModalOpen(true);
-    }
-
-    onOpenModal?.();
-  }
-
-  function closeModal() {
-    if (!isControlled) {
-      setInternalModalOpen(false);
-    }
-
-    onCloseModal?.();
-  }
+  }, [closeModal, modalOpen]);
 
   function patchForm(patch: Partial<CriarCobrancaFormValues>) {
     setForm((current) => ({ ...current, ...patch }));

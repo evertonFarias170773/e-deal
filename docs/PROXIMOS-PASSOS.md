@@ -23,7 +23,10 @@
 - Revisar com operação o banco global de variações e tipos/modelos disponíveis.
 - Criar futuramente em Configurações a manutenção global de `variacoes` e `tipos_variacoes`.
 - Validar como `produtos_proposta_variacao` aplicará valor extra e peso na proposta.
-- Preparar futuro service de Produtos para Supabase.
+- Validar a escrita expandida de valores comerciais, dados fiscais e fotos reais em `public.produtos` e `public.fotosProdutos`.
+- Monitorar erros de permissão/RLS na criação, edição e upload de fotos no bucket `e-deal`, pasta `produtos/`.
+- Garantir que `DELETE` físico de produto permaneça bloqueado; avaliar apenas inativação controlada em fase própria.
+- Definir fase específica para foto principal, edição/exclusão de imagem e manutenção de variações.
 - Manter `produtos`, `fotosProdutos`, `produto_variacoes`, `variacoes` e `tipos_variacoes` documentados na matriz de segurança antes de qualquer escrita.
 
 ## Orçamentos

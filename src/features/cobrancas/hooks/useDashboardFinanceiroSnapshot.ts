@@ -18,25 +18,37 @@ export function useDashboardFinanceiroSnapshot({ cobrancasStats, mesSelecionado 
     () => buildDashboardFinanceiroFallbackSnapshot(cobrancasStats, mesSelecionado),
     [cobrancasStats, mesSelecionado]
   );
+  const requestKey = useMemo(
+    () => `${mesSelecionado}:${cobrancasStats.map((cobranca) => cobranca.id).join("|")}`,
+    [cobrancasStats, mesSelecionado]
+  );
 
-  const [snapshot, setSnapshot] = useState<DashboardFinanceiroSnapshot>(fallbackSnapshot);
+  const [remoteSnapshotsByKey, setRemoteSnapshotsByKey] = useState<Record<string, DashboardFinanceiroSnapshot>>({});
 
   useEffect(() => {
     let active = true;
-    setSnapshot(fallbackSnapshot);
 
     void (async () => {
       const remote = await fetchDashboardFinanceiroSnapshot(cobrancasStats, mesSelecionado);
       if (active) {
-        setSnapshot(remote);
+        setRemoteSnapshotsByKey((current) => {
+          if (current[requestKey]) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [requestKey]: remote
+          };
+        });
       }
     })();
 
     return () => {
       active = false;
     };
-  }, [cobrancasStats, fallbackSnapshot, mesSelecionado]);
+  }, [cobrancasStats, mesSelecionado, requestKey]);
 
-  return snapshot;
+  return remoteSnapshotsByKey[requestKey] ?? fallbackSnapshot;
 }
 
