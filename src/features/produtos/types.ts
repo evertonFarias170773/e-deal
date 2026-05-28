@@ -1,6 +1,6 @@
-export type ProdutoCategoria = "Pulseiras" | "Ingressos" | "Cartoes" | "Credenciais";
+export type ProdutoCategoria = string;
 
-export type ProdutoNivelSeguranca = "baixo" | "medio" | "alto" | "antifraude" | "controle visual";
+export type ProdutoNivelSeguranca = string;
 
 export type ProdutoFoto = {
   id: string;
@@ -42,6 +42,7 @@ export type ProdutoVariacaoDetalhada = ProdutoVariacaoVinculo & {
 
 export type Produto = {
   id: string;
+  created_at: string | null;
   id_produto: number;
   nomeReal: string;
   categoria: ProdutoCategoria;
@@ -59,6 +60,24 @@ export type Produto = {
   ativo: boolean;
   is_estoque: boolean;
   is_variacao: boolean;
+  is_multiplo: boolean;
+  cod_beneficio: string;
+  ncm: string;
+  descri_ncm: string;
+  cest: string;
+  origem: string;
+  cod_origem: number | null;
+  cod_bar: string;
+  und_medida: string;
+  cfop_interno: string;
+  cfop_interestadual: string;
+  unidade_comercial: string;
+  unidade_tributavel: string;
+  icms_origem: string;
+  icms_situacao_tributaria: string;
+  pis_situacao_tributaria: string;
+  cofins_situacao_tributaria: string;
+  informacoes_fiscais: string;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
 };
