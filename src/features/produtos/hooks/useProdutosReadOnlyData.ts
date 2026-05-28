@@ -5,8 +5,15 @@ import { getProdutosReadOnlyList, type ProdutosReadResult } from "@/features/pro
 
 export function useProdutosReadOnlyData() {
   const [state, setState] = useState<ProdutosReadResult>({
-    source: "mock",
+    source: "supabase",
     produtos: [],
+    resumo: {
+      ativos: 0,
+      comVariacoes: 0,
+      estoque: 0,
+      comFotos: 0
+    },
+    categorias: [],
     warnings: []
   });
   const [isLoading, setIsLoading] = useState(true);
