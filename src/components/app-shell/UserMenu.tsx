@@ -27,20 +27,45 @@ export function UserMenu() {
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-[#d7e5e8] bg-white px-3 py-2 shadow-sm">
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#dff8f6] text-[#0b7774]">
+    <div
+      className="flex items-center gap-3 rounded-2xl px-3 py-2 shadow-sm"
+      style={{
+        background: "var(--card)",
+        border: "1px solid var(--border)"
+      }}
+    >
+      <span
+        className="flex h-9 w-9 items-center justify-center rounded-full"
+        style={{
+          background: "color-mix(in srgb, var(--secondary) 15%, transparent)",
+          color: "var(--secondary)"
+        }}
+      >
         <UserRound className="h-4 w-4" />
       </span>
       <div className="hidden leading-tight md:block">
-        <p className="text-sm font-semibold text-slate-900">{user.name}</p>
-        <p className="text-xs text-slate-500">{user.sector}</p>
+        <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+          {user.name}
+        </p>
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          {user.sector}
+        </p>
       </div>
       <button
         type="button"
         onClick={handleLogout}
         disabled={isLoggingOut}
-        className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+        className="rounded-xl p-2 transition"
+        style={{ color: "var(--muted)" }}
         aria-label="Sair"
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background = "var(--background)";
+          (e.currentTarget as HTMLButtonElement).style.color = "var(--foreground)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+          (e.currentTarget as HTMLButtonElement).style.color = "var(--muted)";
+        }}
       >
         <LogOut className="h-4 w-4" />
       </button>

@@ -1,17 +1,117 @@
 @import "tailwindcss";
 
+/* ============================================================
+   TOKENS DE TEMA — LIGHT MODE (padrão)
+   ============================================================ */
 :root {
-  --background: #f3f7f8;
-  --foreground: #102033;
-  --muted: #64748b;
-  --border: #dbe7ea;
-  --card: #ffffff;
-  --primary: #0b2f4a;
-  --primary-foreground: #ffffff;
-  --secondary: #0f9f9a;
-  --accent: #f28c28;
+  /* --- Superfícies --- */
+  --background:          #eef2f5;
+  --card:                #ffffff;
+  --card-hover:          #f8fafc;
+
+  /* --- Texto --- */
+  --foreground:          #0d1b2a;
+  --muted:               #4e6278;
+  --muted-subtle:        #7a95aa;
+
+  /* --- Bordas --- */
+  --border:              #c8dde3;
+  --border-strong:       #a5c3cc;
+
+  /* --- Cor primária — azul escuro (headers, nav, botão principal) --- */
+  --primary:             #0a2540;
+  --primary-hover:       #0e3360;
+  --primary-foreground:  #ffffff;
+
+  /* --- Cor secundária — teal (sucesso, aprovado) --- */
+  --secondary:           #0d9488;
+  --secondary-hover:     #0b7a75;
+  --secondary-foreground:#ffffff;
+
+  /* --- Laranja — atenção, pendente --- */
+  --accent:              #e07b16;
+  --accent-hover:        #c46c10;
+
+  /* --- Ações semânticas --- */
+  --action-save:         #0d9488;
+  --action-save-hover:   #0b7a75;
+  --action-save-fg:      #ffffff;
+
+  --action-edit:         #1e7fc4;
+  --action-edit-hover:   #1669a8;
+  --action-edit-fg:      #ffffff;
+
+  --action-danger:       #dc2626;
+  --action-danger-hover: #b91c1c;
+  --action-danger-fg:    #ffffff;
+
+  /* --- Sidebar — azul escura em ambos os temas --- */
+  --sidebar-bg:          #0a2540;
+  --sidebar-border:      #1a3d5c;
+  --sidebar-text:        #c8dff0;
+  --sidebar-text-muted:  #7aa3c0;
+  --sidebar-active-bg:   #1e4d7a;
+  --sidebar-active-text: #7dd3fc;
+  --sidebar-hover-bg:    #133558;
+  --sidebar-hover-text:  #e2f0fb;
+  --sidebar-icon:        #7aa3c0;
+  --sidebar-icon-active: #7dd3fc;
 }
 
+/* ============================================================
+   TOKENS DE TEMA — DARK MODE (classe .dark no <html>)
+   ============================================================ */
+.dark {
+  --background:          #0d1b2a;
+  --card:                #132436;
+  --card-hover:          #1a2e42;
+
+  --foreground:          #e2eef7;
+  --muted:               #7ea5bf;
+  --muted-subtle:        #5a8099;
+
+  --border:              #1e3a52;
+  --border-strong:       #2a4d6a;
+
+  --primary:             #1a6fc4;
+  --primary-hover:       #2280d6;
+  --primary-foreground:  #ffffff;
+
+  --secondary:           #0d9488;
+  --secondary-hover:     #0b7a75;
+  --secondary-foreground:#ffffff;
+
+  --accent:              #e07b16;
+  --accent-hover:        #c46c10;
+
+  --action-save:         #0d9488;
+  --action-save-hover:   #0f9f99;
+  --action-save-fg:      #ffffff;
+
+  --action-edit:         #2288d6;
+  --action-edit-hover:   #3398e6;
+  --action-edit-fg:      #ffffff;
+
+  --action-danger:       #ef4444;
+  --action-danger-hover: #f87171;
+  --action-danger-fg:    #ffffff;
+
+  /* Sidebar mantém azul escura mesmo no dark */
+  --sidebar-bg:          #071829;
+  --sidebar-border:      #122840;
+  --sidebar-text:        #c8dff0;
+  --sidebar-text-muted:  #5a8099;
+  --sidebar-active-bg:   #1e4d7a;
+  --sidebar-active-text: #7dd3fc;
+  --sidebar-hover-bg:    #0f2e48;
+  --sidebar-hover-text:  #e2f0fb;
+  --sidebar-icon:        #5a8099;
+  --sidebar-icon-active: #7dd3fc;
+}
+
+/* ============================================================
+   RESET E BASE
+   ============================================================ */
 * {
   box-sizing: border-box;
 }
@@ -24,12 +124,16 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+  transition: background-color 150ms ease, color 150ms ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -39,8 +143,12 @@ button {
 
 button:disabled {
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
+/* ============================================================
+   ANIMAÇÕES
+   ============================================================ */
 @keyframes toast-slide-down {
   from {
     opacity: 0;
@@ -54,4 +162,19 @@ button:disabled {
 
 .toast-slide-down {
   animation: toast-slide-down 220ms ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fade-in 200ms ease-out;
 }

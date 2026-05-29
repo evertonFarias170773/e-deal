@@ -1,6 +1,26 @@
 # Changelog
 
-## 2026-05-27
+## 2026-05-29
+
+### Adicionado
+
+- Dark Mode completo via estratégia `class` no `<html>`, com alternância por `ThemeToggle` (botão Sol/Lua) na Topbar.
+- Preferência de tema persiste em `localStorage` com chave `erp-theme` e respeita `prefers-color-scheme` do sistema operacional.
+- Script anti-flash em `layout.tsx` aplica a classe `dark` antes do React hidratar, eliminando piscar visual.
+- Componente `ThemeToggle.tsx` em `src/components/app-shell/`.
+- Tokens semânticos de ação: `--action-save`, `--action-save-hover`, `--action-edit`, `--action-edit-hover`, `--action-danger`, `--action-danger-hover` e seus respectivos foregrounds.
+- Animação `fade-in` global para uso em transições de conteúdo.
+
+### Alterado
+
+- `globals.css` inteiramente refatorado: paleta tokenizada em CSS Custom Properties para light mode (`:root`) e dark mode (`.dark`). Fonte migrada de Arial para **Inter** (Google Fonts).
+- Sidebar passou de fundo branco para **azul escuro** via token `--sidebar-bg` (`#0a2540`), com texto claro, item ativo em azul médio e hover suave. MobileSidebar recebeu as mesmas mudanças.
+- Topbar passou a usar `backdrop-blur` com fundo `--card` semitransparente e borda `--border`.
+- `PageHeader` passou a ter fundo `--primary` (azul escuro) com texto branco — destaque visual de cabeçalho de página.
+- `SummaryCard`, `StatusBadge`, `ResponsiveList`, `LoadingSkeleton`, `EmptyState`, `UserMenu` e `CompanySwitcher` passaram a usar tokens CSS (`--card`, `--border`, `--foreground`, `--muted`) — suporte completo a dark mode sem cores hardcoded.
+- `DashboardPage` passou a usar `--action-save` no botão "Nova proposta" e tokens para todos os cards e seções.
+- Rollback disponível pelo commit `ef1bb46` (checkpoint criado antes das mudanças).
+
 
 ### Alterado
 

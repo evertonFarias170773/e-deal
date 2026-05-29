@@ -4,12 +4,21 @@
 
 O ERP deve ter aparência administrativa moderna, limpa e produtiva, evitando visual genérico ou poluído.
 
-Paleta atual:
+Paleta tokenizada (CSS Custom Properties em `globals.css`):
 
-- Azul escuro como cor principal.
-- Teal/verde água como cor secundária.
-- Laranja apenas como detalhe de destaque.
-- Cinzas claros para fundo, bordas e áreas administrativas.
+| Token | Light | Dark | Uso |
+|---|---|---|---|
+| `--primary` | `#0a2540` | `#1a6fc4` | Azul escuro — headers, botão principal, badge |
+| `--secondary` | `#0d9488` | `#0d9488` | Teal — sucesso, aprovado |
+| `--accent` | `#e07b16` | `#e07b16` | Laranja — atenção, pendente |
+| `--action-save` | `#0d9488` | `#0d9488` | Verde/teal — salvar, confirmar |
+| `--action-edit` | `#1e7fc4` | `#2288d6` | Azul claro — editar |
+| `--action-danger` | `#dc2626` | `#ef4444` | Vermelho — excluir, cancelar |
+| `--background` | `#eef2f5` | `#0d1b2a` | Fundo da página |
+| `--card` | `#ffffff` | `#132436` | Fundo de cards |
+| `--sidebar-bg` | `#0a2540` | `#071829` | Fundo da sidebar (sempre escuro) |
+
+Dark Mode: ativado via classe `.dark` no `<html>`. Alternado por `ThemeToggle` na Topbar. Persiste em `localStorage('erp-theme')`. Respeita `prefers-color-scheme` do sistema.
 
 ## Sidebar
 

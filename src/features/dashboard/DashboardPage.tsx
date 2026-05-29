@@ -25,7 +25,19 @@ export function DashboardPage() {
         subtitle={`Acompanhe os principais indicadores comerciais, financeiros, fiscais e de producao. Contexto: ${activeCompany.shortName}.`}
         context="Visao operacional"
         action={
-          <button className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]">
+          <button
+            className="rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition"
+            style={{
+              background: "var(--action-save)",
+              color: "var(--action-save-fg)"
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = "var(--action-save-hover)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = "var(--action-save)";
+            }}
+          >
             Nova proposta
           </button>
         }
@@ -56,8 +68,8 @@ export function DashboardPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-950">Atividades recentes</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-lg font-semibold" style={{ color: "var(--foreground)" }}>Atividades recentes</h2>
+              <p className="text-sm" style={{ color: "var(--muted)" }}>
                 Eventos mockados para validar a leitura operacional do painel.
               </p>
             </div>
@@ -102,18 +114,22 @@ export function DashboardPage() {
             renderCard={(item) => (
               <article
                 key={item.id}
-                className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+                className="rounded-2xl p-5 shadow-sm"
+                style={{
+                  background: "var(--card)",
+                  border: "1px solid var(--border)"
+                }}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted)" }}>
                       {item.id}
                     </p>
-                    <h3 className="mt-2 font-semibold text-slate-950">{item.title}</h3>
+                    <h3 className="mt-2 font-semibold" style={{ color: "var(--foreground)" }}>{item.title}</h3>
                   </div>
                   <StatusBadge status={item.status} />
                 </div>
-                <p className="mt-3 text-sm leading-6 text-slate-500">{item.description}</p>
+                <p className="mt-3 text-sm leading-6" style={{ color: "var(--muted)" }}>{item.description}</p>
                 <div className="mt-4">
                   <ActionsMenu
                     items={[
@@ -128,20 +144,33 @@ export function DashboardPage() {
           />
         </div>
 
-        <aside className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
+        <aside
+          className="rounded-2xl p-5 shadow-sm"
+          style={{
+            background: "var(--card)",
+            border: "1px solid var(--border)"
+          }}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-950">Proxima etapa</h2>
-              <p className="mt-1 text-sm text-slate-500">Preparado para os proximos modulos.</p>
+              <h2 className="text-lg font-semibold" style={{ color: "var(--foreground)" }}>Proxima etapa</h2>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Preparado para os proximos modulos.</p>
             </div>
             <StatusBadge status="RASCUNHO" />
           </div>
 
           <div className="mt-6 space-y-4">
             {["Cadastros", "Produtos", "Orcamentos"].map((item) => (
-              <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="font-semibold text-slate-900">{item}</p>
-                <p className="mt-1 text-sm text-slate-500">
+              <div
+                key={item}
+                className="rounded-xl p-4"
+                style={{
+                  background: "var(--background)",
+                  border: "1px solid var(--border)"
+                }}
+              >
+                <p className="font-semibold" style={{ color: "var(--foreground)" }}>{item}</p>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
                   Estrutura reservada no menu para implementar a listagem completa na proxima fase.
                 </p>
               </div>

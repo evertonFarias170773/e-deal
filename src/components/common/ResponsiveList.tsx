@@ -52,29 +52,46 @@ export function ResponsiveList<T>({
 
   return (
     <>
-      <div className="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:block">
+      {/* Tabela — desktop */}
+      <div
+        className="hidden overflow-hidden rounded-2xl shadow-sm lg:block"
+        style={{
+          background: "var(--card)",
+          border: "1px solid var(--border)"
+        }}
+      >
         <table className="w-full border-collapse text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
+          <thead>
+            <tr style={{ background: "var(--background)" }}>
               {columns.map((column) => (
                 <th
                   key={column.header}
-                  className={`px-5 py-4 font-semibold ${alignClass[column.align ?? "left"]}`}
+                  className={`px-5 py-4 text-xs font-semibold uppercase tracking-wide ${alignClass[column.align ?? "left"]}`}
+                  style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)" }}
                 >
                   {column.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {items.map((item) => (
-              <tr key={getKey(item)} className="transition hover:bg-slate-50">
+              <tr
+                key={getKey(item)}
+                className="transition"
+                style={{ borderBottom: "1px solid var(--border)" }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLTableRowElement).style.background = "var(--card-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLTableRowElement).style.background = "transparent";
+                }}
+              >
                 {columns.map((column) => (
                   <td
                     key={column.header}
-                    className={`px-5 py-4 align-middle text-slate-700 ${
-                      alignClass[column.align ?? "left"]
-                    }`}
+                    className={`px-5 py-4 align-middle ${alignClass[column.align ?? "left"]}`}
+                    style={{ color: "var(--foreground)" }}
                   >
                     {column.cell(item)}
                   </td>
@@ -85,7 +102,10 @@ export function ResponsiveList<T>({
         </table>
       </div>
 
-      <div className="grid gap-4 lg:hidden">{items.map((item) => renderCard(item))}</div>
+      {/* Cards — mobile */}
+      <div className="grid gap-4 lg:hidden">
+        {items.map((item) => renderCard(item))}
+      </div>
     </>
   );
 }

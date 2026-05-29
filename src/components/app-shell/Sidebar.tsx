@@ -20,10 +20,15 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "hidden h-screen shrink-0 border-r border-[#d7e5e8] bg-white p-3 text-slate-800 shadow-sm transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:flex-col",
+        "hidden h-screen shrink-0 p-3 shadow-xl transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:flex-col",
         isCollapsed ? "w-20" : "w-72"
       )}
+      style={{
+        background: "var(--sidebar-bg)",
+        borderRight: "1px solid var(--sidebar-border)"
+      }}
     >
+      {/* Cabeçalho / Logo */}
       <div
         className={cn(
           "mb-3 flex items-start gap-2 px-1 py-1",
@@ -38,30 +43,56 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
                 alt="Ingresso Ideal"
                 width={943}
                 height={280}
-                className="h-14 w-full object-contain object-left"
+                className="h-14 w-full object-contain object-left brightness-200"
                 priority
               />
-              <p className="mt-2 text-xs font-medium text-slate-500">Painel operacional</p>
+              <p
+                className="mt-2 text-xs font-medium"
+                style={{ color: "var(--sidebar-text-muted)" }}
+              >
+                Painel operacional
+              </p>
             </div>
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-[#f3f7f8]"
+              className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition"
+              style={{ color: "var(--sidebar-text-muted)" }}
               aria-label="Recolher menu lateral"
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--sidebar-hover-bg)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--sidebar-hover-text)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--sidebar-text-muted)";
+              }}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
           </>
         ) : (
           <>
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#0b2f4a] text-sm font-bold text-white">
+            <div
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white"
+              style={{ background: "var(--sidebar-active-bg)" }}
+            >
               ID
             </div>
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-[#f3f7f8]"
+              className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition"
+              style={{ color: "var(--sidebar-text-muted)" }}
               aria-label="Expandir menu lateral"
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--sidebar-hover-bg)";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--sidebar-hover-text)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                (e.currentTarget as HTMLButtonElement).style.color = "var(--sidebar-text-muted)";
+              }}
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -69,36 +100,55 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         )}
       </div>
 
-      <nav className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+      {/* Navegação */}
+      <nav className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
         {navigationItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          const commonClass = cn(
-            "group relative flex items-center rounded-2xl px-3 py-2.5 text-sm font-medium transition",
+          const isActive =
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+          const baseClass = cn(
+            "group relative flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150",
             isCollapsed ? "justify-center" : "gap-3",
-            isActive
-              ? "bg-[#dff8f6] text-[#0b7774]"
-              : "text-slate-600 hover:bg-slate-50 hover:text-[#0b2f4a]",
-            item.disabled && "text-slate-400"
+            item.disabled && "opacity-40 pointer-events-none"
           );
+
+          const activeStyle = isActive
+            ? {
+                background: "var(--sidebar-active-bg)",
+                color: "var(--sidebar-active-text)"
+              }
+            : { color: "var(--sidebar-text)" };
 
           if (item.disabled) {
             return (
               <span
                 key={item.href}
-                className={commonClass}
+                className={baseClass}
+                style={activeStyle}
                 title={isCollapsed ? item.label : undefined}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon
+                  className="h-4 w-4 shrink-0"
+                  style={{ color: isActive ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
+                />
                 {!isCollapsed ? (
                   <>
                     <span className="truncate">{item.label}</span>
-                    <span className="ml-auto text-[10px] uppercase text-slate-400">em breve</span>
+                    <span
+                      className="ml-auto text-[10px] uppercase"
+                      style={{ color: "var(--sidebar-text-muted)" }}
+                    >
+                      em breve
+                    </span>
                   </>
                 ) : (
-                  <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl bg-[#0b2f4a] px-3 py-2 text-xs font-semibold text-white shadow-lg group-hover:block">
-                  {item.label}
-                </span>
+                  <span
+                    className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-xl group-hover:block"
+                    style={{ background: "var(--sidebar-active-bg)" }}
+                  >
+                    {item.label}
+                  </span>
                 )}
               </span>
             );
@@ -108,14 +158,33 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
-              className={commonClass}
+              className={baseClass}
+              style={activeStyle}
               title={isCollapsed ? item.label : undefined}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLAnchorElement).style.background = "var(--sidebar-hover-bg)";
+                  (e.currentTarget as HTMLAnchorElement).style.color = "var(--sidebar-hover-text)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
+                  (e.currentTarget as HTMLAnchorElement).style.color = "var(--sidebar-text)";
+                }
+              }}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon
+                className="h-4 w-4 shrink-0"
+                style={{ color: isActive ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
+              />
               {!isCollapsed ? (
                 <span className="truncate">{item.label}</span>
               ) : (
-                <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl bg-[#0b2f4a] px-3 py-2 text-xs font-semibold text-white shadow-lg group-hover:block">
+                <span
+                  className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-xl group-hover:block"
+                  style={{ background: "var(--sidebar-active-bg)" }}
+                >
                   {item.label}
                 </span>
               )}
@@ -124,26 +193,42 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         })}
       </nav>
 
+      {/* Rodapé — usuário */}
       <div
         className={cn(
-          "mt-4 border-t border-[#d7e5e8] pt-4",
+          "mt-4 border-t pt-4",
           isCollapsed && "flex justify-center"
         )}
+        style={{ borderColor: "var(--sidebar-border)" }}
       >
         <div
           className={cn(
-            "flex items-center rounded-3xl bg-[#f7fbfb] p-3",
+            "flex items-center rounded-2xl p-3",
             isCollapsed ? "justify-center" : "gap-3"
           )}
+          style={{ background: "var(--sidebar-hover-bg)" }}
           title={isCollapsed ? user?.name : undefined}
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#dff8f6] text-[#0b7774]">
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            style={{ background: "var(--sidebar-active-bg)", color: "var(--sidebar-active-text)" }}
+          >
             <UserRound className="h-5 w-5" />
           </span>
           {!isCollapsed && user ? (
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">{user.name}</p>
-              <p className="truncate text-xs text-slate-500">{user.sector}</p>
+              <p
+                className="truncate text-sm font-semibold"
+                style={{ color: "var(--sidebar-text)" }}
+              >
+                {user.name}
+              </p>
+              <p
+                className="truncate text-xs"
+                style={{ color: "var(--sidebar-text-muted)" }}
+              >
+                {user.sector}
+              </p>
             </div>
           ) : null}
         </div>
