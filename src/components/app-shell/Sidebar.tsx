@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { navigationItems } from "@/constants/navigation";
 import { cn } from "@/lib/utils";
+import { ThemedLogo } from "@/components/app-shell/ThemedLogo";
 
 type SidebarProps = {
   isCollapsed: boolean;
@@ -38,15 +38,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         {!isCollapsed ? (
           <>
             <div className="min-w-0 flex-1">
-              <Image
-                src="/logos/ingressoideal.png"
-                alt="Ingresso Ideal"
-                width={943}
-                height={280}
-                className="h-14 w-full object-contain object-left"
-                style={{ filter: "var(--logo-filter)" }}
-                priority
-              />
+              <ThemedLogo className="h-14 w-full object-contain object-left" />
               <p
                 className="mt-2 text-xs font-medium"
                 style={{ color: "var(--sidebar-text-muted)" }}
