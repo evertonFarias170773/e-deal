@@ -36,7 +36,7 @@ export function buildPropostaInformalText({
         : "";
 
       const desconto = item.descontoValorCalculado > 0 ? `\n   Desconto: -${formatPlainCurrency(item.descontoValorCalculado)}` : "";
-      const bonus = item.acrescimoBonus > 0 ? `\n   Tabela especial: +${formatPlainCurrency(item.acrescimoBonus)}` : "";
+      const bonus = item.acrescimoBonus > 0 ? `\n   Tabela especial: -${formatPlainCurrency(item.acrescimoBonus)}` : "";
 
       return `- ${item.descricaoModelo || item.nome}\n   Quantidade: ${item.quantidade.toLocaleString("pt-BR")}\n   Prazo: ${item.prazo}\n   Subtotal: ${formatPlainCurrency(item.subtotal)}${desconto}${bonus}${variacoes}`;
     })
@@ -54,7 +54,7 @@ ${frete ? `${frete.transportadora} - ${frete.servico} - ${formatPlainCurrency(fr
 
 Subtotal produtos: ${formatPlainCurrency(resumo.subtotalProdutos)}
 Descontos individuais: ${formatPlainCurrency(resumo.descontosIndividuais)}
-Acréscimo tabela especial: ${formatPlainCurrency(resumo.acrescimoBonus)}
+Tabela especial do cliente: -${formatPlainCurrency(resumo.acrescimoBonus)}
 Desconto geral: ${formatPlainCurrency(resumo.descontoGeral)}
 Total final: ${formatPlainCurrency(resumo.valorTotal)}
 Forma de pagamento: ${formaPagamento}`;

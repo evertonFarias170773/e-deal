@@ -18,16 +18,50 @@ import { formatDate } from "@/lib/formatters/date";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import type { Proposta, PropostaStatus } from "@/features/orcamentos/types";
 import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcamentos/orcamento-utils";
+import { getClienteBonusPercent } from "@/lib/mocks/propostas.mock";
+
+import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 
 type OrcamentoDetailPageProps = {
-  proposta: Proposta;
+  idInt: number;
 };
 
-export function OrcamentoDetailPage({ proposta }: OrcamentoDetailPageProps) {
+export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { getCobrancasByProposta } = useCobrancas();
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
+  const { proposta, loading, error } = useOrcamentoDetail(idInt);
+
+  if (loading) {
+    return (
+      <div className="flex h-96 items-center justify-center">
+        <div className="text-center space-y-2">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#0b2f4a] border-t-transparent mx-auto"></div>
+          <p className="text-slate-500 font-semibold text-sm">Carregando detalhes do orçamento...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !proposta) {
+    return (
+      <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-center max-w-lg mx-auto mt-12 space-y-4">
+        <h2 className="text-lg font-bold text-red-800">Falha ao carregar orçamento</h2>
+        <p className="text-sm text-red-600">{error || "Não foi possível encontrar a proposta solicitada."}</p>
+        <div className="pt-2">
+          <Link
+            href="/orcamentos"
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para a lista
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const freteEscolhido = proposta.fretes.find((frete) => frete.id === proposta.freteEscolhidoId);
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
@@ -221,29 +255,35 @@ function InfoPill({ label, value }: { label: string; value: string }) {
 }
 
 function ResumoValores({ proposta }: { proposta: Proposta }) {
+  const bonusPercent = proposta.cliente ? getClienteBonusPercent(proposta.cliente) : 0;
   const rows = [
-    ["Subtotal produtos", formatCurrency(proposta.resumo.subtotalProdutos)],
+    ["Subtotal bruto", formatCurrency(proposta.resumo.subtotalBrutoProdutos)],
     ["Descontos individuais", `-${formatCurrency(proposta.resumo.descontosIndividuais)}`],
-    ["Acréscimo tabela especial", `+${formatCurrency(proposta.resumo.acrescimoBonus)}`],
+    [`Tabela especial do cliente aplicada${bonusPercent > 0 ? ` (-${bonusPercent}%)` : ""}`, `-${formatCurrency(proposta.resumo.acrescimoBonus)}`],
+    ["Subtotal produtos", formatCurrency(proposta.resumo.subtotalProdutos)],
     ["Desconto geral", `-${formatCurrency(proposta.resumo.descontoGeral)}`],
     ["Frete", formatCurrency(proposta.resumo.frete)],
     ["Peso total", formatWeightFromGrams(proposta.resumo.pesoTotal)],
-    ["Prazo producao", proposta.resumo.prazoProducao],
-    ["Prazo entrega", proposta.resumo.prazoEntrega]
+    ["Prazo de produção", proposta.resumo.prazoProducao],
+    ["Prazo de entrega", proposta.resumo.prazoEntrega]
   ];
 
   return (
     <div className="space-y-3">
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex items-center justify-between gap-3 text-sm">
-          <span className="text-slate-500">{label}</span>
-          <strong className="text-right text-slate-900">{value}</strong>
-        </div>
-      ))}
+      {rows.map(([label, value]) => {
+        const isDiscount = value.startsWith("-");
+        const valueClass = isDiscount ? "text-teal-600 font-medium" : "text-slate-900";
+        return (
+          <div key={label} className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-slate-500">{label}</span>
+            <strong className={`text-right ${valueClass}`}>{value}</strong>
+          </div>
+        );
+      })}
       <div className="border-t border-slate-200 pt-3">
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm font-semibold text-slate-600">Total final</span>
-          <strong className="text-xl text-slate-950">{formatCurrency(proposta.resumo.valorTotal)}</strong>
+          <strong className="text-xl text-[#0b2f4a] font-extrabold">{formatCurrency(proposta.resumo.valorTotal)}</strong>
         </div>
       </div>
     </div>

@@ -132,13 +132,29 @@ export function ProdutosListPage() {
         subtitle="Gerencie o catalogo usado por propostas, Maestro, producao, fotos e variacoes."
         context="Produtos / Catalogo"
         action={
-          <button
-            type="button"
-            onClick={() => router.push("/produtos/novo")}
-            className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-          >
-            + Novo produto
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/produtos/variacoes")}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Ver variações
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/produtos/variacoes/nova")}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              + Nova variação
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/produtos/novo")}
+              className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+            >
+              + Novo produto
+            </button>
+          </div>
         }
       />
 

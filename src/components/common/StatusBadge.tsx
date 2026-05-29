@@ -26,7 +26,13 @@ const toneByStatus: Record<string, StatusTone> = {
   CANCELADO: "neutral",
   DENEGADA: "neutral",
   RASCUNHO: "neutral",
-  NAO_CONFIRMADO: "neutral"
+  NAO_CONFIRMADO: "neutral",
+  OBRIGATORIA: "danger",
+  OPCIONAL: "neutral",
+  MULTIPLA: "info",
+  ESCOLHA_UNICA: "warning",
+  ATIVO: "success",
+  INATIVO: "neutral"
 };
 
 const toneStyles: Record<StatusTone, string> = {

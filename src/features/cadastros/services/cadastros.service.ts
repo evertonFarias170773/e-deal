@@ -232,7 +232,7 @@ function normalizeRelatedCadastro(row: SupabaseClienteRow) {
 }
 
 type CadastrosListQuery = {
-  pageIndex: number;
+  pageIndex?: number;
   pageSize?: number;
   search?: string;
   categoria?: "TODAS" | CadastroCategoria;
@@ -324,17 +324,18 @@ function applyMockCadastrosQuery(query: Required<Pick<CadastrosListQuery, "pageI
 }
 
 export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promise<CadastrosReadResult> {
+  const pageIndex = Math.max(query.pageIndex ?? 0, 0);
   const pageSize = Math.min(Math.max(query.pageSize ?? 500, 1), 500);
-  const from = Math.max(query.pageIndex, 0) * pageSize;
+  const from = pageIndex * pageSize;
   const to = from + pageSize - 1;
   const client = getSupabaseClient();
 
   if (!client) {
     console.log("[Cadastros][List] client Supabase ausente - fallback mock ativado.", {
-      pageIndex: query.pageIndex,
+      pageIndex,
       pageSize
     });
-    return applyMockCadastrosQuery({ ...query, pageSize });
+    return applyMockCadastrosQuery({ ...query, pageIndex, pageSize });
   }
 
   const searchClause = buildCadastrosSearchClause(query.search ?? "");
@@ -369,7 +370,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       console.log("[Cadastros][List] erro ao consultar Supabase - fallback mock ativado.", {
         message: error instanceof Error ? error.message : String(error)
       });
-      return applyMockCadastrosQuery({ ...query, pageSize });
+      return applyMockCadastrosQuery({ ...query, pageIndex, pageSize });
     }
 
     const cadastros = sortCadastrosByIdClienteDesc((data ?? []).map(mapSupabaseClienteRowToCadastro));
@@ -379,7 +380,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
     console.log("[Cadastros][List] dados reais aplicados.", {
       registrosPagina: cadastros.length,
       totalCount,
-      pageIndex: query.pageIndex,
+      pageIndex,
       pageSize
     });
 
@@ -389,7 +390,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
         cadastros: [],
         totalCount: 0,
         hasNextPage: false,
-        pageIndex: query.pageIndex,
+        pageIndex,
         pageSize,
         loadedCount: 0,
         warnings: ["Nenhum cadastro encontrado para os filtros atuais."]
@@ -401,14 +402,14 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       cadastros,
       totalCount,
       hasNextPage,
-      pageIndex: query.pageIndex,
+      pageIndex,
       pageSize,
       loadedCount: cadastros.length,
       warnings: [`Leitura real aplicada em public.clientes com ${cadastros.length} registros na página atual.`]
     };
   } catch (error) {
     console.log("[Cadastros][List] excecao ao consultar Supabase - fallback mock ativado.", { error });
-    return applyMockCadastrosQuery({ ...query, pageSize });
+    return applyMockCadastrosQuery({ ...query, pageIndex, pageSize });
   }
 }
 
@@ -422,100 +423,93 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
     };
   }
 
-  const supabase = getSupabaseConfig();
-  if (!supabase) {
+  const client = getSupabaseClient();
+  if (!client) {
     return {
       source: "mock",
       cadastro: fallbackDetailFromMock(idCliente)
     };
   }
 
-  const mainRows = await selectSupabaseRows<SupabaseClienteRow>(
-    "clientes",
-    {
-      select:
-        "id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,percentual_bunus",
-      id_cliente: `eq.${idCliente}`,
-      limit: "1"
+  try {
+    const { data: mainRows, error: mainError } = await client
+      .from("clientes")
+      .select("id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,percentual_bunus")
+      .eq("id_cliente", idCliente)
+      .limit(1);
+
+    const mainRow = mainRows?.[0];
+    if (mainError || !mainRow) {
+      console.warn(`[CadastrosService] Cliente #${idCliente} não encontrado no banco ou erro. Usando mock.`, mainError);
+      return {
+        source: "mock",
+        cadastro: fallbackDetailFromMock(idCliente)
+      };
     }
-  );
 
-  const mainRow = mainRows?.[0];
-  if (!mainRow) {
-    return {
-      source: "mock",
-      cadastro: fallbackDetailFromMock(idCliente)
-    };
-  }
+    const cadastro = mapSupabaseClienteRowToCadastro(mainRow);
 
-  const cadastro = mapSupabaseClienteRowToCadastro(mainRow);
+    const [enderecosResult, contatosResult, sociosResult] = await Promise.all([
+      client
+        .from("enderecos")
+        .select("id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf,obs")
+        .eq("id_cliente", idCliente)
+        .limit(100),
+      client
+        .from("contatos")
+        .select("id,id_cliente,nome_contato,cargo,whats,e_mail")
+        .eq("id_cliente", idCliente)
+        .limit(100),
+      client
+        .from("clientes_socios")
+        .select("id,id_cliente_principal,id_cliente_socio,tipo_relacao")
+        .eq("id_cliente_principal", idCliente)
+        .limit(100)
+    ]);
 
-  const [enderecosRows, contatosRows, sociosRows] = await Promise.all([
-    selectSupabaseRows<SupabaseEnderecoRow>(
-      "enderecos",
-      {
-        select: "id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf,obs",
-        id_cliente: `eq.${idCliente}`,
-        limit: "100"
-      }
-    ),
-    selectSupabaseRows<SupabaseContatoRow>(
-      "contatos",
-      {
-        select: "id,id_cliente,nome_contato,cargo,whats,e_mail",
-        id_cliente: `eq.${idCliente}`,
-        limit: "100"
-      }
-    ),
-    selectSupabaseRows<SupabaseClienteSocioRow>(
-      "clientes_socios",
-      {
-        select: "id,id_cliente_principal,id_cliente_socio,tipo_relacao",
-        id_cliente_principal: `eq.${idCliente}`,
-        limit: "100"
-      }
-    )
-  ]);
-
-  const relatedIds = Array.from(
-    new Set(
-      (sociosRows ?? [])
-        .map((row) => normalizeIdCliente(row.id_cliente_socio))
-        .filter((value): value is number => value !== null)
-    )
-  );
-
-  const relatedLookup = new Map<number, ReturnType<typeof normalizeRelatedCadastro>>();
-
-  if (relatedIds.length) {
-    const relatedRows = await selectSupabaseRows<SupabaseClienteRow>(
-      "clientes",
-      {
-        select: "id_cliente,nome,documento",
-        id_cliente: `in.(${relatedIds.join(",")})`,
-        limit: String(Math.max(relatedIds.length, 1))
-      }
+    const relatedIds = Array.from(
+      new Set(
+        (sociosResult.data ?? [])
+          .map((row) => normalizeIdCliente(row.id_cliente_socio))
+          .filter((value): value is number => value !== null)
+      )
     );
 
-    (relatedRows ?? []).forEach((row) => {
-      const normalizedId = normalizeIdCliente(row.id_cliente);
-      if (normalizedId !== null) {
-        relatedLookup.set(normalizedId, normalizeRelatedCadastro(row));
-      }
-    });
-  }
+    const relatedLookup = new Map<number, ReturnType<typeof normalizeRelatedCadastro>>();
 
-  return {
-    source: "supabase",
-    cadastro: mergeSupabaseRelacionamentos(cadastro, {
-      enderecos: enderecosRows ?? [],
-      contatos: contatosRows ?? [],
-      socios: (sociosRows ?? []).map((row) => ({
-        row,
-        relatedCadastro: relatedLookup.get(normalizeIdCliente(row.id_cliente_socio) ?? -1) ?? null
-      }))
-    })
-  };
+    if (relatedIds.length > 0) {
+      const { data: relatedRows } = await client
+        .from("clientes")
+        .select("id,id_cliente,nome,documento")
+        .in("id_cliente", relatedIds)
+        .limit(relatedIds.length);
+
+      (relatedRows ?? []).forEach((row) => {
+        const normalizedId = normalizeIdCliente(row.id_cliente);
+        if (normalizedId !== null) {
+          relatedLookup.set(normalizedId, normalizeRelatedCadastro(row));
+        }
+      });
+    }
+
+    return {
+      source: "supabase",
+      cadastro: mergeSupabaseRelacionamentos(cadastro, {
+        enderecos: enderecosResult.data ?? [],
+        contatos: contatosResult.data ?? [],
+        socios: (sociosResult.data ?? []).map((row) => ({
+          row,
+          relatedCadastro: relatedLookup.get(normalizeIdCliente(row.id_cliente_socio) ?? -1) ?? null
+        }))
+      })
+    };
+  } catch (err) {
+    console.error(`[CadastrosService] Exceção ao buscar detalhes do cliente #${idCliente}:`, err);
+    return {
+      source: "mock",
+      cadastro: fallbackDetailFromMock(idCliente)
+    };
+  }
 }
 
 export async function getCadastroCompleto(idCliente: string | number): Promise<CadastroDetailReadResult> {

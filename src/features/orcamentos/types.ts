@@ -45,6 +45,7 @@ export type PropostaFrete = {
   prazo: string;
   observacao: string;
   escolhido: boolean;
+  chosen?: boolean;
   pesoUsado: number;
 };
 

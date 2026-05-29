@@ -385,35 +385,6 @@ export function OrcamentosListPageReal() {
         />
       </section>
 
-      {source === "mock" ? (
-        <section className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Fallback mockado ativo</p>
-          <p className="mt-1">{warnings[0] ?? "A leitura real nao respondeu. A lista esta usando os dados mockados atuais."}</p>
-          <div className="mt-3 grid gap-1 text-xs">
-            <p>Origem atual dos dados: <strong>{diagnostics?.source ?? source}</strong></p>
-            <p>NEXT_PUBLIC_SUPABASE_URL: <strong>{diagnostics?.hasSupabaseUrl ? "sim" : "nao"}</strong></p>
-            <p>NEXT_PUBLIC_SUPABASE_ANON_KEY: <strong>{diagnostics?.hasSupabaseAnonKey ? "sim" : "nao"}</strong></p>
-            <p>Client import: <strong>{diagnostics?.clientImportPath ?? "nao identificado"}</strong></p>
-            <p>Client shape: <strong>{diagnostics?.clientShape ?? "nao identificado"}</strong></p>
-            <p>Query em public.propostas executada: <strong>{diagnostics?.queryExecuted ? "sim" : "nao"}</strong></p>
-            <p>Quantidade de registros retornados: <strong>{diagnostics?.registrosRetornados ?? 0}</strong></p>
-            <p>
-              Colunas do primeiro registro:{" "}
-              <strong>{diagnostics?.firstRowColumns?.length ? diagnostics.firstRowColumns.join(", ") : "nenhuma"}</strong>
-            </p>
-            <p>Erro do Supabase: <strong>{diagnostics?.supabaseError ?? "nenhum"}</strong></p>
-            <p>Motivo exato do fallback: <strong>{diagnostics?.fallbackReason ?? "nao identificado"}</strong></p>
-            <p>Smoke result existe: <strong>{diagnostics?.smoke?.resultExists ? "sim" : "nao"}</strong></p>
-            <p>Smoke result keys: <strong>{diagnostics?.smoke?.resultKeys?.join(", ") || "nenhuma"}</strong></p>
-            <p>Smoke data e array: <strong>{diagnostics?.smoke?.dataIsArray ? "sim" : "nao"}</strong></p>
-            <p>Smoke data count: <strong>{diagnostics?.smoke?.dataCount ?? 0}</strong></p>
-            <p>Smoke primeiros id_int: <strong>{diagnostics?.smoke?.firstIdInts?.join(", ") || "nenhum"}</strong></p>
-            <p>Smoke error: <strong>{diagnostics?.smoke?.errorMessage ?? "nenhum"}</strong></p>
-            <p>Smoke status/statusText: <strong>{diagnostics?.smoke?.status ?? "n/a"} / {diagnostics?.smoke?.statusText ?? "n/a"}</strong></p>
-          </div>
-        </section>
-      ) : null}
-
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_170px_170px_170px_150px_auto]">
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">

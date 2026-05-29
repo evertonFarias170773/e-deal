@@ -81,7 +81,7 @@ export function calculateItemSubtotal(
     subtotalBruto,
     descontoValorCalculado,
     acrescimoBonus,
-    subtotal: Math.max(0, subtotalBruto - descontoValorCalculado + acrescimoBonus)
+    subtotal: Math.max(0, subtotalBruto - descontoValorCalculado - acrescimoBonus)
   };
 }
 

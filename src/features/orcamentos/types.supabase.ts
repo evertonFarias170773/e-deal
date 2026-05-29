@@ -21,3 +21,33 @@ export type SupabasePagamentoTipoCobrancaRow = {
   tipo_cobranca?: SupabaseValue;
 };
 
+export type SupabaseProdutoPropostaRow = {
+  id: number;
+  id_int: number;
+  id_produto: number;
+  nome_produto?: string | null;
+  modelo_descri?: string | null;
+  valor_unt?: number | null;
+  qtd?: number | null;
+  fixo?: number | null;
+  valor_sub_total?: number | null;
+  peso_uni?: number | null;
+  peso_total?: number | null;
+  peso_base?: number | null;
+  peso_extra?: number | null;
+  valor_base?: number | null;
+  valor_extra?: number | null;
+  ncm?: string | null;
+  cfop?: string | null;
+};
+
+export type SupabaseProdutoPropostaVariacaoRow = {
+  id: number;
+  id_produto_proposta: number;
+  id_variacao: number;
+  id_tipo_variacao: number;
+  nome_variacao?: string | null;
+  v_extra?: number | null;
+  peso_uni?: number | null;
+};
+

@@ -12,7 +12,6 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
-import { getTiposByVariacao, variacoesMock } from "@/lib/mocks/variacoes.mock";
 import {
   PRODUCT_IMAGES_BUCKET,
   createProdutoReal,
@@ -21,6 +20,13 @@ import {
   uploadProdutoFotoReal,
   type ProdutoWriteInput
 } from "@/features/produtos/services/produtos.service";
+import {
+  listVariacoesGlobais,
+  listTiposVariacoes,
+  listProdutoVariacaoVinculos,
+  saveProdutoVariacoes,
+  type VariacaoGlobalJoin
+} from "@/features/produtos/services/produto-variacoes.service";
 import type {
   Produto,
   ProdutoCategoria,
@@ -98,6 +104,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   const [fiscalSourceSearch, setFiscalSourceSearch] = useState("");
   const [selectedFiscalSourceId, setSelectedFiscalSourceId] = useState("");
   const [isLoadingFiscalSource, setIsLoadingFiscalSource] = useState(false);
+  const [variacoesGlobais, setVariacoesGlobais] = useState<VariacaoGlobalJoin[]>([]);
 
   const title = mode === "new" ? "Novo produto" : `Editar produto #${produto?.id_produto}`;
   const subtitle =
@@ -116,11 +123,11 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     const search = normalize(variationSearch);
     const linkedIds = new Set(form.variacoes.map((vinculo) => vinculo.id_variacao));
 
-    return variacoesMock.filter((variacao) => {
+    return variacoesGlobais.filter((variacao) => {
       const matchesSearch = normalize(`${variacao.nome} ${variacao.descricao}`).includes(search);
       return variacao.is_ativo && !linkedIds.has(variacao.id_variacao) && matchesSearch;
     });
-  }, [form.variacoes, variationSearch]);
+  }, [form.variacoes, variacoesGlobais, variationSearch]);
   const categoriaOptions = useMemo(
     () => Array.from(new Set([produto?.categoria, ...produtoCategoriasMock].filter(Boolean))) as ProdutoCategoria[],
     [produto?.categoria]
@@ -162,6 +169,36 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      const globais = await listVariacoesGlobais();
+      if (!active) return;
+      setVariacoesGlobais(globais);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mode === "edit" && produto?.id_produto) {
+      let active = true;
+
+      void (async () => {
+        const vinculos = await listProdutoVariacaoVinculos(produto.id_produto);
+        if (!active) return;
+        updateField("variacoes", vinculos);
+      })();
+
+      return () => {
+        active = false;
+      };
+    }
+  }, [mode, produto?.id_produto]);
 
   function updateField<K extends keyof ProdutoFormState>(field: K, value: ProdutoFormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -274,22 +311,29 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     setIsVariationModalOpen(true);
   }
 
-  function linkVariationToProduct() {
-    const variacao = variacoesMock.find((item) => item.id_variacao === selectedVariationId);
+  async function linkVariationToProduct() {
+    const variacao = variacoesGlobais.find((item) => item.id_variacao === selectedVariationId);
 
     if (!variacao) {
-      showToast({ type: "warning", title: "Selecione uma variação", description: "Escolha uma variação existente do banco mockado." });
+      showToast({ type: "warning", title: "Selecione uma variação", description: "Escolha uma variação global existente." });
       return;
     }
 
+    const tipos = await listTiposVariacoes(variacao.id_variacao);
+
     const vinculo: ProdutoVariacaoDetalhada = {
-      id: `pv_mock_${Date.now()}`,
+      id: `pv_temp_${Date.now()}`,
       id_produto: Number(form.id_produto) || 0,
       id_variacao: variacao.id_variacao,
       is_obrigatorio: newVariationObrigatoria,
       is_multiplo: newVariationMultipla,
-      variacao,
-      tipos: getTiposByVariacao(variacao.id_variacao)
+      variacao: {
+        id_variacao: variacao.id_variacao,
+        nome: variacao.nome,
+        descricao: variacao.descricao,
+        is_ativo: variacao.is_ativo
+      },
+      tipos: tipos.filter((t) => t.is_ativo !== false)
     };
 
     updateField("variacoes", [...form.variacoes, vinculo]);
@@ -297,8 +341,8 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     setIsVariationModalOpen(false);
     showToast({
       type: "success",
-      title: "Variação vinculada ao produto com sucesso.",
-      description: "Foi criado apenas um vínculo mockado em produto_variacoes."
+      title: "Variação vinculada ao produto",
+      description: "A variação foi vinculada localmente. Salve o produto para persistir."
     });
   }
 
@@ -442,6 +486,23 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
         title: successTitle,
         description: "Redirecionando para o detalhe do produto..."
       });
+
+      // Sincroniza vínculos de variação com o banco
+      const targetIdProduto = result.produto?.id_produto ?? produto?.id_produto ?? parsedIdProduto;
+      const vinculosPayload = form.variacoes.map((v) => ({
+        id_variacao: v.id_variacao,
+        is_obrigatorio: v.is_obrigatorio,
+        is_multiplo: v.is_multiplo
+      }));
+
+      const vinculosResult = await saveProdutoVariacoes(targetIdProduto, vinculosPayload);
+      if (!vinculosResult.success) {
+        showToast({
+          type: "warning",
+          title: "Variações não sincronizadas",
+          description: vinculosResult.message
+        });
+      }
 
       if (selectedFotoFile) {
         await uploadSelectedFoto(result.produto?.id_produto ?? produto?.id_produto ?? parsedIdProduto, result.produto?.nomeReal ?? form.nomeReal);
@@ -890,6 +951,8 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
 }
 
 function VariationOptionsList({ variacao }: { variacao: ProdutoVariacaoDetalhada }) {
+  const hexRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+
   return (
     <div className="mt-4 rounded-3xl border border-[#d7e5e8] bg-white p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
@@ -897,14 +960,29 @@ function VariationOptionsList({ variacao }: { variacao: ProdutoVariacaoDetalhada
         Opções de {variacao.variacao.nome}
       </div>
       <div className="grid gap-2 md:grid-cols-2">
-        {variacao.tipos.map((tipo) => (
-          <div key={tipo.id} className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
-            <p className="font-semibold text-slate-950">{tipo.variacao}</p>
-            <p className="mt-1 text-xs text-slate-500">
-              Valor extra {formatCurrency(tipo.v_extra)} | peso {formatWeightFromGrams(tipo.peso, { mode: "g" })} | ref {tipo.ref}
-            </p>
-          </div>
-        ))}
+        {variacao.tipos.map((tipo) => {
+          const isHex = hexRegex.test(tipo.ref);
+          return (
+            <div key={tipo.id} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
+              <div>
+                <p className="font-semibold text-slate-950">{tipo.variacao}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {tipo.v_extra > 0 ? `+${formatCurrency(tipo.v_extra)}` : formatCurrency(0)}
+                  {" | "}
+                  {tipo.peso > 0 ? `+${tipo.peso}g` : "0g"}
+                  {tipo.ref ? ` | Ref: ${tipo.ref}` : ""}
+                </p>
+              </div>
+              {isHex ? (
+                <div
+                  className="h-6 w-6 shrink-0 rounded-full border border-slate-300 shadow-sm"
+                  style={{ backgroundColor: tipo.ref }}
+                  title={`Preview da cor: ${tipo.ref}`}
+                />
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -925,7 +1003,7 @@ function VariationLinkModal({
 }: {
   search: string;
   onSearch: (value: string) => void;
-  variations: VariacaoGlobal[];
+  variations: VariacaoGlobalJoin[];
   selectedVariationId: number | null;
   onSelect: (value: number) => void;
   obrigatoria: boolean;
@@ -943,7 +1021,7 @@ function VariationLinkModal({
             <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Banco de variações</p>
             <h2 className="mt-1 text-lg font-semibold text-slate-950">Adicionar variação existente</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Esta ação cria apenas um vínculo mockado em produto_variacoes. A variação global não será duplicada.
+              Esta ação vincula o produto à variação global selecionada. Salve o produto para persistir.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 p-2 text-slate-700">
@@ -965,7 +1043,7 @@ function VariationLinkModal({
           <div className="grid gap-3">
             {variations.map((variacao) => {
               const isSelected = selectedVariationId === variacao.id_variacao;
-              const optionsCount = getTiposByVariacao(variacao.id_variacao).length;
+              const optionsCount = variacao.opcoesCount;
 
               return (
                 <button
@@ -1008,7 +1086,7 @@ function VariationLinkModal({
             Cancelar
           </button>
           <button type="button" onClick={onSave} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white">
-            Salvar vínculo mockado
+            Confirmar vínculo
           </button>
         </div>
       </div>

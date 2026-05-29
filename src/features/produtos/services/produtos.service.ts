@@ -672,7 +672,7 @@ export async function createProdutoReal(input: ProdutoWriteInput): Promise<Produ
 
   const { data, error } = await client
     .from("produtos")
-    .insert(prepared.payload)
+    .insert(prepared.payload!)
     .select(PRODUTOS_SELECT)
     .single<SupabaseProdutoRow>();
 
@@ -737,7 +737,7 @@ export async function updateProdutoReal(idProduto: number, input: ProdutoWriteIn
 
   const { data, error } = await client
     .from("produtos")
-    .update(prepared.payload)
+    .update(prepared.payload!)
     .eq("id_produto", idProduto)
     .select(PRODUTOS_SELECT)
     .single<SupabaseProdutoRow>();

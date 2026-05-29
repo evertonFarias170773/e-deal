@@ -22,7 +22,13 @@ export function humanizeStatus(status: string) {
     BLOQUEADA_VALIDACAO: "Bloqueada",
     RASCUNHO: "Rascunho",
     CONFIRMADO: "Confirmado",
-    NAO_CONFIRMADO: "Não confirmado"
+    NAO_CONFIRMADO: "Não confirmado",
+    OBRIGATORIA: "Obrigatória",
+    OPCIONAL: "Opcional",
+    MULTIPLA: "Múltipla",
+    ESCOLHA_UNICA: "Escolha única",
+    ATIVO: "Ativo",
+    INATIVO: "Inativo"
   };
 
   return statusMap[status] ?? status;

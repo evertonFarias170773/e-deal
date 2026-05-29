@@ -144,7 +144,7 @@ Pendências:
 
 ## Produtos
 
-Status: módulo com leitura real de `public.produtos`, escrita real expandida por whitelist e upload de fotos no Storage.
+Status: módulo com leitura real de `public.produtos`, escrita real controlada por whitelist, upload de fotos no Storage e submódulo completo de Variações de Produto (listagem, cadastro e edição) com persistência real no Supabase.
 
 Rotas:
 
@@ -152,6 +152,9 @@ Rotas:
 - `/produtos/novo`
 - `/produtos/[id]`
 - `/produtos/[id]/editar`
+- `/produtos/variacoes`
+- `/produtos/variacoes/nova`
+- `/produtos/variacoes/[id]`
 
 Componentes principais:
 
@@ -159,6 +162,9 @@ Componentes principais:
 - `ProdutoDetailPage`
 - `ProdutoFormPage`
 - `produtos.service.ts`
+- `ProdutoVariacoesListPage`
+- `ProdutoVariacaoFormPage`
+- `produto-variacoes.service.ts`
 - `ActionsMenu`
 - `AppToast`
 
@@ -186,22 +192,21 @@ Funcionalidades:
 - galeria mantém fotos existentes sem exclusão nesta etapa;
 - alerta visual ao alterar preço, custo, peso ou prazo;
 - galeria visual de fotos reais, com adição por upload e sem exclusão;
-- banco mockado de variações globais reutilizáveis;
-- vínculo visual de variações existentes ao produto via `produto_variacoes`;
-- visualização de opções/modelos vindos de `tipos_variacoes`;
-- configuração por produto de obrigatória e múltipla escolha;
-- remoção apenas do vínculo da variação com o produto;
-- conceito registrado de que Produtos apenas consome/vincula variações globais mantidas futuramente em Configurações;
-- preparação conceitual para `produtos_proposta_variacao`, que salvará no orçamento a opção/modelo escolhido na proposta;
-- card de uso no Maestro com apelidos;
-- detalhe lendo produto real por `id_produto`;
-- cards de resumo usando contagens reais de `public.produtos` e fotos quando disponíveis;
-- campo `peso` tratado como gramas;
-- service de criação/edição real com whitelist explícita e sem `upsert`;
-- `id`, `created_at` e `id_produto` no `UPDATE` bloqueados;
-- `DELETE` físico de produto explicitamente bloqueado no service e na matriz de segurança;
-- toast no salvamento e ações mockadas;
-- retorno para lista no novo produto e para detalhe na edição.
+- Banco Global de Variações integrado real no caminho `/produtos/variacoes` usando `public.variacoes` e `public.tipos_variacoes`;
+- Listagem global de variações com filtros por busca textual e status (Ativo/Inativo/Todos);
+- Cadastro e edição global de variações (/produtos/variacoes/nova e /produtos/variacoes/[id]) gerenciando dados gerais e suas opções internas;
+- Exibição da quantidade de opções ativas de cada grupo global na listagem;
+- Ações inline de editar e inativar na listagem global e nas opções de variação;
+- Aviso amigável ao tentar inativar uma variação global que já possui vínculos ativos com produtos;
+- Peso de opções em `tipos_variacoes` tratado, exibido e salvo estritamente em **gramas**;
+- Exibição de previews visuais de acréscimo de peso (ex: +5g), valor extra (ex: +R$ 1,50) e cor HEX caso a referência pareça um hexadecimal de cor;
+- Bloqueio completo de exclusão física nas tabelas globais (`public.variacoes` e `public.tipos_variacoes`), operando via desativação lógica (`is_ativo = false`);
+- Vínculo real entre produtos e variações globais salvo na tabela de junção `public.produto_variacoes`;
+- Cópia automática de `variacoes.nome` para `produto_variacoes.nome` ao criar vínculos para estabilidade;
+- Sincronização em lote de vínculos ao salvar o produto em `ProdutoFormPage` (insere novos, atualiza flags e remove os desvinculados);
+- Exclusão física permitida exclusivamente em `public.produto_variacoes` para desassociação de relacionamentos N-N;
+- Preparação técnica para ordenação manual de opções e futura integração com Maestro e produção;
+- Toast no salvamento e validação de dados reais na UI.
 
 Pendências:
 
@@ -210,12 +215,11 @@ Pendências:
 - validar a primeira fase de `INSERT`/`UPDATE` real com operação;
 - validar a escrita expandida de valores, fiscal e fotos com operação;
 - revisar se foto principal terá persistência própria;
-- integrar futuramente escrita real de `produto_variacoes`;
 - definir permissões reais para custo, preço, prazo, peso e inativação.
 
 ## Orçamentos
 
-Status: módulo mockado inicial implementado com fluxo comercial completo.
+Status: módulo integrado real com Supabase (leitura/escrita transacional em public.propostas, public.produtos_proposta e public.produtos_proposta_variacao) e fluxo de seleção do cliente priorizado.
 
 Rotas:
 
@@ -231,48 +235,38 @@ Componentes principais:
 - `OrcamentoFormPage`
 - `ActionsMenu`
 - `AppToast`
+- `orcamentos.service.ts`
 
 Mocks usados:
 
-- `propostas.mock.ts`
-- `cadastros.mock.ts`
-- `produtos.mock.ts`
-- `variacoes.mock.ts`
-- `empresas.mock.ts`
+- `empresas.mock.ts` (apenas para logos/empresas e vendedores de fallback)
 
 Funcionalidades:
 
-- listagem com filtros por proposta, cliente, documento, status, empresa, vendedor e período;
+- listagem com filtros por proposta, cliente, documento, status, empresa, vendedor e período lendo diretamente do banco;
 - tabela desktop;
 - cards mobile;
-- detalhe separado da edição;
-- nova proposta mockada;
-- edição mockada;
-- busca de cliente por `id_cliente`, nome ou documento;
-- vendedor herdado do cadastro do cliente, com edição apenas para admin/gerente;
-- login mockado com perfis distintos: `everton@ideal.local` (admin/gerente) e `caroline@ideal.local` (vendedor comum);
-- status exibido como badge somente leitura;
-- seleção de cliente com contatos, endereços, crédito/risco, vendedor padrão, bônus e vínculos comerciais;
-- adição visual de contato e endereço novos apenas na proposta mockada;
-- seleção obrigatória de endereço quando houver múltiplos endereços;
-- comprador/autorizado a partir de vínculos comerciais;
-- produtos da proposta com tags rápidas, quantidade, valores, prazo, peso, descrição editável e subtotal;
-- seleção visual de variações/opções do produto, com valor extra e peso extra mockados;
+- detalhe e formulário de proposta conectado ao Supabase com herança RLS de sessão;
+- fluxo priorizado de seleção do cliente como primeira etapa na criação/edição;
+- busca de cliente integrada real ao Supabase (public.clientes) por ID, Nome, Apelido/Fantasia e Documento;
+- carregamento assíncrono completo dos endereços e contatos do cliente via `getCadastroCompleto` ao selecioná-lo;
+- botão de limpar seleção de cliente para reiniciar busca;
+- vendedor herdado do cadastro do cliente, com edição permitida apenas para perfis autorizados (gerente/admin);
+- status exibido como badge somente leitura no fluxo;
+- produtos da proposta com tags rápidas, quantidade, valores base herdados, prazo, peso, descrição editável e subtotal;
+- carregamento em tempo real de variações globais e opções de cada produto via `listProdutoVariacaoVinculos`;
+- persistência histórica estática (snapshot) das variações escolhidas em `public.produtos_proposta_variacao` (com valores extras e pesos em gramas);
 - validação de variações obrigatórias antes do salvamento;
 - desconto individual por item em percentual ou valor;
-- fretes mockados com `id_int`, transportadora, serviço, valor, prazo, observação, escolhido e peso usado;
-- aviso visual quando o peso da proposta muda e as cotações podem precisar ser atualizadas;
+- cotações de frete simuladas salvas e visualizadas na proposta;
 - resumo visual com subtotal bruto, descontos individuais, acréscimo de tabela especial/bônus, desconto geral permitido por perfil, frete, total e peso;
-- proposta informal copiável para WhatsApp;
-- PDF mockado via toast;
-- placeholder de cobranças futuras via toast;
-- salvamento com loading, toast e retorno para lista/detalhe.
+- proposta informal copiável para WhatsApp com dados reais estruturados;
+- salvamento em lote transacional seguro usando conciliação no Supabase (atualiza proposta, itens e variações e exclui itens desvinculados fisicamente).
 
 Pendências:
 
 - validar campos finais com operação comercial;
-- preparar futuro service de Propostas para Supabase;
-- integrar futuramente `propostas`, `produtos_proposta`, `produtos_proposta_variacao`, `cotacao_frete`, `desconto_proposta` e `pagamentos_v2`;
+- integrar futuramente `cotacao_frete` e `desconto_proposta`;
 - gerar PDF real via backend/Edge Function segura;
 - gerar cobranças reais no módulo Cobranças/Pagamentos;
 - revisar regras oficiais de cálculo antes de conectar dados reais.

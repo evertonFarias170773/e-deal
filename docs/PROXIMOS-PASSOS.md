@@ -20,28 +20,27 @@
 - Validar responsividade fina da lista, detalhe, novo produto e edição em dispositivos reais.
 - Ajustar máscaras visuais de valores, peso e prazo se necessário.
 - Definir permissões futuras para custo interno, preço, prazo e inativação.
-- Revisar com operação o banco global de variações e tipos/modelos disponíveis.
-- Criar futuramente em Configurações a manutenção global de `variacoes` e `tipos_variacoes`.
-- Validar como `produtos_proposta_variacao` aplicará valor extra e peso na proposta.
+- Validar como `produtos_proposta_variacao` aplicará valor extra e peso na proposta (snapshot estático).
 - Validar a escrita expandida de valores comerciais, dados fiscais e fotos reais em `public.produtos` e `public.fotosProdutos`.
 - Monitorar erros de permissão/RLS na criação, edição e upload de fotos no bucket `e-deal`, pasta `produtos/`.
 - Garantir que `DELETE` físico de produto permaneça bloqueado; avaliar apenas inativação controlada em fase própria.
-- Definir fase específica para foto principal, edição/exclusão de imagem e manutenção de variações.
-- Manter `produtos`, `fotosProdutos`, `produto_variacoes`, `variacoes` e `tipos_variacoes` documentados na matriz de segurança antes de qualquer escrita.
+- Definir fase específica para foto principal e edição/exclusão de imagem.
+- Planejar a implementação de ordenação manual de opções (coluna `ordem` em `tipos_variacoes` no banco).
+- Planejar a integração do Banco de Variações com o Maestro (camada de produção).
+- Manter `produtos`, `fotosProdutos`, `produto_variacoes`, `variacoes` e `tipos_variacoes` documentados na matriz de segurança.
 
 ## Orçamentos
 
-- Revisar campos finais com operação comercial.
+- Validar com a operação comercial o fluxo integrado de criação e edição real de propostas no Supabase.
 - Validar responsividade fina da lista, detalhe, nova proposta e edição em dispositivos reais.
-- Revisar regras de cálculo de produtos, variações, desconto, frete e total antes de conectar Supabase.
+- Homologar as regras de cálculo e arredondamento de produtos, descontos, variações e frete no Supabase.
 - Validar permissões reais para troca de vendedor, desconto geral e alteração de condições comerciais.
 - Definir origem oficial do bônus/tabela especial do cliente e como será aplicado nos cálculos reais.
 - Definir regra real para recotação de frete quando peso, produtos ou endereço forem alterados.
-- Preparar futuro service de Propostas para Supabase.
-- Integrar futuramente `propostas`, `produtos_proposta`, `produtos_proposta_variacao`, `cotacao_frete`, `desconto_proposta` e `pagamentos_v2`.
-- Implementar PDF real apenas com backend/Edge Function segura.
-- Implementar geração real de cobrança no módulo Cobranças/Pagamentos.
-- Revisar a matriz viva antes de liberar qualquer campo textual, item de proposta ou frete.
+- Integrar futuramente as tabelas `cotacao_frete` e `desconto_proposta` à persistência real no Supabase.
+- Implementar PDF real com backend/Edge Function segura.
+- Conectar a geração real de cobranças no módulo Cobranças/Pagamentos com as propostas do Supabase.
+- Revisar a matriz viva antes de liberar novos campos de propostas ou tabelas relacionadas.
 
 ## Financeiro e cobranças
 
