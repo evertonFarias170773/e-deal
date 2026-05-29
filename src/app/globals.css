@@ -5,7 +5,7 @@
    ============================================================ */
 :root {
   /* --- Superfícies --- */
-  --background:          #eef2f5;
+  --background:          #f0f4f7;
   --card:                #ffffff;
   --card-hover:          #f8fafc;
 
@@ -15,7 +15,7 @@
   --muted-subtle:        #7a95aa;
 
   /* --- Bordas --- */
-  --border:              #c8dde3;
+  --border:              #d1dde5;
   --border-strong:       #a5c3cc;
 
   /* --- Cor primária — azul escuro (headers, nav, botão principal) --- */
@@ -45,17 +45,27 @@
   --action-danger-hover: #b91c1c;
   --action-danger-fg:    #ffffff;
 
-  /* --- Sidebar — azul escura em ambos os temas --- */
-  --sidebar-bg:          #0a2540;
-  --sidebar-border:      #1a3d5c;
-  --sidebar-text:        #c8dff0;
-  --sidebar-text-muted:  #7aa3c0;
-  --sidebar-active-bg:   #1e4d7a;
-  --sidebar-active-text: #7dd3fc;
-  --sidebar-hover-bg:    #133558;
-  --sidebar-hover-text:  #e2f0fb;
-  --sidebar-icon:        #7aa3c0;
-  --sidebar-icon-active: #7dd3fc;
+  /* --- Sidebar LIGHT — fundo claro, texto escuro --- */
+  --sidebar-bg:          #ffffff;
+  --sidebar-border:      #e2ecef;
+  --sidebar-text:        #1e3a52;
+  --sidebar-text-muted:  #6b8aa0;
+  --sidebar-active-bg:   #e6f7f6;
+  --sidebar-active-text: #0a7a72;
+  --sidebar-active-border:#0d9488;
+  --sidebar-hover-bg:    #f3f9fa;
+  --sidebar-hover-text:  #0a2540;
+  --sidebar-icon:        #7a9bb0;
+  --sidebar-icon-active: #0a7a72;
+
+  /* --- Logo --- */
+  --logo-filter:         none;
+
+  /* --- Input / Form elements --- */
+  --input-bg:            #ffffff;
+  --input-border:        #d1dde5;
+  --input-text:          #0d1b2a;
+  --input-placeholder:   #7a95aa;
 }
 
 /* ============================================================
@@ -78,7 +88,7 @@
   --primary-foreground:  #ffffff;
 
   --secondary:           #0d9488;
-  --secondary-hover:     #0b7a75;
+  --secondary-hover:     #0f9f99;
   --secondary-foreground:#ffffff;
 
   --accent:              #e07b16;
@@ -96,17 +106,27 @@
   --action-danger-hover: #f87171;
   --action-danger-fg:    #ffffff;
 
-  /* Sidebar mantém azul escura mesmo no dark */
+  /* --- Sidebar DARK — mantém azul escura --- */
   --sidebar-bg:          #071829;
   --sidebar-border:      #122840;
   --sidebar-text:        #c8dff0;
   --sidebar-text-muted:  #5a8099;
   --sidebar-active-bg:   #1e4d7a;
   --sidebar-active-text: #7dd3fc;
+  --sidebar-active-border:#7dd3fc;
   --sidebar-hover-bg:    #0f2e48;
   --sidebar-hover-text:  #e2f0fb;
   --sidebar-icon:        #5a8099;
   --sidebar-icon-active: #7dd3fc;
+
+  /* --- Logo --- */
+  --logo-filter:         brightness(0) invert(1);
+
+  /* --- Input / Form elements --- */
+  --input-bg:            #0d1b2a;
+  --input-border:        #1e3a52;
+  --input-text:          #e2eef7;
+  --input-placeholder:   #5a8099;
 }
 
 /* ============================================================
@@ -124,7 +144,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: "Inter", Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
   transition: background-color 150ms ease, color 150ms ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -144,6 +164,200 @@ button {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* ============================================================
+   DARK MODE — OVERRIDES GLOBAIS
+   Cobre classes Tailwind hardcoded nas feature pages e
+   componentes que ainda não usam tokens CSS.
+   ============================================================ */
+
+/* Inputs, selects, textareas — fundo e texto escuros */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+.dark select,
+.dark textarea {
+  background-color: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  border-color: var(--input-border) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--input-placeholder) !important;
+  opacity: 1 !important;
+}
+
+/* Containers com fundo branco → card escuro */
+.dark .bg-white {
+  background-color: var(--card) !important;
+  color: var(--foreground);
+}
+
+/* Containers com fundo slate-50 → background escuro */
+.dark .bg-slate-50 {
+  background-color: var(--background) !important;
+}
+
+/* Containers com fundo slate-100 → card hover escuro */
+.dark .bg-slate-100 {
+  background-color: var(--card-hover) !important;
+}
+
+/* Bordas hardcoded */
+.dark .border-slate-200,
+.dark .border-slate-100 {
+  border-color: var(--border) !important;
+}
+
+/* Ring hardcoded */
+.dark .ring-slate-200,
+.dark .ring-slate-100 {
+  --tw-ring-color: var(--border) !important;
+}
+
+/* Texto primário (quase preto) → foreground claro */
+.dark .text-slate-950,
+.dark .text-slate-900 {
+  color: var(--foreground) !important;
+}
+
+/* Texto médio */
+.dark .text-slate-800,
+.dark .text-slate-700 {
+  color: color-mix(in srgb, var(--foreground) 85%, transparent) !important;
+}
+
+/* Texto muted */
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: var(--muted) !important;
+}
+
+/* Botões com bg hardcoded white */
+.dark button.bg-white,
+.dark a.bg-white {
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
+}
+
+/* Hover slate-50 em dark */
+.dark .hover\:bg-slate-50:hover {
+  background-color: var(--card-hover) !important;
+}
+
+.dark .hover\:bg-slate-100:hover {
+  background-color: var(--card-hover) !important;
+}
+
+/* Divisores */
+.dark .divide-slate-100 > * + *,
+.dark .divide-slate-200 > * + * {
+  border-color: var(--border) !important;
+}
+
+/* Sombras em dark mode — reduzir opacidade */
+.dark .shadow-slate-900\/10 {
+  --tw-shadow-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ============================================================
+   DARK MODE — OVERRIDES PARA CORES HARDCODED DOS FEATURES
+   Cobre bg-[#0b2f4a], text-[#0b2f4a], border-[#d7e5e8] etc.
+   ============================================================ */
+
+/* Textos na cor primary (#0b2f4a) → foreground claro no dark */
+.dark .text-\[\#0b2f4a\],
+.dark .text-\[\#0b7774\],
+.dark .text-\[\#0f9f9a\] {
+  color: var(--foreground) !important;
+}
+
+/* Hover text primary */
+.dark .hover\:text-\[\#123f61\]:hover {
+  color: var(--foreground) !important;
+}
+
+/* Bordas hardcoded claras → border token */
+.dark .border-\[\#d7e5e8\],
+.dark .border-\[\#b7d9d8\] {
+  border-color: var(--border) !important;
+}
+
+/* Fundos teal claro → card hover */
+.dark .bg-\[\#f7fbfb\],
+.dark .bg-\[\#f2fbfb\],
+.dark .bg-\[\#f3f7f8\],
+.dark .bg-\[\#f1f7f9\] {
+  background-color: var(--card) !important;
+}
+
+/* Badges/pills teal claro */
+.dark .bg-\[\#dff8f6\] {
+  background-color: color-mix(in srgb, var(--secondary) 20%, transparent) !important;
+}
+
+/* Hover fundos claros */
+.dark .hover\:bg-\[\#f3f7f8\]:hover,
+.dark .hover\:bg-\[\#f2fbfb\]:hover {
+  background-color: var(--card-hover) !important;
+}
+
+/* Bordas foco/seleção primary */
+.dark .border-\[\#0b2f4a\] {
+  border-color: var(--primary) !important;
+}
+
+/* Modals / dialogs com fundo branco */
+.dark [role="dialog"] .bg-white,
+.dark [role="dialog"].bg-white {
+  background-color: var(--card) !important;
+}
+
+/* Divisores de modal */
+.dark [role="dialog"] .border-b.border-slate-200,
+.dark [role="dialog"] .border-t.border-slate-200 {
+  border-color: var(--border) !important;
+}
+
+/* Seções de filtro sticky */
+.dark .bg-white\/95 {
+  background-color: color-mix(in srgb, var(--card) 95%, transparent) !important;
+}
+
+/* Sections com fundo branco e backdrop */
+.dark .lg\:bg-white {
+  background-color: var(--card) !important;
+}
+
+/* Paginação e containers de borda */
+.dark section.bg-white,
+.dark section.rounded-3xl.bg-white {
+  background-color: var(--card) !important;
+}
+
+/* Cards mobile de feature pages */
+.dark article.rounded-3xl.bg-white,
+.dark article.rounded-2xl.bg-white {
+  background-color: var(--card) !important;
+}
+
+/* Spinner/loading borders */
+.dark .border-\[\#0b2f4a\] {
+  border-color: var(--primary) !important;
+}
+
+/* Abas com fundo primário selecionado */
+.dark .bg-\[\#0b2f4a\] {
+  background-color: var(--primary) !important;
+}
+
+/* Scrollbar em dark */
+.dark ::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+}
+
+.dark ::-webkit-scrollbar-track {
+  background-color: var(--background);
 }
 
 /* ============================================================

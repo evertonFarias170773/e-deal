@@ -1,14 +1,23 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppToastProvider } from "@/components/common/AppToast";
 import { AuthProvider } from "@/features/auth/AuthProvider";
 import { CobrancasProvider } from "@/features/cobrancas/CobrancasProvider";
 import { CompanyProvider } from "@/features/companies/CompanyProvider";
 
+// next/font/google — sem warning de lint, otimizado e auto-hospedado pelo Next.js
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+  weight: ["400", "500", "600", "700", "800"]
+});
+
 export const metadata: Metadata = {
-  title: "ERP Ideal Mockado",
-  description: "Primeira versão navegável e mockada do ERP Ideal"
+  title: "ERP Ideal",
+  description: "Sistema ERP Ideal — Painel operacional"
 };
 
 export default function RootLayout({
@@ -17,15 +26,8 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" suppressHydrationWarning className={inter.variable}>
       <head>
-        {/* Google Fonts — Inter */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
         {/* Script anti-flash: aplica classe dark antes do React hidratar */}
         <script
           dangerouslySetInnerHTML={{
@@ -44,5 +46,4 @@ export default function RootLayout({
       </body>
     </html>
   );
-
 }

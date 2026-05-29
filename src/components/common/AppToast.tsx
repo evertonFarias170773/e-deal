@@ -24,11 +24,12 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-const toastStyles: Record<ToastType, string> = {
-  success: "border-teal-200 bg-white text-teal-800",
-  error: "border-red-200 bg-white text-red-800",
-  warning: "border-orange-200 bg-white text-orange-800",
-  info: "border-sky-200 bg-white text-sky-800"
+// Usando tokens CSS via inline style para dark mode automático
+const toastAccentColors: Record<ToastType, string> = {
+  success: "var(--secondary)",       // teal
+  error:   "var(--action-danger)",   // red
+  warning: "var(--accent)",          // orange
+  info:    "var(--action-edit)"      // blue
 };
 
 const toastIcons = {
@@ -65,27 +66,48 @@ export function AppToastProvider({ children }: { children: ReactNode }) {
         <div className="flex w-full max-w-md flex-col gap-3">
           {toasts.map((toast) => {
             const Icon = toastIcons[toast.type];
+            const accentColor = toastAccentColors[toast.type];
 
             return (
               <div
                 key={toast.id}
                 className={cn(
-                  "pointer-events-auto flex gap-3 rounded-3xl border p-4 shadow-xl shadow-slate-900/10 toast-slide-down",
-                  toastStyles[toast.type]
+                  "pointer-events-auto flex gap-3 rounded-2xl border p-4 shadow-xl toast-slide-down"
                 )}
+                style={{
+                  background: "var(--card)",
+                  borderColor: "var(--border)",
+                  borderLeftColor: accentColor,
+                  borderLeftWidth: "4px",
+                  color: "var(--foreground)"
+                }}
               >
-                <Icon className="mt-0.5 h-5 w-5 shrink-0" />
+                <Icon
+                  className="mt-0.5 h-5 w-5 shrink-0"
+                  style={{ color: accentColor }}
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{toast.title}</p>
+                  <p className="font-semibold" style={{ color: "var(--foreground)" }}>{toast.title}</p>
                   {toast.description ? (
-                    <p className="mt-1 text-sm text-slate-600">{toast.description}</p>
+                    <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>{toast.description}</p>
                   ) : null}
                 </div>
                 <button
                   type="button"
                   onClick={() => removeToast(toast.id)}
-                  className="rounded-xl p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-xl p-1 transition"
+                  style={{ color: "var(--muted)" }}
                   aria-label="Fechar notificacao"
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget as HTMLButtonElement;
+                    el.style.background = "var(--card-hover)";
+                    el.style.color = "var(--foreground)";
+                  }}
+                  onMouseLeave={(e) => {
+                    const el = e.currentTarget as HTMLButtonElement;
+                    el.style.background = "transparent";
+                    el.style.color = "var(--muted)";
+                  }}
                 >
                   <X className="h-4 w-4" />
                 </button>

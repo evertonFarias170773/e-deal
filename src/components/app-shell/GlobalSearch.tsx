@@ -44,8 +44,15 @@ export function GlobalSearch() {
 
   return (
     <div className="relative hidden flex-1 md:block">
-      <label className="flex items-center gap-3 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-2.5 text-sm text-slate-400 shadow-sm">
-        <Search className="h-4 w-4 text-[#0f9f9a]" />
+      <label
+        className="flex items-center gap-3 rounded-2xl px-4 py-2.5 text-sm shadow-sm"
+        style={{
+          background: "var(--card)",
+          border: "1px solid var(--border)",
+          color: "var(--muted)"
+        }}
+      >
+        <Search className="h-4 w-4 shrink-0" style={{ color: "var(--secondary)" }} />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -58,37 +65,63 @@ export function GlobalSearch() {
           onBlur={() => {
             blurTimeoutRef.current = setTimeout(() => setIsFocused(false), 150);
           }}
-          className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+          className="w-full bg-transparent text-sm outline-none"
+          style={{
+            color: "var(--foreground)"
+          }}
           placeholder="Buscar cliente, proposta, pedido, OS, boleto, nota fiscal ou documento"
         />
       </label>
 
       {shouldShowResults ? (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-xl shadow-slate-900/10">
+        <div
+          className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl p-2 shadow-xl"
+          style={{
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.2)"
+          }}
+        >
           {results.length ? (
             <div className="max-h-80 overflow-y-auto">
               {results.map((result) => (
                 <Link
                   key={result.id}
                   href={result.href}
-                  className="flex gap-3 rounded-2xl px-3 py-3 transition hover:bg-[#f3f7f8]"
+                  className="flex gap-3 rounded-xl px-3 py-3 transition"
+                  style={{ color: "var(--foreground)" }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLAnchorElement).style.background = "var(--card-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
+                  }}
                   onClick={() => {
                     setQuery("");
                     setIsFocused(false);
                   }}
                 >
-                  <span className="h-fit rounded-full bg-[#dff8f6] px-2.5 py-1 text-xs font-semibold text-[#0b7774]">
+                  <span
+                    className="h-fit rounded-full px-2.5 py-1 text-xs font-semibold"
+                    style={{
+                      background: "color-mix(in srgb, var(--secondary) 15%, transparent)",
+                      color: "var(--secondary)"
+                    }}
+                  >
                     {result.type}
                   </span>
                   <span>
-                    <span className="block text-sm font-semibold text-slate-900">{result.title}</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">{result.description}</span>
+                    <span className="block text-sm font-semibold" style={{ color: "var(--foreground)" }}>{result.title}</span>
+                    <span className="mt-0.5 block text-xs" style={{ color: "var(--muted)" }}>{result.description}</span>
                   </span>
                 </Link>
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            <div
+              className="rounded-xl px-4 py-5 text-sm"
+              style={{ background: "var(--background)", color: "var(--muted)" }}
+            >
               Nenhum resultado encontrado.
             </div>
           )}

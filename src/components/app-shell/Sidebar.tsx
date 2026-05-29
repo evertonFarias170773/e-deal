@@ -43,7 +43,8 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
                 alt="Ingresso Ideal"
                 width={943}
                 height={280}
-                className="h-14 w-full object-contain object-left brightness-200"
+                className="h-14 w-full object-contain object-left"
+                style={{ filter: "var(--logo-filter)" }}
                 priority
               />
               <p
@@ -74,8 +75,11 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         ) : (
           <>
             <div
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white"
-              style={{ background: "var(--sidebar-active-bg)" }}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold"
+              style={{
+                background: "var(--primary)",
+                color: "var(--primary-foreground)"
+              }}
             >
               ID
             </div>
@@ -116,9 +120,10 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
           const activeStyle = isActive
             ? {
                 background: "var(--sidebar-active-bg)",
-                color: "var(--sidebar-active-text)"
+                color: "var(--sidebar-active-text)",
+                borderLeft: "3px solid var(--sidebar-active-border)"
               }
-            : { color: "var(--sidebar-text)" };
+            : { color: "var(--sidebar-text)", borderLeft: "3px solid transparent" };
 
           if (item.disabled) {
             return (

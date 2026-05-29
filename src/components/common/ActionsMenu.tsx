@@ -134,8 +134,23 @@ export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
         ref={buttonRef}
         type="button"
         onClick={toggleMenu}
-        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+        className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition"
+        style={{
+          background: "var(--card)",
+          borderColor: "var(--border)",
+          color: "var(--muted)"
+        }}
         aria-expanded={isOpen}
+        onMouseEnter={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = "var(--card-hover)";
+          el.style.color = "var(--foreground)";
+        }}
+        onMouseLeave={(e) => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = "var(--card)";
+          el.style.color = "var(--muted)";
+        }}
       >
         <MoreHorizontal className="h-4 w-4" />
         <span className="hidden sm:inline">{label}</span>
@@ -144,12 +159,15 @@ export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
 
       {isOpen ? (
         <div
-          className="fixed z-50 hidden w-60 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-xl shadow-slate-900/10 lg:block"
+          className="fixed z-50 hidden w-60 overflow-y-auto rounded-2xl p-1 shadow-xl lg:block"
           style={
             {
               top: menuPosition?.top,
               left: menuPosition?.left,
-              maxHeight: menuPosition?.maxHeight
+              maxHeight: menuPosition?.maxHeight,
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.2)"
             } satisfies CSSProperties
           }
         >
@@ -161,11 +179,23 @@ export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
               onClick={() => handleAction(item)}
               className={cn(
                 "flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition",
-                item.destructive
-                  ? "text-red-600 hover:bg-red-50"
-                  : "text-slate-700 hover:bg-slate-50",
                 item.disabled && "cursor-not-allowed opacity-50"
               )}
+              style={{
+                color: item.destructive ? "var(--action-danger)" : "var(--foreground)"
+              }}
+              onMouseEnter={(e) => {
+                if (!item.disabled) {
+                  const el = e.currentTarget as HTMLButtonElement;
+                  el.style.background = item.destructive
+                    ? "color-mix(in srgb, var(--action-danger) 10%, transparent)"
+                    : "var(--card-hover)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = "transparent";
+              }}
             >
               {item.label}
             </button>
@@ -175,26 +205,35 @@ export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
 
       {isOpen ? (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/50 lg:hidden"
+          className="fixed inset-0 z-50 lg:hidden"
+          style={{ background: "rgba(5,12,22,0.6)" }}
           role="dialog"
           aria-modal="true"
           onClick={() => setIsOpen(false)}
         >
           <div
-            className="fixed inset-x-0 bottom-0 rounded-t-3xl bg-white p-4 shadow-2xl"
+            className="fixed inset-x-0 bottom-0 rounded-t-3xl p-4 shadow-2xl"
+            style={{
+              background: "var(--card)",
+              borderTop: "1px solid var(--border)"
+            }}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--secondary)" }}>
                   Menu de acoes
                 </p>
-                <h3 className="mt-1 text-lg font-semibold text-slate-950">{label}</h3>
+                <h3 className="mt-1 text-lg font-semibold" style={{ color: "var(--foreground)" }}>{label}</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="rounded-2xl bg-slate-100 p-2 text-slate-700"
+                className="rounded-2xl p-2 transition"
+                style={{
+                  background: "var(--card-hover)",
+                  color: "var(--muted)"
+                }}
                 aria-label="Fechar menu de acoes"
               >
                 <X className="h-5 w-5" />
@@ -210,11 +249,19 @@ export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
                   onClick={() => handleAction(item)}
                   className={cn(
                     "flex w-full items-center rounded-2xl px-4 py-3 text-left text-base font-medium transition",
-                    item.destructive
-                      ? "text-red-600 hover:bg-red-50"
-                      : "text-slate-800 hover:bg-slate-50",
                     item.disabled && "cursor-not-allowed opacity-50"
                   )}
+                  style={{
+                    color: item.destructive ? "var(--action-danger)" : "var(--foreground)"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!item.disabled) {
+                      (e.currentTarget as HTMLButtonElement).style.background = "var(--card-hover)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                  }}
                 >
                   {item.label}
                 </button>
@@ -224,7 +271,18 @@ export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+              className="mt-2 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition"
+              style={{
+                border: "1px solid var(--border)",
+                background: "var(--card)",
+                color: "var(--muted)"
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--card-hover)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "var(--card)";
+              }}
             >
               Fechar
             </button>
