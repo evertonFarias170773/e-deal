@@ -318,12 +318,12 @@ export function OrcamentosListPageReal() {
     }
 
     return [
-      { label: "Ver proposta", onClick: () => showToast({ type: "info", title: "Detalhe real ainda nao conectado." }) },
-      { label: "Editar proposta", onClick: () => showToast({ type: "info", title: "Edicao real ainda nao conectada." }) },
+      { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
+      { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
       { label: "Duplicar proposta", onClick: () => showToast({ type: "info", title: "Duplicacao ainda nao conectada." }) },
       { label: "Copiar proposta informal", onClick: () => showToast({ type: "info", title: "Resumo informal ainda nao disponivel para dados reais." }) },
       { label: "Gerar PDF mockado", onClick: () => showToast({ type: "info", title: "PDF mockado indisponivel para dados reais." }) },
-      { label: "Gerar cobranca", onClick: () => showToast({ type: "info", title: "Criacao de cobranca ainda nao conectada." }) },
+      { label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) },
       { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
       { label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }
     ];
@@ -493,12 +493,7 @@ export function OrcamentosListPageReal() {
               <button
                 type="button"
                 onClick={() => {
-                  if (proposta.mockProposal) {
-                    router.push(`/orcamentos/${proposta.id_int}`);
-                    return;
-                  }
-
-                  showToast({ type: "info", title: "Detalhe real ainda nao conectado." });
+                  router.push(`/orcamentos/${proposta.id_int}`);
                 }}
                 className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
               >

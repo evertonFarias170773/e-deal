@@ -17,7 +17,7 @@ import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.ser
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
-import type { Cadastro } from "@/features/cadastros/types";
+import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
 import type { Produto } from "@/features/produtos/types";
 import type {
   Proposta,
@@ -995,17 +995,60 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     return { success: false, errorMessage: "Cliente Supabase indisponível." };
   }
 
+  const isUpdate = formState.id_int && Number.isInteger(Number(formState.id_int));
+  let id_int: number | null = isUpdate ? Number(formState.id_int) : null;
+
   try {
     // 1. Fetch customer to get customer's name
     const { cadastro } = await getCadastroCompleto(formState.clienteId);
-    const clienteNome = cadastro ? cadastro.nome : "Cliente Desconhecido";
+    if (!formState.clienteId || !cadastro) {
+      return { success: false, errorMessage: "Cliente é obrigatório e deve possuir cadastro válido." };
+    }
+    const clienteNome = cadastro.nome;
+
+    if (!formState.itens || formState.itens.length === 0) {
+      return { success: false, errorMessage: "Pelo menos 1 produto é obrigatório." };
+    }
+
+    const hasInvalidQty = formState.itens.some((item) => item.quantidade <= 0);
+    if (hasInvalidQty) {
+      return { success: false, errorMessage: "A quantidade de todos os produtos deve ser maior que 0." };
+    }
+
+    const hasInvalidSubtotal = formState.itens.some((item) => item.subtotal <= 0);
+    if (hasInvalidSubtotal) {
+      return { success: false, errorMessage: "O subtotal de cada produto deve ser maior que R$ 0,00." };
+    }
+
+    if (!formState.vendedor || formState.vendedor.trim() === "") {
+      return { success: false, errorMessage: "O vendedor é obrigatório." };
+    }
+
+    if (!formState.empresa || formState.empresa.trim() === "") {
+      return { success: false, errorMessage: "A empresa é obrigatória." };
+    }
 
     // Find the contact selected
     const selectedContact = cadastro?.contatos.find((c) => c.id === formState.contatoId);
     const contatoNome = selectedContact ? selectedContact.nome : (formState.contatoId || "");
 
-    // Find the address selected
-    const selectedAddress = cadastro?.enderecos.find((e) => e.id === formState.enderecoId);
+    // Find the address selected (searching client addresses and comprador addresses if comprador selected)
+    let compradorAddresses: CadastroEndereco[] = [];
+    if (formState.compradorId && cadastro) {
+      const vinculo = cadastro.vinculosComerciais?.find((v) => v.id === formState.compradorId);
+      if (vinculo) {
+        try {
+          const { cadastro: compradorCadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
+          if (compradorCadastro) {
+            compradorAddresses = compradorCadastro.enderecos || [];
+          }
+        } catch (err) {
+          console.error("Erro ao carregar endereços do comprador ao salvar proposta:", err);
+        }
+      }
+    }
+    const allAddresses = [...(cadastro?.enderecos || []), ...compradorAddresses];
+    const selectedAddress = allAddresses.find((e) => e.id === formState.enderecoId);
     const cepText = selectedAddress ? selectedAddress.cep : "";
 
     // Find the chosen freight option details
@@ -1036,6 +1079,18 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     const subtotalProdutos = resumo.subtotalProdutos;
     const valorTotal = resumo.valorTotal;
 
+    if (subtotalProdutos <= 0) {
+      return { success: false, errorMessage: "O subtotal dos produtos deve ser maior que R$ 0,00." };
+    }
+    if (valorTotal <= 0) {
+      return { success: false, errorMessage: "O valor total da proposta deve ser maior que R$ 0,00." };
+    }
+
+    const hasWeightAndCep = resumo.pesoTotal > 0 && cepText && cepText.trim() !== "";
+    if (hasWeightAndCep && !chosenFrete) {
+      return { success: false, errorMessage: "Selecione uma opção de frete antes de salvar." };
+    }
+
     // Generate informal WhatsApp text
     const informalText = buildPropostaInformalText({
       id_int: formState.id_int || "NOVO",
@@ -1046,10 +1101,18 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       formaPagamento: formState.formaPagamento || "A combinar"
     });
 
-    const isUpdate = formState.id_int && Number.isInteger(Number(formState.id_int));
-    let id_int = isUpdate ? Number(formState.id_int) : null;
+    if (!informalText || informalText.trim() === "") {
+      return { success: false, errorMessage: "O texto/resumo informal da proposta é obrigatório." };
+    }
 
-    const propostaData = {
+    const { data: { session } } = await client.auth.getSession();
+    const userId = session?.user?.id;
+
+    if (!isUpdate && !userId) {
+      return { success: false, errorMessage: "Usuário não identificado. Faça login novamente antes de criar a proposta." };
+    }
+
+    const propostaData: SupabasePropostaRow = {
       id_cliente: Number(formState.clienteId),
       cliente: clienteNome,
       empresa: formState.empresa,
@@ -1059,6 +1122,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       valor_total: valorTotal,
       obs_proposta: formState.observacoes,
       texto_whatsapp: informalText,
+      proposta: informalText || "Orçamento conforme solicitação.",
       frete_escolhido: freteNome,
       valor_frete: freteValor,
       contato: contatoNome,
@@ -1078,6 +1142,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       }
     } else {
       // 2b. INSERT PROPOSTA
+      propostaData.user_id = userId;
       const { data: newProp, error: insertError } = await client
         .from("propostas")
         .insert(propostaData)
@@ -1089,6 +1154,49 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       }
 
       id_int = Number(newProp.id_int);
+    }
+
+    // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
+    if (chosenFrete) {
+      try {
+        // Deletar os fretes antigos apenas daquela proposta
+        const { error: deleteError } = await client
+          .from("cotacao_frete")
+          .delete()
+          .eq("id_int", id_int!);
+
+        if (deleteError) {
+          console.error("Erro ao limpar cotações de frete antigas:", deleteError);
+          throw new Error(`Erro ao limpar cotações antigas de frete: ${deleteError.message}`);
+        }
+
+        // Inserir apenas o frete escolhido atual
+        const insertPayload: Record<string, unknown> = {
+          id_int: id_int!,
+          servico: chosenFrete.servico,
+          valor: chosenFrete.valor,
+          prazo: chosenFrete.prazo,
+          cep: cepText || null,
+          peso: resumo.pesoTotal || null,
+          escolhido: true
+        };
+
+        if (chosenFrete.id_cotacao !== undefined) {
+          insertPayload.id_cotacao = chosenFrete.id_cotacao;
+        }
+
+        const { error: insertFreteError } = await client
+          .from("cotacao_frete")
+          .insert(insertPayload);
+
+        if (insertFreteError) {
+          console.error("Erro ao inserir cotação de frete escolhida:", insertFreteError);
+          throw new Error(`Erro ao salvar cotação de frete escolhida: ${insertFreteError.message}`);
+        }
+      } catch (freteErr) {
+        console.error("Erro ao persistir cotação de frete no banco:", freteErr);
+        throw freteErr;
+      }
     }
 
     // 3. RECONCILE ITEMS in public.produtos_proposta
@@ -1129,7 +1237,6 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
         fixo: item.valorFixo,
         valor_sub_total: item.subtotal,
         peso_uni: pesoUni,
-        peso_total: pesoUni * item.quantidade,
         peso_base: pesoBase,
         peso_extra: pesoExtra,
         valor_base: valorBase,
@@ -1225,6 +1332,14 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     return { success: true, id_int: id_int! };
   } catch (err) {
     console.error("[OrcamentosService] Falha ao salvar proposta:", err);
+    if (!isUpdate && id_int) {
+      console.warn(`[OrcamentosService] Falha durante salvamento de itens. Removendo proposta #${id_int} órfã.`);
+      try {
+        await client.from("propostas").delete().eq("id_int", id_int);
+      } catch (cleanErr) {
+        console.error("[OrcamentosService] Erro ao realizar cleanup da proposta órfã:", cleanErr);
+      }
+    }
     const msg = err instanceof Error ? err.message : "Erro interno desconhecido.";
     return { success: false, errorMessage: msg };
   }

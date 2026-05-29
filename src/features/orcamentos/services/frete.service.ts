@@ -34,21 +34,19 @@ export function mapCotacaoRowToPropostaFrete(row: {
  */
 export async function solicitarCotacaoSedex(input: {
   peso: number;
-  id_int: number;
   vol: number;
   cep: string;
-}): Promise<void> {
+  id_int?: number | string;
+}): Promise<PropostaFrete[]> {
   const cleanCep = input.cep.replace(/\D/g, "");
   
   const payload = {
-    // Peso total enviado em gramas (unidade padrão do ERP)
     peso: String(input.peso),
-    id_int: String(input.id_int),
-    vol: Number(input.vol),
-    cep: cleanCep
+    cep: cleanCep,
+    vol: Number(input.vol)
   };
 
-  const response = await fetch("https://10074.hostoo.net.br/webhook/SEDEX", {
+  const response = await fetch("https://10074.hostoo.net.br/webhook/sedex_vibe", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -60,6 +58,39 @@ export async function solicitarCotacaoSedex(input: {
     const errorText = await response.text();
     throw new Error(`Erro na cotação SEDEX (${response.status}): ${errorText || response.statusText}`);
   }
+
+  const data = await response.json();
+  let arrayData: Record<string, unknown>[] = [];
+  if (Array.isArray(data)) {
+    arrayData = data;
+  } else if (data && typeof data === "object") {
+    arrayData = [data as Record<string, unknown>];
+  } else {
+    throw new Error("Resposta inválida do serviço de frete.");
+  }
+
+  return arrayData.map((item: Record<string, unknown>, idx: number) => {
+    const prazo = item.prazo as number | undefined;
+    const servico = item.servico as string | undefined;
+    const valor = item.valor as number | undefined;
+    const texto_entrega = item.texto_entrega as string | undefined;
+
+    const prazoText = prazo 
+      ? (prazo === 1 ? "1 dia útil" : `${prazo} dias úteis`)
+      : "Sob consulta";
+      
+    return {
+      id: `frete_${String(servico || "sedex").toLowerCase()}_${idx}`,
+      id_int: typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0),
+      transportadora: servico === "SEDEX" ? "Correios SEDEX" : servico === "PAC" ? "Correios PAC" : (servico || "Correios"),
+      servico: servico || "SEDEX",
+      valor: Number(valor || 0),
+      prazo: prazoText,
+      observacao: texto_entrega || "",
+      escolhido: false,
+      pesoUsado: input.peso
+    };
+  });
 }
 
 /**
@@ -156,4 +187,208 @@ export async function adicionarCotacaoManual(input: {
   }
 
   return mapCotacaoRowToPropostaFrete(data);
+}
+
+/**
+ * Request Azul Cargo freight quote from the webhook.
+ * Webhook expects: { CEPDestino: string, ValorTotal: number, SiglaServico: string, Itens: [...] }
+ */
+export async function solicitarCotacaoAzulCargo(input: {
+  peso: number;
+  cep: string;
+  valorTotal: number;
+  id_int?: number | string;
+}): Promise<PropostaFrete[]> {
+  const cleanCep = input.cep.replace(/\D/g, "");
+  const pesoKg = input.peso / 1000;
+  const volumes = Math.ceil(input.peso / 16000);
+
+  const payload = {
+    CEPDestino: cleanCep,
+    ValorTotal: Number(input.valorTotal || 0),
+    SiglaServico: "ECOMM",
+    TaxaColeta: "false",
+    TipoEntrega: "AEROPORTO",
+    BaseOrigem: "Qns02",
+    BaseDestino: "",
+    Coleta: "false",
+    Itens: [
+      {
+        Volume: volumes,
+        Peso: pesoKg,
+        Altura: 36,
+        Comprimento: 32,
+        Largura: 23
+      }
+    ]
+  };
+
+  const response = await fetch("https://10074.hostoo.net.br/webhook/cotacao-azul", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Erro na cotação Azul Cargo (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  let arrayData: Record<string, unknown>[] = [];
+  if (Array.isArray(data)) {
+    arrayData = data;
+  } else if (data && typeof data === "object") {
+    arrayData = [data as Record<string, unknown>];
+  } else {
+    throw new Error("Resposta inválida da cotação Azul Cargo.");
+  }
+
+  return arrayData.map((item: Record<string, unknown>, idx: number) => {
+    const prazo = item.Prazo as number | undefined;
+    const total = Number(item.Total || 0);
+    const servico = (item.Servico as string) || "ECOMM";
+
+    // Apply margin 1.15
+    const valorFinal = total * 1.15;
+
+    const prazoText = prazo 
+      ? (prazo === 1 ? "1 dia útil" : `${prazo} dias úteis`)
+      : "Sob consulta";
+
+    const idCotacao = item.ID_Cotacao !== undefined ? Number(item.ID_Cotacao) : undefined;
+
+    return {
+      id: `frete_azul_${String(servico).toLowerCase()}_${idx}`,
+      id_int: typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0),
+      transportadora: "Azul Cargo",
+      servico: servico,
+      valor: valorFinal, // usar SEMPRE o valor final já com margem da Azul.
+      prazo: prazoText,
+      observacao: `Volumes: ${volumes} | Peso: ${pesoKg.toFixed(2)} KG | Valor original: ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+      escolhido: false,
+      pesoUsado: input.peso,
+      valorOriginal: total,
+      valorMargem: valorFinal,
+      volumes: volumes,
+      pesoKg: pesoKg,
+      id_cotacao: idCotacao
+    };
+  });
+}
+
+/**
+ * Normalizes city names for the RPC payload (UPPERCASE, no accents).
+ */
+export function normalizeCityName(value: string): string {
+  return value
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Request shipping carrier freight quotes from Supabase RPC.
+ */
+export async function solicitarCotacaoTransportadoras(input: {
+  peso: number;
+  cidade: string;
+  uf: string;
+  id_int?: number | string;
+}): Promise<PropostaFrete[]> {
+  const normalizedCidade = normalizeCityName(input.cidade);
+  const normalizedUf = input.uf.toUpperCase().trim();
+  const pesoKg = input.peso / 1000;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Configurações do Supabase ausentes no ambiente.");
+  }
+
+  const payload = {
+    p_cidade: normalizedCidade,
+    p_peso: pesoKg,
+    p_uf: normalizedUf
+  };
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/rpc/calcular_frete_transportadora`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": supabaseKey,
+      "Authorization": `Bearer ${supabaseKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Erro na cotação de transportadoras (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  // Resposta esperada: [{ sm: number, un: number, mb: number }]
+  let row: Record<string, number> = {};
+  if (Array.isArray(data) && data.length > 0) {
+    row = data[0];
+  } else if (data && typeof data === "object" && !Array.isArray(data)) {
+    row = data as Record<string, number>;
+  } else {
+    throw new Error("Resposta inválida da cotação de transportadoras.");
+  }
+
+  const results: PropostaFrete[] = [];
+  const idIntNum = typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0);
+
+  // sm = Transportadora São Miguel
+  if (row.sm !== undefined && row.sm > 0) {
+    results.push({
+      id: `frete_transp_sm_${Date.now()}`,
+      id_int: idIntNum,
+      transportadora: "Transportadora São Miguel",
+      servico: "SÃO MIGUEL",
+      valor: Number(row.sm),
+      prazo: "Sob consulta",
+      observacao: "Cotação via transportadora",
+      escolhido: false,
+      pesoUsado: input.peso
+    });
+  }
+
+  // un = Transportadora Unesul
+  if (row.un !== undefined && row.un > 0) {
+    results.push({
+      id: `frete_transp_un_${Date.now()}`,
+      id_int: idIntNum,
+      transportadora: "Transportadora Unesul",
+      servico: "UNESUL",
+      valor: Number(row.un),
+      prazo: "Sob consulta",
+      observacao: "Cotação via transportadora",
+      escolhido: false,
+      pesoUsado: input.peso
+    });
+  }
+
+  // mb = Motoboy
+  if (row.mb !== undefined && row.mb > 0) {
+    results.push({
+      id: `frete_transp_mb_${Date.now()}`,
+      id_int: idIntNum,
+      transportadora: "Motoboy",
+      servico: "MOTOBOY",
+      valor: Number(row.mb),
+      prazo: "Sob consulta",
+      observacao: "Entrega expressa local",
+      escolhido: false,
+      pesoUsado: input.peso
+    });
+  }
+
+  return results;
 }

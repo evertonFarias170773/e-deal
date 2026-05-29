@@ -47,6 +47,11 @@ export type PropostaFrete = {
   escolhido: boolean;
   chosen?: boolean;
   pesoUsado: number;
+  valorOriginal?: number;
+  valorMargem?: number;
+  volumes?: number;
+  pesoKg?: number;
+  id_cotacao?: number;
 };
 
 export type PropostaResumo = {

@@ -15,7 +15,8 @@ import type {
   PropostaFormState,
   PropostaItem,
   PropostaVariacaoEscolhida,
-  TipoDescontoProposta
+  TipoDescontoProposta,
+  PropostaFrete
 } from "@/features/orcamentos/types";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -36,12 +37,7 @@ import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { saveProposta } from "@/features/orcamentos/services/orcamentos.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
-import {
-  solicitarCotacaoSedex,
-  listarCotacoesFrete,
-  escolherCotacaoFrete,
-  adicionarCotacaoManual
-} from "@/features/orcamentos/services/frete.service";
+import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
 
 type OrcamentoFormPageProps = {
@@ -72,6 +68,20 @@ function normalize(value: string) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+function getFreightKey(
+  cep: string | undefined,
+  cidade: string | undefined,
+  uf: string | undefined,
+  pesoTotalGramas: number,
+  volumes: number
+): string {
+  const cleanCep = cep ? cep.replace(/\D/g, "") : "";
+  const cleanCidade = cidade ? normalize(cidade) : "";
+  const cleanUf = uf ? uf.toLowerCase().trim() : "";
+  const weight = Math.round(pesoTotalGramas);
+  return `${cleanCep}_${cleanCidade}_${cleanUf}_${weight}_${volumes}`;
 }
 
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
@@ -159,13 +169,68 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   });
 
   const [isQuotingSedex, setIsQuotingSedex] = useState(false);
+  const [isQuotingAzul, setIsQuotingAzul] = useState(false);
+  const [isQuotingTransp, setIsQuotingTransp] = useState(false);
   const [volumes, setVolumes] = useState(1);
+  const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
+  const [lastQuotedKey, setLastQuotedKey] = useState<string>(() => proposta ? getFreightKey(proposta.enderecoEntrega?.cep, proposta.enderecoEntrega?.cidade, proposta.enderecoEntrega?.uf, proposta.resumo.pesoTotal, 1) : "");
   const [isManualFreteModalOpen, setIsManualFreteModalOpen] = useState(false);
   const [manualFreteDraft, setManualFreteDraft] = useState({
     servico: "",
     prazo: "",
     valor: "",
     escolhido: true
+  });
+
+  const vendedorExibido = canManageCommercialRules
+    ? form.vendedor
+    : cliente
+      ? getClienteVendedorPadrao(cliente)
+      : form.vendedor;
+
+  const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
+  const bonusPercent = cliente ? getClienteBonusPercent(cliente) : 0;
+  const resumo = calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
+  const combinedAddresses = useMemo(() => {
+    const seenIds = new Set<string>();
+    const list: CadastroEndereco[] = [];
+
+    proposalAddresses.forEach((addr) => {
+      if (!seenIds.has(addr.id)) {
+        seenIds.add(addr.id);
+        list.push(addr);
+      }
+    });
+
+    compradorAddresses.forEach((addr) => {
+      if (!seenIds.has(addr.id)) {
+        seenIds.add(addr.id);
+        list.push({
+          ...addr,
+          tipo: "comprador" as unknown as CadastroEndereco["tipo"]
+        });
+      }
+    });
+
+    return list;
+  }, [proposalAddresses, compradorAddresses]);
+
+  const currentAddress = useMemo(() => {
+    return combinedAddresses.find((a) => a.id === form.enderecoId);
+  }, [combinedAddresses, form.enderecoId]);
+
+  const isFreightOutdated = useMemo(() => {
+    const key = getFreightKey(currentAddress?.cep, currentAddress?.cidade, currentAddress?.uf, resumo.pesoTotal, volumes);
+    return lastQuotedKey !== key;
+  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey]);
+
+  const informalText = buildPropostaInformalText({
+    id_int: form.id_int || "NOVO",
+    clienteNome: cliente?.nome ?? "Cliente não definido",
+    itens: form.itens,
+    frete: freteEscolhido,
+    resumo,
+    formaPagamento: form.formaPagamento
   });
 
   // Fetch products catalog
@@ -283,25 +348,182 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     };
   }, [clientSearch]);
 
-  const vendedorExibido = canManageCommercialRules
-    ? form.vendedor
-    : cliente
-      ? getClienteVendedorPadrao(cliente)
-      : form.vendedor;
+  // Load comprador's addresses when compradorId changes
+  useEffect(() => {
+    if (!form.compradorId || !cliente) {
+      setTimeout(() => setCompradorAddresses([]), 0);
+      return;
+    }
+    const vinculo = cliente.vinculosComerciais?.find((v) => v.id === form.compradorId);
+    if (!vinculo) {
+      setTimeout(() => setCompradorAddresses([]), 0);
+      return;
+    }
 
-  const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
-  const bonusPercent = cliente ? getClienteBonusPercent(cliente) : 0;
-  const resumo = calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
-  const hasStaleFreightWeight = form.fretes.some((frete) => Math.abs(frete.pesoUsado - resumo.pesoTotal) > 0.01);
+    let active = true;
+    void (async () => {
+      try {
+        const { cadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
+        if (active && cadastro) {
+          setTimeout(() => setCompradorAddresses(cadastro.enderecos || []), 0);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar endereços do comprador/autorizado:", err);
+        if (active) setTimeout(() => setCompradorAddresses([]), 0);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [form.compradorId, cliente]);
 
-  const informalText = buildPropostaInformalText({
-    id_int: form.id_int || "NOVO",
-    clienteNome: cliente?.nome ?? "Cliente não definido",
-    itens: form.itens,
-    frete: freteEscolhido,
-    resumo,
-    formaPagamento: form.formaPagamento
-  });
+  // Adjust selected address if no longer in combinedAddresses
+  useEffect(() => {
+    if (combinedAddresses.length > 0) {
+      const exists = combinedAddresses.some((addr) => addr.id === form.enderecoId);
+      if (!exists) {
+        const defaultAddr = combinedAddresses.find((e) => e.tipo === "entrega" || e.tipo === "principal") || combinedAddresses[0];
+        updateField("enderecoId", defaultAddr ? defaultAddr.id : "");
+      }
+    } else {
+      updateField("enderecoId", "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combinedAddresses, form.enderecoId]);
+
+  // Debounced auto-quote when address, weight, or volumes change
+  useEffect(() => {
+    const cep = currentAddress?.cep;
+    const cidade = currentAddress?.cidade;
+    const uf = currentAddress?.uf;
+    if (!cep || resumo.pesoTotal <= 0 || volumes <= 0) {
+      return;
+    }
+
+    const currentKey = getFreightKey(cep, cidade, uf, resumo.pesoTotal, volumes);
+    if (currentKey === lastQuotedKey) {
+      return;
+    }
+
+    // se CEP, peso ou volumes mudarem, limpar frete escolhido atual imediatamente
+    let wasChanged = false;
+    if (lastQuotedKey) {
+      wasChanged = true;
+      setTimeout(() => {
+        setForm((prev) => ({
+          ...prev,
+          freteEscolhidoId: "",
+          fretes: prev.fretes.map((f) => ({ ...f, escolhido: false }))
+        }));
+      }, 0);
+    }
+
+    const timer = setTimeout(async () => {
+      setIsQuotingSedex(true);
+      setIsQuotingAzul(true);
+
+      let transportadorasPromise = Promise.resolve([] as PropostaFrete[]);
+      if (cidade && uf) {
+        setIsQuotingTransp(true);
+        transportadorasPromise = solicitarCotacaoTransportadoras({
+          peso: resumo.pesoTotal,
+          cidade,
+          uf
+        }).catch((err) => {
+          console.error("Erro na cotação automática de Transportadoras:", err);
+          return [];
+        }).finally(() => {
+          setIsQuotingTransp(false);
+        });
+      }
+
+      let sedexResults: PropostaFrete[] = [];
+      let azulResults: PropostaFrete[] = [];
+      let transpResults: PropostaFrete[] = [];
+
+      await Promise.all([
+        (async () => {
+          try {
+            sedexResults = await solicitarCotacaoSedex({
+              peso: resumo.pesoTotal,
+              vol: volumes,
+              cep
+            });
+          } catch (err) {
+            console.error("Erro na cotação automática SEDEX:", err);
+          } finally {
+            setIsQuotingSedex(false);
+          }
+        })(),
+        (async () => {
+          try {
+            azulResults = await solicitarCotacaoAzulCargo({
+              peso: resumo.pesoTotal,
+              cep,
+              valorTotal: resumo.subtotalProdutos
+            });
+          } catch (err) {
+            console.error("Erro na cotação automática Azul Cargo:", err);
+          } finally {
+            setIsQuotingAzul(false);
+          }
+        })(),
+        (async () => {
+          transpResults = await transportadorasPromise;
+        })()
+      ]);
+
+      const allResults = [...sedexResults, ...azulResults, ...transpResults];
+
+      setForm((prev) => {
+        // Keep manual fretes
+        const manualFretes = prev.fretes.filter(
+          (f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual"
+        );
+
+        const currentChosen = prev.fretes.find((f) => f.id === prev.freteEscolhidoId);
+        let nextEscolhidoId = prev.freteEscolhidoId;
+
+        const updatedResults = allResults.map((newFrete) => {
+          if (
+            !wasChanged &&
+            currentChosen &&
+            !currentChosen.id.startsWith("manual_") &&
+            currentChosen.transportadora === newFrete.transportadora &&
+            currentChosen.servico === newFrete.servico
+          ) {
+            nextEscolhidoId = newFrete.id;
+            return { ...newFrete, escolhido: true };
+          }
+          return newFrete;
+        });
+
+        if (!wasChanged && currentChosen && currentChosen.id.startsWith("manual_")) {
+          nextEscolhidoId = currentChosen.id;
+        }
+
+        // If changed, we do NOT auto-select anything.
+        // If not changed and nothing was chosen, we auto-select the first one.
+        if (!wasChanged && !nextEscolhidoId && updatedResults.length > 0) {
+          updatedResults[0].escolhido = true;
+          nextEscolhidoId = updatedResults[0].id;
+        }
+
+        const merged = [...updatedResults, ...manualFretes];
+        return {
+          ...prev,
+          fretes: merged,
+          freteEscolhidoId: nextEscolhidoId
+        };
+      });
+
+      setLastQuotedKey(currentKey);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey, resumo.subtotalProdutos]);
+
+
 
   function updateField<K extends keyof PropostaFormState>(field: K, value: PropostaFormState[K]) {
     if (field === "vendedor" && !canManageCommercialRules) {
@@ -310,6 +532,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
     setForm((current) => ({ ...current, [field]: value }));
     setErrorFields((current) => current.filter((item) => item !== field));
+  }
+
+  function handleSelectComprador(id: string) {
+    const nextId = form.compradorId === id ? "" : id;
+    updateField("compradorId", nextId);
   }
 
   function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent) {
@@ -349,14 +576,12 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         clienteId: nextCliente.idCliente.toString(),
         contatoId: nextContacts[0]?.id ?? "",
         enderecoId: nextEndereco?.id ?? "",
-        compradorId: nextCliente.vinculosComerciais?.[0]?.id ?? "",
+        compradorId: "",
         vendedor: defaultVendedor && defaultVendedor !== "Não informado" ? defaultVendedor : current.vendedor,
         empresa: fallbackEmpresa && fallbackEmpresa !== "Não informado" ? fallbackEmpresa : current.empresa,
         itens: recalculatedItems,
-        fretes: nextEndereco
-          ? createFretesMock(nextEndereco, Number(current.id_int) || 0, recalculatedItems.reduce((total, item) => total + item.pesoTotal, 0))
-          : [],
-        freteEscolhidoId: nextEndereco ? "frete_sedex" : ""
+        fretes: [],
+        freteEscolhidoId: ""
       }));
     } catch (err) {
       console.error("Erro ao carregar detalhes do cliente selecionado:", err);
@@ -406,12 +631,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       return;
     }
 
-    // eslint-disable-next-line react-hooks/purity
     const address: CadastroEndereco = { id: `end_prop_${Date.now()}`, ...addressDraft };
     setProposalAddresses((current) => [...current, address]);
     updateField("enderecoId", address.id);
-    updateField("fretes", createFretesMock(address, Number(form.id_int) || 0, resumo.pesoTotal));
-    updateField("freteEscolhidoId", "frete_sedex");
     setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "" });
     setIsAddressModalOpen(false);
     showToast({ type: "success", title: "Endereço adicionado à proposta." });
@@ -521,32 +743,12 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     setOpenItemIds((prev) => ({ ...prev, [itemId]: true }));
   }
 
-  async function refreshFretes() {
-    if (form.id_int === "NOVO") return;
-    try {
-      const realFretes = await listarCotacoesFrete(Number(form.id_int));
-      if (realFretes && realFretes.length > 0) {
-        updateField("fretes", realFretes);
-        const chosen = realFretes.find((f) => f.escolhido) || realFretes[0];
-        updateField("freteEscolhidoId", chosen ? chosen.id : "");
-      }
-    } catch (err) {
-      console.error("Erro ao buscar cotações do banco:", err);
-    }
-  }
-
-  async function handleCotarSedex() {
-    if (form.id_int === "NOVO") {
-      showToast({
-        type: "warning",
-        title: "Salve a proposta primeiro",
-        description: "É necessário salvar o rascunho da proposta antes de cotar frete real."
-      });
-      return;
-    }
-
-    const selectedAddress = proposalAddresses.find((e) => e.id === form.enderecoId);
+  async function handleCotarFretes() {
+    const selectedAddress = combinedAddresses.find((e) => e.id === form.enderecoId);
     const cep = selectedAddress?.cep;
+    const cidade = selectedAddress?.cidade;
+    const uf = selectedAddress?.uf;
+
     if (!cep) {
       showToast({
         type: "error",
@@ -575,43 +777,139 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }
 
     setIsQuotingSedex(true);
-    try {
-      await solicitarCotacaoSedex({
-        peso: resumo.pesoTotal,
-        id_int: Number(form.id_int),
-        vol: volumes,
-        cep
-      });
+    setIsQuotingAzul(true);
 
+    let sedexResults: PropostaFrete[] = [];
+    let azulResults: PropostaFrete[] = [];
+    let transpResults: PropostaFrete[] = [];
+
+    let sedexError = "";
+    let azulError = "";
+    let transpError = "";
+
+    let transportadorasPromise = Promise.resolve([] as PropostaFrete[]);
+    if (!cidade || !uf) {
+      transpError = "Cidade ou UF não preenchida no endereço de entrega.";
+    } else {
+      setIsQuotingTransp(true);
+      transportadorasPromise = solicitarCotacaoTransportadoras({
+        peso: resumo.pesoTotal,
+        cidade,
+        uf
+      }).catch((err) => {
+        console.error("Erro ao cotar Transportadoras manualmente:", err);
+        transpError = err instanceof Error ? err.message : "Erro desconhecido";
+        return [];
+      }).finally(() => {
+        setIsQuotingTransp(false);
+      });
+    }
+
+    await Promise.all([
+      (async () => {
+        try {
+          sedexResults = await solicitarCotacaoSedex({
+            peso: resumo.pesoTotal,
+            vol: volumes,
+            cep
+          });
+        } catch (err) {
+          console.error("Erro ao cotar SEDEX manualmente:", err);
+          sedexError = err instanceof Error ? err.message : "Erro desconhecido";
+        } finally {
+          setIsQuotingSedex(false);
+        }
+      })(),
+      (async () => {
+        try {
+          azulResults = await solicitarCotacaoAzulCargo({
+            peso: resumo.pesoTotal,
+            cep,
+            valorTotal: resumo.subtotalProdutos
+          });
+        } catch (err) {
+          console.error("Erro ao cotar Azul Cargo manualmente:", err);
+          azulError = err instanceof Error ? err.message : "Erro desconhecido";
+        } finally {
+          setIsQuotingAzul(false);
+        }
+      })(),
+      (async () => {
+        transpResults = await transportadorasPromise;
+      })()
+    ]);
+
+    // Keep manual fretes
+    const manualFretes = form.fretes.filter(
+      (f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual"
+    );
+
+    // Find currently selected frete
+    const currentChosen = isFreightOutdated ? undefined : form.fretes.find((f) => f.id === form.freteEscolhidoId);
+    let nextEscolhidoId = "";
+
+    const allResults = [...sedexResults, ...azulResults, ...transpResults];
+
+    const updatedResults = allResults.map((newFrete) => {
+      if (
+        currentChosen &&
+        !currentChosen.id.startsWith("manual_") &&
+        currentChosen.transportadora === newFrete.transportadora &&
+        currentChosen.servico === newFrete.servico
+      ) {
+        nextEscolhidoId = newFrete.id;
+        return { ...newFrete, escolhido: true };
+      }
+      return newFrete;
+    });
+
+    if (currentChosen && currentChosen.id.startsWith("manual_")) {
+      nextEscolhidoId = currentChosen.id;
+    }
+
+    if (!isFreightOutdated && !nextEscolhidoId && updatedResults.length > 0) {
+      updatedResults[0].escolhido = true;
+      nextEscolhidoId = updatedResults[0].id;
+    }
+
+    const merged = [...updatedResults, ...manualFretes];
+    setForm((prev) => ({
+      ...prev,
+      fretes: merged,
+      freteEscolhidoId: nextEscolhidoId || prev.freteEscolhidoId
+    }));
+
+    const currentKey = getFreightKey(cep, cidade, uf, resumo.pesoTotal, volumes);
+    setLastQuotedKey(currentKey);
+
+    // Toast warnings/success consolidation
+    const errorsList = [];
+    if (sedexError) errorsList.push(`SEDEX: ${sedexError}`);
+    if (azulError) errorsList.push(`Azul Cargo: ${azulError}`);
+    if (transpError) errorsList.push(`Transportadoras: ${transpError}`);
+
+    if (errorsList.length === 3) {
+      showToast({
+        type: "error",
+        title: "Falha na cotação de todos os fretes",
+        description: errorsList.join(" | ")
+      });
+    } else if (errorsList.length > 0) {
+      showToast({
+        type: "warning",
+        title: "Cotação parcial realizada",
+        description: `Alguns serviços falharam: ${errorsList.join(" | ")}`
+      });
+    } else {
       showToast({
         type: "success",
         title: "Cotação realizada",
-        description: "A cotação de SEDEX foi processada. Buscando resultados..."
+        description: "Opções de frete atualizadas com sucesso."
       });
-
-      await refreshFretes();
-    } catch (err) {
-      console.error("Erro ao cotar SEDEX:", err);
-      showToast({
-        type: "error",
-        title: "Falha na cotação SEDEX",
-        description: err instanceof Error ? err.message : "Ocorreu um erro ao chamar o webhook."
-      });
-    } finally {
-      setIsQuotingSedex(false);
     }
   }
 
   async function handleSaveManualFrete() {
-    if (form.id_int === "NOVO") {
-      showToast({
-        type: "warning",
-        title: "Salve a proposta primeiro",
-        description: "É necessário salvar o rascunho da proposta antes de cadastrar um frete manual."
-      });
-      return;
-    }
-
     if (!manualFreteDraft.servico || !manualFreteDraft.prazo || !manualFreteDraft.valor) {
       showToast({
         type: "warning",
@@ -621,42 +919,46 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       return;
     }
 
-    const selectedAddress = proposalAddresses.find((e) => e.id === form.enderecoId);
-    const cep = selectedAddress?.cep ? selectedAddress.cep.replace(/\D/g, "") : null;
+    const newManualFrete: PropostaFrete = {
+      id: `manual_${Date.now()}`,
+      id_int: Number(form.id_int) || 0,
+      transportadora: manualFreteDraft.servico,
+      servico: manualFreteDraft.servico,
+      valor: Number(manualFreteDraft.valor),
+      prazo: manualFreteDraft.prazo,
+      observacao: "Cadastro manual",
+      escolhido: manualFreteDraft.escolhido,
+      pesoUsado: resumo.pesoTotal
+    };
 
-    try {
-      const insertedFrete = await adicionarCotacaoManual({
-        id_int: Number(form.id_int),
-        servico: manualFreteDraft.servico,
-        prazo: manualFreteDraft.prazo,
-        valor: Number(manualFreteDraft.valor),
-        escolhido: manualFreteDraft.escolhido,
-        cep: cep || undefined,
-        peso: resumo.pesoTotal || undefined
-      });
+    const updatedFretes = form.fretes.map((f) => ({
+      ...f,
+      escolhido: manualFreteDraft.escolhido ? false : f.escolhido
+    }));
 
-      showToast({
-        type: "success",
-        title: "Frete manual adicionado",
-        description: "Cotação manual gravada com sucesso."
-      });
-
-      setIsManualFreteModalOpen(false);
-      setManualFreteDraft({ servico: "", prazo: "", valor: "", escolhido: true });
-
-      await refreshFretes();
-
-      if (manualFreteDraft.escolhido) {
-        await selectFrete(insertedFrete.id);
-      }
-    } catch (err) {
-      console.error("Erro ao adicionar frete manual:", err);
-      showToast({
-        type: "error",
-        title: "Erro ao adicionar",
-        description: err instanceof Error ? err.message : "Ocorreu um erro ao salvar no banco."
-      });
+    if (manualFreteDraft.escolhido) {
+      updatedFretes.push(newManualFrete);
+      setForm((current) => ({
+        ...current,
+        fretes: updatedFretes,
+        freteEscolhidoId: newManualFrete.id
+      }));
+    } else {
+      updatedFretes.push(newManualFrete);
+      setForm((current) => ({
+        ...current,
+        fretes: updatedFretes
+      }));
     }
+
+    showToast({
+      type: "success",
+      title: "Frete manual adicionado",
+      description: "Cotação manual gravada temporariamente em memória."
+    });
+
+    setIsManualFreteModalOpen(false);
+    setManualFreteDraft({ servico: "", prazo: "", valor: "", escolhido: true });
   }
 
   async function selectFrete(freteId: string) {
@@ -666,24 +968,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       fretes: updatedFretes,
       freteEscolhidoId: freteId
     }));
-
-    if (form.id_int !== "NOVO") {
-      try {
-        await escolherCotacaoFrete(Number(form.id_int), Number(freteId));
-        showToast({
-          type: "success",
-          title: "Frete selecionado",
-          description: "A opção de frete foi atualizada no banco de dados."
-        });
-      } catch (err) {
-        console.error("Erro ao salvar escolha de frete:", err);
-        showToast({
-          type: "error",
-          title: "Erro ao salvar escolha",
-          description: "Não foi possível persistir a escolha de frete."
-        });
-      }
-    }
   }
 
   async function copyInformal() {
@@ -698,6 +982,13 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       )
     );
     const hasInvalidQuantity = form.itens.some((item) => item.quantidade <= 0);
+    const hasInvalidSubtotal = form.itens.some((item) => item.subtotal <= 0);
+    const isSubtotalZero = resumo.subtotalProdutos <= 0;
+    const isTotalZero = resumo.valorTotal <= 0;
+    const isTextEmpty = !informalText || informalText.trim() === "";
+    const isSellerEmpty = !vendedorAtual || vendedorAtual.trim() === "";
+    const isCompanyEmpty = !form.empresa || form.empresa.trim() === "";
+
     const hasUnauthorizedGeneralDiscount = !canManageCommercialRules && Number(form.descontoGeralValor) > 0;
     const sellerChangedWithoutPermission = Boolean(cliente && vendedorAtual !== getClienteVendedorPadrao(cliente) && !canManageCommercialRules);
 
@@ -706,17 +997,55 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       !form.enderecoId ? "enderecoId" : null,
       form.itens.length === 0 ? "itens" : null,
       hasInvalidQuantity ? "quantidade" : null,
+      hasInvalidSubtotal ? "subtotal_itens" : null,
+      isSubtotalZero ? "subtotal" : null,
+      isTotalZero ? "total" : null,
+      isTextEmpty ? "texto" : null,
+      isSellerEmpty ? "vendedor" : null,
+      isCompanyEmpty ? "empresa" : null,
       missingRequiredVariation ? "variacoes" : null
     ].filter(Boolean) as string[];
 
     if (fields.length) {
       setErrorFields(fields);
+      let desc = "Revise cliente, endereço, produtos, quantidades e variações obrigatórias.";
+      if (isSubtotalZero || isTotalZero) {
+        desc = "O valor total e o subtotal dos produtos devem ser maiores que R$ 0,00.";
+      } else if (isTextEmpty) {
+        desc = "O resumo da proposta não pode ser vazio.";
+      } else if (isSellerEmpty) {
+        desc = "O vendedor é obrigatório.";
+      } else if (isCompanyEmpty) {
+        desc = "A empresa é obrigatória.";
+      } else if (hasInvalidSubtotal) {
+        desc = "O subtotal de cada produto deve ser maior que R$ 0,00.";
+      }
       showToast({
         type: "error",
         title: missingRequiredVariation ? "Selecione as variações obrigatórias antes de salvar a proposta." : "Não foi possível salvar",
-        description: "Revise cliente, endereço, produtos, quantidades e variações obrigatórias."
+        description: desc
       });
       return false;
+    }
+
+    const hasWeightAndCep = resumo.pesoTotal > 0 && currentAddress?.cep;
+    if (hasWeightAndCep) {
+      if (isFreightOutdated) {
+        showToast({
+          type: "error",
+          title: "Frete desatualizado",
+          description: "Os dados de entrega, peso ou volumes mudaram. Atualize o frete antes de salvar as alterações."
+        });
+        return false;
+      }
+      if (!form.freteEscolhidoId) {
+        showToast({
+          type: "error",
+          title: "Frete não selecionado",
+          description: "Selecione uma das opções de frete disponíveis antes de salvar."
+        });
+        return false;
+      }
     }
 
     if (hasUnauthorizedGeneralDiscount) {
@@ -915,23 +1244,48 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             <button type="button" onClick={() => setIsContactModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo contato</button>
           </FormSection>
 
-          <FormSection title="4. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
-            {proposalAddresses.length > 0 ? (
-              <SelectorGrid items={proposalAddresses} selectedId={form.enderecoId} onSelect={(id) => updateField("enderecoId", id)} render={(endereco) => ({ title: `${endereco.endereco}, ${endereco.numero}`, subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`, detail: endereco.tipo })} />
+          <FormSection title="4. Comprador / autorizado" description="Cadastro relacionado comercialmente ao cliente principal.">
+            {!cliente ? (
+              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Selecione um cliente para visualizar os compradores autorizados.</p>
+            ) : cliente.vinculosComerciais && cliente.vinculosComerciais.length > 0 ? (
+              <SelectorGrid
+                items={cliente.vinculosComerciais}
+                selectedId={form.compradorId}
+                onSelect={handleSelectComprador}
+                render={(vinculo) => ({
+                  title: vinculo.nome,
+                  subtitle: vinculo.tipoRelacao,
+                  detail: vinculo.documento
+                })}
+              />
             ) : (
-              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço cadastrado para este cliente.</p>
+              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum comprador ou autorizado vinculado a este cliente.</p>
+            )}
+          </FormSection>
+
+          <FormSection title="5. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
+            {combinedAddresses.length > 0 ? (
+              <SelectorGrid
+                items={combinedAddresses}
+                selectedId={form.enderecoId}
+                onSelect={(id) => updateField("enderecoId", id)}
+                render={(endereco) => {
+                  const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                  return {
+                    title: `${endereco.endereco}, ${endereco.numero}`,
+                    subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`,
+                    detail: isCompradorAddress ? "Endereço do Comprador" : endereco.tipo
+                  };
+                }}
+              />
+            ) : (
+              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
             )}
             <button type="button" onClick={() => setIsAddressModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo endereço</button>
           </FormSection>
 
-          {cliente?.vinculosComerciais.length ? (
-            <FormSection title="Comprador / autorizado" description="Cadastro relacionado comercialmente ao cliente principal.">
-              <SelectorGrid items={cliente.vinculosComerciais} selectedId={form.compradorId} onSelect={(id) => updateField("compradorId", id)} render={(vinculo) => ({ title: vinculo.nome, subtitle: vinculo.tipoRelacao, detail: vinculo.documento })} />
-            </FormSection>
-          ) : null}
-
           <FormSection
-            title="5. Produtos"
+            title="6. Produtos"
             description="Escolha do catálogo e configure quantidades, descontos e variações."
           >
             {/* Chips / Tags com borda suave, hover e destaque */}
@@ -1078,64 +1432,58 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           </FormSection>
 
           <FormSection 
-            title="6. Fretes e Entrega" 
+            title="7. Fretes e Entrega" 
             description="Integração em tempo real com cotações de SEDEX e cadastro de frete manual."
           >
-            {form.id_int === "NOVO" ? (
+            {isFreightOutdated && form.enderecoId && resumo.pesoTotal > 0 && (
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                <p className="font-semibold">⚠️ Proposta em rascunho</p>
-                <p className="mt-1">Salve este orçamento primeiro para poder realizar cotações de frete reais ou cadastrar frete manual.</p>
-              </div>
-            ) : (
-              <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-4">
-                <div className="flex flex-wrap items-end gap-4">
-                  <div className="w-24">
-                    <Field label="Volumes">
-                      <input
-                        type="number"
-                        min="1"
-                        value={volumes}
-                        onChange={(e) => setVolumes(Math.max(1, Number(e.target.value) || 1))}
-                        className={inputClass}
-                      />
-                    </Field>
-                  </div>
-                  <div className="flex-1 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCotarSedex}
-                      disabled={isQuotingSedex}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 text-sm font-semibold text-white shadow-md hover:bg-[#123f61] transition disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {isQuotingSedex ? (
-                        <>
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                          Cotando SEDEX...
-                        </>
-                      ) : (
-                        "Cotar SEDEX"
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsManualFreteModalOpen(true)}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-5 text-sm font-semibold text-[#0b2f4a] shadow-sm hover:bg-slate-50 transition"
-                    >
-                      + Frete manual
-                    </button>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 font-medium">
-                  * A cotação utiliza o CEP do endereço selecionado e o peso total da proposta em gramas ({formatWeightFromGrams(resumo.pesoTotal)}).
-                </p>
+                <p className="font-semibold">⚠️ Cotação desatualizada</p>
+                <p className="mt-1">O CEP, peso total ou volumes foram alterados. Clique em &apos;Atualizar frete&apos; para obter os valores corretos.</p>
               </div>
             )}
 
-            {hasStaleFreightWeight ? (
-              <p className="mb-3 rounded-2xl bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-700">
-                O peso total dos produtos mudou. Recomenda-se cotar novamente para atualizar os valores.
+            <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-4">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="w-24">
+                  <Field label="Volumes">
+                    <input
+                      type="number"
+                      min="1"
+                      value={volumes}
+                      onChange={(e) => setVolumes(Math.max(1, Number(e.target.value) || 1))}
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+                <div className="flex-1 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCotarFretes}
+                    disabled={isQuotingSedex || isQuotingAzul || isQuotingTransp || !form.enderecoId || resumo.pesoTotal <= 0}
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 text-sm font-semibold text-white shadow-md hover:bg-[#123f61] transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isQuotingSedex || isQuotingAzul || isQuotingTransp ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                        Atualizando...
+                      </>
+                    ) : (
+                      "Atualizar fretes"
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsManualFreteModalOpen(true)}
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-5 text-sm font-semibold text-[#0b2f4a] shadow-sm hover:bg-slate-50 transition"
+                  >
+                    + Frete manual
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">
+                * A cotação utiliza o CEP do endereço selecionado e o peso total da proposta em gramas ({formatWeightFromGrams(resumo.pesoTotal)}).
               </p>
-            ) : null}
+            </div>
 
             <div className="grid gap-3 md:grid-cols-2">
               {form.fretes.map((frete) => (
@@ -1150,7 +1498,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        {frete.servico === "SEDEX" ? "SEDEX EXPRESS" : frete.servico === "PAC" ? "PAC ECONÔMICO" : "MANUAL / TRANSP."}
+                        {frete.transportadora === "Azul Cargo"
+                          ? `AZUL CARGO ${frete.servico}`
+                          : frete.servico === "SEDEX"
+                          ? "SEDEX EXPRESS"
+                          : frete.servico === "PAC"
+                          ? "PAC ECONÔMICO"
+                          : frete.servico === "SÃO MIGUEL"
+                          ? "TRANSP. SÃO MIGUEL"
+                          : frete.servico === "UNESUL"
+                          ? "TRANSP. UNESUL"
+                          : frete.servico === "MOTOBOY"
+                          ? "ENTREGA MOTOBOY"
+                          : "MANUAL / TRANSP."}
                       </span>
                       <h4 className="font-bold text-slate-900 text-base mt-0.5">{frete.transportadora}</h4>
                       <p className="text-sm text-slate-500 font-medium">Prazo: {frete.prazo}</p>
@@ -1172,11 +1532,33 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                   <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
                     <div>
                       <p className="text-xs text-slate-400 font-semibold uppercase">Valor</p>
-                      <p className="text-base font-extrabold text-slate-950">{formatCurrency(frete.valor)}</p>
+                      <p className="text-base font-extrabold text-slate-950">
+                        {formatCurrency(frete.valor)}
+                      </p>
+                      {frete.transportadora === "Azul Cargo" && frete.valorOriginal !== undefined && (
+                        <p className="text-xs font-medium text-slate-500 mt-0.5">
+                          Original: {formatCurrency(frete.valorOriginal)} (+15%)
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-slate-400 font-semibold uppercase">Peso cotado</p>
-                      <p className="text-xs font-semibold text-slate-700">{formatWeightFromGrams(frete.pesoUsado)}</p>
+                      <p className="text-xs text-slate-400 font-semibold uppercase">Peso / Volumes</p>
+                      {frete.transportadora === "Azul Cargo" && frete.pesoKg !== undefined ? (
+                        <>
+                          <p className="text-xs font-semibold text-slate-700">
+                            {frete.pesoKg.toFixed(2)} KG
+                          </p>
+                          {frete.volumes !== undefined && (
+                            <p className="text-xs font-medium text-slate-500 mt-0.5">
+                              {frete.volumes} {frete.volumes === 1 ? "volume" : "volumes"}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs font-semibold text-slate-700">
+                          {formatWeightFromGrams(frete.pesoUsado)}
+                        </p>
+                      )}
                     </div>
                   </div>
                   {frete.observacao ? (
@@ -1197,7 +1579,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         </div>
 
         <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <FormSection title="7. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
+          <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
             <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
             {canManageCommercialRules ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-[130px_1fr]">
@@ -1216,7 +1598,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             )}
           </FormSection>
 
-          <FormSection title="8. Envio da proposta" description="Texto informal para envio via WhatsApp.">
+          <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
             <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
             <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
               <Copy className="h-4 w-4" />
@@ -1224,7 +1606,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             </button>
           </FormSection>
 
-          <FormSection title="9. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
+          <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
             <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
           </FormSection>
         </div>
@@ -1614,7 +1996,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     clienteId: cliente ? cliente.idCliente.toString() : "",
     contatoId: proposta?.contato.id ?? cliente?.contatos[0]?.id ?? "",
     enderecoId: endereco?.id ?? "",
-    compradorId: proposta?.compradorAutorizado?.id ?? cliente?.vinculosComerciais[0]?.id ?? "",
+    compradorId: proposta?.compradorAutorizado?.id ?? "",
     itens: proposta?.itens ?? [],
     fretes,
     freteEscolhidoId: proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? "",
