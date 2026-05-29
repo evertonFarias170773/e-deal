@@ -33,7 +33,7 @@ type CobrancaDetailProps = {
 export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { getCobrancaById, confirmPagamento, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source } = useCobrancas();
+  const { getCobrancaById, confirmPagamento, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
   const cobranca = getCobrancaById(cobrancaId) as NonNullable<ReturnType<typeof getCobrancaById>>;
 
   if (!cobranca) {
@@ -64,11 +64,19 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   }
 
   function handleConfirm() {
+    if (source === "supabase") {
+      showToast({ type: "warning", title: "Confirmação manual indisponível para cobranças reais." });
+      return;
+    }
     confirmPagamento(cobrancaAtual.id);
     showToast({ type: "success", title: "Pagamento confirmado no mock." });
   }
 
   function handleCancel() {
+    if (source === "supabase") {
+      showToast({ type: "warning", title: "Cancelamento manual indisponível para cobranças reais." });
+      return;
+    }
     const confirmed = window.confirm("Cancelar cobrança mockada? Nenhum backend real será acionado.");
 
     if (!confirmed) {
@@ -80,6 +88,10 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   }
 
   function handleLiberarPedido() {
+    if (source === "supabase") {
+      showToast({ type: "warning", title: "Liberação de pedido automática desativada nesta etapa de testes." });
+      return;
+    }
     const liberou = liberarParaPedido(cobrancaAtual.id_int);
     showToast({
       type: liberou ? "success" : "warning",
@@ -108,10 +120,29 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
         }
       />
 
+      {source === "supabase" && cobrancaAtual.tipo_cobranca === "PIX" && !cobrancaAtual.pix_copia_cola ? (
+        <div className="rounded-3xl border border-teal-200 bg-teal-50 p-5 text-teal-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold">Gerando código PIX...</h2>
+            <p className="mt-1 text-sm text-teal-700">O Banco Inter está registrando a cobrança. Isso leva apenas alguns segundos.</p>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              await refreshCobrancas();
+              showToast({ type: "info", title: "Dados da cobrança atualizados." });
+            }}
+            className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+          >
+            Atualizar status
+          </button>
+        </div>
+      ) : null}
+
       {isCobrancaVencida(cobrancaAtual) ? (
         <div className="rounded-3xl border border-orange-200 bg-orange-50 p-5 text-orange-800">
-          <h2 className="font-semibold">Cobrança vencida no mock</h2>
-          <p className="mt-1 text-sm">Esta cobrança continua aberta e o vencimento já passou. Use isso como referência visual para alertas futuros do financeiro.</p>
+          <h2 className="font-semibold">Cobrança vencida</h2>
+          <p className="mt-1 text-sm">{source === "supabase" ? "Esta cobrança está em atraso. Prossiga com a verificação de pagamento." : "Esta cobrança continua aberta e o vencimento já passou. Use isso como referência visual para alertas futuros do financeiro."}</p>
         </div>
       ) : null}
 
@@ -228,13 +259,24 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
         <div className="space-y-6">
           <DetailCard title="Ações disponíveis">
             <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => router.push(`/pagamento/${cobranca.token_publico}`)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-              >
-                Abrir página pública mockada
-              </button>
+              {source === "supabase" && cobranca.url_cobranca ? (
+                <a
+                  href={cobranca.url_cobranca}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full inline-flex items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 text-center shadow-sm"
+                >
+                  Abrir checkout
+                </a>
+              ) : source !== "supabase" ? (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/pagamento/${cobranca.token_publico}`)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+                >
+                  Abrir página pública mockada
+                </button>
+              ) : null}
               {cobranca.pix_copia_cola ? (
                 <button
                   type="button"
@@ -253,7 +295,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
                   Copiar linha digitável
                 </button>
               ) : null}
-              {cobranca.status !== "PAID" && cobranca.status !== "CANCELADO" ? (
+              {cobranca.status !== "PAID" && cobranca.status !== "CANCELADO" && source !== "supabase" ? (
                 <button
                   type="button"
                   onClick={handleConfirm}
@@ -262,7 +304,18 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
                   Confirmar pagamento mockado
                 </button>
               ) : null}
-              {propostaLiberada ? (
+              {source === "supabase" ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await refreshCobrancas();
+                    showToast({ type: "info", title: "Dados da cobrança atualizados." });
+                  }}
+                  className="w-full rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#123f61]"
+                >
+                  Atualizar dados do Supabase
+                </button>
+              ) : propostaLiberada ? (
                 <button
                   type="button"
                   disabled
@@ -280,7 +333,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
                   Liberar para pedido
                 </button>
               )}
-              {cobranca.status !== "CANCELADO" ? (
+              {cobranca.status !== "CANCELADO" && source !== "supabase" ? (
                 <button
                   type="button"
                   onClick={handleCancel}

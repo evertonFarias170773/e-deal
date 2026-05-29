@@ -277,3 +277,90 @@ export async function updatePagamentoV2Empresa(
     updated
   };
 }
+
+export async function createPagamentoV2Real(
+  payload: {
+    id_int: number;
+    id_cliente: number;
+    cliente: string;
+    documento: string;
+    valor: number;
+    status: string;
+    tipo_cobranca: string;
+    empresa: string;
+    id_empresa: number;
+    os_ideal: string;
+    atendente: string;
+    descricao: string;
+    vencimento?: string;
+    obs_v2?: string;
+  }
+): Promise<{ success: boolean; data?: Cobranca | null; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente do Supabase nao inicializado." };
+  }
+
+  const { data: createdRows, error: insertError } = await client
+    .from("pagamentos_v2")
+    .insert([
+      {
+        id_int: payload.id_int,
+        id_cliente: payload.id_cliente,
+        cliente: payload.cliente,
+        documento: payload.documento,
+        valor: payload.valor,
+        status: payload.status,
+        tipo_cobranca: payload.tipo_cobranca,
+        empresa: payload.empresa,
+        id_empresa: payload.id_empresa,
+        os_ideal: payload.os_ideal,
+        atendente: payload.atendente,
+        descricao: payload.descricao,
+        vencimento: payload.vencimento || null,
+        obs_v2: payload.obs_v2 || null,
+        confirmado: false
+      }
+    ])
+    .select(PAGAMENTOS_V2_SELECT)
+    .returns<SupabasePagamentoV2Row[]>();
+
+  if (insertError) {
+    console.error("[CobrancasService] Erro ao criar pagamento_v2:", insertError);
+    return { success: false, errorMessage: insertError.message || "Erro desconhecido ao inserir cobranca." };
+  }
+
+  if (!createdRows || !createdRows.length) {
+    return { success: false, errorMessage: "Cobranca inserida, mas nao retornou o registro criado." };
+  }
+
+  const createdRow = createdRows[0];
+  const mappedCobranca = mapSupabasePagamentoV2RowToCobranca(createdRow) ?? null;
+
+  // Registrar aviso curto em propostas_chat de forma silenciosa/amigavel
+  try {
+    const { error: chatError } = await client
+      .from("propostas_chat")
+      .insert([
+        {
+          id_int: payload.id_int,
+          id_cliente: payload.id_cliente,
+          mensagem: `Nova cobranca PIX registrada. Valor: R$ ${payload.valor.toFixed(2).replace(".", ",")}.`,
+          tipo: "SISTEMA",
+          autor_name: "Sistema",
+          autor_nome: "Sistema",
+          setor: "Financeiro",
+          visivel_externo: false
+        }
+      ]);
+
+    if (chatError) {
+      console.warn("[CobrancasService] Erro ao gravar em propostas_chat:", chatError);
+    }
+  } catch (chatException) {
+    console.warn("[CobrancasService] Excecao ao gravar em propostas_chat:", chatException);
+  }
+
+  return { success: true, data: mappedCobranca };
+}
+

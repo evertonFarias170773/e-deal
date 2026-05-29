@@ -15,7 +15,8 @@ import {
   getLiberacaoPedidoTone,
   getSituacaoFinanceiraPropostaLabel,
   isCreditoPendente,
-  isPropostaLiberadaParaPedido
+  isPropostaLiberadaParaPedido,
+  EMPRESAS_RECEBEDORAS_FIXAS
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
@@ -43,11 +44,14 @@ export function PropostaCobrancaPanel({
   defaultModalOpen = false
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
-  const { createCobranca, getCobrancasByProposta } = useCobrancas();
+  const { createCobranca, getCobrancasByProposta, source } = useCobrancas();
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [isSaving, setIsSaving] = useState(false);
   const [parcelasCartao, setParcelasCartao] = useState(2);
-  const empresa = getEmpresaRecebedoraByProposta(proposta);
+  const idEmpresaReal = source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : null;
+  const empresa = source === "supabase"
+    ? EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === idEmpresaReal)
+    : getEmpresaRecebedoraByProposta(proposta);
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
   const liberacaoStatus = getLiberacaoPedidoStatus(cobrancasDaProposta);
@@ -74,8 +78,15 @@ export function PropostaCobrancaPanel({
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
   const parcelas = useMemo(() => createParcelasSimuladas(form.valor || 0), [form.valor]);
-  const tipoDisponivel = isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
-  const indisponibilidadeMensagem = getMensagemTipoIndisponivel(proposta.empresa, form.tipoCobranca);
+  const tipoDisponivel = source === "supabase"
+    ? (form.tipoCobranca === "PIX" && idEmpresaReal === 1)
+    : isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
+
+  const indisponibilidadeMensagem = source === "supabase"
+    ? (form.tipoCobranca === "PIX"
+        ? (idEmpresaReal === 1 ? "" : "PIX real disponível apenas para a empresa Ideal Gráfica.")
+        : "Esta forma de pagamento está em preparação para o ambiente real.")
+    : getMensagemTipoIndisponivel(proposta.empresa, form.tipoCobranca);
 
   const analiseCredito = useMemo(() => {
     const disponivel = proposta.cliente.creditoDisponivel;
@@ -168,6 +179,10 @@ export function PropostaCobrancaPanel({
   }
 
   async function handleSubmit() {
+    if (isSaving) {
+      return;
+    }
+
     if (!form.osIdeal.trim()) {
       showToast({ type: "error", title: "Informe a OS Ideal temporária para gerar a cobrança." });
       return;
@@ -186,6 +201,51 @@ export function PropostaCobrancaPanel({
     if (form.valor <= 0) {
       showToast({ type: "error", title: "Informe um valor de cobrança maior que zero." });
       return;
+    }
+
+    if (form.valor > saldoRestante) {
+      showToast({
+        type: "error",
+        title: `O valor da cobrança (${formatCurrency(form.valor)}) não pode ser maior que o saldo restante (${formatCurrency(saldoRestante)}).`
+      });
+      return;
+    }
+
+    if (source === "supabase" && form.tipoCobranca !== "PIX") {
+      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX para testes reais." });
+      return;
+    }
+
+    if (source === "supabase" && idEmpresaReal !== 1) {
+      showToast({ type: "error", title: "Criação de cobrança real disponível apenas para propostas da Ideal Gráfica nesta etapa." });
+      return;
+    }
+
+    if (source === "supabase") {
+      if (!proposta.cliente || !proposta.cliente.nome?.trim()) {
+        showToast({ type: "error", title: "Nome do cliente é obrigatório para gerar cobrança real." });
+        return;
+      }
+      if (!proposta.cliente.documento?.trim()) {
+        showToast({ type: "error", title: "Documento (CPF/CNPJ) do cliente é obrigatório para gerar cobrança real." });
+        return;
+      }
+      if (!proposta.enderecoEntrega || !proposta.enderecoEntrega.endereco?.trim()) {
+        showToast({ type: "error", title: "Logradouro do endereço de entrega é obrigatório para gerar cobrança real." });
+        return;
+      }
+      if (!proposta.enderecoEntrega.cidade?.trim()) {
+        showToast({ type: "error", title: "Cidade do endereço de entrega é obrigatória para gerar cobrança real." });
+        return;
+      }
+      if (!proposta.enderecoEntrega.uf?.trim()) {
+        showToast({ type: "error", title: "UF do endereço de entrega é obrigatória para gerar cobrança real." });
+        return;
+      }
+      if (!proposta.enderecoEntrega.cep?.trim()) {
+        showToast({ type: "error", title: "CEP do endereço de entrega é obrigatório para gerar cobrança real." });
+        return;
+      }
     }
 
     if (!tipoDisponivel) {
@@ -208,18 +268,31 @@ export function PropostaCobrancaPanel({
     };
 
     setIsSaving(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 850));
-    createCobranca(payload);
+    try {
+      if (source !== "supabase") {
+        await new Promise((resolve) => window.setTimeout(resolve, 850));
+      }
+      await createCobranca(payload, proposta);
 
-    showToast({
-      type: "success",
-      title: "Cobrança criada com sucesso."
-    });
+      showToast({
+        type: "success",
+        title: source === "supabase" ? "Cobrança real PIX criada com sucesso!" : "Cobrança criada com sucesso."
+      });
 
-    setForm(buildInitialFormState());
-    setParcelasCartao(2);
-    setIsSaving(false);
-    closeModal();
+      setForm(buildInitialFormState());
+      setParcelasCartao(2);
+      closeModal();
+    } catch (error: unknown) {
+      console.error("[PropostaCobrancaPanel] Erro ao criar cobrança:", error);
+      const errorMessage = error instanceof Error ? error.message : "Verifique sua conexão ou tente novamente.";
+      showToast({
+        type: "error",
+        title: "Erro ao criar cobrança",
+        description: errorMessage
+      });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   const opcoesPagamento: Array<{
@@ -235,51 +308,74 @@ export function PropostaCobrancaPanel({
     { id: "E-FATURADO", label: "Faturado", icon: Landmark }
   ];
 
+  const hasCobrancas = cobrancasDaProposta.length > 0;
+
   return (
     <div className="space-y-6">
       <PanelCard
         title="Cobranças já geradas"
         description="A cobrança continua nascendo dentro da proposta. O modal de criação foi simplificado para um fluxo rápido e operacional."
       >
-        <div className="rounded-3xl border border-[#d7e5e8] bg-slate-50 p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold text-slate-800">
-                Proposta #{proposta.id_int} • {proposta.cliente.nome} • {empresa?.nome ?? proposta.empresa}
-              </p>
-              <p className="text-sm text-slate-600">
-                Total {formatCurrency(proposta.resumo.valorTotal)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
-              </p>
-              {hasCobrancaExcedente ? (
-                <p className="text-xs font-semibold text-orange-700">Cobranças excedem o valor da proposta no mock.</p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={getLiberacaoPedidoLabel(liberacaoStatus)} tone={getLiberacaoPedidoTone(liberacaoStatus)} />
-                {propostaLiberada ? <StatusBadge status="LIBERADA_PARA_PEDIDO" tone="success" /> : null}
+        {!hasCobrancas ? (
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center flex flex-col items-center justify-center gap-4">
+            <p className="text-sm font-medium text-slate-600">
+              Nenhuma cobrança criada para esta proposta ainda.
+            </p>
+            <button
+              type="button"
+              onClick={openModal}
+              className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+            >
+              Gerar cobrança
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-3xl border border-[#d7e5e8] bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-800">
+                    Proposta #{proposta.id_int} • {proposta.cliente.nome} • {empresa?.nome ?? proposta.empresa}
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    Total {formatCurrency(proposta.resumo.valorTotal)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
+                  </p>
+                  {hasCobrancaExcedente ? (
+                    <p className="text-xs font-semibold text-orange-700">
+                      {source === "supabase"
+                        ? "Atenção: o total das cobranças excede o valor total da proposta."
+                        : "Cobranças excedem o valor da proposta no mock."}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={getLiberacaoPedidoLabel(liberacaoStatus)} tone={getLiberacaoPedidoTone(liberacaoStatus)} />
+                    {propostaLiberada ? <StatusBadge status="LIBERADA_PARA_PEDIDO" tone="success" /> : null}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Link
+                    href="/cobrancas"
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Conferência financeira
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={openModal}
+                    className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+                  >
+                    Gerar cobrança
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Link
-                href="/cobrancas"
-                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Conferência financeira
-              </Link>
-              <button
-                type="button"
-                onClick={openModal}
-                className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-              >
-                Gerar cobrança
-              </button>
+            <div className="mt-5">
+              <CobrancasDaPropostaList cobrancas={cobrancasDaProposta} />
             </div>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <CobrancasDaPropostaList cobrancas={cobrancasDaProposta} />
-        </div>
+          </>
+        )}
       </PanelCard>
 
       {modalOpen ? (
@@ -297,7 +393,11 @@ export function PropostaCobrancaPanel({
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Proposta #{proposta.id_int} • Situação {situacaoFinanceira}</p>
                 {hasCobrancaExcedente ? (
-                  <p className="mt-1 text-xs font-semibold text-orange-700">Cobranças excedem o valor da proposta no mock.</p>
+                  <p className="mt-1 text-xs font-semibold text-orange-700">
+                    {source === "supabase"
+                      ? "Atenção: o total das cobranças excede o valor total da proposta."
+                      : "Cobranças excedem o valor da proposta no mock."}
+                  </p>
                 ) : null}
               </div>
               <button type="button" onClick={closeModal} className="rounded-2xl bg-slate-100 p-2 text-slate-700">
@@ -308,7 +408,9 @@ export function PropostaCobrancaPanel({
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-5 md:p-6">
               <PanelCard
                 title="Dados da cobrança"
-                description="Preencha os dados essenciais para gerar a cobrança mockada."
+                description={source === "supabase"
+                  ? "Preencha os dados essenciais para gerar a cobrança real."
+                  : "Preencha os dados essenciais para gerar a cobrança mockada."}
               >
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Empresa recebedora">
@@ -361,14 +463,22 @@ export function PropostaCobrancaPanel({
                   {opcoesPagamento.map((opcao) => {
                     const Icon = opcao.icon;
                     const selected = form.tipoCobranca === opcao.id;
-                    const available = isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
-                    const disabledText = available ? "" : "Indisponível para esta empresa no mock.";
+                    const available = source === "supabase"
+                      ? (opcao.id === "PIX" ? (idEmpresaReal === 1) : true)
+                      : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
+                    const isRealBlocked = source === "supabase" && opcao.id !== "PIX";
+                    const isActuallyDisabled = !available || isRealBlocked;
+                    const disabledText = isRealBlocked
+                      ? "Forma de pagamento em preparação no ambiente real."
+                      : available
+                        ? ""
+                        : "Indisponível para esta empresa.";
 
                     return (
                       <button
                         key={opcao.id}
                         type="button"
-                        disabled={!available}
+                        disabled={isActuallyDisabled}
                         onClick={() => handleTipoChange(opcao.id)}
                         className={`rounded-2xl border px-3 py-2 text-left transition ${
                           selected
@@ -381,13 +491,17 @@ export function PropostaCobrancaPanel({
                           <Icon className="h-4 w-4 text-slate-700" />
                           <span className="text-sm font-semibold text-slate-900">{opcao.label}</span>
                         </div>
-                        {!available ? <p className="mt-1 text-[11px] text-slate-500">Indisponível no mock</p> : null}
+                        {!available ? (
+                          <p className="mt-1 text-[11px] text-slate-500">Indisponível</p>
+                        ) : isRealBlocked ? (
+                          <p className="mt-1 text-[11px] text-orange-600 font-semibold">Em preparação</p>
+                        ) : null}
                       </button>
                     );
                   })}
                 </div>
                 {!tipoDisponivel ? (
-                  <p className="mt-3 text-xs text-orange-700">{indisponibilidadeMensagem || "Indisponível para esta empresa no mock."}</p>
+                  <p className="mt-3 text-xs text-orange-700">{indisponibilidadeMensagem || "Indisponível para esta empresa."}</p>
                 ) : null}
               </PanelCard>
 
@@ -470,62 +584,167 @@ export function PropostaCobrancaPanel({
   );
 }
 
-function CobrancasDaPropostaList({ cobrancas, compact = false }: { cobrancas: Cobranca[]; compact?: boolean }) {
+function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
   if (!cobrancas.length) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
-        Nenhuma cobrança criada para esta proposta ainda. Gere a primeira cobrança por aqui para alimentar `pagamentos_v2` no mock.
+      <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500 text-center">
+        Nenhuma cobrança criada para esta proposta ainda.
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {cobrancas.map((cobranca) => (
-        <div key={cobranca.id} className={`rounded-3xl border border-slate-200 bg-slate-50 ${compact ? "p-4" : "p-5"}`}>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{cobranca.id_pagamento}</p>
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                <MiniInfo label="Tipo" value={getCobrancaTipoLabel(cobranca.tipo_cobranca)} />
-                <MiniInfo label="OS Ideal" value={cobranca.os_ideal} />
-                <MiniInfo label="Valor" value={formatCurrency(getValorCobranca(cobranca))} />
-                <MiniInfo label="Status" value={cobranca.status} />
-                <MiniInfo label="Confirmado" value={cobranca.confirmado ? "Sim" : "Não"} />
-                <MiniInfo label="Cliente" value={cobranca.cliente} />
+      {cobrancas.map((cobranca) => {
+        const valorCobranca = getValorCobranca(cobranca);
+
+        return (
+          <div
+            key={cobranca.id}
+            className="rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition duration-150 shadow-sm"
+          >
+            {/* Desktop Layout */}
+            <div className="hidden lg:flex lg:items-center lg:justify-between lg:gap-4 p-4">
+              {/* Col 1: ID & Cliente */}
+              <div className="flex-[1.5] min-w-[160px] truncate">
+                <p className="text-sm font-bold text-slate-900">{cobranca.id_pagamento}</p>
+                <p className="text-xs text-slate-500 truncate" title={cobranca.cliente}>
+                  {cobranca.cliente}
+                </p>
+              </div>
+
+              {/* Col 2: Tipo & OS */}
+              <div className="flex-1 min-w-[120px]">
+                <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
+                  {getCobrancaTipoLabel(cobranca.tipo_cobranca)}
+                </span>
+                <p className="mt-1 text-xs text-slate-600">
+                  OS Ideal: <span className="font-semibold text-slate-800">{cobranca.os_ideal || "-"}</span>
+                </p>
+              </div>
+
+              {/* Col 3: Valor */}
+              <div className="flex-1 min-w-[100px]">
+                <p className="text-sm font-bold text-slate-900">
+                  {formatCurrency(valorCobranca)}
+                </p>
+                {cobranca.tipo_cobranca === "CARD_PARCELADO" && cobranca.cartao_parcelas ? (
+                  <p className="text-xs text-slate-500">{cobranca.cartao_parcelas}x</p>
+                ) : null}
+              </div>
+
+              {/* Col 4: Status Badges */}
+              <div className="flex flex-col gap-1 min-w-[160px]">
+                <div className="flex items-center gap-1.5">
+                  <StatusBadge status={cobranca.status} />
+                  {isCreditoPendente(cobranca) ? (
+                    <StatusBadge status="AGUARDANDO_CREDITO" tone="warning" />
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-medium text-slate-500">Confirmação:</span>
+                  <StatusBadge
+                    status={cobranca.confirmado ? "CONFIRMADO" : "NAO_CONFIRMADO"}
+                    tone={cobranca.confirmado ? "success" : "neutral"}
+                  />
+                </div>
+              </div>
+
+              {/* Col 5: Actions */}
+              <div className="flex items-center gap-2">
+                {cobranca.url_cobranca ? (
+                  <a
+                    href={cobranca.url_cobranca}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                  >
+                    Abrir checkout
+                  </a>
+                ) : null}
+                <Link
+                  href={`/cobrancas/${cobranca.id}`}
+                  className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#123f61]"
+                >
+                  Ver cobrança
+                </Link>
+                <Link
+                  href="/cobrancas"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  title="Conferência financeira"
+                >
+                  Conferência
+                </Link>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={cobranca.status} />
-              {isCreditoPendente(cobranca) ? <StatusBadge status="AGUARDANDO_CREDITO" tone="warning" /> : null}
+
+            {/* Mobile Layout */}
+            <div className="lg:hidden p-4 flex flex-col gap-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">{cobranca.id_pagamento}</p>
+                  <p className="text-xs text-slate-500 truncate max-w-[200px]" title={cobranca.cliente}>
+                    {cobranca.cliente}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">
+                    {formatCurrency(valorCobranca)}
+                  </p>
+                  <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
+                    {getCobrancaTipoLabel(cobranca.tipo_cobranca)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-x-4 gap-y-2 py-2 border-t border-b border-slate-100 text-xs">
+                <div>
+                  <span className="text-slate-500">OS Ideal: </span>
+                  <span className="font-semibold text-slate-800">{cobranca.os_ideal || "-"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Confirmado: </span>
+                  <span className="font-semibold text-slate-800">{cobranca.confirmado ? "Sim" : "Não"}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex flex-wrap gap-1.5">
+                  <StatusBadge status={cobranca.status} />
+                  {isCreditoPendente(cobranca) ? (
+                    <StatusBadge status="AGUARDANDO_CREDITO" tone="warning" />
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {cobranca.url_cobranca ? (
+                    <a
+                      href={cobranca.url_cobranca}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                    >
+                      Checkout
+                    </a>
+                  ) : null}
+                  <Link
+                    href={`/cobrancas/${cobranca.id}`}
+                    className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#123f61]"
+                  >
+                    Ver
+                  </Link>
+                  <Link
+                    href="/cobrancas"
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Painel
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
-
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Link
-              href={`/cobrancas/${cobranca.id}`}
-              className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white"
-            >
-              Ver cobrança
-            </Link>
-            <Link
-              href="/cobrancas"
-              className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              Conferência financeira
-            </Link>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MiniInfo({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl bg-white px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+        );
+      })}
     </div>
   );
 }
@@ -549,4 +768,19 @@ function getParcelaByQuantidade(parcelas: CobrancaParcelaSimulada[], quantidade:
     valorParcela: (parcelas[0]?.valorFinal ?? 0) / Math.max(quantidade, 1),
     rotulo: `${quantidade}x`
   };
+}
+
+function getEmpresaIdByNome(nome: string | undefined): number {
+  if (!nome) return 1;
+  const normalized = nome.trim().toUpperCase();
+  if (normalized.includes("IDEAL GRÁFICA") || normalized.includes("IDEAL GRAFICA") || normalized.includes("INGRESSO IDEAL")) {
+    return 1;
+  }
+  if (normalized.includes("IDEAL BIRÔ") || normalized.includes("IDEAL BIRO") || normalized.includes("BIRO")) {
+    return 2;
+  }
+  if (normalized.includes("E3 BRINDES") || normalized.includes("E3")) {
+    return 3;
+  }
+  return 1; // Default
 }
