@@ -48,7 +48,6 @@ export function PropostaCobrancaPanel({
   const { createCobranca, getCobrancasByProposta, source } = useCobrancas();
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [isSaving, setIsSaving] = useState(false);
-  const [parcelasCartao, setParcelasCartao] = useState(2);
   const idEmpresaReal = source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : null;
   const empresa = source === "supabase"
     ? EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === idEmpresaReal)
@@ -67,7 +66,7 @@ export function PropostaCobrancaPanel({
   const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
   const situacaoFinanceira = getSituacaoFinanceiraPropostaLabel(cobrancasDaProposta);
 
-  function buildInitialFormState(): CriarCobrancaFormValues {
+  const buildInitialFormState = useCallback((): CriarCobrancaFormValues => {
     const cobrancaComOs = cobrancasDaProposta.find((item) => item.os_ideal && item.os_ideal.trim() !== "");
     const defaultOsIdeal = cobrancaComOs ? cobrancaComOs.os_ideal.trim() : "";
 
@@ -81,16 +80,17 @@ export function PropostaCobrancaPanel({
       vencimento: "2026-05-30",
       osIdeal: defaultOsIdeal
     };
-  }
+  }, [proposta, cobrancasDaProposta, saldoRestante, totalPropostaRounded, cobrancasAtivas]);
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
-  const parcelas = useMemo(() => createParcelasSimuladas(form.valor || 0), [form.valor]);
   const tipoDisponivel = source === "supabase"
     ? (form.tipoCobranca === "PIX"
         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
         : form.tipoCobranca === "BOLETO"
           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-          : false)
+          : form.tipoCobranca === "CARD_PARCELADO"
+            ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+            : false)
     : isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
 
   const indisponibilidadeMensagem = source === "supabase"
@@ -98,7 +98,9 @@ export function PropostaCobrancaPanel({
         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3 ? "" : "PIX real disponível apenas para as empresas Ideal Gráfica, Ideal Birô e E3 Brindes.")
         : form.tipoCobranca === "BOLETO"
           ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Boleto real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
-          : "Esta forma de pagamento está em preparação para o ambiente real.")
+          : form.tipoCobranca === "CARD_PARCELADO"
+            ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
+            : "Esta forma de pagamento está em preparação para o ambiente real.")
     : getMensagemTipoIndisponivel(proposta.empresa, form.tipoCobranca);
 
   const analiseCredito = useMemo(() => {
@@ -121,14 +123,13 @@ export function PropostaCobrancaPanel({
   const openModal = useCallback(() => {
     // Reset do formulário apenas ao abrir o modal para evitar sobrescrever edição em andamento.
     setForm(buildInitialFormState());
-    setParcelasCartao(2);
 
     if (!isControlled) {
       setInternalModalOpen(true);
     }
 
     onOpenModal?.();
-  }, [isControlled, onOpenModal, proposta]);
+  }, [isControlled, onOpenModal, buildInitialFormState]);
 
   const closeModal = useCallback(() => {
     if (!isControlled) {
@@ -165,29 +166,11 @@ export function PropostaCobrancaPanel({
   }
 
   function handleTipoChange(tipo: CobrancaTipo) {
-    if (tipo === "CARD_PARCELADO") {
-      patchForm({
-        tipoCobranca: tipo,
-        parcelaSelecionada: getParcelaByQuantidade(parcelas, parcelasCartao),
-        condicaoPagamento: `${parcelasCartao}x`
-      });
-      return;
-    }
-
     patchForm({
       tipoCobranca: tipo,
       parcelaSelecionada: undefined,
-      condicaoPagamento: tipo === "E-FATURADO" ? "Faturado" : proposta.formaPagamento,
+      condicaoPagamento: tipo === "CARD_PARCELADO" ? "Cartão de crédito" : (tipo === "E-FATURADO" ? "Faturado" : proposta.formaPagamento),
       vencimento: tipo === "BOLETO" || tipo === "E-FATURADO" ? form.vencimento || "2026-05-30" : form.vencimento
-    });
-  }
-
-  function handleParcelasCartaoChange(value: number) {
-    const quantidade = Math.min(12, Math.max(1, Number.isNaN(value) ? 1 : value));
-    setParcelasCartao(quantidade);
-    patchForm({
-      parcelaSelecionada: getParcelaByQuantidade(parcelas, quantidade),
-      condicaoPagamento: `${quantidade}x`
     });
   }
 
@@ -227,8 +210,8 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO") {
-      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX ou Boleto para testes reais." });
+    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO" && form.tipoCobranca !== "CARD_PARCELADO") {
+      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX, Boleto ou Cartão para testes reais." });
       return;
     }
 
@@ -239,6 +222,11 @@ export function PropostaCobrancaPanel({
 
     if (source === "supabase" && form.tipoCobranca === "BOLETO" && idEmpresaReal === 2) {
       showToast({ type: "error", title: "Geração de boleto real não disponível para a empresa Ideal Birô." });
+      return;
+    }
+
+    if (source === "supabase" && form.tipoCobranca === "CARD_PARCELADO" && idEmpresaReal === 2) {
+      showToast({ type: "error", title: "Geração de cartão de crédito real não disponível para a empresa Ideal Birô." });
       return;
     }
 
@@ -291,10 +279,7 @@ export function PropostaCobrancaPanel({
       ...form,
       valor: roundedValor,
       descricao: `Cobrança ${getCobrancaTipoLabel(form.tipoCobranca)} da proposta #${proposta.id_int}`,
-      parcelaSelecionada:
-        form.tipoCobranca === "CARD_PARCELADO"
-          ? getParcelaByQuantidade(parcelas, parcelasCartao)
-          : undefined
+      parcelaSelecionada: undefined
     };
 
     setIsSaving(true);
@@ -306,11 +291,10 @@ export function PropostaCobrancaPanel({
 
       showToast({
         type: "success",
-        title: source === "supabase" ? "Cobrança real PIX criada com sucesso!" : "Cobrança criada com sucesso."
+        title: source === "supabase" ? "Cobrança real criada com sucesso!" : "Cobrança criada com sucesso."
       });
 
       setForm(buildInitialFormState());
-      setParcelasCartao(2);
       closeModal();
     } catch (error: unknown) {
       console.error("[PropostaCobrancaPanel] Erro ao criar cobrança:", error);
@@ -333,8 +317,7 @@ export function PropostaCobrancaPanel({
   }> = [
     { id: "PIX", label: "PIX", icon: QrCode },
     { id: "BOLETO", label: "Boleto", icon: ReceiptText },
-    { id: "CREDIT_CARD", label: "Cartão", icon: CreditCard },
-    { id: "CARD_PARCELADO", label: "Cartão parcelado", icon: CreditCard },
+    { id: "CARD_PARCELADO", label: "Cartão de crédito", icon: CreditCard },
     { id: "E-FATURADO", label: "Faturado", icon: Landmark }
   ];
 
@@ -539,25 +522,7 @@ export function PropostaCobrancaPanel({
                 ) : null}
               </PanelCard>
 
-              {form.tipoCobranca === "CARD_PARCELADO" ? (
-                <PanelCard
-                  title="Campos mínimos do cartão parcelado"
-                  description="Apenas a quantidade de parcelas é necessária nesta etapa."
-                >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Quantidade de parcelas">
-                      <input
-                        type="number"
-                        min={1}
-                        max={12}
-                        value={parcelasCartao}
-                        onChange={(event) => handleParcelasCartaoChange(Number(event.target.value))}
-                        className={inputClass}
-                      />
-                    </Field>
-                  </div>
-                </PanelCard>
-              ) : null}
+              {/* Painel de parcelas removido por solicitação */}
 
               {form.tipoCobranca === "E-FATURADO" ? (
                 <PanelCard
@@ -635,6 +600,7 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
         const valorCobranca = getValorCobranca(cobranca);
         const isBoleto = cobranca.tipo_cobranca === "BOLETO";
         const isPix = cobranca.tipo_cobranca === "PIX";
+        const isCard = cobranca.tipo_cobranca === "CARD_PARCELADO";
         const boletoUrl = cobranca.url_pdf || cobranca.pix_copia_cola || "";
 
         return (
@@ -759,6 +725,36 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                       </button>
                     )}
                   </>
+                ) : isCard ? (
+                  <>
+                    {cobranca.cartao_checkout_url ? (
+                      <a
+                        href={cobranca.cartao_checkout_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm"
+                      >
+                        Abrir checkout cartão
+                      </a>
+                    ) : cobranca.url_cobranca ? (
+                      <a
+                        href={cobranca.url_cobranca}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                      >
+                        Escolher parcelas
+                      </a>
+                    ) : (
+                      <button
+                        disabled
+                        className="inline-flex items-center justify-center rounded-xl bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                        title="Página do cartão ainda não disponível"
+                      >
+                        Indisponível
+                      </button>
+                    )}
+                  </>
                 ) : (
                   cobranca.url_cobranca && (
                     <a
@@ -867,6 +863,35 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                         </a>
                       )}
                     </>
+                  ) : isCard ? (
+                    <>
+                      {cobranca.cartao_checkout_url ? (
+                        <a
+                          href={cobranca.cartao_checkout_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm"
+                        >
+                          Abrir checkout cartão
+                        </a>
+                      ) : cobranca.url_cobranca ? (
+                        <a
+                          href={cobranca.url_cobranca}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                        >
+                          Escolher parcelas
+                        </a>
+                      ) : (
+                        <button
+                          disabled
+                          className="inline-flex items-center justify-center rounded-xl bg-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                        >
+                          Indisponível
+                        </button>
+                      )}
+                    </>
                   ) : (
                     cobranca.url_cobranca && (
                       <a
@@ -905,22 +930,7 @@ function getValorCobranca(cobranca: Cobranca) {
   return cobranca.cartao_valor_final ?? cobranca.valor;
 }
 
-function getParcelaByQuantidade(parcelas: CobrancaParcelaSimulada[], quantidade: number): CobrancaParcelaSimulada {
-  const existing = parcelas.find((item) => item.parcelas === quantidade);
 
-  if (existing) {
-    return existing;
-  }
-
-  return {
-    parcelas: quantidade,
-    taxaPercentual: 0,
-    valorTaxa: 0,
-    valorFinal: parcelas[0]?.valorFinal ?? 0,
-    valorParcela: (parcelas[0]?.valorFinal ?? 0) / Math.max(quantidade, 1),
-    rotulo: `${quantidade}x`
-  };
-}
 
 function getEmpresaIdByNome(nome: string | undefined): number {
   if (!nome) return 1;

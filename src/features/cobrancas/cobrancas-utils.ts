@@ -287,7 +287,7 @@ export function getTipoCobrancaLabel(tipo: string) {
   if (normalized === "PIX") return "PIX";
   if (normalized === "BOLETO") return "Boleto";
   if (normalized === "CREDIT_CARD") return "Cartão de crédito";
-  if (normalized === "CARD_PARCELADO") return "Cartão parcelado";
+  if (normalized === "CARD_PARCELADO") return "Cartão de crédito";
   if (normalized === "E-FATURADO") return "E-Faturado";
 
   return titleCase(

@@ -32,8 +32,8 @@ export const empresasRecebedorasMock: EmpresaRecebedoraOption[] = mockCompanies
 export const tiposCobrancaMock: Array<{ id: CobrancaTipo; label: string; descricao: string }> = [
   { id: "PIX", label: "PIX", descricao: "Cria cobrança imediata com token público e PIX copia e cola mockados." },
   { id: "BOLETO", label: "Boleto", descricao: "Gera linha digitável e PDF mockado quando a empresa permitir boleto à vista." },
-  { id: "CREDIT_CARD", label: "Cartão de crédito", descricao: "Cria checkout mockado para cobrança à vista no cartão." },
-  { id: "CARD_PARCELADO", label: "Cartão parcelado", descricao: "Simula parcelamento e salva taxa, valor final e checkout mockado." },
+  { id: "CREDIT_CARD", label: "Cartão de crédito (Antigo)", descricao: "Cria checkout mockado para cobrança à vista no cartão." },
+  { id: "CARD_PARCELADO", label: "Cartão de crédito", descricao: "Simula checkout de cartão com juros/taxa ou à vista." },
   { id: "E-FATURADO", label: "Faturado", descricao: "Valida crédito do cliente e envia para análise financeira quando faltar limite." }
 ];
 

@@ -4,7 +4,7 @@ export function humanizeStatus(status: string) {
     A_VENCER: "A vencer",
     PAID: "Pago",
     CANCELADO: "Cancelado",
-    CARD_PARCELADO: "Cartão parcelado",
+    CARD_PARCELADO: "Cartão de crédito",
     VENCIDO: "Vencido",
     PRORROGADO: "Prorrogado",
     AGUARDANDO_CREDITO: "Aguardando análise de crédito",

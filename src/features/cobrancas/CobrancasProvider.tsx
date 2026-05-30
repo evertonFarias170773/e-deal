@@ -223,7 +223,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           },
           body: JSON.stringify(webhookPayload)
         });
-      } else {
+      } else if (values.tipoCobranca === "PIX") {
         // 4. Chamar o webhook PIX da empresa correspondente pela camada server-side
         const webhookPayload = {
           cobrancaId: cobrancaId,
@@ -247,6 +247,74 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           },
           body: JSON.stringify(webhookPayload)
         });
+      } else {
+        // Para CARTAO (CARD_PARCELADO) ou FATURADO (E-FATURADO):
+        // O checkout/faturamento é gerado no backend. Não disparamos webhook externo no front.
+        // Apenas recarregamos os dados e retornamos a linha correspondente.
+        const loadResult = await loadData();
+        const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
+                      loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
+
+        try {
+          const msg = values.tipoCobranca === "E-FATURADO"
+            ? `Nova solicitação de faturamento registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
+            : `Nova cobrança de Cartão de crédito registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+
+          await client
+            .from("propostas_chat")
+            .insert([
+              {
+                id_int: proposta.id_int,
+                id_cliente: proposta.cliente.idCliente,
+                mensagem: msg,
+                tipo: "SISTEMA",
+                autor_nome: "Sistema",
+                setor: "Financeiro",
+                visivel_externo: false
+              }
+            ]);
+        } catch (chatErr) {
+          console.warn("Falha ao registrar historico no chat:", chatErr);
+        }
+
+        if (found) {
+          return found;
+        }
+
+        return {
+          id: cobrancaId,
+          id_pagamento: `${proposta.id_int}-${tokenPublico}`,
+          os_ideal: "",
+          id_int: proposta.id_int,
+          id_cliente: proposta.cliente.idCliente,
+          valor: values.valor,
+          status: "A_RECEBER",
+          tipo_cobranca: values.tipoCobranca,
+          created_at: new Date().toISOString(),
+          cliente: proposta.cliente.nome,
+          empresa: proposta.empresa,
+          descricao: `Cobrança ${values.tipoCobranca} registrada.`,
+          documento: proposta.cliente.documento || "",
+          atendente: proposta.vendedor || "",
+          confirmado: false,
+          id_empresa: idEmpresa,
+          token_publico: tokenPublico,
+          url_cobranca: urlCobranca,
+          proposta: {
+            id_int: proposta.id_int,
+            statusProposta: proposta.status,
+            cliente: proposta.cliente.nome,
+            documento: proposta.cliente.documento || "",
+            valorTotal: proposta.resumo.valorTotal,
+            valorPendente: proposta.resumo.valorTotal - values.valor,
+            empresaProposta: proposta.empresa,
+            vendedor: proposta.vendedor || "",
+            descricao: `Cobrança ${values.tipoCobranca} registrada para proposta #${proposta.id_int}`,
+            valorFrete: proposta.resumo.frete
+          },
+          historico: [],
+          propostasChat: []
+        };
       }
 
       if (!response.ok) {
@@ -260,7 +328,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error(result.message || `Falha no retorno da API de ${values.tipoCobranca}.`);
       }
 
-      // 5. Enviar mensagem no chat da proposta
+      // 5. Enviar mensagem no chat da proposta para BOLETO ou PIX
       try {
         const msg = values.tipoCobranca === "BOLETO"
           ? `Boleto registrado. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
@@ -283,8 +351,44 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         console.warn("Falha ao registrar historico no chat:", chatErr);
       }
 
-      await loadData();
-      return result.data || createdRow;
+      const loadResult = await loadData();
+      const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
+                    loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
+
+      return result.data || found || {
+        id: cobrancaId,
+        id_pagamento: `${proposta.id_int}-${tokenPublico}`,
+        os_ideal: "",
+        id_int: proposta.id_int,
+        id_cliente: proposta.cliente.idCliente,
+        valor: values.valor,
+        status: "A_RECEBER",
+        tipo_cobranca: values.tipoCobranca,
+        created_at: new Date().toISOString(),
+        cliente: proposta.cliente.nome,
+        empresa: proposta.empresa,
+        descricao: `Cobrança ${values.tipoCobranca} registrada.`,
+        documento: proposta.cliente.documento || "",
+        atendente: proposta.vendedor || "",
+        confirmado: false,
+        id_empresa: idEmpresa,
+        token_publico: tokenPublico,
+        url_cobranca: urlCobranca,
+        proposta: {
+          id_int: proposta.id_int,
+          statusProposta: proposta.status,
+          cliente: proposta.cliente.nome,
+          documento: proposta.cliente.documento || "",
+          valorTotal: proposta.resumo.valorTotal,
+          valorPendente: proposta.resumo.valorTotal - values.valor,
+          empresaProposta: proposta.empresa,
+          vendedor: proposta.vendedor || "",
+          descricao: `Cobrança ${values.tipoCobranca} registrada para proposta #${proposta.id_int}`,
+          valorFrete: proposta.resumo.frete
+        },
+        historico: [],
+        propostasChat: []
+      };
     }
 
     const next = createCobrancaFromForm(values);

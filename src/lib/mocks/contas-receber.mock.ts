@@ -363,8 +363,8 @@ export function getTipoRecebivelLabel(tipo: RecebivelTipo | BoletoDepositoTipo) 
   const labels: Record<string, string> = {
     PIX: "PIX",
     BOLETO: "Boleto",
-    CREDIT_CARD: "Cartão",
-    CARD_PARCELADO: "Cartão parcelado",
+    CREDIT_CARD: "Cartão de crédito",
+    CARD_PARCELADO: "Cartão de crédito",
     "E-FATURADO": "Faturado",
     DEPOSITO: "Depósito futuro",
     CARTAO: "Cartão",

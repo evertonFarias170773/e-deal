@@ -35,4 +35,12 @@ export type SupabasePagamentoV2Row = {
   cod_solicitacao_inter?: SupabaseValue;
   data_confirmacao?: SupabaseValue;
   n_url_pdf?: SupabaseValue;
+  cartao_checkout_url?: SupabaseValue;
+  cartao_checkout_id?: SupabaseValue;
+  cartao_status?: SupabaseValue;
+  cartao_parcelas?: SupabaseValue;
+  cartao_taxa_percentual?: SupabaseValue;
+  cartao_valor_taxa?: SupabaseValue;
+  cartao_valor_final?: SupabaseValue;
 };
+

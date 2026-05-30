@@ -92,16 +92,18 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       disabled: !isCreditoPendente(cobranca),
       onClick: handleAnaliseCredito
     },
-    {
-      label: "Copiar PIX",
-      disabled: !cobranca.pix_copia_cola,
-      onClick: () => void copyValue(cobranca.pix_copia_cola, "PIX copiado.", "Esta cobrança não possui PIX mockado.")
-    },
-    {
-      label: "Copiar linha digitável",
-      disabled: !cobranca.linha_digitavel,
-      onClick: () => void copyValue(cobranca.linha_digitavel, "Linha digitável copiada.", "Esta cobrança não possui boleto mockado.")
-    },
+    ...(cobranca.tipo_cobranca !== "CARD_PARCELADO" ? [
+      {
+        label: "Copiar PIX",
+        disabled: !cobranca.pix_copia_cola,
+        onClick: () => void copyValue(cobranca.pix_copia_cola, "PIX copiado.", "Esta cobrança não possui PIX mockado.")
+      },
+      {
+        label: "Copiar linha digitável",
+        disabled: !cobranca.linha_digitavel,
+        onClick: () => void copyValue(cobranca.linha_digitavel, "Linha digitável copiada.", "Esta cobrança não possui boleto mockado.")
+      }
+    ] : []),
     {
       label: "Cancelar cobrança",
       destructive: true,

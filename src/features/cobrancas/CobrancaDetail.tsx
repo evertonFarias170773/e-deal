@@ -157,7 +157,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
         <CobrancaResumoCard
           title="Valor final"
           value={formatCurrency(cobranca.cartao_valor_final ?? cobranca.valor)}
-          description={cobranca.cartao_valor_final ? "Inclui taxa simulada do cartão parcelado." : "Sem taxa adicional mockada."}
+          description={cobranca.cartao_valor_final ? "Inclui taxa simulada do cartão de crédito." : "Sem taxa adicional mockada."}
           tone="success"
           icon={CreditCard}
         />
@@ -260,14 +260,36 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
           <DetailCard title="Ações disponíveis">
             <div className="space-y-3">
               {source === "supabase" && cobranca.url_cobranca ? (
-                <a
-                  href={cobranca.url_cobranca}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full inline-flex items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 text-center shadow-sm"
-                >
-                  Abrir checkout
-                </a>
+                cobranca.tipo_cobranca === "CARD_PARCELADO" ? (
+                  cobranca.cartao_checkout_url ? (
+                    <a
+                      href={cobranca.cartao_checkout_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full inline-flex items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 text-center shadow-sm"
+                    >
+                      Abrir checkout cartão
+                    </a>
+                  ) : (
+                    <a
+                      href={cobranca.url_cobranca}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full inline-flex items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 text-center"
+                    >
+                      Escolher parcelas
+                    </a>
+                  )
+                ) : (
+                  <a
+                    href={cobranca.url_cobranca}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full inline-flex items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 text-center shadow-sm"
+                  >
+                    Abrir checkout
+                  </a>
+                )
               ) : source !== "supabase" ? (
                 <button
                   type="button"
@@ -277,7 +299,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
                   Abrir página pública mockada
                 </button>
               ) : null}
-              {cobranca.pix_copia_cola ? (
+              {cobranca.pix_copia_cola && cobranca.tipo_cobranca !== "CARD_PARCELADO" ? (
                 <button
                   type="button"
                   onClick={() => void copyValue(cobranca.pix_copia_cola, "PIX copiado.")}
@@ -286,7 +308,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
                   Copiar PIX
                 </button>
               ) : null}
-              {cobranca.linha_digitavel ? (
+              {cobranca.linha_digitavel && cobranca.tipo_cobranca !== "CARD_PARCELADO" ? (
                 <button
                   type="button"
                   onClick={() => void copyValue(cobranca.linha_digitavel, "Linha digitável copiada.")}
