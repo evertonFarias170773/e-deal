@@ -79,12 +79,12 @@ export function PropostaCobrancaPanel({
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
   const parcelas = useMemo(() => createParcelasSimuladas(form.valor || 0), [form.valor]);
   const tipoDisponivel = source === "supabase"
-    ? (form.tipoCobranca === "PIX" && (idEmpresaReal === 1 || idEmpresaReal === 3))
+    ? (form.tipoCobranca === "PIX" && (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3))
     : isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
 
   const indisponibilidadeMensagem = source === "supabase"
     ? (form.tipoCobranca === "PIX"
-        ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "PIX real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
+        ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3 ? "" : "PIX real disponível apenas para as empresas Ideal Gráfica, Ideal Birô e E3 Brindes.")
         : "Esta forma de pagamento está em preparação para o ambiente real.")
     : getMensagemTipoIndisponivel(proposta.empresa, form.tipoCobranca);
 
@@ -216,8 +216,8 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (source === "supabase" && idEmpresaReal !== 1 && idEmpresaReal !== 3) {
-      showToast({ type: "error", title: "Criação de cobrança real disponível apenas para as empresas Ideal Gráfica e E3 Brindes nesta etapa." });
+    if (source === "supabase" && idEmpresaReal !== 1 && idEmpresaReal !== 2 && idEmpresaReal !== 3) {
+      showToast({ type: "error", title: "Criação de cobrança real disponível apenas para as empresas Ideal Gráfica, Ideal Birô e E3 Brindes nesta etapa." });
       return;
     }
 
@@ -464,7 +464,7 @@ export function PropostaCobrancaPanel({
                     const Icon = opcao.icon;
                     const selected = form.tipoCobranca === opcao.id;
                     const available = source === "supabase"
-                      ? (opcao.id === "PIX" ? (idEmpresaReal === 1 || idEmpresaReal === 3) : true)
+                      ? (opcao.id === "PIX" ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3) : true)
                       : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
                     const isRealBlocked = source === "supabase" && opcao.id !== "PIX";
                     const isActuallyDisabled = !available || isRealBlocked;

@@ -84,6 +84,8 @@ export async function POST(request: Request) {
   let webhookUrl = "";
   if (idEmpresa === 1) {
     webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-ideal";
+  } else if (idEmpresa === 2) {
+    webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-biro";
   } else if (idEmpresa === 3) {
     webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-e3";
   } else {
@@ -122,13 +124,51 @@ export async function POST(request: Request) {
 
     const responseData = await webhookResponse.json();
     
-    // Tratamento de resposta no formato Array de objeto esperado
-    const webhookResult = Array.isArray(responseData) ? responseData[0] : responseData;
+    // Parser seguro por id_empresa
+    let codSolicitacaoInter: string;
+    let pixCopiaCola: string;
+    let linhaDigitavel: string | undefined = undefined;
 
-    if (!webhookResult || !webhookResult.txid || !webhookResult.pix_copia_e_cola) {
-      console.error("[API][GerarPix] Formato de resposta do webhook inesperado:", responseData);
+    try {
+      const webhookResult = Array.isArray(responseData) ? responseData[0] : responseData;
+      if (!webhookResult) {
+        throw new Error("Resposta do Banco Inter vazia ou em formato inesperado.");
+      }
+
+      if (idEmpresa === 2) {
+        const codSolicitacao = webhookResult.cobranca?.codigoSolicitacao;
+        const pCopiaCola = webhookResult.pix?.pixCopiaECola;
+        linhaDigitavel = webhookResult.boleto?.linhaDigitavel;
+
+        if (!codSolicitacao) {
+          throw new Error("Resposta nao contem codigoSolicitacao da cobranca.");
+        }
+        if (!pCopiaCola) {
+          throw new Error("Resposta nao contem pixCopiaECola.");
+        }
+
+        codSolicitacaoInter = codSolicitacao;
+        pixCopiaCola = pCopiaCola;
+      } else {
+        // Para empresas 1 e 3
+        const txid = webhookResult.txid;
+        const pCopiaCola = webhookResult.pix_copia_e_cola;
+
+        if (!txid) {
+          throw new Error("Resposta nao contem txid.");
+        }
+        if (!pCopiaCola) {
+          throw new Error("Resposta nao contem pix_copia_e_cola.");
+        }
+
+        codSolicitacaoInter = txid;
+        pixCopiaCola = pCopiaCola;
+      }
+    } catch (parseError: unknown) {
+      const errMessage = parseError instanceof Error ? parseError.message : String(parseError);
+      console.error("[API][GerarPix] Erro ao fazer parse da resposta do Banco Inter:", parseError, responseData);
       return NextResponse.json(
-        { success: false, message: "Resposta do Banco Inter nao contem dados do PIX necessarios." },
+        { success: false, message: `Resposta do Banco Inter em formato invalido: ${errMessage}` },
         { status: 502 }
       );
     }
@@ -145,16 +185,22 @@ export async function POST(request: Request) {
 
     console.info("[API][GerarPix] Gravando retorno do PIX no Supabase...", {
       cobrancaId,
-      txid: webhookResult.txid
+      codSolicitacaoInter
     });
 
-    // Atualiza o registro no Supabase com cod_solicitacao_inter e pix_copia_cola
+    const updatePayload: Record<string, unknown> = {
+      cod_solicitacao_inter: codSolicitacaoInter,
+      pix_copia_cola: pixCopiaCola
+    };
+
+    if (linhaDigitavel) {
+      updatePayload.linha_digitavel = linhaDigitavel;
+    }
+
+    // Atualiza o registro no Supabase com os dados do PIX
     const { data: updatedData, error: updateError } = await supabase
       .from("pagamentos_v2")
-      .update({
-        cod_solicitacao_inter: webhookResult.txid,
-        pix_copia_cola: webhookResult.pix_copia_e_cola
-      })
+      .update(updatePayload)
       .eq("id", cobrancaId)
       .select();
 

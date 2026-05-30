@@ -177,7 +177,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const webhookPayload = {
         cobrancaId: cobrancaId,
         idEmpresa: idEmpresa,
-        seuNumero: String(proposta.id_int),
+        seuNumero: idEmpresa === 2 ? ((createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
         valorNominal: values.valor,
         dataVencimento: values.vencimento || new Date().toISOString().split("T")[0],
         telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
