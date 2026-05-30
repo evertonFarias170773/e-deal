@@ -85,7 +85,7 @@ export async function POST(request: Request) {
   if (idEmpresa === 1) {
     webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-ideal";
   } else if (idEmpresa === 3) {
-    webhookUrl = "https://10074.hostoo.net.br/webhook-test/vibe-e3";
+    webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-e3";
   } else {
     console.error("[API][GerarPix] id_empresa nao suportado para PIX real:", idEmpresa);
     return NextResponse.json(
