@@ -7,7 +7,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { Field, PanelCard, inputClass } from "@/features/cobrancas/form-ui";
-import type { Cobranca, CobrancaParcelaSimulada, CobrancaTipo, CriarCobrancaFormValues } from "@/features/cobrancas/types";
+import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import {
   getLiberacaoPedidoLabel,
@@ -21,7 +21,6 @@ import {
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
-  createParcelasSimuladas,
   criarCobrancaInitialValues,
   getCobrancaTipoLabel,
   getEmpresaRecebedoraByProposta,
@@ -66,7 +65,7 @@ export function PropostaCobrancaPanel({
   const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
   const situacaoFinanceira = getSituacaoFinanceiraPropostaLabel(cobrancasDaProposta);
 
-  const buildInitialFormState = useCallback((): CriarCobrancaFormValues => {
+  function buildInitialFormState(): CriarCobrancaFormValues {
     const cobrancaComOs = cobrancasDaProposta.find((item) => item.os_ideal && item.os_ideal.trim() !== "");
     const defaultOsIdeal = cobrancaComOs ? cobrancaComOs.os_ideal.trim() : "";
 
@@ -80,7 +79,7 @@ export function PropostaCobrancaPanel({
       vencimento: "2026-05-30",
       osIdeal: defaultOsIdeal
     };
-  }, [proposta, cobrancasDaProposta, saldoRestante, totalPropostaRounded, cobrancasAtivas]);
+  }
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
   const tipoDisponivel = source === "supabase"
@@ -129,7 +128,8 @@ export function PropostaCobrancaPanel({
     }
 
     onOpenModal?.();
-  }, [isControlled, onOpenModal, buildInitialFormState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isControlled, onOpenModal]);
 
   const closeModal = useCallback(() => {
     if (!isControlled) {
@@ -481,9 +481,11 @@ export function PropostaCobrancaPanel({
                           ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
                           : opcao.id === "BOLETO"
                             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                            : true)
+                            : opcao.id === "CARD_PARCELADO"
+                              ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+                              : true)
                       : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
-                    const isRealBlocked = source === "supabase" && opcao.id !== "PIX" && opcao.id !== "BOLETO";
+                    const isRealBlocked = source === "supabase" && opcao.id === "E-FATURADO";
                     const isActuallyDisabled = !available || isRealBlocked;
                     const disabledText = isRealBlocked
                       ? "Forma de pagamento em preparação no ambiente real."
