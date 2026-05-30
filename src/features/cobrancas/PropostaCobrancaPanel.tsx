@@ -619,6 +619,8 @@ export function PropostaCobrancaPanel({
 }
 
 function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
+  const { showToast } = useAppToast();
+
   if (!cobrancas.length) {
     return (
       <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500 text-center">
@@ -631,6 +633,9 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
     <div className="space-y-3">
       {cobrancas.map((cobranca) => {
         const valorCobranca = getValorCobranca(cobranca);
+        const isBoleto = cobranca.tipo_cobranca === "BOLETO";
+        const isPix = cobranca.tipo_cobranca === "PIX";
+        const boletoUrl = cobranca.url_pdf || cobranca.pix_copia_cola || "";
 
         return (
           <div
@@ -638,73 +643,144 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
             className="rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition duration-150 shadow-sm"
           >
             {/* Desktop Layout */}
-            <div className="hidden lg:flex lg:items-center lg:justify-between lg:gap-4 p-4">
-              {/* Col 1: ID & Cliente */}
-              <div className="flex-[1.5] min-w-[160px] truncate">
+            <div className="hidden lg:grid lg:grid-cols-[1fr_1.3fr_1.3fr_1fr_1.2fr_2.2fr] lg:gap-4 lg:items-center p-4">
+              {/* Col 1: Identificador */}
+              <div className="truncate">
                 <p className="text-sm font-bold text-slate-900">{cobranca.id_pagamento}</p>
-                <p className="text-xs text-slate-500 truncate" title={cobranca.cliente}>
-                  {cobranca.cliente}
-                </p>
               </div>
 
-              {/* Col 2: Tipo & OS */}
-              <div className="flex-1 min-w-[120px]">
+              {/* Col 2: Cliente */}
+              <div className="truncate" title={cobranca.cliente}>
+                <p className="text-xs text-slate-600 truncate">{cobranca.cliente}</p>
+              </div>
+
+              {/* Col 3: Tipo + OS Ideal */}
+              <div>
                 <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
                   {getCobrancaTipoLabel(cobranca.tipo_cobranca)}
                 </span>
-                <p className="mt-1 text-xs text-slate-600">
-                  OS Ideal: <span className="font-semibold text-slate-800">{cobranca.os_ideal || "-"}</span>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  OS: <span className="font-semibold text-slate-700">{cobranca.os_ideal || "-"}</span>
                 </p>
               </div>
 
-              {/* Col 3: Valor */}
-              <div className="flex-1 min-w-[100px]">
+              {/* Col 4: Valor */}
+              <div>
                 <p className="text-sm font-bold text-slate-900">
                   {formatCurrency(valorCobranca)}
                 </p>
                 {cobranca.tipo_cobranca === "CARD_PARCELADO" && cobranca.cartao_parcelas ? (
-                  <p className="text-xs text-slate-500">{cobranca.cartao_parcelas}x</p>
+                  <p className="text-[10px] text-slate-500">{cobranca.cartao_parcelas}x</p>
                 ) : null}
               </div>
 
-              {/* Col 4: Status Badges */}
-              <div className="flex flex-col gap-1 min-w-[160px]">
-                <div className="flex items-center gap-1.5">
-                  <StatusBadge status={cobranca.status} />
-                  {isCreditoPendente(cobranca) ? (
-                    <StatusBadge status="AGUARDANDO_CREDITO" tone="warning" />
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-medium text-slate-500">Confirmação:</span>
-                  <StatusBadge
-                    status={cobranca.confirmado ? "CONFIRMADO" : "NAO_CONFIRMADO"}
-                    tone={cobranca.confirmado ? "success" : "neutral"}
-                  />
-                </div>
+              {/* Col 5: Confirmação */}
+              <div>
+                {cobranca.status === "CANCELADO" ? (
+                  <StatusBadge status="CANCELADO" />
+                ) : cobranca.confirmado ? (
+                  <StatusBadge status="CONFIRMADO" />
+                ) : isCreditoPendente(cobranca) ? (
+                  <StatusBadge status="AGUARDANDO_CREDITO" />
+                ) : cobranca.status === "A_VENCER" ? (
+                  <StatusBadge status="A_VENCER" />
+                ) : (
+                  <StatusBadge status="NAO_CONFIRMADO" />
+                )}
               </div>
 
-              {/* Col 5: Actions */}
-              <div className="flex items-center gap-2">
-                {cobranca.url_cobranca ? (
-                  <a
-                    href={cobranca.url_cobranca}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
-                  >
-                    Abrir checkout
-                  </a>
-                ) : null}
+              {/* Col 6: Ações */}
+              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                {isBoleto ? (
+                  <>
+                    {boletoUrl ? (
+                      <a
+                        href={boletoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm"
+                      >
+                        Abrir boleto
+                      </a>
+                    ) : (
+                      <button
+                        disabled
+                        className="inline-flex items-center justify-center rounded-xl bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                        title="Boleto ainda não disponível"
+                      >
+                        Indisponível
+                      </button>
+                    )}
+                    {boletoUrl && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(boletoUrl);
+                            showToast({ type: "success", title: "Link do boleto copiado!" });
+                          } catch {
+                            showToast({ type: "error", title: "Erro ao copiar link." });
+                          }
+                        }}
+                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        title="Copiar link do boleto"
+                      >
+                        Copiar link
+                      </button>
+                    )}
+                  </>
+                ) : isPix ? (
+                  <>
+                    {cobranca.url_cobranca && (
+                      <a
+                        href={cobranca.url_cobranca}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                      >
+                        Abrir checkout
+                      </a>
+                    )}
+                    {cobranca.pix_copia_cola && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(cobranca.pix_copia_cola || "");
+                            showToast({ type: "success", title: "PIX Copia e Cola copiado!" });
+                          } catch {
+                            showToast({ type: "error", title: "Erro ao copiar PIX." });
+                          }
+                        }}
+                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        title="Copiar código PIX"
+                      >
+                        Copiar PIX
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  cobranca.url_cobranca && (
+                    <a
+                      href={cobranca.url_cobranca}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                    >
+                      Abrir checkout
+                    </a>
+                  )
+                )}
+
                 <Link
                   href={`/cobrancas/${cobranca.id}`}
-                  className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#123f61]"
+                  className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#123f61]"
                 >
                   Ver cobrança
                 </Link>
                 <Link
                   href="/cobrancas"
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                   title="Conferência financeira"
                 >
                   Conferência
@@ -742,25 +818,67 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex flex-wrap gap-1.5">
-                  <StatusBadge status={cobranca.status} />
-                  {isCreditoPendente(cobranca) ? (
-                    <StatusBadge status="AGUARDANDO_CREDITO" tone="warning" />
-                  ) : null}
+              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                <div>
+                  {cobranca.status === "CANCELADO" ? (
+                    <StatusBadge status="CANCELADO" />
+                  ) : cobranca.confirmado ? (
+                    <StatusBadge status="CONFIRMADO" />
+                  ) : isCreditoPendente(cobranca) ? (
+                    <StatusBadge status="AGUARDANDO_CREDITO" />
+                  ) : cobranca.status === "A_VENCER" ? (
+                    <StatusBadge status="A_VENCER" />
+                  ) : (
+                    <StatusBadge status="NAO_CONFIRMADO" />
+                  )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  {cobranca.url_cobranca ? (
-                    <a
-                      href={cobranca.url_cobranca}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
-                    >
-                      Checkout
-                    </a>
-                  ) : null}
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  {isBoleto ? (
+                    <>
+                      {boletoUrl ? (
+                        <a
+                          href={boletoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm"
+                        >
+                          Abrir boleto
+                        </a>
+                      ) : (
+                        <button
+                          disabled
+                          className="inline-flex items-center justify-center rounded-xl bg-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                        >
+                          Indisponível
+                        </button>
+                      )}
+                    </>
+                  ) : isPix ? (
+                    <>
+                      {cobranca.url_cobranca && (
+                        <a
+                          href={cobranca.url_cobranca}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                        >
+                          Checkout
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    cobranca.url_cobranca && (
+                      <a
+                        href={cobranca.url_cobranca}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                      >
+                        Checkout
+                      </a>
+                    )
+                  )}
                   <Link
                     href={`/cobrancas/${cobranca.id}`}
                     className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#123f61]"
