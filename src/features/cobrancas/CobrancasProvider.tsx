@@ -115,6 +115,13 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error("Dados da proposta sao obrigatorios para criar cobranca no Supabase.");
       }
 
+      if (values.tipoCobranca === "BOLETO") {
+        const emailCliente = proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "";
+        if (!emailCliente) {
+          throw new Error("Cliente sem e-mail cadastrado para geração do boleto.");
+        }
+      }
+
       const client = getSupabaseClient();
       if (!client) {
         throw new Error("Cliente do Supabase nao inicializado.");
@@ -173,50 +180,99 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error(updateTokenError.message || "Erro ao atualizar token publico no Supabase.");
       }
 
-      // 4. Chamar o webhook PIX da empresa correspondente pela camada server-side
-      const webhookPayload = {
-        cobrancaId: cobrancaId,
-        idEmpresa: idEmpresa,
-        seuNumero: idEmpresa === 2 ? ((createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
-        valorNominal: values.valor,
-        dataVencimento: values.vencimento || new Date().toISOString().split("T")[0],
-        telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
-        cpfCnpj: proposta.cliente.documento,
-        nome: proposta.cliente.nome,
-        endereco: proposta.enderecoEntrega?.endereco || "",
-        cidade: proposta.enderecoEntrega?.cidade || "",
-        uf: proposta.enderecoEntrega?.uf || "",
-        cep: proposta.enderecoEntrega?.cep || ""
-      };
+      let response: Response;
 
-      const response = await fetch("/api/cobrancas/gerar-pix", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify(webhookPayload)
-      });
+      if (values.tipoCobranca === "BOLETO") {
+        // 4. Chamar o webhook BOLETO pela camada server-side
+        const webhookPayload = {
+          cobrancaId: cobrancaId,
+          idEmpresa: idEmpresa,
+          external_reference_id: (createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int),
+          valor_total: values.valor,
+          name: proposta.cliente.nome,
+          id_pagamento: (createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int),
+          documento: proposta.cliente.documento,
+          email: proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "",
+          logradouro: proposta.enderecoEntrega?.endereco || "",
+          complemento: proposta.enderecoEntrega?.complemento || "",
+          cidade: proposta.enderecoEntrega?.cidade || "",
+          UF: proposta.enderecoEntrega?.uf || "",
+          zip_code: proposta.enderecoEntrega?.cep || "",
+          qtd_parcelas: 1,
+          intervalo: 0,
+          inicia_em: 3,
+          multa: 0,
+          juros: 0,
+          descricao: values.descricao || `Boleto da proposta #${proposta.id_int}`,
+          id_cliente: proposta.cliente.idCliente,
+          nf: "",
+          status: "A_RECEBER",
+          "e-faturado": false,
+          contato: proposta.contato?.nome || "",
+          whats: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+          enviar_whats: false,
+          avulso: false,
+          is_prorrogado: false,
+          empresa: nomeEmpresa
+        };
+
+        response = await fetch("/api/cobrancas/gerar-boleto", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(webhookPayload)
+        });
+      } else {
+        // 4. Chamar o webhook PIX da empresa correspondente pela camada server-side
+        const webhookPayload = {
+          cobrancaId: cobrancaId,
+          idEmpresa: idEmpresa,
+          seuNumero: idEmpresa === 2 ? ((createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
+          valorNominal: values.valor,
+          dataVencimento: values.vencimento || new Date().toISOString().split("T")[0],
+          telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+          cpfCnpj: proposta.cliente.documento,
+          nome: proposta.cliente.nome,
+          endereco: proposta.enderecoEntrega?.endereco || "",
+          cidade: proposta.enderecoEntrega?.cidade || "",
+          uf: proposta.enderecoEntrega?.uf || "",
+          cep: proposta.enderecoEntrega?.cep || ""
+        };
+
+        response = await fetch("/api/cobrancas/gerar-pix", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(webhookPayload)
+        });
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Erro ao gerar PIX: ${errorText}`);
+        throw new Error(`Erro ao gerar ${values.tipoCobranca}: ${errorText}`);
       }
 
       const result = await response.json();
 
       if (!result.success) {
-        throw new Error(result.message || "Falha no retorno da API do Banco Inter.");
+        throw new Error(result.message || `Falha no retorno da API de ${values.tipoCobranca}.`);
       }
 
       // 5. Enviar mensagem no chat da proposta
       try {
+        const msg = values.tipoCobranca === "BOLETO"
+          ? `Boleto registrado. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
+          : `Nova cobrança PIX registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+
         await client
           .from("propostas_chat")
           .insert([
             {
               id_int: proposta.id_int,
               id_cliente: proposta.cliente.idCliente,
-              mensagem: `Nova cobrança PIX registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`,
+              mensagem: msg,
               tipo: "SISTEMA",
               autor_nome: "Sistema",
               setor: "Financeiro",

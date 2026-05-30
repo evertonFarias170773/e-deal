@@ -79,13 +79,19 @@ export function PropostaCobrancaPanel({
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
   const parcelas = useMemo(() => createParcelasSimuladas(form.valor || 0), [form.valor]);
   const tipoDisponivel = source === "supabase"
-    ? (form.tipoCobranca === "PIX" && (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3))
+    ? (form.tipoCobranca === "PIX"
+        ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
+        : form.tipoCobranca === "BOLETO"
+          ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+          : false)
     : isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
 
   const indisponibilidadeMensagem = source === "supabase"
     ? (form.tipoCobranca === "PIX"
         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3 ? "" : "PIX real disponível apenas para as empresas Ideal Gráfica, Ideal Birô e E3 Brindes.")
-        : "Esta forma de pagamento está em preparação para o ambiente real.")
+        : form.tipoCobranca === "BOLETO"
+          ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Boleto real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
+          : "Esta forma de pagamento está em preparação para o ambiente real.")
     : getMensagemTipoIndisponivel(proposta.empresa, form.tipoCobranca);
 
   const analiseCredito = useMemo(() => {
@@ -211,14 +217,27 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (source === "supabase" && form.tipoCobranca !== "PIX") {
-      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX para testes reais." });
+    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO") {
+      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX ou Boleto para testes reais." });
       return;
     }
 
     if (source === "supabase" && idEmpresaReal !== 1 && idEmpresaReal !== 2 && idEmpresaReal !== 3) {
       showToast({ type: "error", title: "Criação de cobrança real disponível apenas para as empresas Ideal Gráfica, Ideal Birô e E3 Brindes nesta etapa." });
       return;
+    }
+
+    if (source === "supabase" && form.tipoCobranca === "BOLETO" && idEmpresaReal === 2) {
+      showToast({ type: "error", title: "Geração de boleto real não disponível para a empresa Ideal Birô." });
+      return;
+    }
+
+    if (source === "supabase" && form.tipoCobranca === "BOLETO") {
+      const emailCliente = proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "";
+      if (!emailCliente) {
+        showToast({ type: "error", title: "Cliente sem e-mail cadastrado para geração do boleto." });
+        return;
+      }
     }
 
     if (source === "supabase") {
@@ -464,9 +483,13 @@ export function PropostaCobrancaPanel({
                     const Icon = opcao.icon;
                     const selected = form.tipoCobranca === opcao.id;
                     const available = source === "supabase"
-                      ? (opcao.id === "PIX" ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3) : true)
+                      ? (opcao.id === "PIX"
+                          ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
+                          : opcao.id === "BOLETO"
+                            ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+                            : true)
                       : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
-                    const isRealBlocked = source === "supabase" && opcao.id !== "PIX";
+                    const isRealBlocked = source === "supabase" && opcao.id !== "PIX" && opcao.id !== "BOLETO";
                     const isActuallyDisabled = !available || isRealBlocked;
                     const disabledText = isRealBlocked
                       ? "Forma de pagamento em preparação no ambiente real."
