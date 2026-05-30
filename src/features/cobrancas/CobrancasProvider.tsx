@@ -173,9 +173,10 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error(updateTokenError.message || "Erro ao atualizar token publico no Supabase.");
       }
 
-      // 4. Chamar o webhook PIX da empresa 1 pela camada server-side
+      // 4. Chamar o webhook PIX da empresa correspondente pela camada server-side
       const webhookPayload = {
         cobrancaId: cobrancaId,
+        idEmpresa: idEmpresa,
         seuNumero: String(proposta.id_int),
         valorNominal: values.valor,
         dataVencimento: values.vencimento || new Date().toISOString().split("T")[0],

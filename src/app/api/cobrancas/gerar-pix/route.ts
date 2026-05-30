@@ -11,6 +11,7 @@ function keepDigitsOnly(value: string | undefined | null): string {
 
 type GerarPixRequest = {
   cobrancaId: string;
+  idEmpresa?: number;
   seuNumero: string;
   valorNominal: number;
   dataVencimento: string;
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
 
   const {
     cobrancaId,
+    idEmpresa,
     seuNumero,
     valorNominal,
     dataVencimento,
@@ -79,15 +81,29 @@ export async function POST(request: Request) {
     cep: cepDigits
   };
 
-  console.info("[API][GerarPix] Chamando webhook da Empresa 1...", {
+  let webhookUrl = "";
+  if (idEmpresa === 1) {
+    webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-ideal";
+  } else if (idEmpresa === 3) {
+    webhookUrl = "https://10074.hostoo.net.br/webhook-test/vibe-e3";
+  } else {
+    console.error("[API][GerarPix] id_empresa nao suportado para PIX real:", idEmpresa);
+    return NextResponse.json(
+      { success: false, message: `Criacao de cobranca real nao suportada/bloqueada para a empresa ID ${idEmpresa}.` },
+      { status: 400 }
+    );
+  }
+
+  console.info(`[API][GerarPix] Chamando webhook da Empresa ${idEmpresa}...`, {
     cobrancaId,
     seuNumero,
     valorNominal,
-    tipoPessoa
+    tipoPessoa,
+    webhookUrl
   });
 
   try {
-    const webhookResponse = await fetch("https://10074.hostoo.net.br/webhook/vibe-ideal", {
+    const webhookResponse = await fetch(webhookUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json"
