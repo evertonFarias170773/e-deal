@@ -9,6 +9,10 @@ function keepDigitsOnly(value: string | undefined | null): string {
   return value.replace(/\D/g, "");
 }
 
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 type GerarPixRequest = {
   cobrancaId: string;
   idEmpresa?: number;
@@ -67,7 +71,7 @@ export async function POST(request: Request) {
   // Formata o body esperado pelo webhook do Banco Inter
   const webhookBody = {
     seuNumero: seuNumero,
-    valorNominal: valorNominal,
+    valorNominal: roundMoney(valorNominal),
     dataVencimento: dataVencimento,
     numDiasAgenda: 1,
     telefone: telefoneDigits,

@@ -16,7 +16,8 @@ import {
   getSituacaoFinanceiraPropostaLabel,
   isCreditoPendente,
   isPropostaLiberadaParaPedido,
-  EMPRESAS_RECEBEDORAS_FIXAS
+  EMPRESAS_RECEBEDORAS_FIXAS,
+  roundMoney
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
@@ -58,21 +59,27 @@ export function PropostaCobrancaPanel({
   const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
   const isControlled = typeof isModalOpen === "boolean";
   const modalOpen = isControlled ? Boolean(isModalOpen) : internalModalOpen;
+  const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
   const totalCobradoReal = cobrancasAtivas.reduce((total, item) => total + getValorCobranca(item), 0);
-  const hasCobrancaExcedente = totalCobradoReal > proposta.resumo.valorTotal;
-  const totalGerado = Math.min(totalCobradoReal, proposta.resumo.valorTotal);
-  const saldoRestante = Math.max(proposta.resumo.valorTotal - totalCobradoReal, 0);
+  const totalCobradoRealRounded = roundMoney(totalCobradoReal);
+  const hasCobrancaExcedente = totalCobradoRealRounded > totalPropostaRounded;
+  const totalGerado = Math.min(totalCobradoRealRounded, totalPropostaRounded);
+  const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
   const situacaoFinanceira = getSituacaoFinanceiraPropostaLabel(cobrancasDaProposta);
 
   function buildInitialFormState(): CriarCobrancaFormValues {
+    const cobrancaComOs = cobrancasDaProposta.find((item) => item.os_ideal && item.os_ideal.trim() !== "");
+    const defaultOsIdeal = cobrancaComOs ? cobrancaComOs.os_ideal.trim() : "";
+
     return {
       ...criarCobrancaInitialValues,
       propostaIdInt: proposta.id_int,
-      valor: saldoRestante > 0 || cobrancasAtivas.length > 0 ? saldoRestante : proposta.resumo.valorTotal,
+      valor: roundMoney(saldoRestante > 0 || cobrancasAtivas.length > 0 ? saldoRestante : totalPropostaRounded),
       descricao: `Cobrança da proposta #${proposta.id_int}`,
       observacao: proposta.observacoes,
       condicaoPagamento: proposta.formaPagamento,
-      vencimento: "2026-05-30"
+      vencimento: "2026-05-30",
+      osIdeal: defaultOsIdeal
     };
   }
 
@@ -199,20 +206,23 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (saldoRestante <= 0) {
+    const roundedValor = roundMoney(form.valor);
+    const roundedSaldoRestante = roundMoney(saldoRestante);
+
+    if (roundedSaldoRestante <= 0) {
       showToast({ type: "warning", title: "Esta proposta não possui saldo restante para nova cobrança." });
       return;
     }
 
-    if (form.valor <= 0) {
+    if (roundedValor <= 0) {
       showToast({ type: "error", title: "Informe um valor de cobrança maior que zero." });
       return;
     }
 
-    if (form.valor > saldoRestante) {
+    if (roundedValor > roundedSaldoRestante) {
       showToast({
         type: "error",
-        title: `O valor da cobrança (${formatCurrency(form.valor)}) não pode ser maior que o saldo restante (${formatCurrency(saldoRestante)}).`
+        title: `O valor da cobrança (${formatCurrency(roundedValor)}) não pode ser maior que o saldo restante (${formatCurrency(roundedSaldoRestante)}).`
       });
       return;
     }
@@ -279,6 +289,7 @@ export function PropostaCobrancaPanel({
 
     const payload: CriarCobrancaFormValues = {
       ...form,
+      valor: roundedValor,
       descricao: `Cobrança ${getCobrancaTipoLabel(form.tipoCobranca)} da proposta #${proposta.id_int}`,
       parcelaSelecionada:
         form.tipoCobranca === "CARD_PARCELADO"
@@ -357,7 +368,7 @@ export function PropostaCobrancaPanel({
                     Proposta #{proposta.id_int} • {proposta.cliente.nome} • {empresa?.nome ?? proposta.empresa}
                   </p>
                   <p className="text-sm text-slate-600">
-                    Total {formatCurrency(proposta.resumo.valorTotal)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
+                    Total {formatCurrency(totalPropostaRounded)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
                   </p>
                   {hasCobrancaExcedente ? (
                     <p className="text-xs font-semibold text-orange-700">
@@ -408,7 +419,7 @@ export function PropostaCobrancaPanel({
               <div>
                 <h2 className="text-xl font-semibold text-slate-950">Criar cobrança</h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  {proposta.cliente.nome} • {empresa?.nome ?? proposta.empresa} • Total {formatCurrency(proposta.resumo.valorTotal)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
+                  {proposta.cliente.nome} • {empresa?.nome ?? proposta.empresa} • Total {formatCurrency(totalPropostaRounded)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Proposta #{proposta.id_int} • Situação {situacaoFinanceira}</p>
                 {hasCobrancaExcedente ? (

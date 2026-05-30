@@ -8,6 +8,10 @@ function keepDigitsOnly(value: string | undefined | null): string {
   return value.replace(/\D/g, "");
 }
 
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 type GerarBoletoRequest = {
   cobrancaId: string;
   idEmpresa: number;
@@ -122,7 +126,7 @@ export async function POST(request: Request) {
   // Formata o body para o webhook C6
   const webhookBody = {
     external_reference_id: extRefInt,
-    valor_total,
+    valor_total: roundMoney(valor_total),
     name,
     id_pagamento,
     documento: documentoDigits,

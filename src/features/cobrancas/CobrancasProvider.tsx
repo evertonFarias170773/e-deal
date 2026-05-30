@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { Cobranca, CriarCobrancaFormValues } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
-import { canLiberarParaPedido } from "@/features/cobrancas/cobrancas-utils";
+import { canLiberarParaPedido, roundMoney } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getCobrancasReadOnlyData,
@@ -137,7 +137,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         id_cliente: proposta.cliente.idCliente,
         cliente: proposta.cliente.nome,
         documento: proposta.cliente.documento,
-        valor: values.valor,
+        valor: roundMoney(values.valor),
         status: "A_RECEBER",
         tipo_cobranca: values.tipoCobranca,
         empresa: nomeEmpresa,
@@ -188,7 +188,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           cobrancaId: cobrancaId,
           idEmpresa: idEmpresa,
           external_reference_id: proposta.id_int,
-          valor_total: values.valor,
+          valor_total: roundMoney(values.valor),
           name: proposta.cliente.nome,
           id_pagamento: (createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int),
           documento: proposta.cliente.documento,
@@ -229,7 +229,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           cobrancaId: cobrancaId,
           idEmpresa: idEmpresa,
           seuNumero: idEmpresa === 2 ? ((createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int)) : String(proposta.id_int),
-          valorNominal: values.valor,
+          valorNominal: roundMoney(values.valor),
           dataVencimento: values.vencimento || new Date().toISOString().split("T")[0],
           telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
           cpfCnpj: proposta.cliente.documento,

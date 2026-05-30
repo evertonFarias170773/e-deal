@@ -396,3 +396,7 @@ export function getLiberacaoPedidoTone(status: LiberacaoPedidoStatus): StatusTon
   if (status === "PARCIALMENTE_APROVADA") return "special";
   return "info";
 }
+
+export function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}

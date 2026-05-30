@@ -11,6 +11,7 @@ import type {
 } from "@/features/cobrancas/types";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
 import { propostasMock } from "@/lib/mocks/propostas.mock";
+import { roundMoney } from "@/features/cobrancas/cobrancas-utils";
 
 export const empresasRecebedorasMock: EmpresaRecebedoraOption[] = mockCompanies
   .filter((company) => !company.isConsolidated)
@@ -80,12 +81,12 @@ function buildSnapshot(proposta: Proposta, valorCobrado = 0): PropostaCobrancaSn
     statusProposta: proposta.status,
     cliente: proposta.cliente.nome,
     documento: proposta.cliente.documento,
-    valorTotal: proposta.resumo.valorTotal,
-    valorPendente: Math.max(0, proposta.resumo.valorTotal - valorCobrado),
+    valorTotal: roundMoney(proposta.resumo.valorTotal),
+    valorPendente: Math.max(0, roundMoney(proposta.resumo.valorTotal) - roundMoney(valorCobrado)),
     empresaProposta: proposta.empresa,
     vendedor: proposta.vendedor,
     descricao: proposta.observacoes,
-    valorFrete
+    valorFrete: roundMoney(valorFrete)
   };
 }
 
@@ -175,7 +176,7 @@ function buildInitialFormValues(): CriarCobrancaFormValues {
     propostaIdInt: proposta?.id_int ?? null,
     osIdeal: "",
     tipoCobranca: "PIX",
-    valor: proposta?.resumo.valorTotal ?? 0,
+    valor: roundMoney(proposta?.resumo.valorTotal ?? 0),
     vencimento: "2026-05-30",
     observacao: proposta?.observacoes ?? "",
     descricao: proposta?.observacoes ?? "Cobrança mockada vinculada à proposta.",
@@ -621,8 +622,12 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
   const idPagamento = `PG-MOCK-${timestamp}`;
   const token = `pub_${timestamp}`;
   const parcela = values.parcelaSelecionada;
-  const valorFinal = parcela?.valorFinal ?? values.valor;
-  const creditoAprovado = values.tipoCobranca === "E-FATURADO" && proposta.cliente.creditoDisponivel >= values.valor;
+  const roundedValor = roundMoney(values.valor);
+  const roundedValorFinal = roundMoney(parcela?.valorFinal ?? values.valor);
+  const roundedPropostaTotal = roundMoney(proposta.resumo.valorTotal);
+  const roundedPropostaFrete = roundMoney(proposta.resumo.frete);
+
+  const creditoAprovado = values.tipoCobranca === "E-FATURADO" && proposta.cliente.creditoDisponivel >= roundedValor;
   const creditoPendente = values.tipoCobranca === "E-FATURADO" && !creditoAprovado;
 
   const cobranca: Cobranca = {
@@ -631,7 +636,7 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
     os_ideal: values.osIdeal.trim(),
     id_int: proposta.id_int,
     id_cliente: proposta.cliente.idCliente,
-    valor: values.valor,
+    valor: roundedValor,
     status: values.tipoCobranca === "E-FATURADO" && creditoAprovado ? "A_VENCER" : "A_RECEBER",
     tipo_cobranca: values.tipoCobranca,
     created_at: new Date(timestamp).toISOString(),
@@ -647,8 +652,8 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
     id_empresa: empresa.id,
     token_publico: token,
     url_cobranca: buildPublicUrl(token),
-    pix_copia_cola: values.tipoCobranca === "PIX" ? createPixCode(idPagamento, values.valor) : undefined,
-    linha_digitavel: values.tipoCobranca === "BOLETO" ? createLinhaDigitavel(idPagamento, values.valor) : undefined,
+    pix_copia_cola: values.tipoCobranca === "PIX" ? createPixCode(idPagamento, roundedValor) : undefined,
+    linha_digitavel: values.tipoCobranca === "BOLETO" ? createLinhaDigitavel(idPagamento, roundedValor) : undefined,
     url_pdf: values.tipoCobranca === "BOLETO" ? `/documentos/mock-${idPagamento.toLowerCase()}.pdf` : undefined,
     cartao_checkout_id:
       values.tipoCobranca === "CREDIT_CARD" || values.tipoCobranca === "CARD_PARCELADO"
@@ -666,13 +671,13 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
           : undefined,
     cartao_parcelas: parcela?.parcelas,
     cartao_taxa_percentual: parcela?.taxaPercentual,
-    cartao_valor_taxa: parcela?.valorTaxa,
-    cartao_valor_final: values.tipoCobranca === "CARD_PARCELADO" ? valorFinal : undefined,
+    cartao_valor_taxa: parcela?.valorTaxa ? roundMoney(parcela.valorTaxa) : undefined,
+    cartao_valor_final: values.tipoCobranca === "CARD_PARCELADO" ? roundedValorFinal : undefined,
     capturaAutomatica: values.tipoCobranca === "CREDIT_CARD" ? values.capturaAutomatica : undefined,
     multaPercentual: values.tipoCobranca === "BOLETO" ? values.multaPercentual : undefined,
     jurosPercentual: values.tipoCobranca === "BOLETO" ? values.jurosPercentual : undefined,
-    valor_frete: proposta.resumo.frete,
-    saldo_pendente: Math.max(0, proposta.resumo.valorTotal - valorFinal),
+    valor_frete: roundedPropostaFrete,
+    saldo_pendente: Math.max(0, roundedPropostaTotal - roundedValorFinal),
     obs_v2: values.observacao,
     condicao_pagamento: values.condicaoPagamento,
     creditoPendente,
@@ -682,12 +687,12 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
       statusProposta: creditoPendente ? "AGUARDANDO" : proposta.status,
       cliente: proposta.cliente.nome,
       documento: proposta.cliente.documento,
-      valorTotal: proposta.resumo.valorTotal,
-      valorPendente: Math.max(0, proposta.resumo.valorTotal - valorFinal),
+      valorTotal: roundedPropostaTotal,
+      valorPendente: Math.max(0, roundedPropostaTotal - roundedValorFinal),
       empresaProposta: proposta.empresa,
       vendedor: proposta.vendedor,
       descricao: proposta.observacoes,
-      valorFrete: proposta.resumo.frete
+      valorFrete: roundedPropostaFrete
     },
     historico: createHistory([
       {
