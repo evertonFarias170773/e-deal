@@ -11,7 +11,7 @@ function keepDigitsOnly(value: string | undefined | null): string {
 type GerarBoletoRequest = {
   cobrancaId: string;
   idEmpresa: number;
-  external_reference_id: string;
+  external_reference_id: number;
   valor_total: number;
   name: string;
   id_pagamento: string;
@@ -106,13 +106,22 @@ export async function POST(request: Request) {
     );
   }
 
+  const extRefInt = Number(external_reference_id);
+  if (isNaN(extRefInt) || !Number.isInteger(extRefInt)) {
+    console.error("[API][GerarBoleto] external_reference_id invalido:", external_reference_id);
+    return NextResponse.json(
+      { success: false, message: "external_reference_id inválido. Deve ser o id_int da proposta em formato inteiro." },
+      { status: 400 }
+    );
+  }
+
   const documentoDigits = keepDigitsOnly(documento);
   const zipDigits = keepDigitsOnly(zip_code);
   const whatsDigits = keepDigitsOnly(whats);
 
   // Formata o body para o webhook C6
   const webhookBody = {
-    external_reference_id,
+    external_reference_id: extRefInt,
     valor_total,
     name,
     id_pagamento,

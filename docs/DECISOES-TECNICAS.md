@@ -251,8 +251,9 @@ Regras:
 
 - toda nova liberação de escrita deve atualizar a matriz;
 - o documento deve registrar tabela, campo, operação, status, motivo, risco, validação, fase/data e observações técnicas;
-- `contatos` permanece bloqueado até existir Supabase `authenticated` real no app;
-- `pagamentos_v2`, `DELETE` e campos financeiros/fiscais seguem bloqueados até fase própria.
+- `contatos` e demais campos cadastrais já estão integrados para inserção e edição real em whitelist no módulo de Cadastros;
+- `cotacao_frete`, `desconto_proposta` e `pagamentos_v2` (escrita controlada liberada para PIX real da empresa 1) estão liberados e em uso real, com reutilização do backend financeiro existente e integração do fluxo real de cobrança PIX;
+- `DELETE` destrutivo fora dos cenários explicitamente liberados (como conciliação de itens de proposta), migrations estruturais, alterações de schema, RLS, triggers, views e RPCs permanecem estritamente bloqueados.
 
 ## Estado local para cobranças mockadas
 

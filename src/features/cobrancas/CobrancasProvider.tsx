@@ -187,7 +187,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         const webhookPayload = {
           cobrancaId: cobrancaId,
           idEmpresa: idEmpresa,
-          external_reference_id: (createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int),
+          external_reference_id: proposta.id_int,
           valor_total: values.valor,
           name: proposta.cliente.nome,
           id_pagamento: (createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int),

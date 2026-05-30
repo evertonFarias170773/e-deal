@@ -37,9 +37,9 @@
 - Validar permissões reais para troca de vendedor, desconto geral e alteração de condições comerciais.
 - Definir origem oficial do bônus/tabela especial do cliente e como será aplicado nos cálculos reais.
 - Definir regra real para recotação de frete quando peso, produtos ou endereço forem alterados.
-- Integrar futuramente as tabelas `cotacao_frete` e `desconto_proposta` à persistência real no Supabase.
+- Homologar e expandir o uso real e recálculos automáticos nas tabelas `cotacao_frete` e `desconto_proposta` integradas ao Supabase.
 - Implementar PDF real com backend/Edge Function segura.
-- Conectar a geração real de cobranças no módulo Cobranças/Pagamentos com as propostas do Supabase.
+- Conectar a geração real de cobranças no módulo Cobranças/Pagamentos com as propostas do Supabase (reutilizando a escrita ativa de `pagamentos_v2`).
 - Revisar a matriz viva antes de liberar novos campos de propostas ou tabelas relacionadas.
 
 ## Financeiro e cobranças
@@ -62,9 +62,9 @@
 - Definir regra real de liberação da proposta quando houver múltiplas cobranças para o mesmo `id_int`.
 - Definir regras reais de disponibilidade por empresa para boleto, cartão e faturado.
 - Definir comportamento oficial de parcial, atraso, renegociação, baixa manual e cancelamento.
-- Preparar futuro service de Financeiro para Supabase.
-- Integrar futuramente `pagamentos_v2`, `boletos`, `propostas_chat` e análise real de crédito.
-- Substituir URLs, PDFs, checkout e PIX fictícios por backend/Edge Function segura.
+- Preparar futuro service de Financeiro para Supabase, aproveitando a integração inicial de PIX ativo.
+- Integrar futuramente boletos, propostas_chat, análise real de crédito e outras formas de pagamento na tabela `pagamentos_v2` (que já possui PIX real ativo para a empresa 1).
+- Substituir URLs, PDFs, checkout e fluxos fictícios por backend/Edge Function segura.
 
 ## Fiscal
 

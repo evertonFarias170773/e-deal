@@ -266,14 +266,14 @@ Funcionalidades:
 Pendências:
 
 - validar campos finais com operação comercial;
-- integrar futuramente `cotacao_frete` e `desconto_proposta`;
+- homologar e expandir recálculos automáticos em `cotacao_frete` e `desconto_proposta` (escrita real já integrada);
 - gerar PDF real via backend/Edge Function segura;
-- gerar cobranças reais no módulo Cobranças/Pagamentos;
+- gerar cobranças reais no módulo Cobranças/Pagamentos integrando com `pagamentos_v2`;
 - revisar regras oficiais de cálculo antes de conectar dados reais.
 
 ## Cobranças e Pagamentos
 
-Status: módulo mockado inicial implementado com foco em conferência financeira, criação pela proposta e liberação para pedido.
+Status: módulo integrado real com Supabase (escrita controlada em `pagamentos_v2` liberada inicialmente para PIX real da empresa 1, integrado ao fluxo de cobrança real, com reutilização do backend financeiro existente).
 
 Última validação relevante:
 
@@ -347,8 +347,8 @@ Pendências:
 
 - validar nomes finais de campos e ações com operação financeira;
 - revisar regra oficial de vencimento, atraso, baixa parcial, reserva de limite e cancelamento antes da integração real;
-- preparar futuro service de Financeiro para Supabase;
-- integrar futuramente `pagamentos_v2`, `boletos`, `propostas_chat` e análise real de crédito;
+- preparar futuro service de Financeiro para Supabase, aproveitando a integração inicial de PIX ativo;
+- integrar futuramente boletos, propostas_chat, análise real de crédito e outras bandeiras de pagamento além do PIX na tabela `pagamentos_v2` (que já possui PIX real ativo para a empresa 1);
 - trocar URLs/documentos fictícios por retorno seguro de backend/Edge Function;
 - definir regra oficial de liberação da proposta quando houver múltiplas cobranças e pedido parcial.
 
