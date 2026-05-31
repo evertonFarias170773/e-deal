@@ -1672,6 +1672,14 @@ export async function uploadChatAnexo(
   const timestamp = Date.now();
   const filePath = `propostas/${idInt}/${timestamp}_${sanitizedName}`;
 
+  console.log("[OrcamentosService][uploadChatAnexo] Preparando upload:", {
+    bucket: "chat-ideal",
+    filePath,
+    sanitizedName,
+    contentType: file.type,
+    fileSize: file.size
+  });
+
   try {
     const uploadResult = await client.storage
       .from("chat-ideal")
@@ -1680,14 +1688,22 @@ export async function uploadChatAnexo(
         contentType: file.type
       });
 
+    console.log("[OrcamentosService][uploadChatAnexo] Resposta do upload no storage:", uploadResult);
+
     if (uploadResult.error) {
-      console.error("[OrcamentosService] Erro no upload do anexo:", uploadResult.error);
+      console.error("[OrcamentosService][uploadChatAnexo] Falha no upload no bucket chat-ideal:", {
+        filePath,
+        uploadError: uploadResult.error,
+        errorMessage: uploadResult.error.message
+      });
       return { success: false, errorMessage: uploadResult.error.message || "Erro no upload para o storage." };
     }
 
     const { data: publicUrlData } = client.storage
       .from("chat-ideal")
       .getPublicUrl(uploadResult.data.path);
+
+    console.log("[OrcamentosService][uploadChatAnexo] Public URL gerada:", publicUrlData);
 
     const publicUrl = publicUrlData?.publicUrl;
     if (!publicUrl) {
