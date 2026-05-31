@@ -327,7 +327,7 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO" && form.tipoCobranca !== "CARD_PARCELADO") {
+    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO" && form.tipoCobranca !== "CARD_PARCELADO" && form.tipoCobranca !== "E-FATURADO") {
       showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX, Boleto ou Cartão para testes reais." });
       return;
     }
