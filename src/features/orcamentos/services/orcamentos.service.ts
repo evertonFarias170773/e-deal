@@ -1462,6 +1462,13 @@ export async function gerarPDFProposta(
 
     const data = await response.json();
     if (data && data.success && data.url) {
+      // Registrar timeline de forma assíncrona (não-bloqueante)
+      void registrarMensagemSistemaProposta({
+        idInt: idInt,
+        mensagem: "PDF da proposta gerado.",
+        setor: "Comercial"
+      }).catch((err) => console.warn("[PDF Timeline Error]", err));
+
       return { success: true, url: data.url };
     }
 
@@ -1508,6 +1515,19 @@ export async function duplicarProposta(
     if (!novoIdInt || isNaN(novoIdInt)) {
       return { success: false, errorMessage: "Retorno da duplicação inválido." };
     }
+
+    // Registrar mensagens nos chats de forma assíncrona (não-bloqueante)
+    void registrarMensagemSistemaProposta({
+      idInt: idIntOrigem,
+      mensagem: `Proposta duplicada. Nova proposta gerada: #${novoIdInt}.`,
+      setor: "Comercial"
+    }).catch((err) => console.warn("[Duplicação Timeline Error Original]", err));
+
+    void registrarMensagemSistemaProposta({
+      idInt: novoIdInt,
+      mensagem: `Proposta duplicada a partir da proposta #${idIntOrigem}.`,
+      setor: "Comercial"
+    }).catch((err) => console.warn("[Duplicação Timeline Error Nova]", err));
 
     return { success: true, novoIdInt };
   } catch (err) {
@@ -1690,9 +1710,9 @@ export async function uploadChatAnexo(
     const uploadError = uploadResult.error;
 
     console.log("[CHAT_UPLOAD] uploadData:", uploadData);
-    if (uploadError) {
+    if (uploadError || !uploadData) {
       console.error("[CHAT_UPLOAD] uploadError:", uploadError);
-      return { success: false, errorMessage: uploadError.message || "Erro no upload para o storage." };
+      return { success: false, errorMessage: uploadError?.message || "Erro no upload para o storage." };
     }
 
     const publicUrlResult = client.storage
@@ -1720,6 +1740,59 @@ export async function uploadChatAnexo(
       success: false, 
       errorMessage: error instanceof Error ? error.message : "Erro inesperado ao fazer upload do anexo." 
     };
+  }
+}
+
+export interface RegistrarMensagemSistemaParams {
+  idInt: number;
+  idCliente?: string | number | null;
+  mensagem: string;
+  setor?: string;
+  anexos?: PropostaChatAnexo[] | null;
+  // Parâmetros para expansão futura (não salvos no banco por enquanto)
+  metadata?: Record<string, unknown>;
+  entityType?: string;
+  entityId?: string | number;
+}
+
+export async function registrarMensagemSistemaProposta(
+  params: RegistrarMensagemSistemaParams
+): Promise<{ success: boolean; data?: PropostaChatMessage; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase não configurado." };
+  }
+
+  const { idInt, idCliente, mensagem, setor, anexos } = params;
+  const parsedIdCliente = idCliente && !isNaN(Number(idCliente)) ? Number(idCliente) : null;
+
+  try {
+    const { data, error } = await client
+      .from("propostas_chat")
+      .insert([
+        {
+          id_int: idInt,
+          id_cliente: parsedIdCliente,
+          mensagem: mensagem,
+          tipo: "SISTEMA",
+          autor_nome: "Sistema",
+          setor: setor || "Sistema",
+          visivel_externo: false,
+          anexos: anexos || null
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.warn("[timeline] Falha ao registrar mensagem do sistema:", error);
+      return { success: false, errorMessage: error.message };
+    }
+
+    return { success: true, data: data as PropostaChatMessage };
+  } catch (err) {
+    console.warn("[timeline] Erro inesperado ao registrar mensagem do sistema:", err);
+    return { success: false, errorMessage: err instanceof Error ? err.message : String(err) };
   }
 }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CreditCard, FileText, Search, WalletCards } from "lucide-react";
+import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -15,6 +15,7 @@ import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
 import { gerarPDFProposta, duplicarProposta } from "@/features/orcamentos/services/orcamentos.service";
+import { PropostaChatDrawer } from "@/features/orcamentos/components/PropostaChatDrawer";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const defaultStatusOrder = ["NOVO", "AGUARDANDO", "APROVADO", "CANCELADO"];
@@ -179,11 +180,25 @@ export function OrcamentosListPageReal() {
   const { showToast } = useAppToast();
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
-  const { propostas, source, warnings, detectedColumns, loadedCount, diagnostics, isLoading } = useOrcamentosReadOnlyData(periodo);
+  const { propostas, source, warnings, detectedColumns, loadedCount, isLoading } = useOrcamentosReadOnlyData(periodo);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
   const [vendedor, setVendedor] = useState("TODOS");
+
+  const [activeChatProposta, setActiveChatProposta] = useState<{
+    idInt: number;
+    clienteNome?: string | null;
+    idCliente?: string | null;
+  } | null>(null);
+
+  function handleOpenChat(item: OrcamentoListItem) {
+    setActiveChatProposta({
+      idInt: item.id_int,
+      clienteNome: item.clienteNome,
+      idCliente: item.clienteId
+    });
+  }
 
   const statusOptions = useMemo(() => {
     const values = Array.from(new Set(propostas.map((item) => item.status))).filter(Boolean);
@@ -395,6 +410,7 @@ export function OrcamentosListPageReal() {
     if (item.mockProposal) {
       return [
         { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
+        { label: "Ver chat interno", onClick: () => handleOpenChat(item) },
         { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
         { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
         {
@@ -423,6 +439,7 @@ export function OrcamentosListPageReal() {
 
     return [
       { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
+      { label: "Ver chat interno", onClick: () => handleOpenChat(item) },
       { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
       { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
       { label: "Copiar proposta informal", onClick: () => showToast({ type: "info", title: "Resumo informal ainda nao disponivel para dados reais." }) },
@@ -594,7 +611,23 @@ export function OrcamentosListPageReal() {
           { header: "Status", cell: (proposta) => <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />, align: "center" },
           { header: "Valor total", cell: (proposta) => formatCurrency(proposta.total), align: "right" },
           { header: "Modelo", cell: (proposta) => proposta.modelo, align: "center" },
-          { header: "Ações", cell: (proposta) => <ActionsMenu items={getActions(proposta)} />, align: "right" }
+          {
+            header: "Ações",
+            cell: (proposta) => (
+              <div className="flex items-center justify-end gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleOpenChat(proposta)}
+                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-[#0b2f4a] transition"
+                  title="Chat interno"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </button>
+                <ActionsMenu items={getActions(proposta)} />
+              </div>
+            ),
+            align: "right"
+          }
         ]}
         renderCard={(proposta) => (
           <article key={proposta.id} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
@@ -622,15 +655,25 @@ export function OrcamentosListPageReal() {
               <p className="font-semibold text-slate-900">Valor total: {formatCurrency(proposta.total)}</p>
             </div>
             <div className="mt-4 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  router.push(`/orcamentos/${proposta.id_int}`);
-                }}
-                className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
-              >
-                Ver
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    router.push(`/orcamentos/${proposta.id_int}`);
+                  }}
+                  className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Ver
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenChat(proposta)}
+                  className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Chat
+                </button>
+              </div>
               <ActionsMenu label="Mais" items={getActions(proposta).filter((item) => item.label !== "Ver proposta")} />
             </div>
           </article>
@@ -666,6 +709,21 @@ export function OrcamentosListPageReal() {
           ) : null}
         </section>
       ) : null}
+
+      {activeChatProposta && (
+        <PropostaChatDrawer
+          key={activeChatProposta.idInt}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) {
+              setActiveChatProposta(null);
+            }
+          }}
+          idInt={activeChatProposta.idInt}
+          clienteNome={activeChatProposta.clienteNome}
+          idCliente={activeChatProposta.idCliente}
+        />
+      )}
     </div>
   );
 }

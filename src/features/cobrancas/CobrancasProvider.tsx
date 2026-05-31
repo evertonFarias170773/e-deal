@@ -12,6 +12,7 @@ import {
   type CobrancasReadResult,
   type CobrancasReadSource
 } from "@/features/cobrancas/services/pagamentos-v2.service";
+import { registrarMensagemSistemaProposta } from "@/features/orcamentos/services/orcamentos.service";
 
 type CobrancasContextValue = {
   cobrancas: Cobranca[];
@@ -299,29 +300,21 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
                       loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
 
-        try {
-          const msg = values.tipoCobranca === "E-FATURADO"
-            ? (isScenario1 
-                ? `Nova solicitação de faturamento registrada. Limite disponível e sem atrasos. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
-                : `Solicitação enviada para avaliação do financeiro. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`)
-            : `Nova cobrança de Cartão de crédito registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+        // Registrar timeline usando a nova função padronizada
+        const msg = values.tipoCobranca === "E-FATURADO"
+          ? (isScenario1 
+              ? "E-Faturado registrado com crédito disponível. Aguardando confirmação do financeiro."
+              : "E-Faturado enviado para análise financeira.")
+          : `Registrada nova cobrança CARTÃO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
 
-          await client
-            .from("propostas_chat")
-            .insert([
-              {
-                id_int: proposta.id_int,
-                id_cliente: proposta.cliente.idCliente,
-                mensagem: msg,
-                tipo: "SISTEMA",
-                autor_nome: "Sistema",
-                setor: "Financeiro",
-                visivel_externo: false
-              }
-            ]);
-        } catch (chatErr) {
+        void registrarMensagemSistemaProposta({
+          idInt: proposta.id_int,
+          idCliente: proposta.cliente.idCliente,
+          mensagem: msg,
+          setor: "Financeiro"
+        }).catch((chatErr) => {
           console.warn("Falha ao registrar historico no chat:", chatErr);
-        }
+        });
 
         if (found) {
           return found;
@@ -377,28 +370,19 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error(result.message || `Falha no retorno da API de ${values.tipoCobranca}.`);
       }
 
-      // 5. Enviar mensagem no chat da proposta para BOLETO ou PIX
-      try {
-        const msg = values.tipoCobranca === "BOLETO"
-          ? `Boleto registrado. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
-          : `Nova cobrança PIX registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+      // 5. Enviar mensagem no chat da proposta para BOLETO ou PIX usando a nova função padronizada
+      const msg = values.tipoCobranca === "BOLETO"
+        ? `Registrada nova cobrança BOLETO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
+        : `Registrada nova cobrança PIX, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
 
-        await client
-          .from("propostas_chat")
-          .insert([
-            {
-              id_int: proposta.id_int,
-              id_cliente: proposta.cliente.idCliente,
-              mensagem: msg,
-              tipo: "SISTEMA",
-              autor_nome: "Sistema",
-              setor: "Financeiro",
-              visivel_externo: false
-            }
-          ]);
-      } catch (chatErr) {
+      void registrarMensagemSistemaProposta({
+        idInt: proposta.id_int,
+        idCliente: proposta.cliente.idCliente,
+        mensagem: msg,
+        setor: "Financeiro"
+      }).catch((chatErr) => {
         console.warn("Falha ao registrar historico no chat:", chatErr);
-      }
+      });
 
       const loadResult = await loadData();
       const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
@@ -447,6 +431,24 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   }, [source, loadData, cobrancas]);
 
   const confirmPagamento = useCallback((id: string) => {
+    // Buscar cobrança para registrar na timeline antes de retornar caso Supabase
+    const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
+    if (cobranca && cobranca.id_int) {
+      const isEFaturado = cobranca.tipo_cobranca === "E-FATURADO";
+      const msgText = isEFaturado
+        ? "Faturamento aprovado pelo financeiro. Crédito liberado."
+        : "Pagamento confirmado pelo financeiro.";
+
+      void registrarMensagemSistemaProposta({
+        idInt: cobranca.id_int,
+        idCliente: cobranca.id_cliente,
+        mensagem: msgText,
+        setor: "Financeiro"
+      }).catch((chatErr) => {
+        console.warn("Falha ao registrar historico de confirmacao no chat:", chatErr);
+      });
+    }
+
     if (source === "supabase") {
       return;
     }
@@ -492,7 +494,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
     setCobrancas(updateCob);
     setCobrancasStats(updateCob);
-  }, [source]);
+  }, [source, cobrancas, cobrancasStats]);
 
   const cancelCobranca = useCallback((id: string, motivo: string) => {
     if (source === "supabase") {

@@ -10,12 +10,16 @@ import {
   type PropostaChatMessage,
   type PropostaChatAnexo
 } from "@/features/orcamentos/services/orcamentos.service";
-import type { Proposta } from "@/features/orcamentos/types";
 import { Paperclip, Send, Loader2, FileText, Image as ImageIcon, Download, X, AlertCircle } from "lucide-react";
 import { formatDateTime } from "@/lib/formatters/date";
 
 interface PropostaChatPanelProps {
-  proposta: Proposta;
+  idInt: number;
+  clienteNome?: string | null;
+  idCliente?: string | number | null;
+  tituloContexto?: string;
+  showHeader?: boolean;
+  className?: string;
 }
 
 const ALLOWED_MIME_TYPES = [
@@ -37,7 +41,14 @@ const ALLOWED_MIME_TYPES = [
 ];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
+export function PropostaChatPanel({
+  idInt,
+  clienteNome,
+  idCliente,
+  tituloContexto,
+  showHeader = true,
+  className = "h-[650px] rounded-3xl border border-[#d7e5e8] bg-white shadow-sm overflow-hidden"
+}: PropostaChatPanelProps) {
   const { user } = useAuth();
   const { showToast } = useAppToast();
 
@@ -45,16 +56,18 @@ export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
-  
-  // Keep track of the previous proposal ID to reset loading state during render
-  const [prevIdInt, setPrevIdInt] = useState(proposta.id_int);
-  if (proposta.id_int !== prevIdInt) {
-    setPrevIdInt(proposta.id_int);
-    setLoadingMessages(true);
-  }
-
-  // Arquivos selecionados que ainda não foram enviados
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  
+  // Keep track of the previous proposal ID to reset loading and states during render
+  const [prevIdInt, setPrevIdInt] = useState(idInt);
+  if (idInt !== prevIdInt) {
+    setPrevIdInt(idInt);
+    setMessages([]);
+    setLoadingMessages(true);
+    setMessageText("");
+    setSelectedFiles([]);
+    setSending(false);
+  }
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +76,7 @@ export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
   useEffect(() => {
     let active = true;
     void (async () => {
-      const res = await listPropostaChatMessages(proposta.id_int);
+      const res = await listPropostaChatMessages(idInt);
       if (!active) return;
       if (res.success) {
         setMessages(res.data);
@@ -75,7 +88,7 @@ export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
     return () => {
       active = false;
     };
-  }, [proposta.id_int]);
+  }, [idInt]);
 
   // Scroll to bottom when messages load or change
   useEffect(() => {
@@ -140,7 +153,7 @@ export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
       // 1. Upload de anexos, se houver
       if (selectedFiles.length > 0) {
         for (const file of selectedFiles) {
-          const res = await uploadChatAnexo(proposta.id_int, file);
+          const res = await uploadChatAnexo(idInt, file);
           if (res.success && res.anexo) {
             uploadedAnexos.push(res.anexo);
           } else {
@@ -156,8 +169,9 @@ export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
       }
 
       // 2. Enviar a mensagem principal com os anexos
+      const parsedIdCliente = idCliente && !isNaN(Number(idCliente)) ? Number(idCliente) : null;
       const resMsg = await sendPropostaChatMessage({
-        id_int: proposta.id_int,
+        id_int: idInt,
         mensagem: trimmedMsg,
         tipo: "MENSAGEM",
         autor_uid: user.id,
@@ -167,7 +181,7 @@ export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
         avatar: user.avatarUrl || null,
         visivel_externo: false,
         anexos: uploadedAnexos.length > 0 ? uploadedAnexos : null,
-        id_cliente: proposta.cliente?.idCliente || null
+        id_cliente: parsedIdCliente
       });
 
       if (resMsg.success && resMsg.data) {
@@ -205,20 +219,23 @@ export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
       .toUpperCase();
   }
 
+  const displayClienteNome = clienteNome || "Cliente não cadastrado";
+
   return (
-    <section className="flex flex-col rounded-3xl border border-[#d7e5e8] bg-white shadow-sm overflow-hidden h-[650px]">
-      {/* Header do Chat */}
-      <div className="flex items-center justify-between border-b border-[#d7e5e8] bg-slate-50 px-6 py-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-950">Chat Interno</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Discussão administrativa interna da proposta #{proposta.id_int}
-          </p>
+    <section className={`flex flex-col ${className}`}>
+      {showHeader && (
+        <div className="flex items-center justify-between border-b border-[#d7e5e8] bg-slate-50 px-6 py-4 shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-slate-950">{tituloContexto || "Chat Interno"}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Discussão administrativa interna da proposta #{idInt} • {displayClienteNome}
+            </p>
+          </div>
+          <div className="rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700">
+            Setor: {user?.sector || "ADMIN"}
+          </div>
         </div>
-        <div className="rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700">
-          Setor: {user?.sector || "ADMIN"}
-        </div>
-      </div>
+      )}
 
       {/* Listagem de Mensagens */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30">
