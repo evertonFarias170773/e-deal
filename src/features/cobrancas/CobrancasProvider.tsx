@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Cobranca, CriarCobrancaFormValues } from "@/features/cobrancas/types";
+import type { Cobranca, CriarCobrancaFormValues, CreditAnalysisResult } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
 import { canLiberarParaPedido, roundMoney } from "@/features/cobrancas/cobrancas-utils";
@@ -146,14 +146,41 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const idEmpresa = empresaOption?.id ?? 1;
       const nomeEmpresa = empresaOption?.nome ?? proposta.empresa;
 
-      // 1. Criar registro inicial em pagamentos_v2 com status A_RECEBER
+      let isScenario1 = false;
+      if (values.tipoCobranca === "E-FATURADO") {
+        try {
+          const { data: analysis, error: rpcError } = await client.rpc("fn_analise_credito_cliente", {
+            p_id_cliente: proposta.cliente.idCliente
+          });
+
+          if (!rpcError && analysis && analysis.length > 0) {
+            const analysisObj = analysis[0] as CreditAnalysisResult;
+            const limiteDisponivel = Number(analysisObj.limite_disponivel) || 0;
+            const qtdAtrasados = Number(analysisObj.qtd_pagamentos_atrasados) || 0;
+            
+            isScenario1 = limiteDisponivel >= roundMoney(values.valor) && qtdAtrasados === 0;
+          }
+        } catch (rpcErr) {
+          console.error("Erro RPC fn_analise_credito_cliente no provider:", rpcErr);
+          const hasOverdue = cobrancas.some((cob) => {
+            if (cob.id_cliente !== proposta.cliente.idCliente || cob.status === "PAID" || cob.status === "CANCELADO" || !cob.vencimento) {
+              return false;
+            }
+            const vencDate = new Date(cob.vencimento + "T23:59:59");
+            return vencDate.getTime() < Date.now();
+          });
+          isScenario1 = proposta.cliente.creditoDisponivel >= roundMoney(values.valor) && !hasOverdue;
+        }
+      }
+
+      // 1. Criar registro inicial em pagamentos_v2
       const payloadInicial = {
         id_int: proposta.id_int,
         id_cliente: proposta.cliente.idCliente,
         cliente: proposta.cliente.nome,
         documento: proposta.cliente.documento,
         valor: roundMoney(values.valor),
-        status: "A_RECEBER",
+        status: values.tipoCobranca === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
         tipo_cobranca: values.tipoCobranca,
         empresa: nomeEmpresa,
         id_empresa: idEmpresa,
@@ -162,7 +189,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         descricao: values.descricao || `Cobrança ${values.tipoCobranca} da proposta #${proposta.id_int}`,
         vencimento: values.vencimento || null,
         obs_v2: values.observacao || null,
-        confirmado: false
+        confirmado: false,
+        forma_fatu: values.tipoCobranca === "E-FATURADO" ? (values.modeloFatu || "BOLETO") : null,
+        paid_at: (values.tipoCobranca === "E-FATURADO" && isScenario1) ? new Date().toISOString() : null
       };
 
       const { data: createdRows, error: insertError } = await client
@@ -272,7 +301,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
         try {
           const msg = values.tipoCobranca === "E-FATURADO"
-            ? `Nova solicitação de faturamento registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
+            ? (isScenario1 
+                ? `Nova solicitação de faturamento registrada. Limite disponível e sem atrasos. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
+                : `Solicitação enviada para avaliação do financeiro. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`)
             : `Nova cobrança de Cartão de crédito registrada. Valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
 
           await client
@@ -303,9 +334,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           id_int: proposta.id_int,
           id_cliente: proposta.cliente.idCliente,
           valor: values.valor,
-          status: "A_RECEBER",
+          status: values.tipoCobranca === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
           tipo_cobranca: values.tipoCobranca,
           created_at: new Date().toISOString(),
+          paid_at: (values.tipoCobranca === "E-FATURADO" && isScenario1) ? new Date().toISOString() : undefined,
+          vencimento: values.vencimento || undefined,
           cliente: proposta.cliente.nome,
           empresa: proposta.empresa,
           descricao: `Cobrança ${values.tipoCobranca} registrada.`,
@@ -315,6 +348,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           id_empresa: idEmpresa,
           token_publico: tokenPublico,
           url_cobranca: urlCobranca,
+          forma_fatu: values.tipoCobranca === "E-FATURADO" ? (values.modeloFatu || "BOLETO") : undefined,
           proposta: {
             id_int: proposta.id_int,
             statusProposta: proposta.status,
@@ -406,11 +440,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const next = createCobrancaFromForm(values);
+    const next = createCobrancaFromForm(values, cobrancas);
     setCobrancas((current) => [next, ...current]);
     setCobrancasStats((current) => [next, ...current]);
     return next;
-  }, [source, loadData]);
+  }, [source, loadData, cobrancas]);
 
   const confirmPagamento = useCallback((id: string) => {
     if (source === "supabase") {
@@ -424,20 +458,31 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         }
 
         const paidAt = new Date().toISOString();
+        const isEFaturado = cobranca.tipo_cobranca === "E-FATURADO";
 
         return {
           ...cobranca,
-          status: "PAID",
-          paid_at: paidAt,
+          status: isEFaturado ? "A_VENCER" : "PAID",
+          paid_at: cobranca.paid_at || paidAt,
           confirmado: true,
-          confirmado_por: "Operador mockado",
+          confirmado_por: "Financeiro mockado",
           data_confirmacao: paidAt,
+          creditoPendente: false,
+          creditoAnalise: cobranca.creditoAnalise
+            ? {
+                ...cobranca.creditoAnalise,
+                statusAnalise: "APROVADO",
+                mensagem: "Crédito aprovado pelo financeiro."
+              }
+            : undefined,
           historico: [
             {
               id: `hist_confirm_${paidAt}`,
               data: paidAt,
-              titulo: "Pagamento confirmado no mock",
-              descricao: "Status alterado para pago via ação manual.",
+              titulo: isEFaturado ? "Crédito aprovado no mock" : "Pagamento confirmado no mock",
+              descricao: isEFaturado
+                ? "Faturamento aprovado pelo setor financeiro."
+                : "Status alterado para pago via ação manual.",
               tipo: "success"
             },
             ...cobranca.historico

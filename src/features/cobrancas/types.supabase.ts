@@ -42,5 +42,7 @@ export type SupabasePagamentoV2Row = {
   cartao_taxa_percentual?: SupabaseValue;
   cartao_valor_taxa?: SupabaseValue;
   cartao_valor_final?: SupabaseValue;
+  forma_fatu?: SupabaseValue;
+  forma_pgto?: SupabaseValue;
 };
 

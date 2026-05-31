@@ -106,6 +106,7 @@ export type Cobranca = {
   is_parcial?: boolean;
   saldo_pendente?: number;
   valor_frete?: number;
+  forma_fatu?: string;
   obs_v2?: string;
   motivo_cancela?: string;
   multaPercentual?: number;
@@ -118,6 +119,23 @@ export type Cobranca = {
   historico: CobrancaHistoricoEvento[];
   propostasChat: PropostaChatFinanceiro[];
   creditoAnalise?: CreditoAnaliseMock;
+};
+
+export type CreditAnalysisResult = {
+  id_cliente: number;
+  limite_credito: number;
+  utilizado: number;
+  saldo_carteira: number;
+  limite_disponivel: number;
+  status_credito: string;
+  risco_credito: string;
+  padrao_pagamento: string;
+  media_atraso_dias: number;
+  maior_atraso_dias: number;
+  qtd_pagamentos_atrasados: number;
+  qtd_pedidos_aprovados: number;
+  ticket_medio_aprovado: number;
+  mensagem: string;
 };
 
 export type CriarCobrancaFormValues = {
@@ -134,4 +152,5 @@ export type CriarCobrancaFormValues = {
   jurosPercentual: number;
   capturaAutomatica: boolean;
   parcelaSelecionada?: CobrancaParcelaSimulada;
+  modeloFatu?: "BOLETO" | "DEPÓSITO";
 };

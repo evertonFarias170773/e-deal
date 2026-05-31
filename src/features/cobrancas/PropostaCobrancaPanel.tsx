@@ -6,9 +6,10 @@ import { CreditCard, Landmark, QrCode, ReceiptText, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
-import { Field, PanelCard, inputClass } from "@/features/cobrancas/form-ui";
-import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues } from "@/features/cobrancas/types";
+import { Field, PanelCard, inputClass, InfoBox } from "@/features/cobrancas/form-ui";
+import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisResult } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getLiberacaoPedidoLabel,
   getLiberacaoPedidoStatus,
@@ -44,7 +45,7 @@ export function PropostaCobrancaPanel({
   defaultModalOpen = false
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
-  const { createCobranca, getCobrancasByProposta, source } = useCobrancas();
+  const { createCobranca, getCobrancasByProposta, source, cobrancas } = useCobrancas();
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [isSaving, setIsSaving] = useState(false);
   const idEmpresaReal = source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : null;
@@ -79,11 +80,50 @@ export function PropostaCobrancaPanel({
       observacao: proposta.observacoes,
       condicaoPagamento: proposta.formaPagamento,
       vencimento: "2026-05-30",
-      osIdeal: defaultOsIdeal
+      osIdeal: defaultOsIdeal,
+      modeloFatu: "BOLETO"
     };
   }
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
+  const [realCreditAnalysis, setRealCreditAnalysis] = useState<CreditAnalysisResult | null>(null);
+  const [isLoadingCredit, setIsLoadingCredit] = useState(false);
+
+  useEffect(() => {
+    if (form.tipoCobranca !== "E-FATURADO" || source !== "supabase" || !proposta.cliente.idCliente) {
+      setRealCreditAnalysis(null);
+      return;
+    }
+
+    let active = true;
+    async function fetchCredit() {
+      setIsLoadingCredit(true);
+      try {
+        const client = getSupabaseClient();
+        if (!client) return;
+
+        const { data, error } = await client.rpc("fn_analise_credito_cliente", {
+          p_id_cliente: proposta.cliente.idCliente
+        });
+
+        if (active && !error && data && data.length > 0) {
+          setRealCreditAnalysis(data[0] as CreditAnalysisResult);
+        }
+      } catch (err) {
+        console.error("Erro ao buscar análise de crédito real:", err);
+      } finally {
+        if (active) {
+          setIsLoadingCredit(false);
+        }
+      }
+    }
+
+    void fetchCredit();
+    return () => {
+      active = false;
+    };
+  }, [form.tipoCobranca, proposta.cliente.idCliente, source]);
+
   const tipoDisponivel = source === "supabase"
     ? (form.tipoCobranca === "PIX"
         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
@@ -91,7 +131,9 @@ export function PropostaCobrancaPanel({
           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
           : form.tipoCobranca === "CARD_PARCELADO"
             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-            : false)
+            : form.tipoCobranca === "E-FATURADO"
+              ? true
+              : false)
     : isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
 
   const indisponibilidadeMensagem = source === "supabase"
@@ -101,25 +143,69 @@ export function PropostaCobrancaPanel({
           ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Boleto real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
           : form.tipoCobranca === "CARD_PARCELADO"
             ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
-            : "Esta forma de pagamento está em preparação para o ambiente real.")
+            : form.tipoCobranca === "E-FATURADO"
+              ? ""
+              : "Esta forma de pagamento está em preparação para o ambiente real.")
     : getMensagemTipoIndisponivel(proposta.empresa, form.tipoCobranca);
 
+  const cobrancasAtivasTudo = useMemo(() => {
+    return (cobrancas || []).filter((item) => item.status !== "CANCELADO");
+  }, [cobrancas]);
+
   const analiseCredito = useMemo(() => {
+    if (source === "supabase" && realCreditAnalysis) {
+      const limite = realCreditAnalysis.limite_credito;
+      const disponivel = realCreditAnalysis.limite_disponivel;
+      const utilizado = realCreditAnalysis.utilizado;
+      const saldoCarteira = realCreditAnalysis.saldo_carteira;
+      const qtdAtrasados = realCreditAnalysis.qtd_pagamentos_atrasados;
+      
+      const aprovado = disponivel >= form.valor && qtdAtrasados === 0;
+
+      return {
+        limite,
+        utilizado,
+        saldoCarteira,
+        disponivel,
+        valorSolicitado: form.valor,
+        risco: realCreditAnalysis.risco_credito,
+        qtdAtrasados,
+        statusAnalise: aprovado ? "APROVADO" as const : "AGUARDANDO_FINANCEIRO" as const,
+        mensagem: aprovado 
+          ? "Crédito disponível e sem cobranças vencidas." 
+          : (qtdAtrasados > 0 
+              ? "Cliente com cobrança vencida em aberto. Solicitação enviada para avaliação do financeiro."
+              : "Limite de crédito insuficiente. Solicitação enviada para avaliação do financeiro.")
+      };
+    }
+
+    const mockOverdue = cobrancasAtivasTudo.some((cob) => {
+      if (cob.id_cliente !== proposta.cliente.idCliente || cob.status === "PAID" || cob.status === "CANCELADO" || !cob.vencimento) {
+        return false;
+      }
+      const vencDate = new Date(cob.vencimento + "T23:59:59");
+      return vencDate.getTime() < Date.now();
+    });
+
     const disponivel = proposta.cliente.creditoDisponivel;
     const limite = proposta.cliente.limiteCredito;
     const utilizado = Math.max(0, limite - disponivel);
-    const aprovado = disponivel >= form.valor;
+    const aprovado = disponivel >= form.valor && !mockOverdue;
 
     return {
       limite,
       utilizado,
+      saldoCarteira: 0,
       disponivel,
       valorSolicitado: form.valor,
       risco: proposta.cliente.riscoCredito,
+      qtdAtrasados: mockOverdue ? 1 : 0,
       statusAnalise: aprovado ? "APROVADO" as const : "AGUARDANDO_FINANCEIRO" as const,
-      mensagem: aprovado ? "Crédito disponível. Faturamento liberado." : "Crédito insuficiente. Solicitação enviada ao financeiro."
+      mensagem: aprovado 
+        ? "Crédito disponível. Faturamento liberado." 
+        : "Crédito insuficiente ou com cobrança vencida."
     };
-  }, [form.valor, proposta]);
+  }, [form.valor, proposta, source, realCreditAnalysis, cobrancasAtivasTudo]);
 
   const openModal = useCallback(() => {
     if (proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0) {
@@ -307,12 +393,20 @@ export function PropostaCobrancaPanel({
       if (source !== "supabase") {
         await new Promise((resolve) => window.setTimeout(resolve, 850));
       }
-      await createCobranca(payload, proposta);
+      const created = await createCobranca(payload, proposta);
 
-      showToast({
-        type: "success",
-        title: source === "supabase" ? "Cobrança real criada com sucesso!" : "Cobrança criada com sucesso."
-      });
+      if (payload.tipoCobranca === "E-FATURADO" && !created?.paid_at) {
+        showToast({
+          type: "warning",
+          title: "Faturamento em análise",
+          description: "Solicitação enviada para avaliação do financeiro."
+        });
+      } else {
+        showToast({
+          type: "success",
+          title: source === "supabase" ? "Cobrança real criada com sucesso!" : "Cobrança criada com sucesso."
+        });
+      }
 
       setForm(buildInitialFormState());
       closeModal();
@@ -514,13 +608,10 @@ export function PropostaCobrancaPanel({
                               ? (idEmpresaReal === 1 || idEmpresaReal === 3)
                               : true)
                       : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
-                    const isRealBlocked = source === "supabase" && opcao.id === "E-FATURADO";
-                    const isActuallyDisabled = !available || isRealBlocked;
-                    const disabledText = isRealBlocked
-                      ? "Forma de pagamento em preparação no ambiente real."
-                      : available
-                        ? ""
-                        : "Indisponível para esta empresa.";
+                    const isActuallyDisabled = !available;
+                    const disabledText = available
+                      ? ""
+                      : "Indisponível para esta empresa.";
 
                     return (
                       <button
@@ -541,8 +632,6 @@ export function PropostaCobrancaPanel({
                         </div>
                         {!available ? (
                           <p className="mt-1 text-[11px] text-slate-500">Indisponível</p>
-                        ) : isRealBlocked ? (
-                          <p className="mt-1 text-[11px] text-orange-600 font-semibold">Em preparação</p>
                         ) : null}
                       </button>
                     );
@@ -569,12 +658,54 @@ export function PropostaCobrancaPanel({
                         placeholder="Ex.: Faturado 28 dias"
                       />
                     </Field>
+                    <Field label="Modelo de faturamento">
+                      <select
+                        value={form.modeloFatu || "BOLETO"}
+                        onChange={(event) => patchForm({ modeloFatu: event.target.value as "BOLETO" | "DEPÓSITO" })}
+                        className={inputClass}
+                      >
+                        <option value="BOLETO">BOLETO</option>
+                        <option value="DEPÓSITO">DEPÓSITO</option>
+                      </select>
+                    </Field>
                   </div>
-                  <p className={`mt-3 rounded-2xl border px-3 py-2 text-sm ${analiseCredito.disponivel >= form.valor ? "border-teal-200 bg-teal-50 text-teal-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
-                    {analiseCredito.disponivel >= form.valor
-                      ? "Crédito disponível. Será criado como A_VENCER confirmado."
-                      : "Crédito insuficiente. Será enviado para análise do financeiro."}
-                  </p>
+
+                  {isLoadingCredit ? (
+                    <div className="mt-4 p-4 text-center rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                      <span className="text-sm text-slate-600 font-semibold">Consultando análise de crédito real...</span>
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+                        <InfoBox label="Limite de crédito" value={formatCurrency(analiseCredito.limite)} />
+                        <InfoBox label="Utilizado" value={formatCurrency(analiseCredito.utilizado)} />
+                        <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel)} />
+                        {source === "supabase" && (
+                          <InfoBox label="Saldo de carteira" value={formatCurrency(analiseCredito.saldoCarteira || 0)} />
+                        )}
+                        <InfoBox label="Valor solicitado" value={formatCurrency(analiseCredito.valorSolicitado)} />
+                        <InfoBox 
+                          label="Faturamentos vencidos" 
+                          value={analiseCredito.qtdAtrasados > 0 ? `${analiseCredito.qtdAtrasados} pendente(s)` : "Nenhum atraso"} 
+                          detail={analiseCredito.qtdAtrasados > 0 ? "Requer análise financeira" : "Histórico regular"}
+                        />
+                        <InfoBox label="Risco de crédito" value={analiseCredito.risco} />
+                      </div>
+
+                      <div className={`rounded-2xl border p-4 ${analiseCredito.statusAnalise === "APROVADO" ? "border-teal-200 bg-teal-50 text-teal-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
+                        <p className="font-semibold">{analiseCredito.statusAnalise === "APROVADO" ? "Limite operacional disponível." : "Solicitação enviada para avaliação do financeiro."}</p>
+                        <p className="mt-1 text-sm leading-6">
+                          {analiseCredito.statusAnalise === "APROVADO" 
+                            ? "Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER."
+                            : (analiseCredito.qtdAtrasados > 0
+                                ? "O cliente possui faturamentos pendentes vencidos em aberto. A solicitação ficará bloqueada sob avaliação do financeiro."
+                                : "Limite de crédito insuficiente para o valor solicitado. A solicitação ficará bloqueada sob avaliação do financeiro.")
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </PanelCard>
               ) : null}
 

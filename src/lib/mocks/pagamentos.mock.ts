@@ -597,7 +597,7 @@ export function getCobrancasByProposta(idInt: number) {
   return pagamentosMock.filter((cobranca) => cobranca.id_int === idInt);
 }
 
-export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
+export function createCobrancaFromForm(values: CriarCobrancaFormValues, currentCobrancas?: Cobranca[]) {
   const proposta = propostasMock.find((item) => item.id_int === values.propostaIdInt);
 
   if (!proposta) {
@@ -627,8 +627,20 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
   const roundedPropostaTotal = roundMoney(proposta.resumo.valorTotal);
   const roundedPropostaFrete = roundMoney(proposta.resumo.frete);
 
-  const creditoAprovado = values.tipoCobranca === "E-FATURADO" && proposta.cliente.creditoDisponivel >= roundedValor;
-  const creditoPendente = values.tipoCobranca === "E-FATURADO" && !creditoAprovado;
+  const listToSearch = currentCobrancas || pagamentosMock;
+  const customerCobrancas = listToSearch.filter((item) => item.id_cliente === proposta.cliente.idCliente);
+
+  const hasOverdue = customerCobrancas.some((cob) => {
+    if (!cob.vencimento || cob.status === "PAID" || cob.status === "CANCELADO") {
+      return false;
+    }
+    const vencDate = new Date(cob.vencimento + "T23:59:59");
+    return vencDate.getTime() < Date.now();
+  });
+
+  const hasCredit = proposta.cliente.creditoDisponivel >= roundedValor;
+  const isScenario1 = values.tipoCobranca === "E-FATURADO" && hasCredit && !hasOverdue;
+  const creditoPendente = values.tipoCobranca === "E-FATURADO";
 
   const cobranca: Cobranca = {
     id: `cob_${timestamp}`,
@@ -637,18 +649,19 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
     id_int: proposta.id_int,
     id_cliente: proposta.cliente.idCliente,
     valor: roundedValor,
-    status: values.tipoCobranca === "E-FATURADO" && creditoAprovado ? "A_VENCER" : "A_RECEBER",
+    status: values.tipoCobranca === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
     tipo_cobranca: values.tipoCobranca,
     created_at: new Date(timestamp).toISOString(),
+    paid_at: (values.tipoCobranca === "E-FATURADO" && isScenario1) ? new Date(timestamp).toISOString() : undefined,
     vencimento: values.vencimento || undefined,
     cliente: proposta.cliente.nome,
     empresa: empresa.nome,
     descricao: values.descricao || proposta.observacoes,
     documento: proposta.cliente.documento,
     atendente: proposta.vendedor,
-    confirmado: creditoAprovado,
-    confirmado_por: creditoAprovado ? "Financeiro mockado" : undefined,
-    data_confirmacao: creditoAprovado ? new Date(timestamp).toISOString() : undefined,
+    confirmado: false,
+    confirmado_por: undefined,
+    data_confirmacao: undefined,
     id_empresa: empresa.id,
     token_publico: token,
     url_cobranca: buildPublicUrl(token),
@@ -677,6 +690,7 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
     multaPercentual: values.tipoCobranca === "BOLETO" ? values.multaPercentual : undefined,
     jurosPercentual: values.tipoCobranca === "BOLETO" ? values.jurosPercentual : undefined,
     valor_frete: roundedPropostaFrete,
+    forma_fatu: values.tipoCobranca === "E-FATURADO" ? (values.modeloFatu || "BOLETO") : undefined,
     saldo_pendente: Math.max(0, roundedPropostaTotal - roundedValorFinal),
     obs_v2: values.observacao,
     condicao_pagamento: values.condicaoPagamento,
@@ -707,7 +721,9 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
           {
             data: new Date(timestamp).toISOString(),
             autor: "Sistema",
-            mensagem: "Solicitação de crédito enviada ao financeiro para análise.",
+            mensagem: isScenario1
+              ? "Nova solicitação de faturamento registrada. Limite disponível e sem atrasos."
+              : "Solicitação enviada para avaliação do financeiro.",
             categoria: "SISTEMA"
           }
         ])
@@ -720,11 +736,11 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues) {
             disponivel: proposta.cliente.creditoDisponivel,
             valorSolicitado: values.valor,
             risco: proposta.cliente.riscoCredito,
-            statusAnalise: creditoAprovado ? "APROVADO" : "AGUARDANDO_FINANCEIRO",
-            mensagem: creditoAprovado
-              ? "Crédito disponível. Faturamento liberado."
-              : "Crédito insuficiente. Solicitação enviada ao financeiro.",
-            limiteReservado: creditoAprovado
+            statusAnalise: "AGUARDANDO_FINANCEIRO" as const,
+            mensagem: isScenario1
+              ? "Crédito disponível. Aguardando liberação do financeiro."
+              : "Solicitação enviada para avaliação do financeiro.",
+            limiteReservado: isScenario1
           }
         : undefined
   };
