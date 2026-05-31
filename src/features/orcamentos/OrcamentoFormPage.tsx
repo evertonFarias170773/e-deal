@@ -1022,6 +1022,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }
 
   function validateBeforeSave(vendedorAtual = form.vendedor) {
+    const isNonEmpty = (value: unknown): boolean => {
+      return value !== null && value !== undefined && String(value).trim() !== "";
+    };
+
     const missingRequiredVariation = !form.isAvulso && form.itens.some((item) =>
       item.produto.variacoes.some(
         (variacao) => variacao.is_obrigatorio && !item.variacoesEscolhidas.some((choice) => choice.id_variacao === variacao.id_variacao)
@@ -1031,17 +1035,17 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     const hasInvalidSubtotal = !form.isAvulso && form.itens.some((item) => item.subtotal <= 0);
     const isSubtotalZero = resumo.subtotalProdutos <= 0;
     const isTotalZero = resumo.valorTotal <= 0;
-    const isTextEmpty = !informalText || informalText.trim() === "";
-    const isSellerEmpty = !vendedorAtual || vendedorAtual.trim() === "";
-    const isCompanyEmpty = !form.empresa || form.empresa.trim() === "";
+    const isTextEmpty = !isNonEmpty(informalText);
+    const isSellerEmpty = !isNonEmpty(vendedorAtual);
+    const isCompanyEmpty = !isNonEmpty(form.empresa);
 
     const hasUnauthorizedGeneralDiscount = !canManageCommercialRules && Number(form.descontoGeralValor) > 0;
     const sellerChangedWithoutPermission = Boolean(cliente && vendedorAtual !== getClienteVendedorPadrao(cliente) && !canManageCommercialRules);
 
     const fields = [
-      !form.clienteId ? "clienteId" : null,
-      !form.enderecoId ? "enderecoId" : null,
-      !form.contatoId ? "contatoId" : null,
+      !isNonEmpty(form.clienteId) ? "clienteId" : null,
+      !isNonEmpty(form.enderecoId) ? "enderecoId" : null,
+      !isNonEmpty(form.contatoId) ? "contatoId" : null,
       !form.isAvulso && form.itens.length === 0 ? "itens" : null,
       !form.isAvulso && hasInvalidQuantity ? "quantidade" : null,
       !form.isAvulso && hasInvalidSubtotal ? "subtotal_itens" : null,
@@ -1058,18 +1062,18 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       let title = "Não foi possível salvar";
       let desc = "Revise cliente, contato, endereço, produtos, quantidades e variações obrigatórias.";
       
-      if (!form.clienteId) {
+      if (!isNonEmpty(form.clienteId)) {
         title = "Cliente obrigatório";
         desc = "Selecione um cliente para a proposta.";
-      } else if (!form.contatoId) {
+      } else if (!isNonEmpty(form.contatoId)) {
         title = "Contato obrigatório";
-        desc = "Selecione ou adicione um contato responsável.";
-      } else if (!form.enderecoId) {
+        desc = "Selecione um contato antes de salvar o orçamento.";
+      } else if (!isNonEmpty(form.enderecoId)) {
         title = "Endereço obrigatório";
-        desc = "Selecione ou adicione um endereço de entrega.";
+        desc = "Selecione um endereço de entrega antes de salvar o orçamento.";
       } else if (isSellerEmpty) {
         title = "Vendedor obrigatório";
-        desc = "O vendedor é obrigatório.";
+        desc = "Selecione um vendedor antes de salvar o orçamento.";
       } else if (isCompanyEmpty) {
         title = "Empresa obrigatória";
         desc = "A empresa é obrigatória.";
@@ -1078,7 +1082,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         desc = "Adicione pelo menos um produto ao orçamento.";
       } else if (isSubtotalZero || isTotalZero) {
         title = "Valor inválido";
-        desc = "O valor total e o subtotal dos produtos devem ser maiores que R$ 0,00.";
+        desc = form.isAvulso
+          ? "Informe o valor dos produtos antes de salvar a proposta avulsa."
+          : "O valor total e o subtotal dos produtos devem ser maiores que R$ 0,00.";
       } else if (isTextEmpty) {
         title = "Resumo inválido";
         desc = "O resumo informal da proposta não pode ser vazio.";
@@ -1101,29 +1107,29 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     if (form.isAvulso) {
       const valProdStr = form.valorProdutosManual || "";
       const valProd = Number(valProdStr.replace(",", "."));
-      if (isNaN(valProd) || valProd <= 0 || valProdStr.trim() === "") {
+      if (isNaN(valProd) || valProd <= 0 || !isNonEmpty(valProdStr)) {
         showToast({
           type: "error",
           title: "Valor dos produtos inválido",
-          description: "O valor total dos produtos deve ser maior que R$ 0,00 no modo avulso."
+          description: "Informe o valor dos produtos antes de salvar a proposta avulsa."
         });
         return false;
       }
 
       const valManual = Number(String(form.valorFreteManual || "").replace(",", "."));
-      if (isNaN(valManual) || valManual < 0 || form.valorFreteManual?.trim() === "") {
+      if (isNaN(valManual) || valManual < 0 || !isNonEmpty(form.valorFreteManual)) {
         showToast({
           type: "error",
           title: "Frete obrigatório",
-          description: "Informe um valor de frete válido para a proposta avulsa."
+          description: "Selecione ou informe o frete antes de salvar o orçamento."
         });
         return false;
       }
-      if (!form.observacoesFreteManual || form.observacoesFreteManual.trim() === "") {
+      if (!isNonEmpty(form.observacoesFreteManual)) {
         showToast({
           type: "error",
           title: "Transportadora obrigatória",
-          description: "Informe o nome do serviço/transportadora para o frete manual."
+          description: "Selecione ou informe o frete antes de salvar o orçamento."
         });
         return false;
       }
@@ -1131,19 +1137,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }
 
     // Normal proposal freight validation
-    if (isFreightOutdated && resumo.pesoTotal > 0 && currentAddress?.cep) {
-      showToast({
-        type: "error",
-        title: "Frete desatualizado",
-        description: "Os dados de entrega, peso ou volumes mudaram. Atualize o frete antes de salvar as alterações."
-      });
-      return false;
-    }
-    if (!form.freteEscolhidoId || form.freteEscolhidoId.trim() === "") {
+    if (!isNonEmpty(form.freteEscolhidoId)) {
       showToast({
         type: "error",
         title: "Frete não selecionado",
-        description: "Selecione uma das opções de frete disponíveis antes de salvar."
+        description: "Selecione ou informe o frete antes de salvar o orçamento."
       });
       return false;
     }

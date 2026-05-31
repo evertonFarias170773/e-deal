@@ -889,6 +889,10 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
   }
 }
 
+function isNonEmpty(value: unknown): boolean {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
 export async function saveProposta(formState: PropostaFormState): Promise<{
   success: boolean;
   id_int?: number;
@@ -926,24 +930,24 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       }
     }
 
-    if (!formState.vendedor || formState.vendedor.trim() === "") {
-      return { success: false, errorMessage: "O vendedor é obrigatório." };
+    if (!isNonEmpty(formState.vendedor)) {
+      return { success: false, errorMessage: "Selecione um vendedor antes de salvar o orçamento." };
     }
 
-    if (!formState.empresa || formState.empresa.trim() === "") {
+    if (!isNonEmpty(formState.empresa)) {
       return { success: false, errorMessage: "A empresa é obrigatória." };
     }
 
     // Find the contact selected
-    if (!formState.contatoId || formState.contatoId.trim() === "") {
-      return { success: false, errorMessage: "O contato da proposta é obrigatório." };
+    if (!isNonEmpty(formState.contatoId)) {
+      return { success: false, errorMessage: "Selecione um contato antes de salvar o orçamento." };
     }
     const selectedContact = cadastro?.contatos.find((c) => c.id === formState.contatoId);
     const contatoNome = selectedContact ? selectedContact.nome : (formState.contatoId || "");
 
     // Find the address selected (searching client addresses and comprador addresses if comprador selected)
-    if (!formState.enderecoId || formState.enderecoId.trim() === "") {
-      return { success: false, errorMessage: "O endereço de entrega é obrigatório." };
+    if (!isNonEmpty(formState.enderecoId)) {
+      return { success: false, errorMessage: "Selecione um endereço de entrega antes de salvar o orçamento." };
     }
     let compradorAddresses: CadastroEndereco[] = [];
     if (formState.compradorId && cadastro) {
@@ -965,22 +969,22 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
 
     // Find the chosen freight option details
     if (!formState.isAvulso) {
-      if (!formState.freteEscolhidoId || formState.freteEscolhidoId.trim() === "") {
-        return { success: false, errorMessage: "A opção de frete é obrigatória." };
+      if (!isNonEmpty(formState.freteEscolhidoId)) {
+        return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
     }
     const chosenFrete = formState.isAvulso ? undefined : formState.fretes.find((f) => f.id === formState.freteEscolhidoId);
     if (formState.isAvulso) {
       const valFrete = Number(String(formState.valorFreteManual || "").replace(",", "."));
       if (isNaN(valFrete) || valFrete < 0 || String(formState.valorFreteManual || "").trim() === "") {
-        return { success: false, errorMessage: "O valor do frete manual deve ser maior ou igual a R$ 0,00." };
+        return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
-      if (!formState.observacoesFreteManual || formState.observacoesFreteManual.trim() === "") {
-        return { success: false, errorMessage: "O nome do serviço/transportadora do frete manual é obrigatório." };
+      if (!isNonEmpty(formState.observacoesFreteManual)) {
+        return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
     } else {
       if (!chosenFrete) {
-        return { success: false, errorMessage: "Selecione uma opção de frete válida." };
+        return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
     }
 
@@ -1017,7 +1021,12 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     const valorTotal = subtotalProdutos + freteValor;
 
     if (subtotalProdutos <= 0) {
-      return { success: false, errorMessage: "O subtotal dos produtos deve ser maior que R$ 0,00." };
+      return {
+        success: false,
+        errorMessage: formState.isAvulso
+          ? "Informe o valor dos produtos antes de salvar a proposta avulsa."
+          : "O subtotal dos produtos deve ser maior que R$ 0,00."
+      };
     }
     if (valorTotal <= 0) {
       return { success: false, errorMessage: "O valor total da proposta deve ser maior que R$ 0,00." };
@@ -1043,9 +1052,9 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       formState.descontoGeralTipo
     );
 
-    const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && cepText.trim() !== "";
+    const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && isNonEmpty(cepText);
     if (hasWeightAndCep && !chosenFrete) {
-      return { success: false, errorMessage: "Selecione uma opção de frete antes de salvar." };
+      return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
     }
 
     // Generate informal WhatsApp text
@@ -1069,7 +1078,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       isAvulso: formState.isAvulso
     });
 
-    if (!informalText || informalText.trim() === "") {
+    if (!isNonEmpty(informalText)) {
       return { success: false, errorMessage: "O texto/resumo informal da proposta é obrigatório." };
     }
 
