@@ -110,6 +110,18 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   }, [cobrancas, hasLoadedStorage, source]);
 
   const createCobranca = useCallback(async (values: CriarCobrancaFormValues, proposta?: Proposta): Promise<Cobranca> => {
+    if (proposta) {
+      const cobrancasDaProposta = cobrancas.filter((item) => item.id_int === proposta.id_int && item.status !== "CANCELADO");
+      const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
+      const totalCobradoReal = cobrancasDaProposta.reduce((total, item) => total + (item.cartao_valor_final ?? item.valor), 0);
+      const totalCobradoRealRounded = roundMoney(totalCobradoReal);
+      const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
+
+      if (saldoRestante <= 0) {
+        throw new Error(`Não é possível gerar cobrança: a proposta #${proposta.id_int} já está totalmente cobrada (saldo R$ 0,00).`);
+      }
+    }
+
     if (source === "supabase") {
       if (!proposta) {
         throw new Error("Dados da proposta sao obrigatorios para criar cobranca no Supabase.");

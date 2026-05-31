@@ -56,13 +56,13 @@ export function PropostaCobrancaPanel({
   const liberacaoStatus = getLiberacaoPedidoStatus(cobrancasDaProposta);
   const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
   const isControlled = typeof isModalOpen === "boolean";
-  const modalOpen = isControlled ? Boolean(isModalOpen) : internalModalOpen;
   const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
   const totalCobradoReal = cobrancasAtivas.reduce((total, item) => total + getValorCobranca(item), 0);
   const totalCobradoRealRounded = roundMoney(totalCobradoReal);
   const hasCobrancaExcedente = totalCobradoRealRounded > totalPropostaRounded;
   const totalGerado = Math.min(totalCobradoRealRounded, totalPropostaRounded);
   const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
+  const modalOpen = (isControlled ? Boolean(isModalOpen) : internalModalOpen) && (saldoRestante > 0);
   const situacaoFinanceira = getSituacaoFinanceiraPropostaLabel(cobrancasDaProposta);
 
   function buildInitialFormState(): CriarCobrancaFormValues {
@@ -72,8 +72,10 @@ export function PropostaCobrancaPanel({
     return {
       ...criarCobrancaInitialValues,
       propostaIdInt: proposta.id_int,
-      valor: roundMoney(saldoRestante > 0 || cobrancasAtivas.length > 0 ? saldoRestante : totalPropostaRounded),
-      descricao: `Cobrança da proposta #${proposta.id_int}`,
+      valor: roundMoney(saldoRestante),
+      descricao: saldoRestante < totalPropostaRounded
+        ? `Cobrança complementar da proposta #${proposta.id_int}`
+        : `Cobrança da proposta #${proposta.id_int}`,
       observacao: proposta.observacoes,
       condicaoPagamento: proposta.formaPagamento,
       vencimento: "2026-05-30",
@@ -120,6 +122,15 @@ export function PropostaCobrancaPanel({
   }, [form.valor, proposta]);
 
   const openModal = useCallback(() => {
+    if (saldoRestante <= 0) {
+      showToast({
+        type: "warning",
+        title: "Ação bloqueada",
+        description: "Esta proposta já foi totalmente cobrada (saldo restante é R$ 0,00)."
+      });
+      return;
+    }
+
     // Reset do formulário apenas ao abrir o modal para evitar sobrescrever edição em andamento.
     setForm(buildInitialFormState());
 
@@ -129,7 +140,7 @@ export function PropostaCobrancaPanel({
 
     onOpenModal?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isControlled, onOpenModal]);
+  }, [isControlled, onOpenModal, saldoRestante]);
 
   const closeModal = useCallback(() => {
     if (!isControlled) {
@@ -334,13 +345,15 @@ export function PropostaCobrancaPanel({
             <p className="text-sm font-medium text-slate-600">
               Nenhuma cobrança criada para esta proposta ainda.
             </p>
-            <button
-              type="button"
-              onClick={openModal}
-              className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-            >
-              Gerar cobrança
-            </button>
+            {saldoRestante > 0 && (
+              <button
+                type="button"
+                onClick={openModal}
+                className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                Gerar cobrança
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -373,13 +386,15 @@ export function PropostaCobrancaPanel({
                   >
                     Conferência financeira
                   </Link>
-                  <button
-                    type="button"
-                    onClick={openModal}
-                    className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-                  >
-                    Gerar cobrança
-                  </button>
+                  {saldoRestante > 0 && (
+                    <button
+                      type="button"
+                      onClick={openModal}
+                      className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+                    >
+                      Gerar cobrança
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -449,6 +464,11 @@ export function PropostaCobrancaPanel({
                       onChange={(event) => patchForm({ valor: Number(event.target.value) || 0 })}
                       className={inputClass}
                     />
+                    {saldoRestante < totalPropostaRounded && (
+                      <p className="mt-1.5 text-xs text-amber-700 font-semibold bg-amber-50/70 border border-amber-100 rounded-xl p-2.5">
+                        ⚠️ Cobrança complementar. Saldo restante: {formatCurrency(saldoRestante)}.
+                      </p>
+                    )}
                   </Field>
                   {form.tipoCobranca === "BOLETO" || form.tipoCobranca === "E-FATURADO" ? (
                     <Field label="Data de vencimento *">

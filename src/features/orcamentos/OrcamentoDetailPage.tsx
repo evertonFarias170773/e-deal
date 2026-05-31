@@ -66,6 +66,10 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
   const totalCobradoMock = cobrancasAtivas.reduce((total, item) => total + (item.cartao_valor_final ?? item.valor), 0);
+  const totalPropostaRounded = Math.round(proposta.resumo.valorTotal * 100) / 100;
+  const totalCobradoRealRounded = Math.round(totalCobradoMock * 100) / 100;
+  const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
+
   const liberacaoFinanceira = getLiberacaoPedidoLabel(getLiberacaoPedidoStatus(cobrancasDaProposta));
   const informalText = buildPropostaInformalText({
     id_int: proposta.id_int,
@@ -96,13 +100,15 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
         context="Detalhe da proposta"
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsCobrancaModalOpen(true)}
-              className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-            >
-              Gerar cobrança
-            </button>
+            {saldoRestante > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsCobrancaModalOpen(true)}
+                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                Gerar cobrança
+              </button>
+            )}
             <StatusBadge status={proposta.status} tone={getStatusTone(proposta.status)} />
             <ActionsMenu
               items={[
@@ -110,7 +116,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 { label: "Duplicar proposta", onClick: () => showToast({ type: "info", title: "Duplicar proposta", description: "Acao mockada." }) },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF mockado", onClick: () => showToast({ type: "success", title: "PDF mockado gerado com sucesso." }) },
-                { label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) },
+                ...(saldoRestante > 0 ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
                 { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
                 { label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento mockado", description: "Nenhuma proposta real foi cancelada." }) }
               ]}

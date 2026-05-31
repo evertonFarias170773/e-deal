@@ -935,10 +935,16 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     }
 
     // Find the contact selected
+    if (!formState.contatoId || formState.contatoId.trim() === "") {
+      return { success: false, errorMessage: "O contato da proposta é obrigatório." };
+    }
     const selectedContact = cadastro?.contatos.find((c) => c.id === formState.contatoId);
     const contatoNome = selectedContact ? selectedContact.nome : (formState.contatoId || "");
 
     // Find the address selected (searching client addresses and comprador addresses if comprador selected)
+    if (!formState.enderecoId || formState.enderecoId.trim() === "") {
+      return { success: false, errorMessage: "O endereço de entrega é obrigatório." };
+    }
     let compradorAddresses: CadastroEndereco[] = [];
     if (formState.compradorId && cadastro) {
       const vinculo = cadastro.vinculosComerciais?.find((v) => v.id === formState.compradorId);
@@ -958,7 +964,26 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     const cepText = selectedAddress ? selectedAddress.cep : "";
 
     // Find the chosen freight option details
-    const chosenFrete = formState.fretes.find((f) => f.id === formState.freteEscolhidoId);
+    if (!formState.isAvulso) {
+      if (!formState.freteEscolhidoId || formState.freteEscolhidoId.trim() === "") {
+        return { success: false, errorMessage: "A opção de frete é obrigatória." };
+      }
+    }
+    const chosenFrete = formState.isAvulso ? undefined : formState.fretes.find((f) => f.id === formState.freteEscolhidoId);
+    if (formState.isAvulso) {
+      const valFrete = Number(String(formState.valorFreteManual || "").replace(",", "."));
+      if (isNaN(valFrete) || valFrete < 0 || String(formState.valorFreteManual || "").trim() === "") {
+        return { success: false, errorMessage: "O valor do frete manual deve ser maior ou igual a R$ 0,00." };
+      }
+      if (!formState.observacoesFreteManual || formState.observacoesFreteManual.trim() === "") {
+        return { success: false, errorMessage: "O nome do serviço/transportadora do frete manual é obrigatório." };
+      }
+    } else {
+      if (!chosenFrete) {
+        return { success: false, errorMessage: "Selecione uma opção de frete válida." };
+      }
+    }
+
     const freteValor = formState.isAvulso
       ? (Number(String(formState.valorFreteManual || "0").replace(",", ".")) || 0)
       : (chosenFrete ? chosenFrete.valor : 0);
