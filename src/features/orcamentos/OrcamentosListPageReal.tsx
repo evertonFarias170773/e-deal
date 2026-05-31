@@ -178,7 +178,7 @@ export function OrcamentosListPageReal() {
   const { showToast } = useAppToast();
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
-  const { propostas, source, warnings, detectedColumns, loadedCount, diagnostics } = useOrcamentosReadOnlyData(periodo);
+  const { propostas, source, warnings, detectedColumns, loadedCount, diagnostics, isLoading } = useOrcamentosReadOnlyData(periodo);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
@@ -346,44 +346,52 @@ export function OrcamentosListPageReal() {
         }
       />
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <SummaryCard
-          title="Em aberto"
-          value={emAbertoResumo.quantidade.toString()}
-          description={
-            <span>
-              Soma em {periodoSelecionadoLabel}:{" "}
-              <strong className="text-base font-bold text-slate-900">{formatCurrency(emAbertoResumo.total)}</strong>
-            </span>
-          }
-          tone="info"
-          icon={FileText}
-        />
-        <SummaryCard
-          title="Aprovadas"
-          value={aprovadasResumo.quantidade.toString()}
-          description={
-            <span>
-              Soma em {periodoSelecionadoLabel}:{" "}
-              <strong className="text-base font-bold text-slate-900">{formatCurrency(aprovadasResumo.total)}</strong>
-            </span>
-          }
-          tone="success"
-          icon={WalletCards}
-        />
-        <SummaryCard
-          title="Aguardando"
-          value={aguardandoResumo.quantidade.toString()}
-          description={
-            <span>
-              Soma em {periodoSelecionadoLabel}:{" "}
-              <strong className="text-base font-bold text-slate-900">{formatCurrency(aguardandoResumo.total)}</strong>
-            </span>
-          }
-          tone="warning"
-          icon={CreditCard}
-        />
-      </section>
+      {isLoading ? (
+        <section className="grid gap-4 md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="h-36 animate-pulse rounded-3xl border border-slate-200 bg-white dark:bg-slate-800/40 dark:border-slate-700" />
+          ))}
+        </section>
+      ) : (
+        <section className="grid gap-4 md:grid-cols-3">
+          <SummaryCard
+            title="Em aberto"
+            value={emAbertoResumo.quantidade.toString()}
+            description={
+              <span>
+                Soma em {periodoSelecionadoLabel}:{" "}
+                <strong className="text-base font-bold text-slate-900">{formatCurrency(emAbertoResumo.total)}</strong>
+              </span>
+            }
+            tone="info"
+            icon={FileText}
+          />
+          <SummaryCard
+            title="Aprovadas"
+            value={aprovadasResumo.quantidade.toString()}
+            description={
+              <span>
+                Soma em {periodoSelecionadoLabel}:{" "}
+                <strong className="text-base font-bold text-slate-900">{formatCurrency(aprovadasResumo.total)}</strong>
+              </span>
+            }
+            tone="success"
+            icon={WalletCards}
+          />
+          <SummaryCard
+            title="Aguardando"
+            value={aguardandoResumo.quantidade.toString()}
+            description={
+              <span>
+                Soma em {periodoSelecionadoLabel}:{" "}
+                <strong className="text-base font-bold text-slate-900">{formatCurrency(aguardandoResumo.total)}</strong>
+              </span>
+            }
+            tone="warning"
+            icon={CreditCard}
+          />
+        </section>
+      )}
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_170px_170px_170px_150px_auto]">
@@ -450,6 +458,7 @@ export function OrcamentosListPageReal() {
       <ResponsiveList<OrcamentoListItem>
         items={filteredPropostas}
         getKey={(proposta) => proposta.id}
+        isLoading={isLoading}
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         columns={[
@@ -505,22 +514,35 @@ export function OrcamentosListPageReal() {
         )}
       />
 
-      <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-        <div className="flex items-start gap-3">
-          <CalendarDays className="mt-0.5 h-4 w-4 text-[#0f9f9a]" />
-          <p>
-            {source === "supabase"
-              ? `Dados reais carregados em public.propostas (${loadedCount} registros).`
-              : "Esta tela usa leitura read-only quando o Supabase responde e mantem fallback mockado quando a fonte real falha."}
-          </p>
-        </div>
-        {source === "supabase" ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Colunas detectadas: {detectedColumns.slice(0, 20).join(", ")}
-            {detectedColumns.length > 20 ? "..." : ""}
-          </p>
-        ) : null}
-      </section>
+      {!isLoading ? (
+        <section className={`rounded-3xl border border-dashed p-4 text-sm ${
+          source === "supabase"
+            ? "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-800/20 dark:border-slate-700 dark:text-slate-400"
+            : "border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:border-amber-800 dark:text-amber-300"
+        }`}>
+          <div className="flex items-start gap-3">
+            <CalendarDays className={`mt-0.5 h-4 w-4 ${source === "supabase" ? "text-[#0f9f9a]" : "text-amber-600"}`} />
+            <div>
+              <p className="font-semibold">
+                {source === "supabase"
+                  ? `Dados reais carregados em public.propostas (${loadedCount} registros).`
+                  : "Não foi possível carregar dados reais. Exibindo fallback local."}
+              </p>
+              {source === "mock" && (
+                <p className="mt-1 text-xs">
+                  A conexão com o banco de dados Supabase falhou ou não retornou dados. Exibindo dados de simulação locais.
+                </p>
+              )}
+            </div>
+          </div>
+          {source === "supabase" ? (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Colunas detectadas: {detectedColumns.slice(0, 20).join(", ")}
+              {detectedColumns.length > 20 ? "..." : ""}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }

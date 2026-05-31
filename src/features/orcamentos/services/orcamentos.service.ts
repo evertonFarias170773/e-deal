@@ -25,7 +25,8 @@ import type {
   PropostaItem,
   PropostaVariacaoEscolhida,
   PropostaFrete,
-  PropostaStatus
+  PropostaStatus,
+  TipoDescontoProposta
 } from "@/features/orcamentos/types";
 
 
@@ -217,11 +218,20 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
   const env = logSupabaseEnv();
   const client = getSupabaseClient();
   const hasFrom = Boolean(client && typeof client.from === "function");
-  const smokeQuery = client && hasFrom ? client.from("propostas").select("id_int").limit(5) : null;
-  const hasReturns = Boolean(smokeQuery && typeof smokeQuery.returns === "function");
-  const clientShape = `from:${hasFrom ? "sim" : "nao"}; returns:${hasReturns ? "sim" : "nao"}`;
+  const clientShape = `from:${hasFrom ? "sim" : "nao"}`;
   const periodoFilter = buildPeriodoFilter(periodo);
-  const queryLimit = periodoFilter ? Math.max(limit, 5000) : limit;
+  const queryLimit = periodoFilter ? 1000 : limit;
+
+  const smoke: OrcamentosSmokeDiagnostics = {
+    resultExists: false,
+    resultKeys: [],
+    dataIsArray: false,
+    dataCount: 0,
+    firstIdInts: [],
+    errorMessage: null,
+    status: null,
+    statusText: null
+  };
 
   if (!client) {
     const fallbackReason = !env.hasSupabaseUrl || !env.hasSupabaseAnonKey ? "envs ausentes" : "client compartilhado retornou null";
@@ -239,119 +249,17 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
         firstRowColumns: [],
         supabaseError: null,
         fallbackReason,
-        smoke: {
-          resultExists: false,
-          resultKeys: [],
-          dataIsArray: false,
-          dataCount: 0,
-          firstIdInts: [],
-          errorMessage: null,
-          status: null,
-          statusText: null
-        }
+        smoke
       }
     };
   }
 
   try {
-    if (!smokeQuery || !hasReturns) {
-      return {
-        rows: null,
-        diagnostics: {
-          source: "mock",
-          hasSupabaseUrl: env.hasSupabaseUrl,
-          hasSupabaseAnonKey: env.hasSupabaseAnonKey,
-          clientImportPath: "@/lib/supabase/client",
-          clientShape,
-          queryExecuted: false,
-          registrosRetornados: 0,
-          firstRowColumns: [],
-          supabaseError: "Client sem suporte a query builder esperado (from/select/limit/returns)",
-          fallbackReason: "client incompatível",
-          smoke: {
-            resultExists: false,
-            resultKeys: [],
-            dataIsArray: false,
-            dataCount: 0,
-            firstIdInts: [],
-            errorMessage: "client shape inesperado",
-            status: null,
-            statusText: null
-          }
-        }
-      };
-    }
-
-    const { data: smokeData, error: smokeError } = await smokeQuery.returns<
-      Array<{ id_int: number | string | null }>
-    >();
-
-    const smoke: OrcamentosSmokeDiagnostics = {
-      resultExists: true,
-      resultKeys: ["data", "error"],
-      dataIsArray: Array.isArray(smokeData),
-      dataCount: Array.isArray(smokeData) ? smokeData.length : 0,
-      firstIdInts: Array.isArray(smokeData)
-        ? smokeData.slice(0, 5).map((row) => row?.id_int ?? null)
-        : [],
-      errorMessage:
-        getErrorMessage(smokeError),
-      status: null,
-      statusText: null
-    };
-
-    console.log("[Orcamentos][Smoke]", {
-      resultExists: smoke.resultExists,
-      resultKeys: smoke.resultKeys,
-      dataIsArray: smoke.dataIsArray,
-      dataCount: smoke.dataCount,
-      firstIdInts: smoke.firstIdInts,
-      errorMessage: smoke.errorMessage,
-      status: smoke.status,
-      statusText: smoke.statusText
-    });
-
-    if (smoke.errorMessage) {
-      return {
-        rows: null,
-        diagnostics: {
-          source: "mock",
-          hasSupabaseUrl: env.hasSupabaseUrl,
-          hasSupabaseAnonKey: env.hasSupabaseAnonKey,
-          clientImportPath: "@/lib/supabase/client",
-          clientShape,
-          queryExecuted: true,
-          registrosRetornados: 0,
-          firstRowColumns: [],
-          supabaseError: smoke.errorMessage,
-          fallbackReason: "smoke query com erro",
-          smoke
-        }
-      };
-    }
-
-    if (!smoke.dataIsArray) {
-      return {
-        rows: null,
-        diagnostics: {
-          source: "mock",
-          hasSupabaseUrl: env.hasSupabaseUrl,
-          hasSupabaseAnonKey: env.hasSupabaseAnonKey,
-          clientImportPath: "@/lib/supabase/client",
-          clientShape,
-          queryExecuted: true,
-          registrosRetornados: 0,
-          firstRowColumns: [],
-          supabaseError: "Campo data nao veio como array no smoke test",
-          fallbackReason: "payload invalido",
-          smoke
-        }
-      };
-    }
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa";
 
     console.log("[Orcamentos][Query]", {
       table: "propostas",
-      select: "*",
+      select: columnsToSelect,
       orderBy: "id_int.desc",
       limit: queryLimit,
       periodoSelecionado: periodoFilter?.periodoKey ?? "all",
@@ -362,7 +270,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
 
     let query = client
       .from("propostas")
-      .select("*")
+      .select(columnsToSelect)
       .order("id_int", { ascending: false })
       .limit(queryLimit);
 
@@ -627,18 +535,7 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
   }
 
   if (!rows.length) {
-    if (periodo !== "all") {
-      return buildEmptyRealResult(rows, periodo, fetched as { diagnostics: Partial<OrcamentosDiagnostics> });
-    }
-
-    return buildMockResult([
-      "A tabela public.propostas retornou 0 registros. Fallback mock ativado."
-    ], {
-      ...fetched.diagnostics,
-      fallbackReason: "sem registros",
-      registrosRetornados: 0,
-      source: "mock"
-    });
+    return buildEmptyRealResult(rows, periodo, fetched as { diagnostics: Partial<OrcamentosDiagnostics> });
   }
 
   const real = buildRealResult(rows);
@@ -939,9 +836,15 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
     const freteValor = chosenFrete ? chosenFrete.valor : 0;
 
     // Calculate totals
-    const subtotalProdutos = mappedItens.reduce((sum, it) => sum + it.subtotal, 0);
-    const pesoTotal = mappedItens.reduce((sum, it) => sum + it.pesoTotal, 0);
-    const valorTotal = subtotalProdutos + freteValor;
+    const subtotalProdutos = proposalRow.is_avulso
+      ? Number(proposalRow.valor ?? 0)
+      : mappedItens.reduce((sum, it) => sum + it.subtotal, 0);
+    const pesoTotal = proposalRow.is_avulso
+      ? 0
+      : mappedItens.reduce((sum, it) => sum + it.pesoTotal, 0);
+    const valorTotal = proposalRow.is_avulso
+      ? Number(proposalRow.valor_total ?? (subtotalProdutos + freteValor))
+      : (subtotalProdutos + freteValor);
 
     const proposta: Proposta = {
       id: `prop_${idInt}`,
@@ -975,7 +878,8 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       descontoGeralValor: 0,
       formaPagamento: proposalRow.forma_pagamento || "A combinar",
       cobrancaStatus: "NAO_GERADA",
-      observacoes: proposalRow.obs_proposta || ""
+      observacoes: proposalRow.obs_proposta || "",
+      is_avulso: proposalRow.is_avulso === true
     };
 
     return proposta;
@@ -1006,18 +910,20 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     }
     const clienteNome = cadastro.nome;
 
-    if (!formState.itens || formState.itens.length === 0) {
-      return { success: false, errorMessage: "Pelo menos 1 produto é obrigatório." };
-    }
+    if (!formState.isAvulso) {
+      if (!formState.itens || formState.itens.length === 0) {
+        return { success: false, errorMessage: "Pelo menos 1 produto é obrigatório." };
+      }
 
-    const hasInvalidQty = formState.itens.some((item) => item.quantidade <= 0);
-    if (hasInvalidQty) {
-      return { success: false, errorMessage: "A quantidade de todos os produtos deve ser maior que 0." };
-    }
+      const hasInvalidQty = formState.itens.some((item) => item.quantidade <= 0);
+      if (hasInvalidQty) {
+        return { success: false, errorMessage: "A quantidade de todos os produtos deve ser maior que 0." };
+      }
 
-    const hasInvalidSubtotal = formState.itens.some((item) => item.subtotal <= 0);
-    if (hasInvalidSubtotal) {
-      return { success: false, errorMessage: "O subtotal de cada produto deve ser maior que R$ 0,00." };
+      const hasInvalidSubtotal = formState.itens.some((item) => item.subtotal <= 0);
+      if (hasInvalidSubtotal) {
+        return { success: false, errorMessage: "O subtotal de cada produto deve ser maior que R$ 0,00." };
+      }
     }
 
     if (!formState.vendedor || formState.vendedor.trim() === "") {
@@ -1053,11 +959,15 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
 
     // Find the chosen freight option details
     const chosenFrete = formState.fretes.find((f) => f.id === formState.freteEscolhidoId);
-    const freteValor = chosenFrete ? chosenFrete.valor : 0;
+    const freteValor = formState.isAvulso
+      ? (Number(String(formState.valorFreteManual || "0").replace(",", ".")) || 0)
+      : (chosenFrete ? chosenFrete.valor : 0);
     
     // Map internal freight name
     let freteNome = "RETIRADA";
-    if (chosenFrete) {
+    if (formState.isAvulso) {
+      freteNome = formState.observacoesFreteManual || "Frete Manual";
+    } else if (chosenFrete) {
       if (chosenFrete.id === "frete_sedex" || chosenFrete.transportadora.toUpperCase().includes("SEDEX")) {
         freteNome = "SEDEX";
       } else if (chosenFrete.id === "frete_pac" || chosenFrete.transportadora.toUpperCase().includes("PAC")) {
@@ -1070,14 +980,16 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     }
 
     // Calculo de valores totais
-    const resumo = calculateResumo(
-      formState.itens,
-      formState.fretes,
-      Number(formState.descontoGeralValor) || 0,
-      formState.descontoGeralTipo
-    );
-    const subtotalProdutos = resumo.subtotalProdutos;
-    const valorTotal = resumo.valorTotal;
+    const subtotalProdutos = formState.isAvulso
+      ? (Number(String(formState.valorProdutosManual || "0").replace(",", ".")) || 0)
+      : (calculateResumo(
+          formState.itens,
+          formState.fretes,
+          Number(formState.descontoGeralValor) || 0,
+          formState.descontoGeralTipo
+        ).subtotalProdutos);
+
+    const valorTotal = subtotalProdutos + freteValor;
 
     if (subtotalProdutos <= 0) {
       return { success: false, errorMessage: "O subtotal dos produtos deve ser maior que R$ 0,00." };
@@ -1086,7 +998,27 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       return { success: false, errorMessage: "O valor total da proposta deve ser maior que R$ 0,00." };
     }
 
-    const hasWeightAndCep = resumo.pesoTotal > 0 && cepText && cepText.trim() !== "";
+    const resumo = formState.isAvulso ? {
+      subtotalProdutos,
+      subtotalBrutoProdutos: subtotalProdutos,
+      descontosIndividuais: 0,
+      acrescimoBonus: 0,
+      descontoGeralTipo: "VALOR" as TipoDescontoProposta,
+      descontoGeralValor: 0,
+      descontoGeral: 0,
+      frete: freteValor,
+      valorTotal,
+      pesoTotal: 0,
+      prazoProducao: "A combinar",
+      prazoEntrega: "A combinar"
+    } : calculateResumo(
+      formState.itens,
+      formState.fretes,
+      Number(formState.descontoGeralValor) || 0,
+      formState.descontoGeralTipo
+    );
+
+    const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && cepText.trim() !== "";
     if (hasWeightAndCep && !chosenFrete) {
       return { success: false, errorMessage: "Selecione uma opção de frete antes de salvar." };
     }
@@ -1096,9 +1028,20 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       id_int: formState.id_int || "NOVO",
       clienteNome,
       itens: formState.itens,
-      frete: chosenFrete,
+      frete: formState.isAvulso ? {
+        id: "frete_manual",
+        id_int: Number(formState.id_int) || 0,
+        transportadora: formState.observacoesFreteManual || "Frete Manual",
+        servico: "",
+        valor: freteValor,
+        prazo: "A combinar",
+        observacao: "",
+        escolhido: true,
+        pesoUsado: 0
+      } : chosenFrete,
       resumo,
-      formaPagamento: formState.formaPagamento || "A combinar"
+      formaPagamento: formState.formaPagamento || "A combinar",
+      isAvulso: formState.isAvulso
     });
 
     if (!informalText || informalText.trim() === "") {
@@ -1127,7 +1070,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       valor_frete: freteValor,
       contato: contatoNome,
       cep: cepText,
-      is_avulso: false
+      is_avulso: formState.isAvulso || false
     };
 
     if (isUpdate) {
@@ -1157,7 +1100,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     }
 
     // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
-    if (chosenFrete) {
+    if (formState.isAvulso || chosenFrete) {
       try {
         // Deletar os fretes antigos apenas daquela proposta
         const { error: deleteError } = await client
@@ -1173,15 +1116,15 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
         // Inserir apenas o frete escolhido atual
         const insertPayload: Record<string, unknown> = {
           id_int: id_int!,
-          servico: chosenFrete.servico,
-          valor: chosenFrete.valor,
-          prazo: chosenFrete.prazo,
+          servico: formState.isAvulso ? (formState.observacoesFreteManual || "Frete Manual") : (chosenFrete?.servico || ""),
+          valor: freteValor,
+          prazo: formState.isAvulso ? "A combinar" : (chosenFrete?.prazo || "A combinar"),
           cep: cepText || null,
-          peso: resumo.pesoTotal || null,
+          peso: formState.isAvulso ? 0 : (resumo.pesoTotal || null),
           escolhido: true
         };
 
-        if (chosenFrete.id_cotacao !== undefined) {
+        if (!formState.isAvulso && chosenFrete?.id_cotacao !== undefined) {
           insertPayload.id_cotacao = chosenFrete.id_cotacao;
         }
 
@@ -1200,132 +1143,144 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     }
 
     // 3. RECONCILE ITEMS in public.produtos_proposta
-    // Fetch existing items for this proposal
-    const { data: existingItems, error: fetchItemsError } = await client
-      .from("produtos_proposta")
-      .select("id")
-      .eq("id_int", id_int!);
-
-    if (fetchItemsError) {
-      console.error("[OrcamentosService] Erro ao carregar itens existentes para conciliação:", fetchItemsError);
-    }
-
-    const existingIds = (existingItems || []).map((it) => it.id);
-    const incomingItemIds: number[] = [];
-
-    for (const item of formState.itens) {
-      // Check if it is an existing item
-      const parsedItemId = item.id.startsWith("item_") ? Number(item.id.replace("item_", "")) : null;
-      const isExistingItem = parsedItemId && existingIds.includes(parsedItemId);
-
-      // Calculos de peso e valor extra
-      const pesoExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.peso || 0), 0);
-      const pesoBase = Math.max(0, (item.produto.peso || 0));
-      const pesoUni = pesoBase + pesoExtra;
-
-      const valorExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.v_extra || 0), 0);
-      const valorBase = Math.max(0, (item.produto.valorUnt || 0));
-      const valorUnt = valorBase + valorExtra;
-
-      const itemData = {
-        id_int: id_int!,
-        id_produto: item.id_produto,
-        nome_produto: item.nome,
-        modelo_descri: item.descricaoModelo,
-        valor_unt: valorUnt,
-        qtd: item.quantidade,
-        fixo: item.valorFixo,
-        valor_sub_total: item.subtotal,
-        peso_uni: pesoUni,
-        peso_base: pesoBase,
-        peso_extra: pesoExtra,
-        valor_base: valorBase,
-        valor_extra: valorExtra,
-        ncm: item.produto.nivelSeg || null,
-        cfop: null
-      };
-
-      let dbItemId: number;
-
-      if (isExistingItem) {
-        // Update item
-        dbItemId = parsedItemId!;
-        const { error: itemUpdateError } = await client
-          .from("produtos_proposta")
-          .update(itemData)
-          .eq("id", dbItemId);
-
-        if (itemUpdateError) {
-          throw new Error(`Erro ao atualizar item #${dbItemId} da proposta: ${itemUpdateError.message}`);
-        }
-        incomingItemIds.push(dbItemId);
-      } else {
-        // Insert item
-        const { data: newItem, error: itemInsertError } = await client
-          .from("produtos_proposta")
-          .insert(itemData)
-          .select("id")
-          .single();
-
-        if (itemInsertError || !newItem) {
-          throw new Error(`Erro ao inserir item na proposta: ${itemInsertError?.message || "Sem ID de retorno"}`);
-        }
-
-        dbItemId = newItem.id;
-        incomingItemIds.push(dbItemId);
-      }
-
-      // 4. PERSIST VARIATIONS for this item in public.produtos_proposta_variacao
-      // A. Delete old variations for this item
-      const { error: deleteVarsError } = await client
-        .from("produtos_proposta_variacao")
-        .delete()
-        .eq("id_produto_proposta", dbItemId);
-
-      if (deleteVarsError) {
-        console.error(`[OrcamentosService] Erro ao deletar variações antigas do item #${dbItemId}:`, deleteVarsError);
-      }
-
-      // B. Insert new variations (snapshot historical)
-      if (item.variacoesEscolhidas.length > 0) {
-        const variationsToInsert = item.variacoesEscolhidas.map((escolha) => ({
-          id_produto_proposta: dbItemId,
-          id_variacao: escolha.id_variacao,
-          id_tipo_variacao: Number(escolha.tipo.id),
-          nome_variacao: escolha.tipo.variacao,
-          v_extra: escolha.tipo.v_extra,
-          peso_uni: escolha.tipo.peso
-        }));
-
-        const { error: insertVarsError } = await client
-          .from("produtos_proposta_variacao")
-          .insert(variationsToInsert);
-
-        if (insertVarsError) {
-          throw new Error(`Erro ao gravar variações do item #${dbItemId}: ${insertVarsError.message}`);
-        }
-      }
-    }
-
-    // 5. DELETE removed items
-    const deletedItemIds = existingIds.filter((id) => !incomingItemIds.includes(id));
-    if (deletedItemIds.length > 0) {
-      const { error: deleteRemovedVarsError } = await client
-        .from("produtos_proposta_variacao")
-        .delete()
-        .in("id_produto_proposta", deletedItemIds);
-
-      if (deleteRemovedVarsError) {
-        console.error("[OrcamentosService] Erro ao deletar variações dos itens excluídos:", deleteRemovedVarsError);
-      }
-
-      const { error: deleteRemovedItemsError } = await client
+    if (formState.isAvulso) {
+      // Deletar qualquer item existente se houver
+      const { error: deleteItemsError } = await client
         .from("produtos_proposta")
         .delete()
-        .in("id", deletedItemIds);
+        .eq("id_int", id_int!);
+      
+      if (deleteItemsError) {
+        console.error("[OrcamentosService] Erro ao limpar itens de proposta avulsa:", deleteItemsError);
+      }
+    } else {
+      // Fetch existing items for this proposal
+      const { data: existingItems, error: fetchItemsError } = await client
+        .from("produtos_proposta")
+        .select("id")
+        .eq("id_int", id_int!);
 
-      if (deleteRemovedItemsError) {
-        throw new Error(`Erro ao excluir itens removidos da proposta: ${deleteRemovedItemsError.message}`);
+      if (fetchItemsError) {
+        console.error("[OrcamentosService] Erro ao carregar itens existentes para conciliação:", fetchItemsError);
+      }
+
+      const existingIds = (existingItems || []).map((it) => it.id);
+      const incomingItemIds: number[] = [];
+
+      for (const item of formState.itens) {
+        // Check if it is an existing item
+        const parsedItemId = item.id.startsWith("item_") ? Number(item.id.replace("item_", "")) : null;
+        const isExistingItem = parsedItemId && existingIds.includes(parsedItemId);
+
+        // Calculos de peso e valor extra
+        const pesoExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.peso || 0), 0);
+        const pesoBase = Math.max(0, (item.produto.peso || 0));
+        const pesoUni = pesoBase + pesoExtra;
+
+        const valorExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.v_extra || 0), 0);
+        const valorBase = Math.max(0, (item.produto.valorUnt || 0));
+        const valorUnt = valorBase + valorExtra;
+
+        const itemData = {
+          id_int: id_int!,
+          id_produto: item.id_produto,
+          nome_produto: item.nome,
+          modelo_descri: item.descricaoModelo,
+          valor_unt: valorUnt,
+          qtd: item.quantidade,
+          fixo: item.valorFixo,
+          valor_sub_total: item.subtotal,
+          peso_uni: pesoUni,
+          peso_base: pesoBase,
+          peso_extra: pesoExtra,
+          valor_base: valorBase,
+          valor_extra: valorExtra,
+          ncm: item.produto.nivelSeg || null,
+          cfop: null
+        };
+
+        let dbItemId: number;
+
+        if (isExistingItem) {
+          // Update item
+          dbItemId = parsedItemId!;
+          const { error: itemUpdateError } = await client
+            .from("produtos_proposta")
+            .update(itemData)
+            .eq("id", dbItemId);
+
+          if (itemUpdateError) {
+            throw new Error(`Erro ao atualizar item #${dbItemId} da proposta: ${itemUpdateError.message}`);
+          }
+          incomingItemIds.push(dbItemId);
+        } else {
+          // Insert item
+          const { data: newItem, error: itemInsertError } = await client
+            .from("produtos_proposta")
+            .insert(itemData)
+            .select("id")
+            .single();
+
+          if (itemInsertError || !newItem) {
+            throw new Error(`Erro ao inserir item na proposta: ${itemInsertError?.message || "Sem ID de retorno"}`);
+          }
+
+          dbItemId = newItem.id;
+          incomingItemIds.push(dbItemId);
+        }
+
+        // 4. PERSIST VARIATIONS for this item in public.produtos_proposta_variacao
+        // A. Delete old variations for this item
+        const { error: deleteVarsError } = await client
+          .from("produtos_proposta_variacao")
+          .delete()
+          .eq("id_produto_proposta", dbItemId);
+
+        if (deleteVarsError) {
+          console.error(`[OrcamentosService] Erro ao deletar variações antigas do item #${dbItemId}:`, deleteVarsError);
+        }
+
+        // B. Insert new variations (snapshot historical)
+        if (item.variacoesEscolhidas.length > 0) {
+          const variationsToInsert = item.variacoesEscolhidas.map((escolha) => ({
+            id_produto_proposta: dbItemId,
+            id_variacao: escolha.id_variacao,
+            id_tipo_variacao: Number(escolha.tipo.id),
+            nome_variacao: escolha.tipo.variacao,
+            v_extra: escolha.tipo.v_extra,
+            peso_uni: escolha.tipo.peso
+          }));
+
+          const { error: insertVarsError } = await client
+            .from("produtos_proposta_variacao")
+            .insert(variationsToInsert);
+
+          if (insertVarsError) {
+            throw new Error(`Erro ao gravar variações do item #${dbItemId}: ${insertVarsError.message}`);
+          }
+        }
+      }
+
+      // 5. DELETE removed items
+      const deletedItemIds = existingIds.filter((id) => !incomingItemIds.includes(id));
+      if (deletedItemIds.length > 0) {
+        const { error: deleteRemovedVarsError } = await client
+          .from("produtos_proposta_variacao")
+          .delete()
+          .in("id_produto_proposta", deletedItemIds);
+
+        if (deleteRemovedVarsError) {
+          console.error("[OrcamentosService] Erro ao deletar variações dos itens excluídos:", deleteRemovedVarsError);
+        }
+
+        const { error: deleteRemovedItemsError } = await client
+          .from("produtos_proposta")
+          .delete()
+          .in("id", deletedItemIds);
+
+        if (deleteRemovedItemsError) {
+          throw new Error(`Erro ao excluir itens removidos da proposta: ${deleteRemovedItemsError.message}`);
+        }
       }
     }
 

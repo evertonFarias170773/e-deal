@@ -18,7 +18,8 @@ export function buildPropostaInformalText({
   itens,
   frete,
   resumo,
-  formaPagamento
+  formaPagamento,
+  isAvulso = false
 }: {
   id_int: number | string;
   clienteNome: string;
@@ -26,7 +27,19 @@ export function buildPropostaInformalText({
   frete?: PropostaFrete;
   resumo: PropostaResumo;
   formaPagamento: string;
+  isAvulso?: boolean;
 }) {
+  if (isAvulso) {
+    return `No prop. ${id_int} | Cliente ${clienteNome}
+
+Orcamento conforme solicitacao (Modo Avulso)
+
+Valor produtos: ${formatPlainCurrency(resumo.subtotalProdutos)}
+Frete: ${formatPlainCurrency(resumo.frete)}
+Total final: ${formatPlainCurrency(resumo.valorTotal)}
+Forma de pagamento: ${formaPagamento}`;
+  }
+
   const produtos = itens
     .map((item) => {
       const variacoes = item.variacoesEscolhidas.length
@@ -42,22 +55,34 @@ export function buildPropostaInformalText({
     })
     .join("\n\n");
 
-  return `No prop. ${id_int} | Cliente ${clienteNome}
+  const lines = [
+    `No prop. ${id_int} | Cliente ${clienteNome}`,
+    "",
+    "Orcamento conforme solicitacao",
+    "",
+    "Produto(s)",
+    produtos || "- Nenhum produto adicionado",
+    "",
+    "Frete escolhido",
+    frete ? `${frete.transportadora} - ${frete.servico} - ${formatPlainCurrency(frete.valor)} - ${frete.prazo}` : "Frete nao definido",
+    "",
+    `Subtotal produtos: ${formatPlainCurrency(resumo.subtotalProdutos)}`
+  ];
 
-Orcamento conforme solicitacao
+  if (resumo.descontosIndividuais > 0) {
+    lines.push(`Descontos individuais: ${formatPlainCurrency(resumo.descontosIndividuais)}`);
+  }
+  if (resumo.acrescimoBonus > 0) {
+    lines.push(`Tabela especial do cliente: -${formatPlainCurrency(resumo.acrescimoBonus)}`);
+  }
+  if (resumo.descontoGeral > 0) {
+    lines.push(`Desconto geral: ${formatPlainCurrency(resumo.descontoGeral)}`);
+  }
 
-Produto(s)
-${produtos || "- Nenhum produto adicionado"}
+  lines.push(`Total final: ${formatPlainCurrency(resumo.valorTotal)}`);
+  lines.push(`Forma de pagamento: ${formaPagamento}`);
 
-Frete escolhido
-${frete ? `${frete.transportadora} - ${frete.servico} - ${formatPlainCurrency(frete.valor)} - ${frete.prazo}` : "Frete nao definido"}
-
-Subtotal produtos: ${formatPlainCurrency(resumo.subtotalProdutos)}
-Descontos individuais: ${formatPlainCurrency(resumo.descontosIndividuais)}
-Tabela especial do cliente: -${formatPlainCurrency(resumo.acrescimoBonus)}
-Desconto geral: ${formatPlainCurrency(resumo.descontoGeral)}
-Total final: ${formatPlainCurrency(resumo.valorTotal)}
-Forma de pagamento: ${formaPagamento}`;
+  return lines.join("\n");
 }
 
 function formatPlainCurrency(value: number) {

@@ -201,7 +201,7 @@ export async function solicitarCotacaoAzulCargo(input: {
 }): Promise<PropostaFrete[]> {
   const cleanCep = input.cep.replace(/\D/g, "");
   const pesoKg = input.peso / 1000;
-  const volumes = Math.ceil(input.peso / 16000);
+  const volumes = Math.max(1, Math.ceil(input.peso / 14500));
 
   const payload = {
     CEPDestino: cleanCep,

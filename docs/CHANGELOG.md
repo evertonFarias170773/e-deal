@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-05-31
+
+### Adicionado
+- Efeito de skeleton/loading na listagem principal de Orçamentos/Propostas (`OrcamentosListPageReal`) e SummaryCards superiores enquanto os dados reais do Supabase estão sendo carregados.
+- Aviso visual proeminente com estilo destacado no rodapé caso a conexão real com o Supabase falhe ou retorne dados simulados (`source === "mock"`): *"Não foi possível carregar dados reais. Exibindo fallback local."*
+- Suporte no formulário de orçamento para carregar e iniciar propostas no modo "Avulso" a partir de propostas salvas existentes no banco de dados.
+
+### Alterado
+- O hook de dados `useOrcamentosReadOnlyData` foi refatorado para iniciar com a lista de propostas vazia (`propostas: []`) e estado de carregamento ativo (`isLoading: true`), impedindo que dados falsos/mockados pisquem temporariamente por alguns segundos.
+- Removidas funções e importações sem uso no hook de dados, limpando advertências do linter.
+- Atualizado o divisor de volumes automático para Azul Cargo no webhook para `14500` (14.5kg) para alinhar a estimativa com as regras da interface.
+
 ## 2026-05-29
 
 ### Adicionado

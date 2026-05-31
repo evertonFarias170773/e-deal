@@ -89,6 +89,7 @@ export type Proposta = {
   formaPagamento: string;
   cobrancaStatus: PropostaCobrancaStatus;
   observacoes: string;
+  is_avulso?: boolean;
 };
 
 export type PropostaFormState = {
@@ -107,4 +108,8 @@ export type PropostaFormState = {
   descontoGeralValor: string;
   formaPagamento: string;
   observacoes: string;
+  isAvulso?: boolean;
+  valorProdutosManual?: string;
+  valorFreteManual?: string;
+  observacoesFreteManual?: string;
 };

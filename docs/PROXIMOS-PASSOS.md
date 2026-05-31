@@ -31,6 +31,9 @@
 
 ## Orçamentos
 
+- [x] Exibir skeletons de loading na listagem principal de orçamentos e cards de resumo superior.
+- [x] Ocultar a exibição prematura de dados mockados locais antes da resposta real do Supabase.
+- [x] Exibir aviso claro e destacado no rodapé caso a busca no Supabase falhe e ative o fallback.
 - Validar com a operação comercial o fluxo integrado de criação e edição real de propostas no Supabase.
 - Validar responsividade fina da lista, detalhe, nova proposta e edição em dispositivos reais.
 - Homologar as regras de cálculo e arredondamento de produtos, descontos, variações e frete no Supabase.

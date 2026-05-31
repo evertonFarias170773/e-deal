@@ -140,6 +140,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
   const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => proposta?.cliente.enderecos ?? []);
   const [cliente, setCliente] = useState<Cadastro | null>(() => proposta?.cliente ?? null);
+  const shouldShowRest = mode !== "new" || cliente !== null;
 
   const [selectedProductId, setSelectedProductId] = useState("");
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
@@ -171,7 +172,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [isQuotingSedex, setIsQuotingSedex] = useState(false);
   const [isQuotingAzul, setIsQuotingAzul] = useState(false);
   const [isQuotingTransp, setIsQuotingTransp] = useState(false);
-  const [volumes, setVolumes] = useState(1);
   const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
   const [lastQuotedKey, setLastQuotedKey] = useState<string>(() => proposta ? getFreightKey(proposta.enderecoEntrega?.cep, proposta.enderecoEntrega?.cidade, proposta.enderecoEntrega?.uf, proposta.resumo.pesoTotal, 1) : "");
   const [isManualFreteModalOpen, setIsManualFreteModalOpen] = useState(false);
@@ -190,7 +190,31 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
   const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
   const bonusPercent = cliente ? getClienteBonusPercent(cliente) : 0;
-  const resumo = calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
+  
+  const resumo = useMemo(() => {
+    if (form.isAvulso) {
+      const subtotalProdutos = Number(String(form.valorProdutosManual || "0").replace(",", ".")) || 0;
+      const frete = Number(String(form.valorFreteManual || "0").replace(",", ".")) || 0;
+      return {
+        subtotalProdutos,
+        subtotalBrutoProdutos: subtotalProdutos,
+        descontosIndividuais: 0,
+        acrescimoBonus: 0,
+        descontoGeralTipo: "VALOR" as TipoDescontoProposta,
+        descontoGeralValor: 0,
+        descontoGeral: 0,
+        frete,
+        valorTotal: subtotalProdutos + frete,
+        pesoTotal: 0,
+        prazoProducao: "A combinar",
+        prazoEntrega: "A combinar"
+      };
+    }
+    return calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
+  }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.descontoGeralValor, form.descontoGeralTipo]);
+
+  const volumes = Math.max(1, Math.ceil(resumo.pesoTotal / 14500));
+
   const combinedAddresses = useMemo(() => {
     const seenIds = new Set<string>();
     const list: CadastroEndereco[] = [];
@@ -228,9 +252,20 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     id_int: form.id_int || "NOVO",
     clienteNome: cliente?.nome ?? "Cliente não definido",
     itens: form.itens,
-    frete: freteEscolhido,
+    frete: form.isAvulso ? {
+      id: "frete_manual",
+      id_int: Number(form.id_int) || 0,
+      transportadora: form.observacoesFreteManual || "Frete Manual",
+      servico: "",
+      valor: resumo.frete,
+      prazo: "A combinar",
+      observacao: "",
+      escolhido: true,
+      pesoUsado: 0
+    } : freteEscolhido,
     resumo,
-    formaPagamento: form.formaPagamento
+    formaPagamento: form.formaPagamento,
+    isAvulso: form.isAvulso
   });
 
   // Fetch products catalog
@@ -393,6 +428,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
   // Debounced auto-quote when address, weight, or volumes change
   useEffect(() => {
+    if (form.isAvulso) {
+      return;
+    }
     const cep = currentAddress?.cep;
     const cidade = currentAddress?.cidade;
     const uf = currentAddress?.uf;
@@ -456,6 +494,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           }
         })(),
         (async () => {
+          if (uf?.toUpperCase() === "RS") {
+            setIsQuotingAzul(false);
+            return;
+          }
           try {
             azulResults = await solicitarCotacaoAzulCargo({
               peso: resumo.pesoTotal,
@@ -521,7 +563,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey, resumo.subtotalProdutos]);
+  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey, resumo.subtotalProdutos, form.isAvulso]);
 
 
 
@@ -821,6 +863,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         }
       })(),
       (async () => {
+        if (uf?.toUpperCase() === "RS") {
+          setIsQuotingAzul(false);
+          return;
+        }
         try {
           azulResults = await solicitarCotacaoAzulCargo({
             peso: resumo.pesoTotal,
@@ -976,13 +1022,13 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }
 
   function validateBeforeSave(vendedorAtual = form.vendedor) {
-    const missingRequiredVariation = form.itens.some((item) =>
+    const missingRequiredVariation = !form.isAvulso && form.itens.some((item) =>
       item.produto.variacoes.some(
         (variacao) => variacao.is_obrigatorio && !item.variacoesEscolhidas.some((choice) => choice.id_variacao === variacao.id_variacao)
       )
     );
-    const hasInvalidQuantity = form.itens.some((item) => item.quantidade <= 0);
-    const hasInvalidSubtotal = form.itens.some((item) => item.subtotal <= 0);
+    const hasInvalidQuantity = !form.isAvulso && form.itens.some((item) => item.quantidade <= 0);
+    const hasInvalidSubtotal = !form.isAvulso && form.itens.some((item) => item.subtotal <= 0);
     const isSubtotalZero = resumo.subtotalProdutos <= 0;
     const isTotalZero = resumo.valorTotal <= 0;
     const isTextEmpty = !informalText || informalText.trim() === "";
@@ -995,15 +1041,15 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     const fields = [
       !form.clienteId ? "clienteId" : null,
       !form.enderecoId ? "enderecoId" : null,
-      form.itens.length === 0 ? "itens" : null,
-      hasInvalidQuantity ? "quantidade" : null,
-      hasInvalidSubtotal ? "subtotal_itens" : null,
+      !form.isAvulso && form.itens.length === 0 ? "itens" : null,
+      !form.isAvulso && hasInvalidQuantity ? "quantidade" : null,
+      !form.isAvulso && hasInvalidSubtotal ? "subtotal_itens" : null,
       isSubtotalZero ? "subtotal" : null,
       isTotalZero ? "total" : null,
       isTextEmpty ? "texto" : null,
       isSellerEmpty ? "vendedor" : null,
       isCompanyEmpty ? "empresa" : null,
-      missingRequiredVariation ? "variacoes" : null
+      !form.isAvulso && missingRequiredVariation ? "variacoes" : null
     ].filter(Boolean) as string[];
 
     if (fields.length) {
@@ -1017,15 +1063,36 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         desc = "O vendedor é obrigatório.";
       } else if (isCompanyEmpty) {
         desc = "A empresa é obrigatória.";
-      } else if (hasInvalidSubtotal) {
+      } else if (!form.isAvulso && hasInvalidSubtotal) {
         desc = "O subtotal de cada produto deve ser maior que R$ 0,00.";
       }
       showToast({
         type: "error",
-        title: missingRequiredVariation ? "Selecione as variações obrigatórias antes de salvar a proposta." : "Não foi possível salvar",
+        title: !form.isAvulso && missingRequiredVariation ? "Selecione as variações obrigatórias antes de salvar a proposta." : "Não foi possível salvar",
         description: desc
       });
       return false;
+    }
+
+    if (form.isAvulso) {
+      const valManual = Number(String(form.valorFreteManual || "").replace(",", "."));
+      if (isNaN(valManual) || valManual < 0 || form.valorFreteManual?.trim() === "") {
+        showToast({
+          type: "error",
+          title: "Frete obrigatório",
+          description: "Informe um valor de frete válido para a proposta avulsa."
+        });
+        return false;
+      }
+      if (!form.observacoesFreteManual || form.observacoesFreteManual.trim() === "") {
+        showToast({
+          type: "error",
+          title: "Transportadora obrigatória",
+          description: "Informe o nome do serviço/transportadora para o frete manual."
+        });
+        return false;
+      }
+      return true;
     }
 
     const hasWeightAndCep = resumo.pesoTotal > 0 && currentAddress?.cep;
@@ -1123,7 +1190,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         }
       />
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
+      <section className={shouldShowRest ? "grid gap-6 xl:grid-cols-[1fr_380px]" : "max-w-3xl mx-auto"}>
         <div className="space-y-6">
           <FormSection title="1. Cliente" description="Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados).">
             <div className="relative">
@@ -1203,7 +1270,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             ) : null}
           </FormSection>
 
-          <FormSection title="2. Dados da proposta" description="Vendedor vem do cliente e status é definido pelo sistema.">
+          {shouldShowRest && (
+            <>
+              <FormSection title="2. Dados da proposta" description="Vendedor vem do cliente e status é definido pelo sistema.">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <Field label="id_int">
                 <input value={form.id_int === "NOVO" ? "" : form.id_int} placeholder="Gerado automaticamente" readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
@@ -1286,341 +1355,424 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
           <FormSection
             title="6. Produtos"
-            description="Escolha do catálogo e configure quantidades, descontos e variações."
+            description={form.isAvulso ? "Configure o valor total dos produtos no modo avulso." : "Escolha do catálogo e configure quantidades, descontos e variações."}
           >
-            {/* Chips / Tags com borda suave, hover e destaque */}
-            <div className="mb-4 flex flex-wrap gap-2">
-              {productTags.map((tag) => {
-                const search = normalize(tag.label);
-                const matchingProduct = produtos.find(
-                  (item) =>
-                    normalize(item.nomeReal).includes(search) ||
-                    item.apelidos.some((apelido) => normalize(apelido).includes(search))
-                );
-                const isSelected = selectedProduct && matchingProduct && selectedProduct.id_produto === matchingProduct.id_produto;
+            {/* Toggle Proposta Avulsa */}
+            <div className="mb-6 flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:bg-slate-800/40 dark:border-slate-700">
+              <input
+                type="checkbox"
+                id="isAvulso"
+                checked={form.isAvulso || false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  updateField("isAvulso", checked);
+                  if (checked) {
+                    if (!form.valorProdutosManual) updateField("valorProdutosManual", "0");
+                    if (!form.valorFreteManual) updateField("valorFreteManual", "0");
+                    updateField("freteEscolhidoId", "frete_manual_unico");
+                    updateField("fretes", [{
+                      id: "frete_manual_unico",
+                      id_int: Number(form.id_int) || 0,
+                      transportadora: form.observacoesFreteManual || "Frete Manual",
+                      servico: "",
+                      valor: Number(String(form.valorFreteManual || "0").replace(",", ".")) || 0,
+                      prazo: "A combinar",
+                      observacao: "Cadastro manual",
+                      escolhido: true,
+                      pesoUsado: 0
+                    }]);
+                  } else {
+                    updateField("freteEscolhidoId", "");
+                    updateField("fretes", []);
+                  }
+                }}
+                className="h-4 w-4 rounded border-slate-300 text-[#0f9f9a] focus:ring-[#0f9f9a]"
+              />
+              <label htmlFor="isAvulso" className="text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                Proposta avulsa (orçamento sem produtos cadastrados)
+              </label>
+            </div>
 
-                return (
-                  <button
-                    key={tag.label}
-                    type="button"
-                    onClick={() => {
-                      if (matchingProduct) {
-                        setSelectedProductId(matchingProduct.id_produto.toString());
-                      } else {
-                        showToast({
-                          type: "warning",
-                          title: "Produto não localizado",
-                          description: `Não encontramos produto ativo com a tag "${tag.label}" no catálogo.`
-                        });
-                      }
-                    }}
-                    className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all duration-200 ${
-                      isSelected
-                        ? "border-teal-300 bg-teal-50 text-teal-800 shadow-sm ring-2 ring-teal-200/50"
-                        : "border-[#d7e5e8] bg-white text-[#0b2f4a] hover:bg-[#f3f7f8] hover:border-slate-300"
-                    }`}
+            {form.isAvulso ? (
+              <div className="space-y-4 rounded-2xl bg-slate-50 p-4 border border-slate-200 dark:bg-slate-800/40 dark:border-slate-700">
+                <Field label="Valor total dos produtos (R$) *">
+                  <input
+                    type="text"
+                    value={form.valorProdutosManual || ""}
+                    onChange={(e) => updateField("valorProdutosManual", e.target.value)}
+                    placeholder="Ex: 1500,00"
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            ) : (
+              <>
+                {/* Chips / Tags com borda suave, hover e destaque */}
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {productTags.map((tag) => {
+                    const search = normalize(tag.label);
+                    const matchingProduct = produtos.find(
+                      (item) =>
+                        normalize(item.nomeReal).includes(search) ||
+                        item.apelidos.some((apelido) => normalize(apelido).includes(search))
+                    );
+                    const isSelected = selectedProduct && matchingProduct && selectedProduct.id_produto === matchingProduct.id_produto;
+
+                    return (
+                      <button
+                        key={tag.label}
+                        type="button"
+                        onClick={() => {
+                          if (matchingProduct) {
+                            setSelectedProductId(matchingProduct.id_produto.toString());
+                          } else {
+                            showToast({
+                              type: "warning",
+                              title: "Produto não localizado",
+                              description: `Não encontramos produto ativo com a tag "${tag.label}" no catálogo.`
+                            });
+                          }
+                        }}
+                        className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all duration-200 ${
+                          isSelected
+                            ? "border-teal-300 bg-teal-50 text-teal-800 shadow-sm ring-2 ring-teal-200/50"
+                            : "border-[#d7e5e8] bg-white text-[#0b2f4a] hover:bg-[#f3f7f8] hover:border-slate-300"
+                        }`}
+                      >
+                        {tag.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Dropdown de selecão e botão de adicionar */}
+                <div className="mb-4 grid gap-3 md:grid-cols-[1fr_auto]">
+                  <select
+                    value={selectedProductId}
+                    onChange={(event) => setSelectedProductId(event.target.value)}
+                    className={inputClass}
+                    disabled={loadingProdutos}
                   >
-                    {tag.label}
+                    <option value="">Selecione um produto do catálogo...</option>
+                    {produtos.map((produto) => (
+                      <option key={produto.id} value={produto.id_produto}>
+                        #{produto.id_produto} - {produto.nomeReal}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => addProduct()}
+                    disabled={!selectedProductId}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-md shadow-[#0b2f4a]/10 hover:bg-[#123f61] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Adicionar produto
                   </button>
-                );
-              })}
-            </div>
+                </div>
 
-            {/* Dropdown de selecão e botão de adicionar */}
-            <div className="mb-4 grid gap-3 md:grid-cols-[1fr_auto]">
-              <select
-                value={selectedProductId}
-                onChange={(event) => setSelectedProductId(event.target.value)}
-                className={inputClass}
-                disabled={loadingProdutos}
-              >
-                <option value="">Selecione um produto do catálogo...</option>
-                {produtos.map((produto) => (
-                  <option key={produto.id} value={produto.id_produto}>
-                    #{produto.id_produto} - {produto.nomeReal}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => addProduct()}
-                disabled={!selectedProductId}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-md shadow-[#0b2f4a]/10 hover:bg-[#123f61] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Plus className="h-4 w-4" />
-                Adicionar produto
-              </button>
-            </div>
-
-            {/* Preview do produto selecionado */}
-            {selectedProduct && (
-              <div className="mb-5 rounded-3xl border border-slate-100 bg-slate-50/50 p-4 transition-all duration-200">
-                <div className="flex flex-col gap-4 sm:flex-row">
-                  {selectedProduct.fotos?.[0]?.imagensURL ? (
-                    <img
-                      src={selectedProduct.fotos[0].imagensURL}
-                      alt={selectedProduct.nomeReal}
-                      className="h-20 w-20 shrink-0 rounded-2xl object-cover border border-slate-200 bg-white shadow-sm"
-                    />
-                  ) : (
-                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-slate-200/50 text-slate-400 border border-slate-200 border-dashed">
-                      <Package className="h-8 w-8" />
-                    </div>
-                  )}
-                  <div className="flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <span className="text-xs font-bold text-slate-400">#{selectedProduct.id_produto}</span>
-                        <h3 className="text-base font-bold text-[#0b2f4a]">{selectedProduct.nomeReal}</h3>
+                {/* Preview do produto selecionado */}
+                {selectedProduct && (
+                  <div className="mb-5 rounded-3xl border border-slate-100 bg-slate-50/50 p-4 transition-all duration-200 dark:bg-slate-800/50 dark:border-slate-700">
+                    <div className="flex flex-col gap-4 sm:flex-row">
+                      {selectedProduct.fotos?.[0]?.imagensURL ? (
+                        <img
+                          src={selectedProduct.fotos[0].imagensURL}
+                          alt={selectedProduct.nomeReal}
+                          className="h-20 w-20 shrink-0 rounded-2xl object-cover border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                        />
+                      ) : (
+                        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-slate-200/50 text-slate-400 border border-slate-200 border-dashed dark:bg-slate-800/50 dark:text-slate-500 dark:border-slate-700">
+                          <Package className="h-8 w-8" />
+                        </div>
+                      )}
+                      <div className="flex-1 space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-400">#{selectedProduct.id_produto}</span>
+                            <h3 className="text-base font-bold text-[#0b2f4a] dark:text-slate-200">{selectedProduct.nomeReal}</h3>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Valor Base</span>
+                            <p className="text-base font-extrabold text-[#0b2f4a] dark:text-slate-200">{formatCurrency(selectedProduct.valorUnt)}</p>
+                          </div>
+                        </div>
+                        {selectedProduct.descricao && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal line-clamp-2">{selectedProduct.descricao}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/40 dark:border-slate-700/40">
+                          <span>Formato: <strong className="dark:text-slate-300">{selectedProduct.formato || "Não informado"}</strong></span>
+                          <span>Peso base: <strong className="dark:text-slate-300">{formatWeightFromGrams(selectedProduct.peso)}</strong></span>
+                          <span>Prazo base: <strong className="dark:text-slate-300">{selectedProduct.prazo || "Sob consulta"}</strong></span>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Valor Base</span>
-                        <p className="text-base font-extrabold text-[#0b2f4a]">{formatCurrency(selectedProduct.valorUnt)}</p>
-                      </div>
-                    </div>
-                    {selectedProduct.descricao && (
-                      <p className="text-xs text-slate-500 leading-normal line-clamp-2">{selectedProduct.descricao}</p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 pt-1 border-t border-slate-200/40">
-                      <span>Formato: <strong>{selectedProduct.formato || "Não informado"}</strong></span>
-                      <span>Peso base: <strong>{formatWeightFromGrams(selectedProduct.peso)}</strong></span>
-                      <span>Prazo base: <strong>{selectedProduct.prazo || "Sob consulta"}</strong></span>
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Lista de itens da proposta */}
-            <div className="space-y-4">
-              {form.itens.map((item) => {
-                const isOpen = openItemIds[item.id] ?? false;
-                if (isOpen) {
-                  return (
-                    <ProductItemEditor
-                      key={item.id}
-                      item={item}
-                      bonusPercent={bonusPercent}
-                      hasVariationError={errorFields.includes(`variacoes_${item.id}`)}
-                      onUpdate={(updater) => updateItem(item.id, updater)}
-                      onVariationChange={(idVariacao, tipoId) => updateItemVariation(item.id, idVariacao, tipoId)}
-                      onRemove={() => updateField("itens", form.itens.filter((current) => current.id !== item.id))}
-                      onSave={() => handleSaveItem(item.id)}
-                    />
-                  );
-                } else {
-                  return (
-                    <ProductItemSummary
-                      key={item.id}
-                      item={item}
-                      onEdit={() => handleEditItem(item.id)}
-                      onRemove={() => updateField("itens", form.itens.filter((current) => current.id !== item.id))}
-                    />
-                  );
-                }
-              })}
-              {!form.itens.length ? (
-                <div
-                  className={`rounded-3xl border border-dashed p-5 text-sm ${
-                    errorFields.includes("itens") ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300 bg-slate-50 text-slate-500"
-                  }`}
-                >
-                  Nenhum produto adicionado.
+                {/* Lista de itens da proposta */}
+                <div className="space-y-4">
+                  {form.itens.map((item) => {
+                    const isOpen = openItemIds[item.id] ?? false;
+                    if (isOpen) {
+                      return (
+                        <ProductItemEditor
+                          key={item.id}
+                          item={item}
+                          bonusPercent={bonusPercent}
+                          hasVariationError={errorFields.includes(`variacoes_${item.id}`)}
+                          onUpdate={(updater) => updateItem(item.id, updater)}
+                          onVariationChange={(idVariacao, tipoId) => updateItemVariation(item.id, idVariacao, tipoId)}
+                          onRemove={() => updateField("itens", form.itens.filter((current) => current.id !== item.id))}
+                          onSave={() => handleSaveItem(item.id)}
+                        />
+                      );
+                    } else {
+                      return (
+                        <ProductItemSummary
+                          key={item.id}
+                          item={item}
+                          onEdit={() => handleEditItem(item.id)}
+                          onRemove={() => updateField("itens", form.itens.filter((current) => current.id !== item.id))}
+                        />
+                      );
+                    }
+                  })}
+                  {!form.itens.length ? (
+                    <div
+                      className={`rounded-3xl border border-dashed p-5 text-sm ${
+                        errorFields.includes("itens") ? "border-red-300 bg-red-50 text-red-700" : "border-slate-300 bg-slate-50 text-slate-500"
+                      }`}
+                    >
+                      Nenhum produto adicionado.
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
+              </>
+            )}
           </FormSection>
 
           <FormSection 
             title="7. Fretes e Entrega" 
-            description="Integração em tempo real com cotações de SEDEX e cadastro de frete manual."
+            description={form.isAvulso ? "Configure o frete manual para a proposta avulsa." : "Integração em tempo real com cotações de SEDEX e cadastro de frete manual."}
           >
-            {isFreightOutdated && form.enderecoId && resumo.pesoTotal > 0 && (
-              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                <p className="font-semibold">⚠️ Cotação desatualizada</p>
-                <p className="mt-1">O CEP, peso total ou volumes foram alterados. Clique em &apos;Atualizar frete&apos; para obter os valores corretos.</p>
-              </div>
-            )}
-
-            <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-4">
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="w-24">
-                  <Field label="Volumes">
+            {form.isAvulso ? (
+              <div className="space-y-4 rounded-2xl bg-slate-50 p-4 border border-slate-200 dark:bg-slate-800/40 dark:border-slate-700">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Serviço / Transportadora *">
                     <input
-                      type="number"
-                      min="1"
-                      value={volumes}
-                      onChange={(e) => setVolumes(Math.max(1, Number(e.target.value) || 1))}
+                      type="text"
+                      value={form.observacoesFreteManual || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateField("observacoesFreteManual", val);
+                        updateField("fretes", form.fretes.map(f => f.id === "frete_manual_unico" ? { ...f, transportadora: val } : f));
+                      }}
+                      placeholder="Ex: Transportadora Própria / PAC"
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Valor do frete (R$) *">
+                    <input
+                      type="text"
+                      value={form.valorFreteManual || ""}
+                      onChange={(e) => {
+                        const valStr = e.target.value;
+                        updateField("valorFreteManual", valStr);
+                        const valNum = Number(valStr.replace(",", ".")) || 0;
+                        updateField("fretes", form.fretes.map(f => f.id === "frete_manual_unico" ? { ...f, valor: valNum } : f));
+                      }}
+                      placeholder="Ex: 150,00"
                       className={inputClass}
                     />
                   </Field>
                 </div>
-                <div className="flex-1 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCotarFretes}
-                    disabled={isQuotingSedex || isQuotingAzul || isQuotingTransp || !form.enderecoId || resumo.pesoTotal <= 0}
-                    className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 text-sm font-semibold text-white shadow-md hover:bg-[#123f61] transition disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {isQuotingSedex || isQuotingAzul || isQuotingTransp ? (
-                      <>
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                        Atualizando...
-                      </>
-                    ) : (
-                      "Atualizar fretes"
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsManualFreteModalOpen(true)}
-                    className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-5 text-sm font-semibold text-[#0b2f4a] shadow-sm hover:bg-slate-50 transition"
-                  >
-                    + Frete manual
-                  </button>
-                </div>
               </div>
-              <p className="text-xs text-slate-500 font-medium">
-                * A cotação utiliza o CEP do endereço selecionado e o peso total da proposta em gramas ({formatWeightFromGrams(resumo.pesoTotal)}).
-              </p>
-            </div>
+            ) : (
+              <>
+                {isFreightOutdated && form.enderecoId && resumo.pesoTotal > 0 && (
+                  <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    <p className="font-semibold">⚠️ Cotação desatualizada</p>
+                    <p className="mt-1">O CEP, peso total ou volumes foram alterados. Clique em &apos;Atualizar frete&apos; para obter os valores corretos.</p>
+                  </div>
+                )}
 
-            <div className="grid gap-3 md:grid-cols-2">
-              {form.fretes.map((frete) => (
-                <div 
-                  key={frete.id} 
-                  className={`rounded-3xl border p-4 flex flex-col justify-between transition-all duration-200 ${
-                    frete.id === form.freteEscolhidoId 
-                      ? "border-teal-300 bg-teal-50/60 ring-2 ring-teal-200/50 shadow-sm" 
-                      : "border-slate-200 bg-slate-50 hover:bg-white"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        {frete.transportadora === "Azul Cargo"
-                          ? `AZUL CARGO ${frete.servico}`
-                          : frete.servico === "SEDEX"
-                          ? "SEDEX EXPRESS"
-                          : frete.servico === "PAC"
-                          ? "PAC ECONÔMICO"
-                          : frete.servico === "SÃO MIGUEL"
-                          ? "TRANSP. SÃO MIGUEL"
-                          : frete.servico === "UNESUL"
-                          ? "TRANSP. UNESUL"
-                          : frete.servico === "MOTOBOY"
-                          ? "ENTREGA MOTOBOY"
-                          : "MANUAL / TRANSP."}
-                      </span>
-                      <h4 className="font-bold text-slate-900 text-base mt-0.5">{frete.transportadora}</h4>
-                      <p className="text-sm text-slate-500 font-medium">Prazo: {frete.prazo}</p>
-                    </div>
-                    {frete.id === form.freteEscolhidoId ? (
-                      <span className="rounded-full bg-teal-600 px-3 py-1 text-xs font-bold text-white shadow-sm">
-                        Escolhido
-                      </span>
-                    ) : (
+                <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-4">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex-1 flex gap-2">
                       <button
                         type="button"
-                        onClick={() => selectFrete(frete.id)}
-                        className="rounded-2xl border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all shadow-sm"
+                        onClick={handleCotarFretes}
+                        disabled={isQuotingSedex || isQuotingAzul || isQuotingTransp || !form.enderecoId || resumo.pesoTotal <= 0}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 text-sm font-semibold text-white shadow-md hover:bg-[#123f61] transition disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Escolher
+                        {isQuotingSedex || isQuotingAzul || isQuotingTransp ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                            Atualizando...
+                          </>
+                        ) : (
+                          "Atualizar fretes"
+                        )}
                       </button>
-                    )}
-                  </div>
-                  <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-slate-400 font-semibold uppercase">Valor</p>
-                      <p className="text-base font-extrabold text-slate-950">
-                        {formatCurrency(frete.valor)}
-                      </p>
-                      {frete.transportadora === "Azul Cargo" && frete.valorOriginal !== undefined && (
-                        <p className="text-xs font-medium text-slate-500 mt-0.5">
-                          Original: {formatCurrency(frete.valorOriginal)} (+15%)
-                        </p>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsManualFreteModalOpen(true)}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-5 text-sm font-semibold text-[#0b2f4a] shadow-sm hover:bg-slate-50 transition"
+                      >
+                        + Frete manual
+                      </button>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400 font-semibold uppercase">Peso / Volumes</p>
-                      {frete.transportadora === "Azul Cargo" && frete.pesoKg !== undefined ? (
-                        <>
-                          <p className="text-xs font-semibold text-slate-700">
-                            {frete.pesoKg.toFixed(2)} KG
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium">
+                    * A cotação utiliza o CEP do endereço selecionado e o peso total da proposta em gramas ({formatWeightFromGrams(resumo.pesoTotal)}).
+                  </p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  {form.fretes.map((frete) => (
+                    <div 
+                      key={frete.id} 
+                      className={`rounded-3xl border p-4 flex flex-col justify-between transition-all duration-200 ${
+                        frete.id === form.freteEscolhidoId 
+                          ? "border-teal-300 bg-teal-50/60 ring-2 ring-teal-200/50 shadow-sm" 
+                          : "border-slate-200 bg-slate-50 hover:bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            {frete.transportadora === "Azul Cargo"
+                              ? `AZUL CARGO ${frete.servico}`
+                              : frete.servico === "SEDEX"
+                              ? "SEDEX EXPRESS"
+                              : frete.servico === "PAC"
+                              ? "PAC ECONÔMICO"
+                              : frete.servico === "SÃO MIGUEL"
+                              ? "TRANSP. SÃO MIGUEL"
+                              : frete.servico === "UNESUL"
+                              ? "TRANSP. UNESUL"
+                              : frete.servico === "MOTOBOY"
+                              ? "ENTREGA MOTOBOY"
+                              : "MANUAL / TRANSP."}
+                          </span>
+                          <h4 className="font-bold text-slate-900 text-base mt-0.5">{frete.transportadora}</h4>
+                          <p className="text-sm text-slate-500 font-medium">Prazo: {frete.prazo}</p>
+                        </div>
+                        {frete.id === form.freteEscolhidoId ? (
+                          <span className="rounded-full bg-teal-600 px-3 py-1 text-xs font-bold text-white shadow-sm">
+                            Escolhido
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => selectFrete(frete.id)}
+                            className="rounded-2xl border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all shadow-sm"
+                          >
+                            Escolher
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-slate-400 font-semibold uppercase">Valor</p>
+                          <p className="text-base font-extrabold text-slate-950">
+                            {formatCurrency(frete.valor)}
                           </p>
-                          {frete.volumes !== undefined && (
+                          {frete.transportadora === "Azul Cargo" && frete.valorOriginal !== undefined && (
                             <p className="text-xs font-medium text-slate-500 mt-0.5">
-                              {frete.volumes} {frete.volumes === 1 ? "volume" : "volumes"}
+                              Original: {formatCurrency(frete.valorOriginal)} (+15%)
                             </p>
                           )}
-                        </>
-                      ) : (
-                        <p className="text-xs font-semibold text-slate-700">
-                          {formatWeightFromGrams(frete.pesoUsado)}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-slate-400 font-semibold uppercase">Peso / Volumes</p>
+                          {frete.transportadora === "Azul Cargo" && frete.pesoKg !== undefined ? (
+                            <>
+                              <p className="text-xs font-semibold text-slate-700">
+                                {frete.pesoKg.toFixed(2)} KG
+                              </p>
+                              {frete.volumes !== undefined && (
+                                <p className="text-xs font-medium text-slate-500 mt-0.5">
+                                  {frete.volumes} {frete.volumes === 1 ? "volume" : "volumes"}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-xs font-semibold text-slate-700">
+                              {formatWeightFromGrams(frete.pesoUsado)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {frete.observacao ? (
+                        <p className="mt-2 text-xs italic text-slate-500 bg-slate-100/50 p-2 rounded-xl border border-slate-200/40">
+                          {frete.observacao}
                         </p>
-                      )}
+                      ) : null}
                     </div>
-                  </div>
-                  {frete.observacao ? (
-                    <p className="mt-2 text-xs italic text-slate-500 bg-slate-100/50 p-2 rounded-xl border border-slate-200/40">
-                      {frete.observacao}
+                  ))}
+
+                  {!form.fretes.length ? (
+                    <p className="col-span-2 text-sm text-slate-500 bg-slate-50 rounded-2xl p-4 text-center">
+                      Nenhum frete cotado para esta proposta.
                     </p>
                   ) : null}
                 </div>
-              ))}
-
-              {!form.fretes.length ? (
-                <p className="col-span-2 text-sm text-slate-500 bg-slate-50 rounded-2xl p-4 text-center">
-                  Nenhum frete cotado para esta proposta.
-                </p>
-              ) : null}
-            </div>
-          </FormSection>
-        </div>
-
-        <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
-            <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
-            {canManageCommercialRules ? (
-              <div className="mt-4 grid gap-3 sm:grid-cols-[130px_1fr]">
-                <Field label="Tipo desconto geral">
-                  <select value={form.descontoGeralTipo} onChange={(event) => updateField("descontoGeralTipo", event.target.value as TipoDescontoProposta)} className={inputClass}>
-                    <option value="PERCENTUAL">%</option>
-                    <option value="VALOR">R$</option>
-                  </select>
-                </Field>
-                <Field label="Desconto geral">
-                  <input value={form.descontoGeralValor} onChange={(event) => updateField("descontoGeralValor", event.target.value)} className={inputClass} />
-                </Field>
-              </div>
-            ) : (
-              <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Desconto geral disponível apenas para admin/gerente.</p>
+              </>
             )}
           </FormSection>
-
-          <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
-            <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
-            <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
-              <Copy className="h-4 w-4" />
-              Copiar resumo para WhatsApp
-            </button>
-          </FormSection>
-
-          <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
-            <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
-          </FormSection>
+          </>
+          )}
         </div>
+
+        {shouldShowRest && (
+          <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+            <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
+              <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
+              {canManageCommercialRules ? (
+                <div className="mt-4 grid gap-3 grid-cols-[100px_1fr] items-end">
+                  <Field label="Tipo">
+                    <select value={form.descontoGeralTipo} onChange={(event) => updateField("descontoGeralTipo", event.target.value as TipoDescontoProposta)} className={inputClass}>
+                      <option value="PERCENTUAL">%</option>
+                      <option value="VALOR">R$</option>
+                    </select>
+                  </Field>
+                  <Field label="Desconto geral">
+                    <input value={form.descontoGeralValor} onChange={(event) => updateField("descontoGeralValor", event.target.value)} className={inputClass} />
+                  </Field>
+                </div>
+              ) : (
+                <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Desconto geral disponível apenas para admin/gerente.</p>
+              )}
+            </FormSection>
+
+            <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
+              <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
+              <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
+                <Copy className="h-4 w-4" />
+                Copiar resumo para WhatsApp
+              </button>
+            </FormSection>
+
+            <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
+              <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
+            </FormSection>
+          </div>
+        )}
       </section>
 
-      <div className="sticky bottom-4 z-20 rounded-3xl border border-[#d7e5e8] bg-white/95 p-4 shadow-xl shadow-slate-900/10 backdrop-blur">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={() => router.push(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
-            <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
+      {shouldShowRest && (
+        <div className="sticky bottom-4 z-20 rounded-3xl border border-[#d7e5e8] bg-white/95 p-4 shadow-xl shadow-slate-900/10 backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={() => router.push(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
+              <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {isContactModalOpen ? <ContactModal draft={contactDraft} onChange={setContactDraft} onClose={() => setIsContactModalOpen(false)} onSave={addContact} /> : null}
       {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} /> : null}
@@ -1987,7 +2139,31 @@ function Modal({ title, children, onClose, onSave }: { title: string; children: 
 function createInitialState(proposta?: Proposta): PropostaFormState {
   const cliente = proposta?.cliente;
   const endereco = proposta?.enderecoEntrega;
-  const fretes = proposta?.fretes ?? (endereco ? createFretesMock(endereco, proposta?.id_int ?? 0, proposta?.resumo.pesoTotal ?? 0) : []);
+  const isAvulso = proposta?.is_avulso ?? false;
+
+  let fretes = proposta?.fretes ?? (endereco ? createFretesMock(endereco, proposta?.id_int ?? 0, proposta?.resumo.pesoTotal ?? 0) : []);
+  let chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
+
+  if (isAvulso) {
+    const singleManual = chosenFrete ? {
+      ...chosenFrete,
+      id: "frete_manual_unico",
+      escolhido: true
+    } : {
+      id: "frete_manual_unico",
+      id_int: proposta?.id_int ?? 0,
+      transportadora: "Frete Manual",
+      servico: "",
+      valor: proposta?.resumo.frete ?? 0,
+      prazo: "A combinar",
+      observacao: "Cadastro manual",
+      escolhido: true,
+      pesoUsado: 0
+    };
+    fretes = [singleManual];
+    chosenFrete = singleManual;
+  }
+
   return {
     id_int: proposta?.id_int ? proposta.id_int.toString() : "NOVO",
     empresa: proposta?.empresa ?? "Ideal Grafica",
@@ -1999,10 +2175,14 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     compradorId: proposta?.compradorAutorizado?.id ?? "",
     itens: proposta?.itens ?? [],
     fretes,
-    freteEscolhidoId: proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? "",
+    freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),
     descontoGeralTipo: proposta?.descontoGeralTipo ?? "VALOR",
     descontoGeralValor: proposta?.descontoGeralValor ? proposta.descontoGeralValor.toString() : "0",
     formaPagamento: proposta?.formaPagamento ?? "Pix a vista 3 dias",
-    observacoes: proposta?.observacoes ?? ""
+    observacoes: proposta?.observacoes ?? "",
+    isAvulso,
+    valorProdutosManual: isAvulso ? (proposta?.resumo.subtotalProdutos ?? 0).toString() : "",
+    valorFreteManual: isAvulso ? (proposta?.resumo.frete ?? 0).toString() : "",
+    observacoesFreteManual: isAvulso ? (chosenFrete?.transportadora ?? "Frete Manual") : ""
   };
 }
