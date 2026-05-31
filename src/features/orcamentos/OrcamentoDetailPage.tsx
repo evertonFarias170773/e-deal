@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Copy, CreditCard, FileText, Package, Truck } from "lucide-react";
+import { ArrowLeft, Copy, CreditCard, FileText, Package, Truck, Paperclip } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -21,7 +21,13 @@ import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcament
 import { getClienteBonusPercent } from "@/lib/mocks/propostas.mock";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
-import { gerarPDFProposta, duplicarProposta, registrarMensagemSistemaProposta } from "@/features/orcamentos/services/orcamentos.service";
+import {
+  gerarPDFProposta,
+  duplicarProposta,
+  registrarMensagemSistemaProposta,
+  getPropostaChatResumos,
+  type PropostaChatResumo
+} from "@/features/orcamentos/services/orcamentos.service";
 import { PropostaChatDrawer } from "@/features/orcamentos/components/PropostaChatDrawer";
 
 type OrcamentoDetailPageProps = {
@@ -35,6 +41,40 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const { proposta, loading, error } = useOrcamentoDetail(idInt);
+  const [chatResumo, setChatResumo] = useState<PropostaChatResumo | null>(null);
+
+  const fetchChatResumo = useCallback(async () => {
+    try {
+      const resMap = await getPropostaChatResumos([idInt]);
+      if (resMap && resMap[idInt]) {
+        setChatResumo(resMap[idInt]);
+      } else {
+        setChatResumo(null);
+      }
+    } catch (err) {
+      console.error("[OrcamentoDetailPage] Erro ao buscar resumo do chat:", err);
+    }
+  }, [idInt]);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const resMap = await getPropostaChatResumos([idInt]);
+        if (!active) return;
+        if (resMap && resMap[idInt]) {
+          setChatResumo(resMap[idInt]);
+        } else {
+          setChatResumo(null);
+        }
+      } catch (err) {
+        console.error("[OrcamentoDetailPage] Erro ao buscar resumo do chat:", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [idInt]);
 
   if (loading) {
     return (
@@ -135,6 +175,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
           title: "PDF Gerado",
           description: "O PDF da proposta foi aberto em uma nova aba."
         });
+        void fetchChatResumo();
       } else {
         showToast({
           type: "error",
@@ -220,7 +261,12 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
             <ActionsMenu
               items={[
                 { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${proposta.id_int}/editar`) },
-                { label: "Ver chat interno", onClick: () => setIsChatOpen(true) },
+                {
+                  label: chatResumo && chatResumo.total_mensagens > 0
+                    ? `Ver chat interno (${chatResumo.total_mensagens})`
+                    : "Ver chat interno",
+                  onClick: () => setIsChatOpen(true)
+                },
                 { label: "Duplicar proposta", onClick: () => void handleDuplicarProposta() },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
@@ -284,9 +330,31 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
           <button
             type="button"
             onClick={() => setIsChatOpen(true)}
-            className="shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+            className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5 ${
+              chatResumo?.has_recusado
+                ? "text-red-700 bg-red-50 hover:bg-red-100 border border-red-200"
+                : chatResumo?.has_pendente
+                ? "text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200"
+                : "text-slate-600 hover:bg-slate-50"
+            }`}
           >
-            Chat interno
+            <span>Chat interno</span>
+            {chatResumo && chatResumo.total_mensagens > 0 && (
+              <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold leading-none ${
+                chatResumo.has_recusado
+                  ? "bg-red-600 text-white"
+                  : chatResumo.has_pendente
+                  ? "bg-amber-600 text-white"
+                  : "bg-[#0b2f4a] text-white"
+              }`}>
+                {chatResumo.total_mensagens}
+              </span>
+            )}
+            {chatResumo && chatResumo.total_anexos > 0 && (
+              <span className="inline-flex items-center text-slate-400" title={`${chatResumo.total_anexos} anexo(s)`}>
+                <Paperclip className="h-3.5 w-3.5" />
+              </span>
+            )}
           </button>
         </div>
       </section>
@@ -374,8 +442,14 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
       </section>
 
       <PropostaChatDrawer
+        key={proposta.id_int}
         open={isChatOpen}
-        onOpenChange={setIsChatOpen}
+        onOpenChange={(open) => {
+          setIsChatOpen(open);
+          if (!open) {
+            void fetchChatResumo();
+          }
+        }}
         idInt={proposta.id_int}
         clienteNome={proposta.cliente?.nome}
         idCliente={proposta.cliente?.idCliente}

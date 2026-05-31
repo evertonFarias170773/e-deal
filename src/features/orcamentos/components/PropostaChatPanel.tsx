@@ -20,6 +20,12 @@ interface PropostaChatPanelProps {
   tituloContexto?: string;
   showHeader?: boolean;
   className?: string;
+  onMessagesUpdated?: (
+    msgCount: number,
+    anexoCount: number,
+    hasPendente: boolean,
+    hasRecusado: boolean
+  ) => void;
 }
 
 const ALLOWED_MIME_TYPES = [
@@ -47,7 +53,8 @@ export function PropostaChatPanel({
   idCliente,
   tituloContexto,
   showHeader = true,
-  className = "h-[650px] rounded-3xl border border-[#d7e5e8] bg-white shadow-sm overflow-hidden"
+  className = "h-[650px] rounded-3xl border border-[#d7e5e8] bg-white shadow-sm overflow-hidden",
+  onMessagesUpdated
 }: PropostaChatPanelProps) {
   const { user } = useAuth();
   const { showToast } = useAppToast();
@@ -71,9 +78,31 @@ export function PropostaChatPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Propagate aggregates reactively when messages change
+  useEffect(() => {
+    let anexoCount = 0;
+    let hasPendente = false;
+    let hasRecusado = false;
 
+    for (const msg of messages) {
+      if (msg.anexos !== null && msg.anexos !== undefined) {
+        if (Array.isArray(msg.anexos)) {
+          anexoCount += msg.anexos.length;
+        }
+      }
+      if (msg.is_pendente === true) {
+        hasPendente = true;
+      }
+      if (msg.is_recusado === true) {
+        hasRecusado = true;
+      }
+    }
+
+    onMessagesUpdated?.(messages.length, anexoCount, hasPendente, hasRecusado);
+  }, [messages, onMessagesUpdated]);
 
   useEffect(() => {
+
     let active = true;
     void (async () => {
       const res = await listPropostaChatMessages(idInt);

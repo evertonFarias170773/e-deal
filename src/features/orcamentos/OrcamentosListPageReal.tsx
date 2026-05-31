@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare } from "lucide-react";
+import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -14,7 +14,12 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
-import { gerarPDFProposta, duplicarProposta } from "@/features/orcamentos/services/orcamentos.service";
+import {
+  gerarPDFProposta,
+  duplicarProposta,
+  getPropostaChatResumos,
+  type PropostaChatResumo
+} from "@/features/orcamentos/services/orcamentos.service";
 import { PropostaChatDrawer } from "@/features/orcamentos/components/PropostaChatDrawer";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
@@ -185,12 +190,15 @@ export function OrcamentosListPageReal() {
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
   const [vendedor, setVendedor] = useState("TODOS");
+  const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
   const [activeChatProposta, setActiveChatProposta] = useState<{
     idInt: number;
     clienteNome?: string | null;
     idCliente?: string | null;
   } | null>(null);
+
+
 
   function handleOpenChat(item: OrcamentoListItem) {
     setActiveChatProposta({
@@ -250,6 +258,28 @@ export function OrcamentosListPageReal() {
       return matchesSearch && matchesStatus && matchesModelo && matchesVendedor && matchesPeriodo;
     });
   }, [modelo, periodo, propostas, search, status, vendedor]);
+
+  // Identify visible/rendered proposal IDs (up to 100) to batch query summaries
+  const visibleIdInts = useMemo(() => {
+    return filteredPropostas.slice(0, 100).map((p) => p.id_int);
+  }, [filteredPropostas]);
+
+  useEffect(() => {
+    if (visibleIdInts.length === 0) return;
+    let active = true;
+    void (async () => {
+      try {
+        const resMap = await getPropostaChatResumos(visibleIdInts);
+        if (!active) return;
+        setChatResumos((prev) => ({ ...prev, ...resMap }));
+      } catch (err) {
+        console.error("[OrcamentosListPageReal] Erro ao buscar resumos do chat em lote:", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [visibleIdInts]);
 
   const periodoSelecionadoLabel = useMemo(() => getSelectedPeriodLabel(periodo, periodOptions), [periodOptions, periodo]);
   const emAbertoItens = useMemo(
@@ -406,11 +436,15 @@ export function OrcamentosListPageReal() {
 
   function getActions(item: OrcamentoListItem) {
     const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0" || item.clienteId === "null" || Boolean(item.mockProposal?.clienteNaoCadastrado);
+    const chatResumo = chatResumos[item.id_int];
+    const chatLabel = chatResumo && chatResumo.total_mensagens > 0
+      ? `Ver chat interno (${chatResumo.total_mensagens})`
+      : "Ver chat interno";
 
     if (item.mockProposal) {
       return [
         { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
-        { label: "Ver chat interno", onClick: () => handleOpenChat(item) },
+        { label: chatLabel, onClick: () => handleOpenChat(item) },
         { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
         { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
         {
@@ -439,7 +473,7 @@ export function OrcamentosListPageReal() {
 
     return [
       { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
-      { label: "Ver chat interno", onClick: () => handleOpenChat(item) },
+      { label: chatLabel, onClick: () => handleOpenChat(item) },
       { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
       { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
       { label: "Copiar proposta informal", onClick: () => showToast({ type: "info", title: "Resumo informal ainda nao disponivel para dados reais." }) },
@@ -613,19 +647,54 @@ export function OrcamentosListPageReal() {
           { header: "Modelo", cell: (proposta) => proposta.modelo, align: "center" },
           {
             header: "Ações",
-            cell: (proposta) => (
-              <div className="flex items-center justify-end gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleOpenChat(proposta)}
-                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-[#0b2f4a] transition"
-                  title="Chat interno"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </button>
-                <ActionsMenu items={getActions(proposta)} />
-              </div>
-            ),
+            cell: (proposta) => {
+              const resumo = chatResumos[proposta.id_int];
+              let btnClass = "text-slate-400 hover:bg-slate-100 hover:text-[#0b2f4a]";
+              let titleText = "Chat interno";
+
+              if (resumo) {
+                if (resumo.has_recusado) {
+                  btnClass = "text-red-600 bg-red-50/60 hover:bg-red-100 hover:text-red-700";
+                  titleText = `Chat interno (${resumo.total_mensagens} msg) - Recusado`;
+                } else if (resumo.has_pendente) {
+                  btnClass = "text-amber-600 bg-amber-50/60 hover:bg-amber-100 hover:text-amber-700";
+                  titleText = `Chat interno (${resumo.total_mensagens} msg) - Pendência`;
+                } else if (resumo.total_mensagens > 0) {
+                  btnClass = "text-blue-600 bg-blue-50/60 hover:bg-blue-100 hover:text-blue-700";
+                  titleText = `Chat interno (${resumo.total_mensagens} msg)`;
+                }
+              }
+
+              return (
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenChat(proposta)}
+                    className={`relative rounded-xl p-2 transition flex items-center justify-center ${btnClass}`}
+                    title={titleText}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    {resumo && resumo.total_mensagens > 0 && (
+                      <span className={`absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full px-1 text-[8px] font-extrabold leading-none h-4 min-w-[16px] text-white ${
+                        resumo.has_recusado
+                          ? "bg-red-600"
+                          : resumo.has_pendente
+                          ? "bg-amber-500"
+                          : "bg-[#0b2f4a]"
+                      }`}>
+                        {resumo.total_mensagens}
+                      </span>
+                    )}
+                    {resumo && resumo.total_anexos > 0 && (
+                      <span className="absolute -bottom-0.5 -right-0.5 bg-slate-500 text-white rounded-full p-0.5 border border-white" title={`${resumo.total_anexos} anexo(s)`}>
+                        <Paperclip className="h-2 w-2" />
+                      </span>
+                    )}
+                  </button>
+                  <ActionsMenu items={getActions(proposta)} />
+                </div>
+              );
+            },
             align: "right"
           }
         ]}
@@ -665,14 +734,43 @@ export function OrcamentosListPageReal() {
                 >
                   Ver
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenChat(proposta)}
-                  className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  <MessageSquare className="h-4 w-4" />
-                  Chat
-                </button>
+                {(() => {
+                  const resumo = chatResumos[proposta.id_int];
+                  let btnStyle = "border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
+                  let badgeBg = "bg-[#0b2f4a]";
+                  if (resumo) {
+                    if (resumo.has_recusado) {
+                      btnStyle = "border-red-200 bg-red-50 text-red-700 hover:bg-red-100";
+                      badgeBg = "bg-red-600";
+                    } else if (resumo.has_pendente) {
+                      btnStyle = "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100";
+                      badgeBg = "bg-amber-500";
+                    } else if (resumo.total_mensagens > 0) {
+                      btnStyle = "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100";
+                      badgeBg = "bg-blue-600";
+                    }
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenChat(proposta)}
+                      className={`inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2 text-sm font-semibold transition ${btnStyle}`}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      <span>Chat</span>
+                      {resumo && resumo.total_mensagens > 0 && (
+                        <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold text-white leading-none ${badgeBg}`}>
+                          {resumo.total_mensagens}
+                        </span>
+                      )}
+                      {resumo && resumo.total_anexos > 0 && (
+                        <span className="text-slate-400" title={`${resumo.total_anexos} anexo(s)`}>
+                          <Paperclip className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()}
               </div>
               <ActionsMenu label="Mais" items={getActions(proposta).filter((item) => item.label !== "Ver proposta")} />
             </div>
@@ -714,9 +812,22 @@ export function OrcamentosListPageReal() {
         <PropostaChatDrawer
           key={activeChatProposta.idInt}
           open={true}
-          onOpenChange={(open) => {
+          onOpenChange={async (open) => {
             if (!open) {
+              const idInt = activeChatProposta.idInt;
               setActiveChatProposta(null);
+              // Safe single summary fetch on drawer close to reflect system events (like generated PDFs/bills)
+              try {
+                const singleRes = await getPropostaChatResumos([idInt]);
+                if (singleRes && singleRes[idInt]) {
+                  setChatResumos((prev) => ({
+                    ...prev,
+                    [idInt]: singleRes[idInt]
+                  }));
+                }
+              } catch (err) {
+                console.error("[OrcamentosListPageReal] Erro ao carregar resumo unitário pós-fechamento:", err);
+              }
             }
           }}
           idInt={activeChatProposta.idInt}

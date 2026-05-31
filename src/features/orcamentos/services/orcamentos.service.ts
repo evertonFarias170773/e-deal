@@ -1796,6 +1796,95 @@ export async function registrarMensagemSistemaProposta(
   }
 }
 
+export interface PropostaChatResumo {
+  id_int: number;
+  total_mensagens: number;
+  total_anexos: number;
+  ultima_mensagem: string | null;
+  ultima_data: string | null;
+  has_pendente: boolean;
+  has_recusado: boolean;
+}
+
+export async function getPropostaChatResumos(
+  idInts: number[]
+): Promise<Record<number, PropostaChatResumo>> {
+  const result: Record<number, PropostaChatResumo> = {};
+  if (!idInts || idInts.length === 0) {
+    return result;
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return result;
+  }
+
+  try {
+    const { data, error } = await client
+      .from("propostas_chat")
+      .select("id_int, id, created_at, mensagem, anexos, is_pendente, is_recusado")
+      .in("id_int", idInts)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao buscar resumos do chat em lote:", error);
+      return result;
+    }
+
+    if (!data || data.length === 0) {
+      return result;
+    }
+
+    for (const row of data) {
+      const idInt = Number(row.id_int);
+      if (isNaN(idInt)) continue;
+
+      if (!result[idInt]) {
+        result[idInt] = {
+          id_int: idInt,
+          total_mensagens: 0,
+          total_anexos: 0,
+          ultima_mensagem: null,
+          ultima_data: null,
+          has_pendente: false,
+          has_recusado: false
+        };
+      }
+
+      const resumo = result[idInt];
+      resumo.total_mensagens += 1;
+
+      // Tratar anexos com segurança:
+      // - null = 0
+      // - array = tamanho do array
+      // - objeto inválido = 0
+      let anexoCount = 0;
+      if (row.anexos !== null && row.anexos !== undefined) {
+        if (Array.isArray(row.anexos)) {
+          anexoCount = row.anexos.length;
+        }
+      }
+      resumo.total_anexos += anexoCount;
+
+      resumo.ultima_mensagem = row.mensagem || null;
+      resumo.ultima_data = row.created_at || null;
+
+      if (row.is_pendente === true) {
+        resumo.has_pendente = true;
+      }
+      if (row.is_recusado === true) {
+        resumo.has_recusado = true;
+      }
+    }
+
+    return result;
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção ao buscar resumos do chat em lote:", err);
+    return result;
+  }
+}
+
+
 
 
 

@@ -1,7 +1,5 @@
-"use client";
-
-import { useEffect } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, Paperclip } from "lucide-react";
 import { PropostaChatPanel } from "./PropostaChatPanel";
 
 interface PropostaChatDrawerProps {
@@ -26,6 +24,20 @@ export function PropostaChatDrawer({
   headerBadge,
   headerActions
 }: PropostaChatDrawerProps) {
+  const [localResumo, setLocalResumo] = useState<{
+    total_mensagens: number;
+    total_anexos: number;
+    has_pendente: boolean;
+    has_recusado: boolean;
+  }>({
+    total_mensagens: 0,
+    total_anexos: 0,
+    has_pendente: false,
+    has_recusado: false
+  });
+
+
+
   // ESC key listener to close drawer
   useEffect(() => {
     if (!open) return;
@@ -81,13 +93,39 @@ export function PropostaChatDrawer({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-6 py-4 shrink-0">
           <div className="flex flex-col gap-0.5 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {headerBadge ? (
                 headerBadge
               ) : (
-                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200">
-                  {tituloContexto}
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200">
+                    {tituloContexto}
+                    {localResumo.total_mensagens > 0 && (
+                      <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-[#0b2f4a] px-1.5 py-0.5 text-[9px] font-extrabold text-white leading-none">
+                        {localResumo.total_mensagens}
+                      </span>
+                    )}
+                  </span>
+                  
+                  {localResumo.total_anexos > 0 && (
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200" title={`${localResumo.total_anexos} anexo(s)`}>
+                      <Paperclip className="h-3 w-3 text-slate-500" />
+                      {localResumo.total_anexos}
+                    </span>
+                  )}
+
+                  {localResumo.has_recusado && (
+                    <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700 border border-red-200">
+                      Recusado
+                    </span>
+                  )}
+
+                  {localResumo.has_pendente && (
+                    <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">
+                      Pendência
+                    </span>
+                  )}
+                </div>
               )}
               <h2 className="text-base font-bold text-slate-950 shrink-0">
                 Proposta #{idInt}
@@ -119,9 +157,18 @@ export function PropostaChatDrawer({
             idCliente={idCliente}
             showHeader={false}
             className="h-full border-none shadow-none rounded-none"
+            onMessagesUpdated={(msgCount, anexoCount, hasPendente, hasRecusado) => {
+              setLocalResumo({
+                total_mensagens: msgCount,
+                total_anexos: anexoCount,
+                has_pendente: hasPendente,
+                has_recusado: hasRecusado
+              });
+            }}
           />
         </div>
       </div>
     </div>
   );
 }
+
