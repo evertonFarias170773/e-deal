@@ -1478,6 +1478,48 @@ export async function gerarPDFProposta(
   }
 }
 
+export async function duplicarProposta(
+  idIntOrigem: number
+): Promise<{ success: boolean; novoIdInt?: number; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase não configurado." };
+  }
+
+  if (!idIntOrigem || idIntOrigem <= 0) {
+    return { success: false, errorMessage: "ID de origem inválido." };
+  }
+
+  try {
+    const { data, error } = await client.rpc("copiar_proposta_v2", {
+      p_id_int_origem: idIntOrigem
+    });
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao duplicar proposta:", error);
+      let msg = error.message || "Erro desconhecido ao duplicar proposta.";
+      if (msg.includes("já é cópia") || msg.toLowerCase().includes("ja e copia")) {
+        msg = "Não é permitido duplicar uma proposta que já é cópia.";
+      }
+      return { success: false, errorMessage: msg };
+    }
+
+    const novoIdInt = Number(data);
+    if (!novoIdInt || isNaN(novoIdInt)) {
+      return { success: false, errorMessage: "Retorno da duplicação inválido." };
+    }
+
+    return { success: true, novoIdInt };
+  } catch (err) {
+    console.error("[OrcamentosService] Erro inesperado ao duplicar proposta:", err);
+    return { 
+      success: false, 
+      errorMessage: err instanceof Error ? err.message : "Erro interno desconhecido." 
+    };
+  }
+}
+
+
 
 
 

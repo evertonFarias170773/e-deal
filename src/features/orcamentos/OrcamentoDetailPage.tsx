@@ -21,7 +21,7 @@ import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcament
 import { getClienteBonusPercent } from "@/lib/mocks/propostas.mock";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
-import { gerarPDFProposta } from "@/features/orcamentos/services/orcamentos.service";
+import { gerarPDFProposta, duplicarProposta } from "@/features/orcamentos/services/orcamentos.service";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -151,6 +151,45 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     }
   }
 
+  async function handleDuplicarProposta() {
+    if (!proposta) return;
+    const ok = window.confirm("Deseja realmente duplicar esta proposta?");
+    if (!ok) return;
+
+    showToast({
+      type: "info",
+      title: "Duplicando proposta",
+      description: "Aguarde enquanto a proposta é duplicada..."
+    });
+
+    try {
+      const res = await duplicarProposta(proposta.id_int);
+      if (res.success && res.novoIdInt) {
+        showToast({
+          type: "success",
+          title: "Proposta duplicada",
+          description: "Proposta duplicada com sucesso. Redirecionando..."
+        });
+        window.setTimeout(() => {
+          router.push(`/orcamentos/${res.novoIdInt}/editar`);
+        }, 1200);
+      } else {
+        showToast({
+          type: "error",
+          title: "Erro ao duplicar",
+          description: res.errorMessage || "Não foi possível duplicar a proposta."
+        });
+      }
+    } catch (err) {
+      console.error("[Duplicação] Erro:", err);
+      showToast({
+        type: "error",
+        title: "Erro inesperado",
+        description: "Ocorreu um erro interno ao tentar duplicar."
+      });
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -179,7 +218,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
             <ActionsMenu
               items={[
                 { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${proposta.id_int}/editar`) },
-                { label: "Duplicar proposta", onClick: () => showToast({ type: "info", title: "Duplicar proposta", description: "Acao mockada." }) },
+                { label: "Duplicar proposta", onClick: () => void handleDuplicarProposta() },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
                 ...(saldoRestante > 0 && !isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),

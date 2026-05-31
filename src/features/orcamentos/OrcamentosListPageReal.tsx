@@ -14,7 +14,7 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
-import { gerarPDFProposta } from "@/features/orcamentos/services/orcamentos.service";
+import { gerarPDFProposta, duplicarProposta } from "@/features/orcamentos/services/orcamentos.service";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const defaultStatusOrder = ["NOVO", "AGUARDANDO", "APROVADO", "CANCELADO"];
@@ -351,6 +351,44 @@ export function OrcamentosListPageReal() {
     }
   }
 
+  async function handleDuplicarPropostaForListItem(item: OrcamentoListItem) {
+    const ok = window.confirm(`Deseja realmente duplicar a proposta #${item.id_int}?`);
+    if (!ok) return;
+
+    showToast({
+      type: "info",
+      title: "Duplicando proposta",
+      description: "Aguarde enquanto a proposta é duplicada..."
+    });
+
+    try {
+      const res = await duplicarProposta(item.id_int);
+      if (res.success && res.novoIdInt) {
+        showToast({
+          type: "success",
+          title: "Proposta duplicada",
+          description: "Proposta duplicada com sucesso. Redirecionando..."
+        });
+        window.setTimeout(() => {
+          router.push(`/orcamentos/${res.novoIdInt}/editar`);
+        }, 1200);
+      } else {
+        showToast({
+          type: "error",
+          title: "Erro ao duplicar",
+          description: res.errorMessage || "Não foi possível duplicar a proposta."
+        });
+      }
+    } catch (err) {
+      console.error("[Duplicação] Erro:", err);
+      showToast({
+        type: "error",
+        title: "Erro inesperado",
+        description: "Ocorreu um erro ao tentar duplicar."
+      });
+    }
+  }
+
   function getActions(item: OrcamentoListItem) {
     const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0" || item.clienteId === "null" || Boolean(item.mockProposal?.clienteNaoCadastrado);
 
@@ -358,7 +396,7 @@ export function OrcamentosListPageReal() {
       return [
         { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
         { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
-        { label: "Duplicar proposta", onClick: () => showMockAction("Duplicar proposta") },
+        { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
         {
           label: "Copiar proposta informal",
           onClick: async () => {
@@ -386,7 +424,7 @@ export function OrcamentosListPageReal() {
     return [
       { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
       { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
-      { label: "Duplicar proposta", onClick: () => showToast({ type: "info", title: "Duplicacao ainda nao conectada." }) },
+      { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
       { label: "Copiar proposta informal", onClick: () => showToast({ type: "info", title: "Resumo informal ainda nao disponivel para dados reais." }) },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
       ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) }] : []),
