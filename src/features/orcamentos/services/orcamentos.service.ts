@@ -1519,6 +1519,199 @@ export async function duplicarProposta(
   }
 }
 
+export interface PropostaChatAnexo {
+  url: string;
+  name: string;
+  type: string;
+  size: number;
+}
+
+export interface PropostaChatMessage {
+  id: number;
+  id_int: number;
+  mensagem: string;
+  tipo: "MENSAGEM" | "SISTEMA" | "FINANCEIRO" | "PRODUCAO";
+  autor_uid: string | null;
+  autor_nome: string | null;
+  autor_email: string | null;
+  setor: string | null;
+  created_at: string;
+  updated_at: string | null;
+  editado: boolean;
+  visivel_externo: boolean;
+  anexos: PropostaChatAnexo[] | null;
+  id_cliente: number | null;
+  avatar: string | null;
+  is_pendente: boolean;
+  is_recusado: boolean;
+}
+
+export async function listPropostaChatMessages(
+  idInt: number
+): Promise<{ success: boolean; data: PropostaChatMessage[]; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, data: [], errorMessage: "Cliente Supabase não configurado." };
+  }
+
+  try {
+    const { data, error } = await client
+      .from("propostas_chat")
+      .select("*")
+      .eq("id_int", idInt)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao buscar mensagens do chat:", error);
+      return { success: false, data: [], errorMessage: error.message };
+    }
+
+    return { success: true, data: data as PropostaChatMessage[] };
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção ao buscar mensagens do chat:", err);
+    return { 
+      success: false, 
+      data: [], 
+      errorMessage: err instanceof Error ? err.message : "Erro inesperado ao listar mensagens." 
+    };
+  }
+}
+
+function isValidUUID(val: string | null | undefined): boolean {
+  if (!val) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(val);
+}
+
+export async function sendPropostaChatMessage(payload: {
+  id_int: number;
+  mensagem: string;
+  tipo: "MENSAGEM" | "SISTEMA" | "FINANCEIRO" | "PRODUCAO";
+  autor_uid: string | null;
+  autor_nome: string | null;
+  autor_email: string | null;
+  setor: string | null;
+  avatar: string | null;
+  visivel_externo: boolean;
+  anexos: PropostaChatAnexo[] | null;
+  id_cliente: number | null;
+}): Promise<{ success: boolean; data?: PropostaChatMessage; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase não configurado." };
+  }
+
+  // Se a mensagem for vazia e tiver anexos, gravar mensagem padrão
+  let msg = payload.mensagem?.trim() || "";
+  if (!msg && payload.anexos && payload.anexos.length > 0) {
+    msg = "Enviou um anexo.";
+  }
+
+  const isValidUserUuid = isValidUUID(payload.autor_uid);
+
+  try {
+    const { data, error } = await client
+      .from("propostas_chat")
+      .insert([
+        {
+          id_int: payload.id_int,
+          mensagem: msg,
+          tipo: payload.tipo,
+          autor_uid: isValidUserUuid ? payload.autor_uid : null,
+          autor_nome: payload.autor_nome,
+          autor_email: payload.autor_email,
+          setor: payload.setor,
+          avatar: payload.avatar,
+          visivel_externo: payload.visivel_externo,
+          anexos: payload.anexos,
+          id_cliente: payload.id_cliente
+        }
+      ])
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao enviar mensagem:", error);
+      return { success: false, errorMessage: error.message };
+    }
+
+    return { success: true, data: data as PropostaChatMessage };
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção ao enviar mensagem:", err);
+    return { 
+      success: false, 
+      errorMessage: err instanceof Error ? err.message : "Erro inesperado ao enviar mensagem." 
+    };
+  }
+}
+
+export async function uploadChatAnexo(
+  idInt: number,
+  file: File
+): Promise<{ success: boolean; anexo?: PropostaChatAnexo; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase não configurado." };
+  }
+
+  // Sanitizar nome do arquivo:
+  const parts = file.name.split(".");
+  const extension = parts.length > 1 ? parts.pop() : "";
+  const baseName = parts.join(".") || "anexo";
+  const normalizedBaseName = baseName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9-_]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+  const normalizedExtension = extension?.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  const sanitizedName = normalizedExtension 
+    ? `${normalizedBaseName}.${normalizedExtension}`
+    : normalizedBaseName;
+
+  const timestamp = Date.now();
+  const filePath = `propostas/${idInt}/${timestamp}_${sanitizedName}`;
+
+  try {
+    const uploadResult = await client.storage
+      .from("chat-ideal")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        contentType: file.type
+      });
+
+    if (uploadResult.error) {
+      console.error("[OrcamentosService] Erro no upload do anexo:", uploadResult.error);
+      return { success: false, errorMessage: uploadResult.error.message || "Erro no upload para o storage." };
+    }
+
+    const { data: publicUrlData } = client.storage
+      .from("chat-ideal")
+      .getPublicUrl(uploadResult.data.path);
+
+    const publicUrl = publicUrlData?.publicUrl;
+    if (!publicUrl) {
+      return { success: false, errorMessage: "Falha ao gerar URL pública do anexo." };
+    }
+
+    const anexo: PropostaChatAnexo = {
+      url: publicUrl,
+      name: file.name,
+      type: file.type || "application/octet-stream",
+      size: file.size
+    };
+
+    return { success: true, anexo };
+  } catch (error) {
+    console.error("[OrcamentosService] Exceção no upload do anexo:", error);
+    return { 
+      success: false, 
+      errorMessage: error instanceof Error ? error.message : "Erro inesperado ao fazer upload do anexo." 
+    };
+  }
+}
+
+
 
 
 

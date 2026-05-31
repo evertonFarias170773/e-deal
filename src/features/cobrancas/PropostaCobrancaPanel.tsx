@@ -88,10 +88,21 @@ export function PropostaCobrancaPanel({
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
   const [realCreditAnalysis, setRealCreditAnalysis] = useState<CreditAnalysisResult | null>(null);
   const [isLoadingCredit, setIsLoadingCredit] = useState(false);
+  const [nowTime, setNowTime] = useState<number>(0);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setNowTime(Date.now());
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Reset credit analysis state during render when criteria changes
+  if ((form.tipoCobranca !== "E-FATURADO" || source !== "supabase" || !proposta.cliente.idCliente) && realCreditAnalysis !== null) {
+    setRealCreditAnalysis(null);
+  }
 
   useEffect(() => {
     if (form.tipoCobranca !== "E-FATURADO" || source !== "supabase" || !proposta.cliente.idCliente) {
-      setRealCreditAnalysis(null);
       return;
     }
 
@@ -184,7 +195,7 @@ export function PropostaCobrancaPanel({
         return false;
       }
       const vencDate = new Date(cob.vencimento + "T23:59:59");
-      return vencDate.getTime() < Date.now();
+      return vencDate.getTime() < nowTime;
     });
 
     const disponivel = proposta.cliente.creditoDisponivel;

@@ -1,0 +1,457 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { useAppToast } from "@/components/common/AppToast";
+import {
+  listPropostaChatMessages,
+  sendPropostaChatMessage,
+  uploadChatAnexo,
+  type PropostaChatMessage,
+  type PropostaChatAnexo
+} from "@/features/orcamentos/services/orcamentos.service";
+import type { Proposta } from "@/features/orcamentos/types";
+import { Paperclip, Send, Loader2, FileText, Image as ImageIcon, Download, X, AlertCircle } from "lucide-react";
+import { formatDateTime } from "@/lib/formatters/date";
+
+interface PropostaChatPanelProps {
+  proposta: Proposta;
+}
+
+const ALLOWED_MIME_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-rar-compressed",
+  "text/plain"
+];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+export function PropostaChatPanel({ proposta }: PropostaChatPanelProps) {
+  const { user } = useAuth();
+  const { showToast } = useAppToast();
+
+  const [messages, setMessages] = useState<PropostaChatMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [messageText, setMessageText] = useState("");
+  const [sending, setSending] = useState(false);
+  
+  // Keep track of the previous proposal ID to reset loading state during render
+  const [prevIdInt, setPrevIdInt] = useState(proposta.id_int);
+  if (proposta.id_int !== prevIdInt) {
+    setPrevIdInt(proposta.id_int);
+    setLoadingMessages(true);
+  }
+
+  // Arquivos selecionados que ainda não foram enviados
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const res = await listPropostaChatMessages(proposta.id_int);
+      if (!active) return;
+      if (res.success) {
+        setMessages(res.data);
+      } else {
+        console.error("[PropostaChatPanel] Erro ao carregar mensagens:", res.errorMessage);
+      }
+      setLoadingMessages(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [proposta.id_int]);
+
+  // Scroll to bottom when messages load or change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Remover arquivo da lista de seleção
+  function handleRemoveFile(index: number) {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // Tratar seleção de arquivos
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files) return;
+
+    const validFiles: File[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size > MAX_FILE_SIZE) {
+        showToast({
+          type: "warning",
+          title: "Arquivo muito grande",
+          description: `O arquivo "${file.name}" excede o limite de 10MB.`
+        });
+        continue;
+      }
+      if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+        showToast({
+          type: "warning",
+          title: "Tipo não suportado",
+          description: `O tipo de "${file.name}" não é permitido no chat.`
+        });
+        continue;
+      }
+      validFiles.push(file);
+    }
+
+    setSelectedFiles((prev) => [...prev, ...validFiles]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  // Enviar mensagem
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) {
+      showToast({ type: "error", title: "Não autenticado", description: "Faça login para poder enviar mensagens." });
+      return;
+    }
+
+    const trimmedMsg = messageText.trim();
+    if (!trimmedMsg && selectedFiles.length === 0) {
+      return;
+    }
+
+    setSending(true);
+    const uploadedAnexos: PropostaChatAnexo[] = [];
+
+    try {
+      // 1. Upload de anexos, se houver
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const res = await uploadChatAnexo(proposta.id_int, file);
+          if (res.success && res.anexo) {
+            uploadedAnexos.push(res.anexo);
+          } else {
+            showToast({
+              type: "error",
+              title: "Falha no anexo",
+              description: `Não foi possível enviar o arquivo: ${file.name}`
+            });
+            setSending(false);
+            return;
+          }
+        }
+      }
+
+      // 2. Enviar a mensagem principal com os anexos
+      const resMsg = await sendPropostaChatMessage({
+        id_int: proposta.id_int,
+        mensagem: trimmedMsg,
+        tipo: "MENSAGEM",
+        autor_uid: user.id,
+        autor_nome: user.name,
+        autor_email: user.email,
+        setor: user.sector,
+        avatar: user.avatarUrl || null,
+        visivel_externo: false,
+        anexos: uploadedAnexos.length > 0 ? uploadedAnexos : null,
+        id_cliente: proposta.cliente?.idCliente || null
+      });
+
+      if (resMsg.success && resMsg.data) {
+        setMessageText("");
+        setSelectedFiles([]);
+        // Adiciona a mensagem enviada localmente para atualizar o chat imediatamente
+        setMessages((prev) => [...prev, resMsg.data!]);
+      } else {
+        console.error("[PropostaChatPanel] Erro ao enviar mensagem:", resMsg.errorMessage);
+        showToast({
+          type: "error",
+          title: "Erro ao enviar",
+          description: "Não foi possível enviar a mensagem. Verifique os dados do usuário e tente novamente."
+        });
+      }
+    } catch (err) {
+      console.error("[PropostaChatPanel] Erro ao enviar:", err);
+      showToast({
+        type: "error",
+        title: "Erro inesperado",
+        description: "Não foi possível enviar a mensagem. Verifique os dados do usuário e tente novamente."
+      });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function getInitials(name?: string | null) {
+    if (!name) return "?";
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+  }
+
+  return (
+    <section className="flex flex-col rounded-3xl border border-[#d7e5e8] bg-white shadow-sm overflow-hidden h-[650px]">
+      {/* Header do Chat */}
+      <div className="flex items-center justify-between border-b border-[#d7e5e8] bg-slate-50 px-6 py-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-950">Chat Interno</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Discussão administrativa interna da proposta #{proposta.id_int}
+          </p>
+        </div>
+        <div className="rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700">
+          Setor: {user?.sector || "ADMIN"}
+        </div>
+      </div>
+
+      {/* Listagem de Mensagens */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30">
+        {loadingMessages ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center space-y-2">
+              <Loader2 className="h-6 w-6 animate-spin text-[#0b2f4a] mx-auto" />
+              <p className="text-xs text-slate-500">Carregando mensagens...</p>
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-center p-8">
+            <div className="max-w-xs space-y-2">
+              <AlertCircle className="h-8 w-8 text-slate-400 mx-auto" />
+              <h3 className="text-sm font-semibold text-slate-800">Sem mensagens ainda</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Este chat está limpo. Envie uma mensagem interna ou anexo para iniciar a conversa.
+              </p>
+            </div>
+          </div>
+        ) : (
+          messages.map((message) => {
+            const isUser = message.autor_uid === user?.id;
+            
+            // Renderização de mensagens de Sistema, Financeiro e Produção
+            if (message.tipo === "SISTEMA") {
+              return (
+                <div key={message.id} className="flex justify-center my-2">
+                  <div className="rounded-full bg-slate-100 px-4 py-1.5 text-xs text-slate-600 border border-slate-200 text-center max-w-md">
+                    <span className="font-semibold text-slate-700">Sistema:</span> {message.mensagem}
+                  </div>
+                </div>
+              );
+            }
+
+            if (message.tipo === "FINANCEIRO") {
+              return (
+                <div key={message.id} className="flex justify-center my-2">
+                  <div className="rounded-2xl bg-orange-50 px-4 py-2 text-xs text-orange-800 border border-orange-200 text-center max-w-md">
+                    <span className="font-semibold">Financeiro:</span> {message.mensagem}
+                  </div>
+                </div>
+              );
+            }
+
+            if (message.tipo === "PRODUCAO") {
+              return (
+                <div key={message.id} className="flex justify-center my-2">
+                  <div className="rounded-2xl bg-purple-50 px-4 py-2 text-xs text-purple-800 border border-purple-200 text-center max-w-md">
+                    <span className="font-semibold">Produção:</span> {message.mensagem}
+                  </div>
+                </div>
+              );
+            }
+
+            // Mensagem normal do usuário
+            return (
+              <div key={message.id} className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+                {/* Avatar */}
+                {message.avatar ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={message.avatar}
+                    alt={message.autor_nome || ""}
+                    className="h-8 w-8 rounded-full object-cover border border-slate-200 shrink-0 mt-1"
+                  />
+                ) : (
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-300 text-[11px] font-bold text-slate-600 border border-slate-200 shrink-0 mt-1">
+                    {getInitials(message.autor_nome)}
+                  </div>
+                )}
+
+                {/* Balão */}
+                <div className={`max-w-[70%] flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 px-1 mb-1">
+                    <span className="font-semibold text-slate-800">
+                      {isUser ? "Você" : message.autor_nome}
+                    </span>
+                    {message.setor && (
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 font-medium">
+                        {message.setor}
+                      </span>
+                    )}
+                  </div>
+
+                  <div
+                    className={`rounded-2xl px-4 py-3 text-sm shadow-sm whitespace-pre-wrap leading-relaxed ${
+                      isUser
+                        ? "bg-[#0b2f4a] text-white rounded-tr-none"
+                        : "bg-slate-100 text-slate-800 rounded-tl-none"
+                    }`}
+                  >
+                    <p>{message.mensagem}</p>
+
+                    {/* Renderização de anexos */}
+                    {message.anexos && message.anexos.length > 0 && (
+                      <div className="mt-3 space-y-2 border-t border-slate-200/20 pt-2.5">
+                        {message.anexos.map((anexo, idx) => {
+                          const isImg = anexo.type?.startsWith("image/");
+                          return (
+                            <div key={idx} className="flex flex-col gap-1">
+                              {isImg ? (
+                                <div className="relative max-w-xs overflow-hidden rounded-lg border border-slate-200/20 bg-black/5">
+                                  <a href={anexo.url} target="_blank" rel="noopener noreferrer">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={anexo.url}
+                                      alt={anexo.name}
+                                      className="max-h-40 w-full object-cover transition hover:opacity-90"
+                                    />
+                                  </a>
+                                  <span className="absolute bottom-1 right-1 bg-black/60 px-1.5 py-0.5 text-[9px] text-white rounded font-mono">
+                                    {(anexo.size / 1024).toFixed(1)} KB
+                                  </span>
+                                </div>
+                              ) : (
+                                <a
+                                  href={anexo.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`inline-flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs transition border ${
+                                    isUser
+                                      ? "bg-white/10 text-white hover:bg-white/20 border-white/10"
+                                      : "bg-white text-slate-800 hover:bg-slate-50 border-slate-200"
+                                  }`}
+                                >
+                                  <FileText className="h-4 w-4 shrink-0" />
+                                  <span className="truncate max-w-[150px] font-medium">{anexo.name}</span>
+                                  <Download className="h-3.5 w-3.5 shrink-0 opacity-60 ml-auto" />
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <span className="text-[10px] text-slate-400 mt-1 px-1">
+                    {formatDateTime(message.created_at)}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Lista de arquivos selecionados antes do envio */}
+      {selectedFiles.length > 0 && (
+        <div className="bg-slate-50 border-t border-[#d7e5e8] px-6 py-3 flex flex-wrap gap-2">
+          {selectedFiles.map((file, index) => (
+            <div
+              key={index}
+              className="flex items-center gap-2 bg-white rounded-xl border border-[#d7e5e8] pl-3 pr-1.5 py-1 text-xs text-slate-700 shadow-sm"
+            >
+              {file.type.startsWith("image/") ? (
+                <ImageIcon className="h-3.5 w-3.5 text-[#0f9f9a]" />
+              ) : (
+                <FileText className="h-3.5 w-3.5 text-[#0b2f4a]" />
+              )}
+              <span className="truncate max-w-[180px] font-medium">{file.name}</span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                ({(file.size / (1024 * 1024)).toFixed(2)} MB)
+              </span>
+              <button
+                type="button"
+                onClick={() => handleRemoveFile(index)}
+                className="p-0.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Formulário de Envio */}
+      <form onSubmit={handleSend} className="border-t border-[#d7e5e8] bg-white p-4">
+        <div className="flex items-end gap-3">
+          {/* Botão Anexar */}
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+            title="Anexar arquivo (até 10MB)"
+          >
+            <Paperclip className="h-5 w-5" />
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+            multiple
+            accept={ALLOWED_MIME_TYPES.join(",")}
+          />
+
+          {/* Input de Texto */}
+          <div className="flex-1">
+            <textarea
+              rows={1}
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSend(e);
+                }
+              }}
+              disabled={sending}
+              placeholder={sending ? "Enviando..." : "Escreva uma mensagem interna (Shift + Enter para pular linha)..."}
+              className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-[#0b2f4a] focus:bg-white transition"
+              style={{ maxHeight: "120px" }}
+            />
+          </div>
+
+          {/* Botão Enviar */}
+          <button
+            type="submit"
+            disabled={sending || (!messageText.trim() && selectedFiles.length === 0)}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#0b2f4a] text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-50"
+          >
+            {sending ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}

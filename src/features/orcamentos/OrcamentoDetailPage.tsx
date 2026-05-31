@@ -22,6 +22,7 @@ import { getClienteBonusPercent } from "@/lib/mocks/propostas.mock";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { gerarPDFProposta, duplicarProposta } from "@/features/orcamentos/services/orcamentos.service";
+import { PropostaChatPanel } from "@/features/orcamentos/components/PropostaChatPanel";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -32,6 +33,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const { showToast } = useAppToast();
   const { getCobrancasByProposta } = useCobrancas();
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"detalhes" | "chat">("detalhes");
   const { proposta, loading, error } = useOrcamentoDetail(idInt);
 
   if (loading) {
@@ -254,88 +256,114 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
         />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
-        <div className="space-y-6">
-          <DetailCard title={isClienteNaoCadastrado ? "Cliente e entrega (Sem cadastro)" : "Cliente, contato e entrega"}>
-            <div className="grid gap-3 md:grid-cols-2">
-              {isClienteNaoCadastrado ? (
-                <>
-                  <InfoBox label="Cliente" value={proposta.cliente.nome} detail="Orçamento rápido (sem cadastro)" />
-                  <InfoBox label="Vendedor responsável" value={proposta.vendedor} detail="ERP Ideal" />
-                  <InfoBox label="CEP de entrega" value={proposta.enderecoEntrega.cep} detail="Logística rápida" />
-                </>
-              ) : (
-                <>
-                  <InfoBox label="Cliente" value={`${proposta.cliente.nome} (#${proposta.cliente.idCliente})`} detail={proposta.cliente.documento} />
-                  <InfoBox label="Contato responsavel" value={proposta.contato.nome} detail={`${proposta.contato.whatsapp} - ${proposta.contato.email}`} />
-                  <InfoBox label="Endereco de entrega" value={`${proposta.enderecoEntrega.endereco}, ${proposta.enderecoEntrega.numero}`} detail={`${proposta.enderecoEntrega.cidade}/${proposta.enderecoEntrega.uf} - CEP ${proposta.enderecoEntrega.cep}`} />
-                  <InfoBox label="Comprador / autorizado" value={proposta.compradorAutorizado?.nome ?? "Cliente principal"} detail={proposta.compradorAutorizado?.tipoRelacao ?? "Sem vinculo comercial selecionado"} />
-                </>
-              )}
-            </div>
-          </DetailCard>
-
-          <DetailCard title="Produtos da proposta">
-            <div className="space-y-4">
-              {proposta.itens.map((item) => (
-                <div key={item.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="grid gap-3 lg:grid-cols-[1fr_110px_130px_130px] lg:items-start">
-                    <div>
-                      <p className="font-semibold text-slate-950">#{item.id_produto} - {item.nome}</p>
-                      <p className="mt-1 text-sm text-slate-500">{item.formato} | {item.descricaoModelo}</p>
-                    </div>
-                    <InfoPill label="Qtd." value={item.quantidade.toLocaleString("pt-BR")} />
-                    <InfoPill label="Prazo" value={item.prazo} />
-                    <InfoPill label="Subtotal" value={formatCurrency(item.subtotal)} />
-                  </div>
-                  {item.variacoesEscolhidas.length ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {item.variacoesEscolhidas.map((escolha) => (
-                        <span key={escolha.id} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {escolha.variacao.nome}: {escolha.tipo.variacao} (+{formatCurrency(escolha.tipo.v_extra)} / {formatWeightFromGrams(escolha.tipo.peso, { mode: "g" })})
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </DetailCard>
-
-          <DetailCard title="Fretes disponiveis">
-            <div className="grid gap-3 md:grid-cols-2">
-              {proposta.fretes.map((frete) => (
-                <div key={frete.id} className={`rounded-3xl border p-4 ${frete.escolhido ? "border-teal-200 bg-teal-50" : "border-slate-200 bg-slate-50"}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-950">{frete.transportadora}</p>
-                      <p className="text-sm text-slate-500">{frete.servico} - {frete.prazo}</p>
-                    </div>
-                    {frete.escolhido ? <StatusBadge status="ESCOLHIDO" tone="success" /> : null}
-                  </div>
-                  <p className="mt-3 text-lg font-bold text-slate-950">{formatCurrency(frete.valor)}</p>
-                  <p className="mt-1 text-sm text-slate-500">{frete.observacao}</p>
-                </div>
-              ))}
-            </div>
-          </DetailCard>
-        </div>
-
-        <div className="space-y-6">
-          <DetailCard title="Resumo de valores">
-            <ResumoValores proposta={proposta} />
-          </DetailCard>
-
-          <DetailCard title="Proposta informal">
-            <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
-            <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
-              <Copy className="h-4 w-4" />
-              Copiar resumo para WhatsApp
-            </button>
-          </DetailCard>
-
+      <section className="rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-sm">
+        <div className="flex gap-2 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab("detalhes")}
+            className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "detalhes" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            Detalhes da proposta
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("chat")}
+            className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "chat" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            Chat interno
+          </button>
         </div>
       </section>
+
+      {activeTab === "detalhes" ? (
+        <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
+          <div className="space-y-6">
+            <DetailCard title={isClienteNaoCadastrado ? "Cliente e entrega (Sem cadastro)" : "Cliente, contato e entrega"}>
+              <div className="grid gap-3 md:grid-cols-2">
+                {isClienteNaoCadastrado ? (
+                  <>
+                    <InfoBox label="Cliente" value={proposta.cliente.nome} detail="Orçamento rápido (sem cadastro)" />
+                    <InfoBox label="Vendedor responsável" value={proposta.vendedor} detail="ERP Ideal" />
+                    <InfoBox label="CEP de entrega" value={proposta.enderecoEntrega.cep} detail="Logística rápida" />
+                  </>
+                ) : (
+                  <>
+                    <InfoBox label="Cliente" value={`${proposta.cliente.nome} (#${proposta.cliente.idCliente})`} detail={proposta.cliente.documento} />
+                    <InfoBox label="Contato responsavel" value={proposta.contato.nome} detail={`${proposta.contato.whatsapp} - ${proposta.contato.email}`} />
+                    <InfoBox label="Endereco de entrega" value={`${proposta.enderecoEntrega.endereco}, ${proposta.enderecoEntrega.numero}`} detail={`${proposta.enderecoEntrega.cidade}/${proposta.enderecoEntrega.uf} - CEP ${proposta.enderecoEntrega.cep}`} />
+                    <InfoBox label="Comprador / autorizado" value={proposta.compradorAutorizado?.nome ?? "Cliente principal"} detail={proposta.compradorAutorizado?.tipoRelacao ?? "Sem vinculo comercial selecionado"} />
+                  </>
+                )}
+              </div>
+            </DetailCard>
+
+            <DetailCard title="Produtos da proposta">
+              <div className="space-y-4">
+                {proposta.itens.map((item) => (
+                  <div key={item.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="grid gap-3 lg:grid-cols-[1fr_110px_130px_130px] lg:items-start">
+                      <div>
+                        <p className="font-semibold text-slate-950">#{item.id_produto} - {item.nome}</p>
+                        <p className="mt-1 text-sm text-slate-500">{item.formato} | {item.descricaoModelo}</p>
+                      </div>
+                      <InfoPill label="Qtd." value={item.quantidade.toLocaleString("pt-BR")} />
+                      <InfoPill label="Prazo" value={item.prazo} />
+                      <InfoPill label="Subtotal" value={formatCurrency(item.subtotal)} />
+                    </div>
+                    {item.variacoesEscolhidas.length ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {item.variacoesEscolhidas.map((escolha) => (
+                          <span key={escolha.id} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                            {escolha.variacao.nome}: {escolha.tipo.variacao} (+{formatCurrency(escolha.tipo.v_extra)} / {formatWeightFromGrams(escolha.tipo.peso, { mode: "g" })})
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </DetailCard>
+
+            <DetailCard title="Fretes disponiveis">
+              <div className="grid gap-3 md:grid-cols-2">
+                {proposta.fretes.map((frete) => (
+                  <div key={frete.id} className={`rounded-3xl border p-4 ${frete.escolhido ? "border-teal-200 bg-teal-50" : "border-slate-200 bg-slate-50"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-950">{frete.transportadora}</p>
+                        <p className="text-sm text-slate-500">{frete.servico} - {frete.prazo}</p>
+                      </div>
+                      {frete.escolhido ? <StatusBadge status="ESCOLHIDO" tone="success" /> : null}
+                    </div>
+                    <p className="mt-3 text-lg font-bold text-slate-950">{formatCurrency(frete.valor)}</p>
+                    <p className="mt-1 text-sm text-slate-500">{frete.observacao}</p>
+                  </div>
+                ))}
+              </div>
+            </DetailCard>
+          </div>
+
+          <div className="space-y-6">
+            <DetailCard title="Resumo de valores">
+              <ResumoValores proposta={proposta} />
+            </DetailCard>
+
+            <DetailCard title="Proposta informal">
+              <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
+              <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
+                <Copy className="h-4 w-4" />
+                Copiar resumo para WhatsApp
+              </button>
+            </DetailCard>
+          </div>
+        </section>
+      ) : (
+        <PropostaChatPanel proposta={proposta} />
+      )}
 
       <PropostaCobrancaPanel
         proposta={proposta}
