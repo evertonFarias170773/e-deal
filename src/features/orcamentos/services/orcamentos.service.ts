@@ -1671,41 +1671,37 @@ export async function uploadChatAnexo(
 
   const timestamp = Date.now();
   const filePath = `propostas/${idInt}/${timestamp}_${sanitizedName}`;
+  const uploadPath = filePath;
 
-  console.log("[OrcamentosService][uploadChatAnexo] Preparando upload:", {
-    bucket: "chat-ideal",
-    filePath,
-    sanitizedName,
-    contentType: file.type,
-    fileSize: file.size
-  });
+  console.log("[CHAT_UPLOAD] bucket:", "chat-ideal");
+  console.log("[CHAT_UPLOAD] path:", uploadPath);
+  console.log("[CHAT_UPLOAD] file:", file);
+  console.log("[CHAT_UPLOAD] contentType:", file.type);
 
   try {
     const uploadResult = await client.storage
       .from("chat-ideal")
-      .upload(filePath, file, {
+      .upload(uploadPath, file, {
         cacheControl: "3600",
         contentType: file.type
       });
 
-    console.log("[OrcamentosService][uploadChatAnexo] Resposta do upload no storage:", uploadResult);
+    const uploadData = uploadResult.data;
+    const uploadError = uploadResult.error;
 
-    if (uploadResult.error) {
-      console.error("[OrcamentosService][uploadChatAnexo] Falha no upload no bucket chat-ideal:", {
-        filePath,
-        uploadError: uploadResult.error,
-        errorMessage: uploadResult.error.message
-      });
-      return { success: false, errorMessage: uploadResult.error.message || "Erro no upload para o storage." };
+    console.log("[CHAT_UPLOAD] uploadData:", uploadData);
+    if (uploadError) {
+      console.error("[CHAT_UPLOAD] uploadError:", uploadError);
+      return { success: false, errorMessage: uploadError.message || "Erro no upload para o storage." };
     }
 
-    const { data: publicUrlData } = client.storage
+    const publicUrlResult = client.storage
       .from("chat-ideal")
-      .getPublicUrl(uploadResult.data.path);
+      .getPublicUrl(uploadData.path);
 
-    console.log("[OrcamentosService][uploadChatAnexo] Public URL gerada:", publicUrlData);
+    console.log("[CHAT_UPLOAD] publicUrlResult:", publicUrlResult);
 
-    const publicUrl = publicUrlData?.publicUrl;
+    const publicUrl = publicUrlResult.data?.publicUrl;
     if (!publicUrl) {
       return { success: false, errorMessage: "Falha ao gerar URL pública do anexo." };
     }
