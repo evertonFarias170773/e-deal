@@ -1413,5 +1413,71 @@ export async function listVendedoresReais(): Promise<UsuarioVendedor[]> {
   return (data || []) as UsuarioVendedor[];
 }
 
+export async function gerarPDFProposta(
+  idInt: number,
+  idEmpresa: number | string | null | undefined
+): Promise<{ success: boolean; url?: string; errorMessage?: string }> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !anonKey) {
+      return { success: false, errorMessage: "Configurações do Supabase ausentes no cliente." };
+    }
+
+    if (!idInt) {
+      return { success: false, errorMessage: "ID da proposta inválido." };
+    }
+
+    const idEmpresaNum = idEmpresa !== null && idEmpresa !== undefined ? Number(idEmpresa) : null;
+
+    if (idEmpresaNum === null || isNaN(idEmpresaNum) || ![1, 2, 3].includes(idEmpresaNum)) {
+      return { success: false, errorMessage: "Empresa inválida ou não suportada para geração de PDF." };
+    }
+
+    let idModelo = 10;
+    if (idEmpresaNum === 2) {
+      idModelo = 11;
+    } else if (idEmpresaNum === 3) {
+      idModelo = 12;
+    }
+
+    const url = `${supabaseUrl}/functions/v1/proposta_comencial`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`
+      },
+      body: JSON.stringify({
+        id_int: idInt,
+        id_modelo: idModelo
+      })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      return { success: false, errorMessage: `Edge Function retornou erro HTTP ${response.status}: ${text || response.statusText}` };
+    }
+
+    const data = await response.json();
+    if (data && data.success && data.url) {
+      return { success: true, url: data.url };
+    }
+
+    return { 
+      success: false, 
+      errorMessage: data?.message || data?.error || "A resposta da Edge Function não continha a URL do PDF." 
+    };
+  } catch (error) {
+    console.error("[OrcamentosService] Erro ao gerar PDF da proposta:", error);
+    return { 
+      success: false, 
+      errorMessage: error instanceof Error ? error.message : "Erro desconhecido ao chamar Edge Function." 
+    };
+  }
+}
+
+
 
 

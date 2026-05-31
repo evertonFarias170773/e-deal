@@ -21,6 +21,7 @@ import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcament
 import { getClienteBonusPercent } from "@/lib/mocks/propostas.mock";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
+import { gerarPDFProposta } from "@/features/orcamentos/services/orcamentos.service";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -86,6 +87,70 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
   }
 
+  async function handleGerarPDF() {
+    if (!proposta) return;
+    const isUnregistered = proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0;
+    if (isUnregistered) {
+      showToast({
+        type: "warning",
+        title: "Geração de PDF bloqueada",
+        description: "Para gerar PDF, primeiro cadastre ou vincule um cliente à proposta."
+      });
+      return;
+    }
+
+    const empresaLower = (proposta.empresa || "").toLowerCase();
+    let idEmpresa: number | null = null;
+    if (empresaLower.includes("grafica") || empresaLower.includes("ingresso")) {
+      idEmpresa = 1;
+    } else if (empresaLower.includes("biro")) {
+      idEmpresa = 2;
+    } else if (empresaLower.includes("e3") || empresaLower.includes("brindes")) {
+      idEmpresa = 3;
+    }
+
+    if (idEmpresa === null) {
+      showToast({
+        type: "error",
+        title: "Empresa inválida",
+        description: "A empresa selecionada para a proposta não é suportada para geração de PDF (use Ideal Grafica, Ideal Biro ou E3 Brindes)."
+      });
+      return;
+    }
+
+    showToast({
+      type: "info",
+      title: "Gerando PDF",
+      description: "Aguarde enquanto geramos o PDF da proposta comercial..."
+    });
+
+    try {
+      const res = await gerarPDFProposta(proposta.id_int, idEmpresa);
+      if (res.success && res.url) {
+        window.open(res.url, "_blank");
+        showToast({
+          type: "success",
+          title: "PDF Gerado",
+          description: "O PDF da proposta foi aberto em uma nova aba."
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: "Falha na geração",
+          description: "Não foi possível gerar o PDF da proposta."
+        });
+        console.error("[Edge Function Error] Falha ao gerar PDF da proposta:", res.errorMessage);
+      }
+    } catch (err) {
+      showToast({
+        type: "error",
+        title: "Erro inesperado",
+        description: "Ocorreu um erro ao tentar gerar o PDF."
+      });
+      console.error("[PDF Error] Erro ao chamar Edge Function:", err);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -116,7 +181,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${proposta.id_int}/editar`) },
                 { label: "Duplicar proposta", onClick: () => showToast({ type: "info", title: "Duplicar proposta", description: "Acao mockada." }) },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
-                { label: "Gerar PDF mockado", onClick: () => showToast({ type: "success", title: "PDF mockado gerado com sucesso." }) },
+                { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
                 ...(saldoRestante > 0 && !isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
                 { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
                 { label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento mockado", description: "Nenhuma proposta real foi cancelada." }) }
