@@ -313,6 +313,16 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     return lastQuotedKey !== key;
   }, [form.clienteNaoCadastrado, form.cepLivre, form.cidadeLivre, form.ufLivre, currentAddress, resumo.pesoTotal, volumes, lastQuotedKey]);
 
+  const hasValidCepForFreight = useMemo(() => {
+    const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
+    return Boolean(cep && String(cep).replace(/\D/g, "").length === 8);
+  }, [form.clienteNaoCadastrado, form.cepLivre, currentAddress?.cep]);
+
+  const hasProductsAndWeight = useMemo(() => {
+    return form.itens.length > 0 && resumo.pesoTotal > 0;
+  }, [form.itens.length, resumo.pesoTotal]);
+
+
   const informalText = buildPropostaInformalText({
     id_int: form.id_int || "NOVO",
     clienteNome: form.clienteNaoCadastrado ? (form.nomeClienteLivre || "Cliente não cadastrado") : (cliente?.nome ?? "Cliente não definido"),
@@ -1826,7 +1836,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
               </div>
             ) : (
               <>
-                {isFreightOutdated && form.enderecoId && resumo.pesoTotal > 0 && (
+                {isFreightOutdated &&
+                  hasValidCepForFreight &&
+                  (form.isAvulso ? true : hasProductsAndWeight) &&
+                  (form.clienteNaoCadastrado || Boolean(form.enderecoId)) && (
                   <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                     <p className="font-semibold">⚠️ Cotação desatualizada</p>
                     <p className="mt-1">O CEP, peso total ou volumes foram alterados. Clique em &apos;Atualizar frete&apos; para obter os valores corretos.</p>
@@ -1839,7 +1852,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                       <button
                         type="button"
                         onClick={handleCotarFretes}
-                        disabled={isQuotingSedex || isQuotingAzul || isQuotingTransp || !form.enderecoId || resumo.pesoTotal <= 0}
+                        disabled={
+                          isQuotingSedex ||
+                          isQuotingAzul ||
+                          isQuotingTransp ||
+                          (form.isAvulso
+                            ? true
+                            : (
+                                !hasValidCepForFreight ||
+                                !hasProductsAndWeight ||
+                                (!form.clienteNaoCadastrado && !form.enderecoId)
+                              )
+                          )
+                        }
                         className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 text-sm font-semibold text-white shadow-md hover:bg-[#123f61] transition disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {isQuotingSedex || isQuotingAzul || isQuotingTransp ? (
