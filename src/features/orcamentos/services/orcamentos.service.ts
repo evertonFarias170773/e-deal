@@ -1284,6 +1284,23 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       }
     }
 
+    if (formState.isAvulso) {
+      const { error: finalUpdateError } = await client
+        .from("propostas")
+        .update({
+          is_avulso: true,
+          valor: subtotalProdutos,
+          valor_frete: freteValor,
+          valor_total: valorTotal
+        })
+        .eq("id_int", id_int!);
+
+      if (finalUpdateError) {
+        console.error("[OrcamentosService] Erro no update final da proposta avulsa:", finalUpdateError);
+        throw new Error(`Erro ao finalizar gravação da proposta avulsa: ${finalUpdateError.message}`);
+      }
+    }
+
     return { success: true, id_int: id_int! };
   } catch (err) {
     console.error("[OrcamentosService] Falha ao salvar proposta:", err);
