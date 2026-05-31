@@ -90,6 +90,7 @@ export type Proposta = {
   cobrancaStatus: PropostaCobrancaStatus;
   observacoes: string;
   is_avulso?: boolean;
+  clienteNaoCadastrado?: boolean;
 };
 
 export type PropostaFormState = {
@@ -112,4 +113,9 @@ export type PropostaFormState = {
   valorProdutosManual?: string;
   valorFreteManual?: string;
   observacoesFreteManual?: string;
+  clienteNaoCadastrado?: boolean;
+  nomeClienteLivre?: string;
+  cepLivre?: string;
+  cidadeLivre?: string;
+  ufLivre?: string;
 };

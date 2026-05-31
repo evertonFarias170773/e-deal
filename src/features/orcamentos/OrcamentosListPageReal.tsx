@@ -288,6 +288,8 @@ export function OrcamentosListPageReal() {
   }
 
   function getActions(item: OrcamentoListItem) {
+    const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0";
+
     if (item.mockProposal) {
       return [
         { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
@@ -307,11 +309,11 @@ export function OrcamentosListPageReal() {
             });
 
             await navigator.clipboard?.writeText(text);
-            showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
+            showToast({ type: "success", title: "Resumo cobrado", description: "Proposta informal copiada para WhatsApp." });
           }
         },
         { label: "Gerar PDF mockado", onClick: () => showToast({ type: "success", title: "PDF mockado gerado com sucesso." }) },
-        { label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) },
+        ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) }] : []),
         { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
         { label: "Cancelar proposta", destructive: true, onClick: () => showMockAction("Cancelar proposta") }
       ];
@@ -323,7 +325,7 @@ export function OrcamentosListPageReal() {
       { label: "Duplicar proposta", onClick: () => showToast({ type: "info", title: "Duplicacao ainda nao conectada." }) },
       { label: "Copiar proposta informal", onClick: () => showToast({ type: "info", title: "Resumo informal ainda nao disponivel para dados reais." }) },
       { label: "Gerar PDF mockado", onClick: () => showToast({ type: "info", title: "PDF mockado indisponivel para dados reais." }) },
-      { label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) },
+      ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) }] : []),
       { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
       { label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }
     ];
@@ -465,12 +467,24 @@ export function OrcamentosListPageReal() {
           { header: "N°", cell: (proposta) => <span className="font-semibold text-slate-950">{proposta.id_int}</span> },
           {
             header: "id - Cliente",
-            cell: (proposta) => (
-              <div>
-                <p className="font-medium text-slate-900">{proposta.clienteId || "—"} - {proposta.clienteNome}</p>
-                <p className="text-xs text-slate-500">{proposta.documento || ""}</p>
-              </div>
-            )
+            cell: (proposta) => {
+              const isClienteNaoCadastrado = !proposta.clienteId || proposta.clienteId === "0";
+              return (
+                <div>
+                  <p className="font-medium text-slate-900">
+                    {isClienteNaoCadastrado ? (
+                      <>
+                        {proposta.clienteNome}
+                        <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">Sem cadastro</span>
+                      </>
+                    ) : (
+                      <>{proposta.clienteId} - {proposta.clienteNome}</>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-500">{proposta.documento || ""}</p>
+                </div>
+              );
+            }
           },
           { header: "Tipo cobrança", cell: (proposta) => proposta.tipoCobrancaLabel, align: "center" },
           { header: "Data / Hora", cell: (proposta) => <span>{proposta.createdAt ? formatDateTime(proposta.createdAt) : "-"}</span>, align: "center" },
@@ -486,7 +500,14 @@ export function OrcamentosListPageReal() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>
                 <h3 className="mt-2 font-semibold text-slate-950">
-                  {proposta.clienteId || "—"} - {proposta.clienteNome}
+                  {(!proposta.clienteId || proposta.clienteId === "0") ? (
+                    <>
+                      {proposta.clienteNome}
+                      <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">Sem cadastro</span>
+                    </>
+                  ) : (
+                    <>{proposta.clienteId || "—"} - {proposta.clienteNome}</>
+                  )}
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">{proposta.vendedor}</p>
               </div>

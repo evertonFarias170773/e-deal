@@ -62,6 +62,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     );
   }
 
+  const isClienteNaoCadastrado = proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0;
   const freteEscolhido = proposta.fretes.find((frete) => frete.id === proposta.freteEscolhidoId);
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
@@ -96,11 +97,11 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
 
       <PageHeader
         title={`Proposta #${proposta.id_int}`}
-        subtitle={`${proposta.cliente.nome} - ${proposta.empresa} - ${formatDate(proposta.data)}`}
+        subtitle={`${proposta.cliente.nome}${isClienteNaoCadastrado ? " (Sem cadastro)" : ""} - ${proposta.empresa} - ${formatDate(proposta.data)}`}
         context="Detalhe da proposta"
         action={
           <div className="flex flex-wrap items-center gap-2">
-            {saldoRestante > 0 && (
+            {saldoRestante > 0 && !isClienteNaoCadastrado && (
               <button
                 type="button"
                 onClick={() => setIsCobrancaModalOpen(true)}
@@ -116,7 +117,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 { label: "Duplicar proposta", onClick: () => showToast({ type: "info", title: "Duplicar proposta", description: "Acao mockada." }) },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF mockado", onClick: () => showToast({ type: "success", title: "PDF mockado gerado com sucesso." }) },
-                ...(saldoRestante > 0 ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
+                ...(saldoRestante > 0 && !isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
                 { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
                 { label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento mockado", description: "Nenhuma proposta real foi cancelada." }) }
               ]}
@@ -151,12 +152,22 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
 
       <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          <DetailCard title="Cliente, contato e entrega">
+          <DetailCard title={isClienteNaoCadastrado ? "Cliente e entrega (Sem cadastro)" : "Cliente, contato e entrega"}>
             <div className="grid gap-3 md:grid-cols-2">
-              <InfoBox label="Cliente" value={`${proposta.cliente.nome} (#${proposta.cliente.idCliente})`} detail={proposta.cliente.documento} />
-              <InfoBox label="Contato responsavel" value={proposta.contato.nome} detail={`${proposta.contato.whatsapp} - ${proposta.contato.email}`} />
-              <InfoBox label="Endereco de entrega" value={`${proposta.enderecoEntrega.endereco}, ${proposta.enderecoEntrega.numero}`} detail={`${proposta.enderecoEntrega.cidade}/${proposta.enderecoEntrega.uf} - CEP ${proposta.enderecoEntrega.cep}`} />
-              <InfoBox label="Comprador / autorizado" value={proposta.compradorAutorizado?.nome ?? "Cliente principal"} detail={proposta.compradorAutorizado?.tipoRelacao ?? "Sem vinculo comercial selecionado"} />
+              {isClienteNaoCadastrado ? (
+                <>
+                  <InfoBox label="Cliente" value={proposta.cliente.nome} detail="Orçamento rápido (sem cadastro)" />
+                  <InfoBox label="Vendedor responsável" value={proposta.vendedor} detail="ERP Ideal" />
+                  <InfoBox label="CEP de entrega" value={proposta.enderecoEntrega.cep} detail="Logística rápida" />
+                </>
+              ) : (
+                <>
+                  <InfoBox label="Cliente" value={`${proposta.cliente.nome} (#${proposta.cliente.idCliente})`} detail={proposta.cliente.documento} />
+                  <InfoBox label="Contato responsavel" value={proposta.contato.nome} detail={`${proposta.contato.whatsapp} - ${proposta.contato.email}`} />
+                  <InfoBox label="Endereco de entrega" value={`${proposta.enderecoEntrega.endereco}, ${proposta.enderecoEntrega.numero}`} detail={`${proposta.enderecoEntrega.cidade}/${proposta.enderecoEntrega.uf} - CEP ${proposta.enderecoEntrega.cep}`} />
+                  <InfoBox label="Comprador / autorizado" value={proposta.compradorAutorizado?.nome ?? "Cliente principal"} detail={proposta.compradorAutorizado?.tipoRelacao ?? "Sem vinculo comercial selecionado"} />
+                </>
+              )}
             </div>
           </DetailCard>
 

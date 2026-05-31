@@ -111,6 +111,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
   const createCobranca = useCallback(async (values: CriarCobrancaFormValues, proposta?: Proposta): Promise<Cobranca> => {
     if (proposta) {
+      if (proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0) {
+        throw new Error("Cadastre ou vincule um cliente antes de gerar cobrança.");
+      }
       const cobrancasDaProposta = cobrancas.filter((item) => item.id_int === proposta.id_int && item.status !== "CANCELADO");
       const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
       const totalCobradoReal = cobrancasDaProposta.reduce((total, item) => total + (item.cartao_valor_final ?? item.valor), 0);

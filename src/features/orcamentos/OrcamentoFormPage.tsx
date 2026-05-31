@@ -35,7 +35,7 @@ import {
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
@@ -140,7 +140,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
   const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => proposta?.cliente.enderecos ?? []);
   const [cliente, setCliente] = useState<Cadastro | null>(() => proposta?.cliente ?? null);
-  const shouldShowRest = mode !== "new" || cliente !== null;
+  const shouldShowRest = mode !== "new" || cliente !== null || form.clienteNaoCadastrado;
 
   const [selectedProductId, setSelectedProductId] = useState("");
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
@@ -154,6 +154,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [isSearchingClients, setIsSearchingClients] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [cepLivreLoading, setCepLivreLoading] = useState(false);
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
@@ -181,6 +182,67 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     valor: "",
     escolhido: true
   });
+
+  const [dbVendedores, setDbVendedores] = useState<UsuarioVendedor[]>([]);
+  const [loadingVendedores, setLoadingVendedores] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function loadSellers() {
+      try {
+        const result = await listVendedoresReais();
+        if (active) {
+          setDbVendedores(result);
+        }
+      } catch (err) {
+        console.error("Erro ao buscar vendedores reais:", err);
+      } finally {
+        if (active) {
+          setLoadingVendedores(false);
+        }
+      }
+    }
+    void loadSellers();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const vendedorOptions = useMemo(() => {
+    const list: { label: string; value: string }[] = [];
+    if (!loadingVendedores && dbVendedores.length > 0) {
+      dbVendedores.forEach((v) => {
+        list.push({
+          label: v.nome_usuario,
+          value: v.nome_usuario
+        });
+      });
+    } else if (!loadingVendedores) {
+      // Fallback mockado se a consulta falhar ou vier vazia
+      vendedoresPropostaMock.forEach((name) => {
+        list.push({
+          label: name,
+          value: name
+        });
+      });
+    }
+
+    // Preservar vendedor salvo ao editar proposta existente
+    const savedVendedor = proposta?.vendedor;
+    if (savedVendedor && savedVendedor.trim() !== "") {
+      const exists = list.some(
+        (opt) => opt.value.toLowerCase() === savedVendedor.toLowerCase()
+      );
+      if (!exists) {
+        list.unshift({
+          label: savedVendedor,
+          value: savedVendedor
+        });
+      }
+    }
+
+    return list;
+  }, [dbVendedores, loadingVendedores, proposta?.vendedor]);
 
   const vendedorExibido = canManageCommercialRules
     ? form.vendedor
@@ -244,13 +306,16 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }, [combinedAddresses, form.enderecoId]);
 
   const isFreightOutdated = useMemo(() => {
-    const key = getFreightKey(currentAddress?.cep, currentAddress?.cidade, currentAddress?.uf, resumo.pesoTotal, volumes);
+    const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
+    const cidade = form.clienteNaoCadastrado ? form.cidadeLivre : currentAddress?.cidade;
+    const uf = form.clienteNaoCadastrado ? form.ufLivre : currentAddress?.uf;
+    const key = getFreightKey(cep, cidade, uf, resumo.pesoTotal, volumes);
     return lastQuotedKey !== key;
-  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey]);
+  }, [form.clienteNaoCadastrado, form.cepLivre, form.cidadeLivre, form.ufLivre, currentAddress, resumo.pesoTotal, volumes, lastQuotedKey]);
 
   const informalText = buildPropostaInformalText({
     id_int: form.id_int || "NOVO",
-    clienteNome: cliente?.nome ?? "Cliente não definido",
+    clienteNome: form.clienteNaoCadastrado ? (form.nomeClienteLivre || "Cliente não cadastrado") : (cliente?.nome ?? "Cliente não definido"),
     itens: form.itens,
     frete: form.isAvulso ? {
       id: "frete_manual",
@@ -382,6 +447,46 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       clearTimeout(timeout);
     };
   }, [clientSearch]);
+
+  // Automatic city/state lookup for quick budgets
+  useEffect(() => {
+    if (!form.clienteNaoCadastrado) return;
+    const cleanCep = (form.cepLivre || "").replace(/\D/g, "");
+    if (cleanCep.length === 8) {
+      let active = true;
+      void (async () => {
+        setCepLivreLoading(true);
+        try {
+          const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+          if (response.ok && active) {
+            const data = await response.json();
+            if (!data.erro) {
+              updateField("cidadeLivre", data.localidade || "");
+              updateField("ufLivre", data.uf || "");
+              showToast({
+                type: "success",
+                title: "Localização encontrada",
+                description: `${data.localidade}/${data.uf}`
+              });
+            } else {
+              showToast({
+                type: "warning",
+                title: "CEP não encontrado",
+                description: "Verifique o número digitado ou preencha cidade/UF manualmente."
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Erro ao buscar CEP via ViaCEP:", err);
+        } finally {
+          if (active) setCepLivreLoading(false);
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }
+  }, [form.cepLivre, form.clienteNaoCadastrado]);
 
   // Load comprador's addresses when compradorId changes
   useEffect(() => {
@@ -568,7 +673,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
 
   function updateField<K extends keyof PropostaFormState>(field: K, value: PropostaFormState[K]) {
-    if (field === "vendedor" && !canManageCommercialRules) {
+    if (field === "vendedor" && !canManageCommercialRules && !form.clienteNaoCadastrado) {
       return;
     }
 
@@ -786,16 +891,17 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }
 
   async function handleCotarFretes() {
-    const selectedAddress = combinedAddresses.find((e) => e.id === form.enderecoId);
-    const cep = selectedAddress?.cep;
-    const cidade = selectedAddress?.cidade;
-    const uf = selectedAddress?.uf;
+    const cep = form.clienteNaoCadastrado ? form.cepLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.cep;
+    const cidade = form.clienteNaoCadastrado ? form.cidadeLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.cidade;
+    const uf = form.clienteNaoCadastrado ? form.ufLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.uf;
 
     if (!cep) {
       showToast({
         type: "error",
         title: "CEP não encontrado",
-        description: "Selecione um endereço de entrega válido com CEP para cotar."
+        description: form.clienteNaoCadastrado
+          ? "Informe o CEP para entrega / cálculo de frete."
+          : "Selecione um endereço de entrega válido com CEP para cotar."
       });
       return;
     }
@@ -1043,9 +1149,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     const sellerChangedWithoutPermission = Boolean(cliente && vendedorAtual !== getClienteVendedorPadrao(cliente) && !canManageCommercialRules);
 
     const fields = [
-      !isNonEmpty(form.clienteId) ? "clienteId" : null,
-      !isNonEmpty(form.enderecoId) ? "enderecoId" : null,
-      !isNonEmpty(form.contatoId) ? "contatoId" : null,
+      !form.clienteNaoCadastrado && !isNonEmpty(form.clienteId) ? "clienteId" : null,
+      form.clienteNaoCadastrado && !isNonEmpty(form.nomeClienteLivre) ? "nomeClienteLivre" : null,
+      form.clienteNaoCadastrado && !isNonEmpty(form.cepLivre) ? "cepLivre" : null,
+      !form.clienteNaoCadastrado && !isNonEmpty(form.enderecoId) ? "enderecoId" : null,
+      !form.clienteNaoCadastrado && !isNonEmpty(form.contatoId) ? "contatoId" : null,
       !form.isAvulso && form.itens.length === 0 ? "itens" : null,
       !form.isAvulso && hasInvalidQuantity ? "quantidade" : null,
       !form.isAvulso && hasInvalidSubtotal ? "subtotal_itens" : null,
@@ -1062,13 +1170,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       let title = "Não foi possível salvar";
       let desc = "Revise cliente, contato, endereço, produtos, quantidades e variações obrigatórias.";
       
-      if (!isNonEmpty(form.clienteId)) {
+      if (!form.clienteNaoCadastrado && !isNonEmpty(form.clienteId)) {
         title = "Cliente obrigatório";
         desc = "Selecione um cliente para a proposta.";
-      } else if (!isNonEmpty(form.contatoId)) {
+      } else if (form.clienteNaoCadastrado && !isNonEmpty(form.nomeClienteLivre)) {
+        title = "Nome do cliente obrigatório";
+        desc = "Informe o nome do cliente ou empresa.";
+      } else if (form.clienteNaoCadastrado && !isNonEmpty(form.cepLivre)) {
+        title = "CEP obrigatório";
+        desc = "Informe o CEP para entrega / cálculo de frete.";
+      } else if (!form.clienteNaoCadastrado && !isNonEmpty(form.contatoId)) {
         title = "Contato obrigatório";
         desc = "Selecione um contato antes de salvar o orçamento.";
-      } else if (!isNonEmpty(form.enderecoId)) {
+      } else if (!form.clienteNaoCadastrado && !isNonEmpty(form.enderecoId)) {
         title = "Endereço obrigatório";
         desc = "Selecione um endereço de entrega antes de salvar o orçamento.";
       } else if (isSellerEmpty) {
@@ -1223,166 +1337,257 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
       <section className={shouldShowRest ? "grid gap-6 xl:grid-cols-[1fr_380px]" : "max-w-3xl mx-auto"}>
         <div className="space-y-6">
-          <FormSection title="1. Cliente" description="Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados).">
-            <div className="relative">
-              <label className={`flex items-center gap-3 rounded-2xl border bg-slate-50 px-4 py-3 ${errorFields.includes("clienteId") ? "border-red-300" : "border-slate-200"}`}>
-                <Search className="h-4 w-4 text-[#0f9f9a]" />
-                <input
-                  value={clientSearch}
-                  onChange={(event) => { setClientSearch(event.target.value); setShowClientResults(true); }}
-                  onFocus={() => setShowClientResults(true)}
-                  className="w-full bg-transparent text-sm text-slate-900 outline-none"
-                  placeholder="Buscar por ID, nome, apelido ou documento do cliente..."
-                />
-                {isSearchingClients && (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#0f9f9a] border-t-transparent"></div>
-                )}
-                {cliente && (
-                  <button
-                    type="button"
-                    onClick={() => {
+          <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados)."}>
+            {/* Toggle Cliente Cadastrado vs. Sem Cadastro */}
+            {mode === "new" ? (
+              <div className="mb-4 flex gap-6 border-b border-slate-100 pb-3">
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-800 text-sm">
+                  <input
+                    type="radio"
+                    name="client_type"
+                    checked={!form.clienteNaoCadastrado}
+                    onChange={() => {
+                      updateField("clienteNaoCadastrado", false);
+                      updateField("clienteId", "");
                       setCliente(null);
                       setClientSearch("");
-                      setProposalContacts([]);
-                      setProposalAddresses([]);
-                      updateField("clienteId", "");
-                      updateField("contatoId", "");
-                      updateField("enderecoId", "");
-                      updateField("compradorId", "");
                     }}
-                    className="rounded-xl p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </label>
-              {showClientResults && (clientResults.length > 0 || isSearchingClients || searchError || (clientSearch.trim().length >= 2 && !/^\d+\s*-\s*/.test(clientSearch.trim()))) && (
-                <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-xl max-h-72 overflow-y-auto">
-                  {isSearchingClients && clientResults.length === 0 && (
-                    <div className="px-4 py-3 text-sm text-slate-500 flex items-center gap-2">
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#0f9f9a] border-t-transparent"></div>
-                      Buscando clientes...
+                    className="accent-[#0f9f9a] h-4 w-4"
+                  />
+                  Cliente cadastrado
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-800 text-sm">
+                  <input
+                    type="radio"
+                    name="client_type"
+                    checked={!!form.clienteNaoCadastrado}
+                    onChange={() => {
+                      updateField("clienteNaoCadastrado", true);
+                      updateField("clienteId", "");
+                      setCliente(null);
+                      setClientSearch("");
+                    }}
+                    className="accent-[#0f9f9a] h-4 w-4"
+                  />
+                  Cliente não cadastrado / orçamento rápido
+                </label>
+              </div>
+            ) : (
+              <div className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Tipo de orçamento: {form.clienteNaoCadastrado ? "Cliente não cadastrado / Orçamento rápido" : "Cliente cadastrado"}
+              </div>
+            )}
+
+            {form.clienteNaoCadastrado ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Nome livre do cliente / empresa">
+                    <input
+                      value={form.nomeClienteLivre || ""}
+                      onChange={(e) => updateField("nomeClienteLivre", e.target.value)}
+                      className={`${inputClass} ${errorFields.includes("nomeClienteLivre") ? "border-red-300" : ""}`}
+                      placeholder="Digite o nome completo do cliente ou empresa..."
+                    />
+                  </Field>
+                  <Field label="CEP de entrega">
+                    <div className="relative">
+                      <input
+                        value={form.cepLivre || ""}
+                        onChange={(e) => updateField("cepLivre", e.target.value)}
+                        className={`${inputClass} ${errorFields.includes("cepLivre") ? "border-red-300" : ""}`}
+                        placeholder="Ex: 01001-000"
+                      />
+                      {cepLivreLoading && (
+                        <div className="absolute right-3 top-3.5 h-4 w-4 animate-spin rounded-full border-2 border-[#0f9f9a] border-t-transparent"></div>
+                      )}
                     </div>
-                  )}
-                  {searchError && (
-                    <div className="px-4 py-3 text-sm text-red-600 font-medium">
-                      {searchError}
-                    </div>
-                  )}
-                  {!isSearchingClients && !searchError && clientResults.length === 0 && (
-                    <div className="px-4 py-3 text-sm text-slate-500">
-                      Nenhum cliente encontrado.
-                    </div>
-                  )}
-                  {clientResults.map((result) => (
-                    <button
-                      key={result.id}
-                      type="button"
-                      onClick={() => void selectCliente(result)}
-                      className="w-full rounded-2xl px-3 py-3 text-left hover:bg-slate-50 transition"
-                    >
-                      <p className="font-semibold text-slate-950">#{result.idCliente} - {result.nome}</p>
-                      <p className="text-sm text-slate-500">
-                        {result.documento ? `${result.documento} | ` : ""}
-                        {result.fantasia ? `Apelido: ${result.fantasia} | ` : ""}
-                        {result.cidadeUf} | Vendedor {getClienteVendedorPadrao(result)}
-                      </p>
-                    </button>
-                  ))}
+                  </Field>
                 </div>
-              )}
-            </div>
-            {cliente ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Cidade">
+                    <input
+                      value={form.cidadeLivre || ""}
+                      onChange={(e) => updateField("cidadeLivre", e.target.value)}
+                      className={inputClass}
+                      placeholder="Cidade (preenchida automaticamente via CEP)"
+                    />
+                  </Field>
+                  <Field label="Estado (UF)">
+                    <input
+                      value={form.ufLivre || ""}
+                      onChange={(e) => updateField("ufLivre", e.target.value)}
+                      className={inputClass}
+                      placeholder="UF (preenchida automaticamente via CEP)"
+                    />
+                  </Field>
+                </div>
+              </div>
+            ) : (
+              <div className="relative">
+                <label className={`flex items-center gap-3 rounded-2xl border bg-slate-50 px-4 py-3 ${errorFields.includes("clienteId") ? "border-red-300" : "border-slate-200"}`}>
+                  <Search className="h-4 w-4 text-[#0f9f9a]" />
+                  <input
+                    value={clientSearch}
+                    onChange={(event) => { setClientSearch(event.target.value); setShowClientResults(true); }}
+                    onFocus={() => setShowClientResults(true)}
+                    className="w-full bg-transparent text-sm text-slate-900 outline-none"
+                    placeholder="Buscar por ID, nome, apelido ou documento do cliente..."
+                  />
+                  {isSearchingClients && (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#0f9f9a] border-t-transparent"></div>
+                  )}
+                  {cliente && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCliente(null);
+                        setClientSearch("");
+                        setProposalContacts([]);
+                        setProposalAddresses([]);
+                        updateField("clienteId", "");
+                        updateField("contatoId", "");
+                        updateField("enderecoId", "");
+                        updateField("compradorId", "");
+                      }}
+                      className="rounded-xl p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </label>
+                {showClientResults && (clientResults.length > 0 || isSearchingClients || searchError || (clientSearch.trim().length >= 2 && !/^\d+\s*-\s*/.test(clientSearch.trim()))) && (
+                  <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-xl max-h-72 overflow-y-auto">
+                    {isSearchingClients && clientResults.length === 0 && (
+                      <div className="px-4 py-3 text-sm text-slate-500 flex items-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#0f9f9a] border-t-transparent"></div>
+                        Buscando clientes...
+                      </div>
+                    )}
+                    {searchError && (
+                      <div className="px-4 py-3 text-sm text-red-600 font-medium">
+                        {searchError}
+                      </div>
+                    )}
+                    {!isSearchingClients && !searchError && clientResults.length === 0 && (
+                      <div className="px-4 py-3 text-sm text-slate-500">
+                        Nenhum cliente encontrado.
+                      </div>
+                    )}
+                    {clientResults.map((result) => (
+                      <button
+                        key={result.id}
+                        type="button"
+                        onClick={() => void selectCliente(result)}
+                        className="w-full rounded-2xl px-3 py-3 text-left hover:bg-slate-50 transition"
+                      >
+                        <p className="font-semibold text-slate-950">#{result.idCliente} - {result.nome}</p>
+                        <p className="text-sm text-slate-500">
+                          {result.documento ? `${result.documento} | ` : ""}
+                          {result.fantasia ? `Apelido: ${result.fantasia} | ` : ""}
+                          {result.cidadeUf} | Vendedor {getClienteVendedorPadrao(result)}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {!form.clienteNaoCadastrado && cliente ? (
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <InfoBox label="Cliente" value={`${cliente.nome} (#${cliente.idCliente})`} />
                 <InfoBox label="Crédito / risco" value={`${formatCurrency(cliente.creditoDisponivel)} - risco ${cliente.riscoCredito}`} />
-                <InfoBox label="Tabela especial" value={bonusPercent > 0 ? `+${bonusPercent}% aplicado nos produtos` : "Sem acréscimo especial"} />
+                <InfoBox label="Tabela especial" value={bonusPercent > 0 ? `+${bonusPercent}% applied nos produtos` : "Sem acréscimo especial"} />
               </div>
             ) : null}
           </FormSection>
 
           {shouldShowRest && (
             <>
-              <FormSection title="2. Dados da proposta" description="Vendedor vem do cliente e status é definido pelo sistema.">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="id_int">
-                <input value={form.id_int === "NOVO" ? "" : form.id_int} placeholder="Gerado automaticamente" readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
-              </Field>
-              <Field label="Empresa">
-                <select value={form.empresa} onChange={(event) => updateField("empresa", event.target.value)} className={inputClass}>
-                  {mockCompanies.filter((company) => !company.isConsolidated).map((company) => <option key={company.id} value={company.name}>{company.shortName}</option>)}
-                </select>
-              </Field>
-              <Field label="Vendedor">
-                {canManageCommercialRules ? (
-                  <select value={form.vendedor} onChange={(event) => updateField("vendedor", event.target.value)} className={inputClass}>
-                    {vendedoresPropostaMock.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                ) : (
-                  <input value={vendedorExibido} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
-                )}
-                <p className={`text-xs ${canManageCommercialRules ? "text-amber-700" : "text-slate-500"}`}>
-                  {canManageCommercialRules
-                    ? "Alteração permitida apenas para gerente/admin."
-                    : "Vendedor definido pelo cadastro do cliente."}
-                </p>
-              </Field>
-              <Field label="Status">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                  <StatusBadge status={form.status} tone={form.status === "NOVO" ? "info" : form.status === "APROVADO" ? "success" : form.status === "AGUARDANDO" ? "warning" : "neutral"} />
+              <FormSection title="2. Dados da proposta" description="Vendedor responsável e status é definido pelo sistema.">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <Field label="id_int">
+                    <input value={form.id_int === "NOVO" ? "" : form.id_int} placeholder="Gerado automaticamente" readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                  </Field>
+                  <Field label="Empresa">
+                    <select value={form.empresa} onChange={(event) => updateField("empresa", event.target.value)} className={inputClass}>
+                      {mockCompanies.filter((company) => !company.isConsolidated).map((company) => <option key={company.id} value={company.name}>{company.shortName}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Vendedor">
+                    {canManageCommercialRules || form.clienteNaoCadastrado ? (
+                      <select value={form.vendedor} onChange={(event) => updateField("vendedor", event.target.value)} className={inputClass}>
+                        <option value="">Selecione o vendedor</option>
+                        {vendedorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    ) : (
+                      <input value={vendedorExibido} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                    )}
+                    <p className={`text-xs ${canManageCommercialRules || form.clienteNaoCadastrado ? "text-amber-700" : "text-slate-500"}`}>
+                      {canManageCommercialRules || form.clienteNaoCadastrado
+                        ? "Selecione o vendedor responsável."
+                        : "Vendedor definido pelo cadastro do cliente."}
+                    </p>
+                  </Field>
+                  <Field label="Status">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <StatusBadge status={form.status} tone={form.status === "NOVO" ? "info" : form.status === "APROVADO" ? "success" : form.status === "AGUARDANDO" ? "warning" : "neutral"} />
+                    </div>
+                  </Field>
                 </div>
-              </Field>
-            </div>
-          </FormSection>
+              </FormSection>
 
-          <FormSection title="3. Contato responsável" description="Contato usado para envio da proposta informal e retorno comercial.">
-            {proposalContacts.length > 0 ? (
-              <SelectorGrid items={proposalContacts} selectedId={form.contatoId} onSelect={(id) => updateField("contatoId", id)} render={(contato) => ({ title: contato.nome, subtitle: `${contato.cargo} - ${contato.whatsapp}`, detail: contato.email })} />
-            ) : (
-              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
-            )}
-            <button type="button" onClick={() => setIsContactModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo contato</button>
-          </FormSection>
+              {!form.clienteNaoCadastrado && (
+                <>
+                  <FormSection title="3. Contato responsável" description="Contato usado para envio da proposta informal e retorno comercial.">
+                    {proposalContacts.length > 0 ? (
+                      <SelectorGrid items={proposalContacts} selectedId={form.contatoId} onSelect={(id) => updateField("contatoId", id)} render={(contato) => ({ title: contato.nome, subtitle: `${contato.cargo} - ${contato.whatsapp}`, detail: contato.email })} />
+                    ) : (
+                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
+                    )}
+                    <button type="button" onClick={() => setIsContactModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo contato</button>
+                  </FormSection>
 
-          <FormSection title="4. Comprador / autorizado" description="Cadastro relacionado comercialmente ao cliente principal.">
-            {!cliente ? (
-              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Selecione um cliente para visualizar os compradores autorizados.</p>
-            ) : cliente.vinculosComerciais && cliente.vinculosComerciais.length > 0 ? (
-              <SelectorGrid
-                items={cliente.vinculosComerciais}
-                selectedId={form.compradorId}
-                onSelect={handleSelectComprador}
-                render={(vinculo) => ({
-                  title: vinculo.nome,
-                  subtitle: vinculo.tipoRelacao,
-                  detail: vinculo.documento
-                })}
-              />
-            ) : (
-              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum comprador ou autorizado vinculado a este cliente.</p>
-            )}
-          </FormSection>
+                  <FormSection title="4. Comprador / autorizado" description="Cadastro relacionado comercialmente ao cliente principal.">
+                    {!cliente ? (
+                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Selecione um cliente para visualizar os compradores autorizados.</p>
+                    ) : cliente.vinculosComerciais && cliente.vinculosComerciais.length > 0 ? (
+                      <SelectorGrid
+                        items={cliente.vinculosComerciais}
+                        selectedId={form.compradorId}
+                        onSelect={handleSelectComprador}
+                        render={(vinculo) => ({
+                          title: vinculo.nome,
+                          subtitle: vinculo.tipoRelacao,
+                          detail: vinculo.documento
+                        })}
+                      />
+                    ) : (
+                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum comprador ou autorizado vinculado a este cliente.</p>
+                    )}
+                  </FormSection>
 
-          <FormSection title="5. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
-            {combinedAddresses.length > 0 ? (
-              <SelectorGrid
-                items={combinedAddresses}
-                selectedId={form.enderecoId}
-                onSelect={(id) => updateField("enderecoId", id)}
-                render={(endereco) => {
-                  const isCompradorAddress = (endereco.tipo as string) === "comprador";
-                  return {
-                    title: `${endereco.endereco}, ${endereco.numero}`,
-                    subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`,
-                    detail: isCompradorAddress ? "Endereço do Comprador" : endereco.tipo
-                  };
-                }}
-              />
-            ) : (
-              <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
-            )}
-            <button type="button" onClick={() => setIsAddressModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo endereço</button>
-          </FormSection>
+                  <FormSection title="5. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
+                    {combinedAddresses.length > 0 ? (
+                      <SelectorGrid
+                        items={combinedAddresses}
+                        selectedId={form.enderecoId}
+                        onSelect={(id) => updateField("enderecoId", id)}
+                        render={(endereco) => {
+                          const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                          return {
+                            title: `${endereco.endereco}, ${endereco.numero}`,
+                            subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`,
+                            detail: isCompradorAddress ? "Endereço do Comprador" : endereco.tipo
+                          };
+                        }}
+                      />
+                    ) : (
+                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
+                    )}
+                    <button type="button" onClick={() => setIsAddressModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo endereço</button>
+                  </FormSection>
+                </>
+              )}
 
           <FormSection
             title="6. Produtos"
@@ -2171,6 +2376,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
   const cliente = proposta?.cliente;
   const endereco = proposta?.enderecoEntrega;
   const isAvulso = proposta?.is_avulso ?? false;
+  const clienteNaoCadastrado = proposta?.clienteNaoCadastrado ?? (cliente ? (cliente.idCliente === null || cliente.idCliente === undefined || Number(cliente.idCliente) === 0) : false);
 
   let fretes = proposta?.fretes ?? (endereco ? createFretesMock(endereco, proposta?.id_int ?? 0, proposta?.resumo.pesoTotal ?? 0) : []);
   let chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
@@ -2200,10 +2406,10 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     empresa: proposta?.empresa ?? "Ideal Grafica",
     vendedor: proposta?.vendedor ?? (cliente ? getClienteVendedorPadrao(cliente) : ""),
     status: proposta?.status ?? "NOVO",
-    clienteId: cliente ? cliente.idCliente.toString() : "",
-    contatoId: proposta?.contato.id ?? cliente?.contatos[0]?.id ?? "",
-    enderecoId: endereco?.id ?? "",
-    compradorId: proposta?.compradorAutorizado?.id ?? "",
+    clienteId: clienteNaoCadastrado ? "" : (cliente ? cliente.idCliente.toString() : ""),
+    contatoId: clienteNaoCadastrado ? "" : (proposta?.contato.id ?? cliente?.contatos[0]?.id ?? ""),
+    enderecoId: clienteNaoCadastrado ? "" : (endereco?.id ?? ""),
+    compradorId: clienteNaoCadastrado ? "" : (proposta?.compradorAutorizado?.id ?? ""),
     itens: proposta?.itens ?? [],
     fretes,
     freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),
@@ -2214,6 +2420,11 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     isAvulso,
     valorProdutosManual: isAvulso ? (proposta?.resumo.subtotalProdutos ?? 0).toString() : "",
     valorFreteManual: isAvulso ? (proposta?.resumo.frete ?? 0).toString() : "",
-    observacoesFreteManual: isAvulso ? (chosenFrete?.transportadora ?? "Frete Manual") : ""
+    observacoesFreteManual: isAvulso ? (chosenFrete?.transportadora ?? "Frete Manual") : "",
+    clienteNaoCadastrado,
+    nomeClienteLivre: clienteNaoCadastrado ? (cliente?.nome ?? "") : "",
+    cepLivre: clienteNaoCadastrado ? (endereco?.cep ?? "") : "",
+    cidadeLivre: clienteNaoCadastrado ? (endereco?.cidade ?? "") : "",
+    ufLivre: clienteNaoCadastrado ? (endereco?.uf ?? "") : ""
   };
 }

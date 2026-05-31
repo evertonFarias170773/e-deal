@@ -122,6 +122,15 @@ export function PropostaCobrancaPanel({
   }, [form.valor, proposta]);
 
   const openModal = useCallback(() => {
+    if (proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0) {
+      showToast({
+        type: "error",
+        title: "Ação bloqueada",
+        description: "Cadastre ou vincule um cliente antes de gerar cobrança."
+      });
+      return;
+    }
+
     if (saldoRestante <= 0) {
       showToast({
         type: "warning",

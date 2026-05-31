@@ -605,13 +605,17 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       }
     }
 
+    const isClienteNaoCadastrado = proposalRow.id_cliente === null || proposalRow.id_cliente === undefined || Number(proposalRow.id_cliente) === 0;
+
     // 4. Fetch customer details
-    const { cadastro } = await getCadastroCompleto(proposalRow.id_cliente);
+    const { cadastro } = !isClienteNaoCadastrado
+      ? await getCadastroCompleto(proposalRow.id_cliente)
+      : { cadastro: null };
     
     // Construct fallback customer if not found in db
     const fallbackCliente: Cadastro = {
-      id: `cli_${proposalRow.id_cliente}`,
-      idCliente: proposalRow.id_cliente,
+      id: isClienteNaoCadastrado ? "cli_nao_cadastrado" : `cli_${proposalRow.id_cliente}`,
+      idCliente: (isClienteNaoCadastrado ? null : proposalRow.id_cliente) as unknown as number,
       nome: proposalRow.cliente || "Cliente Não Informado",
       categoria: "CLIENTE",
       documento: "",
@@ -879,7 +883,8 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       formaPagamento: proposalRow.forma_pagamento || "A combinar",
       cobrancaStatus: "NAO_GERADA",
       observacoes: proposalRow.obs_proposta || "",
-      is_avulso: proposalRow.is_avulso === true
+      is_avulso: proposalRow.is_avulso === true,
+      clienteNaoCadastrado: isClienteNaoCadastrado
     };
 
     return proposta;
@@ -907,12 +912,24 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
   let id_int: number | null = isUpdate ? Number(formState.id_int) : null;
 
   try {
-    // 1. Fetch customer to get customer's name
-    const { cadastro } = await getCadastroCompleto(formState.clienteId);
-    if (!formState.clienteId || !cadastro) {
-      return { success: false, errorMessage: "Cliente é obrigatório e deve possuir cadastro válido." };
+    let clienteNome = "";
+    let cadastro = null;
+    if (formState.clienteNaoCadastrado) {
+      if (!isNonEmpty(formState.nomeClienteLivre)) {
+        return { success: false, errorMessage: "O nome do cliente/empresa é obrigatório." };
+      }
+      clienteNome = formState.nomeClienteLivre!;
+    } else {
+      if (!isNonEmpty(formState.clienteId)) {
+        return { success: false, errorMessage: "Cliente é obrigatório e deve possuir cadastro válido." };
+      }
+      const fetched = await getCadastroCompleto(formState.clienteId);
+      cadastro = fetched.cadastro;
+      if (!cadastro) {
+        return { success: false, errorMessage: "Cliente é obrigatório e deve possuir cadastro válido." };
+      }
+      clienteNome = cadastro.nome;
     }
-    const clienteNome = cadastro.nome;
 
     if (!formState.isAvulso) {
       if (!formState.itens || formState.itens.length === 0) {
@@ -939,33 +956,49 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     }
 
     // Find the contact selected
-    if (!isNonEmpty(formState.contatoId)) {
-      return { success: false, errorMessage: "Selecione um contato antes de salvar o orçamento." };
+    let contatoNome = "";
+    if (formState.clienteNaoCadastrado) {
+      contatoNome = "Contato Rápido";
+    } else {
+      if (!isNonEmpty(formState.contatoId)) {
+        return { success: false, errorMessage: "Selecione um contato antes de salvar o orçamento." };
+      }
+      const selectedContact = cadastro?.contatos.find((c) => c.id === formState.contatoId);
+      contatoNome = selectedContact ? selectedContact.nome : (formState.contatoId || "");
     }
-    const selectedContact = cadastro?.contatos.find((c) => c.id === formState.contatoId);
-    const contatoNome = selectedContact ? selectedContact.nome : (formState.contatoId || "");
 
     // Find the address selected (searching client addresses and comprador addresses if comprador selected)
-    if (!isNonEmpty(formState.enderecoId)) {
-      return { success: false, errorMessage: "Selecione um endereço de entrega antes de salvar o orçamento." };
-    }
-    let compradorAddresses: CadastroEndereco[] = [];
-    if (formState.compradorId && cadastro) {
-      const vinculo = cadastro.vinculosComerciais?.find((v) => v.id === formState.compradorId);
-      if (vinculo) {
-        try {
-          const { cadastro: compradorCadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
-          if (compradorCadastro) {
-            compradorAddresses = compradorCadastro.enderecos || [];
+    let cepText = "";
+    if (formState.clienteNaoCadastrado) {
+      if (!isNonEmpty(formState.cepLivre)) {
+        return { success: false, errorMessage: "O CEP é obrigatório para cálculo de frete." };
+      }
+      cepText = formState.cepLivre!.replace(/\D/g, "");
+      if (cepText.length !== 8) {
+        return { success: false, errorMessage: "O CEP informado deve conter 8 dígitos." };
+      }
+    } else {
+      if (!isNonEmpty(formState.enderecoId)) {
+        return { success: false, errorMessage: "Selecione um endereço de entrega antes de salvar o orçamento." };
+      }
+      let compradorAddresses: CadastroEndereco[] = [];
+      if (formState.compradorId && cadastro) {
+        const vinculo = (cadastro as Cadastro).vinculosComerciais?.find((v) => v.id === formState.compradorId);
+        if (vinculo) {
+          try {
+            const { cadastro: compradorCadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
+            if (compradorCadastro) {
+              compradorAddresses = compradorCadastro.enderecos || [];
+            }
+          } catch (err) {
+            console.error("Erro ao carregar endereços do comprador ao salvar proposta:", err);
           }
-        } catch (err) {
-          console.error("Erro ao carregar endereços do comprador ao salvar proposta:", err);
         }
       }
+      const allAddresses = [...((cadastro as Cadastro)?.enderecos || []), ...compradorAddresses];
+      const selectedAddress = allAddresses.find((e) => e.id === formState.enderecoId);
+      cepText = selectedAddress ? selectedAddress.cep : "";
     }
-    const allAddresses = [...(cadastro?.enderecos || []), ...compradorAddresses];
-    const selectedAddress = allAddresses.find((e) => e.id === formState.enderecoId);
-    const cepText = selectedAddress ? selectedAddress.cep : "";
 
     // Find the chosen freight option details
     if (!formState.isAvulso) {
@@ -1090,7 +1123,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     }
 
     const propostaData: SupabasePropostaRow = {
-      id_cliente: Number(formState.clienteId),
+      id_cliente: formState.clienteNaoCadastrado ? null : Number(formState.clienteId),
       cliente: clienteNome,
       empresa: formState.empresa,
       vendedor: formState.vendedor,
@@ -1350,5 +1383,35 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     return { success: false, errorMessage: msg };
   }
 }
+
+export type UsuarioVendedor = {
+  user_id: string;
+  email: string;
+  nome_usuario: string;
+  is_vendedor: boolean;
+  id_empresa: number | null;
+  setor: string | null;
+};
+
+export async function listVendedoresReais(): Promise<UsuarioVendedor[]> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return [];
+  }
+
+  const { data, error } = await client
+    .from("usuarios")
+    .select("user_id, email, nome_usuario, is_vendedor, id_empresa, setor")
+    .eq("is_vendedor", true)
+    .order("nome_usuario");
+
+  if (error) {
+    console.error("[OrcamentosService] Erro ao buscar vendedores reais:", error);
+    return [];
+  }
+
+  return (data || []) as UsuarioVendedor[];
+}
+
 
 
