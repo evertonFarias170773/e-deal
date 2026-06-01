@@ -449,7 +449,7 @@ Pendências:
 
 ## Pendências Atribuídas (Fase 6D)
 
-Status: Implementado completo (incluindo Fase 6D-D — Central Geral de Pendências). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
+Status: Implementado completo (incluindo Fase 6D-E — Realtime e Notificações). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
 
 Rotas:
 - Acessível via aba "Pendências" no drawer de chat em `/orcamentos` ou `/orcamentos/[id]`.
@@ -466,15 +466,20 @@ Funcionalidades:
 - aba superior no drawer para alternar de forma fluida entre o chat e as pendências sem desmontar os painéis;
 - listagem de pendências por proposta e formulário de criação manual;
 - badges semânticos de prioridade e status com cores integradas ao padrão UX/UI do projeto;
-- botões de ação para alterar o status da pendência (Iniciar, Concluir e Cancelar) com preenchimento seguro de logs no banco de dados (UUID e Nome do operador);
+- botões de ação para alterar o status da pendência (Assumir, Concluir e Cancelar) com preenchimento seguro de logs no banco de dados (UUID e Nome do operador);
 - bloqueio de exclusões no banco (tabela sem política de DELETE);
 - registro automático de eventos operacionais como mensagens do tipo `SISTEMA` no chat ao criar, alterar status, concluir ou cancelar pendências;
 - Rota Central `/pendencias` contendo dashboard de cards estatísticos interativos (Minhas, Meu Setor [unassigned], Sem Responsável, Urgentes, Atrasadas e Concluídas Hoje);
 - Filtros avançados e dinâmicos por pesquisa textual livre (título, descrição, cliente ou ID da proposta), status, prioridade, categoria, setor e empresa (alimentada de forma dinâmica via PostgREST);
 - Abas rápidas integradas para seleção instantânea de escopo das pendências (Minhas, Setor, Sem Responsável, Atrasadas, Urgentes, Todas);
-- Ações rápidas na tabela e cards mobile para Iniciar, Concluir ou Cancelar pendências, abrir a proposta ou acionar o chat global drawer via context provider `useGlobalChat` sem redundância de conexões;
+- Ações rápidas na tabela e cards mobile para Assumir, Concluir ou Cancelar pendências, abrir a proposta ou acionar o chat global drawer via context provider `useGlobalChat` sem redundância de conexões;
 - Botão de acesso e badge numérico pulsing no Topbar exibindo o total de pendências ativas do operador logado, com atualização instantânea via eventos de janela customizados (`pendencias-updated`);
-- Paginação incremental inteligente por botão "Carregar Mais" limitando a exibição inicial e reduzindo consultas redundantes.
+- Paginação incremental inteligente por botão "Carregar Mais" limitando a exibição inicial e reduzindo consultas redundantes;
+- Subscrição em tempo real de canal único no Topbar com propagação via Custom Event customizado do DOM (`propostas-pendencias-realtime`) para sincronizar a central, a listagem e os drawers sem conexões realtime duplicadas no cliente;
+- Notificações reativas em Toasts na tela ao receber eventos externos da tabela `propostas_pendencias` (nova atribuída, assumida por outro, concluída ou cancelada), com busca assíncrona on-demand do nome dos envolvidos via PostgREST;
+- Ação "Iniciar" renomeada para "Assumir" que preenche automaticamente o campo `responsavel_user_id` com o UUID real da sessão autenticada do operador;
+- Destaques visuais premium para pendências `URGENTE` (borda vermelha esquerda, ping pulsante animado na badge) e `ATRASADA` (borda âmbar esquerda, badge pulsante de vencimento) unificados entre a central e os painéis de chat;
+- Otimização do carregamento lateral: busca da lista de usuários executada exclusivamente sob demanda ao abrir o formulário "Nova Pendência Manual" em vez de no mount geral.
 
 ## Demais módulos
 

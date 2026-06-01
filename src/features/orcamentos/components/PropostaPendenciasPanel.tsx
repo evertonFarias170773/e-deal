@@ -97,8 +97,9 @@ export function PropostaPendenciasPanel({
     showToastRef.current = showToast;
   }, [showToast]);
 
-  // Load users list once on mount
+  // Load users list on-demand when form is shown
   useEffect(() => {
+    if (!showForm || users.length > 0) return;
     let active = true;
     void (async () => {
       try {
@@ -112,7 +113,30 @@ export function PropostaPendenciasPanel({
     return () => {
       active = false;
     };
-  }, []);
+  }, [showForm, users.length]);
+
+  // Listen to realtime updates propagated from Topbar
+  useEffect(() => {
+    const handleRealtime = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const payload = customEvent.detail;
+      const newRec = payload?.new;
+      const oldRec = payload?.old;
+
+      // If the change belongs to this proposal (id_int matches)
+      if (
+        (newRec && newRec.id_int === idInt) ||
+        (oldRec && oldRec.id_int === idInt)
+      ) {
+        console.log(`[PropostaPendenciasPanel] Realtime update captured for proposal ${idInt}.`);
+        reloadData();
+      }
+    };
+    window.addEventListener("propostas-pendencias-realtime", handleRealtime);
+    return () => {
+      window.removeEventListener("propostas-pendencias-realtime", handleRealtime);
+    };
+  }, [idInt]);
 
   // Load pendencies when idInt changes or reload is requested
   useEffect(() => {
@@ -249,9 +273,13 @@ export function PropostaPendenciasPanel({
 
   const getPriorityBadge = (prio: string) => {
     const config = PRIORITIES.find((p) => p.value === prio) || PRIORITIES[1];
+    const isUrgent = prio === "URGENTE";
     return (
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold border ${config.color}`}>
+      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${config.color}`}>
         {config.label}
+        {isUrgent && (
+          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-red-500 animate-ping shrink-0" />
+        )}
       </span>
     );
   };
@@ -489,8 +517,18 @@ export function PropostaPendenciasPanel({
                 ? new Date(item.data_limite + "T12:00:00").toLocaleDateString()
                 : "";
 
+              const todayStr = new Date().toISOString().split("T")[0];
+              const isUrgent = item.prioridade === "URGENTE";
+              const isOverdue = item.data_limite && item.data_limite < todayStr && item.status !== "CONCLUIDA" && item.status !== "CANCELADA";
+
               return (
-                <div key={item.id} className="p-5 flex flex-col gap-3 hover:bg-slate-50/40 transition">
+                <div
+                  key={item.id}
+                  className={`p-5 flex flex-col gap-3 hover:bg-slate-50/40 transition border-l-4 ${
+                    isUrgent ? "border-l-red-500 bg-red-500/5" :
+                    isOverdue ? "border-l-amber-500 bg-amber-500/5" : "border-l-transparent"
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex flex-col gap-1 min-w-0">
                       <h4 className="text-sm font-bold text-slate-900 break-words">{item.titulo}</h4>
@@ -513,8 +551,13 @@ export function PropostaPendenciasPanel({
                       Setor: {item.responsavel_setor}
                     </span>
                     {limitFormatted && (
-                      <span className="inline-flex items-center gap-1 text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded font-bold">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold border ${
+                        isOverdue
+                          ? "text-red-600 bg-red-50 border-red-100 animate-pulse"
+                          : "text-orange-600 bg-orange-50 border-orange-100"
+                      }`}>
                         <Calendar className="h-3 w-3" /> Prazo: {limitFormatted}
+                        {isOverdue && " (ATRASADA)"}
                       </span>
                     )}
                   </div>
@@ -546,7 +589,7 @@ export function PropostaPendenciasPanel({
                           onClick={() => handleUpdateStatus(item.id, "EM_ANDAMENTO", item.titulo)}
                           className="inline-flex items-center gap-1 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 px-2.5 py-1 text-[10px] font-bold hover:bg-indigo-100 transition"
                         >
-                          <Play className="h-3 w-3" /> Iniciar
+                          <Play className="h-3 w-3" /> Assumir
                         </button>
                       )}
 

@@ -15,7 +15,10 @@ import {
   listPropostaChatMentionsForUser,
   type PropostaChatMentionJoined
 } from "@/features/orcamentos/services/orcamentos.service";
-import { getActiveUserPendenciasCount } from "@/features/orcamentos/services/propostas-pendencias.service";
+import {
+  getActiveUserPendenciasCount,
+  type PropostaPendencia
+} from "@/features/orcamentos/services/propostas-pendencias.service";
 
 type TopbarProps = {
   onOpenMenu: () => void;
@@ -87,6 +90,23 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
     }
   }, [user, fetchNotifications, fetchPendenciasCount]);
 
+  // Fetch user name on demand for realtime toasts
+  const fetchUserNameOnDemand = useCallback(async (userId: string): Promise<string> => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return "um operador";
+    try {
+      const { data, error } = await supabase
+        .from("usuarios")
+        .select("nome_usuario")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (error || !data) return "um operador";
+      return data.nome_usuario;
+    } catch {
+      return "um operador";
+    }
+  }, []);
+
   // Listen to custom updates from page
   useEffect(() => {
     window.addEventListener("pendencias-updated", fetchPendenciasCount);
@@ -94,6 +114,106 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
       window.removeEventListener("pendencias-updated", fetchPendenciasCount);
     };
   }, [fetchPendenciasCount]);
+
+  // Subscribe to real-time pendencias
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(user.id)) return;
+
+    console.log(`[Topbar] Subscrevendo a pendências realtime para usuário: ${user.id}`);
+    
+    const channel = supabase
+      .channel(`global_pendencias_${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Listen to INSERT, UPDATE
+          schema: "public",
+          table: "propostas_pendencias"
+        },
+        (payload) => {
+          console.log("[Topbar] Evento realtime de pendência recebido:", payload);
+          
+          // 1. Refresh local topbar count
+          void fetchPendenciasCount();
+
+          // 2. Propagate to other listening components (page.tsx, PropostaPendenciasPanel.tsx)
+          window.dispatchEvent(new CustomEvent("propostas-pendencias-realtime", { detail: payload }));
+
+          const newRec = payload.new as Partial<PropostaPendencia>;
+          if (!newRec) return;
+
+          if (payload.eventType === "INSERT") {
+            // Nova pendência atribuída ao usuário logado por outra pessoa
+            if (newRec.responsavel_user_id === user.id && newRec.criado_por_user_id !== user.id) {
+              showToast({
+                type: "info",
+                title: "Nova pendência atribuída",
+                description: `A pendência "${newRec.titulo}" foi atribuída a você por ${newRec.criado_por_nome || "outro operador"}.`,
+                onClick: () => {
+                  window.location.href = "/pendencias";
+                }
+              });
+            }
+          } else if (payload.eventType === "UPDATE") {
+            // Se o status mudou
+            if (newRec.status === "EM_ANDAMENTO") {
+              // Outro operador assumiu a pendência que eu criei
+              if (newRec.criado_por_user_id === user.id && newRec.responsavel_user_id !== user.id) {
+                if (newRec.responsavel_user_id) {
+                  void fetchUserNameOnDemand(newRec.responsavel_user_id).then((name) => {
+                    showToast({
+                      type: "info",
+                      title: "Pendência assumida",
+                      description: `A pendência "${newRec.titulo}" foi assumida por ${name}.`
+                    });
+                  });
+                } else {
+                  showToast({
+                    type: "info",
+                    title: "Pendência assumida",
+                    description: `A pendência "${newRec.titulo}" foi assumida.`
+                  });
+                }
+              }
+            } else if (newRec.status === "CONCLUIDA") {
+              // Outro operador concluiu a pendência (eu sou o criador ou o responsável)
+              if (newRec.concluido_por_user_id !== user.id) {
+                if (newRec.criado_por_user_id === user.id || newRec.responsavel_user_id === user.id) {
+                  showToast({
+                    type: "success",
+                    title: "Pendência concluída",
+                    description: `A pendência "${newRec.titulo}" foi concluída por ${newRec.concluido_por_nome || "outro operador"}.`
+                  });
+                }
+              }
+            } else if (newRec.status === "CANCELADA") {
+              // Outro operador cancelou a pendência (eu sou o criador ou o responsável)
+              if (newRec.cancelado_por_user_id !== user.id) {
+                if (newRec.criado_por_user_id === user.id || newRec.responsavel_user_id === user.id) {
+                  showToast({
+                    type: "info",
+                    title: "Pendência cancelada",
+                    description: `A pendência "${newRec.titulo}" foi cancelada por ${newRec.cancelado_por_nome || "outro operador"}.`
+                  });
+                }
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log(`[Topbar] Removendo canal realtime global de pendências para usuário: ${user.id}`);
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, showToast, fetchPendenciasCount, fetchUserNameOnDemand]);
 
   // Subscribe to real-time mentions (reused single subscription channel)
   useEffect(() => {

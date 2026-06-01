@@ -13,6 +13,7 @@ import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { cn } from "@/lib/utils";
 import {
   Search,
   Calendar,
@@ -90,6 +91,18 @@ export default function PendenciasPage() {
     // Dispatch custom event to notify Topbar to update count
     window.dispatchEvent(new Event("pendencias-updated"));
   }, []);
+
+  // Listen to realtime updates propagated from Topbar
+  useEffect(() => {
+    const handleRealtime = () => {
+      console.log("[PendenciasPage] Realtime update captured.");
+      triggerRefresh();
+    };
+    window.addEventListener("propostas-pendencias-realtime", handleRealtime);
+    return () => {
+      window.removeEventListener("propostas-pendencias-realtime", handleRealtime);
+    };
+  }, [triggerRefresh]);
 
   // Fetch initial data
   useEffect(() => {
@@ -714,12 +727,17 @@ export default function PendenciasPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {displayedPendencias.map((item) => {
+                    const isUrgent = item.prioridade === "URGENTE";
                     const isOverdue = item.data_limite && item.data_limite < todayStr && item.status !== "CONCLUIDA" && item.status !== "CANCELADA";
 
                     return (
                       <tr
                         key={item.id}
-                        className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors"
+                        className={cn(
+                          "hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-all duration-150 border-l-2",
+                          isUrgent ? "border-l-red-500 bg-red-500/5 dark:bg-red-500/5" :
+                          isOverdue ? "border-l-amber-500 bg-amber-500/5 dark:bg-amber-500/5" : "border-l-transparent"
+                        )}
                         style={{ borderColor: "var(--border)" }}
                       >
                         {/* Proposta ID */}
@@ -759,12 +777,16 @@ export default function PendenciasPage() {
                           {item.data_limite ? (
                             <span
                               className={`inline-flex items-center gap-1 text-xs font-bold ${
-                                isOverdue ? "text-red-500 animate-pulse" : "text-slate-700 dark:text-slate-300"
+                                isOverdue ? "text-red-500" : "text-slate-700 dark:text-slate-300"
                               }`}
                             >
                               <Calendar className="h-3.5 w-3.5" />
                               {new Date(item.data_limite + "T12:00:00").toLocaleDateString()}
-                              {isOverdue && <span className="text-[9px] uppercase bg-red-100 dark:bg-red-950/40 px-1.5 py-0.5 rounded">Atrasado</span>}
+                              {isOverdue && (
+                                <span className="text-[9px] uppercase bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 px-1.5 py-0.5 rounded font-bold animate-pulse">
+                                  Atrasado
+                                </span>
+                              )}
                             </span>
                           ) : (
                             <span className="text-xs text-slate-400">Sem prazo</span>
@@ -783,7 +805,12 @@ export default function PendenciasPage() {
 
                         {/* Prioridade */}
                         <td className="px-6 py-4">
-                          <StatusBadge status={item.prioridade} tone={getPriorityTone(item.prioridade)} />
+                          <div className="flex items-center gap-1.5">
+                            <StatusBadge status={item.prioridade} tone={getPriorityTone(item.prioridade)} />
+                            {isUrgent && (
+                              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                            )}
+                          </div>
                         </td>
 
                         {/* Status */}
@@ -794,17 +821,17 @@ export default function PendenciasPage() {
                         {/* Ações */}
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Iniciar */}
+                            {/* Assumir */}
                             {item.status === "ABERTA" && (
                               <button
                                 type="button"
                                 disabled={actionLoadingId !== null}
                                 onClick={() => handleUpdateStatus(item.id, item.id_int, item.id_cliente, "EM_ANDAMENTO", item.titulo)}
                                 className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400 px-2 py-1.5 text-xs font-bold hover:bg-indigo-100 transition"
-                                title="Iniciar Resolução"
+                                title="Assumir Pendência"
                               >
                                 <Play className="h-3 w-3" />
-                                Iniciar
+                                Assumir
                               </button>
                             )}
 
@@ -865,12 +892,17 @@ export default function PendenciasPage() {
             {/* Mobile View (Cards) */}
             <div className="lg:hidden space-y-3">
               {displayedPendencias.map((item) => {
+                const isUrgent = item.prioridade === "URGENTE";
                 const isOverdue = item.data_limite && item.data_limite < todayStr && item.status !== "CONCLUIDA" && item.status !== "CANCELADA";
 
                 return (
                   <div
                     key={item.id}
-                    className="rounded-2xl p-4 space-y-3 border flex flex-col"
+                    className={cn(
+                      "rounded-2xl p-4 space-y-3 border flex flex-col transition border-l-4",
+                      isUrgent ? "border-l-red-500 bg-red-500/5 dark:bg-red-500/5" :
+                      isOverdue ? "border-l-amber-500 bg-amber-500/5 dark:bg-amber-500/5" : "border-l-transparent"
+                    )}
                     style={{
                       background: "var(--card)",
                       borderColor: "var(--border)"
@@ -918,9 +950,13 @@ export default function PendenciasPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">Prazo:</span>
                         {item.data_limite ? (
-                          <span className={`font-bold ${isOverdue ? "text-red-500" : "text-slate-700 dark:text-slate-300"}`}>
+                          <span className={`font-bold inline-flex items-center gap-1 ${isOverdue ? "text-red-500" : "text-slate-700 dark:text-slate-300"}`}>
                             {new Date(item.data_limite + "T12:00:00").toLocaleDateString()}
-                            {isOverdue && " (Atrasado)"}
+                            {isOverdue && (
+                              <span className="text-[9px] uppercase bg-red-55 dark:bg-red-950/40 text-red-600 dark:text-red-400 px-1 py-0.5 rounded font-bold animate-pulse">
+                                Atrasado
+                              </span>
+                            )}
                           </span>
                         ) : (
                           <span className="text-slate-400">Não definido</span>
@@ -928,7 +964,12 @@ export default function PendenciasPage() {
                       </div>
 
                       <div className="flex items-center justify-between pt-1">
-                        <StatusBadge status={item.prioridade} tone={getPriorityTone(item.prioridade)} />
+                        <div className="flex items-center gap-1.5">
+                          <StatusBadge status={item.prioridade} tone={getPriorityTone(item.prioridade)} />
+                          {isUrgent && (
+                            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
+                          )}
+                        </div>
                         <StatusBadge status={item.status} />
                       </div>
                     </div>
@@ -960,7 +1001,7 @@ export default function PendenciasPage() {
                               onClick={() => handleUpdateStatus(item.id, item.id_int, item.id_cliente, "EM_ANDAMENTO", item.titulo)}
                               className="rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400 px-3 py-2 text-xs font-bold transition"
                             >
-                              Iniciar
+                              Assumir
                             </button>
                           )}
                           <button

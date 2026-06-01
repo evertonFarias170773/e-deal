@@ -268,7 +268,8 @@ export async function updatePropostaPendenciaStatus(
 
     let systemMsg = "";
     if (status === "EM_ANDAMENTO") {
-      systemMsg = `${user.name} iniciou a resolução da pendência "${titulo}"`;
+      updateData.responsavel_user_id = finalUserId;
+      systemMsg = `${user.name} assumiu a pendência "${titulo}"`;
     } else if (status === "CONCLUIDA") {
       updateData.concluido_por_user_id = finalUserId;
       updateData.concluido_por_nome = user.name;

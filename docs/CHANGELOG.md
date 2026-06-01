@@ -3,6 +3,14 @@
 ## 2026-06-01
 
 ### Adicionado
+- **Realtime + Notificações Operacionais de Pendências (Fase 6D-E)**:
+  - Adicionada subscrição realtime de canal único na Topbar para escutar a tabela `public.propostas_pendencias` e atualizar a badge de pendências ativas.
+  - Implementada propagação de eventos do realtime da Topbar para os demais componentes (Central de Pendências, PropostaPendenciasPanel) via Custom Event do DOM `propostas-pendencias-realtime`, evitando conexões e subscrições realtime duplicadas.
+  - Exibição de Toasts operacionais elegantes em tempo real para eventos-chave: nova pendência atribuída, pendência assumida por outro operador (com fetch de perfil sob demanda), concluída ou cancelada.
+  - Ação "Iniciar" renomeada para "Assumir" em todas as telas, associando a resolução ao UUID real do usuário autenticado no Supabase Auth.
+  - Destaques visuais premium para pendências `URGENTE` (borda vermelha esquerda, ping animado) e `ATRASADA` (borda âmbar esquerda, badge piscante de prazo vencido) no painel lateral de orçamento e na central.
+  - Otimização do painel lateral: lista de usuários carregada exclusivamente sob demanda ao abrir o formulário "Nova Pendência Manual" em vez de no mount.
+
 - **Central de Pendências (Fase 6D-D)**:
   - Criação da página `/pendencias` com layout operacional premium, cards estatísticos interativos e responsividade total.
   - Implementação de filtros avançados por texto livre, status, prioridade, categoria, setor responsável e empresa (dinâmica via PostgREST).
