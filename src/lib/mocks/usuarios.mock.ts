@@ -1,7 +1,7 @@
 import type { MockUser } from "@/lib/types";
 
 export const mockCurrentUser: MockUser = {
-  id: "user_mock_001",
+  id: "d3b07384-d113-4ec5-a55e-85a02e693b31",
   name: "Everton Martins",
   email: "everton@ideal.local",
   sector: "ADMIN",
@@ -13,7 +13,7 @@ export const mockCurrentUser: MockUser = {
 };
 
 export const mockSellerUser: MockUser = {
-  id: "user_mock_002",
+  id: "a8a760c6-3023-455e-b9b5-685b5420d440",
   name: "Caroline Silva",
   email: "caroline@ideal.local",
   sector: "COMERCIAL",

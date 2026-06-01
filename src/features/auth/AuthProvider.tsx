@@ -44,7 +44,11 @@ function mapSessionToUser(session: Session | null): MockUser | null {
         : null;
 
   const fallbackUser = buildFallbackUser(email);
-  return metadataName ? { ...fallbackUser, name: metadataName } : fallbackUser;
+  return {
+    ...fallbackUser,
+    id: session.user.id, // Always use the real Supabase Auth session UUID
+    name: metadataName || fallbackUser.name
+  };
 }
 
 type AuthContextValue = {

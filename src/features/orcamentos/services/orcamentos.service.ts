@@ -1994,21 +1994,21 @@ export async function listAllUsuarios(): Promise<ChatUsuario[]> {
   const client = getSupabaseClient();
   const mockUsers: ChatUsuario[] = [
     {
-      user_id: "user_mock_001",
+      user_id: "d3b07384-d113-4ec5-a55e-85a02e693b31",
       nome_usuario: "Everton Martins",
       email: "everton@ideal.local",
       setor: "ADMIN",
       avatar: null
     },
     {
-      user_id: "user_mock_002",
+      user_id: "a8a760c6-3023-455e-b9b5-685b5420d440",
       nome_usuario: "Caroline Silva",
       email: "caroline@ideal.local",
       setor: "COMERCIAL",
       avatar: null
     },
     {
-      user_id: "user_mock_003",
+      user_id: "b5d7d9a1-cb6c-48be-8f35-4cb5c8a417cd",
       nome_usuario: "Marielle Fonseca",
       email: "marielle@ideal.local",
       setor: "FINANCEIRO",
