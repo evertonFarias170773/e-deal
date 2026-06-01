@@ -103,12 +103,16 @@ export function getDataHoraListaCobranca(cobranca: Pick<Cobranca, "status" | "pa
 }
 
 export function getConferenciaStatusLabel(cobranca: Pick<Cobranca, "status" | "confirmado">) {
+  if (cobranca.confirmado) {
+    return "Liberado";
+  }
+
   if (cobranca.status === "PAID") {
-    return cobranca.confirmado ? "Pago" : "Pago / A liberar";
+    return "Pago / A liberar";
   }
 
   if (cobranca.status === "A_VENCER") {
-    return "Faturado";
+    return "A vencer / A liberar";
   }
 
   if (cobranca.status === "A_RECEBER") {
@@ -119,12 +123,12 @@ export function getConferenciaStatusLabel(cobranca: Pick<Cobranca, "status" | "c
 }
 
 export function getConferenciaStatusTone(cobranca: Pick<Cobranca, "status" | "confirmado">) {
-  if (cobranca.status === "PAID") {
-    return cobranca.confirmado ? "success" : "warning";
+  if (cobranca.confirmado) {
+    return "success";
   }
 
-  if (cobranca.status === "A_VENCER") {
-    return "info";
+  if (cobranca.status === "PAID" || cobranca.status === "A_VENCER") {
+    return "warning";
   }
 
   return "info";

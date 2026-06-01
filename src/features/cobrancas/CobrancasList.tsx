@@ -96,7 +96,12 @@ function isFilaPadrao(cobranca: Cobranca) {
 }
 
 function isBaseConfirmada(cobranca: Cobranca) {
-  return Boolean(cobranca.confirmado) && cobranca.status !== "A_RECEBER" && isEmpresaValida(cobranca);
+  return (
+    Boolean(cobranca.confirmado) &&
+    (cobranca.status === "PAID" || cobranca.status === "A_VENCER") &&
+    Boolean(cobranca.paid_at) &&
+    isEmpresaValida(cobranca)
+  );
 }
 
 function matchesTipoFiltro(cobranca: Cobranca, tipo: TipoFiltro) {
@@ -161,17 +166,25 @@ export function CobrancasList() {
   const monthOptions = useMemo(() => getCurrentMonthOptions(cobrancasStats), [cobrancasStats]);
 
   const visibleCobrancas = useMemo(() => {
+    const hasFilterActive =
+      search.trim() !== "" ||
+      empresa !== "TODAS" ||
+      (tipo !== "TODOS" && tipo !== "PENDENTES_APROVACAO");
+
     const base =
       tipo === "PENDENTES_APROVACAO"
         ? cobrancasStats.filter(isPendenteAprovacao)
-        : tipo === "TODOS"
-          ? cobrancasStats.filter(isFilaPadrao)
-          : cobrancasStats.filter(isBaseConfirmada);
+        : hasFilterActive
+          ? cobrancasStats.filter(isBaseConfirmada)
+          : cobrancasStats.filter(isFilaPadrao);
 
     return base
       .filter((cobranca) => {
         const matchesSearch = cobrancaMatchesSearch(cobranca, search);
-        const matchesTipo = matchesTipoFiltro(cobranca, tipo);
+        const matchesTipo =
+          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO"
+            ? true
+            : matchesTipoFiltro(cobranca, tipo);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
 
         return matchesSearch && matchesTipo && matchesEmpresa;
