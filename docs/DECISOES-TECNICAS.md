@@ -322,3 +322,34 @@ Motivo:
 - separar a operação comercial de geração/conferência da cobrança da rotina financeira de gestão de carteira;
 - permitir que o financeiro acompanhe fluxo de caixa, vencimentos e recebimentos futuros sem recriar cobranças;
 - preparar integração futura com `pagamentos_v2` e `boletos` por services específicos, sem misturar responsabilidades entre módulos.
+
+## Revisão Final e Estabilização (Fase 6F)
+
+### Carregamento Deferido de Dados de Usuários
+
+Decisão: adiar a chamada de `listAllUsuarios` no painel de chat da proposta para ocorrer sob demanda apenas quando o usuário interagir ativamente com a caixa de texto (foco na textarea) ou abrir a criação de pendências manuais.
+
+Motivo:
+
+- evitar que a simples montagem do painel de timeline (que ocorre com frequência na listagem de propostas e no balão global) consuma recursos e adicione overhead de conexões ao buscar todos os usuários do sistema sem necessidade imediata;
+- reduzir a latência inicial de abertura de chat.
+
+### Processamento de Menções via Regex O(M)
+
+Decisão: abandonar loops aninhados que comparavam a lista completa de usuários com cada string de mensagem e passar a usar regex compilada (`mentionRegex = /@([a-zA-Z0-9\u00C0-\u017F._-]+)/g`) para detectar e envelopar menções.
+
+Motivo:
+
+- a iteração aninhada causava degradação de performance quadrática ($O(N \times L)$) com o crescimento da timeline e da lista de usuários ativos;
+- o uso de regex reduz o tempo de parsing de texto para $O(M)$ linear no número de menções da própria mensagem, acelerando sensivelmente o tempo de renderização;
+- permite renderização preventiva de menções mesmo antes da lista de usuários ser resolvida sob demanda.
+
+### Segregação de Efeitos de Consulta na Central de Pendências
+
+Decisão: separar a busca de usuários do sistema (`listAllUsuarios`) do efeito de escuta realtime e recarregamento da Central de Pendências.
+
+Motivo:
+
+- evitar recarregar a lista estática de usuários em lote a cada alteração/atualização realtime de pendências recebidas via Custom Event do DOM;
+- estabilizar hooks de efeito e prevenir renderizações redundantes.
+

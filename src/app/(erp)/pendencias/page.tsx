@@ -104,17 +104,32 @@ export default function PendenciasPage() {
     };
   }, [triggerRefresh]);
 
-  // Fetch initial data
+  // Fetch users list only once on mount
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const usersRes = await listAllUsuarios();
+        if (active) {
+          setUsers(usersRes);
+        }
+      } catch (err) {
+        console.error("[PendenciasPage] Erro ao carregar usuários:", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Fetch initial pendencias data and update on refresh
   useEffect(() => {
     let active = true;
     void (async () => {
       setLoading(true);
       setErrorMsg(null);
       try {
-        const [pendenciasRes, usersRes] = await Promise.all([
-          listAllPropostasPendencias({ limit: 1000 }),
-          listAllUsuarios()
-        ]);
+        const pendenciasRes = await listAllPropostasPendencias({ limit: 1000 });
 
         if (!active) return;
 
@@ -123,8 +138,6 @@ export default function PendenciasPage() {
         } else {
           setErrorMsg(pendenciasRes.errorMessage || "Não foi possível buscar as pendências.");
         }
-
-        setUsers(usersRes);
       } catch (err) {
         if (active) {
           setErrorMsg(err instanceof Error ? err.message : "Erro inesperado ao carregar dados.");

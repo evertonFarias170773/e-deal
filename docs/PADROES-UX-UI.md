@@ -394,3 +394,11 @@ O painel central de gerenciamento de pendências operacionais (`/pendencias`) se
   - **Urgentes**: Itens de prioridade `URGENTE` recebem borda lateral esquerda vermelha (`border-l-red-500`), fundo com opacidade de aviso (`bg-red-500/5`), e um ping pulsante reativo no badge de prioridade.
   - **Atrasadas**: Itens com data limite ultrapassada recebem borda lateral esquerda âmbar (`border-l-amber-500`), fundo de aviso âmbar (`bg-amber-500/5`), e badge pulsante reativa de "ATRASADA" com destaque de prazo em vermelho.
   - Esses padrões visuais são rigorosamente idênticos na Central de Pendências e no Drawer de Chat/Orçamentos para preservar a coesão estética e funcional.
+
+## Otimizações de Desempenho e Fluidez Visual (Fase 6F)
+
+Para assegurar uma interface responsiva, livre de travamentos e eficiente no consumo de recursos, os seguintes padrões de implementação são adotados:
+- **Carregamento Deferido de Componentes Pesados**: Dados auxiliares pesados (como a listagem total de usuários para autocomplete) não devem ser carregados durante a montagem inicial (`onMount`) de painéis de visualização. O carregamento deve ser adiado para eventos de interação ativa do usuário (como o foco `onFocus` em campos de texto de chat ou abertura de formulários manuais).
+- **Estilização Preventiva com Validação Diferida**: Elementos interativos complexos, como marcações de menções (`@nome`), devem ser identificados preventivamente através de expressões regulares no front-end. O estilo visual correspondente (badge azul suave) é aplicado imediatamente, e a validação/resolução dos dados do usuário é processada em segundo plano tão logo os dados sob demanda estejam disponíveis, evitando saltos de layout ou tempos de espera perceptíveis.
+- **Segregação de Canais de Consulta**: Dados estáticos e dinâmicos devem possuir fluxos de atualização distintos. Atualizações em tempo real (Supabase Realtime/Custom Events) devem forçar a recarga estritamente de dados dinâmicos, nunca disparando queries redundantes para tabelas estáticas de suporte.
+

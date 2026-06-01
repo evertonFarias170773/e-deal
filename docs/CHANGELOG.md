@@ -3,6 +3,11 @@
 ## 2026-06-01
 
 ### Adicionado
+- **Revisão e Estabilização Técnica (Fase 6F)**:
+  - Deferido o carregamento de usuários (`listAllUsuarios`) no Drawer de Chat para ocorrer sob demanda (apenas ao focar no campo de digitação), economizando conexões ao ler mensagens.
+  - Implementado renderizador de menções por Regex ($O(M)$), substituindo a iteração de usuários sobre as mensagens por uma busca direta de padrão `@username`, validada após o carregamento da lista.
+  - Otimizado o fluxo de atualização na Central `/pendencias`: a lista de usuários do sistema agora é carregada apenas uma vez na montagem da página, e as atualizações em tempo real recarregam exclusivamente a listagem de pendências.
+
 - **Realtime + Notificações Operacionais de Pendências (Fase 6D-E)**:
   - Adicionada subscrição realtime de canal único na Topbar para escutar a tabela `public.propostas_pendencias` e atualizar a badge de pendências ativas.
   - Implementada propagação de eventos do realtime da Topbar para os demais componentes (Central de Pendências, PropostaPendenciasPanel) via Custom Event do DOM `propostas-pendencias-realtime`, evitando conexões e subscrições realtime duplicadas.

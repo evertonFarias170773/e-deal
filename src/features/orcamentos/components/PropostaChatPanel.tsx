@@ -95,18 +95,18 @@ export function PropostaChatPanel({
     setShowAutocomplete(false);
   }
 
-  // Load users list on mount
-  useEffect(() => {
-    let active = true;
-    void (async () => {
+  // Load users list on-demand when focused
+  const [usersLoaded, setUsersLoaded] = useState(false);
+  const loadUsersOnDemand = useCallback(async () => {
+    if (usersLoaded) return;
+    try {
       const users = await listAllUsuarios();
-      if (!active) return;
       setAllUsers(users);
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
+      setUsersLoaded(true);
+    } catch (err) {
+      console.error("[PropostaChatPanel] Erro ao carregar usuários:", err);
+    }
+  }, [usersLoaded]);
 
   // Mark mentions as read when proposal changes or chat is opened
   useEffect(() => {
@@ -228,61 +228,48 @@ export function PropostaChatPanel({
     }
   }
 
-  // Parser to render mentions in text
+  // Parser to render mentions in text using Regex (O(M) performance)
   function renderMessageContent(text: string) {
     if (!text) return null;
 
-    const sortedUsers = [...allUsers].sort((a, b) => b.nome_usuario.length - a.nome_usuario.length);
-    let parts: Array<string | React.ReactNode> = [text];
+    // Matches @ followed by letters, numbers, accents, dots, underscores, dashes
+    const mentionRegex = /@([a-zA-Z0-9\u00C0-\u017F._-]+)/g;
+    const parts: Array<string | React.ReactNode> = [];
+    let lastIndex = 0;
+    let match;
 
-    for (const u of sortedUsers) {
-      const handle = `@${u.nome_usuario}`;
-      const newParts: Array<string | React.ReactNode> = [];
+    while ((match = mentionRegex.exec(text)) !== null) {
+      const matchIndex = match.index;
+      const fullMatch = match[0];
+      const username = match[1];
 
-      for (const part of parts) {
-        if (typeof part !== "string") {
-          newParts.push(part);
-          continue;
+      // If user list is not loaded yet, we preventively style it as a mention.
+      // Once loaded, we validate that the name corresponds to a real user in the system.
+      const isValidUser = !usersLoaded || allUsers.some(
+        (u) => u.nome_usuario.toLowerCase() === username.toLowerCase()
+      );
+
+      if (isValidUser) {
+        if (matchIndex > lastIndex) {
+          parts.push(text.slice(lastIndex, matchIndex));
         }
-
-        const handleLower = handle.toLowerCase();
-        let index = part.toLowerCase().indexOf(handleLower);
-        let lastIndex = 0;
-
-        while (index !== -1) {
-          const charBefore = index > 0 ? part[index - 1] : "";
-          const isValidStart = !charBefore || /\s/.test(charBefore);
-
-          const nextCharIndex = index + handle.length;
-          const charAfter = nextCharIndex < part.length ? part[nextCharIndex] : "";
-          const isValidEnd = !charAfter || /[^\w\u00C0-\u017F]/.test(charAfter);
-
-          if (isValidStart && isValidEnd) {
-            if (index > lastIndex) {
-              newParts.push(part.slice(lastIndex, index));
-            }
-            newParts.push(
-              <span
-                key={`${u.user_id}-${index}`}
-                className="inline-flex items-center font-semibold px-1 py-0.5 rounded-md text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/40"
-              >
-                {part.slice(index, index + handle.length)}
-              </span>
-            );
-            lastIndex = index + handle.length;
-          }
-
-          index = part.toLowerCase().indexOf(handleLower, index + 1);
-        }
-
-        if (lastIndex < part.length) {
-          newParts.push(part.slice(lastIndex));
-        }
+        parts.push(
+          <span
+            key={`mention-${matchIndex}`}
+            className="inline-flex items-center font-semibold px-1 py-0.5 rounded-md text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/40"
+          >
+            {fullMatch}
+          </span>
+        );
+        lastIndex = mentionRegex.lastIndex;
       }
-      parts = newParts;
     }
 
-    return <>{parts}</>;
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? <>{parts}</> : text;
   }
 
   // Keep ref of onMessagesUpdated to avoid unnecessary triggers / infinite render loops
@@ -848,6 +835,7 @@ export function PropostaChatPanel({
               value={messageText}
               onChange={handleTextareaChange}
               onKeyDown={handleTextareaKeyDown}
+              onFocus={loadUsersOnDemand}
               disabled={sending}
               placeholder={sending ? "Enviando..." : "Escreva uma mensagem interna (Shift + Enter para pular linha)..."}
               className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-[#0b2f4a] focus:bg-white transition"

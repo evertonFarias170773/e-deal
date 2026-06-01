@@ -249,3 +249,33 @@ Toda a validação de acesso e permissões roda no servidor PostgreSQL associada
 ### UI e Fluxos Integrados:
 - **Aba no Drawer**: O `PropostaChatDrawer` agora conta com abas superiores deslizáveis para alternar entre "Conversa" e "Pendências", mantendo os dois painéis montados em DOM para evitar perda de dados e posição de scroll.
 - **Timeline e Notificações**: Ações nas pendências (criar, iniciar resolução, concluir ou cancelar) gravam automaticamente mensagens de `SISTEMA` no chat `propostas_chat` para alertar todos os colaboradores sobre o andamento operacional, evitando duplicidades.
+
+---
+
+## 14. Realtime e Notificações de Pendências (Fase 6D-E)
+
+Na Fase 6D-E, a gestão de pendências foi atualizada para um modelo dinâmico e reativo em tempo real via canais de eventos:
+1. **Canal Realtime Único**: A `Topbar` estabelece uma única subscrição realtime de canal PostgreSQL escutando a tabela `public.propostas_pendencias` do Supabase. Isso centraliza e otimiza o uso de conexões Websocket.
+2. **Propagação de Eventos via Custom Event**: As atualizações em tempo real são propagadas da Topbar para os demais componentes (Central de Pendências `/pendencias`, Drawer de Chat, painel de pendências lateral) através do Custom Event nativo do DOM `"propostas-pendencias-realtime"`.
+3. **Toasts Operacionais Interativos**: O sistema gera alertas visuais imediatos para os operadores envolvidos:
+   - **Novas Atribuições**: Notifica quando uma pendência é atribuída ao setor ou diretamente ao usuário logado.
+   - **Resolução Iniciada**: Notifica quando outro operador assume uma pendência criada pelo usuário.
+   - **Conclusão/Cancelamento**: Alerta quando pendências de interesse direto são concluídas ou canceladas por terceiros.
+   - *Nota: O sistema impede notificações em lote/redundantes do próprio usuário logado (auto-toast).*
+4. **Renomeação da Ação**: A ação "Iniciar" foi padronizada como "Assumir", gravando de maneira segura o UUID real da sessão ativa do usuário autenticado no campo `responsavel_user_id`.
+
+---
+
+## 15. Revisão Final e Estabilização (Fase 6F)
+
+A Fase 6F focou no refino de desempenho e UX para mitigar sobrecargas de queries em banco de dados e processamento no cliente:
+1. **Carregamento Diferido (On-Demand) de Usuários**:
+   - A busca da lista completa de usuários do sistema (`listAllUsuarios`) foi removida do mount inicial do painel de chat.
+   - O fetch agora é deferido para o evento de foco (`onFocus`) no campo de digitação de mensagem ou ao clicar em criar nova pendência manual. Isso evita que visualizações rápidas de mensagens na timeline façam chamadas pesadas ao banco.
+2. **Renderização de Menções com Regex de Alta Performance ($O(M)$)**:
+   - Substituição do algoritmo de renderização que iterava sobre a lista total de usuários em busca de menções por um processador baseado em Expressão Regular (`mentionRegex = /@([a-zA-Z0-9\u00C0-\u017F._-]+)/g`).
+   - O processamento de texto cai de um custo quadrático/linear na lista total de usuários ($O(N \times L)$) para linear na quantidade de menções encontradas ($O(M)$).
+   - Validação assíncrona: se a lista de usuários não estiver carregada na montagem inicial, a regex assume a marcação preventiva como pill de menção e valida o match com a lista real de usuários assim que a mesma é preenchida sob demanda.
+3. **Otimização de Queries na Central de Pendências**:
+   - Em `/pendencias`, a busca inicial de usuários do sistema foi desmembrada do efeito reativo de atualização. Os usuários são trazidos apenas uma vez na montagem inicial, prevenindo novas buscas a cada gatilho realtime de pendências.
+

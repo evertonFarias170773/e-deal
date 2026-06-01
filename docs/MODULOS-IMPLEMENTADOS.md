@@ -404,7 +404,7 @@ Pendências:
 
 ## Chat Interno
 
-Status: integrado real com Supabase (leitura/escrita transacional em public.propostas_chat, upload de anexos no Storage bucket chat-ideal, menções salvas no banco em public.propostas_chat_mentions e sincronização em tempo real via Supabase Realtime) com controle de leitura local por usuário, central global de notificações e balão flutuante contextual integrado em todo o ERP.
+Status: integrado real com Supabase, otimizado e estabilizado na Fase 6F. Controle de leitura local por usuário, autocomplete de menções, central global de notificações e balão flutuante contextual integrado em todo o ERP.
 
 Rotas:
 - Acessível via drawer a partir de `/orcamentos` (listagem) e `/orcamentos/[id]` (detalhe)
@@ -441,7 +441,9 @@ Funcionalidades:
 - Resolução dinâmica de contextos baseado na URL ativa (`usePathname`), apontando para a proposta correspondente ou localizando a última proposta do cliente visitado;
 - Listagem de conversas recentes com as últimas 5 propostas com atividade recente, aplicando filtro em lote no banco para respeitar as políticas de segurança de dados (RLS) do Supabase;
 - Cache inteligente local de 30 segundos (`CACHE_TTL`) e debounce síncrono de requisições para evitar queries redundantes e cliques em rajada.
-- Sinalizador de atividade discreto (ponto azul pulsante) ativado de forma contextual quando o orçamento ativo possuir menções não lidas pendentes para o usuário logado.
+- Sinalizador de atividade discreto (ponto azul pulsante) ativado de forma contextual quando o orçamento ativo possuir menções não lidas pendentes para o usuário logado;
+- Carregamento de usuários para autocomplete diferido e sob demanda, disparado apenas ao focar na caixa de texto do chat;
+- Renderizador de menções por Regex de alta performance ($O(M)$), eliminando o loop sobre a lista de usuários em todas as renderizações de mensagem.
 
 Pendências:
 - criar tabela definitiva de controle de leituras gerais (`propostas_chat_leituras`) no banco de dados para persistência multiplataforma.
@@ -449,7 +451,7 @@ Pendências:
 
 ## Pendências Atribuídas (Fase 6D)
 
-Status: Implementado completo (incluindo Fase 6D-E — Realtime e Notificações). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
+Status: Implementado completo (incluindo Fase 6D-E — Realtime e Notificações e Fase 6F — Estabilização). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
 
 Rotas:
 - Acessível via aba "Pendências" no drawer de chat em `/orcamentos` ou `/orcamentos/[id]`.
@@ -479,7 +481,8 @@ Funcionalidades:
 - Notificações reativas em Toasts na tela ao receber eventos externos da tabela `propostas_pendencias` (nova atribuída, assumida por outro, concluída ou cancelada), com busca assíncrona on-demand do nome dos envolvidos via PostgREST;
 - Ação "Iniciar" renomeada para "Assumir" que preenche automaticamente o campo `responsavel_user_id` com o UUID real da sessão autenticada do operador;
 - Destaques visuais premium para pendências `URGENTE` (borda vermelha esquerda, ping pulsante animado na badge) e `ATRASADA` (borda âmbar esquerda, badge pulsante de vencimento) unificados entre a central e os painéis de chat;
-- Otimização do carregamento lateral: busca da lista de usuários executada exclusivamente sob demanda ao abrir o formulário "Nova Pendência Manual" em vez de no mount geral.
+- Otimização do carregamento lateral: busca da lista de usuários executada exclusivamente sob demanda ao abrir o formulário "Nova Pendência Manual" em vez de no mount geral;
+- Otimização de consultas na Central `/pendencias`: a lista de usuários é buscada uma única vez no mount, separada da escuta e do refresh realtime de pendências.
 
 ## Demais módulos
 
