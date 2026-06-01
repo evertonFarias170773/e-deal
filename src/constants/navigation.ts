@@ -23,7 +23,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Orcamentos", href: "/orcamentos", icon: ClipboardList },
   { label: "Pendências", href: "/pendencias", icon: CheckSquare },
   { label: "Maestro", href: "/maestro", icon: Bot, disabled: true },
-  { label: "Cobrancas", href: "/cobrancas", icon: CreditCard },
+  { label: "Conferência", href: "/cobrancas", icon: CreditCard },
   { label: "Contas a receber", href: "/contas-a-receber", icon: ReceiptText },
   { label: "Notas fiscais", href: "/notas-fiscais", icon: FileText, disabled: true },
   { label: "Pedidos", href: "/pedidos", icon: Boxes, disabled: true },
