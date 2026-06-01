@@ -3,13 +3,15 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useAppToast } from "@/components/common/AppToast";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   listPropostaChatMessages,
   sendPropostaChatMessage,
   uploadChatAnexo,
   saveChatReadInfo,
   type PropostaChatMessage,
-  type PropostaChatAnexo
+  type PropostaChatAnexo,
+  type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { Paperclip, Send, Loader2, FileText, Image as ImageIcon, Download, X, AlertCircle } from "lucide-react";
 import { formatDateTime } from "@/lib/formatters/date";
@@ -21,12 +23,7 @@ interface PropostaChatPanelProps {
   tituloContexto?: string;
   showHeader?: boolean;
   className?: string;
-  onMessagesUpdated?: (
-    msgCount: number,
-    anexoCount: number,
-    hasPendente: boolean,
-    hasRecusado: boolean
-  ) => void;
+  onMessagesUpdated?: (summary: PropostaChatResumo) => void;
 }
 
 const ALLOWED_MIME_TYPES = [
@@ -68,6 +65,12 @@ export function PropostaChatPanel({
   
   // Keep track of the previous proposal ID to reset loading and states during render
   const [prevIdInt, setPrevIdInt] = useState(idInt);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const initialScrolledRef = useRef(false);
+
   if (idInt !== prevIdInt) {
     setPrevIdInt(idInt);
     setMessages([]);
@@ -76,8 +79,17 @@ export function PropostaChatPanel({
     setSelectedFiles([]);
     setSending(false);
   }
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Reset scroll tracking when proposal ID changes
+  useEffect(() => {
+    initialScrolledRef.current = false;
+  }, [idInt]);
+
+  // Keep ref of onMessagesUpdated to avoid unnecessary triggers / infinite render loops
+  const onMessagesUpdatedRef = useRef(onMessagesUpdated);
+  useEffect(() => {
+    onMessagesUpdatedRef.current = onMessagesUpdated;
+  }, [onMessagesUpdated]);
 
   // Propagate aggregates reactively when messages change
   useEffect(() => {
@@ -99,8 +111,22 @@ export function PropostaChatPanel({
       }
     }
 
-    onMessagesUpdated?.(messages.length, anexoCount, hasPendente, hasRecusado);
-  }, [messages, onMessagesUpdated]);
+    const lastMsg = messages[messages.length - 1] || null;
+    const summary: PropostaChatResumo = {
+      id_int: idInt,
+      total_mensagens: messages.length,
+      total_anexos: anexoCount,
+      ultima_mensagem: lastMsg?.mensagem || null,
+      ultima_data: lastMsg?.created_at || null,
+      has_pendente: hasPendente,
+      has_recusado: hasRecusado,
+      nao_lidas_count: 0, // open, so marked as read
+      ultima_mensagem_id: lastMsg?.id || null,
+      ultima_mensagem_created_at: lastMsg?.created_at || null
+    };
+
+    onMessagesUpdatedRef.current?.(summary);
+  }, [messages, idInt]);
 
   // Mark messages as read when they load successfully or when a new message is added
   useEffect(() => {
@@ -110,9 +136,8 @@ export function PropostaChatPanel({
     }
   }, [messages, loadingMessages, idInt, user]);
 
+  // Initial HTTP list fetch
   useEffect(() => {
-
-
     let active = true;
     void (async () => {
       const res = await listPropostaChatMessages(idInt);
@@ -129,10 +154,91 @@ export function PropostaChatPanel({
     };
   }, [idInt]);
 
-  // Scroll to bottom when messages load or change
+  // Realtime subscription setup
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn("[PropostaChatPanel] Supabase client indisponível. Funcionando apenas via HTTP.");
+      return;
+    }
+
+    console.log(`[PropostaChatPanel] Inicializando canal realtime para proposta #${idInt}`);
+    const channel = supabase
+      .channel(`proposta_chat_${idInt}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "propostas_chat",
+          filter: `id_int=eq.${idInt}`
+        },
+        (payload) => {
+          const newMsg = payload.new as PropostaChatMessage;
+          console.log(`[PropostaChatPanel] Realtime INSERT recebido para proposta #${idInt}:`, newMsg);
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) {
+              return prev;
+            }
+            return [...prev, newMsg];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "propostas_chat",
+          filter: `id_int=eq.${idInt}`
+        },
+        (payload) => {
+          const updatedMsg = payload.new as PropostaChatMessage;
+          console.log(`[PropostaChatPanel] Realtime UPDATE recebido para proposta #${idInt}:`, updatedMsg);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
+          );
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log(`[PropostaChatPanel] Realtime conectado para proposta #${idInt}`);
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
+          console.warn(`[PropostaChatPanel] Realtime desconectado/erro para proposta #${idInt}. Status: ${status}`);
+        }
+      });
+
+    return () => {
+      console.log(`[PropostaChatPanel] Removendo canal realtime para proposta #${idInt}`);
+      void supabase.removeChannel(channel);
+    };
+  }, [idInt]);
+
+  // Intelligent Scroll Logic
+  useEffect(() => {
+    if (loadingMessages || messages.length === 0) return;
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    if (!initialScrolledRef.current) {
+      // First load scroll to bottom instantly
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      initialScrolledRef.current = true;
+      return;
+    }
+
+    const lastMsg = messages[messages.length - 1];
+    const isCurrentUserMessage = lastMsg && lastMsg.autor_uid === user?.id;
+
+    // Check if user is scrolled near bottom
+    const threshold = 150; // px
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+
+    if (isCurrentUserMessage || isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, loadingMessages, user?.id]);
 
   // Remover arquivo da lista de seleção
   function handleRemoveFile(index: number) {
@@ -226,8 +332,13 @@ export function PropostaChatPanel({
       if (resMsg.success && resMsg.data) {
         setMessageText("");
         setSelectedFiles([]);
-        // Adiciona a mensagem enviada localmente para atualizar o chat imediatamente
-        setMessages((prev) => [...prev, resMsg.data!]);
+        // Adiciona a mensagem enviada localmente para atualizar o chat imediatamente (se não foi adicionada pelo realtime)
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === resMsg.data!.id)) {
+            return prev;
+          }
+          return [...prev, resMsg.data!];
+        });
       } else {
         console.error("[PropostaChatPanel] Erro ao enviar mensagem:", resMsg.errorMessage);
         showToast({
@@ -277,7 +388,7 @@ export function PropostaChatPanel({
       )}
 
       {/* Listagem de Mensagens */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30">
         {loadingMessages ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center space-y-2">

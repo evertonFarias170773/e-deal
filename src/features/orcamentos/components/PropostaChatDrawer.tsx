@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Paperclip } from "lucide-react";
 import { PropostaChatPanel } from "./PropostaChatPanel";
+import { type PropostaChatResumo } from "@/features/orcamentos/services/orcamentos.service";
 
 interface PropostaChatDrawerProps {
   open: boolean;
@@ -12,6 +13,7 @@ interface PropostaChatDrawerProps {
   // Slots for future indicators/badges
   headerBadge?: React.ReactNode;
   headerActions?: React.ReactNode;
+  onMessagesUpdated?: (summary: PropostaChatResumo) => void;
 }
 
 export function PropostaChatDrawer({
@@ -22,7 +24,8 @@ export function PropostaChatDrawer({
   idCliente,
   tituloContexto = "Chat interno",
   headerBadge,
-  headerActions
+  headerActions,
+  onMessagesUpdated
 }: PropostaChatDrawerProps) {
   const [localResumo, setLocalResumo] = useState<{
     total_mensagens: number;
@@ -157,13 +160,14 @@ export function PropostaChatDrawer({
             idCliente={idCliente}
             showHeader={false}
             className="h-full border-none shadow-none rounded-none"
-            onMessagesUpdated={(msgCount, anexoCount, hasPendente, hasRecusado) => {
+            onMessagesUpdated={(summary) => {
               setLocalResumo({
-                total_mensagens: msgCount,
-                total_anexos: anexoCount,
-                has_pendente: hasPendente,
-                has_recusado: hasRecusado
+                total_mensagens: summary.total_mensagens,
+                total_anexos: summary.total_anexos,
+                has_pendente: summary.has_pendente,
+                has_recusado: summary.has_recusado
               });
+              onMessagesUpdated?.(summary);
             }}
           />
         </div>

@@ -840,6 +840,12 @@ export function OrcamentosListPageReal() {
               }
             }
           }}
+          onMessagesUpdated={(summary) => {
+            setChatResumos((prev) => ({
+              ...prev,
+              [summary.id_int]: summary
+            }));
+          }}
           idInt={activeChatProposta.idInt}
           clienteNome={activeChatProposta.clienteNome}
           idCliente={activeChatProposta.idCliente}

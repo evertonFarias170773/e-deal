@@ -458,6 +458,9 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
             void fetchChatResumo();
           }
         }}
+        onMessagesUpdated={(summary) => {
+          setChatResumo(summary);
+        }}
         idInt={proposta.id_int}
         clienteNome={proposta.cliente?.nome}
         idCliente={proposta.cliente?.idCliente}
