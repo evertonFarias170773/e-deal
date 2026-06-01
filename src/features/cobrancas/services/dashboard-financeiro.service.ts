@@ -91,7 +91,7 @@ function getMesPeriodoFechado(monthKey: string, referenceDate = new Date()) {
   };
 }
 
-async function callDashboardFinanceiroRpc() {
+async function callDashboardFinanceiroRpc(data_inicio: string, data_fim: string) {
   const config = getSupabaseConfig();
 
   if (!config) {
@@ -108,7 +108,10 @@ async function callDashboardFinanceiroRpc() {
         "content-type": "application/json",
         "accept-profile": "public"
       },
-      body: JSON.stringify({})
+      body: JSON.stringify({
+        data_inicio,
+        data_fim
+      })
     });
 
     if (!response.ok) {
@@ -116,7 +119,7 @@ async function callDashboardFinanceiroRpc() {
     }
 
     const data = (await response.json().catch(() => null)) as unknown;
-    return normalizeRpcSnapshot(data);
+    return data;
   } catch {
     return null;
   }
@@ -175,95 +178,10 @@ async function fetchPagamentosV2MonthRows(inicioIso: string, fimExclusivoIso: st
   return rows;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
-function readNumber(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
 
-  if (typeof value === "string") {
-    const parsed = Number(value.replace(",", "."));
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
 
-  return undefined;
-}
 
-function readResumo(value: unknown): DashboardFinanceiroResumoTotal | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const count = readNumber(value.count) ?? readNumber(value.total_registros) ?? readNumber(value.quantidade);
-  const total = readNumber(value.total) ?? readNumber(value.valor) ?? readNumber(value.soma);
-
-  if (typeof count !== "number" || typeof total !== "number") {
-    return undefined;
-  }
-
-  return { count, total };
-}
-
-function normalizeRpcSnapshot(value: unknown): DashboardFinanceiroSnapshot | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const pendentesResumo = readResumo(value.pendentesResumo ?? value.pendentes_resumo);
-  const confirmadosDiaResumo = readResumo(value.confirmadosDiaResumo ?? value.confirmados_dia_resumo);
-  const faturamentoMesResumo = readResumo(value.faturamentoMesResumo ?? value.faturamento_mes_resumo);
-  const faturamentoDiaResumoTotal =
-    readNumber(value.faturamentoDiaResumoTotal ?? value.faturamento_dia_resumo_total) ?? undefined;
-  const faturamentoDiaPorEmpresaRaw = value.faturamentoDiaPorEmpresa ?? value.faturamento_dia_por_empresa;
-
-  const faturamentoDiaPorEmpresa = Array.isArray(faturamentoDiaPorEmpresaRaw)
-    ? faturamentoDiaPorEmpresaRaw
-        .map((item) => {
-          if (!isRecord(item)) {
-            return null;
-          }
-
-          const idEmpresa = readNumber(item.id_empresa ?? item.idEmpresa);
-          const total = readNumber(item.total) ?? readNumber(item.valor);
-          const count = readNumber(item.count) ?? readNumber(item.quantidade) ?? 0;
-
-          if (typeof idEmpresa !== "number" || typeof total !== "number") {
-            return null;
-          }
-
-          return {
-            id_empresa: idEmpresa,
-            empresa: String(item.empresa ?? getEmpresaResumoLabel(idEmpresa)),
-            total,
-            count
-          } satisfies DashboardFinanceiroEmpresaResumo;
-        })
-        .filter((item): item is DashboardFinanceiroEmpresaResumo => Boolean(item))
-    : undefined;
-
-  if (
-    !pendentesResumo ||
-    !confirmadosDiaResumo ||
-    typeof faturamentoDiaResumoTotal !== "number" ||
-    !faturamentoDiaPorEmpresa ||
-    !faturamentoMesResumo
-  ) {
-    return null;
-  }
-
-  return {
-    source: "rpc",
-    warnings: [],
-    pendentesResumo,
-    confirmadosDiaResumo,
-    faturamentoDiaResumoTotal,
-    faturamentoDiaPorEmpresa,
-    faturamentoMesResumo
-  };
-}
 
 function getFaturamentoReference(cobranca: Pick<Cobranca, "paid_at" | "data_confirmacao">) {
   return cobranca.paid_at || cobranca.data_confirmacao || "";
@@ -377,12 +295,40 @@ export async function fetchDashboardFinanceiroSnapshot(
   cobrancasStats: Cobranca[],
   mesSelecionado: string
 ): Promise<DashboardFinanceiroSnapshot> {
-  const rpcSnapshot = await callDashboardFinanceiroRpc();
-  if (rpcSnapshot) {
-    return rpcSnapshot;
+  const [year, month] = mesSelecionado.split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  const data_inicio = `${mesSelecionado}-01`;
+  const data_fim = `${mesSelecionado}-${String(lastDay).padStart(2, "0")}`;
+
+  const rpcData = await callDashboardFinanceiroRpc(data_inicio, data_fim);
+  const mesPeriodo = getMesPeriodoFechado(mesSelecionado);
+
+  if (Array.isArray(rpcData) && rpcData.length > 0) {
+    const rpcRow = rpcData[0] as Record<string, unknown>;
+    const emp1 = Number(rpcRow.empresa1) || 0;
+    const emp2 = Number(rpcRow.empresa2) || 0;
+    const emp3 = Number(rpcRow.empresa3) || 0;
+    const totalPeriodo = Number(rpcRow.total_periodo) || 0;
+
+    const fallback = buildFallbackSnapshot(cobrancasStats, mesSelecionado);
+    return {
+      ...fallback,
+      source: "rpc",
+      warnings: [],
+      faturamentoMesResumo: {
+        count: fallback.faturamentoMesResumo.count,
+        total: totalPeriodo
+      },
+      faturamentoDiaPorEmpresa: [
+        { id_empresa: 1, empresa: "IDEAL GRAFICA EXPRESSA EIRELI", total: emp1, count: 0 },
+        { id_empresa: 2, empresa: "IDEAL BIRO SERV. GRAFICOS", total: emp2, count: 0 },
+        { id_empresa: 3, empresa: "E3 BRINDES LTDA", total: emp3, count: 0 }
+      ],
+      faturamentoDiaResumoTotal: totalPeriodo,
+      faturamentoMesPeriodo: mesPeriodo
+    };
   }
 
-  const mesPeriodo = getMesPeriodoFechado(mesSelecionado);
   const monthRows = await fetchPagamentosV2MonthRows(mesPeriodo.inicioIso, mesPeriodo.fimExclusivoIso);
   if (monthRows) {
     const fallback = buildFallbackSnapshot(cobrancasStats, mesSelecionado);
