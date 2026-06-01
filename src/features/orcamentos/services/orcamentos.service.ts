@@ -2161,6 +2161,73 @@ export async function markPropostaChatMentionsAsRead(
   }
 }
 
+export interface PropostaChatMentionJoined {
+  id: number;
+  chat_id: number;
+  id_int: number;
+  mentioned_user_id: string;
+  mentioned_user_name: string;
+  mentioned_user_email: string;
+  mentioned_by_user_id: string | null;
+  mentioned_by_name: string | null;
+  read_at: string | null;
+  source_type: string;
+  created_at: string;
+  propostas_chat?: {
+    mensagem: string;
+    tipo: string;
+  } | null;
+}
+
+export async function listPropostaChatMentionsForUser(
+  userId: string
+): Promise<PropostaChatMentionJoined[]> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return [];
+  }
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await client
+      .from("propostas_chat_mentions")
+      .select(`
+        id,
+        chat_id,
+        id_int,
+        mentioned_user_id,
+        mentioned_user_name,
+        mentioned_user_email,
+        mentioned_by_user_id,
+        mentioned_by_name,
+        read_at,
+        source_type,
+        created_at,
+        propostas_chat (
+          mensagem,
+          tipo
+        )
+      `)
+      .eq("mentioned_user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao buscar menções do usuário:", error);
+      return [];
+    }
+
+    return (data || []) as unknown as PropostaChatMentionJoined[];
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção ao buscar menções do usuário:", err);
+    return [];
+  }
+}
+
 
 
 

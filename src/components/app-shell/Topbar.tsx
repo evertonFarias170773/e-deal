@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Menu, Bell } from "lucide-react";
 import { CompanySwitcher } from "@/components/app-shell/CompanySwitcher";
 import { GlobalSearch } from "@/components/app-shell/GlobalSearch";
@@ -9,6 +9,11 @@ import { UserMenu } from "@/components/app-shell/UserMenu";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useAppToast } from "@/components/common/AppToast";
+import { NotificationsPopover } from "@/components/app-shell/NotificationsPopover";
+import {
+  listPropostaChatMentionsForUser,
+  type PropostaChatMentionJoined
+} from "@/features/orcamentos/services/orcamentos.service";
 
 type TopbarProps = {
   onOpenMenu: () => void;
@@ -19,38 +24,50 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
   const { showToast } = useAppToast();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Fetch initial unread count
-  useEffect(() => {
-    if (!user?.id) return;
-    
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
+  // Notification popover states
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [notifications, setNotifications] = useState<PropostaChatMentionJoined[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
 
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Fetch notifications
+  const fetchNotifications = useCallback(async () => {
+    if (!user?.id) return;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(user.id)) return;
 
-    let active = true;
-    void (async () => {
-      const { count, error } = await supabase
-        .from("propostas_chat_mentions")
-        .select("*", { count: "exact", head: true })
-        .eq("mentioned_user_id", user.id)
-        .is("read_at", null);
+    // Set loading state asynchronously to avoid React Compiler cascading render warning in useEffect
+    Promise.resolve().then(() => {
+      setLoadingNotifications(true);
+    });
+    setNotificationsError(null);
+    try {
+      const data = await listPropostaChatMentionsForUser(user.id);
+      setNotifications(data);
+      // Sync unread count from results
+      const unread = data.filter((n) => !n.read_at).length;
+      setUnreadCount(unread);
+    } catch (err) {
+      console.error("[Topbar] Erro ao buscar lista de menções:", err);
+      setNotificationsError(String(err));
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, [user]);
 
-      if (error) {
-        console.error("[Topbar] Erro ao buscar contagem de menções:", error);
-        return;
-      }
-      if (!active) return;
-      setUnreadCount(count || 0);
-    })();
+  // Initial fetch on mount / user change (deferred to avoid React Compiler cascading render warning)
+  useEffect(() => {
+    if (user?.id) {
+      const timer = setTimeout(() => {
+        void fetchNotifications();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [user, fetchNotifications]);
 
-    return () => {
-      active = false;
-    };
-  }, [user?.id]);
-
-  // Subscribe to real-time mentions
+  // Subscribe to real-time mentions (reused single subscription channel)
   useEffect(() => {
     if (!user?.id) return;
 
@@ -77,8 +94,8 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
             mentioned_by_name: string | null;
           };
           console.log("[Topbar] Nova menção recebida em tempo real:", newMention);
-          setUnreadCount((prev) => prev + 1);
 
+          // Toast notification
           showToast({
             type: "info",
             title: "Você foi mencionado!",
@@ -87,6 +104,9 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
               window.location.href = `/orcamentos/${newMention.id_int}?chat=open`;
             }
           });
+
+          // Refetch to pull the fully joined message data
+          void fetchNotifications();
         }
       )
       .on(
@@ -98,15 +118,8 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
           filter: `mentioned_user_id=eq.${user.id}`
         },
         () => {
-          // Refetch count on update to be 100% accurate
-          void supabase
-            .from("propostas_chat_mentions")
-            .select("*", { count: "exact", head: true })
-            .eq("mentioned_user_id", user.id)
-            .is("read_at", null)
-            .then(({ count }) => {
-              setUnreadCount(count || 0);
-            });
+          // Refetch fully joined data on update
+          void fetchNotifications();
         }
       )
       .subscribe();
@@ -115,7 +128,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
       console.log(`[Topbar] Removendo canal realtime global de menções para usuário: ${user.id}`);
       void supabase.removeChannel(channel);
     };
-  }, [user?.id, showToast]);
+  }, [user?.id, showToast, fetchNotifications]);
 
   return (
     <header
@@ -152,6 +165,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
           {user && (
             <div className="relative">
               <button
+                ref={bellButtonRef}
                 type="button"
                 className="rounded-xl p-2.5 shadow-sm transition relative"
                 style={{
@@ -160,7 +174,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
                   color: "var(--primary)"
                 }}
                 onClick={() => {
-                  window.location.href = "/orcamentos";
+                  setIsPopoverOpen((prev) => !prev);
                 }}
                 title={unreadCount > 0 ? `Você tem ${unreadCount} menção(ões) não lida(s)` : "Sem menções pendentes"}
               >
@@ -171,6 +185,15 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
                   </span>
                 )}
               </button>
+              {isPopoverOpen && (
+                <NotificationsPopover
+                  notifications={notifications}
+                  loading={loadingNotifications}
+                  error={notificationsError}
+                  onClose={() => setIsPopoverOpen(false)}
+                  triggerRef={bellButtonRef}
+                />
+              )}
             </div>
           )}
 

@@ -404,20 +404,23 @@ Pendências:
 
 ## Chat Interno
 
-Status: integrado real com Supabase (leitura/escrita transacional em public.propostas_chat e upload de anexos no Storage bucket chat-ideal) com controle de leitura local por usuário.
+Status: integrado real com Supabase (leitura/escrita transacional em public.propostas_chat, upload de anexos no Storage bucket chat-ideal, menções salvas no banco em public.propostas_chat_mentions e sincronização em tempo real via Supabase Realtime) com controle de leitura local por usuário e central global de notificações.
 
 Rotas:
 - Acessível via drawer a partir de `/orcamentos` (listagem) e `/orcamentos/[id]` (detalhe)
+- Notificações acessíveis via popover na Topbar em todo o sistema
 
 Componentes principais:
 - `PropostaChatPanel`
 - `PropostaChatDrawer`
 - `OrcamentoDetailPage`
 - `OrcamentosListPageReal`
+- `NotificationsPopover`
+- `Topbar`
 - `orcamentos.service.ts`
 
 Mocks usados:
-- Nenhum para fluxo de mensagens (operando 100% integrado ao Supabase).
+- Nenhum para fluxo de mensagens e menções (operando 100% integrado ao Supabase).
 - Fallbacks locais seguros em caso de indisponibilidade de rede ou localStorage.
 
 Funcionalidades:
@@ -427,12 +430,13 @@ Funcionalidades:
 - cabeçalho de drawer reativo contendo contagem de mensagens, anexos e alertas de status (`Pendência` / `Recusado`);
 - integração na listagem de propostas com busca otimizada em lote (limitada a 100 itens renderizados);
 - controle de lidas e não lidas isolado por usuário/ambiente persistido em `localStorage` e atualizado apenas após carregamento concluído;
-- badges dinâmicas com a quantidade exata de mensagens não lidas e tooltips detalhados na listagem de propostas e abas de detalhes.
+- badges dinâmicas com a quantidade exata de mensagens não lidas e tooltips detalhados na listagem de propostas e abas de detalhes;
+- atualização instantânea da timeline ao enviar/receber mensagens com o drawer aberto (realtime);
+- menções de usuários via autocomplete (`@`) integradas às propostas com pills azuis estilizadas;
+- Central Global de Notificações com popover moderno, indicando quantidade de menções pendentes, com sincronização em tempo real, carregamento dinâmico do conteúdo de chat e clique que redireciona e abre o chat correspondente.
 
 Pendências:
-- ligar realtime para recebimento instantâneo de mensagens com drawer aberto;
-- criar tabela definitiva de controle de leituras (`propostas_chat_leituras`) no banco de dados para persistência multiplataforma;
-- integrar menções operacionais com notificações internas.
+- criar tabela definitiva de controle de leituras gerais (`propostas_chat_leituras`) no banco de dados para persistência multiplataforma.
 
 ## Demais módulos
 

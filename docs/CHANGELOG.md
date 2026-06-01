@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-01
+
+### Adicionado
+- **Menções no Chat Interno (Fase 6A)**:
+  - Autocomplete inteligente acionado via `@` na caixa de texto do chat, com busca nativa filtrada de usuários ativos.
+  - Tabela dedicada `propostas_chat_mentions` para registro estruturado desduplicado das menções.
+  - Destaque visual das menções na timeline do chat por meio de pills azuis estilizadas.
+  - Notificação local por Toast em tempo real integrada à Topbar baseada no ID do usuário logado (`mentioned_user_id = user.id`).
+- **Central Global de Notificações (Fase 6B)**:
+  - Painel Popover flutuante responsivo acoplado ao sino da Topbar.
+  - Carregamento de até 50 menções recentes com join PostgREST nativo para recuperar o texto do chat original.
+  - Sincronização em tempo real de contagem e conteúdo do Popover ao receber novas menções via subscrição Supabase Realtime unificada.
+  - Redirecionamento instantâneo via clique que abre o chat da proposta correspondente (`router.push`).
+
+### Alterado
+- O linter e build do projeto Next.js foram totalmente adequados às regras estritas do React Compiler e ESLint (resolvendo mutações de `window.location` e cascading renders de mount state).
+
 ## 2026-05-31
 
 ### Adicionado
