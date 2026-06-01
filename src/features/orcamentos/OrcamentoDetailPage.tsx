@@ -30,7 +30,7 @@ import {
   loadChatReadInfo,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
-import { PropostaChatDrawer } from "@/features/orcamentos/components/PropostaChatDrawer";
+import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -42,13 +42,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const { user } = useAuth();
   const { getCobrancasByProposta } = useCobrancas();
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("chat") === "open";
-    }
-    return false;
-  });
+  const { openChat } = useGlobalChat();
   const { proposta, loading, error } = useOrcamentoDetail(idInt);
   const [chatResumo, setChatResumo] = useState<PropostaChatResumo | null>(null);
 
@@ -86,6 +80,24 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
       active = false;
     };
   }, [idInt, user]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && proposta) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("chat") === "open") {
+        openChat(proposta.id_int, {
+          clienteNome: proposta.cliente?.nome,
+          idCliente: proposta.cliente?.idCliente,
+          onMessagesUpdated: (summary) => setChatResumo(summary),
+          onClose: () => {
+            void fetchChatResumo();
+          }
+        });
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, "", newUrl);
+      }
+    }
+  }, [proposta, openChat, fetchChatResumo]);
 
   if (loading) {
     return (
@@ -276,7 +288,16 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                   label: chatResumo && chatResumo.total_mensagens > 0
                     ? `Ver chat interno (${chatResumo.total_mensagens})`
                     : "Ver chat interno",
-                  onClick: () => setIsChatOpen(true)
+                  onClick: () => {
+                    openChat(proposta.id_int, {
+                      clienteNome: proposta.cliente?.nome,
+                      idCliente: proposta.cliente?.idCliente,
+                      onMessagesUpdated: (summary) => setChatResumo(summary),
+                      onClose: () => {
+                        void fetchChatResumo();
+                      }
+                    });
+                  }
                 },
                 { label: "Duplicar proposta", onClick: () => void handleDuplicarProposta() },
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
@@ -340,7 +361,16 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
           </button>
           <button
             type="button"
-            onClick={() => setIsChatOpen(true)}
+            onClick={() => {
+              openChat(proposta.id_int, {
+                clienteNome: proposta.cliente?.nome,
+                idCliente: proposta.cliente?.idCliente,
+                onMessagesUpdated: (summary) => setChatResumo(summary),
+                onClose: () => {
+                  void fetchChatResumo();
+                }
+              });
+            }}
             className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5 ${
               chatResumo?.has_recusado
                 ? "text-red-700 bg-red-50 hover:bg-red-100 border border-red-200"
@@ -454,23 +484,6 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
           </DetailCard>
         </div>
       </section>
-
-      <PropostaChatDrawer
-        key={proposta.id_int}
-        open={isChatOpen}
-        onOpenChange={(open) => {
-          setIsChatOpen(open);
-          if (!open) {
-            void fetchChatResumo();
-          }
-        }}
-        onMessagesUpdated={(summary) => {
-          setChatResumo(summary);
-        }}
-        idInt={proposta.id_int}
-        clienteNome={proposta.cliente?.nome}
-        idCliente={proposta.cliente?.idCliente}
-      />
 
       <PropostaCobrancaPanel
         proposta={proposta}

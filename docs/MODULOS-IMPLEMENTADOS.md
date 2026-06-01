@@ -404,11 +404,12 @@ Pendências:
 
 ## Chat Interno
 
-Status: integrado real com Supabase (leitura/escrita transacional em public.propostas_chat, upload de anexos no Storage bucket chat-ideal, menções salvas no banco em public.propostas_chat_mentions e sincronização em tempo real via Supabase Realtime) com controle de leitura local por usuário e central global de notificações.
+Status: integrado real com Supabase (leitura/escrita transacional em public.propostas_chat, upload de anexos no Storage bucket chat-ideal, menções salvas no banco em public.propostas_chat_mentions e sincronização em tempo real via Supabase Realtime) com controle de leitura local por usuário, central global de notificações e balão flutuante contextual integrado em todo o ERP.
 
 Rotas:
 - Acessível via drawer a partir de `/orcamentos` (listagem) e `/orcamentos/[id]` (detalhe)
 - Notificações acessíveis via popover na Topbar em todo o sistema
+- Balão flutuante global acessível de qualquer página/módulo (ex: `/dashboard`, `/cadastros`, `/produtos`, etc.)
 
 Componentes principais:
 - `PropostaChatPanel`
@@ -417,6 +418,8 @@ Componentes principais:
 - `OrcamentosListPageReal`
 - `NotificationsPopover`
 - `Topbar`
+- `GlobalChatBubble`
+- `GlobalChatProvider`
 - `orcamentos.service.ts`
 
 Mocks usados:
@@ -433,7 +436,12 @@ Funcionalidades:
 - badges dinâmicas com a quantidade exata de mensagens não lidas e tooltips detalhados na listagem de propostas e abas de detalhes;
 - atualização instantânea da timeline ao enviar/receber mensagens com o drawer aberto (realtime);
 - menções de usuários via autocomplete (`@`) integradas às propostas com pills azuis estilizadas;
-- Central Global de Notificações com popover moderno, indicando quantidade de menções pendentes, com sincronização em tempo real, carregamento dinâmico do conteúdo de chat e clique que redireciona e abre o chat correspondente.
+- Central Global de Notificações com popover moderno, indicando quantidade de menções pendentes, com sincronização em tempo real, carregamento dinâmico do conteúdo de chat e clique que redireciona e abre o chat correspondente;
+- Balão de Chat Global (`GlobalChatBubble`) flutuante posicionado no canto inferior direito para acesso universal à timeline;
+- Resolução dinâmica de contextos baseado na URL ativa (`usePathname`), apontando para a proposta correspondente ou localizando a última proposta do cliente visitado;
+- Listagem de conversas recentes com as últimas 5 propostas com atividade recente, aplicando filtro em lote no banco para respeitar as políticas de segurança de dados (RLS) do Supabase;
+- Cache inteligente local de 30 segundos (`CACHE_TTL`) e debounce síncrono de requisições para evitar queries redundantes e cliques em rajada.
+- Sinalizador de atividade discreto (ponto azul pulsante) ativado de forma contextual quando o orçamento ativo possuir menções não lidas pendentes para o usuário logado.
 
 Pendências:
 - criar tabela definitiva de controle de leituras gerais (`propostas_chat_leituras`) no banco de dados para persistência multiplataforma.

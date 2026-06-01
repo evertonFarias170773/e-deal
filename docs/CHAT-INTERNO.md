@@ -204,3 +204,26 @@ Use este checklist para testar a integridade operacional do módulo de Chat Inte
 - [ ] **Descarte de Menção Deletada**: Digitar `@` e selecionar um usuário. Em seguida, deletar o `@Nome` do editor e enviar a mensagem. Confirmar que a mensagem é enviada, mas nenhum registro de menção é gravado.
 - [ ] **Menção Manual sem Autocomplete**: Digitar `@Marielle` diretamente no texto sem selecionar no autocomplete e enviar a mensagem. Confirmar que a mensagem de texto é salva normalmente, mas não é criada nenhuma notificação na tabela `propostas_chat_mentions`.
 - [ ] **Recebimento de Notificação em Tempo Real**: Com uma conta logada em uma aba e outra em outra aba (ou simulando o insert de menção no Supabase para o UUID correspondente), atestar que a Topbar exibe o Toast de menção instantaneamente, incrementando a Bell badge de forma pulsante. Confirmar que o clique no Toast redireciona e abre o painel do chat correspondente com `?chat=open`.
+
+---
+
+## 12. Balão do Chat Global (Fase 6C)
+
+Na Fase 6C, o ERP Ideal foi equipado com uma **Central Flutuante de Chat Unificada** (`GlobalChatBubble`), que oferece acesso rápido ao chat de qualquer módulo do sistema.
+
+### Funcionamento e Arquitetura:
+1. **Contexto Unificado**: O layout principal (`AppLayout`) monta o `GlobalChatProvider` que renderiza uma única instância do `PropostaChatDrawer` na raiz da página. Isso evita a inicialização de múltiplos listeners realtime e economiza conexões com o Supabase.
+2. **Resolução de Relações Contextuais**:
+   - O balão flutuante fica posicionado de forma fixa e não-obstrutiva no canto inferior direito (`fixed bottom-6 right-6 z-[60]`).
+   - Ao ser aberto, ele analisa o `pathname` do Next.js para deduzir em qual módulo o usuário está:
+     - `/orcamentos/[id_int]` -> Oferece acesso direto ao chat do orçamento correspondente.
+     - `/cadastros/[id_cliente]` -> Consulta no banco de dados a última proposta vinculada àquele cliente.
+     - `/dashboard` ou outras páginas -> Omitirá o contexto específico, mostrando apenas os chats recentes.
+3. **Conversas Recentes**:
+   - Exibe a lista das últimas 5 propostas com conversas ativas no sistema.
+   - Para respeitar as permissões de acesso e RLS do usuário, o sistema realiza uma consulta em dois passos: busca as últimas propostas ativas em `propostas_chat` e filtra suas chaves contra a tabela `propostas`. Propostas ocultadas pelo RLS não são exibidas, garantindo segurança estrita de dados.
+4. **Cache & Debounce**:
+   - Para evitar chamadas repetitivas e lentidão no banco ao navegar ou reabrir o balão flutuante, o contexto e as conversas recentes são armazenados em um cache local de 30 segundos (`CACHE_TTL = 30000`).
+   - Cliques rápidos e concorrentes são debotados/travados usando uma referência de carregamento síncrona (`loadingRef`), garantindo que apenas uma query por vez seja enviada ao banco de dados.
+5. **Badge Contextual e Discreta**:
+   - Se o usuário estiver em uma página contextual (como orçamento ativo) e possuir menções não lidas pendentes associadas àquela proposta no banco de dados (`propostas_chat_mentions`), um discreto ponto azul pulsante será exibido no balão flutuante, sinalizando novas atividades de forma elegante e discreta.

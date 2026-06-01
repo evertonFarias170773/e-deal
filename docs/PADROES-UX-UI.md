@@ -161,3 +161,22 @@ Mobile:
 - campos empilhados;
 - botões grandes;
 - ações em bottom sheet.
+
+## Balão do Chat Global
+
+O widget `GlobalChatBubble` é posicionado no canto inferior direito de todas as telas autenticadas:
+
+- **Estética**:
+  - Botão circular de diâmetro `h-14 w-14` flutuante no canto inferior direito (`fixed bottom-6 right-6 z-[60]`).
+  - Utiliza cores tokenizadas: fundo `--primary` e ícone branco no modo padrão, ou glassmorphic com bordas sutis para dark mode.
+  - Efeito hover com escala leve (`hover:scale-105`) e sombra projetada pronunciada para dar profundidade de camada.
+- **Badge de Atividade**:
+  - Exibe um pequeno ponto circular azul pulsante (`h-3 w-3` na posição `top-1.5 right-1.5`) em vez de um contador numérico invasivo.
+  - A badge é contextual: ela aparece apenas quando o usuário está visualizando uma proposta com menções pendentes não lidas direcionadas a ele.
+- **Painel Popover**:
+  - Abre-se verticalmente logo acima do botão flutuante.
+  - Largura fixa de `320px` e cantos arredondados (`rounded-2xl`).
+  - Seções distintas:
+    - **Contexto da Página**: Exibe atalho para o chat do item ativamente visualizado (ex: Orçamento em foco ou último orçamento do cliente).
+    - **Conversas Recentes**: Lista as últimas 5 propostas com atividade recente de chat no sistema.
+  - Altura e scroll adaptáveis para evitar transbordamento vertical ou colisão com elementos do layout principal.

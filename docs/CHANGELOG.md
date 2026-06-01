@@ -13,6 +13,14 @@
   - Carregamento de até 50 menções recentes com join PostgREST nativo para recuperar o texto do chat original.
   - Sincronização em tempo real de contagem e conteúdo do Popover ao receber novas menções via subscrição Supabase Realtime unificada.
   - Redirecionamento instantâneo via clique que abre o chat da proposta correspondente (`router.push`).
+- **Balão do Chat Global / Acesso Contextual (Fase 6C)**:
+  - Balão de Chat Global (`GlobalChatBubble`) flutuante e responsivo integrado ao layout principal (`AppLayout`) para abertura instantânea do drawer em qualquer módulo.
+  - Resolução contextual automática baseada na URL ativa (`usePathname`): abre a proposta correspondente em `/orcamentos/[id]` ou busca e aponta para o orçamento mais recente do cliente em `/cadastros/[id]`.
+  - Listagem de até 5 conversas ativas recentes, aplicando filtros em lote contra a tabela `propostas` para respeitar as políticas de segurança de dados (RLS) do Supabase.
+  - Implementação de cache de 30 segundos (`CACHE_TTL = 30000`) para persistência de contexto e conversas recentes.
+  - Bloqueio de requisições concorrentes e cliques múltiplos via controle síncrono `loadingRef`.
+  - Sinalizador discreto e contextual (ponto azul pulsing) exibido no balão se o orçamento correspondente na página tiver menções pendentes não lidas direcionadas ao usuário.
+  - Migração de todos os drawers locais em `OrcamentoDetailPage` e `OrcamentosListPageReal` para a nova infraestrutura global do context provider, garantindo que não existam instâncias de drawer duplicadas no DOM e economizando conexões realtime.
 
 ### Alterado
 - O linter e build do projeto Next.js foram totalmente adequados às regras estritas do React Compiler e ESLint (resolvendo mutações de `window.location` e cascading renders de mount state).

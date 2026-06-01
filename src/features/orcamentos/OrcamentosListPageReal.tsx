@@ -21,7 +21,7 @@ import {
   loadChatReadInfo,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
-import { PropostaChatDrawer } from "@/features/orcamentos/components/PropostaChatDrawer";
+import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
@@ -195,19 +195,32 @@ export function OrcamentosListPageReal() {
   const [vendedor, setVendedor] = useState("TODOS");
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
-  const [activeChatProposta, setActiveChatProposta] = useState<{
-    idInt: number;
-    clienteNome?: string | null;
-    idCliente?: string | null;
-  } | null>(null);
-
-
+  const { openChat } = useGlobalChat();
 
   function handleOpenChat(item: OrcamentoListItem) {
-    setActiveChatProposta({
-      idInt: item.id_int,
+    openChat(item.id_int, {
       clienteNome: item.clienteNome,
-      idCliente: item.clienteId
+      idCliente: item.clienteId,
+      onMessagesUpdated: (summary) => {
+        setChatResumos((prev) => ({
+          ...prev,
+          [summary.id_int]: summary
+        }));
+      },
+      onClose: async () => {
+        try {
+          const freshReadInfo = loadChatReadInfo(user);
+          const singleRes = await getPropostaChatResumos([item.id_int], user?.id, freshReadInfo);
+          if (singleRes && singleRes[item.id_int]) {
+            setChatResumos((prev) => ({
+              ...prev,
+              [item.id_int]: singleRes[item.id_int]
+            }));
+          }
+        } catch (err) {
+          console.error("[OrcamentosListPageReal] Erro ao carregar resumo unitário pós-fechamento:", err);
+        }
+      }
     });
   }
 
@@ -816,41 +829,6 @@ export function OrcamentosListPageReal() {
           ) : null}
         </section>
       ) : null}
-
-      {activeChatProposta && (
-        <PropostaChatDrawer
-          key={activeChatProposta.idInt}
-          open={true}
-          onOpenChange={async (open) => {
-            if (!open) {
-              const idInt = activeChatProposta.idInt;
-              setActiveChatProposta(null);
-              // Safe single summary fetch on drawer close to reflect system events (like generated PDFs/bills) and local read updates
-              try {
-                const freshReadInfo = loadChatReadInfo(user);
-                const singleRes = await getPropostaChatResumos([idInt], user?.id, freshReadInfo);
-                if (singleRes && singleRes[idInt]) {
-                  setChatResumos((prev) => ({
-                    ...prev,
-                    [idInt]: singleRes[idInt]
-                  }));
-                }
-              } catch (err) {
-                console.error("[OrcamentosListPageReal] Erro ao carregar resumo unitário pós-fechamento:", err);
-              }
-            }
-          }}
-          onMessagesUpdated={(summary) => {
-            setChatResumos((prev) => ({
-              ...prev,
-              [summary.id_int]: summary
-            }));
-          }}
-          idInt={activeChatProposta.idInt}
-          clienteNome={activeChatProposta.clienteNome}
-          idCliente={activeChatProposta.idCliente}
-        />
-      )}
     </div>
   );
 }
