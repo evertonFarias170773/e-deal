@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { getLiberacaoPedidoLabel, getLiberacaoPedidoStatus } from "@/features/cobrancas/cobrancas-utils";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -26,6 +27,7 @@ import {
   duplicarProposta,
   registrarMensagemSistemaProposta,
   getPropostaChatResumos,
+  loadChatReadInfo,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { PropostaChatDrawer } from "@/features/orcamentos/components/PropostaChatDrawer";
@@ -37,6 +39,7 @@ type OrcamentoDetailPageProps = {
 export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { user } = useAuth();
   const { getCobrancasByProposta } = useCobrancas();
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -45,7 +48,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
 
   const fetchChatResumo = useCallback(async () => {
     try {
-      const resMap = await getPropostaChatResumos([idInt]);
+      const freshReadInfo = loadChatReadInfo(user);
+      const resMap = await getPropostaChatResumos([idInt], user?.id, freshReadInfo);
       if (resMap && resMap[idInt]) {
         setChatResumo(resMap[idInt]);
       } else {
@@ -54,13 +58,14 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     } catch (err) {
       console.error("[OrcamentoDetailPage] Erro ao buscar resumo do chat:", err);
     }
-  }, [idInt]);
+  }, [idInt, user]);
 
   useEffect(() => {
     let active = true;
     void (async () => {
       try {
-        const resMap = await getPropostaChatResumos([idInt]);
+        const freshReadInfo = loadChatReadInfo(user);
+        const resMap = await getPropostaChatResumos([idInt], user?.id, freshReadInfo);
         if (!active) return;
         if (resMap && resMap[idInt]) {
           setChatResumo(resMap[idInt]);
@@ -74,7 +79,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     return () => {
       active = false;
     };
-  }, [idInt]);
+  }, [idInt, user]);
 
   if (loading) {
     return (
@@ -335,19 +340,22 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 ? "text-red-700 bg-red-50 hover:bg-red-100 border border-red-200"
                 : chatResumo?.has_pendente
                 ? "text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200"
+                : chatResumo && chatResumo.nao_lidas_count > 0
+                ? "text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200"
                 : "text-slate-600 hover:bg-slate-50"
             }`}
+            title={chatResumo ? `Chat interno (${chatResumo.nao_lidas_count} não lidas de ${chatResumo.total_mensagens} total)` : "Chat interno"}
           >
             <span>Chat interno</span>
-            {chatResumo && chatResumo.total_mensagens > 0 && (
+            {chatResumo && chatResumo.nao_lidas_count > 0 && (
               <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold leading-none ${
                 chatResumo.has_recusado
                   ? "bg-red-600 text-white"
                   : chatResumo.has_pendente
                   ? "bg-amber-600 text-white"
-                  : "bg-[#0b2f4a] text-white"
+                  : "bg-blue-600 text-white"
               }`}>
-                {chatResumo.total_mensagens}
+                {chatResumo.nao_lidas_count}
               </span>
             )}
             {chatResumo && chatResumo.total_anexos > 0 && (

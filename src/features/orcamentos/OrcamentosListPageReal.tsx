@@ -18,9 +18,11 @@ import {
   gerarPDFProposta,
   duplicarProposta,
   getPropostaChatResumos,
+  loadChatReadInfo,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { PropostaChatDrawer } from "@/features/orcamentos/components/PropostaChatDrawer";
+import { useAuth } from "@/features/auth/AuthProvider";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const defaultStatusOrder = ["NOVO", "AGUARDANDO", "APROVADO", "CANCELADO"];
@@ -183,6 +185,7 @@ function getStatusTone(status: string) {
 export function OrcamentosListPageReal() {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { user } = useAuth();
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
   const { propostas, source, warnings, detectedColumns, loadedCount, isLoading } = useOrcamentosReadOnlyData(periodo);
@@ -269,7 +272,8 @@ export function OrcamentosListPageReal() {
     let active = true;
     void (async () => {
       try {
-        const resMap = await getPropostaChatResumos(visibleIdInts);
+        const freshReadInfo = loadChatReadInfo(user);
+        const resMap = await getPropostaChatResumos(visibleIdInts, user?.id, freshReadInfo);
         if (!active) return;
         setChatResumos((prev) => ({ ...prev, ...resMap }));
       } catch (err) {
@@ -279,7 +283,7 @@ export function OrcamentosListPageReal() {
     return () => {
       active = false;
     };
-  }, [visibleIdInts]);
+  }, [visibleIdInts, user]);
 
   const periodoSelecionadoLabel = useMemo(() => getSelectedPeriodLabel(periodo, periodOptions), [periodOptions, periodo]);
   const emAbertoItens = useMemo(
@@ -437,8 +441,8 @@ export function OrcamentosListPageReal() {
   function getActions(item: OrcamentoListItem) {
     const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0" || item.clienteId === "null" || Boolean(item.mockProposal?.clienteNaoCadastrado);
     const chatResumo = chatResumos[item.id_int];
-    const chatLabel = chatResumo && chatResumo.total_mensagens > 0
-      ? `Ver chat interno (${chatResumo.total_mensagens})`
+    const chatLabel = chatResumo && chatResumo.nao_lidas_count > 0
+      ? `Ver chat interno (${chatResumo.nao_lidas_count} não lidas)`
       : "Ver chat interno";
 
     if (item.mockProposal) {
@@ -659,8 +663,11 @@ export function OrcamentosListPageReal() {
                 } else if (resumo.has_pendente) {
                   btnClass = "text-amber-600 bg-amber-50/60 hover:bg-amber-100 hover:text-amber-700";
                   titleText = `Chat interno (${resumo.total_mensagens} msg) - Pendência`;
-                } else if (resumo.total_mensagens > 0) {
+                } else if (resumo.nao_lidas_count > 0) {
                   btnClass = "text-blue-600 bg-blue-50/60 hover:bg-blue-100 hover:text-blue-700";
+                  titleText = `Chat interno (${resumo.nao_lidas_count} não lida(s) de ${resumo.total_mensagens} total)`;
+                } else if (resumo.total_mensagens > 0) {
+                  btnClass = "text-slate-600 bg-slate-50 hover:bg-slate-100 hover:text-slate-800";
                   titleText = `Chat interno (${resumo.total_mensagens} msg)`;
                 }
               }
@@ -674,15 +681,15 @@ export function OrcamentosListPageReal() {
                     title={titleText}
                   >
                     <MessageSquare className="h-4 w-4" />
-                    {resumo && resumo.total_mensagens > 0 && (
+                    {resumo && resumo.nao_lidas_count > 0 && (
                       <span className={`absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full px-1 text-[8px] font-extrabold leading-none h-4 min-w-[16px] text-white ${
                         resumo.has_recusado
                           ? "bg-red-600"
                           : resumo.has_pendente
                           ? "bg-amber-500"
-                          : "bg-[#0b2f4a]"
+                          : "bg-blue-600"
                       }`}>
-                        {resumo.total_mensagens}
+                        {resumo.nao_lidas_count}
                       </span>
                     )}
                     {resumo && resumo.total_anexos > 0 && (
@@ -737,7 +744,7 @@ export function OrcamentosListPageReal() {
                 {(() => {
                   const resumo = chatResumos[proposta.id_int];
                   let btnStyle = "border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
-                  let badgeBg = "bg-[#0b2f4a]";
+                  let badgeBg = "bg-blue-600";
                   if (resumo) {
                     if (resumo.has_recusado) {
                       btnStyle = "border-red-200 bg-red-50 text-red-700 hover:bg-red-100";
@@ -745,9 +752,11 @@ export function OrcamentosListPageReal() {
                     } else if (resumo.has_pendente) {
                       btnStyle = "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100";
                       badgeBg = "bg-amber-500";
-                    } else if (resumo.total_mensagens > 0) {
+                    } else if (resumo.nao_lidas_count > 0) {
                       btnStyle = "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100";
                       badgeBg = "bg-blue-600";
+                    } else if (resumo.total_mensagens > 0) {
+                      btnStyle = "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100";
                     }
                   }
                   return (
@@ -758,9 +767,9 @@ export function OrcamentosListPageReal() {
                     >
                       <MessageSquare className="h-4 w-4" />
                       <span>Chat</span>
-                      {resumo && resumo.total_mensagens > 0 && (
+                      {resumo && resumo.nao_lidas_count > 0 && (
                         <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-extrabold text-white leading-none ${badgeBg}`}>
-                          {resumo.total_mensagens}
+                          {resumo.nao_lidas_count}
                         </span>
                       )}
                       {resumo && resumo.total_anexos > 0 && (
@@ -816,9 +825,10 @@ export function OrcamentosListPageReal() {
             if (!open) {
               const idInt = activeChatProposta.idInt;
               setActiveChatProposta(null);
-              // Safe single summary fetch on drawer close to reflect system events (like generated PDFs/bills)
+              // Safe single summary fetch on drawer close to reflect system events (like generated PDFs/bills) and local read updates
               try {
-                const singleRes = await getPropostaChatResumos([idInt]);
+                const freshReadInfo = loadChatReadInfo(user);
+                const singleRes = await getPropostaChatResumos([idInt], user?.id, freshReadInfo);
                 if (singleRes && singleRes[idInt]) {
                   setChatResumos((prev) => ({
                     ...prev,

@@ -7,6 +7,7 @@ import {
   listPropostaChatMessages,
   sendPropostaChatMessage,
   uploadChatAnexo,
+  saveChatReadInfo,
   type PropostaChatMessage,
   type PropostaChatAnexo
 } from "@/features/orcamentos/services/orcamentos.service";
@@ -101,7 +102,16 @@ export function PropostaChatPanel({
     onMessagesUpdated?.(messages.length, anexoCount, hasPendente, hasRecusado);
   }, [messages, onMessagesUpdated]);
 
+  // Mark messages as read when they load successfully or when a new message is added
   useEffect(() => {
+    if (!loadingMessages && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      saveChatReadInfo(user, idInt, lastMsg.id, lastMsg.created_at);
+    }
+  }, [messages, loadingMessages, idInt, user]);
+
+  useEffect(() => {
+
 
     let active = true;
     void (async () => {

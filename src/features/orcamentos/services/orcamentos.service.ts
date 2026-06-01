@@ -1796,6 +1796,72 @@ export async function registrarMensagemSistemaProposta(
   }
 }
 
+export interface ChatReadRecord {
+  last_read_id: number;
+  last_read_created_at: string;
+}
+
+export function getChatReadLocalStorageKey(
+  user: { id?: string | null; email?: string | null } | null | undefined
+): string {
+  const identifier = user?.id || user?.email || "mock-user";
+  return `erpideal_chat_read:${identifier}`;
+}
+
+export function loadChatReadInfo(
+  user: { id?: string | null; email?: string | null } | null | undefined
+): Record<number, ChatReadRecord> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const key = getChatReadLocalStorageKey(user);
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      return JSON.parse(stored) || {};
+    }
+  } catch (err) {
+    console.error("[ChatReadHelper] Erro ao ler localStorage:", err);
+  }
+  return {};
+}
+
+export function saveChatReadInfo(
+  user: { id?: string | null; email?: string | null } | null | undefined,
+  idInt: number,
+  lastReadId: number,
+  lastReadCreatedAt: string
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const key = getChatReadLocalStorageKey(user);
+    const data = loadChatReadInfo(user);
+    
+    const existing = data[idInt];
+    const newId = existing ? Math.max(existing.last_read_id, lastReadId) : lastReadId;
+    
+    let newDate = lastReadCreatedAt;
+    if (existing?.last_read_created_at) {
+      const existingTime = new Date(existing.last_read_created_at).getTime();
+      const newTime = new Date(lastReadCreatedAt).getTime();
+      if (existingTime > newTime) {
+        newDate = existing.last_read_created_at;
+      }
+    }
+
+    data[idInt] = {
+      last_read_id: newId,
+      last_read_created_at: newDate
+    };
+    
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (err) {
+    console.error("[ChatReadHelper] Erro ao gravar no localStorage:", err);
+  }
+}
+
 export interface PropostaChatResumo {
   id_int: number;
   total_mensagens: number;
@@ -1804,10 +1870,15 @@ export interface PropostaChatResumo {
   ultima_data: string | null;
   has_pendente: boolean;
   has_recusado: boolean;
+  nao_lidas_count: number;
+  ultima_mensagem_id: number | null;
+  ultima_mensagem_created_at: string | null;
 }
 
 export async function getPropostaChatResumos(
-  idInts: number[]
+  idInts: number[],
+  currentUserUid?: string | null,
+  readInfo?: Record<number, ChatReadRecord>
 ): Promise<Record<number, PropostaChatResumo>> {
   const result: Record<number, PropostaChatResumo> = {};
   if (!idInts || idInts.length === 0) {
@@ -1822,7 +1893,7 @@ export async function getPropostaChatResumos(
   try {
     const { data, error } = await client
       .from("propostas_chat")
-      .select("id_int, id, created_at, mensagem, anexos, is_pendente, is_recusado")
+      .select("id_int, id, created_at, mensagem, anexos, is_pendente, is_recusado, autor_uid")
       .in("id_int", idInts)
       .order("created_at", { ascending: true });
 
@@ -1847,7 +1918,10 @@ export async function getPropostaChatResumos(
           ultima_mensagem: null,
           ultima_data: null,
           has_pendente: false,
-          has_recusado: false
+          has_recusado: false,
+          nao_lidas_count: 0,
+          ultima_mensagem_id: null,
+          ultima_mensagem_created_at: null
         };
       }
 
@@ -1868,12 +1942,36 @@ export async function getPropostaChatResumos(
 
       resumo.ultima_mensagem = row.mensagem || null;
       resumo.ultima_data = row.created_at || null;
+      resumo.ultima_mensagem_id = row.id;
+      resumo.ultima_mensagem_created_at = row.created_at || null;
 
       if (row.is_pendente === true) {
         resumo.has_pendente = true;
       }
       if (row.is_recusado === true) {
         resumo.has_recusado = true;
+      }
+
+      // Calcular quantidade de mensagens não lidas
+      // 1. Ignorar mensagens enviadas pelo próprio usuário
+      const isPropria = currentUserUid && row.autor_uid === currentUserUid;
+      if (!isPropria) {
+        // 2. Se houver informações de leitura para essa proposta
+        const propRead = readInfo?.[idInt];
+        if (propRead) {
+          const isPostId = row.id > propRead.last_read_id;
+          const isPostDate = propRead.last_read_created_at && row.created_at
+            ? new Date(row.created_at).getTime() > new Date(propRead.last_read_created_at).getTime()
+            : true;
+
+          // Se for posterior pelo ID e pela data (salvo como fallback defensivo)
+          if (isPostId && isPostDate) {
+            resumo.nao_lidas_count += 1;
+          }
+        } else {
+          // Se localStorage falhar ou não possuir registro, assume tudo como não lido
+          resumo.nao_lidas_count += 1;
+        }
       }
     }
 
