@@ -3,6 +3,13 @@
 ## 2026-06-01
 
 ### Adicionado
+- **Fechamento Operacional e Polimento Final (Fase 6G)**:
+  - Adicionado suporte a teclado com tecla `ESC` para fechar o `NotificationsPopover` de menções, o menu popover do `GlobalChatBubble` e a barra lateral móvel `MobileSidebar` de forma nativa e fluida.
+  - Implementado suporte completo de acessibilidade básico com atributos `aria-label` para todos os botões de ícone (remover anexo, anexar arquivos, enviar mensagens, fechar drawers, abrir chats, visualizar propostas e cancelar pendências).
+  - Traduzidos os erros de banco de dados (RLS, violações de chave estrangeira, formato de UUID e restrições de verificação CHECK) na camada de serviço para mensagens em português claras e sem jargões técnicos para os operadores.
+  - Aperfeiçoado o suporte a Dark Mode nos drawers e timelines, aplicando classes dinâmicas e variáveis de tema CSS para eliminar backgrounds claros/brancos brutos ao alternar temas.
+  - Refinados os estados de lista vazia no chat e painéis de pendências com novos contrastes e legibilidade aprimorada para dark mode.
+
 - **Revisão e Estabilização Técnica (Fase 6F)**:
   - Deferido o carregamento de usuários (`listAllUsuarios`) no Drawer de Chat para ocorrer sob demanda (apenas ao focar no campo de digitação), economizando conexões ao ler mensagens.
   - Implementado renderizador de menções por Regex ($O(M)$), substituindo a iteração de usuários sobre as mensagens por uma busca direta de padrão `@username`, validada após o carregamento da lista.

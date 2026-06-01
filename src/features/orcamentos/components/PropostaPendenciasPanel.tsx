@@ -230,7 +230,7 @@ export function PropostaPendenciasPanel({
       reloadData();
     } else {
       showToast({
-        title: "Erro RLS / Permissão",
+        title: "Sem Permissão",
         description: res.errorMessage || "Não foi possível criar a pendência. Verifique suas permissões.",
         type: "error"
       });
@@ -263,7 +263,7 @@ export function PropostaPendenciasPanel({
       reloadData();
     } else {
       showToast({
-        title: "Falha de RLS / Permissão",
+        title: "Sem Permissão",
         description: res.errorMessage || "Você não tem autorização para atualizar esta pendência.",
         type: "error"
       });
@@ -316,16 +316,17 @@ export function PropostaPendenciasPanel({
   };
 
   return (
-    <div className={`flex flex-col h-full bg-white min-h-[400px] ${className}`}>
+    <div className={`flex flex-col h-full bg-white dark:bg-[#132436] min-h-[400px] text-slate-800 dark:text-slate-200 ${className}`}>
       {/* Sub-Header Actions */}
-      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-3 shrink-0">
-        <h3 className="text-sm font-bold text-slate-800">
+      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 px-6 py-3 shrink-0">
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
           {showForm ? "Nova Pendência Manual" : `Pendências Vinculadas (${pendencias.length})`}
         </h3>
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] hover:bg-[#163f5c] text-white px-3  py-1.5 text-xs font-bold transition shadow-sm"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] dark:bg-blue-600 hover:bg-[#163f5c] dark:hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-bold transition shadow-sm"
+          aria-label={showForm ? "Voltar para lista de pendências" : "Adicionar nova pendência"}
         >
           {showForm ? (
             <>
@@ -364,7 +365,7 @@ export function PropostaPendenciasPanel({
           /* Form Component */
           <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
             <div>
-              <label htmlFor="p_titulo" className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label htmlFor="p_titulo" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Título da Pendência *
               </label>
               <input
@@ -374,12 +375,12 @@ export function PropostaPendenciasPanel({
                 value={titulo}
                 onChange={(e) => setTitulo(e.target.value)}
                 placeholder="Ex: Nota fiscal emitida com erro ou Pix não conciliado"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-[#0b2f4a] focus:ring-1 focus:ring-[#0b2f4a] outline-none transition"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:border-[#0b2f4a] dark:focus:border-blue-500 focus:ring-1 focus:ring-[#0b2f4a] outline-none transition"
               />
             </div>
 
             <div>
-              <label htmlFor="p_desc" className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label htmlFor="p_desc" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Descrição do Problema *
               </label>
               <textarea
@@ -389,20 +390,20 @@ export function PropostaPendenciasPanel({
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
                 placeholder="Detalhes completos sobre o que precisa ser verificado e resolvido."
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-[#0b2f4a] focus:ring-1 focus:ring-[#0b2f4a] outline-none transition resize-none"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:border-[#0b2f4a] dark:focus:border-blue-500 focus:ring-1 focus:ring-[#0b2f4a] outline-none transition resize-none"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="p_cat" className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor="p_cat" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Categoria
                 </label>
                 <select
                   id="p_cat"
                   value={categoria}
                   onChange={(e) => setCategoria(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-800 focus:border-[#0b2f4a] outline-none transition bg-white"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-[#0b2f4a] dark:focus:border-blue-500 outline-none transition"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -413,14 +414,14 @@ export function PropostaPendenciasPanel({
               </div>
 
               <div>
-                <label htmlFor="p_prio" className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor="p_prio" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Prioridade
                 </label>
                 <select
                   id="p_prio"
                   value={prioridade}
                   onChange={(e) => setPrioridade(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-800 focus:border-[#0b2f4a] outline-none transition bg-white"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-[#0b2f4a] dark:focus:border-blue-500 outline-none transition"
                 >
                   {PRIORITIES.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -433,14 +434,14 @@ export function PropostaPendenciasPanel({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="p_setor" className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor="p_setor" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Setor Responsável
                 </label>
                 <select
                   id="p_setor"
                   value={responsavelSetor}
                   onChange={(e) => setResponsavelSetor(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-800 focus:border-[#0b2f4a] outline-none transition bg-white"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-[#0b2f4a] dark:focus:border-blue-500 outline-none transition"
                 >
                   {SECTORS.map((s) => (
                     <option key={s.value} value={s.value}>
@@ -451,14 +452,14 @@ export function PropostaPendenciasPanel({
               </div>
 
               <div>
-                <label htmlFor="p_user" className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor="p_user" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Responsável Específico (Opcional)
                 </label>
                 <select
                   id="p_user"
                   value={responsavelUserId}
                   onChange={(e) => setResponsavelUserId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-800 focus:border-[#0b2f4a] outline-none transition bg-white"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-[#0b2f4a] dark:focus:border-blue-500 outline-none transition"
                 >
                   <option value="">Sem responsável designado</option>
                   {users.map((u) => (
@@ -471,7 +472,7 @@ export function PropostaPendenciasPanel({
             </div>
 
             <div>
-              <label htmlFor="p_prazo" className="block text-xs font-bold text-slate-700 mb-1.5">
+              <label htmlFor="p_prazo" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 Data Limite (Opcional)
               </label>
               <input
@@ -479,14 +480,14 @@ export function PropostaPendenciasPanel({
                 type="date"
                 value={dataLimite}
                 onChange={(e) => setDataLimite(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-800 focus:border-[#0b2f4a] outline-none transition bg-white"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3.5 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-[#0b2f4a] dark:focus:border-blue-500 outline-none transition"
               />
             </div>
 
             <button
               type="submit"
               disabled={submitting}
-              className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b2f4a] hover:bg-[#163f5c] text-white px-4 py-2.5 font-bold transition shadow-md disabled:bg-slate-300 disabled:cursor-not-allowed"
+              className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#0b2f4a] dark:bg-blue-600 hover:bg-[#163f5c] dark:hover:bg-blue-700 text-white px-4 py-2.5 font-bold transition shadow-md disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <>
@@ -499,11 +500,11 @@ export function PropostaPendenciasPanel({
           </form>
         ) : pendencias.length === 0 ? (
           /* Empty List State */
-          <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400 px-6 text-center">
-            <AlertCircle className="h-10 w-10 text-slate-300" />
+          <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400 dark:text-slate-500 px-6 text-center">
+            <AlertCircle className="h-10 w-10 text-slate-300 dark:text-slate-700" />
             <div>
-              <p className="text-sm font-semibold text-slate-700">Nenhuma pendência ativa</p>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Nenhuma pendência ativa</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Todas as tarefas estão em dia. Clique em &quot;Adicionar&quot; para registrar um novo impedimento.
               </p>
             </div>
@@ -524,15 +525,15 @@ export function PropostaPendenciasPanel({
               return (
                 <div
                   key={item.id}
-                  className={`p-5 flex flex-col gap-3 hover:bg-slate-50/40 transition border-l-4 ${
+                  className={`p-5 flex flex-col gap-3 hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition border-l-4 ${
                     isUrgent ? "border-l-red-500 bg-red-500/5" :
                     isOverdue ? "border-l-amber-500 bg-amber-500/5" : "border-l-transparent"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex flex-col gap-1 min-w-0">
-                      <h4 className="text-sm font-bold text-slate-900 break-words">{item.titulo}</h4>
-                      <p className="text-xs text-slate-500 font-medium">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 break-words">{item.titulo}</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                         Por: {item.criado_por_nome} | {dateFormatted}
                       </p>
                     </div>
@@ -542,19 +543,19 @@ export function PropostaPendenciasPanel({
                     </div>
                   </div>
 
-                  <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
                     {item.descricao}
                   </p>
 
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 flex-wrap gap-2">
-                    <span className="font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 flex-wrap gap-2">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-850 px-2 py-0.5 rounded">
                       Setor: {item.responsavel_setor}
                     </span>
                     {limitFormatted && (
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold border ${
                         isOverdue
-                          ? "text-red-600 bg-red-50 border-red-100 animate-pulse"
-                          : "text-orange-600 bg-orange-50 border-orange-100"
+                          ? "text-red-600 bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/40 animate-pulse"
+                          : "text-orange-600 bg-orange-50 dark:bg-orange-950/20 border-orange-100 dark:border-orange-900/40"
                       }`}>
                         <Calendar className="h-3 w-3" /> Prazo: {limitFormatted}
                         {isOverdue && " (ATRASADA)"}
@@ -582,12 +583,13 @@ export function PropostaPendenciasPanel({
 
                   {/* Action Buttons */}
                   {(item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
-                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100/50">
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100/50 dark:border-slate-800">
                       {item.status === "ABERTA" && (
                         <button
                           type="button"
                           onClick={() => handleUpdateStatus(item.id, "EM_ANDAMENTO", item.titulo)}
-                          className="inline-flex items-center gap-1 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 px-2.5 py-1 text-[10px] font-bold hover:bg-indigo-100 transition"
+                          className="inline-flex items-center gap-1 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400 px-2.5 py-1 text-[10px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-950/50 transition"
+                          aria-label="Assumir Pendência"
                         >
                           <Play className="h-3 w-3" /> Assumir
                         </button>
@@ -596,7 +598,8 @@ export function PropostaPendenciasPanel({
                       <button
                         type="button"
                         onClick={() => handleUpdateStatus(item.id, "CONCLUIDA", item.titulo)}
-                        className="inline-flex items-center gap-1 rounded bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 text-[10px] font-bold hover:bg-green-100 transition ml-auto"
+                        className="inline-flex items-center gap-1 rounded bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-900 dark:text-green-400 px-2.5 py-1 text-[10px] font-bold hover:bg-green-100 dark:hover:bg-green-950/50 transition ml-auto"
+                        aria-label="Concluir Pendência"
                       >
                         <CheckCircle2 className="h-3 w-3 text-green-600" /> Concluir
                       </button>
@@ -604,7 +607,8 @@ export function PropostaPendenciasPanel({
                       <button
                         type="button"
                         onClick={() => handleUpdateStatus(item.id, "CANCELADA", item.titulo)}
-                        className="inline-flex items-center gap-1 rounded bg-slate-100 border border-slate-200 text-slate-600 px-2.5 py-1 text-[10px] font-bold hover:bg-slate-200 transition"
+                        className="inline-flex items-center gap-1 rounded bg-slate-100 border border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 px-2.5 py-1 text-[10px] font-bold hover:bg-slate-200 dark:hover:bg-slate-750 transition"
+                        aria-label="Cancelar Pendência"
                       >
                         <XCircle className="h-3 w-3 text-slate-500" /> Cancelar
                       </button>

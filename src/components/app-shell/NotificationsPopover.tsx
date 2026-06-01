@@ -43,6 +43,19 @@ export function NotificationsPopover({
     };
   }, [onClose, triggerRef]);
 
+  // Handle ESC key to close the popover
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
   function handleNotificationClick(idInt: number) {
     onClose();
     // Redirect and open the chat drawer on mount using Next.js router

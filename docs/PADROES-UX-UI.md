@@ -402,3 +402,12 @@ Para assegurar uma interface responsiva, livre de travamentos e eficiente no con
 - **Estilização Preventiva com Validação Diferida**: Elementos interativos complexos, como marcações de menções (`@nome`), devem ser identificados preventivamente através de expressões regulares no front-end. O estilo visual correspondente (badge azul suave) é aplicado imediatamente, e a validação/resolução dos dados do usuário é processada em segundo plano tão logo os dados sob demanda estejam disponíveis, evitando saltos de layout ou tempos de espera perceptíveis.
 - **Segregação de Canais de Consulta**: Dados estáticos e dinâmicos devem possuir fluxos de atualização distintos. Atualizações em tempo real (Supabase Realtime/Custom Events) devem forçar a recarga estritamente de dados dinâmicos, nunca disparando queries redundantes para tabelas estáticas de suporte.
 
+## Fechamento Operacional e Polimento Final (Fase 6G)
+
+Para assegurar a acessibilidade, consistência de tradução de erros e suporte impecável a múltiplos dispositivos:
+- **Fechamento via Teclado (ESC)**: Todo popover flutuante, menu contextual de balão, drawer lateral e barra móvel deve escutar globalmente a tecla `Escape` (ESC) para fechamento instantâneo. Isso melhora a usabilidade no desktop e a navegação por teclado.
+- **Acessibilidade Básica (Aria-Labels)**: Botões que possuem apenas ícones (sem texto) devem conter obrigatoriamente um atributo `aria-label` descritivo detalhando a sua ação, garantindo compatibilidade com leitores de tela.
+- **Tradução Amigável de Erros**: Erros gerados pelo motor do banco de dados (como restrições de permissões RLS, integridade referencial ou formato de dados) devem ser capturados e traduzidos na camada de serviço para mensagens claras em português, orientando o usuário sobre o que ocorreu e como corrigir, sem expor nomes de tabelas, chaves ou códigos técnicos.
+- **Coesão Cromática no Dark Mode**: Elementos acoplados dentro de painéis ou gavetas deslizantes devem herdar o background de forma dinâmica (`bg-white dark:bg-slate-900`) e possuir contrastes atenuados para os textos e caixas de texto, garantindo que o tema escuro seja agradável e sem flashes luminosos.
+
+

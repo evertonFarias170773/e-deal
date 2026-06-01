@@ -55,7 +55,7 @@ export function PropostaChatPanel({
   idCliente,
   tituloContexto,
   showHeader = true,
-  className = "h-[650px] rounded-3xl border border-[#d7e5e8] bg-white shadow-sm overflow-hidden",
+  className = "h-[650px] rounded-3xl border border-[#d7e5e8] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden",
   onMessagesUpdated
 }: PropostaChatPanelProps) {
   const { user } = useAuth();
@@ -582,14 +582,14 @@ export function PropostaChatPanel({
   return (
     <section className={`flex flex-col ${className}`}>
       {showHeader && (
-        <div className="flex items-center justify-between border-b border-[#d7e5e8] bg-slate-50 px-6 py-4 shrink-0">
+        <div className="flex items-center justify-between border-b border-[#d7e5e8] dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-6 py-4 shrink-0">
           <div>
-            <h2 className="text-lg font-bold text-slate-950">{tituloContexto || "Chat Interno"}</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h2 className="text-lg font-bold text-slate-950 dark:text-slate-50">{tituloContexto || "Chat Interno"}</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Discussão administrativa interna da proposta #{idInt} • {displayClienteNome}
             </p>
           </div>
-          <div className="rounded-full bg-blue-50 border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700">
+          <div className="rounded-full bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 px-3 py-1 text-xs font-semibold text-blue-700 dark:text-blue-400">
             Setor: {user?.sector || "ADMIN"}
           </div>
         </div>
@@ -607,9 +607,9 @@ export function PropostaChatPanel({
         ) : messages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-center p-8">
             <div className="max-w-xs space-y-2">
-              <AlertCircle className="h-8 w-8 text-slate-400 mx-auto" />
-              <h3 className="text-sm font-semibold text-slate-800">Sem mensagens ainda</h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
+              <AlertCircle className="h-8 w-8 text-slate-400 dark:text-slate-500 mx-auto" />
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Sem mensagens ainda</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 Este chat está limpo. Envie uma mensagem interna ou anexo para iniciar a conversa.
               </p>
             </div>
@@ -717,7 +717,7 @@ export function PropostaChatPanel({
                                   className={`inline-flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs transition border ${
                                     isUser
                                       ? "bg-white/10 text-white hover:bg-white/20 border-white/10"
-                                      : "bg-white text-slate-800 hover:bg-slate-50 border-slate-200"
+                                      : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700"
                                   }`}
                                 >
                                   <FileText className="h-4 w-4 shrink-0" />
@@ -749,21 +749,22 @@ export function PropostaChatPanel({
           {selectedFiles.map((file, index) => (
             <div
               key={index}
-              className="flex items-center gap-2 bg-white rounded-xl border border-[#d7e5e8] pl-3 pr-1.5 py-1 text-xs text-slate-700 shadow-sm"
+              className="flex items-center gap-2 bg-white dark:bg-slate-800 rounded-xl border border-[#d7e5e8] dark:border-slate-700 pl-3 pr-1.5 py-1 text-xs text-slate-700 dark:text-slate-300 shadow-sm"
             >
               {file.type.startsWith("image/") ? (
-                <ImageIcon className="h-3.5 w-3.5 text-[#0f9f9a]" />
+                <ImageIcon className="h-3.5 w-3.5 text-[#0f9f9a] dark:text-[#14b8a6]" />
               ) : (
-                <FileText className="h-3.5 w-3.5 text-[#0b2f4a]" />
+                <FileText className="h-3.5 w-3.5 text-[#0b2f4a] dark:text-blue-400" />
               )}
               <span className="truncate max-w-[180px] font-medium">{file.name}</span>
-              <span className="text-[10px] text-slate-400 font-mono">
+              <span className="text-[10px] text-slate-450 dark:text-slate-500 font-mono">
                 ({(file.size / (1024 * 1024)).toFixed(2)} MB)
               </span>
               <button
                 type="button"
                 onClick={() => handleRemoveFile(index)}
-                className="p-0.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                className="p-0.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-300 transition"
+                aria-label="Remover anexo"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -773,9 +774,9 @@ export function PropostaChatPanel({
       )}
 
       {/* Formulário de Envio */}
-      <form onSubmit={handleSend} className="border-t border-[#d7e5e8] bg-white p-4 relative">
+      <form onSubmit={handleSend} className="border-t border-[#d7e5e8] dark:border-slate-800 bg-white dark:bg-slate-900 p-4 relative">
         {showAutocomplete && filteredUsers.length > 0 && (
-          <div className="absolute bottom-full left-4 z-50 mb-2 w-64 max-h-48 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-lg space-y-0.5">
+          <div className="absolute bottom-full left-4 z-50 mb-2 w-64 max-h-48 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-lg space-y-0.5">
             {filteredUsers.map((u, index) => {
               const isSelected = index === autocompleteIndex;
               return (
@@ -785,11 +786,11 @@ export function PropostaChatPanel({
                   onClick={() => selectUser(u)}
                   className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition ${
                     isSelected
-                      ? "bg-slate-100 text-slate-900 font-medium"
-                      : "text-slate-700 hover:bg-slate-50"
+                      ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                   }`}
                 >
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-400">
                     {u.avatar ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={u.avatar} alt="" className="h-full w-full rounded-full object-cover" />
@@ -798,8 +799,8 @@ export function PropostaChatPanel({
                     )}
                   </div>
                   <div className="truncate">
-                    <span className="block font-semibold text-slate-800">{u.nome_usuario}</span>
-                    <span className="block text-[10px] text-slate-400 truncate">{u.email} {u.setor ? `• ${u.setor}` : ""}</span>
+                    <span className="block font-semibold text-slate-800 dark:text-slate-200">{u.nome_usuario}</span>
+                    <span className="block text-[10px] text-slate-400 dark:text-slate-500 truncate">{u.email} {u.setor ? `• ${u.setor}` : ""}</span>
                   </div>
                 </button>
               );
@@ -813,8 +814,9 @@ export function PropostaChatPanel({
             type="button"
             disabled={sending}
             onClick={() => fileInputRef.current?.click()}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-850 hover:text-slate-900 dark:hover:text-slate-200 disabled:opacity-50"
             title="Anexar arquivo (até 10MB)"
+            aria-label="Anexar arquivo"
           >
             <Paperclip className="h-5 w-5" />
           </button>
@@ -838,7 +840,7 @@ export function PropostaChatPanel({
               onFocus={loadUsersOnDemand}
               disabled={sending}
               placeholder={sending ? "Enviando..." : "Escreva uma mensagem interna (Shift + Enter para pular linha)..."}
-              className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-[#0b2f4a] focus:bg-white transition"
+              className="w-full resize-none rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-2.5 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 outline-none focus:border-[#0b2f4a] dark:focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 transition"
               style={{ maxHeight: "120px" }}
             />
           </div>
@@ -848,6 +850,8 @@ export function PropostaChatPanel({
             type="submit"
             disabled={sending || (!messageText.trim() && selectedFiles.length === 0)}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#0b2f4a] text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-50"
+            title="Enviar mensagem"
+            aria-label="Enviar mensagem"
           >
             {sending ? (
               <Loader2 className="h-5 w-5 animate-spin" />

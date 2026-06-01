@@ -279,3 +279,14 @@ A Fase 6F focou no refino de desempenho e UX para mitigar sobrecargas de queries
 3. **Otimização de Queries na Central de Pendências**:
    - Em `/pendencias`, a busca inicial de usuários do sistema foi desmembrada do efeito reativo de atualização. Os usuários são trazidos apenas uma vez na montagem inicial, prevenindo novas buscas a cada gatilho realtime de pendências.
 
+---
+
+## 16. Fechamento Operacional e Polimento Final (Fase 6G)
+
+Na Fase 6G, a timeline do chat e o painel de pendências receberam refinos finais de usabilidade, acessibilidade e tradução:
+1. **Fechamento Nativo via Teclado**: Configurada escuta ao evento de tecla `Escape` (ESC) para fechamento instantâneo do `NotificationsPopover`, do popover contextual `GlobalChatBubble` e do menu lateral móvel (`MobileSidebar`), garantindo usabilidade ergonômica.
+2. **Acessibilidade por Aria-Labels**: Introduzido suporte formal de acessibilidade aos leitores de tela com a inserção de tags `aria-label` descritivas em todos os botões e links baseados unicamente em ícones (como botões de fechar, remover anexo, enviar mensagens, ir para propostas e abrir chats).
+3. **Tradução Amigável de Exceções**: A camada de serviço de pendências (`createPropostaPendencia` e `updatePropostaPendenciaStatus`) intercepta erros de banco de dados e os traduz em avisos claros e diretos em português, ocultando termos técnicos como "RLS", "CHECK constraint" e chaves estrangeiras.
+4. **Acabamento Visual em Dark Mode**: Revisados e ajustados backgrounds, bordas, contrastes e inputs nos painéis de timeline e formulários de pendências para herdarem o tema dark de forma integrada (`bg-white dark:bg-slate-900` e cores secundárias adequadas), evitando contrastes estourados ou flashes de fundo claro.
+
+

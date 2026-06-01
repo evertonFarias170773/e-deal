@@ -451,7 +451,7 @@ Pendências:
 
 ## Pendências Atribuídas (Fase 6D)
 
-Status: Implementado completo (incluindo Fase 6D-E — Realtime e Notificações e Fase 6F — Estabilização). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
+Status: Implementado completo (incluindo Fase 6D-E — Realtime e Notificações, Fase 6F — Estabilização e Fase 6G — Fechamento Operacional e Polimento). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
 
 Rotas:
 - Acessível via aba "Pendências" no drawer de chat em `/orcamentos` ou `/orcamentos/[id]`.
@@ -482,7 +482,10 @@ Funcionalidades:
 - Ação "Iniciar" renomeada para "Assumir" que preenche automaticamente o campo `responsavel_user_id` com o UUID real da sessão autenticada do operador;
 - Destaques visuais premium para pendências `URGENTE` (borda vermelha esquerda, ping pulsante animado na badge) e `ATRASADA` (borda âmbar esquerda, badge pulsante de vencimento) unificados entre a central e os painéis de chat;
 - Otimização do carregamento lateral: busca da lista de usuários executada exclusivamente sob demanda ao abrir o formulário "Nova Pendência Manual" em vez de no mount geral;
-- Otimização de consultas na Central `/pendencias`: a lista de usuários é buscada uma única vez no mount, separada da escuta e do refresh realtime de pendências.
+- Otimização de consultas na Central `/pendencias`: a lista de usuários é buscada uma única vez no mount, separada da escuta e do refresh realtime de pendências;
+- Teclado e Acessibilidade: fechamento nativo por tecla ESC em popovers de notificações, menu do balão global e menu lateral móvel (`MobileSidebar`), além de atributos `aria-label` aplicados em todos os botões que possuem apenas ícones;
+- Interface em Dark Mode: estilização do drawer de chat, timeline e painel lateral de pendências revisada para suporte total a dark mode, eliminando backgrounds brancos fixos;
+- Erros Semânticos em Português: tradução completa de erros do banco de dados (RLS, formato UUID, chaves estrangeiras, restrições CHECK) na camada de serviço para diálogos operacionais legíveis e amigáveis ao usuário final.
 
 ## Demais módulos
 

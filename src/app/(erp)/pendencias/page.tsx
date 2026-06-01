@@ -181,7 +181,7 @@ export default function PendenciasPage() {
         triggerRefresh();
       } else {
         showToast({
-          title: "Falha de RLS / Permissão",
+          title: "Sem Permissão",
           description: res.errorMessage || "Você não tem autorização para atualizar esta pendência.",
           type: "error"
         });
@@ -842,6 +842,7 @@ export default function PendenciasPage() {
                                 onClick={() => handleUpdateStatus(item.id, item.id_int, item.id_cliente, "EM_ANDAMENTO", item.titulo)}
                                 className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-900 dark:text-indigo-400 px-2 py-1.5 text-xs font-bold hover:bg-indigo-100 transition"
                                 title="Assumir Pendência"
+                                aria-label="Assumir Pendência"
                               >
                                 <Play className="h-3 w-3" />
                                 Assumir
@@ -856,6 +857,7 @@ export default function PendenciasPage() {
                                 onClick={() => handleUpdateStatus(item.id, item.id_int, item.id_cliente, "CONCLUIDA", item.titulo)}
                                 className="inline-flex items-center gap-1 rounded-lg bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-900 dark:text-green-400 px-2 py-1.5 text-xs font-bold hover:bg-green-100 transition"
                                 title="Marcar como Concluída"
+                                aria-label="Concluir Pendência"
                               >
                                 <Check className="h-3.5 w-3.5" />
                                 Concluir
@@ -870,6 +872,7 @@ export default function PendenciasPage() {
                                 onClick={() => handleUpdateStatus(item.id, item.id_int, item.id_cliente, "CANCELADA", item.titulo)}
                                 className="inline-flex items-center gap-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 px-2 py-1.5 text-xs font-bold hover:bg-slate-200 transition"
                                 title="Cancelar Pendência"
+                                aria-label="Cancelar Pendência"
                               >
                                 <X className="h-3.5 w-3.5" />
                               </button>
@@ -881,6 +884,7 @@ export default function PendenciasPage() {
                               onClick={() => openChat(item.id_int, { clienteNome: item.propostas?.cliente || null, idCliente: item.id_cliente })}
                               className="rounded-lg bg-slate-100 border border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 p-1.5 hover:bg-slate-200 transition"
                               title="Abrir Chat da Proposta"
+                              aria-label="Abrir Chat da Proposta"
                             >
                               <MessageSquare className="h-4 w-4" />
                             </button>
@@ -890,6 +894,7 @@ export default function PendenciasPage() {
                               href={`/orcamentos/${item.id_int}?chat=open`}
                               className="rounded-lg bg-slate-100 border border-slate-200 text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 p-1.5 hover:bg-slate-200 transition"
                               title="Ir para Orçamento"
+                              aria-label="Ir para Orçamento"
                             >
                               <Eye className="h-4 w-4" />
                             </Link>

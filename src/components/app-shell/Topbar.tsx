@@ -320,6 +320,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
                 color: "var(--primary)"
               }}
               title={activePendenciasCount > 0 ? `Você tem ${activePendenciasCount} pendência(s) ativa(s)` : "Sem pendências ativas"}
+              aria-label={activePendenciasCount > 0 ? `Você tem ${activePendenciasCount} pendência(s) ativa(s)` : "Sem pendências ativas"}
             >
               <CheckSquare className="h-5 w-5" />
               {activePendenciasCount > 0 && (
@@ -346,6 +347,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
                   setIsPopoverOpen((prev) => !prev);
                 }}
                 title={unreadCount > 0 ? `Você tem ${unreadCount} menção(ões) não lida(s)` : "Sem menções pendentes"}
+                aria-label={unreadCount > 0 ? `Você tem ${unreadCount} menção(ões) não lida(s)` : "Sem menções pendentes"}
               >
                 <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (

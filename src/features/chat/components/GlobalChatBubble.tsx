@@ -278,6 +278,20 @@ export function GlobalChatBubble() {
     };
   }, []);
 
+  // Handle ESC key to close the bubble popover
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
   if (!user) return null;
 
   return (
@@ -306,6 +320,7 @@ export function GlobalChatBubble() {
               style={{ color: "var(--muted)" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--background)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              aria-label="Fechar popover"
             >
               <X className="h-4 w-4" />
             </button>
@@ -434,7 +449,8 @@ export function GlobalChatBubble() {
           background: "var(--primary)",
           color: "#ffffff"
         }}
-        title="Abrir chat global"
+        title="Abrir chat de propostas"
+        aria-label={unreadCount > 0 ? `Abrir chat de propostas. Você tem ${unreadCount} menção(ões) não lida(s)` : "Abrir chat de propostas"}
       >
         <MessageSquare className="h-6 w-6" />
         {unreadCount > 0 && (

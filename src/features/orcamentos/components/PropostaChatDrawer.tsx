@@ -100,13 +100,13 @@ export function PropostaChatDrawer({
 
       {/* Drawer content sliding from the right */}
       <div
-        className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col z-[80] relative"
+        className="w-full max-w-lg bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col z-[80] relative"
         style={{
           animation: 'slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards'
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-6 py-4 shrink-0">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-6 py-4 shrink-0">
           <div className="flex flex-col gap-0.5 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {headerBadge ? (
@@ -123,7 +123,7 @@ export function PropostaChatDrawer({
                   </span>
                   
                   {localResumo.total_anexos > 0 && (
-                    <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200" title={`${localResumo.total_anexos} anexo(s)`}>
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700" title={`${localResumo.total_anexos} anexo(s)`}>
                       <Paperclip className="h-3 w-3 text-slate-500" />
                       {localResumo.total_anexos}
                     </span>
@@ -142,11 +142,11 @@ export function PropostaChatDrawer({
                   )}
                 </div>
               )}
-              <h2 className="text-base font-bold text-slate-950 shrink-0">
+              <h2 className="text-base font-bold text-slate-950 dark:text-slate-50 shrink-0">
                 Proposta #{idInt}
               </h2>
             </div>
-            <p className="text-xs font-medium text-slate-500 truncate max-w-[280px]" title={displayClienteNome}>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate max-w-[280px]" title={displayClienteNome}>
               {displayClienteNome}
             </p>
           </div>
@@ -155,8 +155,9 @@ export function PropostaChatDrawer({
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
+              className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-100 transition"
               title="Fechar chat"
+              aria-label="Fechar chat"
             >
               <X className="h-5 w-5" />
             </button>
@@ -164,14 +165,14 @@ export function PropostaChatDrawer({
         </div>
 
         {/* Tab navigation */}
-        <div className="flex border-b border-slate-100 bg-slate-50/50 shrink-0">
+        <div className="flex border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab("chat")}
             className={`flex-1 py-3 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1.5 ${
               activeTab === "chat"
-                ? "border-[#0b2f4a] text-[#0b2f4a]"
-                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
+                ? "border-[#0b2f4a] dark:border-blue-500 text-[#0b2f4a] dark:text-blue-400"
+                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100/50 dark:hover:bg-slate-800/50"
             }`}
           >
             Conversa
@@ -186,8 +187,8 @@ export function PropostaChatDrawer({
             onClick={() => setActiveTab("pendencias")}
             className={`flex-1 py-3 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1.5 ${
               activeTab === "pendencias"
-                ? "border-[#0b2f4a] text-[#0b2f4a]"
-                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
+                ? "border-[#0b2f4a] dark:border-blue-500 text-[#0b2f4a] dark:text-blue-400"
+                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100/50 dark:hover:bg-slate-800/50"
             }`}
           >
             Pendências

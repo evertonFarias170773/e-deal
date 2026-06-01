@@ -200,13 +200,13 @@ export async function createPropostaPendencia(
       let detailedMessage = error.message;
 
       if (error.code === "42501") {
-        detailedMessage = `Erro de RLS (Permissão): O usuário autenticado (${finalCriadoPorUserId}) não possui permissão para criar pendências. Motivos prováveis: 1) Não possui cadastro correspondente na tabela 'public.usuarios'; ou 2) O 'id_empresa' informado (${insertData.id_empresa}) não coincide com o de seu perfil.`;
+        detailedMessage = `Acesso Negado (Permissão): O usuário autenticado (${finalCriadoPorUserId}) não possui permissão para criar pendências. Motivos prováveis: 1) Seu cadastro de colaborador não foi localizado (public.usuarios); ou 2) A empresa informada (${insertData.id_empresa}) é diferente da cadastrada em seu perfil.`;
       } else if (error.code === "23503") {
-        detailedMessage = `Erro de Chave Estrangeira: Algum ID referenciado (id_int, id_cliente, chat_id ou pagamento_id) não existe no banco. Detalhe: ${error.details || error.message}`;
+        detailedMessage = `Erro de Validação: Algum registro relacionado (Proposta, Cliente ou Pagamento) não existe no sistema. Detalhe: ${error.details || error.message}`;
       } else if (error.code === "22P02") {
-        detailedMessage = `Erro de Formato: Tipo de dados incompatível (ex: UUID inválido). Detalhe: ${error.message}`;
+        detailedMessage = `Erro de Formato: Os identificadores informados possuem formato inválido (ex: UUID incorreto). Detalhe: ${error.message}`;
       } else if (error.code === "23514") {
-        detailedMessage = `Erro de Restrição (CHECK): Um ou mais campos violam restrições do banco. Categoria/Prioridade/Status inválido. Detalhe: ${error.message}`;
+        detailedMessage = `Erro de Validação: Um ou mais campos informados possuem valores inválidos (Categoria, Prioridade ou Status). Detalhe: ${error.message}`;
       }
 
       return { success: false, errorMessage: detailedMessage };
@@ -298,7 +298,7 @@ export async function updatePropostaPendenciaStatus(
       let detailedMessage = error.message;
 
       if (error.code === "42501") {
-        detailedMessage = `Erro de RLS (Permissão): O usuário autenticado (${finalUserId}) não possui permissão para atualizar esta pendência.`;
+        detailedMessage = `Acesso Negado (Permissão): O usuário autenticado (${finalUserId}) não possui permissão para atualizar esta pendência.`;
       }
 
       return { success: false, errorMessage: detailedMessage };
