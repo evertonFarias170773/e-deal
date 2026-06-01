@@ -180,3 +180,22 @@ O widget `GlobalChatBubble` é posicionado no canto inferior direito de todas as
     - **Contexto da Página**: Exibe atalho para o chat do item ativamente visualizado (ex: Orçamento em foco ou último orçamento do cliente).
     - **Conversas Recentes**: Lista as últimas 5 propostas com atividade recente de chat no sistema.
   - Altura e scroll adaptáveis para evitar transbordamento vertical ou colisão com elementos do layout principal.
+
+## Central de Pendências
+
+O painel central de gerenciamento de pendências operacionais (`/pendencias`) segue as seguintes premissas de interface administrativa premium:
+
+- **Métricas Interativas**:
+  - Cards superiores de resumo estatístico (`SummaryCard`) atuam também como filtros rápidos do painel.
+  - Cada card possui coloração tokenizada e ícones semânticos de alta legibilidade, com indicador pulsar para atrasos críticos.
+- **Painel de Filtros Avançados**:
+  - Desenho em layout dobrável (accordion) para evitar saturação de inputs na tela principal.
+  - Pesquisa textual unificada (Live Search) que atualiza a tabela em tempo real com debounce eficiente.
+  - Dropdowns compactos (Selects) de categorização (Empresa, Setor, Categoria, Status, Prioridade).
+- **Lista/Tabela de Dados**:
+  - **Visualização Desktop**: Tabela administrativa rica de contraste moderado. As linhas são interativas e fornecem atalhos claros para navegar até o orçamento correspondente ou abrir a aba de chat em drawer de forma contígua.
+  - **Visualização Mobile**: Cards individuais responsivos que agrupam informações em pilhas lógicas com botões de ação expansivos de toque facilitado, evitando rolagem lateral ou transbordamentos de layout.
+- **Topbar Integration**:
+  - Botão utilitário com ícone `CheckSquare` adicionado no Topbar, ao lado do sino de notificações.
+  - Exibe contagem reativa e pulsação se houver pendências ativas de responsabilidade direta do usuário.
+  - Serve como atalho global de navegação de volta para a rota `/pendencias`.

@@ -227,3 +227,25 @@ Na Fase 6C, o ERP Ideal foi equipado com uma **Central Flutuante de Chat Unifica
    - Cliques rápidos e concorrentes são debotados/travados usando uma referência de carregamento síncrona (`loadingRef`), garantindo que apenas uma query por vez seja enviada ao banco de dados.
 5. **Badge Contextual e Discreta**:
    - Se o usuário estiver em uma página contextual (como orçamento ativo) e possuir menções não lidas pendentes associadas àquela proposta no banco de dados (`propostas_chat_mentions`), um discreto ponto azul pulsante será exibido no balão flutuante, sinalizando novas atividades de forma elegante e discreta.
+
+---
+
+## 13. Gestão de Pendências Atribuídas (Fase 6D)
+
+Na Fase 6D, o Chat Interno foi estendido com a funcionalidade de **Gestão de Pendências Atribuídas** (`public.propostas_pendencias`).
+
+### Arquitetura de Dados:
+- **Tabela**: `public.propostas_pendencias`
+- **Integridade**: Chave estrangeira `id_int` simples vinculada à `public.propostas(id_int)` sem exclusão em cascata, preservando o histórico comercial.
+- **Trigger Específica**: A trigger `trigger_propostas_pendencias_updated_at` aciona a função dedicada `public.set_propostas_pendencias_updated_at()` para atualizar o timestamp `updated_at = now()` a cada modificação.
+- **Deleção Bloqueada**: A tabela possui RLS habilitada sem nenhuma política para `DELETE`, bloqueando qualquer tentativa de exclusão direta de pendências via cliente API.
+
+### Políticas de Segurança RLS Estritas:
+Toda a validação de acesso e permissões roda no servidor PostgreSQL associada ao `auth.uid()`, sem depender de dados manipulados pelo frontend:
+1. **SELECT**: Acesso liberado apenas se o usuário autenticado for o criador, o responsável específico, admin/super admin, ou se pertence ao mesmo `id_empresa` ou `setor` (conforme registrado em `public.usuarios`).
+2. **INSERT**: Exige que o criador seja o usuário logado (`criado_por_user_id = auth.uid()`), que ele exista na tabela de usuários e, se informada uma empresa, que seja a sua própria empresa (exceto admins).
+3. **UPDATE**: Restrito aos mesmos perfis do SELECT. O `WITH CHECK` garante que usuários comuns só possam mover a pendência para empresas/setores que correspondam aos seus dados de cadastro (a não ser que sejam o criador, que pode delegar para outros setores).
+
+### UI e Fluxos Integrados:
+- **Aba no Drawer**: O `PropostaChatDrawer` agora conta com abas superiores deslizáveis para alternar entre "Conversa" e "Pendências", mantendo os dois painéis montados em DOM para evitar perda de dados e posição de scroll.
+- **Timeline e Notificações**: Ações nas pendências (criar, iniciar resolução, concluir ou cancelar) gravam automaticamente mensagens de `SISTEMA` no chat `propostas_chat` para alertar todos os colaboradores sobre o andamento operacional, evitando duplicidades.

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { X, Paperclip } from "lucide-react";
 import { PropostaChatPanel } from "./PropostaChatPanel";
+import { PropostaPendenciasPanel } from "./PropostaPendenciasPanel";
 import { type PropostaChatResumo } from "@/features/orcamentos/services/orcamentos.service";
 
 interface PropostaChatDrawerProps {
@@ -38,6 +39,17 @@ export function PropostaChatDrawer({
     has_pendente: false,
     has_recusado: false
   });
+
+  const [activeTab, setActiveTab] = useState<"chat" | "pendencias">("chat");
+  const [activePendenciasCount, setActivePendenciasCount] = useState(0);
+
+  const handlePendenciasCountUpdated = useCallback((count: number) => {
+    setActivePendenciasCount(count);
+    setLocalResumo((prev) => ({
+      ...prev,
+      has_pendente: count > 0
+    }));
+  }, []);
 
 
 
@@ -151,25 +163,72 @@ export function PropostaChatDrawer({
           </div>
         </div>
 
+        {/* Tab navigation */}
+        <div className="flex border-b border-slate-100 bg-slate-50/50 shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab("chat")}
+            className={`flex-1 py-3 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1.5 ${
+              activeTab === "chat"
+                ? "border-[#0b2f4a] text-[#0b2f4a]"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
+            }`}
+          >
+            Conversa
+            {localResumo.total_mensagens > 0 && (
+              <span className="inline-flex items-center justify-center rounded-full bg-[#0b2f4a] px-1.5 py-0.5 text-[9px] font-extrabold text-white leading-none">
+                {localResumo.total_mensagens}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("pendencias")}
+            className={`flex-1 py-3 text-xs font-bold border-b-2 transition flex items-center justify-center gap-1.5 ${
+              activeTab === "pendencias"
+                ? "border-[#0b2f4a] text-[#0b2f4a]"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
+            }`}
+          >
+            Pendências
+            {activePendenciasCount > 0 && (
+              <span className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-extrabold text-white leading-none">
+                {activePendenciasCount}
+              </span>
+            )}
+          </button>
+        </div>
+
         {/* Panel wrapper */}
-        <div className="flex-1 min-h-0">
-          <PropostaChatPanel
-            key={idInt} // Force unmount/remount when proposal changes to ensure absolute state cleanup
-            idInt={idInt}
-            clienteNome={clienteNome}
-            idCliente={idCliente}
-            showHeader={false}
-            className="h-full border-none shadow-none rounded-none"
-            onMessagesUpdated={(summary) => {
-              setLocalResumo({
-                total_mensagens: summary.total_mensagens,
-                total_anexos: summary.total_anexos,
-                has_pendente: summary.has_pendente,
-                has_recusado: summary.has_recusado
-              });
-              onMessagesUpdated?.(summary);
-            }}
-          />
+        <div className="flex-1 min-h-0 relative">
+          <div className={`h-full ${activeTab === "chat" ? "block" : "hidden"}`}>
+            <PropostaChatPanel
+              key={idInt} // Force unmount/remount when proposal changes to ensure absolute state cleanup
+              idInt={idInt}
+              clienteNome={clienteNome}
+              idCliente={idCliente}
+              showHeader={false}
+              className="h-full border-none shadow-none rounded-none"
+              onMessagesUpdated={(summary) => {
+                setLocalResumo({
+                  total_mensagens: summary.total_mensagens,
+                  total_anexos: summary.total_anexos,
+                  has_pendente: summary.has_pendente || activePendenciasCount > 0,
+                  has_recusado: summary.has_recusado
+                });
+                onMessagesUpdated?.(summary);
+              }}
+            />
+          </div>
+          <div className={`h-full ${activeTab === "pendencias" ? "block" : "hidden"}`}>
+            <PropostaPendenciasPanel
+              key={idInt}
+              idInt={idInt}
+              idCliente={idCliente ? Number(idCliente) : null}
+              className="h-full"
+              onPendenciasCountUpdated={handlePendenciasCountUpdated}
+            />
+          </div>
         </div>
       </div>
     </div>

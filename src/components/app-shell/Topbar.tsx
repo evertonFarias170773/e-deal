@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Menu, Bell } from "lucide-react";
+import Link from "next/link";
+import { Menu, Bell, CheckSquare } from "lucide-react";
 import { CompanySwitcher } from "@/components/app-shell/CompanySwitcher";
 import { GlobalSearch } from "@/components/app-shell/GlobalSearch";
 import { ThemeToggle } from "@/components/app-shell/ThemeToggle";
@@ -14,6 +15,7 @@ import {
   listPropostaChatMentionsForUser,
   type PropostaChatMentionJoined
 } from "@/features/orcamentos/services/orcamentos.service";
+import { getActiveUserPendenciasCount } from "@/features/orcamentos/services/propostas-pendencias.service";
 
 type TopbarProps = {
   onOpenMenu: () => void;
@@ -23,6 +25,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
   const { user } = useAuth();
   const { showToast } = useAppToast();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [activePendenciasCount, setActivePendenciasCount] = useState(0);
 
   // Notification popover states
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -57,15 +60,40 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
     }
   }, [user]);
 
+  // Fetch active user pendencies count
+  const fetchPendenciasCount = useCallback(async () => {
+    if (!user?.id) return;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(user.id)) return;
+
+    try {
+      const res = await getActiveUserPendenciasCount(user.id);
+      if (res.success) {
+        setActivePendenciasCount(res.count);
+      }
+    } catch (err) {
+      console.error("[Topbar] Erro ao buscar contagem de pendências:", err);
+    }
+  }, [user]);
+
   // Initial fetch on mount / user change (deferred to avoid React Compiler cascading render warning)
   useEffect(() => {
     if (user?.id) {
       const timer = setTimeout(() => {
         void fetchNotifications();
+        void fetchPendenciasCount();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [user, fetchNotifications]);
+  }, [user, fetchNotifications, fetchPendenciasCount]);
+
+  // Listen to custom updates from page
+  useEffect(() => {
+    window.addEventListener("pendencias-updated", fetchPendenciasCount);
+    return () => {
+      window.removeEventListener("pendencias-updated", fetchPendenciasCount);
+    };
+  }, [fetchPendenciasCount]);
 
   // Subscribe to real-time mentions (reused single subscription channel)
   useEffect(() => {
@@ -160,6 +188,27 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
         {/* Ações à direita */}
         <div className="ml-auto flex items-center gap-2">
           <CompanySwitcher />
+
+          {/* Badge de Pendências */}
+          {user && (
+            <Link
+              href="/pendencias"
+              className="rounded-xl p-2.5 shadow-sm transition relative block"
+              style={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                color: "var(--primary)"
+              }}
+              title={activePendenciasCount > 0 ? `Você tem ${activePendenciasCount} pendência(s) ativa(s)` : "Sem pendências ativas"}
+            >
+              <CheckSquare className="h-5 w-5" />
+              {activePendenciasCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-600 text-[10px] font-bold text-white animate-pulse">
+                  {activePendenciasCount}
+                </span>
+              )}
+            </Link>
+          )}
 
           {/* Badge de Menções */}
           {user && (

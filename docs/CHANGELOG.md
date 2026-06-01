@@ -3,6 +3,21 @@
 ## 2026-06-01
 
 ### Adicionado
+- **Central de Pendências (Fase 6D-D)**:
+  - Criação da página `/pendencias` com layout operacional premium, cards estatísticos interativos e responsividade total.
+  - Implementação de filtros avançados por texto livre, status, prioridade, categoria, setor responsável e empresa (dinâmica via PostgREST).
+  - Filtros rápidos por abas (Minhas, Setor, Sem Responsável, Urgentes, Atrasadas, Concluídas Hoje).
+  - Adição de atalhos rápidos para abrir a proposta e abrir o chat drawer global via `useGlobalChat` na listagem de pendências.
+  - Integração do link de navegação `/pendencias` no Sidebar.
+  - Badge numérico no Topbar exibindo a quantidade de pendências ativas do usuário logado, com atualização dinâmica via eventos customizados.
+  - Paginação incremental eficiente por botão "Carregar Mais" para evitar chamadas redundantes e consultas desnecessárias.
+- **Gestão de Pendências Atribuídas (Fase 6D-C)**:
+  - Criação da tabela `public.propostas_pendencias` no Supabase com chave estrangeira simples e trigger dedicada de updated_at (`public.set_propostas_pendencias_updated_at`).
+  - Implementação de políticas de Row-Level Security (RLS) estritas associadas a `auth.uid()` e à tabela de usuários, validando empresas, setores e permissões de administrador de forma segura no banco de dados.
+  - Novo service frontend `propostas-pendencias.service.ts` para consultas, criações e transições de status (iniciar, concluir, cancelar).
+  - Componente `PropostaPendenciasPanel` integrado ao drawer global de chat, com visualizador de pendências e formulário de criação manual.
+  - Abas deslizantes superiores no `PropostaChatDrawer` para alternar entre "Conversa" e "Pendências" mantendo ambos os painéis montados em DOM.
+  - Disparo automático de mensagens do tipo `SISTEMA` no chat ao criar ou alterar status das pendências.
 - **Menções no Chat Interno (Fase 6A)**:
   - Autocomplete inteligente acionado via `@` na caixa de texto do chat, com busca nativa filtrada de usuários ativos.
   - Tabela dedicada `propostas_chat_mentions` para registro estruturado desduplicado das menções.
