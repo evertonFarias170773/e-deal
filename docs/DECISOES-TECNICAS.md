@@ -353,3 +353,31 @@ Motivo:
 - evitar recarregar a lista estática de usuários em lote a cada alteração/atualização realtime de pendências recebidas via Custom Event do DOM;
 - estabilizar hooks de efeito e prevenir renderizações redundantes.
 
+## Encerramento Técnico Final (Fase 6H)
+
+### Não Uso de Service Role no Frontend
+
+Decisão: O frontend utiliza estritamente o cliente Supabase configurado com a chave pública anônima (`anon key`) e a sessão do usuário logado (JWT). O uso da chave secreta `service_role` é terminantemente proibido no código do lado do cliente.
+
+Motivo:
+- **Segurança Estrita**: A chave `service_role` do Supabase tem privilégios de superusuário e bypassa completamente todas as políticas de Row-Level Security (RLS). Expô-la no client-side exporia todo o banco de dados (leitura, escrita e deleção de qualquer tabela) a qualquer usuário mal-intencionado que inspecione o código ou o tráfego de rede.
+- **Conformidade com RLS**: Ao usar a `anon key` com a sessão JWT ativa, garantimos que todas as queries enviadas ao Supabase passam pelo crivo das políticas RLS no banco de dados PostgreSQL, forçando a validação de acesso baseada no ID do usuário (`auth.uid()`), empresa e setor.
+
+### Tabela Própria para Pendências (`public.propostas_pendencias`)
+
+Decisão: As pendências são armazenadas na tabela específica `public.propostas_pendencias` em vez de serem modeladas dentro de campos genéricos da tabela de timeline/chat (`public.propostas_chat`).
+
+Motivo:
+- **Diferença de Ciclo de Vida e Mutabilidade**: O chat de mensagens é um log cronológico de histórico (normalmente append-only e imutável). As pendências são entidades de controle operacional mutáveis (trocam de status, mudam de responsável, alteram prioridade, possuem prazos de vencimento específicos).
+- **Segurança RLS Segregada**: A tabela de pendências exige políticas RLS complexas e granulares (ex: validar se o usuário pertence à mesma empresa ou setor, restringir transições de status, etc.). Misturar isso na tabela de chat poluiria o RLS das mensagens gerais.
+- **Desempenho e Indexação**: Permite criar índices específicos em campos como `status`, `prioridade`, `prazo_limite` e `responsavel_user_id`. Consultas na Central de Pendências `/pendencias` e cards estatísticos são otimizados sem necessidade de varrer mensagens textuais complexas.
+
+### Centralização do Realtime de Pendências na Topbar
+
+Decisão: A escuta em tempo real (realtime) das atualizações de `public.propostas_pendencias` é concentrada em um único listener WebSocket localizado no componente `Topbar`, que propaga os eventos aos demais componentes por meio de um Custom Event do DOM (`"propostas-pendencias-realtime"`).
+
+Motivo:
+- **Mitigação do Consumo de Conexões WebSocket**: O Supabase cobra e limita o número de conexões realtime ativas. Se o painel da Topbar, a página `/pendencias` e o Drawer lateral estabelecessem conexões separadas, um único usuário com duas abas abertas poderia exaurir facilmente as cotas de conexão do projeto.
+- **Eficiência de Rede**: Uma única conexão ativa na aba recebe a alteração e despacha o evento localmente via JavaScript no navegador do usuário. Os componentes inscritos no Custom Event reagem imediatamente sem requisições de rede adicionais ou subscriptions duplicadas.
+
+

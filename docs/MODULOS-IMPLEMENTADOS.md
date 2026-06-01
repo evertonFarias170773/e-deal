@@ -404,7 +404,7 @@ Pendências:
 
 ## Chat Interno
 
-Status: integrado real com Supabase, otimizado e estabilizado na Fase 6F. Controle de leitura local por usuário, autocomplete de menções, central global de notificações e balão flutuante contextual integrado em todo o ERP.
+Status: integrado real com Supabase, otimizado e estabilizado, com encerramento técnico concluído na Fase 6H. Controle de leitura local por usuário, autocomplete de menções, central global de notificações e balão flutuante contextual integrado em todo o ERP.
 
 Rotas:
 - Acessível via drawer a partir de `/orcamentos` (listagem) e `/orcamentos/[id]` (detalhe)
@@ -451,7 +451,7 @@ Pendências:
 
 ## Pendências Atribuídas (Fase 6D)
 
-Status: Implementado completo (incluindo Fase 6D-E — Realtime e Notificações, Fase 6F — Estabilização e Fase 6G — Fechamento Operacional e Polimento). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
+Status: Implementado completo (incluindo Fase 6D-E — Realtime e Notificações, Fase 6F — Estabilização, Fase 6G — Fechamento Operacional e Polimento, e Fase 6H — Encerramento Técnico). Persistência real em `public.propostas_pendencias` com RLS estrito baseado no perfil real do usuário logado (cruzando `auth.uid()` com a tabela `public.usuarios` no Supabase) e trigger isolada de timestamp.
 
 Rotas:
 - Acessível via aba "Pendências" no drawer de chat em `/orcamentos` ou `/orcamentos/[id]`.

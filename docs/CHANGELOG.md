@@ -3,6 +3,11 @@
 ## 2026-06-01
 
 ### Adicionado
+- **Encerramento Técnico Final (Fase 6H)**:
+  - Documentação final consolidada em [CHAT-INTERNO.md](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/docs/CHAT-INTERNO.md) detalhando tabelas, fluxos operacionais, regras de menções/pendências, eventos em tempo real, modelo de segurança (RLS) e roadmaps futuros.
+  - Registro de decisões arquiteturais em [DECISOES-TECNICAS.md](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/docs/DECISOES-TECNICAS.md) detalhando por que a chave `service_role` não é usada no frontend, por que as pendências têm uma tabela própria e por que a subscrição realtime de pendências foi centralizada no componente Topbar.
+  - Atualização geral do progresso em [MODULOS-IMPLEMENTADOS.md](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/docs/MODULOS-IMPLEMENTADOS.md).
+
 - **Fechamento Operacional e Polimento Final (Fase 6G)**:
   - Adicionado suporte a teclado com tecla `ESC` para fechar o `NotificationsPopover` de menções, o menu popover do `GlobalChatBubble` e a barra lateral móvel `MobileSidebar` de forma nativa e fluida.
   - Implementado suporte completo de acessibilidade básico com atributos `aria-label` para todos os botões de ícone (remover anexo, anexar arquivos, enviar mensagens, fechar drawers, abrir chats, visualizar propostas e cancelar pendências).

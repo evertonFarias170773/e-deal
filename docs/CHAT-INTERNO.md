@@ -289,4 +289,95 @@ Na Fase 6G, a timeline do chat e o painel de pendências receberam refinos finai
 3. **Tradução Amigável de Exceções**: A camada de serviço de pendências (`createPropostaPendencia` e `updatePropostaPendenciaStatus`) intercepta erros de banco de dados e os traduz em avisos claros e diretos em português, ocultando termos técnicos como "RLS", "CHECK constraint" e chaves estrangeiras.
 4. **Acabamento Visual em Dark Mode**: Revisados e ajustados backgrounds, bordas, contrastes e inputs nos painéis de timeline e formulários de pendências para herdarem o tema dark de forma integrada (`bg-white dark:bg-slate-900` e cores secundárias adequadas), evitando contrastes estourados ou flashes de fundo claro.
 
+---
+
+## 17. Pacote Chat + Pendências — Status Final
+
+Esta seção consolida a arquitetura técnica, regras operacionais e o escopo funcional final do pacote Chat, Notificações e Pendências implementado no branch `erp-ideal-preview`.
+
+### A. Tabelas Usadas no Banco de Dados (Supabase)
+
+1. **`public.propostas_chat`**:
+   - **Propósito**: Persistir o log histórico e sequencial de mensagens textuais e anexos do chat de cada proposta.
+   - **Tipos de Mensagens**: `MENSAGEM` (escritas manualmente por colaboradores), `SISTEMA`, `FINANCEIRO` e `PRODUCAO` (mensagens automáticas de log).
+   - **Storage**: Arquivos anexos armazenados no bucket `chat-ideal` com limite de 10MB por arquivo.
+
+2. **`public.propostas_chat_mentions`**:
+   - **Propósito**: Armazenar registros desduplicados das menções estruturadas `@` associadas às mensagens do chat para acionamento de notificações na Topbar.
+
+3. **`public.propostas_pendencias`**:
+   - **Propósito**: Controlar o ciclo de vida, prazos, setores e operadores responsáveis pelas pendências operacionais atreladas às propostas.
+
+### B. Fluxos Principais
+
+1. **Timeline e Comunicação da Proposta**:
+   - Drawer lateral deslizável acessível a partir da listagem e do detalhe da proposta.
+   - Alternância fluida via abas superiores mantendo em cache o painel de mensagens e o painel de pendências.
+   - Mensagens automáticas geradas pelo sistema em marcos críticos (geração de PDF, faturamento pendente, cobrança gerada, cancelamentos).
+
+2. **Autocomplete de Menções `@`**:
+   - Carregamento assíncrono diferido da lista de usuários ativos sob demanda (no foco da caixa de texto).
+   - Dropdown reativo e inserção de pills azuis estilizadas via processador regex de alta performance ($O(M)$).
+
+3. **Notificações Globais de Menção**:
+   - Contador de notificações não lidas e painel Popover associado ao sino da Topbar.
+   - Exibição de Toasts interativos com redirecionamento e abertura automática do drawer do chat.
+
+4. **Balão do Chat Global Contextual (`GlobalChatBubble`)**:
+   - Flutuante de acesso rápido disponível em qualquer módulo.
+   - Resolução inteligente de contexto de proposta através do `usePathname` (ou última proposta do cliente).
+   - Listagem em lote das 5 conversas mais recentes autorizadas pela política de segurança RLS do usuário.
+
+5. **Central de Pendências (`/pendencias`)**:
+   - Dashboard administrativo completo com cards de controle (Minhas, Setor, Sem Responsável, Urgentes, Atrasadas, Concluídas Hoje).
+   - Filtros dinâmicos e abas operacionais rápidas.
+   - Paginação incremental sob demanda ("Carregar Mais").
+
+### C. Eventos Realtime (Sincronização em Tempo Real)
+
+1. **Canal do Chat da Proposta**: Escuta alterações na tabela `propostas_chat` e atualiza a timeline instantaneamente caso o drawer da proposta correspondente esteja aberto.
+2. **Canal de Menções / Notificações**: Escuta novos registros em `propostas_chat_mentions` e atualiza o indicador da Topbar e exibe Toasts de menção.
+3. **Canal de Pendências Centralizado**: Uma subscrição WebSocket única no componente `Topbar` escuta a tabela `propostas_pendencias` e distribui as atualizações localmente para a Central e para os drawers por meio do Custom Event `"propostas-pendencias-realtime"`. Reduz conexões ativas e exibe Toasts operacionais imediatos para os envolvidos.
+
+### D. Regras de Pendências, Categorias e Prioridades
+
+- **Ação "Assumir"**: Substitui a antiga ação "Iniciar". Ao acionar, vincula a pendência de forma segura ao UUID real do operador autenticado no Supabase no campo `responsavel_user_id`.
+- **Categorias Operacionais**: `FINANCEIRO`, `PRODUCAO`, `COMERCIAL`, `CADASTRO`, `FISCAL`, `EXPEDICAO`, `OUTROS`.
+- **Níveis de Prioridade**:
+  - `BAIXA` / `MEDIA` / `ALTA`
+  - `URGENTE`: Itens marcados como urgente são destacados com borda lateral esquerda vermelha de aviso e ping pulsante de alerta na Central de Pendências e no Drawer de Chat.
+- **Atrasos**: Pendências cuja data limite (`prazo_limite`) foi ultrapassada exibem badge dinâmico de "ATRASADA" com pulsação visual e borda âmbar no card.
+
+### E. Políticas de Segurança (Row-Level Security) Conceitual
+
+1. **Controle de Mensagens**: Mensagens e menções são filtradas de acordo com as permissões das propostas associadas.
+2. **Controle de Pendências (`propostas_pendencias`)**:
+   - **SELECT / UPDATE**: Acesso e escrita concedidos apenas ao criador da pendência, ao responsável atribuído, a administradores ou a colaboradores que pertençam ao mesmo setor (`setor`) ou empresa (`id_empresa`) da pendência.
+   - **INSERT**: Valida se o criador corresponde ao UUID autenticado e se a empresa informada pertence ao cadastro do operador.
+   - **DELETE Bloqueado**: A tabela não possui políticas de `DELETE`, impedindo qualquer tentativa de exclusão física dos dados via API cliente.
+
+### F. Limitações Atuais (Intencionalmente Fora do Escopo)
+
+- **Sem Kanban**: O controle é feito por listas enriquecidas responsivas e filtros focados na operação, sem suporte a cards arrastáveis (Kanban) nesta etapa.
+- **Sem SLA Automático**: Não há cronômetros de contagem regressiva automáticos, cálculo de horas úteis ou regras de escalonamento de prazo.
+- **Sem Automações Financeiras / Comercial**: As pendências não alteram automaticamente o status principal da proposta comercial (`status_interno`) e não controlam regras de pagamentos reais.
+- **Sem Exclusão**: Não é possível excluir pendências (para auditoria e conformidade), apenas cancelá-las.
+- **Dependência do Canal Realtime**: A sincronização reativa em tempo real depende estritamente de a tabela correspondente estar devidamente publicada no canal realtime padrão do Supabase no ambiente de produção.
+
+### G. Próximos Passos Recomendados
+
+1. **Gestão e Monitoramento de SLA**:
+   - Adicionar cronômetros visuais e alarmes automáticos quando uma pendência se aproximar do prazo limite.
+   - Implementar regras de alertas fora do horário comercial ou escalonamento automático de prioridade.
+2. **Painel de Analytics e Produtividade**:
+   - Criação de relatórios de produtividade mostrando o tempo médio de resolução de pendências por setor, operador ou tipo de proposta.
+   - Identificação de gargalos operacionais no fluxo comercial/financeiro.
+3. **Automações de Criação**:
+   - Integração com Edge Functions para gerar pendências automatizadas (ex: quando uma cobrança faturada for enviada para análise de crédito ou quando o peso da proposta mudar e exigir recotamento de frete).
+4. **Notificações Persistidas Unificadas**:
+   - Criação de uma tabela unificada de notificações (`public.notificacoes`) para salvar o histórico de alertas do usuário além do `localStorage` e gerenciar status lidos/não lidos no banco de dados.
+5. **Integração Móvel Nativa**:
+   - Preparar a infraestrutura de notificações para suporte a Push Notifications no celular quando o aplicativo móvel do ERP for desenvolvido.
+
+
 
