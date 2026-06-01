@@ -402,6 +402,38 @@ Pendências:
 - decidir se haverá detalhe próprio de recebível, boleto e depósito;
 - preparar futuro service de Contas a Receber para Supabase sem misturar com criação de cobrança.
 
+## Chat Interno
+
+Status: integrado real com Supabase (leitura/escrita transacional em public.propostas_chat e upload de anexos no Storage bucket chat-ideal) com controle de leitura local por usuário.
+
+Rotas:
+- Acessível via drawer a partir de `/orcamentos` (listagem) e `/orcamentos/[id]` (detalhe)
+
+Componentes principais:
+- `PropostaChatPanel`
+- `PropostaChatDrawer`
+- `OrcamentoDetailPage`
+- `OrcamentosListPageReal`
+- `orcamentos.service.ts`
+
+Mocks usados:
+- Nenhum para fluxo de mensagens (operando 100% integrado ao Supabase).
+- Fallbacks locais seguros em caso de indisponibilidade de rede ou localStorage.
+
+Funcionalidades:
+- mensagens manuais e automáticas do sistema estruturadas por proposta comercial (`id_int`);
+- upload e gerenciamento seguro de anexos no bucket `chat-ideal` com caminhos organizados e sanitização de nomes;
+- renderização inteligente de imagens (preview) e botões de download para documentos gerais;
+- cabeçalho de drawer reativo contendo contagem de mensagens, anexos e alertas de status (`Pendência` / `Recusado`);
+- integração na listagem de propostas com busca otimizada em lote (limitada a 100 itens renderizados);
+- controle de lidas e não lidas isolado por usuário/ambiente persistido em `localStorage` e atualizado apenas após carregamento concluído;
+- badges dinâmicas com a quantidade exata de mensagens não lidas e tooltips detalhados na listagem de propostas e abas de detalhes.
+
+Pendências:
+- ligar realtime para recebimento instantâneo de mensagens com drawer aberto;
+- criar tabela definitiva de controle de leituras (`propostas_chat_leituras`) no banco de dados para persistência multiplataforma;
+- integrar menções operacionais com notificações internas.
+
 ## Demais módulos
 
 Status: pendentes/em breve.

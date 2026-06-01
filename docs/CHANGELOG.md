@@ -3,11 +3,20 @@
 ## 2026-05-31
 
 ### Adicionado
+- Módulo completo de Chat Interno / Timeline Operacional por proposta (`id_int`) integrado ao Supabase.
+- Envio de mensagens manuais e upload de anexos de até 10MB no Storage bucket `chat-ideal` com sanitização e caminhos estruturados (`propostas/{id_int}/{timestamp}_{nomeArquivo}`).
+- Exibição de imagens (preview) e botões de download dinâmicos para PDFs/documentos no balão de chat.
+- Registro automático de mensagens de sistema (`SISTEMA`) nos eventos: PDF gerado, proposta duplicada, cobrança criada, faturamento (`E-FATURADO`) registrado/em análise e proposta cancelada.
+- Cabeçalho de drawer lateral de chat contendo badges de contagem de mensagens, anexos e alertas de status (`Pendência` em amarelo e `Recusado` em vermelho).
+- Batch query `getPropostaChatResumos` para recuperar as estatísticas de chat de até 100 propostas visíveis na listagem de uma só vez, com tratamento de erros robusto para não quebrar a listagem.
+- Controle local de lidas/não lidas por usuário/ambiente persistido em `localStorage` sob a chave `erpideal_chat_read:${user_id_or_email}`, com fallback defensivo por `id` e data de criação.
 - Efeito de skeleton/loading na listagem principal de Orçamentos/Propostas (`OrcamentosListPageReal`) e SummaryCards superiores enquanto os dados reais do Supabase estão sendo carregados.
 - Aviso visual proeminente com estilo destacado no rodapé caso a conexão real com o Supabase falhe ou retorne dados simulados (`source === "mock"`): *"Não foi possível carregar dados reais. Exibindo fallback local."*
 - Suporte no formulário de orçamento para carregar e iniciar propostas no modo "Avulso" a partir de propostas salvas existentes no banco de dados.
 
 ### Alterado
+- A coluna de Ações e cards mobile na listagem principal de Orçamentos agora exibem badges com o número de mensagens não lidas e alteram a cor do ícone de chat (vermelho = recusado, amarelo = pendência, azul = não lidas, cinza = lidas).
+- A aba "Chat interno" no detalhe da proposta comercial indica o número de não lidas e é atualizada automaticamente quando o Drawer é fechado ou um PDF é gerado.
 - O hook de dados `useOrcamentosReadOnlyData` foi refatorado para iniciar com a lista de propostas vazia (`propostas: []`) e estado de carregamento ativo (`isLoading: true`), impedindo que dados falsos/mockados pisquem temporariamente por alguns segundos.
 - Removidas funções e importações sem uso no hook de dados, limpando advertências do linter.
 - Atualizado o divisor de volumes automático para Azul Cargo no webhook para `14500` (14.5kg) para alinhar a estimativa com as regras da interface.
