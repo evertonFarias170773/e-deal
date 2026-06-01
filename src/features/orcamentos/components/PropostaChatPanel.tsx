@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -9,9 +9,13 @@ import {
   sendPropostaChatMessage,
   uploadChatAnexo,
   saveChatReadInfo,
+  listAllUsuarios,
+  createPropostaChatMentions,
+  markPropostaChatMentionsAsRead,
   type PropostaChatMessage,
   type PropostaChatAnexo,
-  type PropostaChatResumo
+  type PropostaChatResumo,
+  type ChatUsuario
 } from "@/features/orcamentos/services/orcamentos.service";
 import { Paperclip, Send, Loader2, FileText, Image as ImageIcon, Download, X, AlertCircle } from "lucide-react";
 import { formatDateTime } from "@/lib/formatters/date";
@@ -62,6 +66,14 @@ export function PropostaChatPanel({
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+  // Mentions and Autocomplete state
+  const [allUsers, setAllUsers] = useState<ChatUsuario[]>([]);
+  const [selectedMentions, setSelectedMentions] = useState<ChatUsuario[]>([]);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteQuery, setAutocompleteQuery] = useState("");
+  const [autocompleteIndex, setAutocompleteIndex] = useState(0);
+  const [mentionTriggerIndex, setMentionTriggerIndex] = useState(-1);
   
   // Keep track of the previous proposal ID to reset loading and states during render
   const [prevIdInt, setPrevIdInt] = useState(idInt);
@@ -69,6 +81,7 @@ export function PropostaChatPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const initialScrolledRef = useRef(false);
 
   if (idInt !== prevIdInt) {
@@ -78,12 +91,199 @@ export function PropostaChatPanel({
     setMessageText("");
     setSelectedFiles([]);
     setSending(false);
+    setSelectedMentions([]);
+    setShowAutocomplete(false);
   }
+
+  // Load users list on mount
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const users = await listAllUsuarios();
+      if (!active) return;
+      setAllUsers(users);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Mark mentions as read when proposal changes or chat is opened
+  useEffect(() => {
+    if (user?.id) {
+      void markPropostaChatMentionsAsRead(user.id, idInt);
+    }
+  }, [idInt, user?.id]);
 
   // Reset scroll tracking when proposal ID changes
   useEffect(() => {
     initialScrolledRef.current = false;
   }, [idInt]);
+
+  // Autocomplete query filters
+  const filteredUsers = useMemo(() => {
+    if (!showAutocomplete) return [];
+    const query = autocompleteQuery.toLowerCase().trim();
+    if (!query) {
+      return allUsers.slice(0, 10);
+    }
+    return allUsers.filter(
+      (u) =>
+        u.nome_usuario.toLowerCase().includes(query) ||
+        u.email.toLowerCase().includes(query)
+    );
+  }, [allUsers, showAutocomplete, autocompleteQuery]);
+
+  // Select user callback
+  const selectUser = useCallback((selectedUser: ChatUsuario) => {
+    if (mentionTriggerIndex === -1 || !textareaRef.current) return;
+    
+    const text = messageText;
+    const selectionStart = textareaRef.current.selectionStart;
+    
+    const beforeMention = text.slice(0, mentionTriggerIndex);
+    const afterCursor = text.slice(selectionStart);
+    
+    const mentionText = `@${selectedUser.nome_usuario} `;
+    const newText = beforeMention + mentionText + afterCursor;
+    
+    setMessageText(newText);
+    
+    setSelectedMentions((prev) => {
+      if (prev.some((u) => u.user_id === selectedUser.user_id)) {
+        return prev;
+      }
+      return [...prev, selectedUser];
+    });
+
+    setShowAutocomplete(false);
+    setMentionTriggerIndex(-1);
+    
+    const newCursorPos = mentionTriggerIndex + mentionText.length;
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  }, [messageText, mentionTriggerIndex]);
+
+  // Autocomplete key and change handlers
+  function handleTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const text = e.target.value;
+    setMessageText(text);
+
+    const selectionStart = e.target.selectionStart;
+    const textBeforeCursor = text.slice(0, selectionStart);
+    const lastAtOffset = textBeforeCursor.lastIndexOf("@");
+    
+    if (lastAtOffset !== -1) {
+      const charBeforeAt = lastAtOffset > 0 ? textBeforeCursor[lastAtOffset - 1] : "";
+      const isValidStart = !charBeforeAt || /\s/.test(charBeforeAt);
+      const textBetweenAtAndCursor = textBeforeCursor.slice(lastAtOffset + 1);
+      const hasWhitespaceBetween = /\s/.test(textBetweenAtAndCursor);
+
+      if (isValidStart && !hasWhitespaceBetween) {
+        setShowAutocomplete(true);
+        setAutocompleteQuery(textBetweenAtAndCursor);
+        setMentionTriggerIndex(lastAtOffset);
+        setAutocompleteIndex(0);
+        return;
+      }
+    }
+    
+    setShowAutocomplete(false);
+  }
+
+  function handleTextareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (showAutocomplete && filteredUsers.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAutocompleteIndex((prev) => (prev + 1) % filteredUsers.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAutocompleteIndex((prev) => (prev - 1 + filteredUsers.length) % filteredUsers.length);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        selectUser(filteredUsers[autocompleteIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowAutocomplete(false);
+        return;
+      }
+    }
+
+    if (e.key === "Enter" && !e.shiftKey && !showAutocomplete) {
+      e.preventDefault();
+      const form = e.currentTarget.form;
+      if (form) {
+        form.requestSubmit();
+      }
+    }
+  }
+
+  // Parser to render mentions in text
+  function renderMessageContent(text: string) {
+    if (!text) return null;
+
+    const sortedUsers = [...allUsers].sort((a, b) => b.nome_usuario.length - a.nome_usuario.length);
+    let parts: Array<string | React.ReactNode> = [text];
+
+    for (const u of sortedUsers) {
+      const handle = `@${u.nome_usuario}`;
+      const newParts: Array<string | React.ReactNode> = [];
+
+      for (const part of parts) {
+        if (typeof part !== "string") {
+          newParts.push(part);
+          continue;
+        }
+
+        const handleLower = handle.toLowerCase();
+        let index = part.toLowerCase().indexOf(handleLower);
+        let lastIndex = 0;
+
+        while (index !== -1) {
+          const charBefore = index > 0 ? part[index - 1] : "";
+          const isValidStart = !charBefore || /\s/.test(charBefore);
+
+          const nextCharIndex = index + handle.length;
+          const charAfter = nextCharIndex < part.length ? part[nextCharIndex] : "";
+          const isValidEnd = !charAfter || /[^\w\u00C0-\u017F]/.test(charAfter);
+
+          if (isValidStart && isValidEnd) {
+            if (index > lastIndex) {
+              newParts.push(part.slice(lastIndex, index));
+            }
+            newParts.push(
+              <span
+                key={`${u.user_id}-${index}`}
+                className="inline-flex items-center font-semibold px-1 py-0.5 rounded-md text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/40"
+              >
+                {part.slice(index, index + handle.length)}
+              </span>
+            );
+            lastIndex = index + handle.length;
+          }
+
+          index = part.toLowerCase().indexOf(handleLower, index + 1);
+        }
+
+        if (lastIndex < part.length) {
+          newParts.push(part.slice(lastIndex));
+        }
+      }
+      parts = newParts;
+    }
+
+    return <>{parts}</>;
+  }
 
   // Keep ref of onMessagesUpdated to avoid unnecessary triggers / infinite render loops
   const onMessagesUpdatedRef = useRef(onMessagesUpdated);
@@ -330,8 +530,29 @@ export function PropostaChatPanel({
       });
 
       if (resMsg.success && resMsg.data) {
+        // Parse active mentions from the selected list that are actually in the text
+        const activeMentions = selectedMentions.filter((u) =>
+          trimmedMsg.toLowerCase().includes(`@${u.nome_usuario.toLowerCase()}`)
+        );
+
+        // Fire and forget mentions creation (non-blocking)
+        if (activeMentions.length > 0) {
+          createPropostaChatMentions(resMsg.data.id, idInt, activeMentions, user)
+            .then((mentionRes) => {
+              if (!mentionRes.success) {
+                console.warn("[PropostaChatPanel] Falha não-bloqueante ao salvar menções:", mentionRes.errorMessage);
+              } else {
+                console.log("[PropostaChatPanel] Menções salvas com sucesso!");
+              }
+            })
+            .catch((err) => {
+              console.error("[PropostaChatPanel] Exceção não-bloqueante ao salvar menções:", err);
+            });
+        }
+
         setMessageText("");
         setSelectedFiles([]);
+        setSelectedMentions([]);
         // Adiciona a mensagem enviada localmente para atualizar o chat imediatamente (se não foi adicionada pelo realtime)
         setMessages((prev) => {
           if (prev.some((m) => m.id === resMsg.data!.id)) {
@@ -478,7 +699,7 @@ export function PropostaChatPanel({
                         : "bg-slate-100 text-slate-800 rounded-tl-none"
                     }`}
                   >
-                    <p>{message.mensagem}</p>
+                    <p>{renderMessageContent(message.mensagem)}</p>
 
                     {/* Renderização de anexos */}
                     {message.anexos && message.anexos.length > 0 && (
@@ -565,7 +786,40 @@ export function PropostaChatPanel({
       )}
 
       {/* Formulário de Envio */}
-      <form onSubmit={handleSend} className="border-t border-[#d7e5e8] bg-white p-4">
+      <form onSubmit={handleSend} className="border-t border-[#d7e5e8] bg-white p-4 relative">
+        {showAutocomplete && filteredUsers.length > 0 && (
+          <div className="absolute bottom-full left-4 z-50 mb-2 w-64 max-h-48 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-lg space-y-0.5">
+            {filteredUsers.map((u, index) => {
+              const isSelected = index === autocompleteIndex;
+              return (
+                <button
+                  key={u.user_id}
+                  type="button"
+                  onClick={() => selectUser(u)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition ${
+                    isSelected
+                      ? "bg-slate-100 text-slate-900 font-medium"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                    {u.avatar ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={u.avatar} alt="" className="h-full w-full rounded-full object-cover" />
+                    ) : (
+                      u.nome_usuario.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()
+                    )}
+                  </div>
+                  <div className="truncate">
+                    <span className="block font-semibold text-slate-800">{u.nome_usuario}</span>
+                    <span className="block text-[10px] text-slate-400 truncate">{u.email} {u.setor ? `• ${u.setor}` : ""}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="flex items-end gap-3">
           {/* Botão Anexar */}
           <button
@@ -589,15 +843,11 @@ export function PropostaChatPanel({
           {/* Input de Texto */}
           <div className="flex-1">
             <textarea
+              ref={textareaRef}
               rows={1}
               value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void handleSend(e);
-                }
-              }}
+              onChange={handleTextareaChange}
+              onKeyDown={handleTextareaKeyDown}
               disabled={sending}
               placeholder={sending ? "Enviando..." : "Escreva uma mensagem interna (Shift + Enter para pular linha)..."}
               className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-[#0b2f4a] focus:bg-white transition"

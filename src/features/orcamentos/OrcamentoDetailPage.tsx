@@ -42,7 +42,13 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const { user } = useAuth();
   const { getCobrancasByProposta } = useCobrancas();
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("chat") === "open";
+    }
+    return false;
+  });
   const { proposta, loading, error } = useOrcamentoDetail(idInt);
   const [chatResumo, setChatResumo] = useState<PropostaChatResumo | null>(null);
 

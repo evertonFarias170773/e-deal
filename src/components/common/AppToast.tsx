@@ -12,6 +12,7 @@ type ToastInput = {
   title: string;
   description?: string;
   duration?: number;
+  onClick?: () => void;
 };
 
 type Toast = ToastInput & {
@@ -72,8 +73,10 @@ export function AppToastProvider({ children }: { children: ReactNode }) {
               <div
                 key={toast.id}
                 className={cn(
-                  "pointer-events-auto flex gap-3 rounded-2xl border p-4 shadow-xl toast-slide-down"
+                  "pointer-events-auto flex gap-3 rounded-2xl border p-4 shadow-xl toast-slide-down",
+                  toast.onClick && "cursor-pointer select-none hover:opacity-95"
                 )}
+                onClick={toast.onClick}
                 style={{
                   background: "var(--card)",
                   borderColor: "var(--border)",

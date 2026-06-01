@@ -1982,6 +1982,186 @@ export async function getPropostaChatResumos(
   }
 }
 
+export interface ChatUsuario {
+  user_id: string;
+  email: string;
+  nome_usuario: string;
+  setor?: string | null;
+  avatar?: string | null;
+}
+
+export async function listAllUsuarios(): Promise<ChatUsuario[]> {
+  const client = getSupabaseClient();
+  const mockUsers: ChatUsuario[] = [
+    {
+      user_id: "user_mock_001",
+      nome_usuario: "Everton Martins",
+      email: "everton@ideal.local",
+      setor: "ADMIN",
+      avatar: null
+    },
+    {
+      user_id: "user_mock_002",
+      nome_usuario: "Caroline Silva",
+      email: "caroline@ideal.local",
+      setor: "COMERCIAL",
+      avatar: null
+    },
+    {
+      user_id: "user_mock_003",
+      nome_usuario: "Marielle Fonseca",
+      email: "marielle@ideal.local",
+      setor: "FINANCEIRO",
+      avatar: null
+    }
+  ];
+
+  if (!client) {
+    return mockUsers;
+  }
+
+  try {
+    const { data, error } = await client
+      .from("usuarios")
+      .select("user_id, email, nome_usuario, setor, avatar")
+      .order("nome_usuario", { ascending: true });
+
+    if (error) {
+      console.warn("[OrcamentosService] Erro ao buscar usuários no Supabase, usando mock:", error);
+      return mockUsers;
+    }
+
+    if (!data || data.length === 0) {
+      console.log("[OrcamentosService] Nenhum usuário retornado do Supabase, usando mock.");
+      return mockUsers;
+    }
+
+    return data as ChatUsuario[];
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção ao buscar usuários:", err);
+    return mockUsers;
+  }
+}
+
+export async function createPropostaChatMentions(
+  chatId: number,
+  idInt: number,
+  mentions: Array<{
+    user_id: string;
+    nome_usuario: string;
+    email: string;
+  }>,
+  author: {
+    id?: string | null;
+    name?: string | null;
+  } | null
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
+
+  if (!mentions || mentions.length === 0) {
+    return { success: true };
+  }
+
+  // Deduplicate mentions by user_id
+  const uniqueMentionsMap = new Map<string, typeof mentions[0]>();
+  for (const m of mentions) {
+    if (m.user_id) {
+      uniqueMentionsMap.set(m.user_id, m);
+    }
+  }
+  const uniqueMentions = Array.from(uniqueMentionsMap.values());
+
+  // Filter out mock UUIDs to avoid DB constraint failures
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  
+  const validByUserId = author?.id && uuidRegex.test(author.id) ? author.id : null;
+
+  const rows = uniqueMentions
+    .filter((m) => uuidRegex.test(m.user_id))
+    .map((m) => ({
+      chat_id: chatId,
+      id_int: idInt,
+      mentioned_user_id: m.user_id,
+      mentioned_user_name: m.nome_usuario,
+      mentioned_user_email: m.email,
+      mentioned_by_user_id: validByUserId,
+      mentioned_by_name: author?.name || null,
+      source_type: "CHAT"
+    }));
+
+  // Log mock mentions in local development
+  const mockMentions = uniqueMentions.filter((m) => !uuidRegex.test(m.user_id));
+  if (mockMentions.length > 0) {
+    console.log(
+      "[OrcamentosService] Simulação de menções locais (IDs mockados ignorados no insert do Supabase):",
+      mockMentions.map((m) => `${m.nome_usuario} (${m.user_id})`)
+    );
+  }
+
+  if (rows.length === 0) {
+    return { success: true };
+  }
+
+  try {
+    const { error } = await client
+      .from("propostas_chat_mentions")
+      .insert(rows);
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao gravar menções no Supabase:", error);
+      return { success: false, errorMessage: error.message };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção ao gravar menções:", err);
+    return { success: false, errorMessage: String(err) };
+  }
+}
+
+export async function markPropostaChatMentionsAsRead(
+  userId: string | null | undefined,
+  idInt: number
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
+
+  if (!userId) {
+    return { success: true };
+  }
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    console.log(`[OrcamentosService] markPropostaChatMentionsAsRead: UID mockado '${userId}' ignorado.`);
+    return { success: true };
+  }
+
+  try {
+    const { error } = await client
+      .from("propostas_chat_mentions")
+      .update({ read_at: new Date().toISOString() })
+      .eq("mentioned_user_id", userId)
+      .eq("id_int", idInt)
+      .is("read_at", null);
+
+    if (error) {
+      console.error("[OrcamentosService] Erro ao marcar menções como lidas:", error);
+      return { success: false, errorMessage: error.message };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção ao marcar menções como lidas:", err);
+    return { success: false, errorMessage: String(err) };
+  }
+}
+
+
 
 
 

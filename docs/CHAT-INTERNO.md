@@ -41,6 +41,29 @@ Toda a persistência de mensagens da timeline é realizada na tabela `public.pro
 | `is_pendente` | `boolean` | Sinaliza que a mensagem registra uma pendência operacional ativa. |
 | `is_recusado` | `boolean` | Sinaliza que a mensagem registra uma recusa operacional ativa. |
 
+### Tabela: `public.propostas_chat_mentions`
+
+Armazena as menções estruturadas geradas no chat interno para envio de notificações em tempo real.
+
+| Campo | Tipo | Descrição |
+| :--- | :--- | :--- |
+| `id` | `bigserial` (PK) | Identificador único da menção. |
+| `chat_id` | `bigint` (FK) | Referência para `public.propostas_chat` (ON DELETE CASCADE). |
+| `id_int` | `bigint` | Identificador operacional da proposta. |
+| `mentioned_user_id` | `uuid` | ID único do usuário mencionado. |
+| `mentioned_user_name` | `text` | Nome do usuário mencionado. |
+| `mentioned_user_email` | `text` | E-mail do usuário mencionado. |
+| `mentioned_by_user_id` | `uuid` | ID único do autor da menção. |
+| `mentioned_by_name` | `text` | Nome do autor da menção. |
+| `read_at` | `timestamp with time zone` | Data e hora de leitura da notificação (ou `null` para não lidas). |
+| `source_type` | `text` | Origem da menção (padrão `'CHAT'`). |
+| `created_at` | `timestamp with time zone` | Data de criação da menção. |
+
+#### Índices de Performance
+- `idx_propostas_chat_mentions_user` no campo `mentioned_user_id`
+- `idx_propostas_chat_mentions_id_int` no campo `id_int`
+- `idx_propostas_chat_mentions_user_read` nos campos `(mentioned_user_id, read_at)` para consulta eficiente das notificações não lidas.
+
 ---
 
 ## 3. Storage e Anexos
@@ -102,6 +125,9 @@ O chat é estruturado de forma modular utilizando React, Next.js e TailwindCSS, 
 - **Mensagens Automáticas**: Timeline alimentada pelo sistema registrando ações do fluxo comercial e financeiro.
 - **Indicadores Ricos**: Presença de ícones de clips de anexo com contagem no tooltip, totalizador histórico e cores semânticas diferenciando alertas.
 - **Controle de Mensagens Não Lidas (localStorage)**: Controle granular por usuário/ambiente sem acionar migrations no banco.
+- **Atualização em Tempo Real (Supabase Realtime)**: Sincronização automática das mensagens na timeline ao enviar ou receber novas interações com o drawer aberto.
+- **Menções de Usuários (`@Nome`)**: Autocomplete inteligente acionado ao digitar `@` no textarea de mensagens, selecionando usuários por ID com indicação visual segura (pills) e salvamento desduplicado no banco de dados.
+- **Notificações Globais na Topbar**: Contador dinâmico (Bell badge) com número de menções não lidas do usuário logado e exibição de Toasts interativos em tempo real que redirecionam e abrem o chat da proposta correspondente ao serem clicados.
 
 ---
 
@@ -139,27 +165,26 @@ O controle de visualizações de mensagens baseia-se em armazenamento local para
    - Mensagens de registro de eventos automáticos do ERP usam `tipo = SISTEMA`.
 3. **Isolamento Completo**: Nunca faça queries de mensagens sem filtrar pelo `id_int` da proposta correspondente.
 4. **Não Bloqueante**: A criação de mensagens de sistema ou o fetch de resumos do chat na listagem não podem, em hipótese alguma, impedir o fluxo normal do ERP. Se uma query falhar, a tela deve continuar funcionando (com fallbacks vazios ou ícones padrão).
+5. **Gravação Resiliente de Menções**: A inserção de menções no banco ocorre em segundo plano (fire-and-forget). Se falhar por qualquer motivo, a mensagem de texto principal é gravada normalmente e o erro é registrado apenas no console do front-end.
+6. **Segurança de Dados do Localhost**: Se o usuário logado ou mencionado possuir ID mockado que não corresponde a um UUID válido, o sistema intercepta e loga a operação localmente em desenvolvimento, ignorando a gravação física no banco para evitar violações de chave estrangeira UUID no Supabase.
 
 ---
 
 ## 9. Limitações Atuais
 
-- **Sem Realtime**: A atualização do chat requer ação de refresh, abertura do drawer ou recarga da listagem (sem WebSockets/Realtime ativos nesta etapa).
 - **Sem Gravação de Áudio**: Comunicação restrita a texto e arquivos.
-- **Sem Menções**: Ausência de marcação direta de usuários via `@` ou notificações internas em tempo real.
 - **Sem Central Global**: Não há uma tela centralizada que lista todas as conversas ativas no ERP. O chat é acessível apenas a partir de propostas.
-- **Controle Local de Leitura**: O status de não lidas é restrito ao navegador e máquina atual do usuário, não sendo persistido na nuvem.
+- **Controle Local de Leitura**: O status de não lidas geral do chat é restrito ao navegador e máquina atual do usuário, não sendo persistido na nuvem (as menções estruturadas, contudo, são controladas no banco via tabela `propostas_chat_mentions`).
 
 ---
 
 ## 10. Roadmap Futuro
 
-1. **Ativação de WebSockets/Realtime**: Conectar as tabelas do Supabase via canal realtime para atualização instantânea dos balões e badges com o drawer aberto.
-2. **Menções e Notificações**: Habilitar marcação de usuários por setor (ex: `@financeiro`) e disparar notificações push ou na Topbar do sistema.
-3. **Gestão de Pendências Operacionais**: Integrar as flags `is_pendente` e `is_recusado` a uma fila de atendimento para que gerentes visualizem gargalos de aprovação.
-4. **Tabela Definitiva de Leituras**: Criar a tabela `propostas_chat_leituras` no Supabase para sincronizar as mensagens não lidas entre múltiplos dispositivos e computadores de forma confiável.
-5. **Central Global de Timeline**: Criar um painel consolidado para o financeiro e comercial visualizarem o histórico operacional geral das últimas propostas alteradas no ERP.
-6. **Resumo Inteligente por IA**: Implementar integração com LLMs para resumir o histórico operacional e pendências comerciais das propostas com timelines extensas.
+1. **Gestão de Pendências Operacionais**: Integrar as flags `is_pendente` e `is_recusado` a uma fila de atendimento para que gerentes visualizem gargalos de aprovação.
+2. **Tabela Definitiva de Leituras**: Criar a tabela `propostas_chat_leituras` no Supabase para sincronizar as mensagens não lidas gerais entre múltiplos dispositivos e computadores de forma confiável.
+3. **Central Global de Timeline**: Criar um painel consolidado para o financeiro e comercial visualizarem o histórico operacional geral das últimas propostas alteradas no ERP.
+4. **Resumo Inteligente por IA**: Implementar integração com LLMs para resumir o histórico operacional e pendências comerciais das propostas com timelines extensas.
+5. **Menções Expandidas**: Suporte a menções de setor (ex: `@financeiro`) ou notificações por canais externos (e-mail, WhatsApp, push externo).
 
 ---
 
@@ -175,3 +200,7 @@ Use este checklist para testar a integridade operacional do módulo de Chat Inte
 - [ ] **Isolamento por Proposta**: Enviar mensagens na Proposta A, abrir o chat da Proposta B e atestar que a conversa da Proposta B está vazia ou contém apenas seu histórico correspondente.
 - [ ] **Mensagens Automáticas**: Gerar um PDF de proposta ou criar uma cobrança mockada e atestar que uma nova mensagem de Sistema descrevendo a ação foi criada no chat.
 - [ ] **Badge de Não Lidas**: Abrir a listagem de propostas sob o perfil de um usuário diferente e atestar que a badge indica mensagens não lidas. Ao abrir o drawer do chat e aguardar a carga, fechar o drawer e constatar que a badge sumiu da linha correspondente.
+- [ ] **Menções por Autocomplete**: Digitar `@` na caixa de texto, constatar a abertura do dropdown, navegar com as setas do teclado e selecionar um usuário com Enter. Confirmar que a pill estilizada renderiza no texto ao enviar e o registro é gravado em `propostas_chat_mentions` se o ID for UUID válido.
+- [ ] **Descarte de Menção Deletada**: Digitar `@` e selecionar um usuário. Em seguida, deletar o `@Nome` do editor e enviar a mensagem. Confirmar que a mensagem é enviada, mas nenhum registro de menção é gravado.
+- [ ] **Menção Manual sem Autocomplete**: Digitar `@Marielle` diretamente no texto sem selecionar no autocomplete e enviar a mensagem. Confirmar que a mensagem de texto é salva normalmente, mas não é criada nenhuma notificação na tabela `propostas_chat_mentions`.
+- [ ] **Recebimento de Notificação em Tempo Real**: Com uma conta logada em uma aba e outra em outra aba (ou simulando o insert de menção no Supabase para o UUID correspondente), atestar que a Topbar exibe o Toast de menção instantaneamente, incrementando a Bell badge de forma pulsante. Confirmar que o clique no Toast redireciona e abre o painel do chat correspondente com `?chat=open`.
