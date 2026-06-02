@@ -26,9 +26,9 @@ export const navigationItems: NavigationItem[] = [
   { label: "Conferência", href: "/cobrancas", icon: CreditCard },
   { label: "Contas a receber", href: "/contas-a-receber", icon: ReceiptText },
   { label: "Notas fiscais", href: "/notas-fiscais", icon: FileText, disabled: true },
-  { label: "Pedidos", href: "/pedidos", icon: Boxes, disabled: true },
-  { label: "OS / Producao", href: "/os-producao", icon: Building2, disabled: true },
-  { label: "Expedicao", href: "/expedicao", icon: Truck, disabled: true },
+  { label: "Pedidos", href: "/pedidos", icon: Boxes },
+  { label: "OS / Producao", href: "/os-producao", icon: Building2 },
+  { label: "Expedicao", href: "/expedicao", icon: Truck },
   { label: "Relatorios", href: "/relatorios", icon: BarChart3, disabled: true },
   { label: "Configuracoes", href: "/configuracoes", icon: Settings, disabled: true }
 ];

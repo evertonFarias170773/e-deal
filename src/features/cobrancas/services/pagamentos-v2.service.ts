@@ -39,7 +39,8 @@ export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "id_fatura",
   "cod_solicitacao_inter",
   "data_confirmacao",
-  "n_url_pdf"
+  "n_url_pdf",
+  "boleto_enviadoo"
 ] as const;
 
 export const PAGAMENTOS_V2_SELECT = PAGAMENTOS_V2_SELECT_COLUMNS.join(", ");
@@ -229,7 +230,7 @@ export async function updatePagamentoV2Empresa(
     tipo_cobranca: "in.(E-Faturado,E-Amostras,E-Retrabalho,E-Cortesia,E-Informe Pgto)",
     status: "eq.A_VENCER",
     or: "(confirmado.is.null,confirmado.eq.false)",
-    select: "id,id_pagamento,id_int,os_ideal,id_cliente,cliente,descricao,valor,status,tipo_cobranca,created_at,paid_at,vencimento,confirmado,confirmado_por,aprovado_por,empresa,id_empresa,documento,atendente,token_publico,public_token,url_cobranca,pix_copia_cola,linha_digitavel,url_pdf,motivo_cancela,erro_pagamento,obs_v2,whats_contato,id_fatura,cod_solicitacao_inter,data_confirmacao,n_url_pdf"
+    select: "id,id_pagamento,id_int,os_ideal,id_cliente,cliente,descricao,valor,status,tipo_cobranca,created_at,paid_at,vencimento,confirmado,confirmado_por,aprovado_por,empresa,id_empresa,documento,atendente,token_publico,public_token,url_cobranca,pix_copia_cola,linha_digitavel,url_pdf,motivo_cancela,erro_pagamento,obs_v2,whats_contato,id_fatura,cod_solicitacao_inter,data_confirmacao,n_url_pdf,boleto_enviadoo"
   });
 
   if (!url) {
@@ -362,5 +363,72 @@ export async function createPagamentoV2Real(
   }
 
   return { success: true, data: mappedCobranca };
+}
+
+export async function updatePagamentoV2StatusConfirmacao(
+  id: string,
+  payload: {
+    confirmado: boolean;
+    confirmado_por: string | null;
+    data_confirmacao: string | null;
+  }
+): Promise<{ success: boolean; updated?: Cobranca | null; errorMessage?: string }> {
+  const config = getSupabaseConfig();
+
+  if (!config) {
+    return {
+      success: false,
+      errorMessage: "Configuracao Supabase ausente no ambiente do app."
+    };
+  }
+
+  const url = buildRestUrl("pagamentos_v2", {
+    id: `eq.${id}`,
+    select: PAGAMENTOS_V2_SELECT
+  });
+
+  if (!url) {
+    return {
+      success: false,
+      errorMessage: "Nao foi possivel montar a URL de update do Supabase."
+    };
+  }
+
+  const response = await fetch(url.toString(), {
+    method: "PATCH",
+    headers: {
+      apikey: config.anonKey,
+      authorization: `Bearer ${config.anonKey}`,
+      accept: "application/json",
+      "accept-profile": "public",
+      "content-type": "application/json",
+      prefer: "return=representation"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    return {
+      success: false,
+      errorMessage: `Erro HTTP ao atualizar status de confirmacao: ${response.status} ${response.statusText}. ${body}`
+    };
+  }
+
+  const data = (await response.json().catch(() => [])) as SupabasePagamentoV2Row[];
+
+  if (!Array.isArray(data) || data.length !== 1) {
+    return {
+      success: false,
+      errorMessage: "Atualizacao nao retornou exatamente um registro de pagamento_v2."
+    };
+  }
+
+  const updated = mapSupabasePagamentoV2RowToCobranca(data[0]) ?? null;
+
+  return {
+    success: true,
+    updated
+  };
 }
 

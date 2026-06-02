@@ -44,5 +44,6 @@ export type SupabasePagamentoV2Row = {
   cartao_valor_final?: SupabaseValue;
   forma_fatu?: SupabaseValue;
   forma_pgto?: SupabaseValue;
+  boleto_enviadoo?: SupabaseValue;
 };
 

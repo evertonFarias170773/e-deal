@@ -9,6 +9,7 @@ import { canLiberarParaPedido, roundMoney } from "@/features/cobrancas/cobrancas
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getCobrancasReadOnlyData,
+  updatePagamentoV2StatusConfirmacao,
   type CobrancasReadResult,
   type CobrancasReadSource
 } from "@/features/cobrancas/services/pagamentos-v2.service";
@@ -26,6 +27,8 @@ type CobrancasContextValue = {
   getCobrancaById: (id: string) => Cobranca | undefined;
   getCobrancaByToken: (token: string) => Cobranca | undefined;
   getCobrancasByProposta: (idInt: number) => Cobranca[];
+  liberarCobrancaReal: (id: string, confirmadoPor: string) => Promise<boolean>;
+  voltarCobrancaFilaReal: (id: string) => Promise<boolean>;
 };
 
 const STORAGE_KEY = "erp_ideal_mock_cobrancas_v6";
@@ -571,6 +574,87 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return true;
   }, [cobrancasStats, source]);
 
+  const liberarCobrancaReal = useCallback(async (id: string, confirmadoPor: string): Promise<boolean> => {
+    if (!id) {
+      throw new Error("ID de cobranca invalido.");
+    }
+
+    if (source === "supabase") {
+      const result = await updatePagamentoV2StatusConfirmacao(id, {
+        confirmado: true,
+        confirmado_por: confirmadoPor,
+        data_confirmacao: new Date().toISOString()
+      });
+
+      if (!result.success || !result.updated) {
+        throw new Error(result.errorMessage || "Falha ao liberar cobranca no Supabase.");
+      }
+
+      const updated = result.updated;
+      const updateList = (list: Cobranca[]) => list.map((item) => (item.id === id ? updated : item));
+      setCobrancas(updateList);
+      setCobrancasStats(updateList);
+      return true;
+    }
+
+    // Mock fallback
+    const mockConfirmadoAt = new Date().toISOString();
+    const updateList = (list: Cobranca[]) =>
+      list.map((item) =>
+        item.id === id
+          ? ({
+              ...item,
+              confirmado: true,
+              confirmado_por: confirmadoPor,
+              data_confirmacao: mockConfirmadoAt
+            } as Cobranca)
+          : item
+      );
+    setCobrancas(updateList);
+    setCobrancasStats(updateList);
+    return true;
+  }, [source]);
+
+  const voltarCobrancaFilaReal = useCallback(async (id: string): Promise<boolean> => {
+    if (!id) {
+      throw new Error("ID de cobranca invalido.");
+    }
+
+    if (source === "supabase") {
+      const result = await updatePagamentoV2StatusConfirmacao(id, {
+        confirmado: false,
+        confirmado_por: null,
+        data_confirmacao: null
+      });
+
+      if (!result.success || !result.updated) {
+        throw new Error(result.errorMessage || "Falha ao estornar cobranca no Supabase.");
+      }
+
+      const updated = result.updated;
+      const updateList = (list: Cobranca[]) => list.map((item) => (item.id === id ? updated : item));
+      setCobrancas(updateList);
+      setCobrancasStats(updateList);
+      return true;
+    }
+
+    // Mock fallback
+    const updateList = (list: Cobranca[]) =>
+      list.map((item) =>
+        item.id === id
+          ? ({
+              ...item,
+              confirmado: false,
+              confirmado_por: undefined,
+              data_confirmacao: undefined
+            } as Cobranca)
+          : item
+      );
+    setCobrancas(updateList);
+    setCobrancasStats(updateList);
+    return true;
+  }, [source]);
+
   const refreshCobrancas = useCallback(async () => {
     return loadData();
   }, [loadData]);
@@ -588,9 +672,22 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       getCobrancaById: (id: string) => cobrancas.find((item) => item.id === id) ?? cobrancasStats.find((item) => item.id === id),
       getCobrancaByToken: (token: string) =>
         cobrancas.find((item) => item.token_publico === token) ?? cobrancasStats.find((item) => item.token_publico === token),
-      getCobrancasByProposta: (idInt: number) => cobrancasStats.filter((item) => item.id_int === idInt)
+      getCobrancasByProposta: (idInt: number) => cobrancasStats.filter((item) => item.id_int === idInt),
+      liberarCobrancaReal,
+      voltarCobrancaFilaReal
     }),
-    [cobrancas, cobrancasStats, source, cancelCobranca, confirmPagamento, createCobranca, liberarParaPedido, refreshCobrancas]
+    [
+      cobrancas,
+      cobrancasStats,
+      source,
+      cancelCobranca,
+      confirmPagamento,
+      createCobranca,
+      liberarParaPedido,
+      refreshCobrancas,
+      liberarCobrancaReal,
+      voltarCobrancaFilaReal
+    ]
   );
 
   return <CobrancasContext.Provider value={value}>{children}</CobrancasContext.Provider>;

@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
-import { canLiberarParaPedido, isCreditoPendente, isPropostaLiberadaParaPedido } from "@/features/cobrancas/cobrancas-utils";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { isCreditoPendente } from "@/features/cobrancas/cobrancas-utils";
 import type { Cobranca } from "@/features/cobrancas/types";
 
 type CobrancaActionsMenuProps = {
@@ -15,10 +17,14 @@ type CobrancaActionsMenuProps = {
 export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { confirmPagamento, cancelCobranca, liberarParaPedido, getCobrancasByProposta } = useCobrancas();
-  const cobrancasDaProposta = getCobrancasByProposta(cobranca.id_int);
-  const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
-  const podeLiberarParaPedido = canLiberarParaPedido(cobrancasDaProposta);
+  const { user } = useAuth();
+  const [isUpdating, setIsUpdating] = useState(false);
+  const {
+    confirmPagamento,
+    cancelCobranca,
+    liberarCobrancaReal,
+    voltarCobrancaFilaReal
+  } = useCobrancas();
 
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
     if (!value) {
@@ -46,14 +52,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     showToast({ type: "warning", title: "Cobrança cancelada no mock." });
   }
 
-  function handleLiberarPedido() {
-    const liberou = liberarParaPedido(cobranca.id_int);
 
-    showToast({
-      type: liberou ? "success" : "warning",
-      title: liberou ? "Proposta liberada para pedido no mock." : "Ainda não é possível liberar para pedido."
-    });
-  }
 
   function handleAnaliseCredito() {
     if (isCreditoPendente(cobranca)) {
@@ -64,6 +63,61 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     showToast({ type: "info", title: "Esta cobrança não possui crédito pendente." });
   }
 
+  async function handleLiberarOSReal() {
+    if (!cobranca.id) {
+      showToast({ type: "error", title: "ID da cobrança inválido para liberação." });
+      return;
+    }
+
+    const confirmed = window.confirm("Tem certeza que quer liberar esta proposta para produção?");
+    if (!confirmed) {
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const operador = user?.name || "Operador Financeiro";
+      const success = await liberarCobrancaReal(cobranca.id, operador);
+      if (success) {
+        showToast({ type: "success", title: "OS liberada para produção com sucesso!" });
+      }
+    } catch (error) {
+      showToast({
+        type: "error",
+        title: error instanceof Error ? error.message : "Falha ao liberar OS."
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
+  async function handleVoltarFilaReal() {
+    if (!cobranca.id) {
+      showToast({ type: "error", title: "ID da cobrança inválido para estorno." });
+      return;
+    }
+
+    const confirmed = window.confirm("Tem certeza que quer voltar esta OS para a lista principal de conferência?");
+    if (!confirmed) {
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const success = await voltarCobrancaFilaReal(cobranca.id);
+      if (success) {
+        showToast({ type: "success", title: "OS retornada à fila de conferência." });
+      }
+    } catch (error) {
+      showToast({
+        type: "error",
+        title: error instanceof Error ? error.message : "Falha ao retornar OS para a fila."
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
   const items = [
     { label: "Ver cobrança", onClick: () => router.push(`/cobrancas/${cobranca.id}`) },
     { label: "Abrir proposta", onClick: () => router.push(`/orcamentos/${cobranca.id_int}`) },
@@ -72,21 +126,44 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       label: "Ver financeiro da proposta",
       onClick: () => router.push(`/orcamentos/${cobranca.id_int}`)
     },
+    // Real Supabase confirmation actions (Liberar OS / Voltar para fila)
+    ...((cobranca.status === "PAID" || cobranca.status === "A_VENCER")
+      ? [
+          !cobranca.confirmado
+            ? {
+                label: isUpdating ? "Liberando..." : "Liberar OS",
+                disabled: isUpdating,
+                onClick: () => void handleLiberarOSReal()
+              }
+            : {
+                label: isUpdating ? "Estornando..." : "Voltar para lista principal",
+                disabled: isUpdating,
+                onClick: () => void handleVoltarFilaReal()
+              }
+        ]
+      : []),
+    ...(cobranca.tipo_cobranca?.toUpperCase() === "E-FATURADO" &&
+    cobranca.status === "A_VENCER" &&
+    Boolean(cobranca.confirmado) &&
+    !Boolean(cobranca.boleto_enviadoo)
+      ? [
+          {
+            label: "Emitir boleto",
+            onClick: () => {
+              showToast({
+                type: "info",
+                title: "Ação de emissão de boleto simulada com sucesso."
+              });
+            }
+          }
+        ]
+      : []),
     {
       label: "Confirmar pagamento mockado",
       disabled: cobranca.status === "PAID" || cobranca.status === "CANCELADO",
       onClick: handleConfirm
     },
-    propostaLiberada
-      ? {
-          label: "Pedido ainda não criado no mock",
-          disabled: true
-        }
-      : {
-          label: "Liberar para pedido",
-          disabled: !podeLiberarParaPedido,
-          onClick: handleLiberarPedido
-        },
+
     {
       label: "Analisar crédito",
       disabled: !isCreditoPendente(cobranca),

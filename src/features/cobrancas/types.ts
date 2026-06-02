@@ -115,6 +115,7 @@ export type Cobranca = {
   condicao_pagamento?: string;
   creditoPendente?: boolean;
   pedidoLiberadoMock?: boolean;
+  boleto_enviadoo?: boolean;
   proposta: PropostaCobrancaSnapshot;
   historico: CobrancaHistoricoEvento[];
   propostasChat: PropostaChatFinanceiro[];

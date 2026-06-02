@@ -13,7 +13,7 @@ export const EMPRESAS_RECEBEDORAS_FIXAS: EmpresaRecebedoraOption[] = [
   {
     id: 2,
     nome: "IDEAL BIRÔ SERV. GRAFICOS",
-    labelCurta: "Birô Gráfica",
+    labelCurta: "Ideal Birô",
     documento: "",
     fluxoFuturo: "",
     descricao: ""
@@ -157,18 +157,29 @@ export function getLocalMonthKey(value: string | Date) {
 }
 
 export function getEmpresaExibicao(cobranca: Pick<Cobranca, "empresa" | "id_empresa">) {
-  const empresaTexto = normalize(toText(cobranca.empresa));
   const empresaId = Number(cobranca.id_empresa);
 
-  if (empresaId === 1 || empresaTexto.includes("ideal grafica") || empresaTexto.includes("ingresso ideal")) {
-    return "Ingresso Ideal / Ideal Gráfica";
+  if (empresaId === 1) {
+    return "Ideal Gráfica";
+  }
+  if (empresaId === 2) {
+    return "Ideal Birô";
+  }
+  if (empresaId === 3) {
+    return "E3 Brindes";
   }
 
-  if (empresaId === 2 || empresaTexto.includes("ideal biro") || empresaTexto.includes("ideal birô") || empresaTexto.includes("biro grafica")) {
-    return "Birô Gráfica / Ideal Birô";
+  const empresaTexto = normalize(toText(cobranca.empresa));
+
+  if (empresaTexto.includes("ideal grafica") || empresaTexto.includes("ingresso ideal")) {
+    return "Ideal Gráfica";
   }
 
-  if (empresaId === 3 || empresaTexto.includes("e3")) {
+  if (empresaTexto.includes("ideal biro") || empresaTexto.includes("ideal birô") || empresaTexto.includes("biro grafica")) {
+    return "Ideal Birô";
+  }
+
+  if (empresaTexto.includes("e3")) {
     return "E3 Brindes";
   }
 
@@ -176,18 +187,29 @@ export function getEmpresaExibicao(cobranca: Pick<Cobranca, "empresa" | "id_empr
 }
 
 export function getEmpresaGrupoKey(cobranca: Pick<Cobranca, "empresa" | "id_empresa">) {
-  const empresaTexto = normalize(toText(cobranca.empresa));
   const empresaId = Number(cobranca.id_empresa);
 
-  if (empresaId === 1 || empresaTexto.includes("ideal grafica") || empresaTexto.includes("ingresso ideal")) {
+  if (empresaId === 1) {
+    return "IDEAL_GRAFICA";
+  }
+  if (empresaId === 2) {
+    return "IDEAL_BIRO";
+  }
+  if (empresaId === 3) {
+    return "E3_BRINDES";
+  }
+
+  const empresaTexto = normalize(toText(cobranca.empresa));
+
+  if (empresaTexto.includes("ideal grafica") || empresaTexto.includes("ingresso ideal")) {
     return "IDEAL_GRAFICA";
   }
 
-  if (empresaId === 2 || empresaTexto.includes("ideal biro") || empresaTexto.includes("ideal birô") || empresaTexto.includes("biro grafica")) {
+  if (empresaTexto.includes("ideal biro") || empresaTexto.includes("ideal birô") || empresaTexto.includes("biro grafica")) {
     return "IDEAL_BIRO";
   }
 
-  if (empresaId === 3 || empresaTexto.includes("e3")) {
+  if (empresaTexto.includes("e3")) {
     return "E3_BRINDES";
   }
 
@@ -226,7 +248,6 @@ export function normalizeCobrancaStatus(params: {
   confirmado?: boolean;
 }): Cobranca["status"] {
   const status = normalize(params.status.trim());
-  const venceEmBreve = params.vencimento ? new Date(params.vencimento).getTime() > Date.now() : false;
 
   if (!status) {
     return params.confirmado || Boolean(params.paidAt) ? "PAID" : "A_RECEBER";
@@ -245,14 +266,14 @@ export function normalizeCobrancaStatus(params: {
   }
 
   if (status === "a_receber" || status === "pending" || status === "pendente" || status.includes("aguard") || status.includes("process")) {
-    return venceEmBreve ? "A_VENCER" : "A_RECEBER";
+    return "A_RECEBER";
   }
 
   if (params.confirmado || Boolean(params.paidAt)) {
     return "PAID";
   }
 
-  return venceEmBreve ? "A_VENCER" : "A_RECEBER";
+  return "A_RECEBER";
 }
 
 export function getCobrancaStatusTone(status: string): StatusTone {

@@ -20,3 +20,7 @@ pnpm-debug.log*
 *.backup
 *.sql
 BACKUPS_SUPABASE/
+
+# development scratch directories and build info
+scratch/
+*.tsbuildinfo

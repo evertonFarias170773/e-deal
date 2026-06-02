@@ -311,6 +311,7 @@ export function mapSupabasePagamentoV2RowToCobranca(row: SupabasePagamentoV2Row)
     condicao_pagamento: tipoCobranca ? getTipoCobrancaLabel(tipoCobranca) : undefined,
     creditoPendente: tipoCobranca === "E-FATURADO" ? !toBoolean(row.confirmado, false) && status !== "PAID" : false,
     pedidoLiberadoMock: false,
+    boleto_enviadoo: toBoolean(row.boleto_enviadoo, false),
     proposta: resolvePropostaSnapshot(row, status),
     historico: resolveHistorico(row, status),
     propostasChat: [],

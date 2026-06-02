@@ -31,12 +31,13 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { useDashboardFinanceiroSnapshot } from "@/features/cobrancas/hooks/useDashboardFinanceiroSnapshot";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
 
-type TipoFiltro = "PENDENTES_APROVACAO" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO";
+type TipoFiltro = "PENDENTES_APROVACAO" | "EMITIR_BOLETOS" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const monthsShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
   { value: "PENDENTES_APROVACAO", label: "Pendentes aprovação" },
+  { value: "EMITIR_BOLETOS", label: "Emitir Boletos" },
   { value: "PIX", label: "PIX" },
   { value: "BOLETO", label: "Boleto" },
   { value: "FATURADO", label: "Faturado" },
@@ -92,7 +93,11 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
 }
 
 function isFilaPadrao(cobranca: Cobranca) {
-  return !Boolean(cobranca.confirmado) && (cobranca.status === "PAID" || cobranca.status === "A_VENCER") && isEmpresaValida(cobranca);
+  return (
+    !Boolean(cobranca.confirmado) &&
+    (cobranca.status === "PAID" || cobranca.status === "A_VENCER") &&
+    isEmpresaValida(cobranca)
+  );
 }
 
 function isBaseConfirmada(cobranca: Cobranca) {
@@ -104,9 +109,23 @@ function isBaseConfirmada(cobranca: Cobranca) {
   );
 }
 
+function isEmitirBoletos(cobranca: Cobranca) {
+  return (
+    cobranca.tipo_cobranca?.toUpperCase() === "E-FATURADO" &&
+    cobranca.status === "A_VENCER" &&
+    Boolean(cobranca.confirmado) &&
+    !Boolean(cobranca.boleto_enviadoo) &&
+    isEmpresaValida(cobranca)
+  );
+}
+
 function matchesTipoFiltro(cobranca: Cobranca, tipo: TipoFiltro) {
   if (tipo === "PENDENTES_APROVACAO") {
     return isPendenteAprovacao(cobranca);
+  }
+
+  if (tipo === "EMITIR_BOLETOS") {
+    return isEmitirBoletos(cobranca);
   }
 
   if (tipo === "TODOS") {
@@ -166,23 +185,20 @@ export function CobrancasList() {
   const monthOptions = useMemo(() => getCurrentMonthOptions(cobrancasStats), [cobrancasStats]);
 
   const visibleCobrancas = useMemo(() => {
-    const hasFilterActive =
-      search.trim() !== "" ||
-      empresa !== "TODAS" ||
-      (tipo !== "TODOS" && tipo !== "PENDENTES_APROVACAO");
-
     const base =
       tipo === "PENDENTES_APROVACAO"
-        ? cobrancasStats.filter(isPendenteAprovacao)
-        : hasFilterActive
-          ? cobrancasStats.filter(isBaseConfirmada)
-          : cobrancasStats.filter(isFilaPadrao);
+        ? cobrancasStats.filter((c) => isPendenteAprovacao(c))
+        : tipo === "EMITIR_BOLETOS"
+          ? cobrancasStats.filter(isEmitirBoletos)
+          : tipo !== "TODOS"
+            ? cobrancasStats.filter(isBaseConfirmada)
+            : cobrancasStats.filter(isFilaPadrao);
 
     return base
       .filter((cobranca) => {
         const matchesSearch = cobrancaMatchesSearch(cobranca, search);
         const matchesTipo =
-          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO"
+          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "EMITIR_BOLETOS"
             ? true
             : matchesTipoFiltro(cobranca, tipo);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
