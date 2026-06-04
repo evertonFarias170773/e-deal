@@ -76,7 +76,7 @@ const getPrazoStatus = (pedido: PedidoMock) => {
   }
   return {
     label: `PRAZO: ${formatDate(pedido.dataPrevistaEntrega)}`,
-    color: "text-slate-650 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 font-bold",
+    color: "text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-350 font-bold",
     isLate: false
   };
 };
@@ -494,7 +494,7 @@ export function PedidosKanbanPage() {
                       {/* Gargalos Badges */}
                       <div className="flex flex-wrap gap-1 pt-0.5">
                         {pedido.urgente && (
-                          <span className="bg-red-650 text-white font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider flex items-center gap-0.5 animate-pulse">
+                          <span className="bg-red-600 text-white font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider flex items-center gap-0.5 animate-pulse">
                             <Flame className="h-2.5 w-2.5 shrink-0" />
                             <span>URGENTE</span>
                           </span>
@@ -505,24 +505,24 @@ export function PedidosKanbanPage() {
                           </span>
                         )}
                         {pedido.financialBlock && (
-                          <span className="bg-red-105 text-red-805 border border-red-200/60 dark:bg-red-955 dark:text-red-405 dark:border-red-900/60 font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider flex items-center gap-0.5">
+                          <span className="bg-red-50 text-red-700 border border-red-200/60 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/60 font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider flex items-center gap-0.5">
                             <Lock className="h-2.5 w-2.5 shrink-0" />
                             <span>FINAN BLOQ</span>
                           </span>
                         )}
                         {pedido.blockReason && (
-                          <span className="bg-amber-500 text-white font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider flex items-center gap-0.5 animate-pulse" title={pedido.blockReason}>
+                          <span className="bg-amber-550 text-white font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider flex items-center gap-0.5 animate-pulse" title={pedido.blockReason}>
                             <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
                             <span>PAUSA</span>
                           </span>
                         )}
                         {hasReproved && (
-                          <span className="bg-rose-105 text-rose-850 border border-rose-200/60 dark:bg-rose-955 dark:text-rose-405 dark:border-rose-900 font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">
+                          <span className="bg-red-50 text-red-700 border border-red-200/60 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/60 font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">
                             ❌ ARTE REPROVADA
                           </span>
                         )}
                         {pedido.statusPedido === "AGUARDANDO_APROVACAO_CLIENTE" && (
-                          <span className="bg-blue-105 text-blue-855 border border-blue-200/60 dark:bg-blue-955 dark:text-blue-405 dark:border-blue-900 font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200/60 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-900/60 font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">
                             💬 AGUARDANDO CLIENTE
                           </span>
                         )}
@@ -657,11 +657,11 @@ export function PedidosKanbanPage() {
       </div>
 
       {/* Header e Seleção de modo TV */}
-      <div className="flex justify-between items-center gap-3 bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 p-2.5 rounded-2xl shadow-sm text-xs">
+      <div className="flex justify-between items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-2xl shadow-sm text-xs">
         <div className="flex gap-2">
           <Link
             href="/pedidos"
-            className="px-3.5 py-2 font-bold rounded-xl text-slate-650 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="px-3.5 py-2 font-bold rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
             Fila Geral
           </Link>
@@ -673,13 +673,13 @@ export function PedidosKanbanPage() {
           </Link>
           <Link
             href="/pedidos/impressao"
-            className="px-3.5 py-2 font-bold rounded-xl text-slate-650 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-805 transition"
+            className="px-3.5 py-2 font-bold rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
             Fila de Impressão
           </Link>
           <Link
             href="/expedicao"
-            className="px-3.5 py-2 font-bold rounded-xl text-slate-650 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-805 transition"
+            className="px-3.5 py-2 font-bold rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
             Expedição
           </Link>
@@ -687,7 +687,7 @@ export function PedidosKanbanPage() {
         <div className="flex gap-2 items-center">
           <button
             onClick={() => setIsFullscreen(true)}
-            className="h-8 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl font-bold flex items-center gap-1.5 transition text-xs border border-slate-205 dark:border-slate-700"
+            className="h-8 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl font-bold flex items-center gap-1.5 transition text-xs border border-slate-200 dark:border-slate-700"
             title="Fullscreen / TV Mode"
           >
             <Tv className="h-4 w-4" />
@@ -821,7 +821,7 @@ export function PedidosKanbanPage() {
       {/* Pause Operational Modal */}
       {isPauseModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-xl">
+          <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-xl">
             <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Registrar Ocorrência / Pausa de OS</h3>
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-650 dark:text-slate-400">

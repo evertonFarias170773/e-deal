@@ -36,6 +36,8 @@ export const CONTAS_RECEBER_SELECT_COLUMNS = [
   "ext_reference",
   "deposito_conta",
   "confirmado_por",
+  "multa",
+  "juros_dia",
   "is_prorrogado",
   "motivo_prorg",
   "dias_prorg"
@@ -52,11 +54,15 @@ export type ContasReceberReadResult = {
 };
 
 function cloneRecebiveisMock() {
-  return contasReceberMock.map((item) => ({ ...item })) as BoletoDepositoMock[];
+  return contasReceberMock
+    .filter((item) => item.status !== "A_RECEBER")
+    .map((item) => ({ ...item })) as BoletoDepositoMock[];
 }
 
 function cloneBoletosDepositosMock() {
-  return boletosDepositosMock.map((item) => ({ ...item })) as BoletoDepositoMock[];
+  return boletosDepositosMock
+    .filter((item) => item.status !== "A_RECEBER")
+    .map((item) => ({ ...item })) as BoletoDepositoMock[];
 }
 
 function buildMockResult(): ContasReceberReadResult {
@@ -120,7 +126,9 @@ async function fetchPagamentosRows() {
 }
 
 function mapRowsToReadModel(rows: SupabaseBoletoRow[]) {
-  const boletos = rows.map((row) => mapSupabaseBoletoRowToBoletoDepositoMock(row));
+  const boletos = rows
+    .map((row) => mapSupabaseBoletoRowToBoletoDepositoMock(row))
+    .filter((item) => item.status !== "A_RECEBER");
 
   return {
     recebiveis: boletos,

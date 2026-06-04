@@ -146,7 +146,7 @@ export function PainelImpressaoPage() {
     return (
       <div className="flex h-96 items-center justify-center">
         <div className="text-center space-y-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#0b2f4a] border-t-transparent mx-auto"></div>
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-900 dark:border-slate-50 border-t-transparent mx-auto"></div>
           <p className="text-slate-500 font-semibold text-sm">Carregando fila de impressoras...</p>
         </div>
       </div>
@@ -218,7 +218,7 @@ export function PainelImpressaoPage() {
         </Link>
         <Link
           href="/pedidos/impressao"
-          className="px-3.5 py-2 font-bold rounded-xl bg-[#0b2f4a] text-white transition"
+          className="px-3.5 py-2 font-bold rounded-xl bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 transition"
         >
           Fila de Impressão
         </Link>
@@ -239,7 +239,7 @@ export function PainelImpressaoPage() {
         )}
         <button
           onClick={() => setIsFullscreen(true)}
-          className="h-8 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-855 dark:hover:bg-slate-750 text-slate-750 dark:text-slate-250 rounded-xl font-bold flex items-center gap-1 transition text-xs"
+          className="h-8 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-750 dark:text-slate-200 rounded-xl font-bold flex items-center gap-1 transition text-xs"
         >
           <Tv className="h-4 w-4" />
           <span>Modo TV</span>
@@ -265,7 +265,7 @@ export function PainelImpressaoPage() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 p-2.5 rounded-xl flex flex-col justify-between shadow-xs">
           <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-wider">Fila Total Ativa</span>
-          <strong className="text-base font-mono font-black mt-0.5 text-[#0b2f4a] dark:text-slate-200">
+          <strong className="text-base font-mono font-black mt-0.5 text-slate-900 dark:text-slate-200">
             {activeItems.length}
           </strong>
         </div>
@@ -283,13 +283,13 @@ export function PainelImpressaoPage() {
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 p-2.5 rounded-xl flex flex-col justify-between border-l-4 border-l-orange-500 shadow-xs">
           <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-wider">Bloqueados/Pausados</span>
-          <strong className="text-base font-mono font-black mt-0.5 text-orange-600 dark:text-orange-450">
+          <strong className="text-base font-mono font-black mt-0.5 text-orange-600 dark:text-orange-400">
             {bloqueadosCount}
           </strong>
         </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 p-2.5 rounded-xl flex flex-col justify-between border-l-4 border-l-red-500 shadow-xs">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 p-2.5 rounded-xl flex flex-col justify-between border-l-4 border-l-red-500 shadow-sm">
           <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-wider">Prazo Atrasado</span>
-          <strong className="text-base font-mono font-black mt-0.5 text-red-650 dark:text-red-400">
+          <strong className="text-base font-mono font-black mt-0.5 text-red-600 dark:text-red-400">
             {atrasadosCount}
           </strong>
         </div>
@@ -333,8 +333,8 @@ export function PainelImpressaoPage() {
 
     if (sortedItems.length === 0) {
       return (
-        <div className={`rounded-xl border p-12 text-center text-slate-400 dark:text-slate-650 bg-white dark:bg-slate-900 border-slate-200/40 dark:border-slate-800/30`}>
-          <Printer className="h-8 w-8 mx-auto mb-2 text-slate-350 dark:text-slate-700" />
+        <div className={`rounded-xl border p-12 text-center text-slate-400 dark:text-slate-600 bg-white dark:bg-slate-900 border-slate-200/40 dark:border-slate-800/30`}>
+          <Printer className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-700" />
           <p className="font-bold">Nenhum lote na fila de impressão</p>
           <p className="text-[10px] mt-0.5">Ajuste os filtros superiores ou registre novas ordens.</p>
         </div>
@@ -344,20 +344,20 @@ export function PainelImpressaoPage() {
     return (
       <div className={`overflow-x-auto max-h-[65vh] rounded-xl border transition-colors relative ${
         isTv 
-          ? "bg-slate-955 border-slate-800 text-slate-100" 
-          : "bg-white dark:bg-slate-900 border-slate-200/40 dark:border-slate-800/30 text-slate-800 dark:text-slate-250 shadow-xs"
+          ? "bg-slate-950 border-slate-800 text-slate-100" 
+          : "bg-white dark:bg-slate-900 border-slate-200/40 dark:border-slate-800/30 text-slate-800 dark:text-slate-200 shadow-sm"
       }`}>
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="font-bold uppercase tracking-wider text-[9px]">
-              <th className={`py-2.5 px-3 w-[120px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Status</th>
-              <th className={`py-2.5 px-3 w-[110px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>OS / Cliente</th>
-              <th className={`py-2.5 px-3 sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Produto / Modelo</th>
-              <th className={`py-2.5 px-3 text-right w-[80px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Qtd</th>
-              <th className={`py-2.5 px-3 sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Especificações</th>
-              <th className={`py-2.5 px-3 w-[120px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Setor</th>
-              <th className={`py-2.5 px-3 w-[90px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Entrega</th>
-              <th className={`py-2.5 px-3 text-right w-[140px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-850 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Ações</th>
+              <th className={`py-2.5 px-3 w-[120px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Status</th>
+              <th className={`py-2.5 px-3 w-[110px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>OS / Cliente</th>
+              <th className={`py-2.5 px-3 sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Produto / Modelo</th>
+              <th className={`py-2.5 px-3 text-right w-[80px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Qtd</th>
+              <th className={`py-2.5 px-3 sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Especificações</th>
+              <th className={`py-2.5 px-3 w-[120px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Setor</th>
+              <th className={`py-2.5 px-3 w-[90px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Entrega</th>
+              <th className={`py-2.5 px-3 text-right w-[140px] sticky top-0 z-10 border-b ${isTv ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-400"}`}>Ações</th>
             </tr>
           </thead>
           <tbody className={`divide-y ${
@@ -373,7 +373,7 @@ export function PainelImpressaoPage() {
               let rowHighlightClass = "";
               const isCriticalBlock = itemStatus === "BLOQUEADO FINANCEIRO" || itemStatus === "PAUSADO OPERACIONAL";
               const shouldGlow = isTv && (isCriticalBlock || (isLate && (itemStatus === "PRONTO PARA IMPRIMIR" || itemStatus === "EM IMPRESSÃO")));
-
+              
               if (itemStatus === "EM IMPRESSÃO") {
                 statusBadge = (
                   <span className="bg-blue-600 text-white font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase">
@@ -391,7 +391,7 @@ export function PainelImpressaoPage() {
                 );
                 rowHighlightClass = isTv 
                   ? "bg-slate-900/40 hover:bg-slate-900" 
-                  : "hover:bg-slate-50/30 dark:hover:bg-slate-950/20";
+                  : "hover:bg-slate-50/30 dark:hover:bg-slate-900/20";
               } else if (itemStatus === "PAUSADO OPERACIONAL") {
                 statusBadge = (
                   <span className="bg-orange-500 text-white font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase">
@@ -399,24 +399,24 @@ export function PainelImpressaoPage() {
                   </span>
                 );
                 rowHighlightClass = isTv 
-                  ? "bg-orange-955/20 border-l-4 border-l-orange-500" 
+                  ? "bg-orange-900/20 border-l-4 border-l-orange-500" 
                   : "bg-orange-50/35 dark:bg-orange-950/10 hover:bg-orange-50/50";
               } else if (itemStatus === "BLOQUEADO FINANCEIRO") {
                 statusBadge = (
-                  <span className="bg-red-650 text-white font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase">
+                  <span className="bg-red-600 text-white font-extrabold px-1.5 py-0.5 rounded text-[9px] uppercase">
                     BLOQUEADO FINANCEIRO
                   </span>
                 );
                 rowHighlightClass = isTv 
-                  ? "bg-red-955/20 border-l-4 border-l-red-500" 
-                  : "bg-red-50/35 dark:bg-red-955/10 hover:bg-red-50/50";
+                  ? "bg-red-900/20 border-l-4 border-l-red-500" 
+                  : "bg-red-50/35 dark:bg-red-950/10 hover:bg-red-50/50";
               } else if (isAwaiting) {
                 statusBadge = (
-                  <span className="bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-550 font-bold px-1.5 py-0.5 rounded text-[9px] uppercase">
+                  <span className="bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 font-bold px-1.5 py-0.5 rounded text-[9px] uppercase">
                     AGUARDANDO ARTE
                   </span>
                 );
-                rowHighlightClass = "opacity-55 text-slate-450 dark:text-slate-500 bg-slate-50/20 dark:bg-slate-950/5 hover:opacity-85";
+                rowHighlightClass = "opacity-55 text-slate-400 dark:text-slate-500 bg-slate-50/20 dark:bg-slate-950/5 hover:opacity-85";
               } else {
                 statusBadge = (
                   <span className="bg-slate-100 text-emerald-800 dark:bg-slate-900/60 dark:text-emerald-500 font-bold px-1.5 py-0.5 rounded text-[9px] uppercase">
@@ -428,15 +428,15 @@ export function PainelImpressaoPage() {
 
               if (shouldGlow) {
                 if (itemStatus === "BLOQUEADO FINANCEIRO") {
-                  rowHighlightClass += " border-l-4 border-l-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-955/35";
+                  rowHighlightClass += " border-l-4 border-l-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-900/30";
                 } else if (itemStatus === "PAUSADO OPERACIONAL") {
-                  rowHighlightClass += " border-l-4 border-l-orange-500 animate-pulse shadow-[0_0_10px_rgba(249,115,22,0.25)] bg-orange-955/35";
+                  rowHighlightClass += " border-l-4 border-l-orange-500 animate-pulse shadow-[0_0_10px_rgba(249,115,22,0.25)] bg-orange-900/30";
                 } else if (isLate) {
-                  rowHighlightClass += " border-l-4 border-l-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-950/15";
+                  rowHighlightClass += " border-l-4 border-l-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.25)] bg-red-900/15";
                 }
               } else if (isTv) {
                 if (p.urgente) {
-                  rowHighlightClass += " border-l-4 border-l-red-650 shadow-xs";
+                  rowHighlightClass += " border-l-4 border-l-red-600 shadow-sm";
                 }
               } else {
                 if (p.urgente && !isAwaiting) {
@@ -447,7 +447,7 @@ export function PainelImpressaoPage() {
               return (
                 <tr 
                   key={`${p.id_int}-${m.id}`} 
-                  className={`transition duration-155 ${rowHighlightClass} ${isTv ? "hover:bg-slate-900/60" : ""}`}
+                  className={`transition duration-150 ${rowHighlightClass} ${isTv ? "hover:bg-slate-900/60" : ""}`}
                 >
                   <td className={`${cellPadding} font-bold align-middle`}>
                     {statusBadge}
@@ -456,13 +456,13 @@ export function PainelImpressaoPage() {
                     <div className={`font-mono font-black ${
                       isAwaiting 
                         ? "text-slate-400 dark:text-slate-600 font-normal" 
-                        : "text-[#0b2f4a] dark:text-blue-400"
+                        : "text-blue-700 dark:text-blue-400"
                     }`}>
                       OS-{p.id_int}
                       {p.urgente && !isAwaiting && <span className="ml-1 text-red-500 text-[10px]" title="Urgente">⚡</span>}
                     </div>
                     <div className={`truncate max-w-[100px] ${
-                      isAwaiting ? "text-slate-350 dark:text-slate-650" : "text-slate-500"
+                      isAwaiting ? "text-slate-400 dark:text-slate-600" : "text-slate-500"
                     } ${textSmall}`} title={p.clienteNome}>
                       {p.clienteNome}
                     </div>
@@ -490,8 +490,8 @@ export function PainelImpressaoPage() {
                       {m.corMaterial && (
                         <span className={`px-1.5 py-0.2 rounded font-bold border ${
                           isAwaiting
-                            ? "bg-slate-50/50 dark:bg-slate-900/30 text-slate-350 dark:text-slate-650 border-slate-200/20 dark:border-slate-800/20"
-                            : "bg-slate-100 dark:bg-slate-800 text-slate-650 dark:text-slate-450 border-slate-205 dark:border-slate-700/35"
+                            ? "bg-slate-50/50 dark:bg-slate-900/30 text-slate-400 dark:text-slate-600 border-slate-200/20 dark:border-slate-800/20"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/35"
                         }`}>
                           {m.corMaterial}
                         </span>
@@ -500,7 +500,7 @@ export function PainelImpressaoPage() {
                         <span className={`px-1.5 py-0.2 rounded border font-bold ${
                           isAwaiting
                             ? "bg-purple-50/30 text-purple-400 dark:bg-purple-950/5 dark:text-purple-600 border-purple-100/20 dark:border-purple-900/20"
-                            : "bg-purple-50 text-purple-700 dark:bg-purple-950/20 dark:text-purple-455 border-purple-100 dark:border-purple-900/35"
+                            : "bg-purple-50 text-purple-700 dark:bg-purple-950/20 dark:text-purple-400 border-purple-100 dark:border-purple-900/35"
                         }`}>
                           F+V
                         </span>
@@ -509,7 +509,7 @@ export function PainelImpressaoPage() {
                         <span className={`px-1.5 py-0.2 rounded font-bold ${
                           isAwaiting
                             ? "bg-blue-50/30 text-blue-400 dark:bg-blue-950/5 dark:text-blue-600"
-                            : "bg-blue-50 text-blue-700 dark:bg-blue-950/20 dark:text-blue-455"
+                            : "bg-blue-50 text-blue-700 dark:bg-blue-950/20 dark:text-blue-400"
                         }`}>
                           VDP
                         </span>
@@ -527,7 +527,7 @@ export function PainelImpressaoPage() {
                     </span>
                   </td>
                   <td className={`${cellPadding} align-middle font-mono font-bold`}>
-                    <span className={isLate ? "text-red-650 dark:text-red-400 font-black animate-pulse" : "text-slate-600 dark:text-slate-450"}>
+                    <span className={isLate ? "text-red-600 dark:text-red-400 font-black animate-pulse" : "text-slate-600 dark:text-slate-400"}>
                       {new Date(p.dataPrevistaEntrega).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
                     </span>
                   </td>
@@ -548,7 +548,7 @@ export function PainelImpressaoPage() {
                           <button
                             type="button"
                             onClick={() => handlePausePrint(p.id_int)}
-                            className={`border border-orange-500 text-orange-500 hover:bg-orange-55 dark:hover:bg-orange-950/20 font-bold transition ${btnHeight}`}
+                            className={`border border-orange-500 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/20 font-bold transition ${btnHeight}`}
                           >
                             Pausar
                           </button>
@@ -627,7 +627,7 @@ export function PainelImpressaoPage() {
       {renderKpis()}
 
       {/* Filtros Operacionais */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 p-4 rounded-xl shadow-xs space-y-3 text-xs">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 p-4 rounded-xl shadow-sm space-y-3 text-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Status buttons */}
           <div className="flex flex-wrap gap-1">
@@ -661,8 +661,8 @@ export function PainelImpressaoPage() {
                   onClick={() => setFilterStatus(st)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border ${
                     isActive
-                      ? "bg-[#0b2f4a] text-white border-[#0b2f4a]"
-                      : "bg-white hover:bg-slate-50 border-slate-200 text-slate-650 dark:bg-slate-950 dark:hover:bg-slate-800 dark:border-slate-800 dark:text-slate-400"
+                      ? "bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 border-slate-900"
+                      : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-950 dark:hover:bg-slate-800 dark:border-slate-800 dark:text-slate-400"
                   }`}
                 >
                   <span>{label}</span>
@@ -689,7 +689,7 @@ export function PainelImpressaoPage() {
               <select
                 value={filterSetor}
                 onChange={(e) => setFilterSetor(e.target.value)}
-                className="h-8 px-2 rounded-lg border border-slate-200/60 dark:border-slate-800 bg-slate-50 dark:bg-slate-955 text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none"
+                className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none"
               >
                 <option value="todos">Todos os Setores</option>
                 {sectors.map(s => (
@@ -704,7 +704,7 @@ export function PainelImpressaoPage() {
               <select
                 value={filterMaterial}
                 onChange={(e) => setFilterMaterial(e.target.value)}
-                className="h-8 px-2 rounded-lg border border-slate-200/60 dark:border-slate-800 bg-slate-50 dark:bg-slate-955 text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none"
+                className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-955 text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none"
               >
                 <option value="todos">Todos os Materiais</option>
                 {materials.map(m => (
@@ -795,7 +795,7 @@ export function PainelImpressaoPage() {
       {/* Pause Modal */}
       {isPauseModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-xl">
+          <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-xl p-6 border border-slate-200 dark:border-slate-800 space-y-4 shadow-xl">
             <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">Registrar Pausa na Impressão</h3>
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
@@ -812,7 +812,7 @@ export function PainelImpressaoPage() {
               <button
                 onClick={submitPausa}
                 disabled={!pauseReason.trim()}
-                className="flex-1 h-9 bg-red-650 disabled:opacity-50 text-white font-bold rounded-xl hover:bg-red-700 transition"
+                className="flex-1 h-9 bg-red-600 disabled:opacity-50 text-white font-bold rounded-xl hover:bg-red-700 transition"
               >
                 Confirmar Pausa
               </button>

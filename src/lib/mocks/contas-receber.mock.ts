@@ -41,6 +41,10 @@ export type RecebivelMock = {
   dias_prorg?: number;
   dias_atraso?: number;
   valor_atualizado?: number;
+  is_avulso?: boolean;
+  is_faturado?: boolean;
+  multa?: number;
+  juros_dia?: number;
   observacao: string;
 };
 

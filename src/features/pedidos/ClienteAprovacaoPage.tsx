@@ -41,12 +41,10 @@ export function ClienteAprovacaoPage({ token }: ClienteAprovacaoPageProps) {
         </div>
       </div>
     );
-  }
-
-  if (!targetPedido || !targetModelo) {
+  }  if (!targetPedido || !targetModelo) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 text-center space-y-4">
+      <div className="min-h-screen bg-slate-955 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-6 text-center space-y-4">
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
           <h2 className="text-lg font-bold text-white">Link de Aprovação Inválido</h2>
           <p className="text-sm text-slate-400">
@@ -103,7 +101,7 @@ export function ClienteAprovacaoPage({ token }: ClienteAprovacaoPageProps) {
     targetModelo.statusArte === "EM_REVISAO_INTERNA";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center py-8 px-4">
+    <div className="min-h-screen bg-slate-955 text-slate-100 flex flex-col items-center py-8 px-4">
       {/* Header Banner - UX Prototype Alert */}
       <div className="max-w-md w-full mb-6 bg-blue-950/80 border border-blue-800 rounded-2xl p-4 text-xs text-blue-300 flex items-start gap-3">
         <AlertCircle className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
@@ -115,7 +113,7 @@ export function ClienteAprovacaoPage({ token }: ClienteAprovacaoPageProps) {
         </div>
       </div>
 
-      <main className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-6">
+      <main className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-6">
         {/* Lote Title */}
         <div className="border-b border-slate-800 pb-3 flex justify-between items-start">
           <div className="space-y-1">

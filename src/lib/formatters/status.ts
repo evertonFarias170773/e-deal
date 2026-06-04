@@ -1,5 +1,33 @@
 export function humanizeStatus(status: string) {
   const statusMap: Record<string, string> = {
+    // PedidoStatus
+    NOVO: "Novo",
+    ARTE_EM_ANDAMENTO: "Arte em Andamento",
+    AGUARDANDO_APROVACAO_CLIENTE: "Aguardando Cliente",
+    AGUARDANDO_APROVACAO_ATENDENTE: "Aguardando Atendente",
+    AGUARDANDO_OS: "Aguardando OS",
+    EM_IMPRESSAO: "Em Impressão",
+    EM_ACABAMENTO: "Em Acabamento",
+    REVISAO_FINAL: "Revisão Final",
+    PRONTO_EXPEDICAO: "Pronto p/ Expedição",
+    EXPEDIDO: "Expedido",
+
+    // ArteStatus
+    EM_CRIACAO: "Em Criação",
+    EM_REVISAO_INTERNA: "Revisão Interna",
+    AGUARDANDO_CLIENTE: "Aguardando Cliente",
+    REPROVADA_CLIENTE: "Reprovada p/ Cliente",
+    APROVADA_CLIENTE: "Aprovada p/ Cliente",
+    LIBERADA: "Arte Liberada",
+    IMPRESSA: "Arte Impressa",
+    NAO_NECESSARIA: "Sem Arte",
+    DESIGN_ATRIBUIDO: "Design Atribuído",
+
+    // ProducaoStatus
+    CONCLUIDA: "OS Concluída",
+    PAUSADA: "Produção Pausada",
+
+    // Existing statuses
     A_RECEBER: "A receber",
     A_VENCER: "A vencer",
     PAID: "Pago",

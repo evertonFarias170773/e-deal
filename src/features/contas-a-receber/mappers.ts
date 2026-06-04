@@ -1,7 +1,7 @@
 import type { BoletoDepositoMock, BoletoDepositoStatus, BoletoDepositoTipo } from "@/lib/mocks/contas-receber.mock";
 import type { SupabaseBoletoRow } from "./types.supabase";
 
-const BOLETO_DEPOSITO_TYPES = new Set<BoletoDepositoTipo>(["BOLETO", "DEPOSITO", "OUTRO_RECEBIVEL"]);
+
 const STATUS_VALIDOS = new Set<BoletoDepositoStatus>(["A_VENCER", "A_RECEBER", "PAID", "CANCELADO", "VENCIDO"]);
 
 function toText(value: unknown) {
@@ -116,10 +116,6 @@ function resolveVencimento(row: SupabaseBoletoRow) {
   return toIsoDate(row.vencimento);
 }
 
-function resolveValor(row: SupabaseBoletoRow) {
-  return toNumber(row.valor_atualizado ?? row.valor, 0);
-}
-
 function resolveValorOriginal(row: SupabaseBoletoRow) {
   return toNumber(row.valor, 0);
 }
@@ -184,6 +180,10 @@ export function mapSupabaseBoletoRowToBoletoDepositoMock(row: SupabaseBoletoRow)
     dias_prorg: resolveNumberOrUndefined(row.dias_prorg),
     dias_atraso: resolveNumberOrUndefined(row.dias_atraso),
     valor_atualizado: resolveNumberOrUndefined(row.valor_atualizado),
+    is_avulso: toBoolean(row.is_avulso, false),
+    is_faturado: toBoolean(row.is_faturado, false),
+    multa: resolveNumberOrUndefined(row.multa),
+    juros_dia: resolveNumberOrUndefined(row.juros_dia),
     observacao: resolveObservacao(row)
   };
 }

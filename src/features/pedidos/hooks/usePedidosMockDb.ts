@@ -730,6 +730,34 @@ export function usePedidosMockDb() {
     saveDb(updated);
   }, [pedidos, saveDb]);
 
+  const addPedido = useCallback((pedidoData: Omit<PedidoMock, "id_int" | "modelos">) => {
+    const nextId = pedidos.length > 0 ? Math.max(...pedidos.map(p => p.id_int)) + 1 : 18000;
+    const newPedido: PedidoMock = {
+      ...pedidoData,
+      id_int: nextId,
+      modelos: pedidoData.produtos ? pedidoData.produtos.flatMap(prod => prod.modelos) : []
+    };
+    const updated = [newPedido, ...pedidos];
+    saveDb(updated);
+
+    // Seed default chat messages for the new order
+    const chatKey = `${CHAT_STORAGE_KEY_PREFIX}${nextId}`;
+    const defaults: MockChatMessage[] = [
+      {
+        id: `chat_${nextId}_init`,
+        id_int: nextId,
+        autor_nome: "Sistema",
+        setor: "Sistema",
+        tipo: "SISTEMA",
+        mensagem: `Pedido/OS #${nextId} criado pelo vendedor ${pedidoData.vendedor} para o cliente ${pedidoData.clienteNome}.`,
+        created_at: new Date().toISOString()
+      }
+    ];
+    localStorage.setItem(chatKey, JSON.stringify(defaults));
+
+    return nextId;
+  }, [pedidos, saveDb]);
+
   return {
     pedidos,
     isLoaded,
@@ -748,6 +776,7 @@ export function usePedidosMockDb() {
     finalizarImpressaoModelo,
     getChatMessages,
     addChatMessage,
-    salvarComentarioInternoModelo
+    salvarComentarioInternoModelo,
+    addPedido
   };
 }

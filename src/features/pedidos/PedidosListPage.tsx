@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
-import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, User, Calendar, Scale, CheckCircle2, Clock, AlertTriangle, ShieldAlert } from "lucide-react";
+import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, User, Calendar, Scale, CheckCircle2, Clock, AlertTriangle, ShieldAlert, Plus } from "lucide-react";
 
 export function PedidosListPage() {
   const router = useRouter();
@@ -248,6 +248,13 @@ export function PedidosListPage() {
           <p className="text-xs text-slate-500 font-semibold">Controle integrado de ordens de serviço por produto e modelo</p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/pedidos/novo"
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Novo Boletim (Abertura OS)</span>
+          </Link>
           <button
             onClick={() => setIsCompact(!isCompact)}
             className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition flex items-center gap-1.5 ${
@@ -298,15 +305,15 @@ export function PedidosListPage() {
       {/* Filtros Rápidos (Barra de Badges) */}
       <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
         {[
-          { key: "all", label: "Tudo", count: totalCount, style: "border-slate-200 dark:border-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-350" },
-          { key: "atrasado", label: "Atrasados", count: atrasadosCount, style: "border-red-200 bg-red-50/20 text-red-750 dark:border-red-950 dark:text-red-400 hover:bg-red-50/50" },
-          { key: "urgente", label: "Urgentes", count: urgentesCount, style: "border-red-300 bg-red-50 text-red-800 dark:border-red-900/50 dark:text-red-450 hover:bg-red-100/40 animate-pulse" },
-          { key: "producao", label: "Produção", count: producaoCount, style: "border-orange-200 bg-orange-50/20 text-orange-755 dark:border-orange-950 dark:text-orange-400 hover:bg-orange-50/50" },
-          { key: "expedicao", label: "Expedição", count: expedicaoCount, style: "border-teal-200 bg-teal-50/15 text-teal-755 dark:border-teal-950 dark:text-teal-400 hover:bg-teal-50/50" },
-          { key: "aguardando_cliente", label: "Aguardando Clie.", count: aguardandoClienteCount, style: "border-blue-200 bg-blue-50/10 text-blue-755 dark:border-blue-950 dark:text-blue-400 hover:bg-blue-50/50" },
-          { key: "bloqueado", label: "Bloqueados", count: bloqueadosCount, style: "border-amber-250 bg-amber-50/20 text-amber-755 dark:border-amber-950 dark:text-amber-400 hover:bg-amber-50/50" },
-          { key: "hoje", label: "Prazo Hoje", count: hojeCount, style: "border-slate-250 bg-slate-100 text-slate-800 dark:border-slate-750 dark:text-slate-200 hover:bg-slate-200/55" },
-          { key: "semana", label: "Esta Semana", count: semanaCount, style: "border-purple-200 bg-purple-50/10 text-purple-755 dark:border-purple-950 dark:text-purple-400 hover:bg-purple-50/50" }
+          { key: "all", label: "Tudo", count: totalCount, style: "border-slate-200 dark:border-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-400" },
+          { key: "atrasado", label: "Atrasados", count: atrasadosCount, style: "border-red-200 bg-red-50/20 text-red-700 dark:border-red-950 dark:text-red-400 hover:bg-red-50/50" },
+          { key: "urgente", label: "Urgentes", count: urgentesCount, style: "border-red-250 bg-red-50 text-red-800 dark:border-red-900/50 dark:text-red-400 hover:bg-red-100/40 animate-pulse" },
+          { key: "producao", label: "Produção", count: producaoCount, style: "border-orange-200 bg-orange-50/20 text-orange-700 dark:border-orange-900 dark:text-orange-400 hover:bg-orange-50/50" },
+          { key: "expedicao", label: "Expedição", count: expedicaoCount, style: "border-teal-200 bg-teal-50/15 text-teal-700 dark:border-teal-900 dark:text-teal-400 hover:bg-teal-50/50" },
+          { key: "aguardando_cliente", label: "Aguardando Clie.", count: aguardandoClienteCount, style: "border-blue-200 bg-blue-50/10 text-blue-700 dark:border-blue-900 dark:text-blue-400 hover:bg-blue-50/50" },
+          { key: "bloqueado", label: "Bloqueados", count: bloqueadosCount, style: "border-amber-200 bg-amber-50/20 text-amber-700 dark:border-amber-900 dark:text-amber-450 hover:bg-amber-50/50" },
+          { key: "hoje", label: "Prazo Hoje", count: hojeCount, style: "border-slate-200 bg-slate-100 text-slate-800 dark:border-slate-700 dark:text-slate-200 hover:bg-slate-200/55" },
+          { key: "semana", label: "Esta Semana", count: semanaCount, style: "border-purple-200 bg-purple-50/10 text-purple-700 dark:border-purple-900 dark:text-purple-400 hover:bg-purple-50/50" }
         ].map((btn) => (
           <button
             key={btn.key}
@@ -503,29 +510,29 @@ export function PedidosListPage() {
                         <td className="py-3.5 px-3">
                           <div className="flex flex-col gap-1 max-w-[200px]">
                             {p.financialBlock && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-100 text-red-800 border border-red-200 text-[9px] font-black uppercase tracking-wider">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 text-red-700 border border-red-200 text-[9px] font-black uppercase tracking-wider">
                                 <ShieldAlert className="h-3 w-3 shrink-0" />
                                 <span>🔒 Bloqueio Financeiro</span>
                               </span>
                             )}
                             {p.blockReason && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-250 text-[9px] font-black uppercase tracking-wider animate-pulse">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700 border border-amber-200 text-[9px] font-black uppercase tracking-wider animate-pulse">
                                 <AlertTriangle className="h-3 w-3 shrink-0" />
                                 <span>⚠️ Pausa: {p.blockReason}</span>
                               </span>
                             )}
                             {hasReproved && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 text-red-750 border border-red-150 text-[9px] font-black uppercase tracking-wider">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-50 text-red-700 border border-red-200 text-[9px] font-black uppercase tracking-wider">
                                 <span>❌ Arte Reprovada</span>
                               </span>
                             )}
                             {hasPendingArte && !hasReproved && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-655 border border-slate-200 text-[9px] font-black uppercase tracking-wider">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 text-[9px] font-black uppercase tracking-wider">
                                 <span>🎨 Arte Pendente</span>
                               </span>
                             )}
                             {!bloqueado && !hasReproved && !hasPendingArte && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-150 text-[9px] font-black uppercase tracking-wider">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black uppercase tracking-wider">
                                 <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                                 <span>Lote Ok</span>
                               </span>
@@ -540,7 +547,7 @@ export function PedidosListPage() {
                               {formatDate(p.dataPrevistaEntrega)}
                             </span>
                             {atrasado && (
-                              <span className="text-[9px] text-red-650 font-black uppercase tracking-wide animate-pulse">
+                              <span className="text-[9px] text-red-600 font-black uppercase tracking-wide animate-pulse">
                                 Atrasado
                               </span>
                             )}
@@ -633,33 +640,33 @@ export function PedidosListPage() {
                         </td>
 
                         {/* Progresso */}
-                        <td className="py-1 px-2 text-slate-650 dark:text-slate-400">
+                        <td className="py-1 px-2 text-slate-600 dark:text-slate-400">
                           A:{arteProgress}%|F:{prodProgress}%
                         </td>
 
                         {/* Prazo */}
-                        <td className={`py-1 px-2 ${atrasado ? "bg-red-100 dark:bg-red-950/40 text-red-750 font-black" : "text-slate-750 dark:text-slate-350"}`}>
+                        <td className={`py-1 px-2 ${atrasado ? "bg-red-100 dark:bg-red-950/40 text-red-700 font-black" : "text-slate-700 dark:text-slate-300"}`}>
                           {p.dataPrevistaEntrega} {atrasado ? "⚠️" : ""}
                         </td>
 
                         {/* Alertas */}
                         <td className="py-1 px-2 truncate max-w-[240px]">
                           {p.financialBlock && (
-                            <span className="text-red-600 dark:text-red-450 font-black mr-2">🔒 FINANCIERO BLOQ.</span>
+                            <span className="text-red-600 dark:text-red-400 font-black mr-2">🔒 FINANCIERO BLOQ.</span>
                           )}
                           {p.blockReason && (
-                            <span className="text-amber-650 dark:text-amber-450 font-black mr-2">⚠️ PAUSA: {p.blockReason}</span>
+                            <span className="text-amber-600 dark:text-amber-400 font-black mr-2">⚠️ PAUSA: {p.blockReason}</span>
                           )}
                           {models.some(m => m.statusArte === "REPROVADA_CLIENTE") && (
                             <span className="text-red-500 font-black mr-2">❌ ARTE REPROVADA</span>
                           )}
                           {!bloqueado && !models.some(m => m.statusArte === "REPROVADA_CLIENTE") && (
-                            <span className="text-emerald-600 dark:text-emerald-450 font-bold">✓ OS NORMAL</span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ OS NORMAL</span>
                           )}
                         </td>
 
                         {/* Valor */}
-                        <td className="py-1 px-2 font-bold text-slate-800 dark:text-slate-205">
+                        <td className="py-1 px-2 font-bold text-slate-800 dark:text-slate-200">
                           {formatCurrency(p.valorTotal)}
                         </td>
 

@@ -203,7 +203,7 @@ export default function ModelosManagerPanel({
   };
 
   const getStepIndex = (status: ArteStatus) => {
-    if (status === "PENDENTE" || status === "EM_CRIACAO") return 0;
+    if (status === "PENDENTE" || status === "EM_CRIACAO" || status === "DESIGN_ATRIBUIDO") return 0;
     if (status === "EM_REVISAO_INTERNA") return 1;
     if (status === "AGUARDANDO_CLIENTE") return 2;
     if (status === "REPROVADA_CLIENTE") return 3;
@@ -398,7 +398,7 @@ export default function ModelosManagerPanel({
                         <div>
                           <span className="text-slate-400 block font-bold text-[8px] uppercase">AGUARDANDO QUEM?</span>
                           <strong className="text-[#0b2f4a] dark:text-blue-400 text-[9px] font-black uppercase">
-                            {m.statusArte === "PENDENTE" || m.statusArte === "EM_CRIACAO" ? "Designer (Criação)" :
+                            {m.statusArte === "PENDENTE" || m.statusArte === "EM_CRIACAO" || m.statusArte === "DESIGN_ATRIBUIDO" ? "Designer (Criação)" :
                              m.statusArte === "EM_REVISAO_INTERNA" ? "Atendente (Revisão)" :
                              m.statusArte === "AGUARDANDO_CLIENTE" ? "Cliente (Aprovação)" :
                              m.statusArte === "REPROVADA_CLIENTE" ? "Designer (Ajuste)" :
@@ -441,6 +441,12 @@ export default function ModelosManagerPanel({
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-[8px] font-black uppercase tracking-wider animate-pulse">
                             <Clock className="h-3 w-3" />
                             <span>Aguardando Designer (Criação)</span>
+                          </span>
+                        )}
+                        {m.statusArte === "DESIGN_ATRIBUIDO" && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300 text-[8px] font-black uppercase tracking-wider animate-pulse border border-sky-200 dark:border-sky-900/35">
+                            <Clock className="h-3 w-3" />
+                            <span>Arte Atribuída ao Designer</span>
                           </span>
                         )}
                         {m.statusArte === "REPROVADA_CLIENTE" && (
@@ -564,7 +570,7 @@ export default function ModelosManagerPanel({
                           )}
 
                           {/* Upload Input */}
-                          {(m.statusArte === "PENDENTE" || m.statusArte === "REPROVADA_CLIENTE" || m.statusArte === "EM_CRIACAO") && (
+                          {(m.statusArte === "PENDENTE" || m.statusArte === "REPROVADA_CLIENTE" || m.statusArte === "EM_CRIACAO" || m.statusArte === "DESIGN_ATRIBUIDO") && (
                             <div className="space-y-1.5">
                               <label className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block">Upload Nova Versão de Layout</label>
                               <div className="flex gap-2 items-center">

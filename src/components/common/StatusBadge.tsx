@@ -3,6 +3,36 @@ import { humanizeStatus } from "@/lib/formatters/status";
 import { cn } from "@/lib/utils";
 
 const toneByStatus: Record<string, StatusTone> = {
+  // PedidoStatus
+  NOVO: "info",
+  ARTE_EM_ANDAMENTO: "info",
+  AGUARDANDO_APROVACAO_CLIENTE: "warning",
+  AGUARDANDO_APROVACAO_ATENDENTE: "warning",
+  AGUARDANDO_OS: "info",
+  EM_IMPRESSAO: "special",
+  EM_ACABAMENTO: "special",
+  REVISAO_FINAL: "special",
+  PRONTO_EXPEDICAO: "success",
+  EXPEDIDO: "success",
+  CANCELADO: "neutral",
+
+  // ArteStatus
+  PENDENTE: "warning",
+  EM_CRIACAO: "info",
+  EM_REVISAO_INTERNA: "info",
+  AGUARDANDO_CLIENTE: "warning",
+  REPROVADA_CLIENTE: "danger",
+  APROVADA_CLIENTE: "success",
+  LIBERADA: "success",
+  IMPRESSA: "success",
+  NAO_NECESSARIA: "neutral",
+  DESIGN_ATRIBUIDO: "info",
+
+  // ProducaoStatus
+  CONCLUIDA: "success",
+  PAUSADA: "danger",
+
+  // Existing statuses
   APROVADO: "success",
   AUTORIZADA: "success",
   PAID: "success",
@@ -10,7 +40,6 @@ const toneByStatus: Record<string, StatusTone> = {
   LIBERADA_PARA_PEDIDO: "success",
   PRONTA_PARA_LIBERACAO: "info",
   A_VENCER: "warning",
-  PENDENTE: "warning",
   AGUARDANDO_CREDITO: "warning",
   AGUARDANDO: "info",
   AGUARDANDO_PAGAMENTO: "info",
@@ -23,7 +52,6 @@ const toneByStatus: Record<string, StatusTone> = {
   ERRO: "danger",
   ERRO_AUTORIZACAO: "danger",
   BLOQUEADA_VALIDACAO: "danger",
-  CANCELADO: "neutral",
   DENEGADA: "neutral",
   RASCUNHO: "neutral",
   NAO_CONFIRMADO: "neutral",
@@ -41,7 +69,7 @@ const toneStyles: Record<StatusTone, string> = {
   warning: "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
   danger:  "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300",
   neutral: "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  special: "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-900/30 dark:text-teal-300"
+  special: "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300"
 };
 
 type StatusBadgeProps = {

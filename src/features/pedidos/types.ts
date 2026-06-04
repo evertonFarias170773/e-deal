@@ -20,7 +20,8 @@ export type ArteStatus =
   | "APROVADA_CLIENTE"
   | "LIBERADA"
   | "IMPRESSA"
-  | "NAO_NECESSARIA";
+  | "NAO_NECESSARIA"
+  | "DESIGN_ATRIBUIDO";
 
 export type ProducaoStatus =
   | "PENDENTE"
@@ -80,6 +81,7 @@ export interface ModeloMock {
   bloco?: string;
   corMaterial?: string;
   csvDadosVariaveisUrl?: string;
+  gabaritoNumeracao?: string;
   observacoesTecnicas?: string;
   comentarioInterno?: string;
 }
@@ -89,12 +91,14 @@ export interface ProdutoMock {
   nome: string; // ex: Triband, Pulseira Tyvek, Credencial
   quantidade: number;
   pesoEstimado: number; // em kg
+  quantidadeOriginal?: number; // Qtd total da proposta
   modelos: ModeloMock[];
 }
 
 export interface PedidoMock {
   id_int: number;
   clienteNome: string;
+  contatoNome?: string;
   idCliente: number;
   empresa: string;
   vendedor: string;
@@ -124,6 +128,15 @@ export interface PedidoMock {
   };
   instrucoesDesign?: string;
   instrucoesImpressao?: string;
+  
+  // Especificações de acabamento e designer
+  verniz?: string;
+  laminacao?: string;
+  corte?: string;
+  furo?: string;
+  acabamentoEspecial?: string;
+  observacoesAcabamento?: string;
+  designerResponsavelOS?: string;
 
   // Estrutura hierárquica operacional
   produtos: ProdutoMock[];

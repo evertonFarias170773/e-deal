@@ -57,6 +57,8 @@ export type SupabaseBoletoRow = {
   ext_reference?: SupabaseNullableValue;
   deposito_conta?: SupabaseNullableValue;
   confirmado_por?: SupabaseNullableValue;
+  multa?: SupabaseNullableValue;
+  juros_dia?: SupabaseNullableValue;
   is_prorrogado?: SupabaseNullableValue;
   motivo_prorg?: SupabaseNullableValue;
   dias_prorg?: SupabaseNullableValue;

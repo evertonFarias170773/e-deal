@@ -206,7 +206,7 @@ export function ExpedicaoPage() {
   };
 
   const renderHeaderSelector = () => (
-    <div className="flex justify-between items-center gap-3 bg-white dark:bg-slate-900 border border-[#d7e5e8] dark:border-slate-800 p-2.5 rounded-2xl shadow-sm text-xs">
+    <div className="flex justify-between items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/40 p-2.5 rounded-xl shadow-sm text-xs">
       <div className="flex gap-2">
         <Link
           href="/pedidos"
@@ -233,46 +233,29 @@ export function ExpedicaoPage() {
           Expedição
         </Link>
       </div>
-      <div className="flex items-center gap-3">
-        {currentTime && (
-          <div className="h-8 px-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 shadow-sm text-xs">
-            <Clock className="h-3.5 w-3.5 text-blue-600" />
-            <span>{currentTime}</span>
-          </div>
-        )}
-      </div>
+      {currentTime && (
+        <div className="h-8 px-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 shadow-sm text-xs">
+          <Clock className="h-3.5 w-3.5 text-blue-600" />
+          <span>{currentTime}</span>
+        </div>
+      )}
+        <button
+          onClick={resetLocalStorage}
+          className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-xl px-2.5 py-1.5 text-[10px] font-bold transition border border-slate-200 dark:border-slate-700"
+          title="Resetar dados mock do localStorage"
+        >
+          <RefreshCw className="h-3 w-3" />
+          <span>Reset Mock</span>
+        </button>
     </div>
   );
 
   return (
     <div className="space-y-6">
-      {/* Banner de Protótipo */}
-      <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-blue-900 flex items-start justify-between gap-4">
-        <div className="flex gap-2">
-          <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-bold text-sm">PAINEL DE EXPEDIÇÃO & PESAGEM (PROTÓTIPO)</h4>
-            <p className="text-xs text-blue-700 mt-1">
-              Simulação de pesagem integrada de embalagens. Os desvios superiores a 5% bloqueiam o despacho físico.
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2 items-center shrink-0">
-          <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-1 rounded">MOCK LOCAL</span>
-          <button
-            onClick={resetLocalStorage}
-            className="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-xl px-3 py-1.5 text-xs font-bold transition"
-          >
-            <RefreshCw className="h-3 w-3" />
-            <span>Resetar Dados</span>
-          </button>
-        </div>
-      </div>
-
       {renderHeaderSelector()}
 
       {/* Barra de Filtro */}
-      <section className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm space-y-4">
+      <section className="rounded-xl border border-slate-200/50 dark:border-slate-800/40 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <div className="relative w-80">
@@ -317,7 +300,7 @@ export function ExpedicaoPage() {
       {/* Lista Principal */}
       <div className={`grid ${isCompact ? "gap-4" : "gap-6"} md:grid-cols-2`}>
         {/* Lado Esquerdo: Aguardando Pesagem/Despacho */}
-        <div className={`bg-slate-50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/80 rounded-3xl ${isCompact ? "p-3.5 space-y-3" : "p-5 space-y-4"}`}>
+        <div className={`bg-slate-50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/80 rounded-xl ${isCompact ? "p-3.5 space-y-3" : "p-5 space-y-4"}`}>
           <div className="border-b border-slate-200 dark:border-slate-800 pb-2 flex justify-between items-center text-xs font-black uppercase text-slate-500">
             <span className="flex items-center gap-1.5">
               <Scale className="h-4 w-4 text-blue-600" />
@@ -433,7 +416,7 @@ export function ExpedicaoPage() {
                           </div>
                           <button
                             onClick={() => handleDispatchWeight(pedido)}
-                            disabled={!isAllWeighed || isDivergente}
+                            disabled={!isAllWeighed || isDivergente || pedido.financialBlock}
                             className="h-8 px-4 bg-blue-600 disabled:opacity-50 text-white font-extrabold rounded-lg hover:bg-blue-700 text-xs flex items-center gap-1 transition"
                           >
                             <Truck className="h-3.5 w-3.5" />
@@ -463,12 +446,19 @@ export function ExpedicaoPage() {
                           
                           <button
                             onClick={() => handleDispatchWeight(pedido)}
-                            disabled={!isAllWeighed || isDivergente}
+                            disabled={!isAllWeighed || isDivergente || pedido.financialBlock}
                             className="w-full h-8 bg-blue-600 disabled:opacity-50 text-white font-extrabold rounded-lg hover:bg-blue-700 text-xs flex items-center justify-center gap-1 transition mt-2"
                           >
                             <Truck className="h-3.5 w-3.5" />
                             <span>Despachar Todos os {currentVol} Volumes ({totalWeight.toFixed(2)} kg)</span>
                           </button>
+                        </div>
+                      )}
+
+                      {pedido.financialBlock && (
+                        <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 p-2 rounded-lg text-[10px] font-bold border border-red-200 dark:border-red-900/40 flex items-center gap-1.5 animate-pulse mt-1">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          <span>EXPEDIÇÃO BLOQUEADA: AGUARDANDO CONFIRMAÇÃO FINANCEIRA</span>
                         </div>
                       )}
 
@@ -506,7 +496,7 @@ export function ExpedicaoPage() {
         </div>
 
         {/* Lado Direito: Despachados Hoje */}
-        <div className={`bg-slate-50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/80 rounded-3xl ${isCompact ? "p-3.5 space-y-3" : "p-5 space-y-4"}`}>
+        <div className={`bg-slate-50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/80 rounded-xl ${isCompact ? "p-3.5 space-y-3" : "p-5 space-y-4"}`}>
           <div className="border-b border-slate-200 dark:border-slate-800 pb-2 flex justify-between items-center text-xs font-black uppercase text-slate-500">
             <span className="flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
