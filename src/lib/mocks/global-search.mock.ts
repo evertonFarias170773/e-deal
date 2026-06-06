@@ -22,13 +22,7 @@ export const globalSearchResultsMock: GlobalSearchResult[] = [
     description: "Vencimento em 21/05/2026 - R$ 1.240,00",
     href: "/contas-a-receber"
   },
-  {
-    id: "nfe-16604",
-    type: "NF-e",
-    title: "NFE-16604-001",
-    description: "Autorizada - Ideal Biro - R$ 120,00",
-    href: "/notas-fiscais"
-  },
+
   {
     id: "os-0001",
     type: "OS",

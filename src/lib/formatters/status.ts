@@ -27,6 +27,7 @@ export function humanizeStatus(status: string) {
     CONCLUIDA: "OS Concluída",
     PAUSADA: "Produção Pausada",
 
+    PRONTA_PARA_ENVIO: "Pronta para Envio",
     // Existing statuses
     A_RECEBER: "A receber",
     A_VENCER: "A vencer",

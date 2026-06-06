@@ -32,6 +32,7 @@ const toneByStatus: Record<string, StatusTone> = {
   CONCLUIDA: "success",
   PAUSADA: "danger",
 
+  PRONTA_PARA_ENVIO: "info",
   // Existing statuses
   APROVADO: "success",
   AUTORIZADA: "success",
