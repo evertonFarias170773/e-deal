@@ -839,4 +839,95 @@ export async function invalidateNfePayments(idNotaFiscal: string): Promise<boole
   }
 }
 
+export async function getNfeFinanceiroStatus(refs: string[]) {
+  const client = getSupabaseClient();
+  if (!client || refs.length === 0) {
+    return { paymentsCountMap: {}, boletosMap: {} };
+  }
+
+  try {
+    // Buscar contagem de vencimentos ativos por ref
+    const { data: paymentsData, error: paymentsError } = await client
+      .from("notas_fiscais_pagamentos")
+      .select("ref, id")
+      .in("ref", refs)
+      .eq("ativo", true);
+
+    if (paymentsError) {
+      console.error("[NfeService] Error fetching payments count:", paymentsError);
+    }
+
+    // Buscar boletos correspondentes
+    const { data: boletosData, error: boletosError } = await client
+      .from("boletos")
+      .select("ext_reference, valor, parcela, status")
+      .in("ext_reference", refs);
+
+    if (boletosError) {
+      console.error("[NfeService] Error fetching boletos:", boletosError);
+    }
+
+    const paymentsCountMap: Record<string, number> = {};
+    paymentsData?.forEach((p) => {
+      if (p.ref) {
+        paymentsCountMap[p.ref] = (paymentsCountMap[p.ref] || 0) + 1;
+      }
+    });
+
+    const boletosMap: Record<string, { count: number; totalValor: number; parcelas: number[] }> = {};
+    boletosData?.forEach((b) => {
+      const ref = b.ext_reference as string;
+      if (ref) {
+        if (!boletosMap[ref]) {
+          boletosMap[ref] = { count: 0, totalValor: 0, parcelas: [] };
+        }
+        boletosMap[ref].count += 1;
+        boletosMap[ref].totalValor += Number(b.valor || 0);
+        if (b.parcela !== null && b.parcela !== undefined) {
+          boletosMap[ref].parcelas.push(Number(b.parcela));
+        }
+      }
+    });
+
+    return { paymentsCountMap, boletosMap };
+  } catch (err) {
+    console.error("[NfeService] getNfeFinanceiroStatus failed:", err);
+    return { paymentsCountMap: {}, boletosMap: {} };
+  }
+}
+
+export async function launchBoletosForNfe(
+  nfe: SupabaseNfeRow | NfeReadModel,
+  pagamentos: SupabaseNfePagamentoRow[],
+  clienteNome: string,
+  clienteDocumento: string
+) {
+  const client = getSupabaseClient();
+  if (!client) throw new Error("Supabase client not initialized");
+
+  const records = pagamentos.map((pg) => {
+    return {
+      id_int: nfe.id_int,
+      parcela: pg.numero_parcela,
+      total_parcelas: pg.total_parcelas,
+      valor: pg.valor,
+      vencimento: pg.data_vencimento,
+      status: "A_VENCER",
+      nome_cliente: clienteNome || null,
+      documento: clienteDocumento || null,
+      id_cliente: nfe.id_cliente,
+      id_empresa: nfe.id_empresa,
+      n_nf: nfe.numero_nf ? String(nfe.numero_nf) : null,
+      ext_reference: nfe.ref,
+      descricao: `Vencimento fiscal ${pg.numero_parcela}/${pg.total_parcelas} - Ref: ${nfe.ref}`,
+      is_faturado: true,
+      id_pagamento: String(pg.id)
+    };
+  });
+
+  const { data, error } = await client.from("boletos").insert(records);
+  if (error) throw error;
+  return data;
+}
+
 
