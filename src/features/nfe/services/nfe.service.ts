@@ -857,10 +857,10 @@ export async function getNfeFinanceiroStatus(refs: string[]) {
       console.error("[NfeService] Error fetching payments count:", paymentsError);
     }
 
-    // Buscar boletos correspondentes
+    // Buscar boletos correspondentes com todos os campos necessários para a revisão
     const { data: boletosData, error: boletosError } = await client
       .from("boletos")
-      .select("ext_reference, valor, parcela, status")
+      .select("id, id_int, ext_reference, valor, parcela, total_parcelas, vencimento, status, deposito_conta, id_boleto_c6, nosso_numero, linha_digitavel, multa, juros_dia, descricao, nome_cliente, documento, id_cliente, id_empresa, n_nf, is_faturado")
       .in("ext_reference", refs);
 
     if (boletosError) {
@@ -874,18 +874,14 @@ export async function getNfeFinanceiroStatus(refs: string[]) {
       }
     });
 
-    const boletosMap: Record<string, { count: number; totalValor: number; parcelas: number[] }> = {};
+    const boletosMap: Record<string, any[]> = {};
     boletosData?.forEach((b) => {
       const ref = b.ext_reference as string;
       if (ref) {
         if (!boletosMap[ref]) {
-          boletosMap[ref] = { count: 0, totalValor: 0, parcelas: [] };
+          boletosMap[ref] = [];
         }
-        boletosMap[ref].count += 1;
-        boletosMap[ref].totalValor += Number(b.valor || 0);
-        if (b.parcela !== null && b.parcela !== undefined) {
-          boletosMap[ref].parcelas.push(Number(b.parcela));
-        }
+        boletosMap[ref].push(b);
       }
     });
 
@@ -921,11 +917,44 @@ export async function launchBoletosForNfe(
       ext_reference: nfe.ref,
       descricao: `Vencimento fiscal ${pg.numero_parcela}/${pg.total_parcelas} - Ref: ${nfe.ref}`,
       is_faturado: true,
-      id_pagamento: String(pg.id)
+      id_pagamento: null // Sempre nulo neste fluxo, conforme ressalva obrigatória
     };
   });
 
   const { data, error } = await client.from("boletos").insert(records);
+  if (error) throw error;
+  return data;
+}
+
+export async function updateBoletoInDb(
+  id: string,
+  updates: {
+    vencimento?: string;
+    valor?: number;
+    descricao?: string;
+    deposito_conta?: boolean;
+    multa?: number | null;
+    juros_dia?: number | null;
+  }
+) {
+  const client = getSupabaseClient();
+  if (!client) throw new Error("Supabase client not initialized");
+
+  // Whitelist rígida dos campos editáveis para impedir alterações acidentais de campos bancários
+  const cleanUpdates: Record<string, any> = {};
+  const allowed = ["vencimento", "valor", "descricao", "deposito_conta", "multa", "juros_dia"];
+  for (const key of allowed) {
+    if (key in updates) {
+      cleanUpdates[key] = (updates as any)[key];
+    }
+  }
+
+  const { data, error } = await client
+    .from("boletos")
+    .update(cleanUpdates)
+    .eq("id", id)
+    .select("*");
+
   if (error) throw error;
   return data;
 }

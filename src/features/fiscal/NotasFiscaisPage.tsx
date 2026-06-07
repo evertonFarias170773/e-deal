@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { AlertTriangle, Copy, ExternalLink, FileText, Play, Send, Loader2, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, FileText, Play, Send, Loader2, CheckCircle2, Info, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -13,8 +13,9 @@ import { useNfeReadOnlyData } from "@/features/nfe/hooks/useNfeReadOnlyData";
 import { useNfseReadOnlyData } from "@/features/nfse/hooks/useNfseReadOnlyData";
 import type { NfeReadModel, SupabaseNfePagamentoRow } from "@/features/nfe/types";
 import type { NfseReadModel } from "@/features/nfse/types";
+import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
-import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos } from "@/features/nfe/services/nfe.service";
+import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, updateBoletoInDb } from "@/features/nfe/services/nfe.service";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
@@ -117,7 +118,7 @@ export function NotasFiscaisPage() {
   const nfseListCombined = useMemo(() => [...simulatedNfses, ...nfseData.nfseList], [simulatedNfses, nfseData.nfseList]);
 
   const [nfePaymentsCountMap, setNfePaymentsCountMap] = useState<Record<string, number>>({});
-  const [boletosMap, setBoletosMap] = useState<Record<string, { count: number; totalValor: number; parcelas: number[] }>>({});
+  const [boletosMap, setBoletosMap] = useState<Record<string, SupabaseBoletoRow[]>>({});
 
   const refreshFinanceiroStatusForRef = async (ref: string) => {
     try {
@@ -191,9 +192,85 @@ export function NotasFiscaisPage() {
     }
   };
 
+  const [launchSuccessModalOpen, setLaunchSuccessModalOpen] = useState(false);
+  const [justLaunchedNfe, setJustLaunchedNfe] = useState<NfeReadModel | null>(null);
+
+  const [selectedNfeForReview, setSelectedNfeForReview] = useState<NfeReadModel | null>(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [boletosForReview, setBoletosForReview] = useState<SupabaseBoletoRow[]>([]);
+  const [isLoadingReviewBoletos, setIsLoadingReviewBoletos] = useState(false);
+  const [isSavingReview, setIsSavingReview] = useState(false);
+
+  const handleOpenReviewModal = async (item: NfeReadModel) => {
+    setSelectedNfeForReview(item);
+    setReviewModalOpen(true);
+    setIsLoadingReviewBoletos(true);
+    setBoletosForReview([]);
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        const { data, error } = await client
+          .from("boletos")
+          .select("*")
+          .eq("ext_reference", item.ref)
+          .order("parcela", { ascending: true });
+        if (error) throw error;
+        setBoletosForReview(data || []);
+      }
+    } catch (err) {
+      console.error("[NotasFiscaisPage] failed to fetch boletos for review:", err);
+      showToast({ type: "error", title: "Erro ao carregar boletos para revisão." });
+    } finally {
+      setIsLoadingReviewBoletos(false);
+    }
+  };
+
+  const handleBoletoChange = (index: number, field: keyof SupabaseBoletoRow, value: SupabaseBoletoRow[keyof SupabaseBoletoRow]) => {
+    setBoletosForReview(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const handleSaveReview = async () => {
+    setIsSavingReview(true);
+    try {
+      for (const b of boletosForReview) {
+        await updateBoletoInDb(b.id, {
+          vencimento: b.vencimento ? new Date(String(b.vencimento)).toISOString().split('T')[0] : undefined,
+          valor: b.valor !== null && b.valor !== undefined ? Number(b.valor) : undefined,
+          descricao: b.descricao ? String(b.descricao) : undefined,
+          deposito_conta: !!b.deposito_conta,
+          multa: b.multa !== null && b.multa !== undefined ? Number(b.multa) : null,
+          juros_dia: b.juros_dia !== null && b.juros_dia !== undefined ? Number(b.juros_dia) : null,
+        });
+      }
+      showToast({
+        type: "success",
+        title: "Sucesso!",
+        description: "Os boletos foram atualizados com sucesso."
+      });
+      setReviewModalOpen(false);
+      if (selectedNfeForReview) {
+        void refreshFinanceiroStatusForRef(selectedNfeForReview.ref);
+      }
+    } catch (err) {
+      console.error("[NotasFiscaisPage] error saving boletos:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao salvar",
+        description: "Ocorreu um erro ao atualizar os boletos no banco."
+      });
+    } finally {
+      setIsSavingReview(false);
+    }
+  };
+
   const handleLaunchBoletos = async () => {
     if (!selectedNfeForLaunch) return;
-    const toLaunch = vencimentosForLaunch.filter(pg => !boletosMap[selectedNfeForLaunch.ref]?.parcelas.includes(pg.numero_parcela));
+    const launchedParcelas = boletosMap[selectedNfeForLaunch.ref]?.map(b => Number(b.parcela)) || [];
+    const toLaunch = vencimentosForLaunch.filter(pg => !launchedParcelas.includes(pg.numero_parcela));
     if (toLaunch.length === 0) return;
 
     setIsLaunchingBoleto(true);
@@ -211,7 +288,9 @@ export function NotasFiscaisPage() {
         description: `${toLaunch.length} boleto(s) lançado(s) com sucesso no Contas a Receber.`
       });
 
+      setJustLaunchedNfe(selectedNfeForLaunch);
       setLaunchModalOpen(false);
+      setLaunchSuccessModalOpen(true);
       void refreshFinanceiroStatusForRef(selectedNfeForLaunch.ref);
     } catch (err) {
       console.error("[NotasFiscaisPage] Error launching boletos:", err);
@@ -304,7 +383,7 @@ export function NotasFiscaisPage() {
     ref: string,
     valorTotalNf: number,
     nfePaymentsCount: number | undefined,
-    boletosInfo: { count: number; totalValor: number; parcelas: number[] } | undefined
+    boletos: SupabaseBoletoRow[] | undefined
   ) {
     if (!nfePaymentsCount || nfePaymentsCount === 0) {
       return {
@@ -314,7 +393,7 @@ export function NotasFiscaisPage() {
       };
     }
 
-    if (!boletosInfo || boletosInfo.count === 0) {
+    if (!boletos || boletos.length === 0) {
       return {
         status: "NAO_LANCADO",
         label: "Não lançado no contas a receber",
@@ -322,30 +401,68 @@ export function NotasFiscaisPage() {
       };
     }
 
-    const diff = boletosInfo.totalValor - valorTotalNf;
+    const totalValor = boletos.reduce((acc, b) => acc + Number(b.valor || 0), 0);
+    const diff = totalValor - valorTotalNf;
 
     // Divergência: soma dos boletos maior que o total da NF em mais de 0.05
     if (diff > 0.05) {
       return {
-        status: "DIVERGENCIA_MAIOR",
-        label: "Divergência (Soma maior que o total)",
+        status: "DIVERGENCIA",
+        label: "Divergência",
         tone: "danger" as const
       };
     }
 
-    // Sucesso: soma dentro da margem de tolerância
-    if (Math.abs(diff) <= 0.05) {
+    // Parcial: soma menor que o total em mais de 0.05
+    if (diff < -0.05) {
       return {
-        status: "LANCADO",
-        label: "Lançado no contas a receber",
+        status: "PARCIAL",
+        label: "Parcialmente lançado",
+        tone: "warning" as const
+      };
+    }
+
+    // A soma dos boletos é equivalente ao total da nota (+/- 0.05).
+    // Verificar se todos os boletos estão marcados como depósito em conta:
+    const allDeposito = boletos.every((b) => b.deposito_conta === true);
+    if (allDeposito) {
+      return {
+        status: "DEPOSITO_CONTA",
+        label: "Depósito em conta",
         tone: "success" as const
       };
     }
 
-    // Parcial: soma menor que o total
+    // Para boletos que NÃO são depósito em conta, verificar se estão registrados
+    const nonDepositoBoletos = boletos.filter((b) => b.deposito_conta !== true);
+    const allRegistered =
+      nonDepositoBoletos.length > 0 &&
+      nonDepositoBoletos.every((b) => {
+        return (
+          b.id_boleto_c6 !== null &&
+          b.id_boleto_c6 !== undefined &&
+          b.id_boleto_c6 !== "" ||
+          b.nosso_numero !== null &&
+          b.nosso_numero !== undefined &&
+          b.nosso_numero !== "" ||
+          b.linha_digitavel !== null &&
+          b.linha_digitavel !== undefined &&
+          b.linha_digitavel !== ""
+        );
+      });
+
+    if (allRegistered) {
+      return {
+        status: "BOLETO_REGISTRADO",
+        label: "Boleto registrado",
+        tone: "success" as const
+      };
+    }
+
+    // Pelo menos um boleto não-depósito está pendente de registro
     return {
-      status: "PARCIAL",
-      label: "Parcialmente lançado",
+      status: "A_RECEBER_CRIADO",
+      label: "A receber criado — boleto não registrado",
       tone: "warning" as const
     };
   }
@@ -492,7 +609,12 @@ export function NotasFiscaisPage() {
       const bInfo = boletosMap[item.ref];
       const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
 
-      if (finStatus.status !== "LANCADO") {
+      if (
+        finStatus.status !== "BOLETO_REGISTRADO" &&
+        finStatus.status !== "DEPOSITO_CONTA" &&
+        finStatus.status !== "A_RECEBER_CRIADO" &&
+        finStatus.status !== "SEM_VENCIMENTOS"
+      ) {
         actions.push({
           label: "Lançar no Contas a Receber",
           onClick: () => {
@@ -501,7 +623,13 @@ export function NotasFiscaisPage() {
         });
       }
 
-      if (bInfo && bInfo.count > 0) {
+      if (bInfo && bInfo.length > 0) {
+        actions.push({
+          label: "Revisar boletos lançados",
+          onClick: () => {
+            void handleOpenReviewModal(item);
+          }
+        });
         actions.push({
           label: "Ver contas a receber",
           onClick: () => {
@@ -1889,7 +2017,7 @@ export function NotasFiscaisPage() {
                     <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Parcelas do Vencimento Fiscal</h4>
                     <div className="border border-slate-100 rounded-2xl overflow-hidden divide-y divide-slate-100">
                       {vencimentosForLaunch.map((pg) => {
-                        const alreadyLaunched = boletosMap[selectedNfeForLaunch.ref]?.parcelas.includes(pg.numero_parcela) || false;
+                        const alreadyLaunched = boletosMap[selectedNfeForLaunch.ref]?.some(b => Number(b.parcela) === pg.numero_parcela) || false;
                         return (
                           <div key={pg.id} className="p-3.5 flex items-center justify-between gap-3 bg-white text-xs hover:bg-slate-50/50 transition">
                             <div className="space-y-1">
@@ -1926,7 +2054,7 @@ export function NotasFiscaisPage() {
 
                   {/* Resumo do Lançamento */}
                   {(() => {
-                    const toLaunch = vencimentosForLaunch.filter(pg => !boletosMap[selectedNfeForLaunch.ref]?.parcelas.includes(pg.numero_parcela));
+                    const toLaunch = vencimentosForLaunch.filter(pg => !boletosMap[selectedNfeForLaunch.ref]?.some(b => Number(b.parcela) === pg.numero_parcela));
                     if (toLaunch.length === 0) {
                       return (
                         <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs text-amber-800 space-y-1">
@@ -1973,7 +2101,7 @@ export function NotasFiscaisPage() {
                   disabled={
                     isLaunchingBoleto ||
                     isLoadingVencimentos ||
-                    vencimentosForLaunch.filter(pg => !boletosMap[selectedNfeForLaunch.ref]?.parcelas.includes(pg.numero_parcela)).length === 0
+                    vencimentosForLaunch.filter(pg => !boletosMap[selectedNfeForLaunch.ref]?.some(b => Number(b.parcela) === pg.numero_parcela)).length === 0
                   }
                   className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[150px]"
                 >
@@ -1987,6 +2115,329 @@ export function NotasFiscaisPage() {
                   )}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmação pós-lançamento */}
+      {launchSuccessModalOpen && (
+        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl shrink-0">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900 leading-tight">
+                Lançamento Concluído
+              </h3>
+            </div>
+            <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed">
+              Contas a receber criado com sucesso. Deseja revisar e registrar os boletos no banco agora?
+            </div>
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setLaunchSuccessModalOpen(false)}
+                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl"
+              >
+                Agora não
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLaunchSuccessModalOpen(false);
+                  if (justLaunchedNfe) {
+                    void handleOpenReviewModal(justLaunchedNfe);
+                  }
+                }}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center"
+              >
+                Revisar e registrar boletos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Revisão e Edição de Boletos */}
+      {reviewModalOpen && selectedNfeForReview && (
+        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-3xl w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-5 flex items-center justify-between border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl shrink-0">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 leading-tight">
+                    Revisar Boletos Lançados
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Ref: {selectedNfeForReview.ref}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl transition text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="px-6 py-6 overflow-y-auto max-h-[70vh] space-y-6">
+              {isLoadingReviewBoletos ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#0b2f4a]" />
+                  <span className="text-sm font-medium">Carregando boletos...</span>
+                </div>
+              ) : boletosForReview.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  Nenhum boleto encontrado para esta nota fiscal.
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Info da Nota */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-wrap gap-x-8 gap-y-3 text-xs text-slate-600">
+                    <div>
+                      <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Cliente</span>
+                      <strong className="text-slate-800 text-sm font-medium">
+                        {selectedNfeForReview.nome || selectedNfeForReview.fantasia || "Sem nome"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Documento</span>
+                      <strong className="text-slate-800 text-sm font-mono font-medium">
+                        {boletosForReview[0]?.documento || "Não informado"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Valor Total NF</span>
+                      <strong className="text-slate-800 text-sm font-medium">
+                        {formatCurrency(selectedNfeForReview.valor_total_nf)}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* Lista de Boletos (Cards) */}
+                  <div className="space-y-4">
+                    {boletosForReview.map((boleto, idx) => {
+                      const isRegistered = !!(boleto.id_boleto_c6 || boleto.nosso_numero || boleto.linha_digitavel);
+                      const isValDisabled = isRegistered || !!boleto.deposito_conta;
+                      
+                      return (
+                        <div
+                          key={boleto.id}
+                          className="p-5 border border-slate-100 rounded-3xl bg-white shadow-sm space-y-4 hover:border-slate-200 transition"
+                        >
+                          <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                            <span className="font-bold text-slate-800 text-sm">
+                              Parcela {boleto.parcela}/{boleto.total_parcelas}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {boleto.deposito_conta ? (
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 rounded-lg text-[10px]">
+                                  Depósito em Conta
+                                </span>
+                              ) : isRegistered ? (
+                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold border border-blue-200 rounded-lg text-[10px]">
+                                  Registrado no Banco
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-slate-50 text-slate-500 font-bold border border-slate-200 rounded-lg text-[10px]">
+                                  Pendente de Registro
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Inputs Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {/* Valor */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                Valor
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-medium">R$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  disabled={isValDisabled}
+                                  value={boleto.valor !== null && boleto.valor !== undefined ? Number(boleto.valor) : ""}
+                                  onChange={(e) => handleBoletoChange(idx, "valor", e.target.value === "" ? null : Number(e.target.value))}
+                                  className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white disabled:bg-slate-50 disabled:text-slate-500 focus:border-[#0b2f4a] outline-none font-mono"
+                                />
+                              </div>
+                              {isValDisabled && (
+                                <span className="text-[9px] text-slate-400 block italic leading-normal">
+                                  {isRegistered
+                                    ? "Valor bloqueado: Boleto já registrado no banco."
+                                    : "Valor bloqueado: Marcado como depósito em conta."}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Vencimento */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                Vencimento
+                              </label>
+                              <input
+                                type="date"
+                                value={boleto.vencimento ? String(boleto.vencimento).substring(0, 10) : ""}
+                                onChange={(e) => handleBoletoChange(idx, "vencimento", e.target.value)}
+                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
+                              />
+                            </div>
+
+                            {/* Descrição */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                Descrição
+                              </label>
+                              <input
+                                type="text"
+                                value={boleto.descricao ? String(boleto.descricao) : ""}
+                                onChange={(e) => handleBoletoChange(idx, "descricao", e.target.value)}
+                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none"
+                              />
+                            </div>
+
+                            {/* Multa */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                Multa (%)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={boleto.multa !== null && boleto.multa !== undefined ? Number(boleto.multa) : ""}
+                                onChange={(e) => handleBoletoChange(idx, "multa", e.target.value === "" ? null : Number(e.target.value))}
+                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
+                              />
+                            </div>
+
+                            {/* Juros */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                Juros/Dia (%)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.0001"
+                                value={boleto.juros_dia !== null && boleto.juros_dia !== undefined ? Number(boleto.juros_dia) : ""}
+                                onChange={(e) => handleBoletoChange(idx, "juros_dia", e.target.value === "" ? null : Number(e.target.value))}
+                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
+                              />
+                            </div>
+
+                            {/* Depósito em conta */}
+                            <div className="flex items-center gap-2 pt-5 font-sans">
+                              <input
+                                type="checkbox"
+                                id={`deposito-conta-${boleto.id}`}
+                                disabled={isRegistered}
+                                checked={!!boleto.deposito_conta}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  handleBoletoChange(idx, "deposito_conta", checked);
+                                }}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <label
+                                htmlFor={`deposito-conta-${boleto.id}`}
+                                className="text-xs font-semibold text-slate-700 cursor-pointer select-none"
+                              >
+                                Depósito em conta
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Bank details if registered */}
+                          {isRegistered && (
+                            <div className="mt-3 bg-slate-50 border border-slate-100 rounded-2xl p-3 text-[11px] text-slate-500 space-y-1 font-mono">
+                              <p className="flex justify-between">
+                                <span>Nosso Número:</span>
+                                <strong className="text-slate-800">{boleto.nosso_numero || "N/A"}</strong>
+                              </p>
+                              <p className="flex justify-between">
+                                <span>Linha Digitável:</span>
+                                <strong className="text-slate-800">{boleto.linha_digitavel || "N/A"}</strong>
+                              </p>
+                              <p className="flex justify-between">
+                                <span>ID C6:</span>
+                                <strong className="text-slate-800">{boleto.id_boleto_c6 || "N/A"}</strong>
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Registro Bancário Section */}
+                  {(() => {
+                    const pendingBankReg = boletosForReview.filter(b => {
+                      const isRegistered = !!(b.id_boleto_c6 || b.nosso_numero || b.linha_digitavel);
+                      return !b.deposito_conta && !isRegistered;
+                    });
+                    if (pendingBankReg.length > 0) {
+                      return (
+                        <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                          <div className="flex items-center gap-2">
+                            <Info className="h-4.5 w-4.5 text-blue-600" />
+                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Registro Bancário</span>
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed">
+                            Existem {pendingBankReg.length} boleto(s) elegível(is) para registro no banco. Boletos marcados como &quot;Depósito em conta&quot; não são elegíveis para registro bancário.
+                          </p>
+                          <button
+                            type="button"
+                            disabled
+                            className="w-full px-4 py-2.5 text-xs font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-xl cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            Registrar boletos no banco (C6 Bank)
+                          </button>
+                          <p className="text-[10px] text-slate-400 italic text-center leading-normal">
+                            A integração de registro via API n8n/C6 está sendo preparada para o próximo ciclo de desenvolvimento.
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setReviewModalOpen(false)}
+                disabled={isSavingReview}
+                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 disabled:opacity-50 transition rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveReview}
+                disabled={isSavingReview || isLoadingReviewBoletos || boletosForReview.length === 0}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[140px]"
+              >
+                {isSavingReview ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  "Salvar Alterações"
+                )}
+              </button>
             </div>
           </div>
         </div>
