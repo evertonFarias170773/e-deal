@@ -19,10 +19,15 @@ import {
   duplicarProposta,
   getPropostaChatResumos,
   loadChatReadInfo,
+  getPropostaDetailById,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
+import type { Proposta } from "@/features/orcamentos/types";
+
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const defaultStatusOrder = ["NOVO", "AGUARDANDO", "APROVADO", "CANCELADO"];
@@ -186,6 +191,10 @@ export function OrcamentosListPageReal() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { user } = useAuth();
+  const { getCobrancasByProposta } = useCobrancas();
+  const [selectedPropostaForCobranca, setSelectedPropostaForCobranca] = useState<Proposta | null>(null);
+  const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
+  const [isLoadingCobrancaProposta, setIsLoadingCobrancaProposta] = useState(false);
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
   const { propostas, source, warnings, detectedColumns, loadedCount, isLoading } = useOrcamentosReadOnlyData(periodo);
@@ -451,6 +460,113 @@ export function OrcamentosListPageReal() {
     }
   }
 
+  async function handleOpenCobrancaModal(item: OrcamentoListItem) {
+    if (item.mockProposal) {
+      setSelectedPropostaForCobranca(item.mockProposal);
+      setIsCobrancaModalOpen(true);
+      return;
+    }
+
+    if (isLoadingCobrancaProposta) return;
+    setIsLoadingCobrancaProposta(true);
+    showToast({
+      type: "info",
+      title: "Carregando proposta",
+      description: "Aguarde enquanto os dados da proposta são carregados..."
+    });
+
+    try {
+      const data = await getPropostaDetailById(item.id_int);
+      if (data) {
+        // Calculate saldoRestante using the exact same rule as PropostaCobrancaPanel:
+        const cobrancasDaProposta = getCobrancasByProposta(item.id_int);
+        const cobrancasAtivas = cobrancasDaProposta.filter((c) => c.status !== "CANCELADO");
+        const totalCobradoReal = cobrancasAtivas.reduce((total, c) => total + (c.cartao_valor_final ?? c.valor), 0);
+        const totalPropostaRounded = Math.round(data.resumo.valorTotal * 100) / 100;
+        const totalCobradoRealRounded = Math.round(totalCobradoReal * 100) / 100;
+        const saldoRestante = totalPropostaRounded - totalCobradoRealRounded;
+
+        if (saldoRestante <= 0) {
+          showToast({
+            type: "warning",
+            title: "Ação bloqueada",
+            description: "Esta proposta já foi totalmente cobrada (saldo restante é R$ 0,00)."
+          });
+          return;
+        }
+
+        setSelectedPropostaForCobranca(data);
+        setIsCobrancaModalOpen(true);
+      } else {
+        throw new Error("Proposta não encontrada.");
+      }
+    } catch (err) {
+      console.error("[OrcamentosListPageReal] Error loading proposal for cobranca:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao carregar proposta",
+        description: err instanceof Error ? err.message : "Não foi possível carregar os detalhes."
+      });
+    } finally {
+      setIsLoadingCobrancaProposta(false);
+    }
+  }
+
+  async function handleCopiarPropostaInformal(item: OrcamentoListItem) {
+    if (item.mockProposal) {
+      const frete = item.mockProposal.fretes.find((freteItem) => freteItem.id === item.mockProposal!.freteEscolhidoId);
+      const text = buildPropostaInformalText({
+        id_int: item.mockProposal.id_int,
+        clienteNome: item.mockProposal.cliente.nome,
+        itens: item.mockProposal.itens,
+        frete,
+        resumo: item.mockProposal.resumo,
+        formaPagamento: item.mockProposal.formaPagamento
+      });
+
+      try {
+        await navigator.clipboard?.writeText(text);
+        showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
+      } catch {
+        showToast({ type: "error", title: "Erro ao copiar", description: "Não foi possível copiar para a área de transferência." });
+      }
+      return;
+    }
+
+    showToast({
+      type: "info",
+      title: "Carregando proposta",
+      description: "Aguarde enquanto os dados da proposta são carregados..."
+    });
+
+    try {
+      const data = await getPropostaDetailById(item.id_int);
+      if (data) {
+        const frete = data.fretes.find((freteItem) => freteItem.id === data.freteEscolhidoId);
+        const text = buildPropostaInformalText({
+          id_int: data.id_int,
+          clienteNome: data.cliente.nome,
+          itens: data.itens,
+          frete,
+          resumo: data.resumo,
+          formaPagamento: data.formaPagamento
+        });
+
+        await navigator.clipboard?.writeText(text);
+        showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
+      } else {
+        throw new Error("Proposta não encontrada.");
+      }
+    } catch (err) {
+      console.error("[OrcamentosListPageReal] Error copying proposal informal text:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao copiar proposta",
+        description: err instanceof Error ? err.message : "Não foi possível carregar os detalhes."
+      });
+    }
+  }
+
   function getActions(item: OrcamentoListItem) {
     const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0" || item.clienteId === "null" || Boolean(item.mockProposal?.clienteNaoCadastrado);
     const chatResumo = chatResumos[item.id_int];
@@ -466,24 +582,10 @@ export function OrcamentosListPageReal() {
         { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
         {
           label: "Copiar proposta informal",
-          onClick: async () => {
-            const frete = item.mockProposal!.fretes.find((freteItem) => freteItem.id === item.mockProposal!.freteEscolhidoId);
-            const text = buildPropostaInformalText({
-              id_int: item.mockProposal!.id_int,
-              clienteNome: item.mockProposal!.cliente.nome,
-              itens: item.mockProposal!.itens,
-              frete,
-              resumo: item.mockProposal!.resumo,
-              formaPagamento: item.mockProposal!.formaPagamento
-            });
-
-            await navigator.clipboard?.writeText(text);
-            showToast({ type: "success", title: "Resumo cobrado", description: "Proposta informal copiada para WhatsApp." });
-          }
+          onClick: () => void handleCopiarPropostaInformal(item)
         },
         { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
-        ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) }] : []),
-        { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
+        ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
         { label: "Cancelar proposta", destructive: true, onClick: () => showMockAction("Cancelar proposta") }
       ];
     }
@@ -493,10 +595,12 @@ export function OrcamentosListPageReal() {
       { label: chatLabel, onClick: () => handleOpenChat(item) },
       { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
       { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
-      { label: "Copiar proposta informal", onClick: () => showToast({ type: "info", title: "Resumo informal ainda nao disponivel para dados reais." }) },
+      {
+        label: "Copiar proposta informal",
+        onClick: () => void handleCopiarPropostaInformal(item)
+      },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
-      ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => router.push(`/cobrancas/nova?id_int=${item.id_int}`) }] : []),
-      { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
+      ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
       { label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }
     ];
   }
@@ -829,6 +933,19 @@ export function OrcamentosListPageReal() {
           ) : null}
         </section>
       ) : null}
+
+      {isCobrancaModalOpen && selectedPropostaForCobranca && (
+        <PropostaCobrancaPanel
+          proposta={selectedPropostaForCobranca}
+          isModalOpen={isCobrancaModalOpen}
+          onOpenModal={() => setIsCobrancaModalOpen(true)}
+          onCloseModal={() => {
+            setIsCobrancaModalOpen(false);
+            setSelectedPropostaForCobranca(null);
+          }}
+          onlyModal={true}
+        />
+      )}
     </div>
   );
 }

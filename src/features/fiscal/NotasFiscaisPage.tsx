@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { AlertTriangle, Copy, ExternalLink, FileText, Play, Send, Loader2, CheckCircle2, Info, X } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, FileText, Play, Send, Loader2, CheckCircle2, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -15,12 +15,59 @@ import type { NfeReadModel, SupabaseNfePagamentoRow } from "@/features/nfe/types
 import type { NfseReadModel } from "@/features/nfse/types";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
-import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, updateBoletoInDb } from "@/features/nfe/services/nfe.service";
+import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos } from "@/features/nfe/services/nfe.service";
+import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
 import { faturaveisMocks } from "./mocks/faturaveis.mock";
 import { FaturamentoPreviewPanel } from "./components/FaturamentoPreviewPanel";
+
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+function parseFocusResponse(data: any): { success: boolean; message: string } {
+  if (!data) {
+    return { success: false, message: "Resposta do servidor vazia." };
+  }
+
+  const normalized = Array.isArray(data) ? data[0] : data;
+  const body = normalized?.body ?? normalized;
+
+  const statusCode = Number(normalized?.statusCode ?? body?.statusCode ?? normalized?.status_code ?? body?.status_code ?? 200);
+  if (statusCode >= 400) {
+    const errMsg = body?.erro?.mensagem || body?.error || body?.message || body?.mensagem || "Erro processado pelo webhook.";
+    return { success: false, message: `${errMsg} (Status: ${statusCode})` };
+  }
+
+  if (body.erro) {
+    if (typeof body.erro === "object") {
+      return { success: false, message: body.erro.mensagem || body.erro.message || JSON.stringify(body.erro) };
+    }
+    return { success: false, message: String(body.erro) };
+  }
+
+  if (body.error || body.errors) {
+    const err = body.error || body.errors;
+    return { success: false, message: typeof err === "object" ? (err.message || JSON.stringify(err)) : String(err) };
+  }
+
+  if (body.status === "erro" || body.status === "rejeitado" || body.status === "erro_autorizacao") {
+    return { success: false, message: body.mensagem || body.mensagem_sefaz || "Erro retornado pela SEFAZ/Focus API." };
+  }
+
+  if (body.codigo) {
+    const lowerCode = String(body.codigo).toLowerCase();
+    const successCodes = ["100", "135", "sucesso", "autorizado", "cancelado", "cce_registrada"];
+    if (!successCodes.includes(lowerCode)) {
+      return { success: false, message: body.mensagem || body.mensagem_sefaz || `Erro retornado pela API (Código: ${body.codigo})` };
+    }
+  }
+
+  if (body.mensagem_sefaz && (body.mensagem_sefaz.toLowerCase().includes("rejeicao") || body.mensagem_sefaz.toLowerCase().includes("rejeição"))) {
+    return { success: false, message: body.mensagem_sefaz };
+  }
+
+  return { success: true, message: "Operação realizada com sucesso." };
+}
 
 function getFormaPagamentoLabel(forma: string) {
   if (forma === "01") return "Dinheiro";
@@ -197,73 +244,170 @@ export function NotasFiscaisPage() {
 
   const [selectedNfeForReview, setSelectedNfeForReview] = useState<NfeReadModel | null>(null);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
-  const [boletosForReview, setBoletosForReview] = useState<SupabaseBoletoRow[]>([]);
-  const [isLoadingReviewBoletos, setIsLoadingReviewBoletos] = useState(false);
-  const [isSavingReview, setIsSavingReview] = useState(false);
 
-  const handleOpenReviewModal = async (item: NfeReadModel) => {
+  const handleOpenReviewModal = (item: NfeReadModel) => {
     setSelectedNfeForReview(item);
     setReviewModalOpen(true);
-    setIsLoadingReviewBoletos(true);
-    setBoletosForReview([]);
-    try {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client
-          .from("boletos")
-          .select("*")
-          .eq("ext_reference", item.ref)
-          .order("parcela", { ascending: true });
-        if (error) throw error;
-        setBoletosForReview(data || []);
-      }
-    } catch (err) {
-      console.error("[NotasFiscaisPage] failed to fetch boletos for review:", err);
-      showToast({ type: "error", title: "Erro ao carregar boletos para revisão." });
-    } finally {
-      setIsLoadingReviewBoletos(false);
+  };
+
+  // States para Carta de Correção (CCe)
+  const [cceModalOpen, setCceModalOpen] = useState(false);
+  const [cceText, setCceText] = useState("");
+  const [cceLoading, setCceLoading] = useState(false);
+  const [cceNote, setCceNote] = useState<NfeReadModel | null>(null);
+
+  // States para Cancelamento
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelJustificativa, setCancelJustificativa] = useState("");
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelNoteNfe, setCancelNoteNfe] = useState<NfeReadModel | null>(null);
+  const [cancelNoteNfse, setCancelNoteNfse] = useState<NfseReadModel | null>(null);
+
+  const handleOpenCceModal = (note: NfeReadModel) => {
+    if (!note.id_empresa) {
+      showToast({ type: "error", title: "Empresa não identificada", description: "Não é possível emitir Carta de Correção sem identificar a empresa emitente." });
+      return;
     }
+    setCceNote(note);
+    setCceText("");
+    setCceModalOpen(true);
   };
 
-  const handleBoletoChange = (index: number, field: keyof SupabaseBoletoRow, value: SupabaseBoletoRow[keyof SupabaseBoletoRow]) => {
-    setBoletosForReview(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
-      return next;
-    });
+  const handleOpenCancelNfeModal = (note: NfeReadModel) => {
+    if (!note.id_empresa) {
+      showToast({ type: "error", title: "Empresa não identificada", description: "Não é possível cancelar NF-e sem identificar a empresa emitente." });
+      return;
+    }
+    setCancelNoteNfe(note);
+    setCancelNoteNfse(null);
+    setCancelJustificativa("");
+    setCancelModalOpen(true);
   };
 
-  const handleSaveReview = async () => {
-    setIsSavingReview(true);
+  const handleOpenCancelNfseModal = (note: NfseReadModel) => {
+    if (!note.id_empresa) {
+      showToast({ type: "error", title: "Empresa não identificada", description: "Não é possível cancelar NFS-e sem identificar a empresa emitente." });
+      return;
+    }
+    setCancelNoteNfse(note);
+    setCancelNoteNfe(null);
+    setCancelJustificativa("");
+    setCancelModalOpen(true);
+  };
+
+  const handleSendCce = async () => {
+    if (!cceNote) return;
+    if (!cceNote.id_empresa) {
+      showToast({ type: "error", title: "Erro de validação", description: "A empresa emitente não foi identificada." });
+      return;
+    }
+    if (cceText.trim().length < 15) {
+      showToast({ type: "error", title: "Erro de validação", description: "A correção deve conter pelo menos 15 caracteres." });
+      return;
+    }
+    setCceLoading(true);
     try {
-      for (const b of boletosForReview) {
-        await updateBoletoInDb(b.id, {
-          vencimento: b.vencimento ? new Date(String(b.vencimento)).toISOString().split('T')[0] : undefined,
-          valor: b.valor !== null && b.valor !== undefined ? Number(b.valor) : undefined,
-          descricao: b.descricao ? String(b.descricao) : undefined,
-          deposito_conta: !!b.deposito_conta,
-          multa: b.multa !== null && b.multa !== undefined ? Number(b.multa) : null,
-          juros_dia: b.juros_dia !== null && b.juros_dia !== undefined ? Number(b.juros_dia) : null,
-        });
+      const response = await fetch("https://10074.hostoo.net.br/webhook/carta-correcao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_empresa: Number(cceNote.id_empresa),
+          referencia: cceNote.ref,
+          correcao: cceText.trim()
+        })
+      });
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("A resposta da API de Carta de Correção não é um JSON válido.");
       }
+
+      if (!response.ok) {
+        const errorMsg = data.erro?.mensagem || data.error || data.message || `Erro HTTP ${response.status}`;
+        throw new Error(errorMsg);
+      }
+
+      const parsed = parseFocusResponse(data);
+      if (!parsed.success) throw new Error(parsed.message);
+
       showToast({
         type: "success",
         title: "Sucesso!",
-        description: "Os boletos foram atualizados com sucesso."
+        description: "A solicitação foi enviada. Atualize a nota para conferir o status final."
       });
-      setReviewModalOpen(false);
-      if (selectedNfeForReview) {
-        void refreshFinanceiroStatusForRef(selectedNfeForReview.ref);
-      }
+      setCceModalOpen(false);
     } catch (err) {
-      console.error("[NotasFiscaisPage] error saving boletos:", err);
+      console.error("[NotasFiscaisPage] Error emitting CCe:", err);
       showToast({
         type: "error",
-        title: "Erro ao salvar",
-        description: "Ocorreu um erro ao atualizar os boletos no banco."
+        title: "Falha ao emitir Carta de Correção",
+        description: err instanceof Error ? err.message : "Erro desconhecido."
       });
     } finally {
-      setIsSavingReview(false);
+      setCceLoading(false);
+    }
+  };
+
+  const handleSendCancel = async () => {
+    const note = cancelNoteNfe || cancelNoteNfse;
+    if (!note) return;
+    if (!note.id_empresa) {
+      showToast({ type: "error", title: "Erro de validação", description: "A empresa emitente não foi identificada." });
+      return;
+    }
+    if (cancelJustificativa.trim().length < 15) {
+      showToast({ type: "error", title: "Erro de validação", description: "A justificativa deve conter pelo menos 15 caracteres." });
+      return;
+    }
+    setCancelLoading(true);
+    try {
+      const isNfse = !!cancelNoteNfse;
+      const url = isNfse 
+        ? "https://10074.hostoo.net.br/webhook/cancelamento-nfse" 
+        : "https://10074.hostoo.net.br/webhook/cancelamento";
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_empresa: Number(note.id_empresa),
+          referencia: note.ref,
+          justificativa: cancelJustificativa.trim()
+        })
+      });
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("A resposta da API de cancelamento não é um JSON válido.");
+      }
+
+      if (!response.ok) {
+        const errorMsg = data.erro?.mensagem || data.error || data.message || `Erro HTTP ${response.status}`;
+        throw new Error(errorMsg);
+      }
+
+      const parsed = parseFocusResponse(data);
+      if (!parsed.success) throw new Error(parsed.message);
+
+      showToast({
+        type: "success",
+        title: "Sucesso!",
+        description: "A solicitação foi enviada. Atualize a nota para conferir o status final."
+      });
+      setCancelModalOpen(false);
+    } catch (err) {
+      console.error("[NotasFiscaisPage] Error canceling note:", err);
+      showToast({
+        type: "error",
+        title: "Falha ao cancelar nota fiscal",
+        description: err instanceof Error ? err.message : "Erro desconhecido."
+      });
+    } finally {
+      setCancelLoading(false);
     }
   };
 
@@ -625,7 +769,7 @@ export function NotasFiscaisPage() {
 
       if (bInfo && bInfo.length > 0) {
         actions.push({
-          label: "Revisar boletos lançados",
+          label: "Revisar para gerar boletos",
           onClick: () => {
             void handleOpenReviewModal(item);
           }
@@ -644,11 +788,11 @@ export function NotasFiscaisPage() {
 
       actions.push({
         label: "Cancelar NF-e",
-        disabled: true
+        onClick: () => handleOpenCancelNfeModal(item)
       });
       actions.push({
         label: "Carta de Correção",
-        disabled: true
+        onClick: () => handleOpenCceModal(item)
       });
     }
 
@@ -691,6 +835,15 @@ export function NotasFiscaisPage() {
         icon: Copy
       }
     ];
+
+    const nfseStatus = (item.status || "").toUpperCase();
+    if (nfseStatus === "AUTORIZADA") {
+      actions.push({
+        label: "Cancelar NFS-e",
+        onClick: () => handleOpenCancelNfseModal(item),
+        icon: AlertTriangle
+      });
+    }
 
     if (item.url_pdf) {
       actions.push({
@@ -2161,281 +2314,140 @@ export function NotasFiscaisPage() {
       )}
 
       {/* Modal de Revisão e Edição de Boletos */}
-      {reviewModalOpen && selectedNfeForReview && (
-        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-3xl w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+      <RevisarGeracaoBancariaModal
+        isOpen={reviewModalOpen}
+        onClose={() => setReviewModalOpen(false)}
+        extReference={selectedNfeForReview?.ref || ""}
+        nomeCliente={selectedNfeForReview?.nome || selectedNfeForReview?.fantasia || undefined}
+        valorTotalNf={selectedNfeForReview?.valor_total_nf}
+        onSaveSuccess={() => {
+          if (selectedNfeForReview) {
+            void refreshFinanceiroStatusForRef(selectedNfeForReview.ref);
+          }
+        }}
+      />
+
+      {/* Modal de Carta de Correção (CCe) */}
+      {cceModalOpen && cceNote && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
             {/* Header */}
             <div className="px-6 py-5 flex items-center justify-between border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl shrink-0">
-                  <FileText className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 leading-tight">
-                    Revisar Boletos Lançados
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5 font-mono">Ref: {selectedNfeForReview.ref}</p>
-                </div>
-              </div>
+              <h3 className="text-base font-bold text-slate-900">Carta de Correção (CCe)</h3>
               <button
                 type="button"
-                onClick={() => setReviewModalOpen(false)}
+                onClick={() => setCceModalOpen(false)}
                 className="p-1.5 hover:bg-slate-100 rounded-xl transition text-slate-400 hover:text-slate-600"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-
-            {/* Content Area */}
-            <div className="px-6 py-6 overflow-y-auto max-h-[70vh] space-y-6">
-              {isLoadingReviewBoletos ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
-                  <Loader2 className="h-8 w-8 animate-spin text-[#0b2f4a]" />
-                  <span className="text-sm font-medium">Carregando boletos...</span>
-                </div>
-              ) : boletosForReview.length === 0 ? (
-                <div className="text-center py-12 text-slate-500">
-                  Nenhum boleto encontrado para esta nota fiscal.
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Info da Nota */}
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-wrap gap-x-8 gap-y-3 text-xs text-slate-600">
-                    <div>
-                      <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Cliente</span>
-                      <strong className="text-slate-800 text-sm font-medium">
-                        {selectedNfeForReview.nome || selectedNfeForReview.fantasia || "Sem nome"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Documento</span>
-                      <strong className="text-slate-800 text-sm font-mono font-medium">
-                        {boletosForReview[0]?.documento || "Não informado"}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Valor Total NF</span>
-                      <strong className="text-slate-800 text-sm font-medium">
-                        {formatCurrency(selectedNfeForReview.valor_total_nf)}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {/* Lista de Boletos (Cards) */}
-                  <div className="space-y-4">
-                    {boletosForReview.map((boleto, idx) => {
-                      const isRegistered = !!(boleto.id_boleto_c6 || boleto.nosso_numero || boleto.linha_digitavel);
-                      const isValDisabled = isRegistered || !!boleto.deposito_conta;
-                      
-                      return (
-                        <div
-                          key={boleto.id}
-                          className="p-5 border border-slate-100 rounded-3xl bg-white shadow-sm space-y-4 hover:border-slate-200 transition"
-                        >
-                          <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-                            <span className="font-bold text-slate-800 text-sm">
-                              Parcela {boleto.parcela}/{boleto.total_parcelas}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {boleto.deposito_conta ? (
-                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 rounded-lg text-[10px]">
-                                  Depósito em Conta
-                                </span>
-                              ) : isRegistered ? (
-                                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold border border-blue-200 rounded-lg text-[10px]">
-                                  Registrado no Banco
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 bg-slate-50 text-slate-500 font-bold border border-slate-200 rounded-lg text-[10px]">
-                                  Pendente de Registro
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Inputs Grid */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {/* Valor */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                Valor
-                              </label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-medium">R$</span>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  disabled={isValDisabled}
-                                  value={boleto.valor !== null && boleto.valor !== undefined ? Number(boleto.valor) : ""}
-                                  onChange={(e) => handleBoletoChange(idx, "valor", e.target.value === "" ? null : Number(e.target.value))}
-                                  className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white disabled:bg-slate-50 disabled:text-slate-500 focus:border-[#0b2f4a] outline-none font-mono"
-                                />
-                              </div>
-                              {isValDisabled && (
-                                <span className="text-[9px] text-slate-400 block italic leading-normal">
-                                  {isRegistered
-                                    ? "Valor bloqueado: Boleto já registrado no banco."
-                                    : "Valor bloqueado: Marcado como depósito em conta."}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Vencimento */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                Vencimento
-                              </label>
-                              <input
-                                type="date"
-                                value={boleto.vencimento ? String(boleto.vencimento).substring(0, 10) : ""}
-                                onChange={(e) => handleBoletoChange(idx, "vencimento", e.target.value)}
-                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
-                              />
-                            </div>
-
-                            {/* Descrição */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                Descrição
-                              </label>
-                              <input
-                                type="text"
-                                value={boleto.descricao ? String(boleto.descricao) : ""}
-                                onChange={(e) => handleBoletoChange(idx, "descricao", e.target.value)}
-                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none"
-                              />
-                            </div>
-
-                            {/* Multa */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                Multa (%)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={boleto.multa !== null && boleto.multa !== undefined ? Number(boleto.multa) : ""}
-                                onChange={(e) => handleBoletoChange(idx, "multa", e.target.value === "" ? null : Number(e.target.value))}
-                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
-                              />
-                            </div>
-
-                            {/* Juros */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                Juros/Dia (%)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.0001"
-                                value={boleto.juros_dia !== null && boleto.juros_dia !== undefined ? Number(boleto.juros_dia) : ""}
-                                onChange={(e) => handleBoletoChange(idx, "juros_dia", e.target.value === "" ? null : Number(e.target.value))}
-                                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
-                              />
-                            </div>
-
-                            {/* Depósito em conta */}
-                            <div className="flex items-center gap-2 pt-5 font-sans">
-                              <input
-                                type="checkbox"
-                                id={`deposito-conta-${boleto.id}`}
-                                disabled={isRegistered}
-                                checked={!!boleto.deposito_conta}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  handleBoletoChange(idx, "deposito_conta", checked);
-                                }}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                              <label
-                                htmlFor={`deposito-conta-${boleto.id}`}
-                                className="text-xs font-semibold text-slate-700 cursor-pointer select-none"
-                              >
-                                Depósito em conta
-                              </label>
-                            </div>
-                          </div>
-
-                          {/* Bank details if registered */}
-                          {isRegistered && (
-                            <div className="mt-3 bg-slate-50 border border-slate-100 rounded-2xl p-3 text-[11px] text-slate-500 space-y-1 font-mono">
-                              <p className="flex justify-between">
-                                <span>Nosso Número:</span>
-                                <strong className="text-slate-800">{boleto.nosso_numero || "N/A"}</strong>
-                              </p>
-                              <p className="flex justify-between">
-                                <span>Linha Digitável:</span>
-                                <strong className="text-slate-800">{boleto.linha_digitavel || "N/A"}</strong>
-                              </p>
-                              <p className="flex justify-between">
-                                <span>ID C6:</span>
-                                <strong className="text-slate-800">{boleto.id_boleto_c6 || "N/A"}</strong>
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Registro Bancário Section */}
-                  {(() => {
-                    const pendingBankReg = boletosForReview.filter(b => {
-                      const isRegistered = !!(b.id_boleto_c6 || b.nosso_numero || b.linha_digitavel);
-                      return !b.deposito_conta && !isRegistered;
-                    });
-                    if (pendingBankReg.length > 0) {
-                      return (
-                        <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
-                          <div className="flex items-center gap-2">
-                            <Info className="h-4.5 w-4.5 text-blue-600" />
-                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Registro Bancário</span>
-                          </div>
-                          <p className="text-xs text-slate-500 leading-relaxed">
-                            Existem {pendingBankReg.length} boleto(s) elegível(is) para registro no banco. Boletos marcados como &quot;Depósito em conta&quot; não são elegíveis para registro bancário.
-                          </p>
-                          <button
-                            type="button"
-                            disabled
-                            className="w-full px-4 py-2.5 text-xs font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-xl cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            Registrar boletos no banco (C6 Bank)
-                          </button>
-                          <p className="text-[10px] text-slate-400 italic text-center leading-normal">
-                            A integração de registro via API n8n/C6 está sendo preparada para o próximo ciclo de desenvolvimento.
-                          </p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                </div>
+            {/* Content */}
+            <div className="px-6 py-6 space-y-4">
+              <p className="text-xs text-slate-500 leading-normal font-sans">
+                Digite o texto de correção para a nota <strong className="font-mono text-slate-700">{cceNote.ref}</strong> (mínimo 15 caracteres).
+              </p>
+              <textarea
+                value={cceText}
+                onChange={(e) => setCceText(e.target.value)}
+                disabled={cceLoading}
+                className="w-full h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none resize-none font-sans"
+                placeholder="Exemplo: Correção do endereço de entrega para Rua das Flores, 123..."
+              />
+              {cceText.trim().length < 15 && cceText.trim().length > 0 && (
+                <p className="text-[11px] text-amber-600 font-medium font-sans">
+                  Faltam {15 - cceText.trim().length} caracteres para atingir o mínimo de 15.
+                </p>
               )}
             </div>
-
             {/* Footer */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
               <button
                 type="button"
-                onClick={() => setReviewModalOpen(false)}
-                disabled={isSavingReview}
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 disabled:opacity-50 transition rounded-xl"
+                onClick={() => setCceModalOpen(false)}
+                disabled={cceLoading}
+                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl font-sans"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={handleSaveReview}
-                disabled={isSavingReview || isLoadingReviewBoletos || boletosForReview.length === 0}
-                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[140px]"
+                onClick={handleSendCce}
+                disabled={cceLoading || cceText.trim().length < 15}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[120px] font-sans"
               >
-                {isSavingReview ? (
+                {cceLoading ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Salvando...
+                    Enviando...
                   </>
                 ) : (
-                  "Salvar Alterações"
+                  "Enviar CCe"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Cancelamento */}
+      {cancelModalOpen && (cancelNoteNfe || cancelNoteNfse) && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-5 flex items-center justify-between border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">
+                Cancelar {cancelNoteNfe ? "NF-e" : "NFS-e"}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCancelModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl transition text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {/* Content */}
+            <div className="px-6 py-6 space-y-4">
+              <p className="text-xs text-slate-500 leading-normal font-sans">
+                Informe a justificativa de cancelamento para a nota <strong className="font-mono text-slate-700">{(cancelNoteNfe || cancelNoteNfse)?.ref}</strong> (mínimo 15 caracteres).
+              </p>
+              <textarea
+                value={cancelJustificativa}
+                onChange={(e) => setCancelJustificativa(e.target.value)}
+                disabled={cancelLoading}
+                className="w-full h-32 p-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none resize-none font-sans"
+                placeholder="Exemplo: Duplicidade na emissão ou desistência da venda do serviço..."
+              />
+              {cancelJustificativa.trim().length < 15 && cancelJustificativa.trim().length > 0 && (
+                <p className="text-[11px] text-amber-600 font-medium font-sans">
+                  Faltam {15 - cancelJustificativa.trim().length} caracteres para atingir o mínimo de 15.
+                </p>
+              )}
+            </div>
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setCancelModalOpen(false)}
+                disabled={cancelLoading}
+                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl font-sans"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSendCancel}
+                disabled={cancelLoading || cancelJustificativa.trim().length < 15}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-red-650 hover:bg-red-700 disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[120px] font-sans"
+              >
+                {cancelLoading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Cancelando...
+                  </>
+                ) : (
+                  "Confirmar"
                 )}
               </button>
             </div>

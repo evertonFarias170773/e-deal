@@ -2,6 +2,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { nfeMocks } from "@/lib/mocks/nfe.mock";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import type { SupabaseNfeRow, NfeReadModel, SupabaseNfeItemRow, SupabaseNfePagamentoRow } from "../types";
+import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
 
@@ -874,6 +875,7 @@ export async function getNfeFinanceiroStatus(refs: string[]) {
       }
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const boletosMap: Record<string, any[]> = {};
     boletosData?.forEach((b) => {
       const ref = b.ext_reference as string;
@@ -941,10 +943,12 @@ export async function updateBoletoInDb(
   if (!client) throw new Error("Supabase client not initialized");
 
   // Whitelist rígida dos campos editáveis para impedir alterações acidentais de campos bancários
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cleanUpdates: Record<string, any> = {};
   const allowed = ["vencimento", "valor", "descricao", "deposito_conta", "multa", "juros_dia"];
   for (const key of allowed) {
     if (key in updates) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cleanUpdates[key] = (updates as any)[key];
     }
   }
@@ -958,5 +962,217 @@ export async function updateBoletoInDb(
   if (error) throw error;
   return data;
 }
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(email: string): boolean {
+  return EMAIL_REGEX.test(email);
+}
+
+export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow) {
+  const client = getSupabaseClient();
+  if (!client) throw new Error("Supabase client not initialized");
+
+  // 1. Fetch Client email and details
+  let email = "";
+  if (boleto.id_cliente) {
+    const { data: cliData } = await client
+      .from("clientes")
+      .select("email, email_financeiro, email_contato")
+      .eq("id_cliente", boleto.id_cliente)
+      .maybeSingle();
+
+    if (cliData) {
+      email = (String(cliData.email_financeiro || cliData.email || cliData.email_contato || "")).trim();
+    }
+  }
+
+  // Fallback de E-mail do ERP
+  if (!email || !isValidEmail(email)) {
+    if (boleto.id_empresa === 1) {
+      email = "financeiro@ingressoideal.com.br";
+    } else if (boleto.id_empresa === 3) {
+      email = "financeiro@e3brindes.com.br";
+    } else {
+      email = "financeiro@pay-ideal.com.br";
+    }
+  }
+
+  // Validação do email
+  if (!email || !isValidEmail(email)) {
+    throw new Error("O e-mail do cliente é inválido e nenhum e-mail de fallback pôde ser determinado.");
+  }
+
+  // 2. Fetch Client address
+  let address = {
+    logradouro: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    cidade: "",
+    uf: "",
+    cep: ""
+  };
+
+  if (boleto.id_cliente) {
+    // Try principal first
+    let { data: addrData } = await client
+      .from("enderecos")
+      .select("endereco, numero, complemento, bairro, cidade, uf, cep")
+      .eq("id_cliente", boleto.id_cliente)
+      .eq("tipo_endereco", "Principal")
+      .maybeSingle();
+
+    if (!addrData) {
+      // Fallback to any address
+      const { data: fallbackAddr } = await client
+        .from("enderecos")
+        .select("endereco, numero, complemento, bairro, cidade, uf, cep")
+        .eq("id_cliente", boleto.id_cliente)
+        .limit(1);
+
+      if (fallbackAddr && fallbackAddr.length > 0) {
+        addrData = fallbackAddr[0];
+      }
+    }
+
+    if (addrData) {
+      address = {
+        logradouro: addrData.endereco || "",
+        numero: addrData.numero || "",
+        complemento: addrData.complemento || "",
+        bairro: addrData.bairro || "",
+        cidade: addrData.cidade || "",
+        uf: addrData.uf || "",
+        cep: addrData.cep ? String(addrData.cep).replace(/\D/g, "") : ""
+      };
+    }
+  }
+
+  // Validação dos campos obrigatórios de endereço
+  if (!address.logradouro) {
+    throw new Error("Logradouro do cliente está pendente.");
+  }
+  if (!address.numero) {
+    throw new Error("Número do endereço do cliente está pendente.");
+  }
+  if (!address.cidade) {
+    throw new Error("Cidade do cliente está pendente.");
+  }
+  if (!address.uf) {
+    throw new Error("UF do cliente está pendente.");
+  }
+  if (!address.cep) {
+    throw new Error("CEP do cliente está pendente.");
+  }
+  if (address.cep.length !== 8) {
+    throw new Error("CEP do cliente é inválido (deve conter exatamente 8 dígitos).");
+  }
+
+  // 3. Prepare payload
+  if (!boleto.documento) {
+    throw new Error("Documento do cliente está pendente.");
+  }
+  const documentoDigits = String(boleto.documento).replace(/\D/g, "");
+  if (!documentoDigits) {
+    throw new Error("Documento do cliente é inválido ou vazio (deve conter apenas dígitos).");
+  }
+  if (documentoDigits.length !== 11 && documentoDigits.length !== 14) {
+    throw new Error("Documento do cliente é inválido (deve conter 11 dígitos para CPF ou 14 dígitos para CNPJ).");
+  }
+
+  const n_nfStr = boleto.n_nf ? String(boleto.n_nf) : "";
+  const extReference = boleto.ext_reference || "";
+
+  const payload = {
+    boleto_id: boleto.id,
+    ext_reference: extReference,
+    id_empresa: boleto.id_empresa ? Number(boleto.id_empresa) : 0,
+    id_cliente: boleto.id_cliente ? Number(boleto.id_cliente) : 0,
+    id_int: boleto.id_int ? Number(boleto.id_int) : 0,
+    n_nf: n_nfStr,
+    parcela: boleto.parcela ? Number(boleto.parcela) : 1,
+    total_parcelas: boleto.total_parcelas ? Number(boleto.total_parcelas) : 1,
+    valor: boleto.valor ? Number(boleto.valor) : 0,
+    vencimento: boleto.vencimento ? String(boleto.vencimento).slice(0, 10) : "",
+    nome_cliente: boleto.nome_cliente || "",
+    documento: documentoDigits,
+    email: email,
+    endereco: address,
+    multa_percentual: boleto.multa ? Number(boleto.multa) : 0,
+    juros_dia_percentual: boleto.juros_dia ? Number(boleto.juros_dia) : 0,
+    instrucoes: [
+      `Parcela ${boleto.parcela || 1}/${boleto.total_parcelas || 1} - NF ${n_nfStr || "S/N"} - Ref ${extReference}`
+    ]
+  };
+
+  // 4. Send request
+  const response = await fetch("https://10074.hostoo.net.br/webhook/boletos-vibe", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Erro no processamento do registro do boleto: ${response.statusText}`);
+  }
+
+  // Check response
+  let resData;
+  try {
+    resData = await response.json();
+  } catch {
+    throw new Error("A resposta do servidor não é um JSON válido.");
+  }
+
+  if (!resData) {
+    throw new Error("Resposta do banco vazia ou inválida.");
+  }
+
+  if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
+    throw new Error(resData.error || resData.message || "Erro retornado pelo webhook.");
+  }
+
+  return { success: true, data: resData };
+}
+
+export async function deleteBoletoFromBankViaN8n(boletoId: string, idBoletoC6: string, idEmpresa: number) {
+  const response = await fetch("https://10074.hostoo.net.br/webhook/del-boleto-vibe", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      boleto_id: boletoId,
+      cod_C6: idBoletoC6,
+      id_empresa: idEmpresa
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Erro no processamento da exclusão do boleto: ${response.statusText}`);
+  }
+
+  let resData;
+  try {
+    resData = await response.json();
+  } catch {
+    throw new Error("A resposta do servidor não é um JSON válido.");
+  }
+
+  if (!resData) {
+    throw new Error("Resposta do banco vazia ou inválida.");
+  }
+
+  if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
+    throw new Error(resData.error || resData.message || "Erro retornado pelo webhook.");
+  }
+
+  return { success: true, data: resData };
+}
+
 
 

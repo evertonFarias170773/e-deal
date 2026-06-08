@@ -27,10 +27,11 @@ import type {
   BoletoDepositoMock
 } from "@/lib/mocks/contas-receber.mock";
 import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/services/contas-receber.service";
+import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 
 type ActiveTab = "CARTEIRA" | "BOLETOS" | "VENCIMENTOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
-type StatusFilter = "TODOS" | "A_VENCER" | "VENCIDOS" | "PAID" | "VENCIDO" | "CANCELADO";
+type StatusFilter = "TODOS" | "A_VENCER" | "VENCIDOS" | "PAID" | "VENCIDO" | "CANCELADO" | "NAO_REGISTRADO";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none w-full";
 
@@ -58,6 +59,13 @@ export function ContasReceberPage() {
   const [isFaturadoFilter, setIsFaturadoFilter] = useState<"TODOS" | "SIM" | "NAO">("TODOS");
   const [detailItem, setDetailItem] = useState<BoletoDepositoMock | null>(null);
 
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [selectedBoletoRef, setSelectedBoletoRef] = useState<string | null>(null);
+  const [selectedBoletoCliente, setSelectedBoletoCliente] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [deletingBoletoId, setDeletingBoletoId] = useState<string | null>(null);
+  const [confirmDeleteBoleto, setConfirmDeleteBoleto] = useState<BoletoDepositoMock | null>(null);
+
   // Hydrate client-side dynamic dates safely
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -73,8 +81,18 @@ export function ContasReceberPage() {
       setToday(clientToday);
       setFirstDayOfMonth(clientFirstDay);
       setLastDayOfMonth(clientLastDay);
-      setDataInicial(clientFirstDay);
-      setDataFinal(clientLastDay);
+
+      // Ler o parâmetro search da URL
+      const params = new URLSearchParams(window.location.search);
+      const searchParam = params.get("search");
+      if (searchParam) {
+        setSearch(searchParam);
+        setDataInicial("");
+        setDataFinal("");
+      } else {
+        setDataInicial(clientFirstDay);
+        setDataFinal(clientLastDay);
+      }
     }, 0);
     return () => clearTimeout(timer);
   }, []);
@@ -116,7 +134,7 @@ export function ContasReceberPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [refreshTrigger]);
 
   const filterState = useMemo(() => ({
     search,
@@ -218,6 +236,54 @@ export function ContasReceberPage() {
     window.open(url, "_blank");
   }
 
+  async function handleDeleteBoletoFromBank(boleto: BoletoDepositoMock) {
+    if (!boleto.id_boleto_c6) return;
+    setDeletingBoletoId(boleto.id);
+    try {
+      const { deleteBoletoFromBankViaN8n } = await import("@/features/nfe/services/nfe.service");
+      await deleteBoletoFromBankViaN8n(boleto.id, String(boleto.id_boleto_c6), Number(boleto.id_empresa || 1));
+      
+      const { getSupabaseClient } = await import("@/lib/supabase/client");
+      const client = getSupabaseClient();
+      if (client) {
+        // Fallback update no Supabase local por segurança
+        const { error: updateError } = await client
+          .from("boletos")
+          .update({
+            id_boleto_c6: null,
+            nosso_numero: null,
+            linha_digitavel: null,
+            codigo_barras: null,
+            url_pdf: null,
+            pdf_storage: null,
+            status: "A_VENCER",
+            deposito_conta: false
+          })
+          .eq("id", boleto.id);
+
+        if (updateError) {
+          console.error("[ContasReceberPage] failed fallback update for delete:", updateError);
+        }
+      }
+
+      showToast({
+        type: "success",
+        title: "Boleto removido do banco. O contas a receber foi mantido."
+      });
+
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] failed to delete boleto:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao excluir boleto",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setDeletingBoletoId(null);
+    }
+  }
+
   const tabs: Array<{ id: ActiveTab; label: string }> = [
     { id: "CARTEIRA", label: "Carteira" },
     { id: "BOLETOS", label: "Boletos e depósitos" },
@@ -275,6 +341,7 @@ export function ContasReceberPage() {
             <option value="VENCIDOS">Vencidos</option>
             <option value="PAID">Pagos</option>
             <option value="CANCELADO">Cancelados</option>
+            <option value="NAO_REGISTRADO">Boletos não registrados</option>
           </select>
 
           <select value={isAvulsoFilter} onChange={(event) => setIsAvulsoFilter(event.target.value as "TODOS" | "SIM" | "NAO")} className={filterClass}>
@@ -351,6 +418,11 @@ export function ContasReceberPage() {
           onPdf={openPdf}
           onDetail={setDetailItem}
           onNavigate={(path) => router.push(path)}
+          onRegister={(item) => {
+            setSelectedBoletoRef(item.ext_reference || null);
+            setSelectedBoletoCliente(item.cliente);
+            setReviewModalOpen(true);
+          }}
         />
       ) : null}
 
@@ -365,6 +437,14 @@ export function ContasReceberPage() {
           onProrrogar={prorrogarBoleto}
           onDetail={setDetailItem}
           onNavigate={(path) => router.push(path)}
+          onRegister={(item) => {
+            setSelectedBoletoRef(item.ext_reference || null);
+            setSelectedBoletoCliente(item.cliente);
+            setReviewModalOpen(true);
+          }}
+          onDeleteFromBank={(item) => {
+            setConfirmDeleteBoleto(item);
+          }}
         />
       ) : null}
 
@@ -388,6 +468,62 @@ export function ContasReceberPage() {
       )}
 
       {detailItem ? <RecebivelDetailModal item={detailItem} today={today} onClose={() => setDetailItem(null)} /> : null}
+
+      <RevisarGeracaoBancariaModal
+        isOpen={reviewModalOpen}
+        onClose={() => {
+          setReviewModalOpen(false);
+          setSelectedBoletoRef(null);
+          setSelectedBoletoCliente(null);
+        }}
+        extReference={selectedBoletoRef || ""}
+        nomeCliente={selectedBoletoCliente || undefined}
+        onSaveSuccess={() => {
+          setRefreshTrigger(prev => prev + 1);
+        }}
+      />
+
+      {confirmDeleteBoleto && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="p-3 bg-red-50 text-red-500 rounded-2xl">
+                <AlertTriangle className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">
+                  Excluir boleto do banco?
+                </h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  Esta ação cancela/remove apenas o registro bancário do boleto no C6. O contas a receber continuará existindo no ERP e poderá ser revisado ou registrado novamente.
+                </p>
+              </div>
+            </div>
+            
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteBoleto(null)}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deletingBoletoId !== null}
+                onClick={() => {
+                  const boleto = confirmDeleteBoleto;
+                  setConfirmDeleteBoleto(null);
+                  void handleDeleteBoletoFromBank(boleto);
+                }}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-red-650 hover:bg-red-700 rounded-xl transition"
+              >
+                {deletingBoletoId ? "Excluindo..." : "Excluir boleto do banco"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -404,7 +540,9 @@ function GroupedSection({
   onDetail,
   onNavigate,
   isBoletoTab = false,
-  onProrrogar
+  onProrrogar,
+  onRegister,
+  onDeleteFromBank
 }: {
   title: string;
   tone: "danger" | "warning" | "info" | "success" | "neutral";
@@ -418,6 +556,8 @@ function GroupedSection({
   onNavigate: (path: string) => void;
   isBoletoTab?: boolean;
   onProrrogar?: (id: string) => void;
+  onRegister?: (item: BoletoDepositoMock) => void;
+  onDeleteFromBank?: (item: BoletoDepositoMock) => void;
 }) {
   if (items.length === 0) return null;
 
@@ -458,9 +598,9 @@ function GroupedSection({
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
             { header: "Status", cell: (item) => <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />, align: "center" },
             { header: "Linha/Ref.", cell: (item) => item.linha_digitavel ?? item.referencia ?? "-" },
-            { header: "Ações", cell: (item) => <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} />, align: "right" }
+            { header: "Ações", cell: (item) => <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} />, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} label="Mais" />} />}
         />
       ) : (
         <ResponsiveList<BoletoDepositoMock>
@@ -476,9 +616,9 @@ function GroupedSection({
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
             { header: "Venc.", cell: (item) => formatLocalDate(item.vencimento), align: "center" },
             { header: "Conf.", cell: (item) => <StatusBadge status={item.confirmado ? "CONFIRMADO" : "NAO_CONFIRMADO"} tone={item.confirmado ? "success" : "neutral"} />, align: "center" },
-            { header: "Ações", cell: (item) => <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} />, align: "right" }
+            { header: "Ações", cell: (item) => <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} label="Mais" />} />}
         />
       )}
     </div>
@@ -493,7 +633,8 @@ function CarteiraTab({
   onCopy,
   onPdf,
   onDetail,
-  onNavigate
+  onNavigate,
+  onRegister
 }: {
   items: BoletoDepositoMock[];
   today: string;
@@ -503,6 +644,7 @@ function CarteiraTab({
   onPdf: (url?: string) => void;
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
+  onRegister?: (item: BoletoDepositoMock) => void;
 }) {
   const vencidos = useMemo(() => items.filter((item) => isVisualVencido(item, today)), [items, today]);
   const previsaoFutura = useMemo(() => items.filter((item) => item.status === "A_VENCER"), [items]);
@@ -526,10 +668,10 @@ function CarteiraTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
     </div>
   );
 }
@@ -543,7 +685,9 @@ function BoletosDepositosTab({
   onPdf,
   onProrrogar,
   onDetail,
-  onNavigate
+  onNavigate,
+  onRegister,
+  onDeleteFromBank
 }: {
   items: BoletoDepositoMock[];
   today: string;
@@ -554,6 +698,8 @@ function BoletosDepositosTab({
   onProrrogar: (id: string) => void;
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
+  onRegister: (item: BoletoDepositoMock) => void;
+  onDeleteFromBank: (item: BoletoDepositoMock) => void;
 }) {
   const vencidos = useMemo(() => items.filter((item) => isVisualVencido(item, today)), [items, today]);
   const previsaoFutura = useMemo(() => items.filter((item) => item.status === "A_VENCER"), [items]);
@@ -577,10 +723,10 @@ function BoletosDepositosTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
     </div>
   );
 }
@@ -697,6 +843,7 @@ function RecebivelActions({
   onPdf,
   onDetail,
   onNavigate,
+  onRegister,
   label
 }: {
   item: BoletoDepositoMock;
@@ -706,20 +853,35 @@ function RecebivelActions({
   onPdf: (url?: string) => void;
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
+  onRegister?: (item: BoletoDepositoMock) => void;
   label?: string;
 }) {
+  const actionItems: Array<{
+    label: string;
+    onClick?: () => void;
+    disabled?: boolean;
+    destructive?: boolean;
+  }> = [
+    { label: "Ver detalhe recebível", onClick: () => onDetail(item) },
+    { label: "Abrir proposta", onClick: () => onNavigate(`/orcamentos/${item.id_int}`) },
+    { label: "Ver cliente", onClick: () => onNavigate(`/cadastros/${item.id_cliente}`) },
+  ];
+
+  if (item.tipo === "BOLETO" && onRegister) {
+    actionItems.push({ label: "Revisar geração bancária", onClick: () => onRegister(item) });
+  }
+
+  actionItems.push(
+    { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
+    { label: "Abrir PDF Boleto", disabled: !item.url_pdf, onClick: () => onPdf(item.url_pdf) },
+    { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
+    { label: "Cancelar recebível", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
+  );
+
   return (
     <ActionsMenu
       label={label}
-      items={[
-        { label: "Ver detalhe recebível", onClick: () => onDetail(item) },
-        { label: "Abrir proposta", onClick: () => onNavigate(`/orcamentos/${item.id_int}`) },
-        { label: "Ver cliente", onClick: () => onNavigate(`/cadastros/${item.id_cliente}`) },
-        { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-        { label: "Abrir PDF Boleto", disabled: !item.url_pdf, onClick: () => onPdf(item.url_pdf) },
-        { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
-        { label: "Cancelar recebível", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
-      ]}
+      items={actionItems}
     />
   );
 }
@@ -733,6 +895,8 @@ function BoletoActions({
   onProrrogar,
   onDetail,
   onNavigate,
+  onRegister,
+  onDeleteFromBank,
   label
 }: {
   item: BoletoDepositoMock;
@@ -743,20 +907,48 @@ function BoletoActions({
   onProrrogar: (id: string) => void;
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
+  onRegister?: (item: BoletoDepositoMock) => void;
+  onDeleteFromBank?: (item: BoletoDepositoMock) => void;
   label?: string;
 }) {
+  const isRegistered = !!(item.id_boleto_c6 || item.nosso_numero || item.linha_digitavel);
+  const showRegister = !!onRegister && item.tipo === "BOLETO" && !item.deposito_conta && !isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
+  const showDelete = !!onDeleteFromBank && item.tipo === "BOLETO" && !item.deposito_conta && isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
+
+  const actionItems: Array<{
+    label: string;
+    onClick?: () => void;
+    disabled?: boolean;
+    destructive?: boolean;
+  }> = [
+    { label: "Ver detalhe boleto", onClick: () => onDetail(item) },
+    { label: "Abrir proposta", onClick: () => onNavigate(`/orcamentos/${item.id_int}`) },
+  ];
+
+  if (item.tipo === "BOLETO" && onRegister) {
+    actionItems.push({ label: "Revisar geração bancária", onClick: () => onRegister(item) });
+  }
+
+  if (showRegister) {
+    actionItems.push({ label: "Registrar boleto", onClick: () => onRegister!(item) });
+  }
+
+  if (showDelete) {
+    actionItems.push({ label: "Excluir boleto do banco", destructive: true, onClick: () => onDeleteFromBank!(item) });
+  }
+
+  actionItems.push(
+    { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
+    { label: "Abrir PDF Boleto", disabled: !item.url_pdf, onClick: () => onPdf(item.url_pdf) },
+    { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
+    { label: "Prorrogar vencimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onProrrogar(item.id) },
+    { label: "Cancelar boleto", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
+  );
+
   return (
     <ActionsMenu
       label={label}
-      items={[
-        { label: "Ver detalhe boleto", onClick: () => onDetail(item) },
-        { label: "Abrir proposta", onClick: () => onNavigate(`/orcamentos/${item.id_int}`) },
-        { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-        { label: "Abrir PDF Boleto", disabled: !item.url_pdf, onClick: () => onPdf(item.url_pdf) },
-        { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
-        { label: "Prorrogar vencimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onProrrogar(item.id) },
-        { label: "Cancelar boleto", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
-      ]}
+      items={actionItems}
     />
   );
 }
@@ -900,9 +1092,13 @@ function matchesVisibleStatus(item: BoletoDepositoMock, status: StatusFilter, to
   if (status === "TODOS") return true;
   if (status === "VENCIDOS") return isVisualVencido(item, today);
   if (status === "A_VENCER") return item.status === "A_VENCER";
-
   if (status === "PAID") return item.status === "PAID";
   if (status === "CANCELADO") return item.status === "CANCELADO";
+  if (status === "NAO_REGISTRADO") {
+    return item.tipo === "BOLETO" &&
+           !item.deposito_conta &&
+           (!item.id_boleto_c6 || !item.nosso_numero || !item.linha_digitavel);
+  }
   return true;
 }
 
@@ -932,15 +1128,30 @@ function toMillis(value?: string) {
 }
 
 function getVisualStatus(item: BoletoDepositoMock, today: string): string {
+  if (item.status === "CANCELADO") return "CANCELADO";
+  if (item.status === "PAID") return "PAID";
   if (isVisualVencido(item, today)) return "VENCIDO";
-  return item.status;
+
+  if (item.deposito_conta) {
+    return "DEPOSITO_CONTA";
+  }
+
+  const isRegistered = !!(item.id_boleto_c6 || item.nosso_numero || item.linha_digitavel);
+  if (isRegistered) {
+    return "BOLETO_REGISTRADO";
+  }
+
+  return "A_RECEBER_CRIADO";
 }
 
 function getVisualStatusTone(item: BoletoDepositoMock, today: string) {
-  if (isVisualVencido(item, today)) return "danger";
-  if (item.status === "PAID") return "success";
-  if (item.status === "A_VENCER") return "warning";
-  if (item.status === "A_RECEBER") return "info";
+  const vis = getVisualStatus(item, today);
+  if (vis === "VENCIDO") return "danger";
+  if (vis === "PAID") return "success";
+  if (vis === "DEPOSITO_CONTA") return "success";
+  if (vis === "BOLETO_REGISTRADO") return "success";
+  if (vis === "A_RECEBER_CRIADO") return "warning";
+  if (vis === "CANCELADO") return "neutral";
   return "neutral";
 }
 
@@ -950,7 +1161,10 @@ function humanizeLocalStatus(status: string) {
     A_VENCER: "Previsão futura",
     PAID: "Pago",
     CANCELADO: "Cancelado",
-    VENCIDO: "Vencido"
+    VENCIDO: "Vencido",
+    DEPOSITO_CONTA: "Depósito em conta",
+    BOLETO_REGISTRADO: "Boleto registrado",
+    A_RECEBER_CRIADO: "A receber criado — boleto não registrado"
   };
 
   return labels[status] ?? status;
@@ -1053,7 +1267,7 @@ function filterVisibleRows(
       return false;
     }
 
-    const haystack = normalize(`${item.cliente} ${item.id_int} ${item.id_pagamento} ${item.os_ideal} ${item.documento}`);
+    const haystack = normalize(`${item.cliente} ${item.id_int} ${item.id_pagamento} ${item.os_ideal} ${item.documento} ${item.ext_reference || ""}`);
     const matchesSearch = !normalizedSearch || haystack.includes(normalizedSearch);
     const matchesEmpresa = filters.empresa === "TODAS" || (item.empresa_original?.trim() || item.empresa) === filters.empresa;
     const matchesTipo = filters.tipo === "TODOS" || item.tipo === filters.tipo;

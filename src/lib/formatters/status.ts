@@ -29,6 +29,9 @@ export function humanizeStatus(status: string) {
 
     PRONTA_PARA_ENVIO: "Pronta para Envio",
     // Existing statuses
+    DEPOSITO_CONTA: "Depósito em conta",
+    BOLETO_REGISTRADO: "Boleto registrado",
+    A_RECEBER_CRIADO: "A receber criado — boleto não registrado",
     A_RECEBER: "A receber",
     A_VENCER: "A vencer",
     PAID: "Pago",

@@ -35,6 +35,7 @@ type PropostaCobrancaPanelProps = {
   onOpenModal?: () => void;
   onCloseModal?: () => void;
   defaultModalOpen?: boolean;
+  onlyModal?: boolean;
 };
 
 export function PropostaCobrancaPanel({
@@ -42,7 +43,8 @@ export function PropostaCobrancaPanel({
   isModalOpen,
   onOpenModal,
   onCloseModal,
-  defaultModalOpen = false
+  defaultModalOpen = false,
+  onlyModal = false
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
   const { createCobranca, getCobrancasByProposta, source, cobrancas } = useCobrancas();
@@ -447,6 +449,239 @@ export function PropostaCobrancaPanel({
   ];
 
   const hasCobrancas = cobrancasDaProposta.length > 0;
+
+  if (onlyModal) {
+    return modalOpen ? (
+      <div className="fixed inset-0 z-[70] bg-slate-950/60 p-2 sm:p-6" role="dialog" aria-modal="true" onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          closeModal();
+        }
+      }}>
+        <div className="mx-auto flex h-[calc(100vh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[94vh] sm:rounded-[28px]">
+          <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-4 sm:p-5 md:p-6">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-950">Criar cobrança</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {proposta.cliente.nome} • {empresa?.nome ?? proposta.empresa} • Total {formatCurrency(totalPropostaRounded)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">Proposta #{proposta.id_int} • Situação {situacaoFinanceira}</p>
+              {hasCobrancaExcedente ? (
+                <p className="mt-1 text-xs font-semibold text-orange-700">
+                  {source === "supabase"
+                    ? "Atenção: o total das cobranças excede o valor total da proposta."
+                    : "Cobranças excedem o valor da proposta no mock."}
+                </p>
+              ) : null}
+            </div>
+            <button type="button" onClick={closeModal} className="rounded-2xl bg-slate-100 p-2 text-slate-700">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-5 md:p-6">
+            <PanelCard
+              title="Dados da cobrança"
+              description={source === "supabase"
+                ? "Preencha os dados essenciais para gerar a cobrança real."
+                : "Preencha os dados essenciais para gerar a cobrança mockada."}
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Empresa recebedora">
+                  <input readOnly value={empresa?.labelCurta ?? proposta.empresa} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                </Field>
+                <Field label="Forma de pagamento selecionada">
+                  <input readOnly value={getCobrancaTipoLabel(form.tipoCobranca)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                </Field>
+                <Field label="OS Ideal *">
+                  <input
+                    value={form.osIdeal}
+                    onChange={(event) => patchForm({ osIdeal: event.target.value })}
+                    className={inputClass}
+                    placeholder="Ex.: OS-IDEAL-2101"
+                  />
+                </Field>
+                <Field label="Valor da cobrança *">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={form.valor}
+                    onChange={(event) => patchForm({ valor: Number(event.target.value) || 0 })}
+                    className={inputClass}
+                  />
+                  {saldoRestante < totalPropostaRounded && (
+                    <p className="mt-1.5 text-xs text-amber-700 font-semibold bg-amber-50/70 border border-amber-100 rounded-xl p-2.5">
+                      ⚠️ Cobrança complementar. Saldo restante: {formatCurrency(saldoRestante)}.
+                    </p>
+                  )}
+                </Field>
+                {form.tipoCobranca === "BOLETO" || form.tipoCobranca === "E-FATURADO" ? (
+                  <Field label="Data de vencimento *">
+                    <input type="date" value={form.vencimento} onChange={(event) => patchForm({ vencimento: event.target.value })} className={inputClass} />
+                  </Field>
+                ) : null}
+                <div className="md:col-span-2">
+                  <Field label="Observações">
+                    <textarea
+                      value={form.observacao}
+                      onChange={(event) => patchForm({ observacao: event.target.value })}
+                      className={`${inputClass} min-h-24 resize-y`}
+                      placeholder="Observação opcional"
+                    />
+                  </Field>
+                </div>
+              </div>
+            </PanelCard>
+
+            <PanelCard
+              title="Forma de pagamento"
+              description="Escolha uma opção operacional. Detalhes técnicos de geração ficam para backend e detalhe da cobrança."
+            >
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                {opcoesPagamento.map((opcao) => {
+                  const Icon = opcao.icon;
+                  const selected = form.tipoCobranca === opcao.id;
+                  const available = source === "supabase"
+                    ? (opcao.id === "PIX"
+                        ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
+                        : opcao.id === "BOLETO"
+                          ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+                          : opcao.id === "CARD_PARCELADO"
+                            ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+                            : true)
+                    : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
+                  const isActuallyDisabled = !available;
+                  const disabledText = available
+                    ? ""
+                    : "Indisponível para esta empresa.";
+
+                  return (
+                    <button
+                      key={opcao.id}
+                      type="button"
+                      disabled={isActuallyDisabled}
+                      onClick={() => handleTipoChange(opcao.id)}
+                      className={`rounded-2xl border px-3 py-2 text-left transition ${
+                        selected
+                          ? "border-[#0f9f9a] bg-[#dff8f6]"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                      title={disabledText}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="h-4 w-4 text-slate-700" />
+                        <span className="text-sm font-semibold text-slate-900">{opcao.label}</span>
+                      </div>
+                      {!available ? (
+                        <p className="mt-1 text-[11px] text-slate-500">Indisponível</p>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+              {!tipoDisponivel ? (
+                <p className="mt-3 text-xs text-orange-700">{indisponibilidadeMensagem || "Indisponível para esta empresa."}</p>
+              ) : null}
+            </PanelCard>
+
+            {form.tipoCobranca === "E-FATURADO" ? (
+              <PanelCard
+                title="Campos mínimos do faturado"
+                description="Condição comercial e aviso resumido de crédito."
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Condição comercial">
+                    <input
+                      value={form.condicaoPagamento}
+                      onChange={(event) => patchForm({ condicaoPagamento: event.target.value })}
+                      className={inputClass}
+                      placeholder="Ex.: Faturado 28 dias"
+                    />
+                  </Field>
+                  <Field label="Modelo de faturamento">
+                    <select
+                      value={form.modeloFatu || "BOLETO"}
+                      onChange={(event) => patchForm({ modeloFatu: event.target.value as "BOLETO" | "DEPÓSITO" })}
+                      className={inputClass}
+                    >
+                      <option value="BOLETO">BOLETO</option>
+                      <option value="DEPÓSITO">DEPÓSITO</option>
+                    </select>
+                  </Field>
+                </div>
+
+                {isLoadingCredit ? (
+                  <div className="mt-4 p-4 text-center rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                    <span className="text-sm text-slate-600 font-semibold">Consultando análise de crédito real...</span>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+                      <InfoBox label="Limite de crédito" value={formatCurrency(analiseCredito.limite)} />
+                      <InfoBox label="Utilizado" value={formatCurrency(analiseCredito.utilizado)} />
+                      <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel)} />
+                      {source === "supabase" && (
+                        <InfoBox label="Saldo de carteira" value={formatCurrency(analiseCredito.saldoCarteira || 0)} />
+                      )}
+                      <InfoBox label="Valor solicitado" value={formatCurrency(analiseCredito.valorSolicitado)} />
+                      <InfoBox 
+                        label="Faturamentos vencidos" 
+                        value={analiseCredito.qtdAtrasados > 0 ? `${analiseCredito.qtdAtrasados} pendente(s)` : "Nenhum atraso"} 
+                        detail={analiseCredito.qtdAtrasados > 0 ? "Requer análise financeira" : "Histórico regular"}
+                      />
+                      <InfoBox label="Risco de crédito" value={analiseCredito.risco} />
+                    </div>
+
+                    <div className={`rounded-2xl border p-4 ${analiseCredito.statusAnalise === "APROVADO" ? "border-teal-200 bg-teal-50 text-teal-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
+                      <p className="font-semibold">{analiseCredito.statusAnalise === "APROVADO" ? "Limite operacional disponível." : "Solicitação enviada para avaliação do financeiro."}</p>
+                      <p className="mt-1 text-sm leading-6">
+                        {analiseCredito.statusAnalise === "APROVADO" 
+                          ? "Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER."
+                          : (analiseCredito.qtdAtrasados > 0
+                              ? "O cliente possui faturamentos pendentes vencidos em aberto. A solicitação ficará bloqueada sob avaliação do financeiro."
+                              : "Limite de crédito insuficiente para o valor solicitado. A solicitação ficará bloqueada sob avaliação do financeiro.")
+                        }
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </PanelCard>
+            ) : null}
+
+            <p className="text-sm text-slate-600">
+              Esta proposta já possui <strong className="text-slate-900">{cobrancasDaProposta.length}</strong> cobrança(s) gerada(s).
+            </p>
+          </div>
+
+          <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <p className="text-sm font-semibold text-slate-700">
+                Proposta #{proposta.id_int} • {getCobrancaTipoLabel(form.tipoCobranca)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSaving || !tipoDisponivel}
+                  className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+                >
+                  {isSaving ? "Gerando cobrança..." : "Gerar cobrança"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    ) : null;
+  }
 
   return (
     <div className="space-y-6">
