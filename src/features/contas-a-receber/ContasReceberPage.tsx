@@ -33,6 +33,19 @@ type ActiveTab = "CARTEIRA" | "BOLETOS" | "VENCIMENTOS" | "CARTOES" | "PREVISAO"
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
 type StatusFilter = "TODOS" | "A_VENCER" | "VENCIDOS" | "PAID" | "VENCIDO" | "CANCELADO" | "NAO_REGISTRADO";
 
+interface C6PaymentInfo {
+  date: string;
+  amount: number;
+}
+
+interface C6QueryResult {
+  id: string;
+  amount: number;
+  due_date: string;
+  status: string;
+  payments: C6PaymentInfo[];
+}
+
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none w-full";
 
 export function ContasReceberPage() {
@@ -65,6 +78,12 @@ export function ContasReceberPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [deletingBoletoId, setDeletingBoletoId] = useState<string | null>(null);
   const [confirmDeleteBoleto, setConfirmDeleteBoleto] = useState<BoletoDepositoMock | null>(null);
+
+  // States for C6 manual query integration
+  const [selectedBoletoForC6Query, setSelectedBoletoForC6Query] = useState<BoletoDepositoMock | null>(null);
+  const [c6QueryResult, setC6QueryResult] = useState<C6QueryResult | null>(null);
+  const [isC6Querying, setIsC6Querying] = useState(false);
+  const [isC6Updating, setIsC6Updating] = useState(false);
 
   // Hydrate client-side dynamic dates safely
   useEffect(() => {
@@ -284,6 +303,151 @@ export function ContasReceberPage() {
     }
   }
 
+  async function handleQueryC6(boleto: BoletoDepositoMock) {
+    if (!boleto.id_boleto_c6) {
+      showToast({ type: "warning", title: "Código C6 não encontrado no boleto." });
+      return;
+    }
+    setIsC6Querying(true);
+    try {
+      const response = await fetch("https://10074.hostoo.net.br/webhook/consulta-paid-c6", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          cod_C6: boleto.id_boleto_c6,
+          id_empresa: Number(boleto.id_empresa || 1)
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na consulta C6: Status HTTP ${response.status}`);
+      }
+
+      const rawData = await response.json();
+      const data = Array.isArray(rawData) ? rawData[0] : rawData;
+
+      if (!data) {
+        throw new Error("Nenhum dado retornado da consulta C6.");
+      }
+
+      // Validations
+      if (data.id !== boleto.id_boleto_c6) {
+        throw new Error(`O código retornado (${data.id}) não corresponde ao código consultado (${boleto.id_boleto_c6}).`);
+      }
+
+      if (data.status !== "PAID") {
+        showToast({
+          type: "warning",
+          title: "Boleto não está pago no C6.",
+          description: `Status retornado: ${data.status || "Desconhecido"}`
+        });
+        setIsC6Querying(false);
+        return;
+      }
+
+      if (!data.payments || !Array.isArray(data.payments) || data.payments.length === 0 || !data.payments[0].date) {
+        throw new Error("O C6 retornou status PAID, mas sem data de pagamento associada.");
+      }
+
+      const c6Amount = Number(data.payments[0].amount ?? data.amount);
+      const expectedAmount1 = Number(boleto.valor);
+      const expectedAmount2 = Number(boleto.valor_atualizado ?? boleto.valor);
+
+      const matchesAmount1 = Math.abs(c6Amount - expectedAmount1) < 0.01;
+      const matchesAmount2 = Math.abs(c6Amount - expectedAmount2) < 0.01;
+
+      if (!matchesAmount1 && !matchesAmount2) {
+        throw new Error(
+          `O valor pago no C6 (${formatCurrency(c6Amount)}) não é compatível com o valor original (${formatCurrency(expectedAmount1)}) ou atualizado (${formatCurrency(expectedAmount2)}) do boleto.`
+        );
+      }
+
+      // Success! Set the validated result to transition to Step 2
+      setC6QueryResult(data);
+    } catch (err) {
+      console.error("[ContasReceberPage] webhook query C6 failed:", err);
+      showToast({
+        type: "error",
+        title: "Falha ao consultar no C6",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsC6Querying(false);
+    }
+  }
+
+  async function handleConfirmPaymentC6(boleto: BoletoDepositoMock, queryResult: C6QueryResult) {
+    setIsC6Updating(true);
+    try {
+      const paymentDate = queryResult.payments[0].date;
+      
+      const { getSupabaseClient } = await import("@/lib/supabase/client");
+      const client = getSupabaseClient();
+      if (!client) {
+        throw new Error("Conexão com o banco de dados (Supabase) não inicializada.");
+      }
+
+      // Exact update query requested by user:
+      const { data: updatedData, error: updateError } = await client
+        .from("boletos")
+        .update({
+          status: "PAID",
+          paid_at: paymentDate
+        })
+        .eq("id_boleto_c6", boleto.id_boleto_c6)
+        .in("status", ["A_VENCER", "VENCIDO"])
+        .select();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      if (!updatedData || updatedData.length === 0) {
+        throw new Error(
+          "Não foi possível atualizar o boleto. O status local atual pode não ser 'A_VENCER' ou 'VENCIDO', ou o código C6 não existe."
+        );
+      }
+
+      // Update local React state for immediate feedback
+      setRecebiveis((current) =>
+        current.map((item) =>
+          item.id_boleto_c6 === boleto.id_boleto_c6
+            ? { ...item, status: "PAID" as const, paid_at: paymentDate, confirmado: true }
+            : item
+        )
+      );
+      setBoletosDepositos((current) =>
+        current.map((item) =>
+          item.id_boleto_c6 === boleto.id_boleto_c6
+            ? { ...item, status: "PAID" as const, paid_at: paymentDate, confirmado: true }
+            : item
+        )
+      );
+
+      showToast({
+        type: "success",
+        title: "Boleto liquidado com sucesso!",
+        description: `Status atualizado no Supabase para PAID com pagamento em ${formatLocalDate(paymentDate.slice(0, 10))}.`
+      });
+
+      // Close modal and refresh list
+      setSelectedBoletoForC6Query(null);
+      setC6QueryResult(null);
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] failed to confirm C6 payment:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao atualizar recebível",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsC6Updating(false);
+    }
+  }
+
   const tabs: Array<{ id: ActiveTab; label: string }> = [
     { id: "CARTEIRA", label: "Carteira" },
     { id: "BOLETOS", label: "Boletos e depósitos" },
@@ -423,6 +587,10 @@ export function ContasReceberPage() {
             setSelectedBoletoCliente(item.cliente);
             setReviewModalOpen(true);
           }}
+          onConsultaC6={(item) => {
+            setSelectedBoletoForC6Query(item);
+            setC6QueryResult(null);
+          }}
         />
       ) : null}
 
@@ -444,6 +612,10 @@ export function ContasReceberPage() {
           }}
           onDeleteFromBank={(item) => {
             setConfirmDeleteBoleto(item);
+          }}
+          onConsultaC6={(item) => {
+            setSelectedBoletoForC6Query(item);
+            setC6QueryResult(null);
           }}
         />
       ) : null}
@@ -524,6 +696,173 @@ export function ContasReceberPage() {
           </div>
         </div>
       )}
+
+      {selectedBoletoForC6Query && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wide text-[#0f9f9a] bg-teal-50 px-2.5 py-1 rounded-full">
+                  Integração C6 Bank
+                </span>
+                <h3 className="mt-3 text-lg font-bold text-slate-900">
+                  {c6QueryResult ? "Confirmar Baixa de Pagamento" : "Consultar Pagamento C6"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isC6Querying || isC6Updating) return;
+                  setSelectedBoletoForC6Query(null);
+                  setC6QueryResult(null);
+                }}
+                disabled={isC6Querying || isC6Updating}
+                className="rounded-2xl bg-slate-100 p-2 text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+                aria-label="Fechar consulta"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {!c6QueryResult ? (
+              // Step 1: Pre-query Confirmation
+              <div className="mt-6 space-y-4">
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Deseja consultar o status deste boleto diretamente no C6 Bank? Confirme os dados abaixo antes de prosseguir.
+                </p>
+
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Cliente</span>
+                    <strong className="text-slate-900 text-right max-w-[70%] truncate">
+                      {selectedBoletoForC6Query.cliente}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Valor Atual</span>
+                    <strong className="text-[#0b2f4a]">
+                      {formatCurrency(selectedBoletoForC6Query.valor_atualizado ?? selectedBoletoForC6Query.valor)}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Vencimento</span>
+                    <strong className="text-slate-900">
+                      {formatLocalDate(selectedBoletoForC6Query.vencimento)}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Código C6</span>
+                    <code className="text-slate-800 bg-slate-200 px-1.5 py-0.5 rounded text-xs">
+                      {selectedBoletoForC6Query.id_boleto_c6}
+                    </code>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Status Local</span>
+                    <strong className="text-slate-900 uppercase">
+                      {humanizeLocalStatus(getVisualStatus(selectedBoletoForC6Query, today))}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 justify-stretch mt-6">
+                  <button
+                    type="button"
+                    disabled={isC6Querying}
+                    onClick={() => {
+                      setSelectedBoletoForC6Query(null);
+                      setC6QueryResult(null);
+                    }}
+                    className="flex-1 py-3 text-sm font-semibold text-slate-500 hover:text-slate-850 hover:bg-slate-50 border border-slate-200 rounded-2xl transition disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isC6Querying}
+                    onClick={() => void handleQueryC6(selectedBoletoForC6Query)}
+                    className="flex-1 py-3 text-sm font-semibold text-white bg-[#0f9f9a] hover:bg-[#0c7c78] rounded-2xl transition disabled:opacity-75 flex items-center justify-center gap-2"
+                  >
+                    {isC6Querying ? (
+                      <>
+                        <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Consultando...
+                      </>
+                    ) : (
+                      "Consultar no C6"
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // Step 2: Final Confirmation
+              <div className="mt-6 space-y-4">
+                <div className="p-4 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-100 flex items-start gap-3">
+                  <span className="bg-emerald-500 text-white rounded-full p-0.5 mt-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                  <div>
+                    <h4 className="font-bold text-sm">Pagamento encontrado no C6!</h4>
+                    <p className="text-xs mt-1 text-emerald-700 leading-relaxed text-left">
+                      Deseja atualizar este recebível como pago? Esta ação atualizará a tabela local no Supabase.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Valor Pago</span>
+                    <strong className="text-emerald-700 font-bold text-base">
+                      {formatCurrency(Number(c6QueryResult.payments?.[0]?.amount ?? c6QueryResult.amount))}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Data do Pagamento</span>
+                    <strong className="text-slate-900">
+                      {formatLocalDate(c6QueryResult.payments?.[0]?.date?.slice(0, 10) || "")}
+                    </strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Código C6</span>
+                    <code className="text-slate-800 bg-slate-200 px-1.5 py-0.5 rounded text-xs">
+                      {c6QueryResult.id}
+                    </code>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 justify-stretch mt-6">
+                  <button
+                    type="button"
+                    disabled={isC6Updating}
+                    onClick={() => {
+                      setC6QueryResult(null);
+                    }}
+                    className="flex-1 py-3 text-sm font-semibold text-slate-500 hover:text-slate-850 hover:bg-slate-50 border border-slate-200 rounded-2xl transition disabled:opacity-50"
+                  >
+                    Voltar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isC6Updating}
+                    onClick={() => void handleConfirmPaymentC6(selectedBoletoForC6Query, c6QueryResult)}
+                    className="flex-1 py-3 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-2xl transition disabled:opacity-75 flex items-center justify-center gap-2"
+                  >
+                    {isC6Updating ? (
+                      <>
+                        <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Confirmando...
+                      </>
+                    ) : (
+                      "Sim, atualizar recebível"
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -542,7 +881,8 @@ function GroupedSection({
   isBoletoTab = false,
   onProrrogar,
   onRegister,
-  onDeleteFromBank
+  onDeleteFromBank,
+  onConsultaC6
 }: {
   title: string;
   tone: "danger" | "warning" | "info" | "success" | "neutral";
@@ -558,10 +898,12 @@ function GroupedSection({
   onProrrogar?: (id: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
   onDeleteFromBank?: (item: BoletoDepositoMock) => void;
+  onConsultaC6?: (item: BoletoDepositoMock) => void;
 }) {
   if (items.length === 0) return null;
 
   const totalSum = items.reduce((acc, item) => acc + (item.valor_atualizado ?? item.valor), 0);
+  const isPaidSection = title === "Pagos";
 
   const toneClasses = {
     danger: { bg: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50", dot: "bg-red-500" },
@@ -597,10 +939,13 @@ function GroupedSection({
             { header: "Venc.", cell: (item) => formatLocalDate(item.vencimento), align: "center" },
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
             { header: "Status", cell: (item) => <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />, align: "center" },
+            ...(isPaidSection ? [
+              { header: "Dt. Pagto", cell: (item: BoletoDepositoMock) => item.paid_at ? formatPaidAtDate(item.paid_at) : "-", align: "center" as const }
+            ] : []),
             { header: "Linha/Ref.", cell: (item) => item.linha_digitavel ?? item.referencia ?? "-" },
-            { header: "Ações", cell: (item) => <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} />, align: "right" }
+            { header: "Ações", cell: (item) => <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} />, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} label="Mais" />} />}
         />
       ) : (
         <ResponsiveList<BoletoDepositoMock>
@@ -613,12 +958,15 @@ function GroupedSection({
             { header: "Empresa", cell: (item) => item.empresa },
             { header: "Tipo", cell: (item) => getTipoRecebivelLabel(item.tipo) },
             { header: "Status", cell: (item) => <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />, align: "center" },
+            ...(isPaidSection ? [
+              { header: "Dt. Pagto", cell: (item: BoletoDepositoMock) => item.paid_at ? formatPaidAtDate(item.paid_at) : "-", align: "center" as const }
+            ] : []),
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
             { header: "Venc.", cell: (item) => formatLocalDate(item.vencimento), align: "center" },
             { header: "Conf.", cell: (item) => <StatusBadge status={item.confirmado ? "CONFIRMADO" : "NAO_CONFIRMADO"} tone={item.confirmado ? "success" : "neutral"} />, align: "center" },
-            { header: "Ações", cell: (item) => <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />, align: "right" }
+            { header: "Ações", cell: (item) => <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} label="Mais" />} />}
         />
       )}
     </div>
@@ -634,7 +982,8 @@ function CarteiraTab({
   onPdf,
   onDetail,
   onNavigate,
-  onRegister
+  onRegister,
+  onConsultaC6
 }: {
   items: BoletoDepositoMock[];
   today: string;
@@ -645,6 +994,7 @@ function CarteiraTab({
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
+  onConsultaC6?: (item: BoletoDepositoMock) => void;
 }) {
   const vencidos = useMemo(() => items.filter((item) => isVisualVencido(item, today)), [items, today]);
   const previsaoFutura = useMemo(() => items.filter((item) => item.status === "A_VENCER"), [items]);
@@ -668,10 +1018,10 @@ function CarteiraTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
     </div>
   );
 }
@@ -687,7 +1037,8 @@ function BoletosDepositosTab({
   onDetail,
   onNavigate,
   onRegister,
-  onDeleteFromBank
+  onDeleteFromBank,
+  onConsultaC6
 }: {
   items: BoletoDepositoMock[];
   today: string;
@@ -700,6 +1051,7 @@ function BoletosDepositosTab({
   onNavigate: (path: string) => void;
   onRegister: (item: BoletoDepositoMock) => void;
   onDeleteFromBank: (item: BoletoDepositoMock) => void;
+  onConsultaC6?: (item: BoletoDepositoMock) => void;
 }) {
   const vencidos = useMemo(() => items.filter((item) => isVisualVencido(item, today)), [items, today]);
   const previsaoFutura = useMemo(() => items.filter((item) => item.status === "A_VENCER"), [items]);
@@ -723,10 +1075,10 @@ function BoletosDepositosTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
     </div>
   );
 }
@@ -844,6 +1196,7 @@ function RecebivelActions({
   onDetail,
   onNavigate,
   onRegister,
+  onConsultaC6,
   label
 }: {
   item: BoletoDepositoMock;
@@ -854,8 +1207,11 @@ function RecebivelActions({
   onDetail: (item: BoletoDepositoMock) => void;
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
+  onConsultaC6?: (item: BoletoDepositoMock) => void;
   label?: string;
 }) {
+  const showConsultaC6 = !!item.id_boleto_c6 && item.status !== "PAID" && item.tipo === "BOLETO";
+
   const actionItems: Array<{
     label: string;
     onClick?: () => void;
@@ -869,6 +1225,10 @@ function RecebivelActions({
 
   if (item.tipo === "BOLETO" && onRegister) {
     actionItems.push({ label: "Revisar geração bancária", onClick: () => onRegister(item) });
+  }
+
+  if (showConsultaC6 && onConsultaC6) {
+    actionItems.push({ label: "Consultar pagamento C6", onClick: () => onConsultaC6(item) });
   }
 
   actionItems.push(
@@ -897,6 +1257,7 @@ function BoletoActions({
   onNavigate,
   onRegister,
   onDeleteFromBank,
+  onConsultaC6,
   label
 }: {
   item: BoletoDepositoMock;
@@ -909,11 +1270,13 @@ function BoletoActions({
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
   onDeleteFromBank?: (item: BoletoDepositoMock) => void;
+  onConsultaC6?: (item: BoletoDepositoMock) => void;
   label?: string;
 }) {
   const isRegistered = !!(item.id_boleto_c6 || item.nosso_numero || item.linha_digitavel);
   const showRegister = !!onRegister && item.tipo === "BOLETO" && !item.deposito_conta && !isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
   const showDelete = !!onDeleteFromBank && item.tipo === "BOLETO" && !item.deposito_conta && isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
+  const showConsultaC6 = !!item.id_boleto_c6 && item.status !== "PAID" && item.tipo === "BOLETO";
 
   const actionItems: Array<{
     label: string;
@@ -935,6 +1298,10 @@ function BoletoActions({
 
   if (showDelete) {
     actionItems.push({ label: "Excluir boleto do banco", destructive: true, onClick: () => onDeleteFromBank!(item) });
+  }
+
+  if (showConsultaC6 && onConsultaC6) {
+    actionItems.push({ label: "Consultar pagamento C6", onClick: () => onConsultaC6(item) });
   }
 
   actionItems.push(
@@ -969,6 +1336,9 @@ function RecebivelCard({ item, today, actions }: { item: BoletoDepositoMock; tod
         <p>Total: <strong className="text-slate-900">{formatCurrency(item.valor_atualizado ?? item.valor)}</strong></p>
         {item.dias_atraso !== undefined && item.dias_atraso > 0 && <p className="text-red-650">Atraso: <strong>{item.dias_atraso} dia(s)</strong></p>}
         <p>Venc.: {formatLocalDate(item.vencimento)}</p>
+        {(item.status === "PAID" || item.paid_at) && (
+          <p>Pagto: {item.paid_at ? formatPaidAtDate(item.paid_at) : "-"}</p>
+        )}
         <p>Conf.: {item.confirmado ? "Sim" : "Não"}</p>
       </div>
       <div className="mt-4 flex justify-end">{actions}</div>
@@ -1043,6 +1413,9 @@ function RecebivelDetailModal({
           <DetailField label="Total original" value={formatCurrency(item.valor)} />
           {item.valor_atualizado !== undefined && <DetailField label="Total atualizado" value={formatCurrency(item.valor_atualizado)} />}
           <DetailField label="Vencimento" value={formatLocalDate(item.vencimento)} />
+          {(item.status === "PAID" || item.paid_at) && (
+            <DetailField label="Data do Pagamento" value={item.paid_at ? formatLocalDateTime(item.paid_at) : "-"} />
+          )}
           <DetailField label="Confirmado" value={item.confirmado ? "Sim" : "Não"} />
           <DetailField label="CPF / CNPJ" value={item.documento} />
           <DetailField label="Parcela" value={item.parcela ? `${item.parcela}/${item.total_parcelas ?? item.parcela}` : "-"} />
@@ -1174,6 +1547,36 @@ function formatLocalDate(value: string) {
   if (!value) return "-";
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function formatPaidAtDate(paidAt: string | undefined) {
+  if (!paidAt) return "-";
+  return formatLocalDate(paidAt.slice(0, 10));
+}
+
+function formatLocalDateTime(value: string | undefined) {
+  if (!value) return "-";
+  try {
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return "-";
+
+    if (value.length <= 10) {
+      const [year, month, day] = value.split("-");
+      return `${day}/${month}/${year}`;
+    }
+
+    return date.toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZone: "America/Sao_Paulo"
+    });
+  } catch {
+    return "-";
+  }
 }
 
 

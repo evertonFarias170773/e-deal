@@ -33,7 +33,7 @@ type CobrancaDetailProps = {
 export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { getCobrancaById, confirmPagamento, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
+  const { getCobrancaById, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
   const cobranca = getCobrancaById(cobrancaId) as NonNullable<ReturnType<typeof getCobrancaById>>;
 
   if (!cobranca) {
@@ -63,14 +63,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
     showToast({ type: "success", title: successTitle });
   }
 
-  function handleConfirm() {
-    if (source === "supabase") {
-      showToast({ type: "warning", title: "Confirmação manual indisponível para cobranças reais." });
-      return;
-    }
-    confirmPagamento(cobrancaAtual.id);
-    showToast({ type: "success", title: "Pagamento confirmado no mock." });
-  }
+
 
   function handleCancel() {
     if (source === "supabase") {
@@ -317,15 +310,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
                   Copiar linha digitável
                 </button>
               ) : null}
-              {cobranca.status !== "PAID" && cobranca.status !== "CANCELADO" && source !== "supabase" ? (
-                <button
-                  type="button"
-                  onClick={handleConfirm}
-                  className="w-full rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white"
-                >
-                  Confirmar pagamento mockado
-                </button>
-              ) : null}
+
               {source === "supabase" ? (
                 <button
                   type="button"

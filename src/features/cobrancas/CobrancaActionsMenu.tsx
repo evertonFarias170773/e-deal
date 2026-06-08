@@ -7,6 +7,8 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { isCreditoPendente } from "@/features/cobrancas/cobrancas-utils";
+import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
+import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import type { Cobranca } from "@/features/cobrancas/types";
 
 type CobrancaActionsMenuProps = {
@@ -18,9 +20,10 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const router = useRouter();
   const { showToast } = useAppToast();
   const { user } = useAuth();
+  const { openChat } = useGlobalChat();
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const {
-    confirmPagamento,
     cancelCobranca,
     liberarCobrancaReal,
     voltarCobrancaFilaReal
@@ -36,11 +39,6 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     showToast({ type: "success", title: successTitle });
   }
 
-  function handleConfirm() {
-    confirmPagamento(cobranca.id);
-    showToast({ type: "success", title: "Pagamento confirmado no mock." });
-  }
-
   function handleCancel() {
     const confirmed = window.confirm("Cancelar cobrança mockada? Esta ação altera apenas o estado visual.");
 
@@ -52,15 +50,12 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     showToast({ type: "warning", title: "Cobrança cancelada no mock." });
   }
 
-
-
   function handleAnaliseCredito() {
-    if (isCreditoPendente(cobranca)) {
-      router.push(`/cobrancas/${cobranca.id}`);
+    if (!cobranca.id_cliente) {
+      showToast({ type: "warning", title: "Cliente não identificado para análise de crédito." });
       return;
     }
-
-    showToast({ type: "info", title: "Esta cobrança não possui crédito pendente." });
+    setIsCreditModalOpen(true);
   }
 
   async function handleLiberarOSReal() {
@@ -123,8 +118,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     { label: "Abrir proposta", onClick: () => router.push(`/orcamentos/${cobranca.id_int}`) },
     { label: "Ver cliente", onClick: () => router.push(`/cadastros/${cobranca.id_cliente}`) },
     {
-      label: "Ver financeiro da proposta",
-      onClick: () => router.push(`/orcamentos/${cobranca.id_int}`)
+      label: "Abrir chat da proposta",
+      onClick: () => openChat(cobranca.id_int, { clienteNome: cobranca.cliente, idCliente: cobranca.id_cliente })
     },
     // Real Supabase confirmation actions (Liberar OS / Voltar para fila)
     ...((cobranca.status === "PAID" || cobranca.status === "A_VENCER")
@@ -158,11 +153,6 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
           }
         ]
       : []),
-    {
-      label: "Confirmar pagamento mockado",
-      disabled: cobranca.status === "PAID" || cobranca.status === "CANCELADO",
-      onClick: handleConfirm
-    },
 
     {
       label: "Analisar crédito",
@@ -190,9 +180,16 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   ];
 
   return (
-    <ActionsMenu
-      label={label}
-      items={items}
-    />
+    <>
+      <ActionsMenu
+        label={label}
+        items={items}
+      />
+      <AnaliseCreditoModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        cobranca={cobranca}
+      />
+    </>
   );
 }

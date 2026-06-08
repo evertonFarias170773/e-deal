@@ -91,6 +91,7 @@ export function PropostaCobrancaPanel({
   const [realCreditAnalysis, setRealCreditAnalysis] = useState<CreditAnalysisResult | null>(null);
   const [isLoadingCredit, setIsLoadingCredit] = useState(false);
   const [nowTime, setNowTime] = useState<number>(0);
+  const [showPendingAlert, setShowPendingAlert] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => {
       setNowTime(Date.now());
@@ -293,7 +294,8 @@ export function PropostaCobrancaPanel({
     });
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(bypassPendingCheck?: boolean | React.MouseEvent) {
+    const shouldBypass = bypassPendingCheck === true;
     if (isSaving) {
       return;
     }
@@ -394,6 +396,11 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    if (!shouldBypass && form.tipoCobranca === "E-FATURADO" && analiseCredito.qtdAtrasados > 0) {
+      setShowPendingAlert(true);
+      return;
+    }
+
     const payload: CriarCobrancaFormValues = {
       ...form,
       valor: roundedValor,
@@ -451,8 +458,10 @@ export function PropostaCobrancaPanel({
   const hasCobrancas = cobrancasDaProposta.length > 0;
 
   if (onlyModal) {
-    return modalOpen ? (
-      <div className="fixed inset-0 z-[70] bg-slate-950/60 p-2 sm:p-6" role="dialog" aria-modal="true" onClick={(event) => {
+    return (
+      <>
+        {modalOpen ? (
+          <div className="fixed inset-0 z-[70] bg-slate-950/60 p-2 sm:p-6" role="dialog" aria-modal="true" onClick={(event) => {
         if (event.target === event.currentTarget) {
           closeModal();
         }
@@ -633,17 +642,14 @@ export function PropostaCobrancaPanel({
                       <InfoBox label="Risco de crédito" value={analiseCredito.risco} />
                     </div>
 
-                    <div className={`rounded-2xl border p-4 ${analiseCredito.statusAnalise === "APROVADO" ? "border-teal-200 bg-teal-50 text-teal-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
-                      <p className="font-semibold">{analiseCredito.statusAnalise === "APROVADO" ? "Limite operacional disponível." : "Solicitação enviada para avaliação do financeiro."}</p>
-                      <p className="mt-1 text-sm leading-6">
-                        {analiseCredito.statusAnalise === "APROVADO" 
-                          ? "Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER."
-                          : (analiseCredito.qtdAtrasados > 0
-                              ? "O cliente possui faturamentos pendentes vencidos em aberto. A solicitação ficará bloqueada sob avaliação do financeiro."
-                              : "Limite de crédito insuficiente para o valor solicitado. A solicitação ficará bloqueada sob avaliação do financeiro.")
-                        }
-                      </p>
-                    </div>
+                    {analiseCredito.statusAnalise === "APROVADO" ? (
+                      <div className="rounded-2xl border p-4 border-teal-200 bg-teal-50 text-teal-800">
+                        <p className="font-semibold">Limite operacional disponível.</p>
+                        <p className="mt-1 text-sm leading-6">
+                          Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </PanelCard>
@@ -680,7 +686,41 @@ export function PropostaCobrancaPanel({
           </div>
         </div>
       </div>
-    ) : null;
+    ) : null}
+
+      {showPendingAlert ? (
+        <div className="fixed inset-0 z-[80] bg-slate-950/60 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-6">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-slate-950">Aviso de Pendência</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Este cliente possui faturamento vencido em aberto. A solicitação ficará bloqueada sob avaliação do financeiro.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowPendingAlert(false)}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowPendingAlert(false);
+                  await handleSubmit(true);
+                }}
+                className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                Enviar para avaliação
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
   }
 
   return (
@@ -939,17 +979,14 @@ export function PropostaCobrancaPanel({
                         <InfoBox label="Risco de crédito" value={analiseCredito.risco} />
                       </div>
 
-                      <div className={`rounded-2xl border p-4 ${analiseCredito.statusAnalise === "APROVADO" ? "border-teal-200 bg-teal-50 text-teal-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
-                        <p className="font-semibold">{analiseCredito.statusAnalise === "APROVADO" ? "Limite operacional disponível." : "Solicitação enviada para avaliação do financeiro."}</p>
-                        <p className="mt-1 text-sm leading-6">
-                          {analiseCredito.statusAnalise === "APROVADO" 
-                            ? "Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER."
-                            : (analiseCredito.qtdAtrasados > 0
-                                ? "O cliente possui faturamentos pendentes vencidos em aberto. A solicitação ficará bloqueada sob avaliação do financeiro."
-                                : "Limite de crédito insuficiente para o valor solicitado. A solicitação ficará bloqueada sob avaliação do financeiro.")
-                          }
-                        </p>
-                      </div>
+                      {analiseCredito.statusAnalise === "APROVADO" ? (
+                        <div className="rounded-2xl border p-4 border-teal-200 bg-teal-50 text-teal-800">
+                          <p className="font-semibold">Limite operacional disponível.</p>
+                          <p className="mt-1 text-sm leading-6">
+                            Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER.
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </PanelCard>
@@ -983,6 +1020,38 @@ export function PropostaCobrancaPanel({
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showPendingAlert ? (
+        <div className="fixed inset-0 z-[80] bg-slate-950/60 p-4 flex items-center justify-center animate-fade-in" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-6">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-slate-950">Aviso de Pendência</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Este cliente possui faturamento vencido em aberto. A solicitação ficará bloqueada sob avaliação do financeiro.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowPendingAlert(false)}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowPendingAlert(false);
+                  await handleSubmit(true);
+                }}
+                className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                Enviar para avaliação
+              </button>
             </div>
           </div>
         </div>
