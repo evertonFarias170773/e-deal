@@ -17,6 +17,7 @@ import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supaba
 import { useRouter } from "next/navigation";
 import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
+import { getSefazRejectionInfo } from "@/features/fiscal/constants/sefaz-rejeicoes";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
@@ -2356,37 +2357,47 @@ export function NotasFiscaisPage() {
                             </span>
                           </div>
                         </div>
-                      ) : hasSefazDetails ? (
-                        <div className="space-y-3">
-                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Referência</span>
-                              <strong className="text-slate-800 font-mono text-sm">{focusConfirmNote.ref}</strong>
+                      ) : hasSefazDetails ? (() => {
+                        const rejection = getSefazRejectionInfo(sefazCode);
+                        return (
+                          <div className="space-y-3">
+                            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Referência</span>
+                                <strong className="text-slate-800 font-mono text-sm">{focusConfirmNote.ref}</strong>
+                              </div>
+                              <hr className="border-slate-100" />
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Código Sefaz</span>
+                                <strong className="text-slate-800 font-mono">{sefazCode || "900"}</strong>
+                              </div>
+                              <hr className="border-slate-100" />
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Mensagem Sefaz</span>
+                                <span className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block">
+                                  {sefazMessage}
+                                </span>
+                              </div>
                             </div>
-                            <hr className="border-slate-100" />
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Código Sefaz</span>
-                              <strong className="text-slate-800 font-mono">{sefazCode || "900"}</strong>
-                            </div>
-                            <hr className="border-slate-100" />
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Mensagem Sefaz</span>
-                              <span className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block">
-                                {sefazMessage}
-                              </span>
-                            </div>
-                          </div>
 
-                          <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 space-y-1">
-                            <span className="font-bold text-blue-900 block">Orientação:</span>
-                            <span>
-                              {sefazMessage.toLowerCase().includes("vencimento da parcela")
-                                ? "Corrija os vencimentos na aba Pagamentos. Nenhuma parcela pode vencer antes da data de emissão da NF-e."
-                                : "Revise os dados fiscais e cadastrais da nota fiscal de acordo com a mensagem de rejeição acima."}
-                            </span>
+                            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-900 space-y-2">
+                              <div className="flex items-center gap-1.5 font-bold text-blue-950">
+                                <span className="text-base">💡</span>
+                                <span>{rejection.titulo}</span>
+                              </div>
+                              <div className="text-slate-700 leading-normal">
+                                <strong className="text-slate-800 font-medium block mb-1">O que significa:</strong>
+                                {rejection.explicacao}
+                              </div>
+                              <hr className="border-blue-100/80 my-2" />
+                              <div className="text-slate-700 leading-normal">
+                                <strong className="text-slate-800 font-medium block mb-1">Como resolver:</strong>
+                                {rejection.orientacao}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
+                        );
+                      })() : (
                         <div className="space-y-2">
                           <span className="text-rose-700 block font-semibold">Erro Técnico/Comunicação:</span>
                           <p className="text-xs text-rose-600 bg-rose-50/50 p-3 rounded-xl border border-rose-100 break-words font-mono">
