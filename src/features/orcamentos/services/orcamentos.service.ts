@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { propostasMock, calculateResumo } from "@/lib/mocks/propostas.mock";
+import { calculateResumo } from "@/features/orcamentos/orcamento-utils";
 import type {
   SupabasePagamentoTipoCobrancaRow,
   SupabasePropostaRow,
@@ -7,7 +7,6 @@ import type {
   SupabaseProdutoPropostaVariacaoRow
 } from "@/features/orcamentos/types.supabase";
 import {
-  mapMockPropostaToListItem,
   mapSupabasePropostaRowsToListItems,
   type OrcamentoListItem,
   type OrcamentoListSource
@@ -64,9 +63,6 @@ export type OrcamentosSmokeDiagnostics = {
   statusText: string | null;
 };
 
-function cloneMockList() {
-  return propostasMock.map((proposta) => mapMockPropostaToListItem(proposta));
-}
 
 function getErrorMessage(error: unknown) {
   if (!error) {
@@ -102,36 +98,7 @@ function normalizeSmokeIdInt(value: unknown): number | string | null {
   return null;
 }
 
-function buildMockResult(warnings: string[] = [], diagnostics?: Partial<OrcamentosDiagnostics>): OrcamentosReadResult {
-  return {
-    source: "mock",
-    propostas: cloneMockList(),
-    warnings,
-    detectedColumns: [],
-    diagnostics: {
-      source: "mock",
-      hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-      hasSupabaseAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-      clientImportPath: "@/lib/supabase/client",
-      clientShape: "desconhecido",
-      queryExecuted: Boolean(diagnostics?.queryExecuted),
-      registrosRetornados: diagnostics?.registrosRetornados ?? 0,
-      firstRowColumns: diagnostics?.firstRowColumns ?? [],
-      supabaseError: diagnostics?.supabaseError ?? null,
-      fallbackReason: diagnostics?.fallbackReason ?? null,
-      smoke: diagnostics?.smoke ?? {
-        resultExists: false,
-        resultKeys: [],
-        dataIsArray: false,
-        dataCount: 0,
-        firstIdInts: [],
-        errorMessage: null,
-        status: null,
-        statusText: null
-      }
-    }
-  };
-}
+
 
 function logSupabaseEnv() {
   const hasSupabaseUrl = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
@@ -255,7 +222,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
   }
 
   try {
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa";
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete";
 
     console.log("[Orcamentos][Query]", {
       table: "propostas",
@@ -529,9 +496,16 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
   const rows = fetched.rows;
 
   if (!rows) {
-    return buildMockResult([
-      "Supabase ausente ou consulta falhou. Fallback mock ativado para a lista de orcamentos."
-    ], fetched.diagnostics as Partial<OrcamentosDiagnostics>);
+    return {
+      source: "supabase",
+      propostas: [],
+      warnings: [
+        "A conexão com o banco de dados Supabase falhou na leitura real das propostas."
+      ],
+      detectedColumns: [],
+      errorMessage: fetched.diagnostics.supabaseError || "Erro de conexão com o banco de dados Supabase",
+      diagnostics: fetched.diagnostics as OrcamentosDiagnostics
+    };
   }
 
   if (!rows.length) {
@@ -540,9 +514,16 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
 
   const real = buildRealResult(rows);
   if (!real) {
-    return buildMockResult([
-      "Falha ao mapear propostas do Supabase. Fallback mock ativado."
-    ], fetched.diagnostics as Partial<OrcamentosDiagnostics>);
+    return {
+      source: "supabase",
+      propostas: [],
+      warnings: [
+        "Falha ao mapear propostas do Supabase."
+      ],
+      detectedColumns: [],
+      errorMessage: "Erro ao processar mapeamento das propostas",
+      diagnostics: fetched.diagnostics as OrcamentosDiagnostics
+    };
   }
 
   return {
@@ -558,8 +539,8 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
 export async function getPropostaDetailById(idInt: number): Promise<Proposta | null> {
   const client = getSupabaseClient();
   if (!client) {
-    console.warn("[OrcamentosService] Supabase client não inicializado. Carregando mock.");
-    return propostasMock.find((p) => p.id_int === idInt) || null;
+    console.warn("[OrcamentosService] Supabase client não inicializado.");
+    return null;
   }
 
   try {
@@ -571,8 +552,8 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       .single();
 
     if (proposalError || !proposalRow) {
-      console.warn(`[OrcamentosService] Proposta #${idInt} não encontrada no banco. Usando mock.`);
-      return propostasMock.find((p) => p.id_int === idInt) || null;
+      console.warn(`[OrcamentosService] Proposta #${idInt} não encontrada no banco.`);
+      return null;
     }
 
     // 2. Fetch items
@@ -890,7 +871,7 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
     return proposta;
   } catch (err) {
     console.error(`[OrcamentosService] Erro ao carregar proposta #${idInt} real:`, err);
-    return propostasMock.find((p) => p.id_int === idInt) || null;
+    return null;
   }
 }
 
@@ -910,6 +891,24 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
 
   const isUpdate = formState.id_int && Number.isInteger(Number(formState.id_int));
   let id_int: number | null = isUpdate ? Number(formState.id_int) : null;
+
+  if (isUpdate && id_int) {
+    // Revalidação de segurança no service antes de salvar
+    const { data: billings, error: billingsError } = await client
+      .from("pagamentos_v2")
+      .select("id")
+      .eq("id_int", id_int)
+      .limit(1);
+
+    if (billingsError) {
+      console.error("Erro ao verificar cobranças antes de salvar proposta:", billingsError);
+    } else if (billings && billings.length > 0) {
+      return {
+        success: false,
+        errorMessage: "Esta proposta possui cobrança gerada. Para alterar, exclua primeiro a cobrança pendente."
+      };
+    }
+  }
 
   try {
     let clienteNome = "";
@@ -2224,6 +2223,40 @@ export async function listPropostaChatMentionsForUser(
     return (data || []) as unknown as PropostaChatMentionJoined[];
   } catch (err) {
     console.error("[OrcamentosService] Exceção ao buscar menções do usuário:", err);
+    return [];
+  }
+}
+
+export async function getEligiblePropostas(): Promise<Proposta[]> {
+  const client = getSupabaseClient();
+  if (!client) {
+    console.warn("[OrcamentosService] Supabase client não inicializado em getEligiblePropostas.");
+    return [];
+  }
+
+  try {
+    const { data: proposalRows, error } = await client
+      .from("propostas")
+      .select("id_int")
+      .in("status_interno", ["APROVADO", "AGUARDANDO"])
+      .order("id_int", { ascending: false });
+
+    if (error || !proposalRows) {
+      console.error("[OrcamentosService] Erro ao buscar propostas elegíveis:", error);
+      return [];
+    }
+
+    const propostas: Proposta[] = [];
+    for (const row of proposalRows) {
+      const prop = await getPropostaDetailById(row.id_int);
+      if (prop) {
+        propostas.push(prop);
+      }
+    }
+
+    return propostas;
+  } catch (err) {
+    console.error("[OrcamentosService] Exceção em getEligiblePropostas:", err);
     return [];
   }
 }

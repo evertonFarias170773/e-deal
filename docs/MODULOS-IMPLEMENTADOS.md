@@ -344,10 +344,13 @@ Funcionalidades:
 - modal de criação simplificado com cabeçalho compacto da proposta, dados essenciais, botões simples de forma de pagamento, campos condicionais mínimos e rodapé com `Cancelar`/`Gerar cobrança`;
 - remoção de simulações técnicas extensas dentro do modal (PIX, boleto, checkout, cálculos de taxa e prévias longas), mantendo o foco operacional;
 - lista extensa de cobranças mantida fora do modal, em bloco próprio da proposta;
-- detalhe completo da cobrança com proposta, cliente, `os_ideal`, status, confirmado, condição comercial, links, histórico e campos específicos do método;
-- página pública mockada por `token_publico` com botão de simular pagamento;
-- confirmação e cancelamento mockados persistidos em estado local do navegador;
-- integração do módulo com Orçamentos para gerar e acompanhar cobrança diretamente no detalhe da proposta;
+- redesenho completo de `CobrancaDetail` para um padrão de painel administrativo limpo de alta densidade (sem cards de KPIs e debug brutos, sem referências de mock visual e sem tokens visíveis);
+- ocultação segura de checkout/gateway para cobranças faturadas (`E-FATURADO`, `E_FATURADO`, `FATURADO`) normalizadas pelo tipo da cobrança;
+- regra de valor final do cartão (`cartao_valor_final`) aplicada somente para cartão parcelado e se válido (> 0), caso contrário exibindo o valor base da cobrança;
+- links públicos de PIX/boleto/checkout exibidos visualmente truncados com domínio real (`pay.ai-ideal.com.br/i/...`), mas mantendo o redirecionamento e a cópia no clipboard do link original completo;
+- remoção de botões de atalho redundantes para conferência financeira global no painel e orçamentos, limpando a navegação operacional do vendedor;
+- higienização de termos mockados/simulados em toasts, diálogos, timeline e detalhe de cobranças;
+- integração do módulo com Orçamentos para gerar e acompanhá-la diretamente no detalhe da proposta;
 - validação manual concluída para OS Ideal obrigatório, empresa herdada da proposta, bloqueio visual do Birô, geração mockada de PIX/boleto/cartão/faturado e conferência da lista financeira com liberação por proposta.
 
 Pendências:

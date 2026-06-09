@@ -32,7 +32,7 @@ import {
   createItemFromProduto,
   getClienteBonusPercent,
   getClienteVendedorPadrao
-} from "@/lib/mocks/propostas.mock";
+} from "@/features/orcamentos/orcamento-utils";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
@@ -40,6 +40,7 @@ import { saveProposta, listVendedoresReais, type UsuarioVendedor } from "@/featu
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
+import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
 type OrcamentoFormPageProps = {
   mode: "new" | "edit";
@@ -76,6 +77,29 @@ function getFreightKey(
 }
 
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
+  const { getCobrancasByProposta } = useCobrancas();
+  const targetIdInt = idInt ?? proposta?.id_int;
+  const hasCobrancas = targetIdInt ? getCobrancasByProposta(targetIdInt).length > 0 : false;
+
+  if (mode === "edit" && hasCobrancas) {
+    return (
+      <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-center max-w-lg mx-auto mt-12 space-y-4 shadow-sm">
+        <h2 className="text-lg font-bold text-amber-800">Edição Bloqueada</h2>
+        <p className="text-sm text-amber-700 leading-relaxed font-semibold">
+          Esta proposta possui cobrança gerada. Para alterar, exclua primeiro a cobrança pendente.
+        </p>
+        <div className="pt-2">
+          <Link
+            href={targetIdInt ? `/orcamentos/${targetIdInt}` : "/orcamentos"}
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+          >
+            Voltar para detalhes
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (mode === "edit" && !proposta && idInt) {
     return <OrcamentoFormLoader idInt={idInt} />;
   }

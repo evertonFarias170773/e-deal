@@ -40,7 +40,9 @@ export function mapSupabaseNfeRowToReadModel(row: SupabaseNfeRow): NfeReadModel 
     endereco_entrega_observacao: row.endereco_entrega_observacao,
     valor_produtos: row.valor_produtos,
     valor_desconto: row.valor_desconto,
-    valor_total_nf: row.valor_total_nf,
+    valor_total_nf: (row.valor_total_nf !== null && row.valor_total_nf !== undefined)
+      ? row.valor_total_nf
+      : ((row.valor_produtos ?? 0) + (row.valor_frete ?? 0)),
     caminho_xml: row.caminho_xml,
     caminho_danfe: row.caminho_danfe,
     url_xml: row.url_xml,

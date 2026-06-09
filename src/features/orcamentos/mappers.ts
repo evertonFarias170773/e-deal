@@ -1,8 +1,6 @@
-import type { Proposta } from "@/features/orcamentos/types";
 import type { SupabasePropostaRow } from "@/features/orcamentos/types.supabase";
-import { mockCompanies } from "@/lib/mocks/empresas.mock";
 
-export type OrcamentoListSource = "supabase" | "mock";
+export type OrcamentoListSource = "supabase";
 
 export type OrcamentoListItem = {
   id: string;
@@ -26,7 +24,6 @@ export type OrcamentoListItem = {
   tipoCobrancaLabel: string;
   modelo: "AVULSO" | "PROPOSTA";
   source: OrcamentoListSource;
-  mockProposal?: Proposta;
   rawColumns?: string[];
 };
 
@@ -167,21 +164,7 @@ function getStatusLabel(status: string) {
   return status || "Sem status";
 }
 
-function getCobrancaLabel(value: unknown) {
-  const text = normalize(toText(value));
 
-  if (!text) {
-    return "Nao informada";
-  }
-
-  if (text.includes("nao")) return "Nao gerada";
-  if (text.includes("pend")) return "Pendente";
-  if (text.includes("gerad")) return "Gerada";
-  if (text.includes("pag")) return "Paga";
-  if (text.includes("cancel")) return "Cancelada";
-
-  return toText(value);
-}
 
 function normalizeTipoCobranca(value: unknown) {
   const raw = normalize(toText(value));
@@ -269,7 +252,10 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
   const data = parseMaybeDate(row.created_at ?? row.data ?? row.data_criacao ?? row.data_proposta);
   const statusInterno = pickText(row, ["status_interno"]);
   const statusRaw = statusInterno || pickText(row, ["status"]);
-  const total = pickNumber(row, ["valor_total", "valor"]) ?? 0;
+  const valorTotalDb = pickNumber(row, ["valor_total"]);
+  const valorDb = pickNumber(row, ["valor"]) ?? 0;
+  const valorFreteDb = pickNumber(row, ["valor_frete"]) ?? 0;
+  const total = (valorTotalDb !== null && valorTotalDb !== undefined) ? valorTotalDb : (valorDb + valorFreteDb);
   const isAvulsoRaw = parseBooleanLike(row.is_avulso);
   const isAvulso = isAvulsoRaw === true;
   const modelo: OrcamentoListItem["modelo"] = isAvulso ? "AVULSO" : "PROPOSTA";
@@ -312,32 +298,5 @@ export function mapSupabasePropostaRowsToListItems(rows: SupabasePropostaRow[]) 
   return rows.map(mapRowToListItem).filter((item): item is OrcamentoListItem => Boolean(item));
 }
 
-export function mapMockPropostaToListItem(proposta: Proposta): OrcamentoListItem {
-  const empresaMap = mockCompanies.find((company) => company.name === proposta.empresa || company.shortName === proposta.empresa);
 
-  return {
-    id: proposta.id,
-    id_int: proposta.id_int,
-    clienteId: String((proposta.cliente as { idCliente?: number }).idCliente ?? ""),
-    clienteNome: proposta.cliente.nome,
-    osIdeal: "",
-    documento: proposta.cliente.documento || "",
-    empresaId: empresaMap?.id ?? null,
-    empresaLabel: empresaMap?.shortName || getEmpresaLabel(empresaMap?.id ?? null, proposta.empresa),
-    vendedor: proposta.vendedor,
-    createdAt: proposta.data,
-    dataKey: getLocalDateKey(proposta.data),
-    periodoKey: getLocalMonthKey(proposta.data),
-    status: proposta.status,
-    statusLabel: getStatusLabel(proposta.status),
-    statusInterno: proposta.status,
-    isAvulsoRaw: false,
-    total: proposta.resumo.valorTotal,
-    tiposCobranca: [],
-    tipoCobrancaLabel: getCobrancaLabel(proposta.cobrancaStatus),
-    modelo: "PROPOSTA",
-    source: "mock",
-    mockProposal: proposta
-  };
-}
 

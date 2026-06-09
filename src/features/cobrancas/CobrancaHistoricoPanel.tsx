@@ -31,7 +31,7 @@ export function CobrancaHistoricoPanel({ cobranca }: CobrancaHistoricoPanelProps
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">propostas_chat mockado</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Histórico de mensagens internas</h3>
         <div className="mt-3 space-y-3">
           {cobranca.propostasChat.length ? (
             cobranca.propostasChat.map((evento) => (
@@ -48,7 +48,7 @@ export function CobrancaHistoricoPanel({ cobranca }: CobrancaHistoricoPanelProps
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
-              Nenhuma mensagem interna registrada para esta cobrança mockada.
+              Nenhuma mensagem interna registrada para esta cobrança.
             </div>
           )}
         </div>

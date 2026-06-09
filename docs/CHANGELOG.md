@@ -3,6 +3,14 @@
 ## 2026-06-09
 
 ### Adicionado
+- **Refinamento e Higienização de UX de Cobranças e Propostas (/goal)**:
+  - Redesenho completo de [CobrancaDetail.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/cobrancas/CobrancaDetail.tsx) adotando padrão administrativo de alta densidade visual (sem KPIs redundantes e sem campos técnicos desnecessários).
+  - Implementação de ocultação de checkout para faturados (`E-FATURADO`, `E_FATURADO`, `FATURADO`) normalizando o tipo da cobrança em [PropostaCobrancaPanel.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/cobrancas/PropostaCobrancaPanel.tsx) e no detalhe.
+  - Regra de valor final do cartão (`cartao_valor_final`) aplicada somente quando o tipo for cartão parcelado e o valor for maior que zero, retornando ao valor base (`valor`) nos demais casos.
+  - Exibição visual truncada da URL pública de checkout no painel, garantindo que o link original completo seja copiado para a área de transferência.
+  - Remoção de atalhos e botões redundantes de conferência financeira no painel de cobranças geradas e nos orçamentos, sem alterar o acesso geral ao painel financeiro.
+  - Higienização completa de termos e frases mockadas/simuladas em [CobrancaDetail.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/cobrancas/CobrancaDetail.tsx), [CobrancaHistoricoPanel.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/cobrancas/CobrancaHistoricoPanel.tsx) e [CobrancaActionsMenu.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/cobrancas/CobrancaActionsMenu.tsx).
+
 - **Refinamento de UX de Orçamentos e Propostas (Ressalvas Obrigatórias)**:
   - Componente [ContactEditModal.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/orcamentos/components/ContactEditModal.tsx) para edição estritamente local/em memória de contatos do cliente no formulário, sem chamadas ao Supabase (`public.contatos`).
   - Componente [ProductSearchSelector.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/orcamentos/components/ProductSearchSelector.tsx) com barra de pesquisa para filtrar o catálogo real (por código, nomeReal e apelidos), barra de tags com categorias dinâmicas e validação de duplicidade antes de adicionar produtos.

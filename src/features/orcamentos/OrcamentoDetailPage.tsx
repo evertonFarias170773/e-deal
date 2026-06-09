@@ -19,7 +19,7 @@ import { formatDate } from "@/lib/formatters/date";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import type { Proposta, PropostaStatus } from "@/features/orcamentos/types";
 import { buildPropostaInformalText, getCobrancaLabel } from "@/features/orcamentos/orcamento-utils";
-import { getClienteBonusPercent } from "@/lib/mocks/propostas.mock";
+import { getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import {
@@ -132,9 +132,9 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const freteEscolhido = proposta.fretes.find((frete) => frete.id === proposta.freteEscolhidoId);
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
-  const totalCobradoMock = cobrancasAtivas.reduce((total, item) => total + (item.cartao_valor_final ?? item.valor), 0);
+  const totalCobradoReal = cobrancasAtivas.reduce((total, item) => total + (item.cartao_valor_final ?? item.valor), 0);
   const totalPropostaRounded = Math.round(proposta.resumo.valorTotal * 100) / 100;
-  const totalCobradoRealRounded = Math.round(totalCobradoMock * 100) / 100;
+  const totalCobradoRealRounded = Math.round(totalCobradoReal * 100) / 100;
   const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
 
   const liberacaoFinanceira = getLiberacaoPedidoLabel(getLiberacaoPedidoStatus(cobrancasDaProposta));
@@ -283,7 +283,11 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
             <StatusBadge status={proposta.status} tone={getStatusTone(proposta.status)} />
             <ActionsMenu
               items={[
-                { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${proposta.id_int}/editar`) },
+                {
+                  label: "Editar proposta",
+                  onClick: () => router.push(`/orcamentos/${proposta.id_int}/editar`),
+                  disabled: cobrancasDaProposta.length > 0
+                },
                 {
                   label: chatResumo && chatResumo.total_mensagens > 0
                     ? `Ver chat interno (${chatResumo.total_mensagens})`
@@ -303,15 +307,14 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
                 ...(saldoRestante > 0 && !isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
-                { label: "Ver financeiro", onClick: () => router.push("/cobrancas") },
                 {
                   label: "Cancelar proposta",
                   destructive: true,
                   onClick: () => {
                     showToast({
                       type: "warning",
-                      title: "Cancelamento mockado",
-                      description: "Nenhuma proposta real foi cancelada."
+                      title: "Cancelamento da proposta",
+                      description: "O cancelamento da proposta foi solicitado."
                     });
                     void registrarMensagemSistemaProposta({
                       idInt: proposta.id_int,
@@ -327,6 +330,15 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
         }
       />
 
+      {cobrancasDaProposta.length > 0 && (
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-800 shadow-sm flex flex-col gap-1.5">
+          <h2 className="font-semibold text-base">Edição Bloqueada</h2>
+          <p className="text-sm font-semibold text-amber-700">
+            Esta proposta possui cobrança gerada. Para alterar, exclua primeiro a cobrança pendente.
+          </p>
+        </div>
+      )}
+
       {proposta.cliente.restricao ? (
         <div className="rounded-3xl border border-orange-200 bg-orange-50 p-5 text-orange-800">
           <h2 className="font-semibold">Cliente com restricao</h2>
@@ -335,7 +347,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Subtotal produtos" value={formatCurrency(proposta.resumo.subtotalProdutos)} description="Soma mockada dos itens da proposta." tone="info" icon={Package} />
+        <SummaryCard title="Subtotal produtos" value={formatCurrency(proposta.resumo.subtotalProdutos)} description="Soma dos itens da proposta." tone="info" icon={Package} />
         <SummaryCard title="Frete escolhido" value={formatCurrency(proposta.resumo.frete)} description={freteEscolhido ? `${freteEscolhido.transportadora} - ${freteEscolhido.prazo}` : "Frete nao definido."} tone="warning" icon={Truck} />
         <SummaryCard title="Total final" value={formatCurrency(proposta.resumo.valorTotal)} description={`Pagamento: ${proposta.formaPagamento}.`} tone="success" icon={FileText} />
         <SummaryCard
@@ -343,7 +355,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
           value={cobrancasAtivas.length ? `${cobrancasAtivas.length} gerada(s)` : getCobrancaLabel(proposta.cobrancaStatus)}
           description={
             cobrancasAtivas.length
-              ? `${formatCurrency(totalCobradoMock)} no mock • ${liberacaoFinanceira}.`
+              ? `${formatCurrency(totalCobradoReal)} • ${liberacaoFinanceira}.`
               : "Criação principal acontece dentro desta proposta; conferência fica no módulo financeiro."
           }
           tone="neutral"

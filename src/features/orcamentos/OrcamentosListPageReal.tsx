@@ -197,7 +197,7 @@ export function OrcamentosListPageReal() {
   const [isLoadingCobrancaProposta, setIsLoadingCobrancaProposta] = useState(false);
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
-  const { propostas, source, warnings, detectedColumns, loadedCount, isLoading } = useOrcamentosReadOnlyData(periodo);
+  const { propostas, source, warnings, detectedColumns, loadedCount, isLoading, errorMessage } = useOrcamentosReadOnlyData(periodo);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
@@ -351,16 +351,10 @@ export function OrcamentosListPageReal() {
     });
   }, [detectedColumns, loadedCount, source, warnings]);
 
-  function showMockAction(title: string) {
-    showToast({
-      type: "info",
-      title,
-      description: "Acao mockada para validacao visual. Nenhum backend real foi acionado."
-    });
-  }
+
 
   async function handleGerarPDFForListItem(item: OrcamentoListItem) {
-    const isUnregistered = !item.clienteId || item.clienteId === "0" || item.clienteId === "null" || Boolean(item.mockProposal?.clienteNaoCadastrado);
+    const isUnregistered = !item.clienteId || item.clienteId === "0" || item.clienteId === "null";
     if (isUnregistered) {
       showToast({
         type: "warning",
@@ -461,12 +455,6 @@ export function OrcamentosListPageReal() {
   }
 
   async function handleOpenCobrancaModal(item: OrcamentoListItem) {
-    if (item.mockProposal) {
-      setSelectedPropostaForCobranca(item.mockProposal);
-      setIsCobrancaModalOpen(true);
-      return;
-    }
-
     if (isLoadingCobrancaProposta) return;
     setIsLoadingCobrancaProposta(true);
     showToast({
@@ -513,26 +501,6 @@ export function OrcamentosListPageReal() {
   }
 
   async function handleCopiarPropostaInformal(item: OrcamentoListItem) {
-    if (item.mockProposal) {
-      const frete = item.mockProposal.fretes.find((freteItem) => freteItem.id === item.mockProposal!.freteEscolhidoId);
-      const text = buildPropostaInformalText({
-        id_int: item.mockProposal.id_int,
-        clienteNome: item.mockProposal.cliente.nome,
-        itens: item.mockProposal.itens,
-        frete,
-        resumo: item.mockProposal.resumo,
-        formaPagamento: item.mockProposal.formaPagamento
-      });
-
-      try {
-        await navigator.clipboard?.writeText(text);
-        showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
-      } catch {
-        showToast({ type: "error", title: "Erro ao copiar", description: "Não foi possível copiar para a área de transferência." });
-      }
-      return;
-    }
-
     showToast({
       type: "info",
       title: "Carregando proposta",
@@ -568,32 +536,21 @@ export function OrcamentosListPageReal() {
   }
 
   function getActions(item: OrcamentoListItem) {
-    const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0" || item.clienteId === "null" || Boolean(item.mockProposal?.clienteNaoCadastrado);
+    const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0" || item.clienteId === "null";
     const chatResumo = chatResumos[item.id_int];
     const chatLabel = chatResumo && chatResumo.nao_lidas_count > 0
       ? `Ver chat interno (${chatResumo.nao_lidas_count} não lidas)`
       : "Ver chat interno";
-
-    if (item.mockProposal) {
-      return [
-        { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
-        { label: chatLabel, onClick: () => handleOpenChat(item) },
-        { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
-        { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
-        {
-          label: "Copiar proposta informal",
-          onClick: () => void handleCopiarPropostaInformal(item)
-        },
-        { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
-        ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
-        { label: "Cancelar proposta", destructive: true, onClick: () => showMockAction("Cancelar proposta") }
-      ];
-    }
+    const hasCobrancas = getCobrancasByProposta(item.id_int).length > 0;
 
     return [
       { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
       { label: chatLabel, onClick: () => handleOpenChat(item) },
-      { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${item.id_int}/editar`) },
+      {
+        label: "Editar proposta",
+        onClick: () => router.push(`/orcamentos/${item.id_int}/editar`),
+        disabled: hasCobrancas
+      },
       { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
       {
         label: "Copiar proposta informal",
@@ -906,26 +863,26 @@ export function OrcamentosListPageReal() {
 
       {!isLoading ? (
         <section className={`rounded-3xl border border-dashed p-4 text-sm ${
-          source === "supabase"
-            ? "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-800/20 dark:border-slate-700 dark:text-slate-400"
-            : "border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:border-amber-800 dark:text-amber-300"
+          errorMessage
+            ? "border-red-300 bg-red-50 text-red-800 dark:bg-red-950/20 dark:border-red-800 dark:text-red-300"
+            : "border-slate-300 bg-slate-50 text-slate-600 dark:bg-slate-800/20 dark:border-slate-700 dark:text-slate-400"
         }`}>
           <div className="flex items-start gap-3">
-            <CalendarDays className={`mt-0.5 h-4 w-4 ${source === "supabase" ? "text-[#0f9f9a]" : "text-amber-600"}`} />
+            <CalendarDays className={`mt-0.5 h-4 w-4 ${errorMessage ? "text-red-600" : "text-[#0f9f9a]"}`} />
             <div>
               <p className="font-semibold">
-                {source === "supabase"
-                  ? `Dados reais carregados em public.propostas (${loadedCount} registros).`
-                  : "Não foi possível carregar dados reais. Exibindo fallback local."}
+                {errorMessage
+                  ? "Erro ao conectar com o banco de dados Supabase"
+                  : `Dados reais carregados em public.propostas (${loadedCount} registros).`}
               </p>
-              {source === "mock" && (
+              {errorMessage && (
                 <p className="mt-1 text-xs">
-                  A conexão com o banco de dados Supabase falhou ou não retornou dados. Exibindo dados de simulação locais.
+                  {errorMessage}
                 </p>
               )}
             </div>
           </div>
-          {source === "supabase" ? (
+          {!errorMessage ? (
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               Colunas detectadas: {detectedColumns.slice(0, 20).join(", ")}
               {detectedColumns.length > 20 ? "..." : ""}

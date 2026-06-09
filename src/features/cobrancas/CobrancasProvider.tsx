@@ -22,6 +22,7 @@ type CobrancasContextValue = {
   createCobranca: (values: CriarCobrancaFormValues, proposta?: Proposta) => Promise<Cobranca>;
   confirmPagamento: (id: string) => void;
   cancelCobranca: (id: string, motivo: string) => void;
+  deleteCobranca: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
   liberarParaPedido: (idInt: number) => boolean;
   refreshCobrancas: () => Promise<CobrancasReadResult>;
   getCobrancaById: (id: string) => Cobranca | undefined;
@@ -92,6 +93,10 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setHasLoadedStorage(true);
     return result;
   }, []);
+
+  const refreshCobrancas = useCallback(async () => {
+    return loadData();
+  }, [loadData]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -427,7 +432,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const next = createCobrancaFromForm(values, cobrancas);
+    if (!proposta) {
+      throw new Error("Dados da proposta são obrigatórios para criar cobrança.");
+    }
+
+    const next = createCobrancaFromForm(values, proposta, cobrancas);
     setCobrancas((current) => [next, ...current]);
     setCobrancasStats((current) => [next, ...current]);
     return next;
@@ -532,6 +541,62 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setCobrancas(updateCob);
     setCobrancasStats(updateCob);
   }, [source]);
+
+  const deleteCobranca = useCallback(async (id: string): Promise<{ success: boolean; errorMessage?: string }> => {
+    const cobranca = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
+    if (!cobranca) {
+      return { success: false, errorMessage: "Cobrança não encontrada." };
+    }
+
+    const statusNormalized = cobranca.status?.trim().toUpperCase();
+    if (statusNormalized === "PAID") {
+      return { success: false, errorMessage: "Não é permitido excluir cobrança paga." };
+    }
+
+    if (source === "supabase") {
+      const client = getSupabaseClient();
+      if (!client) {
+        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+      }
+
+      // Revalidar status atual no Supabase para impedir exclusão de PAID em tempo real
+      const { data: dbRow, error: fetchError } = await client
+        .from("pagamentos_v2")
+        .select("status")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (fetchError || !dbRow) {
+        console.error("[deleteCobranca] Erro ao buscar status atual da cobrança:", fetchError);
+        return {
+          success: false,
+          errorMessage: fetchError?.message || "Não foi possível verificar o status atual da cobrança no banco."
+        };
+      }
+
+      if (String(dbRow.status || "").trim().toUpperCase() === "PAID") {
+        return { success: false, errorMessage: "Não é permitido excluir cobrança paga." };
+      }
+
+      const { error } = await client
+        .from("pagamentos_v2")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        console.error("[deleteCobranca] Erro ao excluir do Supabase:", error);
+        return { success: false, errorMessage: error.message };
+      }
+
+      await refreshCobrancas();
+      return { success: true };
+    } else {
+      const updateCob = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== id);
+      setCobrancas(updateCob);
+      setCobrancasStats(updateCob);
+      return { success: true };
+    }
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
 
   const liberarParaPedido = useCallback((idInt: number) => {
     if (source === "supabase") {
@@ -655,9 +720,6 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return true;
   }, [source]);
 
-  const refreshCobrancas = useCallback(async () => {
-    return loadData();
-  }, [loadData]);
 
   const value = useMemo<CobrancasContextValue>(
     () => ({
@@ -667,6 +729,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       createCobranca,
       confirmPagamento,
       cancelCobranca,
+      deleteCobranca,
       liberarParaPedido,
       refreshCobrancas,
       getCobrancaById: (id: string) => cobrancas.find((item) => item.id === id) ?? cobrancasStats.find((item) => item.id === id),
@@ -681,6 +744,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       cobrancasStats,
       source,
       cancelCobranca,
+      deleteCobranca,
       confirmPagamento,
       createCobranca,
       liberarParaPedido,

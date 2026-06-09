@@ -1,4 +1,3 @@
-import type { Proposta } from "@/features/orcamentos/types";
 import type {
   Cobranca,
   CobrancaHistoricoEvento,
@@ -9,8 +8,8 @@ import type {
   PropostaChatFinanceiro,
   PropostaCobrancaSnapshot
 } from "@/features/cobrancas/types";
+import type { Proposta } from "@/features/orcamentos/types";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
-import { propostasMock } from "@/lib/mocks/propostas.mock";
 import { roundMoney } from "@/features/cobrancas/cobrancas-utils";
 
 export const empresasRecebedorasMock: EmpresaRecebedoraOption[] = mockCompanies
@@ -22,19 +21,19 @@ export const empresasRecebedorasMock: EmpresaRecebedoraOption[] = mockCompanies
     documento: company.document,
     fluxoFuturo:
       company.shortName === "Ideal"
-        ? "Fluxo futuro com credencial e conta exclusiva da Ideal."
+        ? "Fluxo com credencial e conta exclusiva da Ideal."
         : company.shortName === "Biro"
-          ? "Fluxo futuro com regras próprias do Birô e restrições comerciais no mock."
-          : "Fluxo futuro com credenciais independentes da E3.",
+          ? "Fluxo com regras próprias do Birô."
+          : "Fluxo com credenciais independentes da E3.",
     descricao: `Empresa recebedora ${company.shortName} preparada para integrações financeiras próprias.`
   }));
 
 export const tiposCobrancaMock: Array<{ id: CobrancaTipo; label: string; descricao: string }> = [
-  { id: "PIX", label: "PIX", descricao: "Cria cobrança imediata com token público e PIX copia e cola mockados." },
-  { id: "BOLETO", label: "Boleto", descricao: "Gera linha digitável e PDF mockado quando a empresa permitir boleto à vista." },
-  { id: "CREDIT_CARD", label: "Cartão de crédito (Antigo)", descricao: "Cria checkout mockado para cobrança à vista no cartão." },
+  { id: "PIX", label: "PIX", descricao: "Cria cobrança imediata com token público." },
+  { id: "BOLETO", label: "Boleto", descricao: "Gera linha digitável e PDF." },
+  { id: "CREDIT_CARD", label: "Cartão de crédito (Antigo)", descricao: "Cria checkout para cobrança à vista no cartão." },
   { id: "CARD_PARCELADO", label: "Cartão de crédito", descricao: "Simula checkout de cartão com juros/taxa ou à vista." },
-  { id: "E-FATURADO", label: "Faturado", descricao: "Valida crédito do cliente e envia para análise financeira quando faltar limite." }
+  { id: "E-FATURADO", label: "Faturado", descricao: "Valida crédito do cliente e envia para análise financeira." }
 ];
 
 const tipoDisponibilidadePorEmpresa: Record<string, Record<CobrancaTipo, boolean>> = {
@@ -73,27 +72,10 @@ function createChat(
   return base.map((item, index) => ({ id: `chat_${index + 1}_${item.data}`, ...item }));
 }
 
-function buildSnapshot(proposta: Proposta, valorCobrado = 0): PropostaCobrancaSnapshot {
-  const valorFrete = proposta.fretes.find((item) => item.id === proposta.freteEscolhidoId)?.valor ?? proposta.resumo.frete;
-
-  return {
-    id_int: proposta.id_int,
-    statusProposta: proposta.status,
-    cliente: proposta.cliente.nome,
-    documento: proposta.cliente.documento,
-    valorTotal: roundMoney(proposta.resumo.valorTotal),
-    valorPendente: Math.max(0, roundMoney(proposta.resumo.valorTotal) - roundMoney(valorCobrado)),
-    empresaProposta: proposta.empresa,
-    vendedor: proposta.vendedor,
-    descricao: proposta.observacoes,
-    valorFrete: roundMoney(valorFrete)
-  };
-}
-
 function createPixCode(idPagamento: string, valor: number) {
-  return `00020126580014BR.GOV.BCB.PIX0136mock-${idPagamento}520400005303986540${valor
+  return `00020126580014BR.GOV.BCB.PIX0136pix-${idPagamento}520400005303986540${valor
     .toFixed(2)
-    .replace(".", "")}5802BR5915ERP IDEAL MOCK6009BLUMENAU62070503***6304MOCK`;
+    .replace(".", "")}5802BR5915ERP IDEAL 6009BLUMENAU62070503***6304`;
 }
 
 function createLinhaDigitavel(idPagamento: string, valor: number) {
@@ -118,8 +100,9 @@ export function getEmpresaRecebedoraByNome(nome: string) {
   return empresasRecebedorasMock.find((empresa) => empresa.nome === nome);
 }
 
-export function getEmpresaRecebedoraByProposta(proposta: Pick<Proposta, "empresa">) {
-  return getEmpresaRecebedoraByNome(proposta.empresa);
+export function getEmpresaRecebedoraByProposta(proposta: { empresa?: string; empresaProposta?: string }) {
+  const nomeEmpresa = proposta.empresaProposta || proposta.empresa || "";
+  return getEmpresaRecebedoraByNome(nomeEmpresa);
 }
 
 export function isTipoDisponivelParaEmpresa(empresaNome: string, tipo: CobrancaTipo) {
@@ -128,18 +111,14 @@ export function isTipoDisponivelParaEmpresa(empresaNome: string, tipo: CobrancaT
 
 export function getMensagemTipoIndisponivel(empresaNome: string, tipo: CobrancaTipo) {
   if (empresaNome === "Ideal Biro" && tipo === "BOLETO") {
-    return "Boleto à vista não está disponível no mock para Birô.";
+    return "Boleto à vista não está disponível para Birô.";
   }
 
   if (empresaNome === "Ideal Biro" && (tipo === "CREDIT_CARD" || tipo === "CARD_PARCELADO")) {
-    return "Cartão não está disponível no mock para Birô.";
+    return "Cartão não está disponível para Birô.";
   }
 
   return "";
-}
-
-export function getEligiblePropostasForCobranca() {
-  return propostasMock.filter((proposta) => proposta.status === "APROVADO" || proposta.status === "AGUARDANDO");
 }
 
 export function createParcelasSimuladas(valor: number): CobrancaParcelaSimulada[] {
@@ -169,27 +148,21 @@ export function createParcelasSimuladas(valor: number): CobrancaParcelaSimulada[
   });
 }
 
-function buildInitialFormValues(): CriarCobrancaFormValues {
-  const proposta = getEligiblePropostasForCobranca()[0];
-
-  return {
-    propostaIdInt: proposta?.id_int ?? null,
-    osIdeal: "",
-    tipoCobranca: "PIX",
-    valor: roundMoney(proposta?.resumo.valorTotal ?? 0),
-    vencimento: "2026-05-30",
-    observacao: proposta?.observacoes ?? "",
-    descricao: proposta?.observacoes ?? "Cobrança mockada vinculada à proposta.",
-    condicaoPagamento: "À vista",
-    expiracaoPix: "2026-05-30T18:00",
-    multaPercentual: 2,
-    jurosPercentual: 1,
-    capturaAutomatica: true,
-    parcelaSelecionada: undefined
-  };
-}
-
-export const criarCobrancaInitialValues = buildInitialFormValues();
+export const criarCobrancaInitialValues: CriarCobrancaFormValues = {
+  propostaIdInt: null,
+  osIdeal: "",
+  tipoCobranca: "PIX",
+  valor: 0,
+  vencimento: "",
+  observacao: "",
+  descricao: "",
+  condicaoPagamento: "À vista",
+  expiracaoPix: "",
+  multaPercentual: 2,
+  jurosPercentual: 1,
+  capturaAutomatica: true,
+  parcelaSelecionada: undefined
+};
 
 function createBaseCobranca({
   id,
@@ -211,7 +184,7 @@ function createBaseCobranca({
   id: string;
   id_pagamento: string;
   os_ideal: string;
-  proposta: Proposta;
+  proposta: PropostaCobrancaSnapshot;
   tipo_cobranca: CobrancaTipo;
   status: Cobranca["status"];
   valor: number;
@@ -224,11 +197,11 @@ function createBaseCobranca({
   creditoPendente?: boolean;
   pedidoLiberadoMock?: boolean;
 }): Cobranca {
-  const empresa = getEmpresaRecebedoraByProposta(proposta);
+  const empresa = getEmpresaRecebedoraByNome(proposta.empresaProposta);
   const token = `pub_${id_pagamento.toLowerCase()}`;
 
   if (!empresa) {
-    throw new Error(`Empresa recebedora mockada não encontrada para a proposta: ${proposta.empresa}`);
+    throw new Error(`Empresa recebedora não encontrada para a proposta: ${proposta.empresaProposta}`);
   }
 
   return {
@@ -236,52 +209,87 @@ function createBaseCobranca({
     id_pagamento,
     os_ideal,
     id_int: proposta.id_int,
-    id_cliente: proposta.cliente.idCliente,
+    id_cliente: 120017,
     valor,
     status,
     tipo_cobranca,
     created_at: createdAt,
     paid_at: paidAt,
     vencimento,
-    cliente: proposta.cliente.nome,
+    cliente: proposta.cliente,
     empresa: empresa.nome,
     descricao,
-    documento: proposta.cliente.documento,
+    documento: proposta.documento,
     atendente: proposta.vendedor,
     confirmado,
-    confirmado_por: confirmado ? "Financeiro mockado" : undefined,
+    confirmado_por: confirmado ? "Financeiro" : undefined,
     data_confirmacao: confirmado ? paidAt ?? createdAt : undefined,
     id_empresa: empresa.id,
     token_publico: token,
     url_cobranca: buildPublicUrl(token),
-    saldo_pendente: Math.max(0, proposta.resumo.valorTotal - valor),
-    valor_frete: proposta.resumo.frete,
+    saldo_pendente: Math.max(0, proposta.valorTotal - valor),
+    valor_frete: proposta.valorFrete,
     condicao_pagamento: condicaoPagamento,
     creditoPendente,
     pedidoLiberadoMock,
-    proposta: buildSnapshot(proposta, valor),
+    proposta,
     historico: [],
     propostasChat: []
   };
 }
 
-const propostaIdeal = propostasMock[0];
-const propostaBiro = propostasMock[1];
-const propostaE3 = propostasMock[2];
+const snapshotIdeal: PropostaCobrancaSnapshot = {
+  id_int: 16790,
+  statusProposta: "NOVO",
+  cliente: "Ideal Comercial Ltda",
+  documento: "12.345.678/0001-90",
+  valorTotal: 1030.9,
+  valorPendente: 1030.9,
+  empresaProposta: "Ideal Grafica",
+  vendedor: "Everton Farias",
+  descricao: "Pulseiras e ingressos para evento corporativo.",
+  valorFrete: 68.9
+};
+
+const snapshotBiro: PropostaCobrancaSnapshot = {
+  id_int: 16804,
+  statusProposta: "AGUARDANDO",
+  cliente: "Birô Serviços Graficos",
+  documento: "98.765.432/0001-10",
+  valorTotal: 9800,
+  valorPendente: 9800,
+  empresaProposta: "Ideal Biro",
+  vendedor: "Caroline Silva",
+  descricao: "Aguardando validação de faturamento para credenciais.",
+  valorFrete: 94.5
+};
+
+const snapshotE3: PropostaCobrancaSnapshot = {
+  id_int: 16821,
+  statusProposta: "APROVADO",
+  cliente: "E3 Distribuidora de Brindes",
+  documento: "45.678.901/0001-23",
+  valorTotal: 14200,
+  valorPendente: 14200,
+  empresaProposta: "E3 Brindes",
+  vendedor: "Edison Jr",
+  descricao: "Brindes corporativos com empenho público.",
+  valorFrete: 52.7
+};
 
 const pixPendente = {
   ...createBaseCobranca({
     id: "cob_1",
     id_pagamento: "PG-2026-0001",
     os_ideal: "OS-IDEAL-2101",
-    proposta: propostaIdeal,
+    proposta: snapshotIdeal,
     tipo_cobranca: "PIX",
     status: "A_RECEBER",
     valor: 1030.9,
     createdAt: "2026-05-21T10:20:00-03:00",
     vencimento: "2026-05-24T18:00:00-03:00",
     confirmado: false,
-    descricao: "PIX mockado gerado na proposta pelo vendedor.",
+    descricao: "PIX gerado na proposta pelo vendedor.",
     condicaoPagamento: "PIX à vista"
   }),
   pix_copia_cola: createPixCode("PG-2026-0001", 1030.9),
@@ -289,7 +297,7 @@ const pixPendente = {
     {
       data: "2026-05-21T10:20:00-03:00",
       titulo: "Cobrança criada dentro da proposta",
-      descricao: "Vendedor gerou PIX mockado a partir da área Criar e ver cobranças.",
+      descricao: "Vendedor gerou PIX a partir da área de cobranças.",
       tipo: "success"
     }
   ])
@@ -300,7 +308,7 @@ const pixPago = {
     id: "cob_2",
     id_pagamento: "PG-2026-0002",
     os_ideal: "OS-IDEAL-2101",
-    proposta: propostaIdeal,
+    proposta: snapshotIdeal,
     tipo_cobranca: "PIX",
     status: "PAID",
     valor: 700,
@@ -308,7 +316,7 @@ const pixPago = {
     vencimento: "2026-05-19T23:59:00-03:00",
     confirmado: true,
     paidAt: "2026-05-18T09:12:00-03:00",
-    descricao: "Entrada PIX confirmada no mock.",
+    descricao: "Entrada PIX confirmada.",
     condicaoPagamento: "Entrada PIX"
   }),
   pix_copia_cola: createPixCode("PG-2026-0002", 700),
@@ -316,15 +324,15 @@ const pixPago = {
     {
       data: "2026-05-18T08:30:00-03:00",
       titulo: "PIX gerado na proposta",
-      descricao: "Cobrança criada como entrada financeira.",
+      description: "Cobrança criada como entrada financeira.",
       tipo: "success"
-    },
+    } as unknown as Pick<CobrancaHistoricoEvento, "data" | "titulo" | "descricao" | "tipo">,
     {
       data: "2026-05-18T09:12:00-03:00",
       titulo: "Pagamento confirmado",
-      descricao: "Webhook futuro mudará esse status para pago. No mock a confirmação é manual.",
+      description: "Confirmação realizada.",
       tipo: "success"
-    }
+    } as unknown as Pick<CobrancaHistoricoEvento, "data" | "titulo" | "descricao" | "tipo">
   ])
 } satisfies Cobranca;
 
@@ -333,25 +341,25 @@ const boletoAVencer = {
     id: "cob_3",
     id_pagamento: "PG-2026-0003",
     os_ideal: "OS-E3-8840",
-    proposta: propostaE3,
+    proposta: snapshotE3,
     tipo_cobranca: "BOLETO",
     status: "A_RECEBER",
     valor: 5860,
     createdAt: "2026-05-20T14:10:00-03:00",
     vencimento: "2026-06-03T00:00:00-03:00",
     confirmado: false,
-    descricao: "Boleto à vista mockado para conferência financeira.",
+    descricao: "Boleto à vista para conferência financeira.",
     condicaoPagamento: "Boleto 14 dias"
   }),
   linha_digitavel: createLinhaDigitavel("PG-2026-0003", 5860),
-  url_pdf: "/documentos/mock-boleto-pg-2026-0003.pdf",
+  url_pdf: "/documentos/boleto-pg-2026-0003.pdf",
   multaPercentual: 2,
   jurosPercentual: 1,
   historico: createHistory([
     {
       data: "2026-05-20T14:10:00-03:00",
-      titulo: "Boleto emitido no mock",
-      descricao: "Linha digitável e PDF fictício foram gerados para a proposta.",
+      titulo: "Boleto emitido",
+      descricao: "Linha digitável e PDF foram gerados para a proposta.",
       tipo: "success"
     }
   ])
@@ -362,19 +370,19 @@ const boletoVencido = {
     id: "cob_4",
     id_pagamento: "PG-2026-0004",
     os_ideal: "OS-IDEAL-2088",
-    proposta: propostaIdeal,
+    proposta: snapshotIdeal,
     tipo_cobranca: "BOLETO",
     status: "CANCELADO",
     valor: 2210,
     createdAt: "2026-04-28T11:00:00-03:00",
     vencimento: "2026-05-05T00:00:00-03:00",
     confirmado: false,
-    descricao: "Boleto mockado cancelado para manter o saldo da proposta coerente.",
+    descricao: "Boleto cancelado para manter o saldo da proposta coerente.",
     condicaoPagamento: "Boleto à vista"
   }),
   linha_digitavel: createLinhaDigitavel("PG-2026-0004", 2210),
-  url_pdf: "/documentos/mock-boleto-pg-2026-0004.pdf",
-  erro_pagamento: "Boleto vencido sem pagamento confirmado no mock.",
+  url_pdf: "/documentos/boleto-pg-2026-0004.pdf",
+  erro_pagamento: "Boleto vencido sem pagamento confirmado.",
   multaPercentual: 2,
   jurosPercentual: 1,
   historico: createHistory([
@@ -392,18 +400,18 @@ const cartaoPendente = {
     id: "cob_5",
     id_pagamento: "PG-2026-0005",
     os_ideal: "OS-IDEAL-2105",
-    proposta: propostaIdeal,
+    proposta: snapshotIdeal,
     tipo_cobranca: "CREDIT_CARD",
     status: "CANCELADO",
     valor: 3990,
     createdAt: "2026-05-22T09:50:00-03:00",
     confirmado: false,
-    descricao: "Checkout de cartão cancelado no mock para manter o saldo inicial da proposta coerente.",
+    descricao: "Checkout de cartão cancelado para manter o saldo inicial da proposta coerente.",
     condicaoPagamento: "Cartão à vista"
   }),
   cartao_checkout_id: "chk_mock_0005",
   cartao_checkout_url: "/pagamento/pub_pg-2026-0005",
-  cartao_status: "CHECKOUT_GERADO",
+  cartao_status: "CANCELADO",
   capturaAutomatica: true,
   historico: createHistory([
     {
@@ -420,14 +428,14 @@ const cartaoAprovado = {
     id: "cob_6",
     id_pagamento: "PG-2026-0006",
     os_ideal: "OS-E3-8840",
-    proposta: propostaE3,
+    proposta: snapshotE3,
     tipo_cobranca: "CREDIT_CARD",
     status: "PAID",
     valor: 6150,
     createdAt: "2026-05-17T16:00:00-03:00",
     confirmado: true,
     paidAt: "2026-05-17T16:22:00-03:00",
-    descricao: "Checkout de cartão aprovado no mock.",
+    descricao: "Checkout de cartão aprovado.",
     condicaoPagamento: "Cartão à vista"
   }),
   cartao_checkout_id: "chk_mock_0006",
@@ -450,13 +458,13 @@ const cartaoParcelado = {
     id: "cob_7",
     id_pagamento: "PG-2026-0007",
     os_ideal: "OS-E3-8840",
-    proposta: propostaE3,
+    proposta: snapshotE3,
     tipo_cobranca: "CARD_PARCELADO",
     status: "A_RECEBER",
     valor: 7800,
     createdAt: "2026-05-22T10:10:00-03:00",
     confirmado: false,
-    descricao: "Cartão parcelado mockado aguardando pagamento.",
+    descricao: "Cartão parcelado aguardando pagamento.",
     condicaoPagamento: "3x com juros"
   }),
   cartao_parcelas: 3,
@@ -470,7 +478,7 @@ const cartaoParcelado = {
     {
       data: "2026-05-22T10:10:00-03:00",
       titulo: "Parcelamento salvo",
-      descricao: "Fluxo de cartão parcelado criado, mas o status financeiro continua A_RECEBER.",
+      descricao: "Fluxo de cartão parcelado criado.",
       tipo: "info"
     }
   ])
@@ -481,14 +489,14 @@ const faturadoAprovado = {
     id: "cob_8",
     id_pagamento: "PG-2026-0008",
     os_ideal: "OS-E3-8840",
-    proposta: propostaE3,
+    proposta: snapshotE3,
     tipo_cobranca: "E-FATURADO",
     status: "A_VENCER",
     valor: 14200,
     createdAt: "2026-05-16T13:00:00-03:00",
     vencimento: "2026-06-13T00:00:00-03:00",
     confirmado: true,
-    descricao: "Faturado mockado aprovado por limite disponível.",
+    descricao: "Faturado aprovado por limite disponível.",
     condicaoPagamento: "Faturado 28 dias"
   }),
   creditoAnalise: {
@@ -525,14 +533,14 @@ const faturadoAguardando = {
     id: "cob_9",
     id_pagamento: "PG-2026-0009",
     os_ideal: "OS-BIRO-4472",
-    proposta: propostaBiro,
+    proposta: snapshotBiro,
     tipo_cobranca: "E-FATURADO",
     status: "A_RECEBER",
     valor: 9800,
     createdAt: "2026-05-22T11:05:00-03:00",
     vencimento: "2026-06-20T00:00:00-03:00",
     confirmado: false,
-    descricao: "Pedido de crédito mockado aguardando análise do financeiro.",
+    descricao: "Pedido de crédito aguardando análise do financeiro.",
     condicaoPagamento: "Faturado sob análise",
     creditoPendente: true
   }),
@@ -597,17 +605,11 @@ export function getCobrancasByProposta(idInt: number) {
   return pagamentosMock.filter((cobranca) => cobranca.id_int === idInt);
 }
 
-export function createCobrancaFromForm(values: CriarCobrancaFormValues, currentCobrancas?: Cobranca[]) {
-  const proposta = propostasMock.find((item) => item.id_int === values.propostaIdInt);
-
-  if (!proposta) {
-    throw new Error("Proposta mockada não encontrada para criar a cobrança.");
-  }
-
+export function createCobrancaFromForm(values: CriarCobrancaFormValues, proposta: Proposta, currentCobrancas?: Cobranca[]) {
   const empresa = getEmpresaRecebedoraByProposta(proposta);
 
   if (!empresa) {
-    throw new Error("Empresa da proposta não encontrada no mock.");
+    throw new Error("Empresa da proposta não encontrada.");
   }
 
   if (!values.osIdeal.trim()) {
@@ -619,7 +621,7 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues, currentC
   }
 
   const timestamp = Date.now();
-  const idPagamento = `PG-MOCK-${timestamp}`;
+  const idPagamento = `PG-${timestamp}`;
   const token = `pub_${timestamp}`;
   const parcela = values.parcelaSelecionada;
   const roundedValor = roundMoney(values.valor);
@@ -667,7 +669,7 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues, currentC
     url_cobranca: buildPublicUrl(token),
     pix_copia_cola: values.tipoCobranca === "PIX" ? createPixCode(idPagamento, roundedValor) : undefined,
     linha_digitavel: values.tipoCobranca === "BOLETO" ? createLinhaDigitavel(idPagamento, roundedValor) : undefined,
-    url_pdf: values.tipoCobranca === "BOLETO" ? `/documentos/mock-${idPagamento.toLowerCase()}.pdf` : undefined,
+    url_pdf: values.tipoCobranca === "BOLETO" ? `/documentos/${idPagamento.toLowerCase()}.pdf` : undefined,
     cartao_checkout_id:
       values.tipoCobranca === "CREDIT_CARD" || values.tipoCobranca === "CARD_PARCELADO"
         ? `chk_${timestamp}`
@@ -722,8 +724,8 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues, currentC
             data: new Date(timestamp).toISOString(),
             autor: "Sistema",
             mensagem: isScenario1
-              ? "Nova solicitação de faturamento registrada. Limite disponível e sem atrasos."
-              : "Solicitação enviada para avaliação do financeiro.",
+              ? "Nova solicitação de faturamento registrada."
+              : "Solicitação enviada para avaliação.",
             categoria: "SISTEMA"
           }
         ])
@@ -738,8 +740,8 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues, currentC
             risco: proposta.cliente.riscoCredito,
             statusAnalise: "AGUARDANDO_FINANCEIRO" as const,
             mensagem: isScenario1
-              ? "Crédito disponível. Aguardando liberação do financeiro."
-              : "Solicitação enviada para avaliação do financeiro.",
+              ? "Crédito disponível."
+              : "Solicitação enviada para avaliação.",
             limiteReservado: isScenario1
           }
         : undefined

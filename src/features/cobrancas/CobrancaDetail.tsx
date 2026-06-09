@@ -1,34 +1,55 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CreditCard, FileText, Link2, Wallet } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
-import { PageHeader } from "@/components/common/PageHeader";
-import { StatusBadge } from "@/components/common/StatusBadge";
 import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
 import { CobrancaHistoricoPanel } from "@/features/cobrancas/CobrancaHistoricoPanel";
-import { CobrancaResumoCard } from "@/features/cobrancas/CobrancaResumoCard";
 import { CobrancaStatusBadge } from "@/features/cobrancas/CobrancaStatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import {
   canLiberarParaPedido,
-  getCobrancaStatusDescription,
-  getLiberacaoPedidoLabel,
-  getLiberacaoPedidoStatus,
-  getLiberacaoPedidoTone,
   getTipoCobrancaLabel,
-  isCreditoPendente,
   isCobrancaVencida,
   isPropostaLiberadaParaPedido
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import type { Cobranca } from "@/features/cobrancas/types";
 
 type CobrancaDetailProps = {
   cobrancaId: string;
 };
+
+function getValorCobranca(cobranca: Cobranca) {
+  const tipoNormalized = cobranca.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
+  if (tipoNormalized === "CARD-PARCELADO" && typeof cobranca.cartao_valor_final === "number" && cobranca.cartao_valor_final > 0) {
+    return cobranca.cartao_valor_final;
+  }
+  return cobranca.valor;
+}
+
+function renderShortUrl(url: string | undefined, token: string | undefined) {
+  if (!url) return "-";
+  if (token && url.includes(token)) {
+    return `pay.ai-ideal.com.br/i/${token}`;
+  }
+  try {
+    const parsed = new URL(url);
+    const domain = parsed.hostname;
+    const path = parsed.pathname;
+    if (path.length > 15) {
+      return `${domain}${path.substring(0, 10)}...${path.substring(path.length - 5)}`;
+    }
+    return `${domain}${path}`;
+  } catch {
+    if (url.length > 30) {
+      return `${url.substring(0, 20)}...${url.substring(url.length - 8)}`;
+    }
+    return url;
+  }
+}
 
 export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   const router = useRouter();
@@ -39,7 +60,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   if (!cobranca) {
     return (
       <div data-cobranca-detail-source={source} className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Detalhe da cobrança</p>
+        <span className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Detalhe da cobrança</span>
         <h1 className="mt-2 text-2xl font-bold text-slate-950">Cobrança não encontrada</h1>
         <p className="mt-3 text-sm leading-6 text-slate-600">
           O identificador informado não existe no conjunto de dados carregado. Volte para a lista e tente novamente.
@@ -50,34 +71,34 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
 
   const cobrancaAtual = cobranca;
   const cobrancasDaProposta = getCobrancasByProposta(cobrancaAtual.id_int);
-  const liberacaoStatus = getLiberacaoPedidoStatus(cobrancasDaProposta);
   const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
   const podeLiberarParaPedido = canLiberarParaPedido(cobrancasDaProposta);
+
+  const tipoNormalized = cobrancaAtual.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
+  const isFaturado = tipoNormalized === "E-FATURADO" || tipoNormalized === "FATURADO";
+  const valorExibicao = getValorCobranca(cobrancaAtual);
 
   async function copyValue(value: string | undefined, successTitle: string) {
     if (!value) {
       return;
     }
-
     await navigator.clipboard?.writeText(value);
     showToast({ type: "success", title: successTitle });
   }
-
-
 
   function handleCancel() {
     if (source === "supabase") {
       showToast({ type: "warning", title: "Cancelamento manual indisponível para cobranças reais." });
       return;
     }
-    const confirmed = window.confirm("Cancelar cobrança mockada? Nenhum backend real será acionado.");
+    const confirmed = window.confirm("Cancelar cobrança? Esta ação altera apenas o estado visual.");
 
     if (!confirmed) {
       return;
     }
 
-    cancelCobranca(cobrancaAtual.id, "Cancelamento mockado solicitado a partir do detalhe.");
-    showToast({ type: "warning", title: "Cobrança cancelada no mock." });
+    cancelCobranca(cobrancaAtual.id, "Cancelamento solicitado a partir do detalhe.");
+    showToast({ type: "warning", title: "Cobrança cancelada." });
   }
 
   function handleLiberarPedido() {
@@ -88,44 +109,48 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
     const liberou = liberarParaPedido(cobrancaAtual.id_int);
     showToast({
       type: liberou ? "success" : "warning",
-      title: liberou ? "Proposta liberada para pedido no mock." : "Ainda não é possível liberar para pedido."
+      title: liberou ? "Proposta liberada para pedido." : "Ainda não é possível liberar para pedido."
     });
   }
 
   return (
-    <div data-cobranca-detail-source={source} className="space-y-6">
+    <div data-cobranca-detail-source={source} className="space-y-4 max-w-5xl mx-auto">
       <div>
-        <Link href="/cobrancas" className="inline-flex items-center gap-2 rounded-2xl border border-[#d7e5e8] bg-white px-3 py-2 text-sm font-semibold text-[#0b2f4a] shadow-sm transition hover:bg-slate-50">
-          <ArrowLeft className="h-4 w-4" />
+        <Link href="/cobrancas" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+          <ArrowLeft className="h-3.5 w-3.5" />
           Voltar para cobranças
         </Link>
       </div>
 
-      <PageHeader
-        title={cobrancaAtual.id_pagamento}
-        subtitle={`Proposta #${cobrancaAtual.id_int} • ${cobrancaAtual.cliente} • ${getTipoCobrancaLabel(cobrancaAtual.tipo_cobranca)}`}
-        context="Detalhe da cobrança"
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <CobrancaStatusBadge cobranca={cobrancaAtual} />
-            <CobrancaActionsMenu cobranca={cobrancaAtual} />
-          </div>
-        }
-      />
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Cobrança #{cobrancaAtual.id_pagamento}</span>
+          <h1 className="text-xl font-bold text-slate-900 mt-0.5">
+            {cobrancaAtual.cliente}
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Vínculo: Proposta #{cobrancaAtual.id_int} • CPF/CNPJ: {cobrancaAtual.documento || "-"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <CobrancaStatusBadge cobranca={cobrancaAtual} />
+          <CobrancaActionsMenu cobranca={cobrancaAtual} />
+        </div>
+      </div>
 
-      {source === "supabase" && cobrancaAtual.tipo_cobranca === "PIX" && !cobrancaAtual.pix_copia_cola ? (
-        <div className="rounded-3xl border border-teal-200 bg-teal-50 p-5 text-teal-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {source === "supabase" && tipoNormalized === "PIX" && !cobrancaAtual.pix_copia_cola ? (
+        <div className="rounded-xl border border-teal-200 bg-teal-50 p-4 text-teal-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
           <div>
-            <h2 className="font-semibold">Gerando código PIX...</h2>
-            <p className="mt-1 text-sm text-teal-700">O Banco Inter está registrando a cobrança. Isso leva apenas alguns segundos.</p>
+            <p className="font-semibold">Gerando código PIX...</p>
+            <p className="text-xs text-teal-700 mt-0.5">Aguardando registro do pagamento no banco.</p>
           </div>
           <button
             type="button"
             onClick={async () => {
               await refreshCobrancas();
-              showToast({ type: "info", title: "Dados da cobrança atualizados." });
+              showToast({ type: "info", title: "Dados atualizados." });
             }}
-            className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+            className="inline-flex items-center justify-center rounded-xl bg-teal-800 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-teal-900"
           >
             Atualizar status
           </button>
@@ -133,245 +158,237 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
       ) : null}
 
       {isCobrancaVencida(cobrancaAtual) ? (
-        <div className="rounded-3xl border border-orange-200 bg-orange-50 p-5 text-orange-800">
-          <h2 className="font-semibold">Cobrança vencida</h2>
-          <p className="mt-1 text-sm">{source === "supabase" ? "Esta cobrança está em atraso. Prossiga com a verificação de pagamento." : "Esta cobrança continua aberta e o vencimento já passou. Use isso como referência visual para alertas futuros do financeiro."}</p>
+        <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-orange-800 text-sm">
+          <p className="font-semibold">Vencimento Excedido</p>
+          <p className="text-xs text-orange-700 mt-0.5">
+            O prazo de vencimento desta cobrança expirou.
+          </p>
         </div>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <CobrancaResumoCard
-          title="Valor principal"
-          value={formatCurrency(cobranca.valor)}
-          description="Valor base salvo no registro mockado."
-          tone="info"
-          icon={Wallet}
-        />
-        <CobrancaResumoCard
-          title="Valor final"
-          value={formatCurrency(cobranca.cartao_valor_final ?? cobranca.valor)}
-          description={cobranca.cartao_valor_final ? "Inclui taxa simulada do cartão de crédito." : "Sem taxa adicional mockada."}
-          tone="success"
-          icon={CreditCard}
-        />
-        <CobrancaResumoCard
-          title="Situação"
-          value={getCobrancaStatusDescription(cobranca)}
-          description={cobranca.vencimento ? `Vencimento ${formatDate(cobranca.vencimento)}.` : "Cobrança sem vencimento definido."}
-          tone="warning"
-          icon={FileText}
-        />
-        <CobrancaResumoCard
-          title="Página pública"
-          value={cobranca.token_publico ?? "Sem token"}
-          description="Token mockado para visualização pública."
-          tone="neutral"
-          icon={Link2}
-        />
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-6">
-          <DetailCard title="Dados da proposta">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <InfoBox label="id_int" value={`#${cobranca.proposta.id_int}`} detail={`Status da proposta: ${cobranca.proposta.statusProposta}`} />
-              <InfoBox label="OS Ideal" value={cobranca.os_ideal} detail="Campo temporário usado enquanto o sistema antigo roda em paralelo." />
-              <InfoBox label="Valor total" value={formatCurrency(cobranca.proposta.valorTotal)} detail={`Pendente ${formatCurrency(cobranca.proposta.valorPendente)}`} />
-              <InfoBox label="Empresa da proposta" value={cobranca.proposta.empresaProposta} detail={`Vendedor: ${cobranca.proposta.vendedor}`} />
-              <InfoBox label="Frete" value={formatCurrency(cobranca.proposta.valorFrete)} detail="Valor herdado visualmente da proposta." />
-            </div>
-            <p className="mt-4 text-sm leading-6 text-slate-600">{cobranca.proposta.descricao}</p>
-            <div className="mt-4">
-              <StatusBadge status={getLiberacaoPedidoLabel(liberacaoStatus)} tone={getLiberacaoPedidoTone(liberacaoStatus)} />
-            </div>
-          </DetailCard>
-
-          <DetailCard title="Cliente e cobrança">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <InfoBox label="Cliente" value={cobranca.cliente} detail={`ID cliente ${cobranca.id_cliente}`} />
-              <InfoBox label="Documento" value={cobranca.documento} detail="CPF/CNPJ herdado da proposta." />
-              <InfoBox label="Empresa recebedora" value={cobranca.empresa} detail="Empresa herdada da proposta para o fluxo financeiro." />
-              <InfoBox label="Tipo de cobrança" value={getTipoCobrancaLabel(cobranca.tipo_cobranca)} detail={cobranca.atendente} />
-              <InfoBox label="Valor" value={formatCurrency(cobranca.valor)} detail={`Criada em ${formatDate(cobranca.created_at)}`} />
-              <InfoBox label="Vencimento" value={cobranca.vencimento ? formatDate(cobranca.vencimento) : "Sem vencimento"} detail={cobranca.paid_at ? `Pago em ${formatDate(cobranca.paid_at)}` : "Pagamento ainda não confirmado."} />
-              <InfoBox
-                label="Status"
-                value={getCobrancaStatusDescription(cobranca)}
-                detail={`Status bruto: ${cobranca.status} • ${cobranca.confirmado ? "Confirmado" : "Não confirmado"}`}
-              />
-              <InfoBox label="Saldo pendente" value={formatCurrency(cobranca.saldo_pendente ?? 0)} detail="Preparado para cenários futuros de parcial." />
-              <InfoBox label="Condição" value={cobranca.condicao_pagamento ?? "Não informada"} detail="Condição comercial definida pelo vendedor dentro da proposta." />
-              <InfoBox label="Crédito pendente" value={isCreditoPendente(cobranca) ? "Sim" : "Não"} detail="Usado pelo financeiro para análise de faturado." />
-            </div>
-          </DetailCard>
-
-          <DetailCard title="Links, documentos e campos específicos">
-            <div className="grid gap-3 md:grid-cols-2">
-              <InfoBox label="Token público" value={cobranca.token_publico ?? "Não gerado"} detail="A mesma cobrança pode ser aberta em página pública mockada." />
-              <InfoBox label="URL pública" value={cobranca.url_cobranca ?? "Não gerada"} />
-              <InfoBox label="PIX copia e cola" value={cobranca.pix_copia_cola ?? "Não se aplica"} />
-              <InfoBox label="Linha digitável" value={cobranca.linha_digitavel ?? "Não se aplica"} />
-              <InfoBox label="PDF mockado" value={cobranca.url_pdf ?? "Não se aplica"} />
-              <InfoBox label="Checkout mockado" value={cobranca.cartao_checkout_url ?? "Não se aplica"} detail={cobranca.cartao_checkout_id ?? "Sem checkout"} />
-            </div>
-
-            {cobranca.tipo_cobranca === "CARD_PARCELADO" ? (
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <InfoBox label="Parcelas" value={`${cobranca.cartao_parcelas ?? 0}x`} />
-                <InfoBox label="Taxa percentual" value={`${(cobranca.cartao_taxa_percentual ?? 0).toFixed(1)}%`} />
-                <InfoBox label="Valor da taxa" value={formatCurrency(cobranca.cartao_valor_taxa ?? 0)} />
-                <InfoBox label="Valor final" value={formatCurrency(cobranca.cartao_valor_final ?? cobranca.valor)} />
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="md:col-span-2 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Informações Financeiras</h2>
+            
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 text-xs">
+              <div>
+                <span className="text-slate-500 block mb-0.5">Valor</span>
+                <span className="font-bold text-slate-900 text-sm">{formatCurrency(valorExibicao)}</span>
+                {tipoNormalized === "CARD-PARCELADO" && cobrancaAtual.cartao_parcelas ? (
+                  <span className="text-[10px] text-slate-500 block">Parcelado em {cobrancaAtual.cartao_parcelas}x</span>
+                ) : null}
               </div>
-            ) : null}
 
-            {cobranca.tipo_cobranca === "BOLETO" ? (
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <InfoBox label="Multa" value={`${(cobranca.multaPercentual ?? 0).toFixed(1)}%`} />
-                <InfoBox label="Juros" value={`${(cobranca.jurosPercentual ?? 0).toFixed(1)}%`} />
-                <InfoBox label="Erro/retorno" value={cobranca.erro_pagamento ?? "Sem erro mockado"} />
-                <InfoBox label="Motivo de cancelamento" value={cobranca.motivo_cancela ?? "Sem cancelamento"} />
+              <div>
+                <span className="text-slate-500 block mb-0.5">Vencimento</span>
+                <span className="font-semibold text-slate-900">
+                  {cobrancaAtual.vencimento ? formatDate(cobrancaAtual.vencimento) : "-"}
+                </span>
+                {cobrancaAtual.paid_at ? (
+                  <span className="text-[10px] text-teal-600 block font-medium">Pago em {formatDate(cobrancaAtual.paid_at)}</span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 block">Aguardando pagamento</span>
+                )}
               </div>
-            ) : null}
 
-            {cobranca.tipo_cobranca === "E-FATURADO" && cobranca.creditoAnalise ? (
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <InfoBox label="Limite" value={formatCurrency(cobranca.creditoAnalise.limite)} />
-                <InfoBox label="Utilizado" value={formatCurrency(cobranca.creditoAnalise.utilizado)} />
-                <InfoBox label="Disponível" value={formatCurrency(cobranca.creditoAnalise.disponivel)} />
-                <InfoBox label="Risco" value={cobranca.creditoAnalise.risco} />
-                <InfoBox label="Análise" value={cobranca.creditoAnalise.statusAnalise} detail={cobranca.creditoAnalise.mensagem} />
+              <div>
+                <span className="text-slate-500 block mb-0.5">Tipo de cobrança</span>
+                <span className="font-semibold text-slate-900">
+                  {getTipoCobrancaLabel(cobrancaAtual.tipo_cobranca)}
+                </span>
               </div>
-            ) : null}
-          </DetailCard>
 
-          <DetailCard title="Histórico mockado">
-            <CobrancaHistoricoPanel cobranca={cobranca} />
-          </DetailCard>
+              <div>
+                <span className="text-slate-500 block mb-0.5">Empresa recebedora</span>
+                <span className="font-semibold text-slate-900">{cobrancaAtual.empresa || "-"}</span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 block mb-0.5">Vendedor</span>
+                <span className="font-semibold text-slate-900">
+                  {cobrancaAtual.proposta?.vendedor || cobrancaAtual.atendente || "-"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-slate-500 block mb-0.5">OS Ideal</span>
+                <span className="font-semibold text-slate-900">{cobrancaAtual.os_ideal || "-"}</span>
+              </div>
+            </div>
+
+            {cobrancaAtual.condicao_pagamento && (
+              <div className="mt-4 pt-3 border-t border-slate-100 text-xs">
+                <span className="text-slate-500 block mb-0.5">Condição comercial</span>
+                <span className="font-semibold text-slate-800">{cobrancaAtual.condicao_pagamento}</span>
+              </div>
+            )}
+            
+            {cobrancaAtual.obs_v2 && (
+              <div className="mt-2 pt-2 border-t border-slate-100 text-xs">
+                <span className="text-slate-500 block mb-0.5">Observações</span>
+                <p className="text-slate-700 leading-relaxed">{cobrancaAtual.obs_v2}</p>
+              </div>
+            )}
+          </div>
+
+          {(cobrancaAtual.url_cobranca || cobrancaAtual.pix_copia_cola || cobrancaAtual.linha_digitavel || cobrancaAtual.url_pdf) ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+              <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Links e Códigos de Pagamento</h2>
+              
+              <div className="space-y-3 text-xs">
+                {cobrancaAtual.url_cobranca && !isFaturado && (
+                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="truncate">
+                      <span className="text-slate-500 block text-[10px]">Link de Pagamento</span>
+                      <span className="font-mono text-slate-700 truncate block max-w-md" title={cobrancaAtual.url_cobranca}>
+                        {renderShortUrl(cobrancaAtual.url_cobranca, cobrancaAtual.token_publico)}
+                      </span>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <a
+                        href={cobrancaAtual.url_cobranca}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-lg bg-teal-600 px-2.5 py-1 text-white font-semibold hover:bg-teal-700 transition"
+                      >
+                        Abrir
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => void copyValue(cobrancaAtual.url_cobranca, "Link de pagamento copiado.")}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 transition font-semibold"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {cobrancaAtual.pix_copia_cola && (
+                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="truncate text-left w-full sm:w-auto">
+                      <span className="text-slate-500 block text-[10px]">Código PIX Copia e Cola</span>
+                      <span className="font-mono text-slate-700 truncate block max-w-md" title={cobrancaAtual.pix_copia_cola}>
+                        {cobrancaAtual.pix_copia_cola}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void copyValue(cobrancaAtual.pix_copia_cola, "Código PIX copiado.")}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 transition shrink-0 font-semibold"
+                    >
+                      Copiar PIX
+                    </button>
+                  </div>
+                )}
+
+                {cobrancaAtual.linha_digitavel && (
+                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="truncate text-left w-full sm:w-auto">
+                      <span className="text-slate-500 block text-[10px]">Linha Digitável</span>
+                      <span className="font-mono text-slate-700 truncate block max-w-md" title={cobrancaAtual.linha_digitavel}>
+                        {cobrancaAtual.linha_digitavel}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void copyValue(cobrancaAtual.linha_digitavel, "Linha digitável copiada.")}
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 transition shrink-0 font-semibold"
+                    >
+                      Copiar Código
+                    </button>
+                  </div>
+                )}
+
+                {cobrancaAtual.url_pdf && (
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Documento da Cobrança</span>
+                      <span className="font-medium text-slate-700">Arquivo PDF da cobrança</span>
+                    </div>
+                    <a
+                      href={cobrancaAtual.url_pdf}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 transition font-semibold"
+                    >
+                      Visualizar PDF
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <CobrancaHistoricoPanel cobranca={cobrancaAtual} />
+          </div>
         </div>
 
-        <div className="space-y-6">
-          <DetailCard title="Ações disponíveis">
-            <div className="space-y-3">
-              {source === "supabase" && cobranca.url_cobranca ? (
-                cobranca.tipo_cobranca === "CARD_PARCELADO" ? (
-                  cobranca.cartao_checkout_url ? (
-                    <a
-                      href={cobranca.cartao_checkout_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full inline-flex items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 text-center shadow-sm"
-                    >
-                      Abrir checkout cartão
-                    </a>
-                  ) : (
-                    <a
-                      href={cobranca.url_cobranca}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full inline-flex items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 text-center"
-                    >
-                      Escolher parcelas
-                    </a>
-                  )
-                ) : (
-                  <a
-                    href={cobranca.url_cobranca}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full inline-flex items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 text-center shadow-sm"
-                  >
-                    Abrir checkout
-                  </a>
-                )
-              ) : source !== "supabase" ? (
-                <button
-                  type="button"
-                  onClick={() => router.push(`/pagamento/${cobranca.token_publico}`)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Abrir página pública mockada
-                </button>
-              ) : null}
-              {cobranca.pix_copia_cola && cobranca.tipo_cobranca !== "CARD_PARCELADO" ? (
-                <button
-                  type="button"
-                  onClick={() => void copyValue(cobranca.pix_copia_cola, "PIX copiado.")}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Copiar PIX
-                </button>
-              ) : null}
-              {cobranca.linha_digitavel && cobranca.tipo_cobranca !== "CARD_PARCELADO" ? (
-                <button
-                  type="button"
-                  onClick={() => void copyValue(cobranca.linha_digitavel, "Linha digitável copiada.")}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Copiar linha digitável
-                </button>
-              ) : null}
-
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Ações Administrativas</h2>
+            <div className="space-y-2 text-xs">
+              
               {source === "supabase" ? (
                 <button
                   type="button"
                   onClick={async () => {
                     await refreshCobrancas();
-                    showToast({ type: "info", title: "Dados da cobrança atualizados." });
+                    showToast({ type: "info", title: "Dados atualizados." });
                   }}
-                  className="w-full rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#123f61]"
+                  className="w-full rounded-xl bg-[#0b2f4a] py-2 px-3 text-white font-semibold hover:bg-[#123f61] transition text-center"
                 >
-                  Atualizar dados do Supabase
-                </button>
-              ) : propostaLiberada ? (
-                <button
-                  type="button"
-                  disabled
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60"
-                >
-                  Pedido ainda não criado no mock
+                  Atualizar do Supabase
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleLiberarPedido}
-                  disabled={!podeLiberarParaPedido}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60"
-                >
-                  Liberar para pedido
-                </button>
+                cobrancaAtual.token_publico && (
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/pagamento/${cobrancaAtual.token_publico}`)}
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-700 hover:bg-slate-50 transition font-semibold text-center"
+                  >
+                    Visualizar Página de Checkout
+                  </button>
+                )
               )}
-              {cobranca.status !== "CANCELADO" && source !== "supabase" ? (
+
+              {source !== "supabase" && (
+                propostaLiberada ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 px-3 text-slate-400 cursor-not-allowed font-semibold text-center"
+                  >
+                    Pedido já liberado
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleLiberarPedido}
+                    disabled={!podeLiberarParaPedido}
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 font-semibold text-center"
+                  >
+                    Liberar para pedido
+                  </button>
+                )
+              )}
+
+              {cobrancaAtual.status !== "CANCELADO" && source !== "supabase" && (
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+                  className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center"
                 >
                   Cancelar cobrança
                 </button>
-              ) : null}
+              )}
+              
             </div>
-          </DetailCard>
+          </div>
         </div>
-      </section>
-    </div>
-  );
-}
-
-function DetailCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-
-function InfoBox({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p>
-      {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
+      </div>
     </div>
   );
 }

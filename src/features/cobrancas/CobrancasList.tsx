@@ -45,47 +45,7 @@ const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
   { value: "TODOS", label: "Todos os tipos" }
 ];
 
-function formatMonthLabel(monthKey: string) {
-  const [year, month] = monthKey.split("-");
-  const monthIndex = Number(month) - 1;
-  return `${monthsShort[monthIndex] ?? "Mês"}/${year.slice(-2)}`;
-}
 
-function getFaturamentoReferenceKey(cobranca: Cobranca) {
-  const ref = cobranca.paid_at || cobranca.data_confirmacao || "";
-
-  if (!ref) {
-    return null;
-  }
-
-  return {
-    dateKey: getLocalDateKey(ref),
-    monthKey: getLocalMonthKey(ref),
-    value: ref
-  };
-}
-
-function addMonths(monthKey: string, offset: number) {
-  const [year, month] = monthKey.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, 1));
-  date.setUTCMonth(date.getUTCMonth() + offset);
-  const nextYear = date.getUTCFullYear();
-  const nextMonth = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${nextYear}-${nextMonth}`;
-}
-
-function getCurrentMonthOptions(cobrancas: Cobranca[]) {
-  const currentMonthKey = getLocalMonthKey(new Date());
-  const recentFromSystem = Array.from({ length: 6 }, (_, index) => addMonths(currentMonthKey, -index));
-  const fromData = cobrancas
-    .map((cobranca) => getFaturamentoReferenceKey(cobranca)?.monthKey)
-    .filter((value): value is string => Boolean(value));
-
-  const keys = new Set<string>([currentMonthKey, ...recentFromSystem, ...fromData]);
-  return Array.from(keys)
-    .sort((a, b) => b.localeCompare(a))
-    .map((value) => ({ value, label: formatMonthLabel(value) }));
-}
 
 function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
   const idEmpresa = Number(cobranca.id_empresa);
@@ -147,6 +107,26 @@ function matchesTipoFiltro(cobranca: Cobranca, tipo: TipoFiltro) {
   return cobranca.tipo_cobranca === "CREDIT_CARD" || cobranca.tipo_cobranca === "CARD_PARCELADO";
 }
 
+function getInitialDates() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+
+  const format = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  return {
+    start: format(firstDay),
+    end: format(lastDay)
+  };
+}
+
 export function CobrancasList() {
   const router = useRouter();
   const { cobrancasStats, source, refreshCobrancas } = useCobrancas();
@@ -154,6 +134,11 @@ export function CobrancasList() {
   const [search, setSearch] = useState("");
   const [tipo, setTipo] = useState<TipoFiltro>("TODOS");
   const [empresa, setEmpresa] = useState("TODAS");
+  const [statusFilter, setStatusFilter] = useState<"FILA" | "CONFIRMADOS">("FILA");
+  
+  const initialDates = useMemo(() => getInitialDates(), []);
+  const [dataInicial, setDataInicial] = useState(initialDates.start);
+  const [dataFinal, setDataFinal] = useState(initialDates.end);
   const [mesSelecionado, setMesSelecionado] = useState(getLocalMonthKey(new Date()));
   const [empresaEmEdicao, setEmpresaEmEdicao] = useState<Cobranca | null>(null);
   const [empresaDestinoId, setEmpresaDestinoId] = useState<number | null>(null);
@@ -182,7 +167,25 @@ export function CobrancasList() {
       .map(([value, label]) => ({ value, label }));
   }, [cobrancasStats]);
 
-  const monthOptions = useMemo(() => getCurrentMonthOptions(cobrancasStats), [cobrancasStats]);
+
+
+  const faturamentoPeriodoTotal = useMemo(() => {
+    return cobrancasStats
+      .filter((c) => {
+        if (c.status !== "PAID" || !c.paid_at) {
+          return false;
+        }
+        const paidAtLocalDateKey = getLocalDateKey(c.paid_at);
+        return paidAtLocalDateKey >= dataInicial && paidAtLocalDateKey <= dataFinal;
+      })
+      .reduce((sum, c) => {
+        const tipoNormalized = String(c.tipo_cobranca).toUpperCase();
+        const val = (tipoNormalized === "CARD_PARCELADO" && typeof c.cartao_valor_final === "number" && c.cartao_valor_final > 0)
+          ? c.cartao_valor_final
+          : c.valor;
+        return sum + (val ?? 0);
+      }, 0);
+  }, [cobrancasStats, dataInicial, dataFinal]);
 
   const visibleCobrancas = useMemo(() => {
     const base =
@@ -190,9 +193,11 @@ export function CobrancasList() {
         ? cobrancasStats.filter((c) => isPendenteAprovacao(c))
         : tipo === "EMITIR_BOLETOS"
           ? cobrancasStats.filter(isEmitirBoletos)
-          : tipo !== "TODOS"
+          : statusFilter === "CONFIRMADOS"
             ? cobrancasStats.filter(isBaseConfirmada)
-            : cobrancasStats.filter(isFilaPadrao);
+            : tipo === "TODOS"
+              ? cobrancasStats.filter(isFilaPadrao)
+              : cobrancasStats.filter(isBaseConfirmada);
 
     return base
       .filter((cobranca) => {
@@ -206,7 +211,7 @@ export function CobrancasList() {
         return matchesSearch && matchesTipo && matchesEmpresa;
       })
       .slice(0, 500);
-  }, [cobrancasStats, empresa, search, tipo]);
+  }, [cobrancasStats, empresa, search, tipo, statusFilter]);
 
   const empresaDestinoSelecionada = empresaDestinoId ? getEmpresaRecebedoraFixaById(empresaDestinoId) ?? null : null;
 
@@ -310,6 +315,7 @@ export function CobrancasList() {
     dashboardFinanceiro.faturamentoMesResumo.total,
     dashboardFinanceiro.pendentesResumo,
     dashboardFinanceiro.source,
+    dashboardFinanceiro.faturamentoMesPeriodo,
     mesSelecionado,
     source
   ]);
@@ -338,6 +344,10 @@ export function CobrancasList() {
           total={dashboardFinanceiro.pendentesResumo.total}
           helper="E-Faturado aguardando validação financeira."
           tone="warning"
+          onClick={() => {
+            setTipo("PENDENTES_APROVACAO");
+            setStatusFilter("FILA");
+          }}
         />
 
         <ConferenceStatCard
@@ -346,9 +356,13 @@ export function CobrancasList() {
           total={dashboardFinanceiro.confirmadosDiaResumo.total}
           helper="Baseado na data atual em America/Sao_Paulo."
           tone="success"
+          onClick={() => {
+            setTipo("TODOS");
+            setStatusFilter("CONFIRMADOS");
+          }}
         />
 
-        <section className="rounded-3xl border p-4 shadow-sm h-full">
+        <section className="rounded-3xl border p-4 shadow-sm h-full bg-white">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -375,23 +389,30 @@ export function CobrancasList() {
           </div>
         </section>
 
-        <section className="rounded-3xl border p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
+        <section className="rounded-3xl border p-5 shadow-sm bg-white">
+          <div className="flex flex-col gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Faturamento total do mês corrente</p>
-              <p className="mt-2 text-2xl font-bold text-slate-950">{formatCurrency(dashboardFinanceiro.faturamentoMesResumo.total)}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Faturamento por Período</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{formatCurrency(faturamentoPeriodoTotal)}</p>
             </div>
-            <select value={mesSelecionado} onChange={(event) => setMesSelecionado(event.target.value)} className={filterClass}>
-              {monthOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={dataInicial}
+                onChange={(e) => setDataInicial(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700 outline-none w-full"
+              />
+              <span className="text-xs text-slate-400">até</span>
+              <input
+                type="date"
+                value={dataFinal}
+                onChange={(e) => setDataFinal(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700 outline-none w-full"
+              />
+            </div>
           </div>
           <p className="mt-4 text-xs text-slate-500">
-            {dashboardFinanceiro.faturamentoMesPeriodo?.label ??
-              "Período fechado por paid_at e confirmação, sem usar created_at."}
+            Período filtrado por paid_at e status PAID, sem usar created_at.
           </p>
         </section>
       </section>
@@ -406,6 +427,39 @@ export function CobrancasList() {
         </section>
       ) : null}
 
+      <div className="flex gap-2 border-b border-slate-200 pb-1">
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter("FILA");
+            setTipo("TODOS");
+          }}
+          className={[
+            "rounded-t-2xl px-5 py-2 text-sm font-semibold transition-all",
+            statusFilter === "FILA"
+              ? "border-b-2 border-[#0b2f4a] text-[#0b2f4a]"
+              : "text-slate-500 hover:text-slate-800"
+          ].join(" ")}
+        >
+          Fila de Conferência
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter("CONFIRMADOS");
+            setTipo("TODOS");
+          }}
+          className={[
+            "rounded-t-2xl px-5 py-2 text-sm font-semibold transition-all",
+            statusFilter === "CONFIRMADOS"
+              ? "border-b-2 border-[#0b2f4a] text-[#0b2f4a]"
+              : "text-slate-500 hover:text-slate-800"
+          ].join(" ")}
+        >
+          Cobranças Confirmadas
+        </button>
+      </div>
+
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[1fr_220px_180px_180px_180px_auto]">
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -418,7 +472,19 @@ export function CobrancasList() {
             />
           </label>
 
-          <select value={tipo} onChange={(event) => setTipo(event.target.value as TipoFiltro)} className={filterClass}>
+          <select
+            value={tipo}
+            onChange={(event) => {
+              const val = event.target.value as TipoFiltro;
+              setTipo(val);
+              if (val === "PENDENTES_APROVACAO" || val === "EMITIR_BOLETOS") {
+                setStatusFilter("FILA");
+              } else if (val !== "TODOS") {
+                setStatusFilter("CONFIRMADOS");
+              }
+            }}
+            className={filterClass}
+          >
             {tipoOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -441,7 +507,10 @@ export function CobrancasList() {
               setSearch("");
               setTipo("TODOS");
               setEmpresa("TODAS");
+              setStatusFilter("FILA");
               setMesSelecionado(getLocalMonthKey(new Date()));
+              setDataInicial(initialDates.start);
+              setDataFinal(initialDates.end);
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
@@ -602,21 +671,26 @@ function ConferenceStatCard({
   count,
   total,
   helper,
-  tone
+  tone,
+  onClick
 }: {
   title: string;
   count: number;
   total: number;
   helper: string;
   tone: "success" | "warning";
+  onClick?: () => void;
 }) {
   const toneClass =
     tone === "success"
-      ? "border-teal-200 bg-teal-50 text-teal-800"
-      : "border-orange-200 bg-orange-50 text-orange-800";
+      ? "border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100/30"
+      : "border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100/30";
 
   return (
-    <section className={`rounded-3xl border p-5 shadow-sm ${toneClass}`}>
+    <section
+      onClick={onClick}
+      className={`rounded-3xl border p-5 shadow-sm transition-all duration-200 ${onClick ? "cursor-pointer hover:shadow-md hover:scale-[1.01]" : ""} ${toneClass}`}
+    >
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
       <div className="mt-3 flex items-end justify-between gap-3">
         <div>

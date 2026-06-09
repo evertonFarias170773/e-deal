@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CreditCard, Landmark, QrCode, ReceiptText, X } from "lucide-react";
+import { CreditCard, Landmark, QrCode, ReceiptText, Trash2, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
@@ -769,12 +769,6 @@ export function PropostaCobrancaPanel({
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <Link
-                    href="/cobrancas"
-                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Conferência financeira
-                  </Link>
                   {saldoRestante > 0 && (
                     <button
                       type="button"
@@ -1062,6 +1056,43 @@ export function PropostaCobrancaPanel({
 
 function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
   const { showToast } = useAppToast();
+  const { deleteCobranca } = useCobrancas();
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+  async function handleDelete(id: string, status: string | undefined) {
+    if (status?.trim().toUpperCase() === "PAID") {
+      showToast({ type: "error", title: "Não é permitido excluir cobrança paga." });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Tem certeza que deseja excluir esta cobrança? Esta ação não deve ser feita se o cliente já recebeu ou usou o link de pagamento."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(id);
+    try {
+      const result = await deleteCobranca(id);
+      if (result.success) {
+        showToast({ type: "success", title: "Cobrança excluída com sucesso." });
+      } else {
+        showToast({
+          type: "error",
+          title: result.errorMessage || "Erro ao excluir cobrança."
+        });
+      }
+    } catch (error) {
+      showToast({
+        type: "error",
+        title: error instanceof Error ? error.message : "Falha ao excluir cobrança."
+      });
+    } finally {
+      setIsDeleting(null);
+    }
+  }
 
   if (!cobrancas.length) {
     return (
@@ -1075,9 +1106,11 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
     <div className="space-y-3">
       {cobrancas.map((cobranca) => {
         const valorCobranca = getValorCobranca(cobranca);
-        const isBoleto = cobranca.tipo_cobranca === "BOLETO";
-        const isPix = cobranca.tipo_cobranca === "PIX";
-        const isCard = cobranca.tipo_cobranca === "CARD_PARCELADO";
+        const tipoNormalized = cobranca.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
+        const isFaturado = tipoNormalized === "E-FATURADO" || tipoNormalized === "FATURADO";
+        const isBoleto = tipoNormalized === "BOLETO";
+        const isPix = tipoNormalized === "PIX";
+        const isCard = tipoNormalized === "CARD-PARCELADO" || tipoNormalized === "CARD_PARCELADO";
         const boletoUrl = cobranca.url_pdf || cobranca.pix_copia_cola || "";
 
         return (
@@ -1233,7 +1266,7 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                     )}
                   </>
                 ) : (
-                  cobranca.url_cobranca && (
+                  cobranca.url_cobranca && !isFaturado && (
                     <a
                       href={cobranca.url_cobranca}
                       target="_blank"
@@ -1251,13 +1284,18 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                 >
                   Ver cobrança
                 </Link>
-                <Link
-                  href="/cobrancas"
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                  title="Conferência financeira"
-                >
-                  Conferência
-                </Link>
+
+                {cobranca.status?.trim().toUpperCase() !== "PAID" && (
+                  <button
+                    type="button"
+                    disabled={isDeleting === cobranca.id}
+                    onClick={() => void handleDelete(cobranca.id, cobranca.status)}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition disabled:opacity-50"
+                    title="Excluir cobrança"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1370,7 +1408,7 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                       )}
                     </>
                   ) : (
-                    cobranca.url_cobranca && (
+                    cobranca.url_cobranca && !isFaturado && (
                       <a
                         href={cobranca.url_cobranca}
                         target="_blank"
@@ -1387,12 +1425,18 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                   >
                     Ver
                   </Link>
-                  <Link
-                    href="/cobrancas"
-                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Painel
-                  </Link>
+
+                  {cobranca.status?.trim().toUpperCase() !== "PAID" && (
+                    <button
+                      type="button"
+                      disabled={isDeleting === cobranca.id}
+                      onClick={() => void handleDelete(cobranca.id, cobranca.status)}
+                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition disabled:opacity-50"
+                      title="Excluir cobrança"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1404,7 +1448,11 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
 }
 
 function getValorCobranca(cobranca: Cobranca) {
-  return cobranca.cartao_valor_final ?? cobranca.valor;
+  const tipoNormalized = cobranca.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
+  if (tipoNormalized === "CARD-PARCELADO" && typeof cobranca.cartao_valor_final === "number" && cobranca.cartao_valor_final > 0) {
+    return cobranca.cartao_valor_final;
+  }
+  return cobranca.valor;
 }
 
 

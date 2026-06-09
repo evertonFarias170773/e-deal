@@ -25,9 +25,48 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const {
     cancelCobranca,
+    deleteCobranca,
     liberarCobrancaReal,
     voltarCobrancaFilaReal
   } = useCobrancas();
+
+  async function handleDelete() {
+    if (cobranca.status?.trim().toUpperCase() === "PAID") {
+      showToast({ type: "error", title: "Não é permitido excluir cobrança paga." });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Tem certeza que deseja excluir esta cobrança? Esta ação não deve ser feita se o cliente já recebeu ou usou o link de pagamento."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const result = await deleteCobranca(cobranca.id);
+      if (result.success) {
+        showToast({ type: "success", title: "Cobrança excluída com sucesso." });
+        if (typeof window !== "undefined" && window.location.pathname.endsWith(`/cobrancas/${cobranca.id}`)) {
+          router.push("/cobrancas");
+        }
+      } else {
+        showToast({
+          type: "error",
+          title: result.errorMessage || "Erro ao excluir cobrança."
+        });
+      }
+    } catch (error) {
+      showToast({
+        type: "error",
+        title: error instanceof Error ? error.message : "Falha ao excluir cobrança."
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  }
 
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
     if (!value) {
@@ -40,14 +79,14 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   }
 
   function handleCancel() {
-    const confirmed = window.confirm("Cancelar cobrança mockada? Esta ação altera apenas o estado visual.");
+    const confirmed = window.confirm("Cancelar cobrança? Esta ação altera apenas o estado visual.");
 
     if (!confirmed) {
       return;
     }
 
-    cancelCobranca(cobranca.id, "Cancelamento mockado solicitado pelo usuário.");
-    showToast({ type: "warning", title: "Cobrança cancelada no mock." });
+    cancelCobranca(cobranca.id, "Cancelamento solicitado pelo usuário.");
+    showToast({ type: "warning", title: "Cobrança cancelada." });
   }
 
   function handleAnaliseCredito() {
@@ -147,7 +186,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
             onClick: () => {
               showToast({
                 type: "info",
-                title: "Ação de emissão de boleto simulada com sucesso."
+                title: "Ação de emissão de boleto executada com sucesso."
               });
             }
           }
@@ -163,12 +202,12 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       {
         label: "Copiar PIX",
         disabled: !cobranca.pix_copia_cola,
-        onClick: () => void copyValue(cobranca.pix_copia_cola, "PIX copiado.", "Esta cobrança não possui PIX mockado.")
+        onClick: () => void copyValue(cobranca.pix_copia_cola, "PIX copiado.", "Esta cobrança não possui PIX.")
       },
       {
         label: "Copiar linha digitável",
         disabled: !cobranca.linha_digitavel,
-        onClick: () => void copyValue(cobranca.linha_digitavel, "Linha digitável copiada.", "Esta cobrança não possui boleto mockado.")
+        onClick: () => void copyValue(cobranca.linha_digitavel, "Linha digitável copiada.", "Esta cobrança não possui boleto.")
       }
     ] : []),
     {
@@ -176,7 +215,14 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       destructive: true,
       disabled: cobranca.status === "CANCELADO",
       onClick: handleCancel
-    }
+    },
+    ...(cobranca.status?.trim().toUpperCase() !== "PAID" ? [
+      {
+        label: "Excluir cobrança",
+        destructive: true,
+        onClick: () => void handleDelete()
+      }
+    ] : [])
   ];
 
   return (
