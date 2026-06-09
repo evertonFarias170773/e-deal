@@ -233,6 +233,8 @@ Componentes principais:
 - `OrcamentosListPage`
 - `OrcamentoDetailPage`
 - `OrcamentoFormPage`
+- `ContactEditModal` (Edição local temporária de contatos)
+- `ProductSearchSelector` (Busca avançada de produtos reais)
 - `ActionsMenu`
 - `AppToast`
 - `orcamentos.service.ts`
@@ -251,8 +253,13 @@ Funcionalidades:
 - busca de cliente integrada real ao Supabase (public.clientes) por ID, Nome, Apelido/Fantasia e Documento;
 - carregamento assíncrono completo dos endereços e contatos do cliente via `getCadastroCompleto` ao selecioná-lo;
 - botão de limpar seleção de cliente para reiniciar busca;
-- vendedor herdado do cadastro do cliente, com edição permitida apenas para perfis autorizados (gerente/admin);
+- vendedor herdado do cadastro do cliente (atribuído automaticamente ao selecionar o cliente). Se o cliente não possuir vendedor cadastrado, o campo fica em branco e um toast de aviso operacional é disparado. Usuários comuns visualizam o campo como somente leitura; administradores/gerentes podem editá-lo;
 - status exibido como badge somente leitura no fluxo;
+- modal compacto de edição de contato `ContactEditModal` atuando estritamente em memória/estado local de modo a não persistir alterações no Supabase (`public.contatos`);
+- destaque em azul suave e badge descritivo ("Endereço de sócio" ou "Endereço de vínculo comercial") para endereços cujo tipo for comprador (`tipo === "comprador"`);
+- renomeada a Seção 4 do formulário para "4. Dados de faturamento" com descrição correspondente;
+- seletor de produtos customizado `ProductSearchSelector` com dropdown reativo pesquisando produtos por código, nome e apelido sobre o catálogo real retornado da API, com categorias (tags) dinâmicas e aviso de catálogo vazio;
+- validação de duplicidade que impede a inclusão repetida de um produto no orçamento (exibe toast de aviso);
 - produtos da proposta com tags rápidas, quantidade, valores base herdados, prazo, peso, descrição editável e subtotal;
 - carregamento em tempo real de variações globais e opções de cada produto via `listProdutoVariacaoVinculos`;
 - persistência histórica estática (snapshot) das variações escolhidas em `public.produtos_proposta_variacao` (com valores extras e pesos em gramas);

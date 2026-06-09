@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-09
+
+### Adicionado
+- **Refinamento de UX de Orçamentos e Propostas (Ressalvas Obrigatórias)**:
+  - Componente [ContactEditModal.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/orcamentos/components/ContactEditModal.tsx) para edição estritamente local/em memória de contatos do cliente no formulário, sem chamadas ao Supabase (`public.contatos`).
+  - Componente [ProductSearchSelector.tsx](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/src/features/orcamentos/components/ProductSearchSelector.tsx) com barra de pesquisa para filtrar o catálogo real (por código, nomeReal e apelidos), barra de tags com categorias dinâmicas e validação de duplicidade antes de adicionar produtos.
+  - Atribuição automática do vendedor padrão associado ao cadastro do cliente. Se o cliente não tiver vendedor padrão, o campo fica vazio e um toast operacional alerta o operador. Usuários comuns visualizam o vendedor como somente leitura, enquanto admins/gerentes podem editá-lo.
+  - Highlight visual (azul suave) e badge dinâmico ("Endereço de sócio" ou "Endereço de vínculo comercial") para endereços do tipo comprador/parceiro comercial.
+  - Renomeada a seção 4 do formulário para "4. Dados de faturamento".
+  - Removidos produtos/previews estáticos mockados e select antigo.
+
 ## 2026-06-01
 
 ### Adicionado

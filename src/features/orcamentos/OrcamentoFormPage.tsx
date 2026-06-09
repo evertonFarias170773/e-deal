@@ -4,8 +4,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Package, Plus, Search, Trash2, X } from "lucide-react";
+import { Copy, Search, Trash2, X, Edit2 } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
+import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -29,8 +31,7 @@ import {
   createFretesMock,
   createItemFromProduto,
   getClienteBonusPercent,
-  getClienteVendedorPadrao,
-  vendedoresPropostaMock
+  getClienteVendedorPadrao
 } from "@/lib/mocks/propostas.mock";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
@@ -52,16 +53,6 @@ type AddressDraft = Omit<CadastroEndereco, "id">;
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]";
 
-const productTags = [
-  { label: "TRIBAND" },
-  { label: "BRACELETE" },
-  { label: "TEX BAND" },
-  { label: "VANGOGH" },
-  { label: "UP" },
-  { label: "MOBI" },
-  { label: "CORDÃO" },
-  { label: "PVC" }
-];
 
 function normalize(value: string) {
   return value
@@ -142,12 +133,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [cliente, setCliente] = useState<Cadastro | null>(() => proposta?.cliente ?? null);
   const shouldShowRest = mode !== "new" || cliente !== null || form.clienteNaoCadastrado;
 
-  const [selectedProductId, setSelectedProductId] = useState("");
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
-
-  const selectedProduct = useMemo(() => {
-    return produtos.find((p) => p.id_produto.toString() === selectedProductId);
-  }, [produtos, selectedProductId]);
   const [clientSearch, setClientSearch] = useState(() => proposta?.cliente ? `${proposta.cliente.idCliente} - ${proposta.cliente.nome}` : "");
   const [showClientResults, setShowClientResults] = useState(false);
   const [clientResults, setClientResults] = useState<Cadastro[]>([]);
@@ -159,6 +145,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({ nome: "", cargo: "", whatsapp: "", email: "" });
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editContactDraft, setEditContactDraft] = useState<ContactDraft>({ nome: "", cargo: "", whatsapp: "", email: "" });
   const [addressDraft, setAddressDraft] = useState<AddressDraft>({
     tipo: "entrega",
     cep: "",
@@ -217,14 +205,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           value: v.nome_usuario
         });
       });
-    } else if (!loadingVendedores) {
-      // Fallback mockado se a consulta falhar ou vier vazia
-      vendedoresPropostaMock.forEach((name) => {
-        list.push({
-          label: name,
-          value: name
-        });
-      });
     }
 
     // Preservar vendedor salvo ao editar proposta existente
@@ -246,7 +226,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
   const vendedorExibido = canManageCommercialRules
     ? form.vendedor
-    : cliente
+    : (cliente && getClienteVendedorPadrao(cliente) && getClienteVendedorPadrao(cliente) !== "Não informado")
       ? getClienteVendedorPadrao(cliente)
       : form.vendedor;
 
@@ -351,9 +331,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         const list = await listProdutos({ pageSize: 1000, ativo: true });
         if (active) {
           setProdutos(list);
-          if (list.length > 0 && !selectedProductId) {
-            setSelectedProductId(list[0].id_produto.toString());
-          }
         }
       } catch (err) {
         console.error("Erro ao carregar catálogo de produtos:", err);
@@ -362,7 +339,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       }
     })();
     return () => { active = false; };
-  }, [selectedProductId]);
+  }, []);
 
   // Load variations for initial items in edit mode
   useEffect(() => {
@@ -496,6 +473,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         active = false;
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.cepLivre, form.clienteNaoCadastrado]);
 
   // Load comprador's addresses when compradorId changes
@@ -724,6 +702,14 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       setProposalAddresses(nextCliente.enderecos || []);
       
       const defaultVendedor = getClienteVendedorPadrao(nextCliente);
+      const hasSeller = defaultVendedor && defaultVendedor !== "Não informado";
+      if (!hasSeller) {
+        showToast({
+          type: "warning",
+          title: "Vendedor não vinculado",
+          description: "Este cliente não possui um vendedor padrão cadastrado. Selecione o vendedor manualmente."
+        });
+      }
       const fallbackEmpresa = nextCliente.empresaPadrao && nextCliente.empresaPadrao !== "Não informado"
         ? nextCliente.empresaPadrao
         : "Ideal Grafica";
@@ -734,7 +720,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         contatoId: nextContacts[0]?.id ?? "",
         enderecoId: nextEndereco?.id ?? "",
         compradorId: "",
-        vendedor: defaultVendedor && defaultVendedor !== "Não informado" ? defaultVendedor : current.vendedor,
+        vendedor: hasSeller ? defaultVendedor : "",
         empresa: fallbackEmpresa && fallbackEmpresa !== "Não informado" ? fallbackEmpresa : current.empresa,
         itens: recalculatedItems,
         fretes: [],
@@ -753,13 +739,25 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       setCliente(basicCliente);
       setProposalContacts([]);
       setProposalAddresses([]);
+      const defaultVendedor = getClienteVendedorPadrao(basicCliente);
+      const hasSeller = defaultVendedor && defaultVendedor !== "Não informado";
+      if (!hasSeller) {
+        showToast({
+          type: "warning",
+          title: "Vendedor não vinculado",
+          description: "Este cliente não possui um vendedor padrão cadastrado. Selecione o vendedor manualmente."
+        });
+      }
+      setCliente(basicCliente);
+      setProposalContacts([]);
+      setProposalAddresses([]);
       setForm((current) => ({
         ...current,
         clienteId: basicCliente.idCliente.toString(),
         contatoId: "",
         enderecoId: "",
         compradorId: "",
-        vendedor: getClienteVendedorPadrao(basicCliente) || current.vendedor,
+        vendedor: hasSeller ? defaultVendedor : "",
         empresa: basicCliente.empresaPadrao && basicCliente.empresaPadrao !== "Não informado" ? basicCliente.empresaPadrao : current.empresa,
         itens: recalculatedItems,
         fretes: [],
@@ -782,6 +780,30 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     showToast({ type: "success", title: "Contato adicionado à proposta." });
   }
 
+  function openEditContact(contato: CadastroContato) {
+    setEditingContactId(contato.id);
+    setEditContactDraft({
+      nome: contato.nome,
+      cargo: contato.cargo ?? "",
+      whatsapp: contato.whatsapp,
+      email: contato.email ?? ""
+    });
+  }
+
+  function saveEditedContact() {
+    if (!editContactDraft.nome || !editContactDraft.whatsapp) {
+      showToast({ type: "warning", title: "Contato incompleto", description: "Informe nome e WhatsApp para salvar o contato." });
+      return;
+    }
+
+    setProposalContacts((current) =>
+      current.map((c) => (c.id === editingContactId ? { ...c, ...editContactDraft } : c))
+    );
+
+    setEditingContactId(null);
+    showToast({ type: "success", title: "Contato atualizado com sucesso (Modo Local)" });
+  }
+
   function addAddress() {
     if (!addressDraft.cep || !addressDraft.endereco || !addressDraft.numero || !addressDraft.cidade || !addressDraft.uf) {
       showToast({ type: "warning", title: "Endereço incompleto", description: "Preencha CEP, logradouro, número, cidade e UF." });
@@ -796,10 +818,21 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     showToast({ type: "success", title: "Endereço adicionado à proposta." });
   }
 
-  async function addProduct(productId = selectedProductId) {
+  async function addProduct(productId: string) {
     const produto = produtos.find((item) => item.id_produto.toString() === productId.toString());
 
     if (!produto) {
+      return;
+    }
+
+    // Validação de duplicidade
+    const isDuplicate = form.itens.some((item) => item.id_produto === produto.id_produto);
+    if (isDuplicate) {
+      showToast({
+        type: "warning",
+        title: "Produto já adicionado",
+        description: `O produto "${produto.nomeReal}" (#${produto.id_produto}) já está no orçamento. Ajuste a quantidade diretamente no item.`
+      });
       return;
     }
 
@@ -1537,6 +1570,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                         ? "Selecione o vendedor responsável."
                         : "Vendedor definido pelo cadastro do cliente."}
                     </p>
+                    {!loadingVendedores && dbVendedores.length === 0 && (
+                      <p className="text-xs text-rose-600 mt-1 font-semibold">
+                        ⚠️ Aviso: Nenhum vendedor retornado pelo banco de dados.
+                      </p>
+                    )}
                   </Field>
                   <Field label="Status">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -1550,14 +1588,24 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                 <>
                   <FormSection title="3. Contato responsável" description="Contato usado para envio da proposta informal e retorno comercial.">
                     {proposalContacts.length > 0 ? (
-                      <SelectorGrid items={proposalContacts} selectedId={form.contatoId} onSelect={(id) => updateField("contatoId", id)} render={(contato) => ({ title: contato.nome, subtitle: `${contato.cargo} - ${contato.whatsapp}`, detail: contato.email })} />
+                      <SelectorGrid
+                        items={proposalContacts}
+                        selectedId={form.contatoId}
+                        onSelect={(id) => updateField("contatoId", id)}
+                        render={(contato) => ({
+                          title: contato.nome,
+                          subtitle: `${contato.cargo || "Sem cargo"} - ${contato.whatsapp}`,
+                          detail: contato.email || "Sem e-mail"
+                        })}
+                        onEdit={(contato) => openEditContact(contato)}
+                      />
                     ) : (
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
                     )}
                     <button type="button" onClick={() => setIsContactModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo contato</button>
                   </FormSection>
 
-                  <FormSection title="4. Comprador / autorizado" description="Cadastro relacionado comercialmente ao cliente principal.">
+                  <FormSection title="4. Dados de faturamento" description="Selecione o sócio ou vínculo comercial responsável pelo faturamento.">
                     {!cliente ? (
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Selecione um cliente para visualizar os compradores autorizados.</p>
                     ) : cliente.vinculosComerciais && cliente.vinculosComerciais.length > 0 ? (
@@ -1589,6 +1637,26 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                             subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`,
                             detail: isCompradorAddress ? "Endereço do Comprador" : endereco.tipo
                           };
+                        }}
+                        extraClassNameForItem={(endereco) => {
+                          const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                          if (!isCompradorAddress) return "";
+                          const isSelected = form.enderecoId === endereco.id;
+                          return isSelected
+                            ? "border-blue-400 bg-blue-50 text-blue-900 shadow-sm"
+                            : "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
+                        }}
+                        badgeForItem={(endereco) => {
+                          const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                          if (!isCompradorAddress) return null;
+                          const vinculo = cliente?.vinculosComerciais?.find((v) => v.id === form.compradorId);
+                          const isPartner = vinculo?.tipoRelacao.toLowerCase().includes("sócio") || vinculo?.tipoRelacao.toLowerCase().includes("socio");
+                          const badgeText = isPartner ? "Endereço de sócio" : "Endereço de vínculo comercial";
+                          return (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 border border-blue-200">
+                              {badgeText}
+                            </span>
+                          );
                         }}
                       />
                     ) : (
@@ -1646,115 +1714,20 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     type="text"
                     value={form.valorProdutosManual || ""}
                     onChange={(e) => updateField("valorProdutosManual", e.target.value)}
-                    placeholder="Ex: 1500,00"
                     className={inputClass}
                   />
                 </Field>
               </div>
             ) : (
               <>
-                {/* Chips / Tags com borda suave, hover e destaque */}
-                <div className="mb-4 flex flex-wrap gap-2">
-                  {productTags.map((tag) => {
-                    const search = normalize(tag.label);
-                    const matchingProduct = produtos.find(
-                      (item) =>
-                        normalize(item.nomeReal).includes(search) ||
-                        item.apelidos.some((apelido) => normalize(apelido).includes(search))
-                    );
-                    const isSelected = selectedProduct && matchingProduct && selectedProduct.id_produto === matchingProduct.id_produto;
+                <ProductSearchSelector
+                  produtos={produtos}
+                  loadingProdutos={loadingProdutos}
+                  onAddProduct={addProduct}
+                  showToast={showToast}
+                  itensAtuais={form.itens}
+                />
 
-                    return (
-                      <button
-                        key={tag.label}
-                        type="button"
-                        onClick={() => {
-                          if (matchingProduct) {
-                            setSelectedProductId(matchingProduct.id_produto.toString());
-                          } else {
-                            showToast({
-                              type: "warning",
-                              title: "Produto não localizado",
-                              description: `Não encontramos produto ativo com a tag "${tag.label}" no catálogo.`
-                            });
-                          }
-                        }}
-                        className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all duration-200 ${
-                          isSelected
-                            ? "border-teal-300 bg-teal-50 text-teal-800 shadow-sm ring-2 ring-teal-200/50"
-                            : "border-[#d7e5e8] bg-white text-[#0b2f4a] hover:bg-[#f3f7f8] hover:border-slate-300"
-                        }`}
-                      >
-                        {tag.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Dropdown de selecão e botão de adicionar */}
-                <div className="mb-4 grid gap-3 md:grid-cols-[1fr_auto]">
-                  <select
-                    value={selectedProductId}
-                    onChange={(event) => setSelectedProductId(event.target.value)}
-                    className={inputClass}
-                    disabled={loadingProdutos}
-                  >
-                    <option value="">Selecione um produto do catálogo...</option>
-                    {produtos.map((produto) => (
-                      <option key={produto.id} value={produto.id_produto}>
-                        #{produto.id_produto} - {produto.nomeReal}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => addProduct()}
-                    disabled={!selectedProductId}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-md shadow-[#0b2f4a]/10 hover:bg-[#123f61] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Adicionar produto
-                  </button>
-                </div>
-
-                {/* Preview do produto selecionado */}
-                {selectedProduct && (
-                  <div className="mb-5 rounded-3xl border border-slate-100 bg-slate-50/50 p-4 transition-all duration-200 dark:bg-slate-800/50 dark:border-slate-700">
-                    <div className="flex flex-col gap-4 sm:flex-row">
-                      {selectedProduct.fotos?.[0]?.imagensURL ? (
-                        <img
-                          src={selectedProduct.fotos[0].imagensURL}
-                          alt={selectedProduct.nomeReal}
-                          className="h-20 w-20 shrink-0 rounded-2xl object-cover border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
-                        />
-                      ) : (
-                        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-slate-200/50 text-slate-400 border border-slate-200 border-dashed dark:bg-slate-800/50 dark:text-slate-500 dark:border-slate-700">
-                          <Package className="h-8 w-8" />
-                        </div>
-                      )}
-                      <div className="flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <span className="text-xs font-bold text-slate-400">#{selectedProduct.id_produto}</span>
-                            <h3 className="text-base font-bold text-[#0b2f4a] dark:text-slate-200">{selectedProduct.nomeReal}</h3>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Valor Base</span>
-                            <p className="text-base font-extrabold text-[#0b2f4a] dark:text-slate-200">{formatCurrency(selectedProduct.valorUnt)}</p>
-                          </div>
-                        </div>
-                        {selectedProduct.descricao && (
-                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal line-clamp-2">{selectedProduct.descricao}</p>
-                        )}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200/40 dark:border-slate-700/40">
-                          <span>Formato: <strong className="dark:text-slate-300">{selectedProduct.formato || "Não informado"}</strong></span>
-                          <span>Peso base: <strong className="dark:text-slate-300">{formatWeightFromGrams(selectedProduct.peso)}</strong></span>
-                          <span>Prazo base: <strong className="dark:text-slate-300">{selectedProduct.prazo || "Sob consulta"}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Lista de itens da proposta */}
                 <div className="space-y-4">
@@ -2036,6 +2009,14 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       )}
 
       {isContactModalOpen ? <ContactModal draft={contactDraft} onChange={setContactDraft} onClose={() => setIsContactModalOpen(false)} onSave={addContact} /> : null}
+      {editingContactId ? (
+        <ContactEditModal
+          draft={editContactDraft}
+          onChange={setEditContactDraft}
+          onClose={() => setEditingContactId(null)}
+          onSave={saveEditedContact}
+        />
+      ) : null}
       {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} /> : null}
       {isManualFreteModalOpen ? (
         <ManualFreteModal
@@ -2239,18 +2220,62 @@ function ProductItemEditor({
   );
 }
 
-function SelectorGrid<T extends { id: string }>({ items, selectedId, onSelect, render }: { items: T[]; selectedId: string; onSelect: (id: string) => void; render: (item: T) => { title: string; subtitle: string; detail: string } }) {
+function SelectorGrid<T extends { id: string }>({
+  items,
+  selectedId,
+  onSelect,
+  render,
+  onEdit,
+  extraClassNameForItem,
+  badgeForItem
+}: {
+  items: T[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  render: (item: T) => { title: string; subtitle: string; detail: string };
+  onEdit?: (item: T, event: React.MouseEvent) => void;
+  extraClassNameForItem?: (item: T) => string;
+  badgeForItem?: (item: T) => React.ReactNode;
+}) {
   return (
     <div className="grid gap-3 md:grid-cols-2">
       {items.map((item) => {
         const content = render(item);
         const isSelected = selectedId === item.id;
+        const extraClass = extraClassNameForItem ? extraClassNameForItem(item) : "";
+        const badge = badgeForItem ? badgeForItem(item) : null;
         return (
-          <button key={item.id} type="button" onClick={() => onSelect(item.id)} className={`rounded-3xl border p-4 text-left transition ${isSelected ? "border-teal-200 bg-teal-50 text-teal-800" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"}`}>
-            <p className="font-semibold">{content.title}</p>
-            <p className="mt-1 text-sm opacity-80">{content.subtitle}</p>
-            <p className="mt-1 text-xs opacity-70">{content.detail}</p>
-          </button>
+          <div
+            key={item.id}
+            onClick={() => onSelect(item.id)}
+            className={`relative rounded-3xl border p-4 text-left transition flex justify-between items-start cursor-pointer ${
+              isSelected
+                ? "border-teal-200 bg-teal-50 text-teal-800"
+                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+            } ${extraClass}`}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <p className="font-semibold truncate">{content.title}</p>
+                {badge}
+              </div>
+              <p className="text-sm opacity-80 truncate">{content.subtitle}</p>
+              <p className="mt-1 text-xs opacity-70 truncate">{content.detail}</p>
+            </div>
+            {onEdit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(item, e);
+                }}
+                className="ml-2 p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition shrink-0"
+                title="Editar"
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         );
       })}
     </div>
@@ -2385,13 +2410,13 @@ function AddressModal({ draft, onChange, onClose, onSave }: { draft: AddressDraf
   );
 }
 
-function Modal({ title, children, onClose, onSave }: { title: string; children: ReactNode; onClose: () => void; onSave: () => void }) {
+function Modal({ title, children, onClose, onSave, saveLabel = "Adicionar" }: { title: string; children: ReactNode; onClose: () => void; onSave: () => void; saveLabel?: string }) {
   return (
     <div className="fixed inset-0 z-[70] bg-slate-950/50 p-4" role="dialog" aria-modal="true">
       <div className="mx-auto mt-8 max-w-3xl rounded-3xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 p-5"><h2 className="text-lg font-semibold text-slate-950">{title}</h2><button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
         <div className="p-5">{children}</div>
-        <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button type="button" onClick={onSave} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white">Adicionar</button></div>
+        <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button type="button" onClick={onSave} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white">{saveLabel}</button></div>
       </div>
     </div>
   );
