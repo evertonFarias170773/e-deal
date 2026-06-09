@@ -60,7 +60,10 @@ export function humanizeStatus(status: string) {
     MULTIPLA: "Múltipla",
     ESCOLHA_UNICA: "Escolha única",
     ATIVO: "Ativo",
-    INATIVO: "Inativo"
+    INATIVO: "Inativo",
+    FALHA_INTEGRACAO: "Falha de integração/envio",
+    RETORNO_FOCUS: "Retorno Focus",
+    NAO_ENCONTRADA_FOCUS: "Não encontrada no Focus"
   };
 
   return statusMap[status] ?? status;

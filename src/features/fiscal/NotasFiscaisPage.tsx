@@ -15,7 +15,7 @@ import type { NfeReadModel, SupabaseNfePagamentoRow } from "@/features/nfe/types
 import type { NfseReadModel } from "@/features/nfse/types";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
-import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos } from "@/features/nfe/services/nfe.service";
+import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe } from "@/features/nfe/services/nfe.service";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 
 // Fase 1 MVP
@@ -518,7 +518,7 @@ export function NotasFiscaisPage() {
   function getStatusTone(status: string) {
     const s = status.toUpperCase();
     if (s === "AUTORIZADA") return "success";
-    if (["ERRO_ENVIO", "ERRO_AUTORIZACAO", "REJEITADA", "DENEGADA"].includes(s)) return "danger";
+    if (["ERRO_ENVIO", "ERRO_AUTORIZACAO", "REJEITADA", "DENEGADA", "FALHA_INTEGRACAO", "RETORNO_FOCUS", "NAO_ENCONTRADA_FOCUS"].includes(s)) return "danger";
     if (["PENDENTE", "PRONTA_PARA_ENVIO", "PROCESSANDO", "PROCESSANDO_AUTORIZACAO"].includes(s)) return "warning";
     return "neutral";
   }
@@ -683,8 +683,14 @@ export function NotasFiscaisPage() {
       });
     }
 
-    // 4. ERRO_AUTORIZACAO / REJEITADA / ERRO_ENVIO
-    if (status === "ERRO_AUTORIZACAO" || status === "REJEITADA" || status === "ERRO_ENVIO") {
+    // 4. Status recuperáveis: RETORNO_FOCUS, ERRO_ENVIO, ERRO_AUTORIZACAO, NAO_ENCONTRADA_FOCUS, REJEITADA
+    if (["RETORNO_FOCUS", "ERRO_ENVIO", "ERRO_AUTORIZACAO", "NAO_ENCONTRADA_FOCUS", "REJEITADA"].includes(status)) {
+      actions.push({
+        label: "Ver detalhes",
+        onClick: () => {
+          router.push(`/notas-fiscais/${item.id}`);
+        }
+      });
       actions.push({
         label: "Corrigir rascunho",
         onClick: () => {
@@ -692,7 +698,13 @@ export function NotasFiscaisPage() {
         }
       });
       actions.push({
-        label: "Consultar status",
+        label: "Reenviar NF-e",
+        onClick: () => {
+          void handleReenviarNfe(item);
+        }
+      });
+      actions.push({
+        label: "Atualizar status",
         onClick: () => {
           hasAutoOpenedDanfe.current = false;
           setFocusConfirmNote(item);
@@ -701,12 +713,6 @@ export function NotasFiscaisPage() {
           setSefazCode("");
           setSefazMessage("");
           void runStatusQuery(item);
-        }
-      });
-      actions.push({
-        label: "DANFE Preview",
-        onClick: () => {
-          void handleDanfePreview(item.ref);
         }
       });
     }
@@ -1106,6 +1112,70 @@ export function NotasFiscaisPage() {
     }
   }
 
+  async function handleReenviarNfe(item: NfeReadModel) {
+    try {
+      showToast({ type: "info", title: "Preparando reenvio da nota..." });
+      
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Cliente Supabase não inicializado.");
+
+      // 1. Buscar ambiente atual da empresa
+      const { data: company, error: compErr } = await client
+        .from("empresas")
+        .select("ambiente_nfe")
+        .eq("id", item.id_empresa)
+        .single();
+
+      if (compErr) {
+        console.warn("[Reenviar NFe] Erro ao buscar ambiente da empresa:", compErr);
+      }
+
+      const activeEnv = company?.ambiente_nfe || "homologacao";
+
+      // 2. Se ambiente for diferente, atualizar no cabeçalho da nota
+      if (activeEnv !== item.ambiente) {
+        console.log(`[Reenviar NFe] Atualizando ambiente de ${item.ambiente} para ${activeEnv}`);
+        const { error: updErr } = await client
+          .from("notas_fiscais")
+          .update({ ambiente: activeEnv })
+          .eq("id", item.id);
+        
+        if (updErr) throw updErr;
+      }
+
+      // 3. Chamar RPC para remontar o payload e validar
+      console.log("[Reenviar NFe] Executando fn_preparar_envio_nfe");
+      const prepRes = await prepararEnvioNfe(item.ref);
+      if (!prepRes || !prepRes.ok) {
+        throw new Error(prepRes?.mensagem || "Falha ao preparar envio e remontar payload.");
+      }
+
+      // 4. Atualizar a listagem para refletir novo status / dados
+      const refreshed = await nfeData.refresh();
+      const updatedNote = refreshed?.nfeList?.find(n => n.id === item.id) || {
+        ...item,
+        status: "PRONTA_PARA_ENVIO",
+        ambiente: activeEnv
+      };
+
+      showToast({ type: "success", title: "Nota preparada para reenvio!" });
+
+      // 5. Abrir modal de confirmação de envio
+      setFocusConfirmNote(updatedNote);
+      setTrackingStep("IDLE");
+      setTrackingError(undefined);
+      setSefazCode("");
+      setSefazMessage("");
+    } catch (err) {
+      console.error("[Reenviar NFe] Erro ao preparar reenvio:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao preparar reenvio",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+
   // Handler para faturamento real (NF-e) ou simulação (NFS-e)
   async function handleFaturarClick(item: FaturavelOrigem) {
     if (item.tipo === "OS" || item.tipo === "CONTRATO") {
@@ -1218,7 +1288,8 @@ export function NotasFiscaisPage() {
     }
 
     if (nfeStatus) {
-      if (item.status.toUpperCase() !== nfeStatus.toUpperCase()) return false;
+      const displayStatus = getNfeDisplayStatus(item);
+      if (displayStatus.toUpperCase() !== nfeStatus.toUpperCase()) return false;
     }
 
     return true;
@@ -1628,6 +1699,9 @@ export function NotasFiscaisPage() {
                 <option value="REJEITADA">Rejeitada</option>
                 <option value="CANCELADA">Cancelada</option>
                 <option value="DENEGADA">Denegada</option>
+                <option value="FALHA_INTEGRACAO">Falha de Integração/Envio</option>
+                <option value="RETORNO_FOCUS">Retorno Focus</option>
+                <option value="NAO_ENCONTRADA_FOCUS">Não Encontrada no Focus</option>
               </select>
             </div>
           </div>
@@ -1650,7 +1724,10 @@ export function NotasFiscaisPage() {
               },
               {
                 header: "Status",
-                cell: (item) => <StatusBadge status={item.status} tone={getStatusTone(item.status)} />,
+                cell: (item) => {
+                  const displayStatus = getNfeDisplayStatus(item);
+                  return <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />;
+                },
                 align: "center"
               },
               {
@@ -1719,7 +1796,10 @@ export function NotasFiscaisPage() {
                     <p className="text-xs text-slate-500">Cliente ID: {item.id_cliente}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
-                    <StatusBadge status={item.status} tone={getStatusTone(item.status)} />
+                    {(() => {
+                      const displayStatus = getNfeDisplayStatus(item);
+                      return <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />;
+                    })()}
                     {item.status === "AUTORIZADA" && (
                       (() => {
                         const count = nfePaymentsCountMap[item.ref] || 0;

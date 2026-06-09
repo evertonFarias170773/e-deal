@@ -1174,5 +1174,23 @@ export async function deleteBoletoFromBankViaN8n(boletoId: string, idBoletoC6: s
   return { success: true, data: resData };
 }
 
+export function getNfeDisplayStatus(note: {
+  status?: string | null;
+  erro_codigo?: string | null;
+  status_focus?: string | null;
+  status_sefaz?: string | null;
+}) {
+  if (
+    (note.status || "").toUpperCase() === "RETORNO_FOCUS" &&
+    note.erro_codigo &&
+    !note.status_focus &&
+    !note.status_sefaz
+  ) {
+    return "FALHA_INTEGRACAO";
+  }
+  return note.status || "PENDENTE";
+}
+
+
 
 

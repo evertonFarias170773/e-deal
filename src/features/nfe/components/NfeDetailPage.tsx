@@ -47,6 +47,7 @@ import {
   previewNfeRascunho,
   invalidateNfePayments,
   getAlertasNfe,
+  getNfeDisplayStatus,
   type SimpleProduct
 } from "../services/nfe.service";
 import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow } from "../types";
@@ -1239,7 +1240,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         <div className="space-y-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-slate-900">{note.ref}</h1>
-            <StatusBadge status={note.status || "PENDENTE"} />
+            <StatusBadge status={getNfeDisplayStatus(note)} />
           </div>
           <p className="text-sm text-slate-500">
             Origem: Proposta/Pedido <strong>#{note.id_int}</strong> • Vendedor: {note.criado_por_nome || "-"}

@@ -64,7 +64,10 @@ const toneByStatus: Record<string, StatusTone> = {
   MULTIPLA: "info",
   ESCOLHA_UNICA: "warning",
   ATIVO: "success",
-  INATIVO: "neutral"
+  INATIVO: "neutral",
+  FALHA_INTEGRACAO: "danger",
+  RETORNO_FOCUS: "danger",
+  NAO_ENCONTRADA_FOCUS: "danger"
 };
 
 const toneStyles: Record<StatusTone, string> = {
