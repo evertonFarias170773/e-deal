@@ -1191,6 +1191,97 @@ export function getNfeDisplayStatus(note: {
   return note.status || "PENDENTE";
 }
 
+export interface SupabaseNotaEventoRow {
+  id?: string;
+  tipo_documento: "NFE" | "NFSE";
+  ref: string;
+  tipo_evento: "AUTORIZACAO" | "REJEICAO" | "CONSULTA" | "WEBHOOK" | "CARTA_CORRECAO" | "CANCELAMENTO" | "INUTILIZACAO";
+  sequencia_evento?: number | null;
+  status_evento?: string | null;
+  status_sefaz?: string | null;
+  mensagem_sefaz?: string | null;
+  caminho_xml?: string | null;
+  caminho_pdf?: string | null;
+  url_xml?: string | null;
+  url_pdf?: string | null;
+  justificativa?: string | null;
+  correcao?: string | null;
+  payload_envio?: Record<string, unknown> | null;
+  payload_retorno?: Record<string, unknown> | null;
+  origem?: string | null;
+  criado_por?: string | null;
+  criado_por_nome?: string | null;
+  created_at?: string;
+}
+
+export async function insertNotaEvento(
+  payload: Partial<SupabaseNotaEventoRow>
+): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client
+      .from("notas_eventos")
+      .insert(payload);
+
+    if (error) {
+      console.error("[NfeService] insertNotaEvento failed:", error);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[NfeService] insertNotaEvento exception:", err);
+    return false;
+  }
+}
+
+export async function getNotaEventos(tipoDocumento: "NFE" | "NFSE", ref: string): Promise<SupabaseNotaEventoRow[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  try {
+    const { data, error } = await client
+      .from("notas_eventos")
+      .select("*")
+      .eq("tipo_documento", tipoDocumento)
+      .eq("ref", ref)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error("[NfeService] getNotaEventos failed:", err);
+    return [];
+  }
+}
+
+export async function getNotaEventosForRefs(
+  tipoDocumento: "NFE" | "NFSE",
+  refs: string[]
+): Promise<SupabaseNotaEventoRow[]> {
+  const client = getSupabaseClient();
+  if (!client || refs.length === 0) return [];
+
+  try {
+    const { data, error } = await client
+      .from("notas_eventos")
+      .select("*")
+      .eq("tipo_documento", tipoDocumento)
+      .in("ref", refs)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error("[NfeService] getNotaEventosForRefs failed:", err);
+    return [];
+  }
+}
+
+
+
 
 
 

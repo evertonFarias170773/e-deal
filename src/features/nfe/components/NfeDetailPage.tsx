@@ -26,6 +26,7 @@ import {
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { formatDateTime } from "@/lib/formatters/date";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import {
   getNfeById,
@@ -48,6 +49,8 @@ import {
   invalidateNfePayments,
   getAlertasNfe,
   getNfeDisplayStatus,
+  getNotaEventos,
+  type SupabaseNotaEventoRow,
   type SimpleProduct
 } from "../services/nfe.service";
 import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow } from "../types";
@@ -126,6 +129,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const isReadOnly = note ? ["AUTORIZADA", "CANCELADA", "DENEGADA", "PROCESSANDO", "PROCESSANDO_AUTORIZACAO"].includes((note.status || "").toUpperCase()) : false;
   const [items, setItems] = useState<SupabaseNfeItemRow[]>([]);
   const [pagamentos, setPagamentos] = useState<SupabaseNfePagamentoRow[]>([]);
+  const [events, setEvents] = useState<SupabaseNotaEventoRow[]>([]);
   const [cliente, setCliente] = useState<ClienteData | null>(null);
   const [empresa, setEmpresa] = useState<EmpresaData | null>(null);
 
@@ -475,6 +479,10 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       // Initial validation from view
       const validation = await getNfeValidationGeral(dbNote.ref);
       setValidationData(validation as ValidationData | null);
+
+      // Load events
+      const dbEvents = await getNotaEventos("NFE", dbNote.ref);
+      setEvents(dbEvents || []);
     } catch (err) {
       console.error("[NfeDetail] Error loading note data:", err);
       showToast({ type: "error", title: "Erro ao carregar dados do rascunho." });
@@ -1386,6 +1394,52 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                       ))}
                     </ul>
                   )}
+                </div>
+              )}
+            </div>
+
+            {/* Eventos Fiscais */}
+            <div className="border border-slate-100 p-5 rounded-2xl bg-slate-50/50 space-y-4">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <Layers className="h-4 w-4 text-[#0b2f4a]" /> Eventos fiscais
+              </h3>
+              
+              {events.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">Nenhum evento fiscal registrado para esta nota.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-[#d7e5e8] bg-white">
+                  <table className="w-full text-left text-sm text-slate-700">
+                    <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-[#d7e5e8]">
+                      <tr>
+                        <th className="px-4 py-3">Tipo do Evento</th>
+                        <th className="px-4 py-3 w-24">Sequência</th>
+                        <th className="px-4 py-3">Status Evento</th>
+                        <th className="px-4 py-3">Status SEFAZ</th>
+                        <th className="px-4 py-3 w-72">Mensagem SEFAZ</th>
+                        <th className="px-4 py-3 w-40">Data</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {events.map((evt) => (
+                        <tr key={evt.id} className="hover:bg-slate-50/50 text-xs">
+                          <td className="px-4 py-3 font-semibold text-slate-700">{evt.tipo_evento}</td>
+                          <td className="px-4 py-3 font-mono">{evt.sequencia_evento ?? "-"}</td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                              {evt.status_evento || "-"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-mono">{evt.status_sefaz || "-"}</td>
+                          <td className="px-4 py-3 text-slate-600 truncate max-w-[280px]" title={evt.mensagem_sefaz || undefined}>
+                            {evt.mensagem_sefaz || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-500">
+                            {evt.created_at ? formatDateTime(evt.created_at) : "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

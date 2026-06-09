@@ -39,6 +39,7 @@ export function useNfeReadOnlyData() {
     ...state,
     isLoading,
     loadedCount: state.nfeList.length,
-    refresh
+    refresh,
+    setState
   };
 }

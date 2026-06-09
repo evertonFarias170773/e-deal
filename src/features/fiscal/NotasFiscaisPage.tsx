@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { AlertTriangle, Copy, ExternalLink, FileText, Play, Send, Loader2, CheckCircle2, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
@@ -15,7 +15,7 @@ import type { NfeReadModel, SupabaseNfePagamentoRow } from "@/features/nfe/types
 import type { NfseReadModel } from "@/features/nfse/types";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
-import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe } from "@/features/nfe/services/nfe.service";
+import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 
 // Fase 1 MVP
@@ -198,6 +198,60 @@ export function NotasFiscaisPage() {
     };
   }, [nfeListCombined]);
 
+  const [cceEventsMap, setCceEventsMap] = useState<Record<string, SupabaseNotaEventoRow[]>>({});
+
+  const refreshCceEventsForRefs = useCallback(async (refs: string[]) => {
+    try {
+      const events = await getNotaEventosForRefs("NFE", refs);
+      setCceEventsMap(prev => {
+        const next = { ...prev };
+        refs.forEach(r => {
+          delete next[r];
+        });
+        events.forEach(e => {
+          if (e.ref) {
+            if (!next[e.ref]) {
+              next[e.ref] = [];
+            }
+            next[e.ref].push(e);
+          }
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error("[NotasFiscaisPage] refreshCceEventsForRefs failed:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refs = nfeListCombined.map(n => n.ref).filter(Boolean);
+    if (refs.length > 0) {
+      void (async () => {
+        try {
+          const events = await getNotaEventosForRefs("NFE", refs);
+          if (active) {
+            const map: Record<string, SupabaseNotaEventoRow[]> = {};
+            events.forEach(e => {
+              if (e.ref) {
+                if (!map[e.ref]) {
+                  map[e.ref] = [];
+                }
+                map[e.ref].push(e);
+              }
+            });
+            setCceEventsMap(map);
+          }
+        } catch (err) {
+          console.error("[NotasFiscaisPage] loadCceEvents failed:", err);
+        }
+      })();
+    }
+    return () => {
+      active = false;
+    };
+  }, [nfeListCombined]);
+
   const [selectedNfeForLaunch, setSelectedNfeForLaunch] = useState<NfeReadModel | null>(null);
   const [launchModalOpen, setLaunchModalOpen] = useState(false);
   const [vencimentosForLaunch, setVencimentosForLaunch] = useState<SupabaseNfePagamentoRow[]>([]);
@@ -332,12 +386,89 @@ export function NotasFiscaisPage() {
       const parsed = parseFocusResponse(data);
       if (!parsed.success) throw new Error(parsed.message);
 
+      // Inserir registro em public.notas_eventos
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data: { session } } = await client.auth.getSession();
+          const criadoPor = session?.user?.id || session?.user?.email || null;
+          const criadoPorNome = session?.user?.user_metadata?.nome || session?.user?.user_metadata?.full_name || session?.user?.email || null;
+
+          const normalized = Array.isArray(data) ? data[0] : data;
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let focusData: any = normalized;
+
+          if (normalized && normalized.body) {
+            focusData = normalized.body;
+          }
+
+          if (focusData && focusData.payload_retorno) {
+            focusData = focusData.payload_retorno;
+          }
+
+          if (focusData && typeof focusData.data === "string") {
+            try {
+              focusData = JSON.parse(focusData.data);
+            } catch (err) {
+              console.error("[CCE] Error parsing focusData.data string:", err);
+            }
+          } else if (focusData && focusData.data && typeof focusData.data === "object") {
+            focusData = focusData.data;
+          }
+
+          if (typeof focusData === "string") {
+            try {
+              focusData = JSON.parse(focusData);
+            } catch (err) {
+              console.error("[CCE] Error parsing focusData string:", err);
+            }
+          }
+
+          const payloadEnvio = {
+            id_empresa: Number(cceNote.id_empresa),
+            referencia: cceNote.ref,
+            correcao: cceText.trim()
+          };
+
+          const eventData = {
+            tipo_documento: "NFE" as const,
+            ref: cceNote.ref,
+            tipo_evento: "CARTA_CORRECAO" as const,
+            sequencia_evento: focusData?.numero_carta_correcao ? Number(focusData.numero_carta_correcao) : null,
+            status_evento: focusData?.status || null,
+            status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
+            mensagem_sefaz: focusData?.mensagem_sefaz || null,
+            caminho_xml: focusData?.caminho_xml_carta_correcao || null,
+            caminho_pdf: focusData?.caminho_pdf_carta_correcao || null,
+            correcao: cceText.trim(),
+            payload_envio: payloadEnvio,
+            payload_retorno: focusData,
+            origem: "FOCUS_CCE",
+            criado_por: criadoPor,
+            criado_por_nome: criadoPorNome
+          };
+
+          console.log("[NotasFiscaisPage] Inserindo evento de Carta de Correção:", eventData);
+          const success = await insertNotaEvento(eventData);
+          if (success) {
+            console.log("[CCE] Evento persistido:", eventData);
+          } else {
+            console.error("[CCE] Falha ao persistir evento de Carta de Correção:", eventData);
+          }
+          void refreshCceEventsForRefs([cceNote.ref]);
+        } catch (eventErr) {
+          console.error("[NotasFiscaisPage] Falha ao registrar evento da Carta de Correção:", eventErr);
+        }
+      }
+
       showToast({
         type: "success",
         title: "Sucesso!",
         description: "A solicitação foi enviada. Atualize a nota para conferir o status final."
       });
       setCceModalOpen(false);
+      void nfeData.refresh();
     } catch (err) {
       console.error("[NotasFiscaisPage] Error emitting CCe:", err);
       showToast({
@@ -393,12 +524,116 @@ export function NotasFiscaisPage() {
       const parsed = parseFocusResponse(data);
       if (!parsed.success) throw new Error(parsed.message);
 
+      // 1. Normalizar o retorno da Focus
+      const normalized = Array.isArray(data) ? data[0] : data;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let focusData: any = normalized;
+
+      if (normalized && normalized.body) {
+        focusData = normalized.body;
+      }
+      if (focusData && focusData.payload_retorno) {
+        focusData = focusData.payload_retorno;
+      }
+      if (focusData && typeof focusData.data === "string") {
+        try {
+          focusData = JSON.parse(focusData.data);
+        } catch (err) {
+          console.error("[Cancelamento] Error parsing focusData.data string:", err);
+        }
+      } else if (focusData && focusData.data && typeof focusData.data === "object") {
+        focusData = focusData.data;
+      }
+      if (typeof focusData === "string") {
+        try {
+          focusData = JSON.parse(focusData);
+        } catch (err) {
+          console.error("[Cancelamento] Error parsing focusData string:", err);
+        }
+      }
+
+      const client = getSupabaseClient();
+      if (client && !isNfse) {
+        try {
+          const nowIso = new Date().toISOString();
+          
+          // 2. Atualizar notas_fiscais
+          const { error: updateError } = await client
+            .from("notas_fiscais")
+            .update({
+              status: "CANCELADA",
+              status_focus: focusData?.status || null,
+              status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
+              codigo_status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
+              mensagem_sefaz: focusData?.mensagem_sefaz || null,
+              erro_codigo: null,
+              erro_mensagem: null,
+              data_cancelamento: nowIso,
+              payload_retorno: focusData,
+              updated_at: nowIso
+            })
+            .eq("id", note.id);
+
+          if (updateError) {
+            console.error("[Cancelamento] Falha ao atualizar notas_fiscais:", updateError);
+          } else {
+            console.log("[Cancelamento] Status da nota atualizado no banco para CANCELADA:", note.ref);
+          }
+
+          // 3. Inserir em public.notas_eventos
+          const { data: { session } } = await client.auth.getSession();
+          const criadoPor = session?.user?.id || session?.user?.email || null;
+          const criadoPorNome = session?.user?.user_metadata?.nome || session?.user?.user_metadata?.full_name || session?.user?.email || null;
+
+          const payloadEnvio = {
+            id_empresa: Number(note.id_empresa),
+            referencia: note.ref,
+            justificativa: cancelJustificativa.trim()
+          };
+
+          const eventData = {
+            tipo_documento: "NFE" as const,
+            ref: note.ref,
+            tipo_evento: "CANCELAMENTO" as const,
+            status_evento: focusData?.status || null,
+            status_sefaz: focusData?.status_sefaz || focusData?.codigo_status_sefaz || null,
+            mensagem_sefaz: focusData?.mensagem_sefaz || null,
+            caminho_xml: focusData?.caminho_xml_cancelamento || null,
+            caminho_pdf: focusData?.caminho_danfe || null,
+            justificativa: cancelJustificativa.trim(),
+            payload_envio: payloadEnvio,
+            payload_retorno: focusData,
+            origem: "FOCUS_CANCELAMENTO",
+            criado_por: criadoPor,
+            criado_por_nome: criadoPorNome
+          };
+
+          console.log("[Cancelamento] Inserindo evento de cancelamento:", eventData);
+          const success = await insertNotaEvento(eventData);
+          if (success) {
+            console.log("[Cancelamento] Evento de cancelamento persistido no banco.");
+          } else {
+            console.error("[Cancelamento] Falha ao persistir evento de cancelamento.");
+          }
+          
+          // 4. Atualizar estado local
+          nfeData.setState(prev => ({
+            ...prev,
+            nfeList: prev.nfeList.map(n => n.id === note.id ? { ...n, status: "CANCELADA" } : n)
+          }));
+          void refreshCceEventsForRefs([note.ref]);
+        } catch (dbErr) {
+          console.error("[Cancelamento] Erro no fluxo de persistência de cancelamento:", dbErr);
+        }
+      }
+
       showToast({
         type: "success",
         title: "Sucesso!",
-        description: "A solicitação foi enviada. Atualize a nota para conferir o status final."
+        description: "A nota fiscal foi cancelada com sucesso."
       });
       setCancelModalOpen(false);
+      void nfeData.refresh();
     } catch (err) {
       console.error("[NotasFiscaisPage] Error canceling note:", err);
       showToast({
@@ -796,6 +1031,43 @@ export function NotasFiscaisPage() {
         label: "Cancelar NF-e",
         onClick: () => handleOpenCancelNfeModal(item)
       });
+
+      const events = cceEventsMap[item.ref] || [];
+      const latestCceEvent = events.find(e => e.tipo_evento === "CARTA_CORRECAO");
+      const payloadRetorno = item.payload_retorno as Record<string, unknown> | null;
+      const fallbackPdf = payloadRetorno?.caminho_pdf_carta_correcao as string | undefined;
+      const fallbackXml = payloadRetorno?.caminho_xml_carta_correcao as string | undefined;
+
+      const hasCce = !!latestCceEvent || !!fallbackPdf || !!fallbackXml;
+
+      if (hasCce) {
+        const baseUrl = item.ambiente === "producao" ? "https://api.focusnfe.com.br" : "https://homologacao.focusnfe.com.br";
+        const pdfUrl = latestCceEvent?.url_pdf || latestCceEvent?.caminho_pdf
+          ? (latestCceEvent.url_pdf || `${baseUrl}${latestCceEvent.caminho_pdf}`)
+          : (fallbackPdf ? `${baseUrl}${fallbackPdf}` : null);
+
+        const xmlUrl = latestCceEvent?.url_xml || latestCceEvent?.caminho_xml
+          ? (latestCceEvent.url_xml || `${baseUrl}${latestCceEvent.caminho_xml}`)
+          : (fallbackXml ? `${baseUrl}${fallbackXml}` : null);
+
+        if (pdfUrl) {
+          actions.push({
+            label: "Abrir Carta de Correção (PDF)",
+            onClick: () => {
+              window.open(pdfUrl, "_blank");
+            }
+          });
+        }
+        if (xmlUrl) {
+          actions.push({
+            label: "Baixar XML da Carta de Correção",
+            onClick: () => {
+              window.open(xmlUrl, "_blank");
+            }
+          });
+        }
+      }
+
       actions.push({
         label: "Carta de Correção",
         onClick: () => handleOpenCceModal(item)
