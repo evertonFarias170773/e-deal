@@ -1130,14 +1130,21 @@ export function NotasFiscaisPage() {
         console.warn("[Reenviar NFe] Erro ao buscar ambiente da empresa:", compErr);
       }
 
-      const activeEnv = company?.ambiente_nfe || "homologacao";
+      const activeEnv = company?.ambiente_nfe || (item.id_empresa === 1 ? "producao" : "homologacao");
 
-      // 2. Se ambiente for diferente, atualizar no cabeçalho da nota
-      if (activeEnv !== item.ambiente) {
-        console.log(`[Reenviar NFe] Atualizando ambiente de ${item.ambiente} para ${activeEnv}`);
+      // 2. Se ambiente for diferente, ou se o payload_envio tiver o ambiente incorreto, atualizar no banco
+      const needsEnvUpdate = activeEnv !== item.ambiente;
+      const needsPayloadUpdate = !item.payload_envio || (item.payload_envio as { ambiente?: string }).ambiente !== activeEnv;
+
+      if (needsEnvUpdate || needsPayloadUpdate) {
+        console.log(`[Reenviar NFe] Atualizando ambiente para ${activeEnv} e sincronizando payload_envio`);
+        const updatedPayload = item.payload_envio ? { ...item.payload_envio, ambiente: activeEnv } : null;
         const { error: updErr } = await client
           .from("notas_fiscais")
-          .update({ ambiente: activeEnv })
+          .update({ 
+            ambiente: activeEnv,
+            payload_envio: updatedPayload
+          })
           .eq("id", item.id);
         
         if (updErr) throw updErr;
@@ -1155,7 +1162,8 @@ export function NotasFiscaisPage() {
       const updatedNote = refreshed?.nfeList?.find(n => n.id === item.id) || {
         ...item,
         status: "PRONTA_PARA_ENVIO",
-        ambiente: activeEnv
+        ambiente: activeEnv,
+        payload_envio: prepRes.payload || (item.payload_envio ? { ...item.payload_envio, ambiente: activeEnv } : null)
       };
 
       showToast({ type: "success", title: "Nota preparada para reenvio!" });
@@ -1973,211 +1981,254 @@ export function NotasFiscaisPage() {
         />
       ) : null}
 
-      {focusConfirmNote && (
-        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
-            {trackingStep === "IDLE" ? (
-              <>
-                <div className="px-6 pt-6 pb-4 flex items-center gap-3">
-                  <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl shrink-0">
-                    <Send className="h-6 w-6" />
+      {focusConfirmNote && (() => {
+        const isAuthError = 
+          String(focusConfirmNote.erro_codigo) === "401" ||
+          (focusConfirmNote.payload_retorno && (focusConfirmNote.payload_retorno as { statusCode?: number }).statusCode === 401) ||
+          String(focusConfirmNote.erro_mensagem || "").toLowerCase().includes("unauthorized") ||
+          String(sefazMessage || "").toLowerCase().includes("unauthorized") ||
+          String(sefazCode || "") === "401";
+
+        const hasSefazDetails = Boolean(
+          focusConfirmNote.codigo_status_sefaz || 
+          focusConfirmNote.status_sefaz || 
+          focusConfirmNote.mensagem_sefaz
+        );
+
+        return (
+          <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+              {trackingStep === "IDLE" ? (
+                <>
+                  <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl shrink-0">
+                      <Send className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 leading-tight">
+                      Enviar para Focus
+                    </h3>
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 leading-tight">
-                    Enviar para Focus
-                  </h3>
-                </div>
-                <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed">
-                  A nota fiscal com referência <strong className="text-slate-900 font-mono font-semibold">{focusConfirmNote.ref}</strong> será enviada para emissão no sistema Focus API. Deseja prosseguir?
-                </div>
-                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setFocusConfirmNote(null)}
-                    className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSendToFocus}
-                    className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center min-w-[120px]"
-                  >
-                    Enviar para Focus
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="px-6 pt-6 pb-4 flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl shrink-0 ${
-                    trackingStep === "AUTHORIZED"
-                      ? "bg-emerald-50 text-emerald-600"
-                      : trackingStep === "ERROR"
-                      ? "bg-rose-50 text-rose-600"
-                      : trackingStep === "STILL_PROCESSING"
-                      ? "bg-amber-50 text-amber-600"
-                      : "bg-blue-50 text-blue-600"
-                  }`}>
-                    {trackingStep === "AUTHORIZED" ? (
-                      <CheckCircle2 className="h-6 w-6" />
-                    ) : trackingStep === "ERROR" ? (
-                      <AlertTriangle className="h-6 w-6" />
+                  <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed">
+                    A nota fiscal com referência <strong className="text-slate-900 font-mono font-semibold">{focusConfirmNote.ref}</strong> será enviada para emissão no sistema Focus API. Deseja prosseguir?
+                  </div>
+                  <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFocusConfirmNote(null)}
+                      className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSendToFocus}
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center min-w-[120px]"
+                    >
+                      Enviar para Focus
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="px-6 pt-6 pb-4 flex items-center gap-3">
+                    <div className={`p-3 rounded-2xl shrink-0 ${
+                      trackingStep === "AUTHORIZED"
+                        ? "bg-emerald-50 text-emerald-600"
+                        : trackingStep === "ERROR"
+                        ? "bg-rose-50 text-rose-600"
+                        : trackingStep === "STILL_PROCESSING"
+                        ? "bg-amber-50 text-amber-600"
+                        : "bg-blue-50 text-blue-600"
+                    }`}>
+                      {trackingStep === "AUTHORIZED" ? (
+                        <CheckCircle2 className="h-6 w-6" />
+                      ) : trackingStep === "ERROR" ? (
+                        <AlertTriangle className="h-6 w-6" />
+                      ) : (
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                      )}
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 leading-tight">
+                      {trackingStep === "ERROR"
+                        ? isAuthError
+                          ? "Falha de autenticação com a Focus NFe"
+                          : hasSefazDetails
+                          ? "NF-e rejeitada pela Sefaz"
+                          : "Falha de processamento"
+                        : "Acompanhamento de Emissão"}
+                    </h3>
+                  </div>
+
+                  <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed space-y-4">
+                    {trackingStep === "ERROR" ? (
+                      isAuthError ? (
+                        <div className="space-y-3">
+                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Referência</span>
+                              <strong className="text-slate-800 font-mono text-sm">{focusConfirmNote.ref}</strong>
+                            </div>
+                            <hr className="border-slate-100" />
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Mensagem de erro</span>
+                              <span className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block">
+                                A nota não chegou à SEFAZ porque a credencial da empresa emissora foi recusada pela Focus.
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 space-y-1">
+                            <span className="font-bold text-blue-900 block">Orientação:</span>
+                            <span>
+                              Verifique a credencial Focus da empresa emissora e tente reenviar.
+                            </span>
+                          </div>
+                        </div>
+                      ) : hasSefazDetails ? (
+                        <div className="space-y-3">
+                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Referência</span>
+                              <strong className="text-slate-800 font-mono text-sm">{focusConfirmNote.ref}</strong>
+                            </div>
+                            <hr className="border-slate-100" />
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Código Sefaz</span>
+                              <strong className="text-slate-800 font-mono">{sefazCode || "900"}</strong>
+                            </div>
+                            <hr className="border-slate-100" />
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Mensagem Sefaz</span>
+                              <span className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block">
+                                {sefazMessage}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 space-y-1">
+                            <span className="font-bold text-blue-900 block">Orientação:</span>
+                            <span>
+                              {sefazMessage.toLowerCase().includes("vencimento da parcela")
+                                ? "Corrija os vencimentos na aba Pagamentos. Nenhuma parcela pode vencer antes da data de emissão da NF-e."
+                                : "Revise os dados fiscais e cadastrais da nota fiscal de acordo com a mensagem de rejeição acima."}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <span className="text-rose-700 block font-semibold">Erro Técnico/Comunicação:</span>
+                          <p className="text-xs text-rose-600 bg-rose-50/50 p-3 rounded-xl border border-rose-100 break-words font-mono">
+                            {sefazMessage || trackingError || "Erro de resposta desconhecido."}
+                          </p>
+                        </div>
+                      )
                     ) : (
-                      <Loader2 className="h-6 w-6 animate-spin" />
+                      <>
+                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-1.5 font-mono text-xs">
+                          <p className="flex justify-between">
+                            <span className="text-slate-400">Referência:</span>
+                            <strong className="text-slate-800">{focusConfirmNote.ref}</strong>
+                          </p>
+                          <p className="flex justify-between">
+                            <span className="text-slate-400">Status Atual:</span>
+                            <strong className="text-slate-800 uppercase">{focusConfirmNote.status}</strong>
+                          </p>
+                        </div>
+
+                        <div className="text-slate-700 font-medium">
+                          {trackingStep === "SENDING" && "Enviando nota para Focus..."}
+                          {trackingStep === "SENT_WAITING" && "Nota enviada. Aguardando processamento da Focus..."}
+                          {trackingStep === "QUERYING" && "Consultando autorização e documentos fiscais..."}
+                          {trackingStep === "AUTHORIZED" && (
+                            <span className="text-emerald-700">NF-e autorizada com sucesso.</span>
+                          )}
+                          {trackingStep === "STILL_PROCESSING" && (
+                            <span className="text-amber-700">A NF-e ainda está em processamento. Consulte novamente em alguns instantes.</span>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
-                  <h3 className="text-base font-bold text-slate-900 leading-tight">
-                    {trackingStep === "ERROR" && (sefazMessage || sefazCode)
-                      ? "NF-e rejeitada pela Sefaz"
-                      : "Acompanhamento de Emissão"}
-                  </h3>
-                </div>
 
-                <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed space-y-4">
-                  {!(trackingStep === "ERROR" && (sefazMessage || sefazCode)) ? (
-                    <>
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-1.5 font-mono text-xs">
-                        <p className="flex justify-between">
-                          <span className="text-slate-400">Referência:</span>
-                          <strong className="text-slate-800">{focusConfirmNote.ref}</strong>
-                        </p>
-                        <p className="flex justify-between">
-                          <span className="text-slate-400">Status Atual:</span>
-                          <strong className="text-slate-800 uppercase">{focusConfirmNote.status}</strong>
-                        </p>
-                      </div>
-
-                      <div className="text-slate-700 font-medium">
-                        {trackingStep === "SENDING" && "Enviando nota para Focus..."}
-                        {trackingStep === "SENT_WAITING" && "Nota enviada. Aguardando processamento da Focus..."}
-                        {trackingStep === "QUERYING" && "Consultando autorização e documentos fiscais..."}
+                  <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
+                    {["SENDING", "SENT_WAITING", "QUERYING"].includes(trackingStep) ? (
+                      <span className="text-xs text-slate-400 flex items-center gap-1.5 animate-pulse">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Não feche esta tela...
+                      </span>
+                    ) : (
+                      <>
                         {trackingStep === "AUTHORIZED" && (
-                          <span className="text-emerald-700">NF-e autorizada com sucesso.</span>
+                          <>
+                            {focusConfirmNote?.url_danfe && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.open(focusConfirmNote.url_danfe!, "_blank");
+                                  closeTrackingModal();
+                                }}
+                                className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition rounded-xl flex items-center gap-1.5"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                Abrir DANFE
+                              </button>
+                            )}
+                            {focusConfirmNote?.ref && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const xmlUrl = `https://pay.ai-ideal.com.br/functions/v1/download-nfe-xml?ref=${encodeURIComponent(focusConfirmNote.ref)}`;
+                                  window.open(xmlUrl, "_blank");
+                                  closeTrackingModal();
+                                }}
+                                className="px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition rounded-xl flex items-center gap-1.5"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                Baixar XML
+                              </button>
+                            )}
+                          </>
                         )}
                         {trackingStep === "STILL_PROCESSING" && (
-                          <span className="text-amber-700">A NF-e ainda está em processamento. Consulte novamente em alguns instantes.</span>
+                          <button
+                            type="button"
+                            onClick={() => void runStatusQuery(focusConfirmNote)}
+                            className="px-4 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] transition rounded-xl flex items-center gap-1.5"
+                          >
+                            Consultar status novamente
+                          </button>
                         )}
-                        {trackingStep === "ERROR" && (
-                          <div className="space-y-2">
-                            <span className="text-rose-700 block font-semibold">Erro Técnico/Comunicação:</span>
-                            <p className="text-xs text-rose-600 bg-rose-50/50 p-3 rounded-xl border border-rose-100 break-words font-mono">
-                              {trackingError || "Erro de resposta desconhecido."}
-                            </p>
-                          </div>
+                        {trackingStep === "ERROR" && !isAuthError && hasSefazDetails && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (focusConfirmNote) {
+                                const noteId = focusConfirmNote.id;
+                                closeTrackingModal();
+                                router.push(`/notas-fiscais/${noteId}`);
+                              }
+                            }}
+                            className="px-4 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] transition rounded-xl"
+                          >
+                            Corrigir rascunho
+                          </button>
                         )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Referência</span>
-                          <strong className="text-slate-800 font-mono text-sm">{focusConfirmNote.ref}</strong>
-                        </div>
-                        <hr className="border-slate-100" />
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Código Sefaz</span>
-                          <strong className="text-slate-800 font-mono">{sefazCode || "900"}</strong>
-                        </div>
-                        <hr className="border-slate-100" />
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Mensagem Sefaz</span>
-                          <span className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block">
-                            {sefazMessage}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 space-y-1">
-                        <span className="font-bold text-blue-900 block">Orientação:</span>
-                        <span>
-                          {sefazMessage.toLowerCase().includes("vencimento da parcela")
-                            ? "Corrija os vencimentos na aba Pagamentos. Nenhuma parcela pode vencer antes da data de emissão da NF-e."
-                            : "Revise os dados fiscais e cadastrais da nota fiscal de acordo com a mensagem de rejeição acima."}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
-                  {["SENDING", "SENT_WAITING", "QUERYING"].includes(trackingStep) ? (
-                    <span className="text-xs text-slate-400 flex items-center gap-1.5 animate-pulse">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Não feche esta tela...
-                    </span>
-                  ) : (
-                    <>
-                      {trackingStep === "AUTHORIZED" && (
-                        <>
-                          {focusConfirmNote?.url_danfe && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                window.open(focusConfirmNote.url_danfe!, "_blank");
-                                closeTrackingModal();
-                              }}
-                              className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition rounded-xl flex items-center gap-1.5"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              Abrir DANFE
-                            </button>
-                          )}
-                          {focusConfirmNote?.ref && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const xmlUrl = `https://pay.ai-ideal.com.br/functions/v1/download-nfe-xml?ref=${encodeURIComponent(focusConfirmNote.ref)}`;
-                                window.open(xmlUrl, "_blank");
-                                closeTrackingModal();
-                              }}
-                              className="px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition rounded-xl flex items-center gap-1.5"
-                            >
-                              <FileText className="h-3.5 w-3.5" />
-                              Baixar XML
-                            </button>
-                          )}
-                        </>
-                      )}
-                      {trackingStep === "STILL_PROCESSING" && (
                         <button
                           type="button"
-                          onClick={() => void runStatusQuery(focusConfirmNote)}
-                          className="px-4 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] transition rounded-xl flex items-center gap-1.5"
+                          onClick={closeTrackingModal}
+                          className="px-5 py-2.5 text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 transition rounded-xl"
                         >
-                          Consultar status novamente
+                          Fechar
                         </button>
-                      )}
-                      {trackingStep === "ERROR" && (sefazMessage || sefazCode) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (focusConfirmNote) {
-                              const noteId = focusConfirmNote.id;
-                              closeTrackingModal();
-                              router.push(`/notas-fiscais/${noteId}`);
-                            }
-                          }}
-                          className="px-4 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] transition rounded-xl"
-                        >
-                          Corrigir rascunho
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={closeTrackingModal}
-                        className="px-5 py-2.5 text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 transition rounded-xl"
-                      >
-                        Fechar
-                      </button>
-                    </>
-                  )}
-                </div>
-              </>
-            )}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {launchModalOpen && selectedNfeForLaunch && (
         <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
