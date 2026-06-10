@@ -6,6 +6,7 @@ import type { Session } from "@supabase/supabase-js";
 import { mockCurrentUser, mockSellerUser } from "@/lib/mocks/usuarios.mock";
 import type { MockUser } from "@/lib/types";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { fetchUsuarioEnriquecido } from "@/features/auth/usuarios.service";
 
 function resolveMockUser(email: string): MockUser {
   const normalizedEmail = email.trim().toLowerCase();
@@ -51,6 +52,30 @@ function mapSessionToUser(session: Session | null): MockUser | null {
   };
 }
 
+/**
+ * Enriquece o usuário base (mapeado da sessão) com dados reais de
+ * public.usuarios + public.perfis.
+ *
+ * - Nunca lança exceção — retorna o baseUser inalterado se falhar.
+ * - Chamado de forma assíncrona após o login, sem bloquear a UI.
+ */
+async function enrichUserWithSupabaseData(baseUser: MockUser): Promise<MockUser> {
+  try {
+    const enriched = await fetchUsuarioEnriquecido(baseUser.id, baseUser.email, baseUser.name);
+    if (!enriched) return baseUser;
+
+    return {
+      ...baseUser,
+      ...enriched,
+      // Sempre manter o id da sessão auth — nunca sobrescrever
+      id: baseUser.id
+    };
+  } catch (err) {
+    console.warn("[AuthProvider] Falha ao enriquecer usuário com dados do banco:", err);
+    return baseUser;
+  }
+}
+
 type AuthContextValue = {
   user: MockUser | null;
   isAuthenticated: boolean;
@@ -74,30 +99,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let isMounted = true;
-    void client.auth.getSession().then(({ data, error }) => {
-      if (!isMounted) {
-        return;
-      }
+
+    void client.auth.getSession().then(async ({ data, error }) => {
+      if (!isMounted) return;
 
       if (error) {
         console.error("[AuthProvider] Falha ao restaurar sessao:", error.message);
       }
 
-      setAuthState({
-        user: mapSessionToUser(data.session),
-        isLoading: false
-      });
+      const baseUser = mapSessionToUser(data.session);
+
+      if (baseUser) {
+        // Setar imediatamente com dados de sessão para não bloquear a UI
+        setAuthState({ user: baseUser, isLoading: false });
+
+        // Enriquecer com dados reais do banco de forma assíncrona
+        const enrichedUser = await enrichUserWithSupabaseData(baseUser);
+        if (isMounted) {
+          setAuthState({ user: enrichedUser, isLoading: false });
+        }
+      } else {
+        setAuthState({ user: null, isLoading: false });
+      }
     });
 
     const { data: subscription } = client.auth.onAuthStateChange((_event, session) => {
-      if (!isMounted) {
-        return;
-      }
+      if (!isMounted) return;
 
-      setAuthState({
-        user: mapSessionToUser(session),
-        isLoading: false
-      });
+      const baseUser = mapSessionToUser(session);
+
+      if (baseUser) {
+        // Setar imediatamente (sem esperar enriquecimento) para não bloquear
+        setAuthState({ user: baseUser, isLoading: false });
+
+        // Enriquecer assincronamente
+        void enrichUserWithSupabaseData(baseUser).then((enrichedUser) => {
+          if (isMounted) {
+            setAuthState({ user: enrichedUser, isLoading: false });
+          }
+        });
+      } else {
+        setAuthState({ user: null, isLoading: false });
+      }
     });
 
     return () => {
@@ -130,19 +173,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("Nao foi possivel recuperar sessao autenticada.");
     }
 
-    setAuthState({
-      user: mappedUser,
-      isLoading: false
+    // Setar usuário base imediatamente para liberar a UI
+    setAuthState({ user: mappedUser, isLoading: false });
+
+    // Enriquecimento assíncrono pós-login (não bloqueia o redirecionamento)
+    void enrichUserWithSupabaseData(mappedUser).then((enrichedUser) => {
+      setAuthState({ user: enrichedUser, isLoading: false });
     });
   }, []);
 
   const logout = useCallback(async () => {
     const client = getSupabaseClient();
     if (!client) {
-      setAuthState({
-        user: null,
-        isLoading: false
-      });
+      setAuthState({ user: null, isLoading: false });
       return;
     }
 
@@ -151,10 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.message || "Nao foi possivel encerrar sessao.");
     }
 
-    setAuthState({
-      user: null,
-      isLoading: false
-    });
+    setAuthState({ user: null, isLoading: false });
   }, []);
 
   const value = useMemo(
