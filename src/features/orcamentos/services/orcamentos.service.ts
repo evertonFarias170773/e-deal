@@ -686,7 +686,7 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
         cod_origem: null,
         cod_bar: "",
         und_medida: "UN",
-        cfop_interno: "",
+        cfop_interno: item.cfop || "",
         cfop_interestadual: "",
         unidade_comercial: "",
         unidade_tributavel: "",
@@ -699,7 +699,13 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
         variacoes: []
       };
 
-      const finalProduct = product || fallbackProduct;
+      const finalProduct = product
+        ? {
+            ...product,
+            ncm: item.ncm || product.ncm || "",
+            cfop_interno: item.cfop || product.cfop_interno || ""
+          }
+        : fallbackProduct;
 
       // Extract variations selected for this item
       const itemVars = variationRows.filter((v) => v.id_produto_proposta === item.id);
@@ -1107,7 +1113,8 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       } : chosenFrete,
       resumo,
       formaPagamento: formState.formaPagamento || "A combinar",
-      isAvulso: formState.isAvulso
+      isAvulso: formState.isAvulso,
+      contatoNome: contatoNome
     });
 
     if (!isNonEmpty(informalText)) {
@@ -1131,7 +1138,6 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       valor_total: valorTotal,
       obs_proposta: formState.observacoes,
       texto_whatsapp: informalText,
-      proposta: informalText || "Orçamento conforme solicitação.",
       frete_escolhido: freteNome,
       valor_frete: freteValor,
       contato: contatoNome,
@@ -1152,6 +1158,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     } else {
       // 2b. INSERT PROPOSTA
       propostaData.user_id = userId;
+      propostaData.proposta = informalText || "Orçamento conforme solicitação.";
       const { data: newProp, error: insertError } = await client
         .from("propostas")
         .insert(propostaData)
@@ -1244,25 +1251,23 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
         const pesoUni = pesoBase + pesoExtra;
 
         const valorExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.v_extra || 0), 0);
-        const valorBase = Math.max(0, (item.produto.valorUnt || 0));
-        const valorUnt = valorBase + valorExtra;
 
         const itemData = {
           id_int: id_int!,
           id_produto: item.id_produto,
           nome_produto: item.nome,
           modelo_descri: item.descricaoModelo,
-          valor_unt: valorUnt,
+          valor_unt: item.valorUnitario,
           qtd: item.quantidade,
           fixo: item.valorFixo,
-          valor_sub_total: item.subtotal,
+          valor_sub_total: (item.valorUnitario * item.quantidade) + item.valorFixo,
           peso_uni: pesoUni,
           peso_base: pesoBase,
           peso_extra: pesoExtra,
-          valor_base: valorBase,
+          valor_base: item.valorUnitario - valorExtra,
           valor_extra: valorExtra,
-          ncm: item.produto.nivelSeg || null,
-          cfop: null
+          ncm: item.produto.ncm || null,
+          cfop: item.produto.cfop_interno || null
         };
 
         let dbItemId: number;

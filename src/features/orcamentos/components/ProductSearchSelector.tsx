@@ -12,6 +12,52 @@ type ProductSearchSelectorProps = {
   itensAtuais: PropostaItem[];
 };
 
+const allowedCategories = [
+  "Ingressos de segurança",
+  "Pulseiras",
+  "Cordão Credencial",
+  "Cartão PVC"
+];
+
+const TAG_STYLES: Record<string, { active: string; inactive: string }> = {
+  "Ingressos de segurança": {
+    inactive: "border-indigo-100 bg-indigo-50/60 text-indigo-700 hover:bg-indigo-100/80 hover:border-indigo-200",
+    active: "border-indigo-400 bg-indigo-100 text-indigo-900 shadow-sm ring-2 ring-indigo-200/50"
+  },
+  "Pulseiras": {
+    inactive: "border-emerald-100 bg-emerald-50/60 text-emerald-700 hover:bg-emerald-100/80 hover:border-emerald-200",
+    active: "border-emerald-400 bg-emerald-100 text-emerald-900 shadow-sm ring-2 ring-emerald-200/50"
+  },
+  "Cordão Credencial": {
+    inactive: "border-amber-100 bg-amber-50/60 text-amber-700 hover:bg-amber-100/80 hover:border-amber-200",
+    active: "border-amber-400 bg-amber-100 text-amber-900 shadow-sm ring-2 ring-amber-200/50"
+  },
+  "Cartão PVC": {
+    inactive: "border-purple-100 bg-purple-50/60 text-purple-700 hover:bg-purple-100/80 hover:border-purple-200",
+    active: "border-purple-400 bg-purple-100 text-purple-900 shadow-sm ring-2 ring-purple-200/50"
+  }
+};
+
+function getCorrectedCategoryNormalized(category?: string): string {
+  if (!category) return "";
+  // Normalize strings to strip accents and lowercase
+  const clean = (val: string) => val.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const cat = clean(category);
+  if (cat === "vartao pvc" || cat === "cartao pvc") {
+    return "cartao pvc";
+  }
+  if (cat === "ingressos de seguranca") {
+    return "ingressos de seguranca";
+  }
+  if (cat === "pulseiras") {
+    return "pulseiras";
+  }
+  if (cat === "cordao credencial") {
+    return "cordao credencial";
+  }
+  return cat;
+}
+
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-10 py-3 text-sm text-slate-900 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]";
 
@@ -44,14 +90,6 @@ export function ProductSearchSelector({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Dynamically extract categories from real products
-  const categories = useMemo(() => {
-    const cats = produtos
-      .filter((p) => p.ativo && p.categoria)
-      .map((p) => p.categoria.toUpperCase());
-    return Array.from(new Set(cats));
-  }, [produtos]);
-
   // Filter products based on query
   const filteredProducts = useMemo(() => {
     const q = normalize(searchQuery).trim();
@@ -64,7 +102,9 @@ export function ProductSearchSelector({
       const matchesName = normalize(p.nomeReal).includes(q);
       const matchesCode = p.id_produto.toString().includes(q);
       const matchesApelidos = (p.apelidos || []).some((a) => normalize(a).includes(q));
-      const matchesCategory = p.categoria && normalize(p.categoria).includes(q);
+      
+      const correctedCat = getCorrectedCategoryNormalized(p.categoria);
+      const matchesCategory = correctedCat && (correctedCat.includes(q) || q.includes(correctedCat));
 
       return matchesName || matchesCode || matchesApelidos || matchesCategory;
     });
@@ -96,39 +136,41 @@ export function ProductSearchSelector({
   return (
     <div className="space-y-4" ref={containerRef}>
       {/* Category Tags */}
-      {categories.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {categories.map((cat) => {
-            const isTagActive = searchQuery.toUpperCase() === cat;
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => handleTagClick(cat)}
-                className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all duration-200 ${
-                  isTagActive
-                    ? "border-teal-300 bg-teal-50 text-teal-800 shadow-sm ring-2 ring-teal-200/50"
-                    : "border-[#d7e5e8] bg-white text-[#0b2f4a] hover:bg-[#f3f7f8] hover:border-slate-300"
-                }`}
-              >
-                {cat}
-              </button>
-            );
-          })}
-          {searchQuery && (
+      <div className="flex flex-wrap gap-2">
+        {allowedCategories.map((cat) => {
+          const catNormalized = getCorrectedCategoryNormalized(cat);
+          const queryNormalized = getCorrectedCategoryNormalized(searchQuery);
+          const isTagActive = queryNormalized === catNormalized && searchQuery !== "";
+          const style = TAG_STYLES[cat] || {
+            inactive: "border-[#d7e5e8] bg-white text-[#0b2f4a] hover:bg-[#f3f7f8] hover:border-slate-300",
+            active: "border-teal-300 bg-teal-50 text-teal-800 shadow-sm ring-2 ring-teal-200/50"
+          };
+          return (
             <button
+              key={cat}
               type="button"
-              onClick={() => {
-                setSearchQuery("");
-                setIsOpen(false);
-              }}
-              className="shrink-0 rounded-full border border-rose-200 bg-rose-50 text-rose-700 px-3.5 py-1.5 text-xs font-bold hover:bg-rose-100 transition"
+              onClick={() => handleTagClick(cat)}
+              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all duration-200 ${
+                isTagActive ? style.active : style.inactive
+              }`}
             >
-              Limpar Filtro
+              {cat}
             </button>
-          )}
-        </div>
-      )}
+          );
+        })}
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchQuery("");
+              setIsOpen(false);
+            }}
+            className="shrink-0 rounded-full border border-rose-200 bg-rose-50 text-rose-700 px-3.5 py-1.5 text-xs font-bold hover:bg-rose-100 transition"
+          >
+            Limpar Filtro
+          </button>
+        )}
+      </div>
 
       {/* Search Input Box */}
       <div className="relative">

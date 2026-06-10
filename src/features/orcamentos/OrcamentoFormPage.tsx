@@ -16,7 +16,6 @@ import type {
   Proposta,
   PropostaFormState,
   PropostaItem,
-  PropostaVariacaoEscolhida,
   TipoDescontoProposta,
   PropostaFrete
 } from "@/features/orcamentos/types";
@@ -327,6 +326,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }, [form.itens.length, resumo.pesoTotal]);
 
 
+  const selectedContact = proposalContacts.find((c) => c.id === form.contatoId);
+  const contatoNome = form.clienteNaoCadastrado ? "Contato Rápido" : (selectedContact ? selectedContact.nome : "");
+
   const informalText = buildPropostaInformalText({
     id_int: form.id_int || "NOVO",
     clienteNome: form.clienteNaoCadastrado ? (form.nomeClienteLivre || "Cliente não cadastrado") : (cliente?.nome ?? "Cliente não definido"),
@@ -344,7 +346,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     } : freteEscolhido,
     resumo,
     formaPagamento: form.formaPagamento,
-    isAvulso: form.isAvulso
+    isAvulso: form.isAvulso,
+    contatoNome
   });
 
   // Fetch products catalog
@@ -560,19 +563,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       return;
     }
 
-    // se CEP, peso ou volumes mudarem, limpar frete escolhido atual imediatamente
-    let wasChanged = false;
-    if (lastQuotedKey) {
-      wasChanged = true;
-      setTimeout(() => {
-        setForm((prev) => ({
-          ...prev,
-          freteEscolhidoId: "",
-          fretes: prev.fretes.map((f) => ({ ...f, escolhido: false }))
-        }));
-      }, 0);
-    }
-
     const timer = setTimeout(async () => {
       setIsQuotingSedex(true);
       setIsQuotingAzul(true);
@@ -635,35 +625,56 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       const allResults = [...sedexResults, ...azulResults, ...transpResults];
 
       setForm((prev) => {
+        // Capture previous choice details
+        const currentChosen = prev.fretes.find((f) => f.id === prev.freteEscolhidoId || f.escolhido);
+        const chosenServico = currentChosen?.servico;
+        const chosenTransportadora = currentChosen?.transportadora;
+        const isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
+
         // Keep manual fretes
         const manualFretes = prev.fretes.filter(
           (f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual"
         );
 
-        const currentChosen = prev.fretes.find((f) => f.id === prev.freteEscolhidoId);
-        let nextEscolhidoId = prev.freteEscolhidoId;
+        let nextEscolhidoId = "";
+        let foundMatch = false;
 
         const updatedResults = allResults.map((newFrete) => {
           if (
-            !wasChanged &&
             currentChosen &&
-            !currentChosen.id.startsWith("manual_") &&
-            currentChosen.transportadora === newFrete.transportadora &&
-            currentChosen.servico === newFrete.servico
+            !isManual &&
+            newFrete.transportadora === chosenTransportadora &&
+            newFrete.servico === chosenServico
           ) {
             nextEscolhidoId = newFrete.id;
+            foundMatch = true;
             return { ...newFrete, escolhido: true };
           }
-          return newFrete;
+          return { ...newFrete, escolhido: false };
         });
 
-        if (!wasChanged && currentChosen && currentChosen.id.startsWith("manual_")) {
+        if (currentChosen && isManual) {
           nextEscolhidoId = currentChosen.id;
+          foundMatch = true;
+          manualFretes.forEach((f) => {
+            if (f.id === currentChosen.id) {
+              f.escolhido = true;
+            }
+          });
         }
 
-        // If changed, we do NOT auto-select anything.
-        // If not changed and nothing was chosen, we auto-select the first one.
-        if (!wasChanged && !nextEscolhidoId && updatedResults.length > 0) {
+        // If there was a selection previously and it is no longer available:
+        if (currentChosen && !foundMatch) {
+          showToast({
+            type: "warning",
+            title: "Frete indisponível",
+            description: "O frete escolhido anteriormente não está disponível na nova cotação. Selecione uma nova opção."
+          });
+          nextEscolhidoId = "";
+        }
+
+        // Auto-select first option only if there was no previous choice
+        if (!currentChosen && updatedResults.length > 0) {
           updatedResults[0].escolhido = true;
           nextEscolhidoId = updatedResults[0].id;
         }
@@ -680,7 +691,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey, resumo.subtotalProdutos, form.isAvulso]);
+  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey, resumo.subtotalProdutos, form.isAvulso, showToast]);
 
 
 
@@ -892,25 +903,34 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       const vinculo = item.produto.variacoes.find((variacao) => variacao.id_variacao === id_variacao);
       const tipo = vinculo?.tipos.find((tipoVariacao) => tipoVariacao.id === tipoId);
 
+      const oldChoice = item.variacoesEscolhidas.find((c) => c.id_variacao === id_variacao);
+      const oldExtra = oldChoice?.tipo.v_extra || 0;
+
+      let nextVariacoes = item.variacoesEscolhidas;
+      let newExtra = 0;
+
       if (!vinculo || !tipo) {
-        return {
-          ...item,
-          variacoesEscolhidas: item.variacoesEscolhidas.filter((choice) => choice.id_variacao !== id_variacao)
+        // If deselected or not found, remove the choice
+        nextVariacoes = item.variacoesEscolhidas.filter((c) => c.id_variacao !== id_variacao);
+      } else {
+        const newChoice = {
+          id: `pv_sel_${item.id_produto}_${id_variacao}_${Date.now()}`,
+          id_variacao,
+          variacao: vinculo.variacao,
+          tipo
         };
+        nextVariacoes = [...item.variacoesEscolhidas.filter((c) => c.id_variacao !== id_variacao), newChoice];
+        newExtra = tipo.v_extra;
       }
 
-      const nextChoice: PropostaVariacaoEscolhida = {
-        id: `choice_${item.id}_${id_variacao}`,
-        id_variacao,
-        variacao: vinculo.variacao,
-        tipo
-      };
-      const variacoesEscolhidas = [
-        ...item.variacoesEscolhidas.filter((choice) => choice.id_variacao !== id_variacao),
-        nextChoice
-      ];
+      const priceDiff = newExtra - oldExtra;
+      const nextValorUnitario = Math.max(0, item.valorUnitario + priceDiff);
 
-      return { ...item, variacoesEscolhidas };
+      return {
+        ...item,
+        variacoesEscolhidas: nextVariacoes,
+        valorUnitario: nextValorUnitario
+      };
     });
   }
 
@@ -1058,35 +1078,56 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       })()
     ]);
 
+    // Find currently selected frete
+    const currentChosen = form.fretes.find((f) => f.id === form.freteEscolhidoId || f.escolhido);
+    const chosenServico = currentChosen?.servico;
+    const chosenTransportadora = currentChosen?.transportadora;
+    const isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
+
     // Keep manual fretes
     const manualFretes = form.fretes.filter(
       (f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual"
     );
 
-    // Find currently selected frete
-    const currentChosen = isFreightOutdated ? undefined : form.fretes.find((f) => f.id === form.freteEscolhidoId);
     let nextEscolhidoId = "";
+    let foundMatch = false;
 
     const allResults = [...sedexResults, ...azulResults, ...transpResults];
 
     const updatedResults = allResults.map((newFrete) => {
       if (
         currentChosen &&
-        !currentChosen.id.startsWith("manual_") &&
-        currentChosen.transportadora === newFrete.transportadora &&
-        currentChosen.servico === newFrete.servico
+        !isManual &&
+        newFrete.transportadora === chosenTransportadora &&
+        newFrete.servico === chosenServico
       ) {
         nextEscolhidoId = newFrete.id;
+        foundMatch = true;
         return { ...newFrete, escolhido: true };
       }
-      return newFrete;
+      return { ...newFrete, escolhido: false };
     });
 
-    if (currentChosen && currentChosen.id.startsWith("manual_")) {
+    if (currentChosen && isManual) {
       nextEscolhidoId = currentChosen.id;
+      foundMatch = true;
+      manualFretes.forEach((f) => {
+        if (f.id === currentChosen.id) {
+          f.escolhido = true;
+        }
+      });
     }
 
-    if (!isFreightOutdated && !nextEscolhidoId && updatedResults.length > 0) {
+    if (currentChosen && !foundMatch) {
+      showToast({
+        type: "warning",
+        title: "Frete indisponível",
+        description: "O frete escolhido anteriormente não está disponível na nova cotação. Selecione uma nova opção."
+      });
+      nextEscolhidoId = "";
+    }
+
+    if (!currentChosen && updatedResults.length > 0) {
       updatedResults[0].escolhido = true;
       nextEscolhidoId = updatedResults[0].id;
     }
@@ -1095,7 +1136,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     setForm((prev) => ({
       ...prev,
       fretes: merged,
-      freteEscolhidoId: nextEscolhidoId || prev.freteEscolhidoId
+      freteEscolhidoId: nextEscolhidoId
     }));
 
     const currentKey = getFreightKey(cep, cidade, uf, resumo.pesoTotal, volumes);
@@ -1989,7 +2030,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
               <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
               {canManageCommercialRules ? (
-                <div className="mt-4 grid gap-3 grid-cols-[100px_1fr] items-end">
+                <div className="mt-4 grid gap-3 grid-cols-[75px_1fr] items-start">
                   <Field label="Tipo">
                     <select value={form.descontoGeralTipo} onChange={(event) => updateField("descontoGeralTipo", event.target.value as TipoDescontoProposta)} className={inputClass}>
                       <option value="PERCENTUAL">%</option>
@@ -1997,7 +2038,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     </select>
                   </Field>
                   <Field label="Desconto geral">
-                    <input value={form.descontoGeralValor} onChange={(event) => updateField("descontoGeralValor", event.target.value)} className={inputClass} />
+                    {/* Nota técnica: O desconto geral é temporário (cálculo em memória) e não é persistido no banco de dados. */}
+                    <input value={form.descontoGeralValor} onChange={(event) => updateField("descontoGeralValor", event.target.value)} className={inputClass} placeholder="0,00" />
                   </Field>
                 </div>
               ) : (
@@ -2142,25 +2184,47 @@ function ProductItemEditor({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_140px_160px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(240px,_360px)_1fr] items-start">
         <Field label="Descrição/modelo do item">
           <textarea
             value={item.descricaoModelo}
             onChange={(event) => onUpdate((current) => ({ ...current, descricaoModelo: event.target.value }))}
-            className={`${inputClass} min-h-24 resize-y`}
+            className={`${inputClass} min-h-[44px] py-2.5 resize-y`}
             placeholder="Descreva detalhes adicionais sobre o produto se necessário..."
           />
         </Field>
-        <Field label="Quantidade">
-          <input
-            type="number"
-            value={item.quantidade || ""}
-            onChange={(event) => onUpdate((current) => ({ ...current, quantidade: Math.max(0, Number(event.target.value)) }))}
-            className={inputClass}
-            placeholder="Qtd"
-          />
-        </Field>
-        <InfoBox label="Subtotal final" value={formatCurrency(item.subtotal)} />
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 items-start">
+          <Field label="Quantidade">
+            <input
+              type="number"
+              value={item.quantidade || ""}
+              onChange={(event) => onUpdate((current) => ({ ...current, quantidade: Math.max(0, Number(event.target.value)) }))}
+              className={inputClass}
+              placeholder="Qtd"
+            />
+          </Field>
+          <Field label="Valor Unitário (R$)">
+            <input
+              type="number"
+              step="0.0001"
+              value={item.valorUnitario || ""}
+              onChange={(event) => onUpdate((current) => ({ ...current, valorUnitario: Math.max(0, Number(event.target.value)) }))}
+              className={inputClass}
+              placeholder="0,00"
+            />
+          </Field>
+          <Field label="Fixo (R$)">
+            <input
+              type="number"
+              step="0.01"
+              value={item.valorFixo || ""}
+              onChange={(event) => onUpdate((current) => ({ ...current, valorFixo: Math.max(0, Number(event.target.value)) }))}
+              className={inputClass}
+              placeholder="0,00"
+            />
+          </Field>
+          <InfoBox label="Subtotal final" value={formatCurrency(item.subtotal)} />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4 pt-1">

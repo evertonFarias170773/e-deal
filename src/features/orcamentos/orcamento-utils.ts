@@ -28,7 +28,8 @@ export function buildPropostaInformalText({
   frete,
   resumo,
   formaPagamento,
-  isAvulso = false
+  isAvulso = false,
+  contatoNome
 }: {
   id_int: number | string;
   clienteNome: string;
@@ -37,59 +38,47 @@ export function buildPropostaInformalText({
   resumo: PropostaResumo;
   formaPagamento: string;
   isAvulso?: boolean;
+  contatoNome?: string;
 }) {
+  const contactName = contatoNome || clienteNome || "cliente";
+
+  let itemsText = "";
   if (isAvulso) {
-    return `No prop. ${id_int} | Cliente ${clienteNome}
-
-Orcamento conforme solicitacao (Modo Avulso)
-
-Valor produtos: ${formatPlainCurrency(resumo.subtotalProdutos)}
-Frete: ${formatPlainCurrency(resumo.frete)}
-Total final: ${formatPlainCurrency(resumo.valorTotal)}
-Forma de pagamento: ${formaPagamento}`;
+    itemsText = `✅ Orçamento Avulso: ${formatPlainCurrency(resumo.subtotalProdutos)}`;
+  } else {
+    itemsText = itens
+      .map((item) => {
+        return `✅ ${item.quantidade.toLocaleString("pt-BR")} ${item.nome}: ${formatPlainCurrency(item.subtotal)} (${item.prazo})`;
+      })
+      .join("\n");
   }
 
-  const produtos = itens
-    .map((item) => {
-      const variacoes = item.variacoesEscolhidas.length
-        ? `\n   Variacoes: ${item.variacoesEscolhidas
-            .map((escolha) => `${escolha.variacao.nome}: ${escolha.tipo.variacao}`)
-            .join(", ")}`
-        : "";
-
-      const desconto = item.descontoValorCalculado > 0 ? `\n   Desconto: -${formatPlainCurrency(item.descontoValorCalculado)}` : "";
-      const bonus = item.acrescimoBonus > 0 ? `\n   Tabela especial: -${formatPlainCurrency(item.acrescimoBonus)}` : "";
-
-      return `- ${item.descricaoModelo || item.nome}\n   Quantidade: ${item.quantidade.toLocaleString("pt-BR")}\n   Prazo: ${item.prazo}\n   Subtotal: ${formatPlainCurrency(item.subtotal)}${desconto}${bonus}${variacoes}`;
-    })
-    .join("\n\n");
+  let freteMsg = "";
+  const freteEscolhido = frete && frete.transportadora && frete.transportadora !== "Frete nao definido" && frete.transportadora !== "Retirada Local";
+  if (freteEscolhido) {
+    freteMsg = `Frete via ${frete.transportadora}${frete.servico ? ` (${frete.servico})` : ""}: ${formatPlainCurrency(frete.valor)} (prazo de ${frete.prazo})`;
+  } else if (frete && frete.transportadora === "Retirada Local") {
+    freteMsg = `Frete: Retirada Local (Sem custo)`;
+  } else {
+    freteMsg = "Como ainda não definimos o frete, me avisa se precisa que eu verifique o valor para o seu endereço?";
+  }
 
   const lines = [
-    `No prop. ${id_int} | Cliente ${clienteNome}`,
-    "",
-    "Orcamento conforme solicitacao",
-    "",
-    "Produto(s)",
-    produtos || "- Nenhum produto adicionado",
-    "",
-    "Frete escolhido",
-    frete ? `${frete.transportadora} - ${frete.servico} - ${formatPlainCurrency(frete.valor)} - ${frete.prazo}` : "Frete nao definido",
-    "",
-    `Subtotal produtos: ${formatPlainCurrency(resumo.subtotalProdutos)}`
+    `Oi, ${contactName}! Como vai?`,
+    `Proposta ${id_int}`,
+    `Segue orçamento para os itens que você pediu.`,
+    `Consegui aplicar uma condição especial para você!`,
+    ``,
+    `Ficou assim:`,
+    ``,
+    itemsText || "✅ Nenhum produto adicionado",
+    ``,
+    `O valor total do pedido ficou em ${formatPlainCurrency(resumo.valorTotal)} no ${formaPagamento}.`,
+    ``,
+    freteMsg,
+    ``,
+    `Se estiver tudo certo, me confirma por aqui que já dou andamento ao processo!`
   ];
-
-  if (resumo.descontosIndividuais > 0) {
-    lines.push(`Descontos individuais: ${formatPlainCurrency(resumo.descontosIndividuais)}`);
-  }
-  if (resumo.acrescimoBonus > 0) {
-    lines.push(`Tabela especial do cliente: -${formatPlainCurrency(resumo.acrescimoBonus)}`);
-  }
-  if (resumo.descontoGeral > 0) {
-    lines.push(`Desconto geral: ${formatPlainCurrency(resumo.descontoGeral)}`);
-  }
-
-  lines.push(`Total final: ${formatPlainCurrency(resumo.valorTotal)}`);
-  lines.push(`Forma de pagamento: ${formaPagamento}`);
 
   return lines.join("\n");
 }
@@ -137,8 +126,7 @@ export function calculateItemSubtotal(
   item: Pick<PropostaItem, "quantidade" | "valorUnitario" | "valorFixo" | "variacoesEscolhidas" | "descontoTipo" | "descontoValor">,
   bonusPercent = 0
 ) {
-  const variationExtra = item.variacoesEscolhidas.reduce((total, escolha) => total + escolha.tipo.v_extra * item.quantidade, 0);
-  const subtotalBruto = item.quantidade * item.valorUnitario + item.valorFixo + variationExtra;
+  const subtotalBruto = item.quantidade * item.valorUnitario + item.valorFixo;
   const descontoValorCalculado = Math.min(subtotalBruto, calculateDiscountValue(subtotalBruto, item.descontoTipo, item.descontoValor));
   const acrescimoBonus = (subtotalBruto - descontoValorCalculado) * (bonusPercent / 100);
 
@@ -157,6 +145,7 @@ export function calculateItemWeight(item: Pick<PropostaItem, "quantidade" | "pes
 
 export function createItemFromProduto(produto: Produto, quantidade = 1000, bonusPercent = 0, autoSelectVariations = true): PropostaItem {
   const variacoesEscolhidas = autoSelectVariations ? firstVariationChoices(produto) : [];
+  const variationExtra = variacoesEscolhidas.reduce((total, escolha) => total + escolha.tipo.v_extra, 0);
   const baseItem = {
     id: `item_${produto.id_produto}_${Date.now()}`,
     id_produto: produto.id_produto,
@@ -165,7 +154,7 @@ export function createItemFromProduto(produto: Produto, quantidade = 1000, bonus
     formato: produto.formato,
     descricaoModelo: produto.descricao,
     quantidade,
-    valorUnitario: produto.valorUnt,
+    valorUnitario: produto.valorUnt + variationExtra,
     valorFixo: produto.valorFixo,
     descontoTipo: "VALOR" as TipoDescontoProposta,
     descontoValor: 0,
