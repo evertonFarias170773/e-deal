@@ -31,12 +31,12 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { useDashboardFinanceiroSnapshot } from "@/features/cobrancas/hooks/useDashboardFinanceiroSnapshot";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
 
-type TipoFiltro = "PENDENTES_APROVACAO" | "EMITIR_BOLETOS" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO";
+type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "EMITIR_BOLETOS" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
-const monthsShort = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
   { value: "PENDENTES_APROVACAO", label: "Pendentes aprovação" },
+  { value: "CONFIRMADOS_DIA", label: "Confirmados do dia" },
   { value: "EMITIR_BOLETOS", label: "Emitir Boletos" },
   { value: "PIX", label: "PIX" },
   { value: "BOLETO", label: "Boleto" },
@@ -53,6 +53,13 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
 }
 
 function isFilaPadrao(cobranca: Cobranca) {
+  const tipoNormalizado = String(cobranca.tipo_cobranca).trim().toUpperCase().replace(/_/g, "-");
+  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+
+  if (isEFaturado) {
+    return isPendenteAprovacao(cobranca) && isEmpresaValida(cobranca);
+  }
+
   return (
     !Boolean(cobranca.confirmado) &&
     (cobranca.status === "PAID" || cobranca.status === "A_VENCER") &&
@@ -61,12 +68,49 @@ function isFilaPadrao(cobranca: Cobranca) {
 }
 
 function isBaseConfirmada(cobranca: Cobranca) {
+  if (isPendenteAprovacao(cobranca)) {
+    return false;
+  }
+
+  const tipoNormalizado = String(cobranca.tipo_cobranca).trim().toUpperCase().replace(/_/g, "-");
+  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+
+  if (isEFaturado) {
+    return Boolean(cobranca.confirmado) && (cobranca.status === "PAID" || cobranca.status === "A_VENCER") && isEmpresaValida(cobranca);
+  }
+
   return (
     Boolean(cobranca.confirmado) &&
     (cobranca.status === "PAID" || cobranca.status === "A_VENCER") &&
     Boolean(cobranca.paid_at) &&
     isEmpresaValida(cobranca)
   );
+}
+
+function isConfirmadoDia(cobranca: Cobranca) {
+  if (!isBaseConfirmada(cobranca)) {
+    return false;
+  }
+  const dateVal = cobranca.paid_at || cobranca.data_confirmacao || cobranca.created_at;
+  if (!dateVal) {
+    return false;
+  }
+  const todayKey = getLocalDateKey(new Date());
+  return getLocalDateKey(dateVal) === todayKey;
+}
+
+function getEmpresaLabelVisual(nome: string) {
+  const upper = nome.toUpperCase();
+  if (upper.includes("GRÁFICA") || upper.includes("GRAFICA EXPRESSA") || upper.includes("EIRELI")) {
+    return "Ideal Gráfica";
+  }
+  if (upper.includes("BIRÔ") || upper.includes("BIRO")) {
+    return "Ideal Birô";
+  }
+  if (upper.includes("E3") || upper.includes("BRINDES")) {
+    return "E3 Brindes";
+  }
+  return nome;
 }
 
 function isEmitirBoletos(cobranca: Cobranca) {
@@ -169,41 +213,99 @@ export function CobrancasList() {
 
 
 
-  const faturamentoPeriodoTotal = useMemo(() => {
-    return cobrancasStats
-      .filter((c) => {
-        if (c.status !== "PAID" || !c.paid_at) {
-          return false;
+  const faturamentoPeriodoPorEmpresa = useMemo(() => {
+    const groups = new Map<number, { id_empresa: number; empresa: string; total: number }>();
+    
+    // Initialize the three fixed companies
+    groups.set(1, { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI", total: 0 });
+    groups.set(2, { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS", total: 0 });
+    groups.set(3, { id_empresa: 3, empresa: "E3 BRINDES LTDA", total: 0 });
+
+    cobrancasStats.forEach((c) => {
+      // Excluir: A_RECEBER, CANCELADO, confirmado = false
+      if (c.status === "A_RECEBER" || c.status === "CANCELADO" || !c.confirmado) {
+        return;
+      }
+
+      // Considerar apenas status in ('PAID', 'A_VENCER')
+      if (c.status !== "PAID" && c.status !== "A_VENCER") {
+        return;
+      }
+
+      // Preferência de data: paid_at ?? data_confirmacao ?? created_at
+      const dateVal = c.paid_at || c.data_confirmacao || c.created_at;
+      if (!dateVal) {
+        return;
+      }
+
+      const faturamentoLocalDateKey = getLocalDateKey(dateVal);
+      if (faturamentoLocalDateKey < dataInicial || faturamentoLocalDateKey > dataFinal) {
+        return;
+      }
+
+      let idEmpresa = Number(c.id_empresa);
+      let empresaNome = c.empresa?.trim() || "";
+
+      // Agrupar por empresa: usar id_empresa como fonte principal; se vazia/1/Definir empresa, mapear por id_empresa
+      if (!idEmpresa || idEmpresa <= 0) {
+        const lowerName = empresaNome.toLowerCase();
+        if (lowerName.includes("eireli") || lowerName.includes("grafica expressa") || lowerName.includes("grafica")) {
+          idEmpresa = 1;
+        } else if (lowerName.includes("biro")) {
+          idEmpresa = 2;
+        } else if (lowerName.includes("e3") || lowerName.includes("brindes")) {
+          idEmpresa = 3;
+        } else {
+          idEmpresa = 1;
         }
-        const paidAtLocalDateKey = getLocalDateKey(c.paid_at);
-        return paidAtLocalDateKey >= dataInicial && paidAtLocalDateKey <= dataFinal;
-      })
-      .reduce((sum, c) => {
-        const tipoNormalized = String(c.tipo_cobranca).toUpperCase();
-        const val = (tipoNormalized === "CARD_PARCELADO" && typeof c.cartao_valor_final === "number" && c.cartao_valor_final > 0)
-          ? c.cartao_valor_final
-          : c.valor;
-        return sum + (val ?? 0);
-      }, 0);
+      }
+
+      // Padronizar por id_empresa
+      if (idEmpresa === 1) empresaNome = "IDEAL GRÁFICA EXPRESSA EIRELI";
+      else if (idEmpresa === 2) empresaNome = "IDEAL BIRÔ SERV. GRAFICOS";
+      else if (idEmpresa === 3) empresaNome = "E3 BRINDES LTDA";
+      else empresaNome = `Empresa ${idEmpresa}`;
+
+      const valorValido = c.valor ?? 0;
+
+      const current = groups.get(idEmpresa);
+      if (current) {
+        current.total += valorValido;
+      } else {
+        groups.set(idEmpresa, {
+          id_empresa: idEmpresa,
+          empresa: empresaNome,
+          total: valorValido
+        });
+      }
+    });
+
+    return Array.from(groups.values()).sort((a, b) => a.id_empresa - b.id_empresa);
   }, [cobrancasStats, dataInicial, dataFinal]);
+
+  const faturamentoPeriodoTotal = useMemo(() => {
+    return faturamentoPeriodoPorEmpresa.reduce((sum, item) => sum + item.total, 0);
+  }, [faturamentoPeriodoPorEmpresa]);
 
   const visibleCobrancas = useMemo(() => {
     const base =
       tipo === "PENDENTES_APROVACAO"
         ? cobrancasStats.filter((c) => isPendenteAprovacao(c))
-        : tipo === "EMITIR_BOLETOS"
-          ? cobrancasStats.filter(isEmitirBoletos)
-          : statusFilter === "CONFIRMADOS"
-            ? cobrancasStats.filter(isBaseConfirmada)
-            : tipo === "TODOS"
-              ? cobrancasStats.filter(isFilaPadrao)
-              : cobrancasStats.filter(isBaseConfirmada);
+        : tipo === "CONFIRMADOS_DIA"
+          ? cobrancasStats.filter(isConfirmadoDia)
+          : tipo === "EMITIR_BOLETOS"
+            ? cobrancasStats.filter(isEmitirBoletos)
+            : statusFilter === "CONFIRMADOS"
+              ? cobrancasStats.filter(isBaseConfirmada)
+              : tipo === "TODOS"
+                ? cobrancasStats.filter(isFilaPadrao)
+                : cobrancasStats.filter(isBaseConfirmada);
 
     return base
       .filter((cobranca) => {
         const matchesSearch = cobrancaMatchesSearch(cobranca, search);
         const matchesTipo =
-          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "EMITIR_BOLETOS"
+          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "EMITIR_BOLETOS"
             ? true
             : matchesTipoFiltro(cobranca, tipo);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
@@ -337,13 +439,14 @@ export function CobrancasList() {
         )}
       />
 
-      <section className="grid gap-4 xl:grid-cols-4">
+      <section className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         <ConferenceStatCard
           title="Pendentes de aprovação"
           count={dashboardFinanceiro.pendentesResumo.count}
           total={dashboardFinanceiro.pendentesResumo.total}
           helper="E-Faturado aguardando validação financeira."
           tone="warning"
+          isActive={tipo === "PENDENTES_APROVACAO"}
           onClick={() => {
             setTipo("PENDENTES_APROVACAO");
             setStatusFilter("FILA");
@@ -356,64 +459,71 @@ export function CobrancasList() {
           total={dashboardFinanceiro.confirmadosDiaResumo.total}
           helper="Baseado na data atual em America/Sao_Paulo."
           tone="success"
+          isActive={tipo === "CONFIRMADOS_DIA"}
           onClick={() => {
-            setTipo("TODOS");
+            setTipo("CONFIRMADOS_DIA");
             setStatusFilter("CONFIRMADOS");
           }}
         />
 
-        <section className="rounded-3xl border p-4 shadow-sm h-full bg-white">
+        <section className="rounded-2xl border border-slate-200/60 p-4 shadow-sm bg-white flex flex-col justify-between">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {dashboardFinanceiro.source === "rpc" ? "Faturamento do período por empresa" : "Faturamento do dia por empresa"}
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                {dashboardFinanceiro.source === "rpc" ? "Faturamento do período" : "Faturamento do dia"}
               </p>
-              <p className="mt-2 text-xl font-bold text-slate-950">{formatCurrency(dashboardFinanceiro.faturamentoDiaResumoTotal)}</p>
+              <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{formatCurrency(dashboardFinanceiro.faturamentoDiaResumoTotal)}</p>
             </div>
-            <div className="rounded-2xl bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700">
+            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 select-none">
               {dashboardFinanceiro.source === "rpc" ? "Período" : "Hoje"}
-            </div>
+            </span>
           </div>
 
-          <div className="mt-2 space-y-1">
+          <div className="mt-2.5 space-y-1">
             {dashboardFinanceiro.faturamentoDiaPorEmpresa.map((item) => {
               return (
-                <div key={item.id_empresa} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-1.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold leading-4 text-slate-900">{item.empresa}</p>
-                  </div>
-                  <p className="shrink-0 text-sm font-semibold leading-4 text-slate-900">{formatCurrency(item.total)}</p>
+                <div key={item.id_empresa} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50/50 px-3 py-1">
+                  <p className="truncate text-[11px] font-semibold text-slate-700">{getEmpresaLabelVisual(item.empresa)}</p>
+                  <p className="shrink-0 text-[11px] font-semibold text-slate-900">{formatCurrency(item.total)}</p>
                 </div>
               );
             })}
           </div>
         </section>
 
-        <section className="rounded-3xl border p-5 shadow-sm bg-white">
-          <div className="flex flex-col gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Faturamento por Período</p>
-              <p className="mt-2 text-2xl font-bold text-slate-950">{formatCurrency(faturamentoPeriodoTotal)}</p>
+        <section className="rounded-2xl border border-slate-200/60 p-4 shadow-sm bg-white flex flex-col justify-between">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Faturamento por Período</p>
+              <p className="text-base font-bold text-slate-900">{formatCurrency(faturamentoPeriodoTotal)}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <input
                 type="date"
                 value={dataInicial}
                 onChange={(e) => setDataInicial(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700 outline-none w-full"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-1.5 py-1 text-[10px] text-slate-700 outline-none w-full"
               />
-              <span className="text-xs text-slate-400">até</span>
+              <span className="text-[10px] text-slate-400">a</span>
               <input
                 type="date"
                 value={dataFinal}
                 onChange={(e) => setDataFinal(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700 outline-none w-full"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-1.5 py-1 text-[10px] text-slate-700 outline-none w-full"
               />
             </div>
           </div>
-          <p className="mt-4 text-xs text-slate-500">
-            Período filtrado por paid_at e status PAID, sem usar created_at.
-          </p>
+
+          <div className="mt-2.5 space-y-1">
+            {faturamentoPeriodoPorEmpresa.map((item) => {
+              return (
+                <div key={item.id_empresa} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50/50 px-3 py-1">
+                  <p className="truncate text-[11px] font-semibold text-slate-700">{getEmpresaLabelVisual(item.empresa)}</p>
+                  <p className="shrink-0 text-[11px] font-semibold text-slate-900">{formatCurrency(item.total)}</p>
+                </div>
+              );
+            })}
+          </div>
         </section>
       </section>
 
@@ -672,6 +782,7 @@ function ConferenceStatCard({
   total,
   helper,
   tone,
+  isActive,
   onClick
 }: {
   title: string;
@@ -679,30 +790,38 @@ function ConferenceStatCard({
   total: number;
   helper: string;
   tone: "success" | "warning";
+  isActive?: boolean;
   onClick?: () => void;
 }) {
-  const toneClass =
-    tone === "success"
-      ? "border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100/30"
-      : "border-orange-200 bg-orange-50 text-orange-800 hover:bg-orange-100/30";
+  const baseClass = onClick ? "cursor-pointer hover:shadow-sm transition-all duration-200" : "";
+  
+  let stateClass = "";
+  if (isActive) {
+    stateClass = tone === "success"
+      ? "border-teal-500 bg-teal-50/30 ring-1 ring-teal-500/20 text-slate-900"
+      : "border-orange-500 bg-orange-50/30 ring-1 ring-orange-500/20 text-slate-900";
+  } else {
+    stateClass = "border-slate-200/80 bg-white text-slate-900 hover:bg-slate-50/50 hover:border-slate-300";
+  }
 
   return (
     <section
       onClick={onClick}
-      className={`rounded-3xl border p-5 shadow-sm transition-all duration-200 ${onClick ? "cursor-pointer hover:shadow-md hover:scale-[1.01]" : ""} ${toneClass}`}
+      className={`rounded-2xl border p-4 shadow-sm ${baseClass} ${stateClass}`}
     >
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <div>
-          <p className="text-3xl font-bold text-slate-950">{count}</p>
-          <p className="mt-1 text-sm text-slate-500">quantidade de registros</p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm font-semibold text-slate-900">{formatCurrency(total)}</p>
-          <p className="text-xs text-slate-500">soma total</p>
-        </div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
+        {tone === "success" ? (
+          <span className="h-2 w-2 rounded-full bg-teal-500" />
+        ) : (
+          <span className="h-2 w-2 rounded-full bg-orange-500" />
+        )}
       </div>
-      <p className="mt-4 text-sm leading-6 text-slate-600">{helper}</p>
+      <div className="mt-2.5 flex items-baseline justify-between gap-2">
+        <p className="text-2xl font-bold tracking-tight text-slate-900">{count}</p>
+        <p className="text-sm font-semibold text-slate-700">{formatCurrency(total)}</p>
+      </div>
+      <p className="mt-1 text-[11px] leading-4 text-slate-500 truncate" title={helper}>{helper}</p>
     </section>
   );
 }

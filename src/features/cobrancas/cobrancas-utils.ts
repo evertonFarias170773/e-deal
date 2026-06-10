@@ -66,33 +66,15 @@ export function getDataReferenciaFaturamento(cobranca: Pick<Cobranca, "paid_at" 
 }
 
 export function isPendenteAprovacao(
-  cobranca: Pick<Cobranca, "tipo_cobranca" | "confirmado" | "status">
+  cobranca: Pick<Cobranca, "tipo_cobranca" | "confirmado" | "status" | "cliente_restricao" | "cliente_limite_credito" | "cliente_credito" | "valor">
 ) {
-  const tiposPendentes = new Set([
-    "E-FATURADO",
-    "E-AMOSTRAS",
-    "E-RETRABALHO",
-    "E-CORTESIA",
-    "E-INFORME PGTO"
-  ]);
+  const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
+  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
 
-  const tipoNormalizado = cobranca.tipo_cobranca.trim().toUpperCase();
-
-  return tiposPendentes.has(tipoNormalizado) && cobranca.status === "A_VENCER" && !cobranca.confirmado;
+  return isEFaturado && cobranca.status === "A_VENCER" && !cobranca.confirmado;
 }
 
-function formatLocalDate(value: string | Date, options: Intl.DateTimeFormatOptions) {
-  const text = typeof value === "string" ? value.trim() : "";
 
-  if (text && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    return text;
-  }
-
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "America/Sao_Paulo",
-    ...options
-  }).format(new Date(value));
-}
 
 export function getDataHoraListaCobranca(cobranca: Pick<Cobranca, "status" | "paid_at" | "created_at">) {
   if (cobranca.status === "PAID" && cobranca.paid_at) {
@@ -102,7 +84,22 @@ export function getDataHoraListaCobranca(cobranca: Pick<Cobranca, "status" | "pa
   return cobranca.created_at || cobranca.paid_at;
 }
 
-export function getConferenciaStatusLabel(cobranca: Pick<Cobranca, "status" | "confirmado">) {
+export function getConferenciaStatusLabel(
+  cobranca: Pick<Cobranca, "status" | "confirmado" | "tipo_cobranca" | "cliente_restricao" | "cliente_limite_credito" | "cliente_credito" | "valor">
+) {
+  const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
+  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+
+  if (isEFaturado) {
+    if (cobranca.status === "CANCELADO") {
+      return "Cancelado";
+    }
+    if (isPendenteAprovacao(cobranca)) {
+      return "Aguardando financeiro";
+    }
+    return "Liberado";
+  }
+
   if (cobranca.confirmado) {
     return "Liberado";
   }
@@ -122,7 +119,22 @@ export function getConferenciaStatusLabel(cobranca: Pick<Cobranca, "status" | "c
   return "A receber";
 }
 
-export function getConferenciaStatusTone(cobranca: Pick<Cobranca, "status" | "confirmado">) {
+export function getConferenciaStatusTone(
+  cobranca: Pick<Cobranca, "status" | "confirmado" | "tipo_cobranca" | "cliente_restricao" | "cliente_limite_credito" | "cliente_credito" | "valor">
+) {
+  const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
+  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+
+  if (isEFaturado) {
+    if (cobranca.status === "CANCELADO") {
+      return "neutral";
+    }
+    if (isPendenteAprovacao(cobranca)) {
+      return "warning";
+    }
+    return "success";
+  }
+
   if (cobranca.confirmado) {
     return "success";
   }
@@ -135,29 +147,33 @@ export function getConferenciaStatusTone(cobranca: Pick<Cobranca, "status" | "co
 }
 
 export function getLocalDateKey(value: string | Date) {
-  return formatLocalDate(value, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  });
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text && text.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(text)) {
+    return text.slice(0, 10);
+  }
+
+  const dateObj = typeof value === "string" ? new Date(value) : value;
+  if (dateObj instanceof Date && !isNaN(dateObj.getTime())) {
+    return dateObj.toISOString().slice(0, 10);
+  }
+
+  return "";
 }
 
 export function getLocalMonthKey(value: string | Date) {
-  const text = typeof value === "string" ? value.trim() : "";
-
-  if (text && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    return text.slice(0, 7);
-  }
-
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit"
-  }).format(new Date(value));
+  const dateKey = getLocalDateKey(value);
+  return dateKey ? dateKey.slice(0, 7) : "";
 }
 
 export function getEmpresaExibicao(cobranca: Pick<Cobranca, "empresa" | "id_empresa">) {
   const empresaId = Number(cobranca.id_empresa);
+  const empresaTextoRaw = cobranca.empresa?.trim() || "";
+
+  if (empresaTextoRaw === "Definir empresa" || empresaTextoRaw === "1" || !empresaTextoRaw) {
+    if (empresaId === 1) return "IDEAL GRÁFICA EXPRESSA EIRELI";
+    if (empresaId === 2) return "IDEAL BIRÔ SERV. GRAFICOS";
+    if (empresaId === 3) return "E3 BRINDES LTDA";
+  }
 
   if (empresaId === 1) {
     return "Ideal Gráfica";

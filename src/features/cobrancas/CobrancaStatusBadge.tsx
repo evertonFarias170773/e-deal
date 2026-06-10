@@ -5,7 +5,7 @@ import {
 } from "@/features/cobrancas/cobrancas-utils";
 
 type CobrancaStatusBadgeProps = {
-  cobranca: Pick<Cobranca, "status" | "confirmado">;
+  cobranca: Pick<Cobranca, "status" | "confirmado" | "tipo_cobranca" | "cliente_restricao" | "cliente_limite_credito" | "cliente_credito" | "valor">;
 };
 
 export function CobrancaStatusBadge({ cobranca }: CobrancaStatusBadgeProps) {

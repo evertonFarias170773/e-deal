@@ -103,26 +103,38 @@ function buildRestUrl(table: string, params: Record<string, string>) {
   return url;
 }
 
-async function fetchPagamentosV2Rows(limit = 5000) {
+async function fetchPagamentosV2Rows(limit = 10000) {
   const client = getSupabaseClient();
 
   if (!client) {
     return null;
   }
 
-  const query = client
-    .from("pagamentos_v2")
-    .select(PAGAMENTOS_V2_SELECT)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  const rows: SupabasePagamentoV2Row[] = [];
+  const pageSize = 1000;
 
-  const { data, error } = await query.returns<SupabasePagamentoV2Row[]>();
+  for (let from = 0; from < limit; from += pageSize) {
+    const to = from + pageSize - 1;
+    const query = client
+      .from("pagamentos_v2")
+      .select(PAGAMENTOS_V2_SELECT)
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
-  if (error || !data || !Array.isArray(data)) {
-    return null;
+    const { data, error } = await query.returns<SupabasePagamentoV2Row[]>();
+
+    if (error || !data || !Array.isArray(data)) {
+      return null;
+    }
+
+    rows.push(...data);
+
+    if (data.length < pageSize) {
+      break;
+    }
   }
 
-  return data;
+  return rows;
 }
 
 function mapRowsToCobrancas(rows: SupabasePagamentoV2Row[]) {
@@ -156,6 +168,55 @@ function sortByConferenceRecency(items: Cobranca[]) {
   });
 }
 
+async function fetchClientesInfo(clientIds: number[]) {
+  const config = getSupabaseConfig();
+  const uniqueIds = Array.from(new Set(clientIds)).filter(Boolean);
+  if (!config || uniqueIds.length === 0) {
+    return {};
+  }
+
+  const mapping: Record<number, { restricao: boolean; limite_credito: number; credito: number }> = {};
+  const limit = 500;
+  
+  for (let i = 0; i < uniqueIds.length; i += limit) {
+    const chunk = uniqueIds.slice(i, i + limit);
+    const url = new URL(`${config.url}/rest/v1/clientes`);
+    url.searchParams.set("select", "id_cliente,restricao,limite_credito,credito");
+    url.searchParams.set("id_cliente", `in.(${chunk.join(",")})`);
+
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {
+          apikey: config.anonKey,
+          authorization: `Bearer ${config.anonKey}`,
+          accept: "application/json",
+          "accept-profile": "public"
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
+        if (Array.isArray(data)) {
+          data.forEach((row: { id_cliente: unknown; restricao: unknown; limite_credito: unknown; credito: unknown }) => {
+            const id = Number(row.id_cliente);
+            if (Number.isFinite(id)) {
+              mapping[id] = {
+                restricao: Boolean(row.restricao),
+                limite_credito: Number(row.limite_credito) || 0,
+                credito: Number(row.credito) || 0
+              };
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[CobrancasService] Erro ao consultar clientes em lote:", err);
+    }
+  }
+
+  return mapping;
+}
+
 export async function getCobrancasReadOnlyData(): Promise<CobrancasReadResult> {
   const rows = await fetchPagamentosV2Rows();
 
@@ -168,7 +229,18 @@ export async function getCobrancasReadOnlyData(): Promise<CobrancasReadResult> {
     };
   }
 
-  const cobrancasStats = sortByConferenceRecency(mapRowsToCobrancas(rows));
+  const mappedCobrancas = mapRowsToCobrancas(rows);
+  const clientIds = mappedCobrancas.map((c) => c.id_cliente).filter(Boolean);
+  const clientMap = await fetchClientesInfo(clientIds);
+
+  mappedCobrancas.forEach((c) => {
+    const cInfo = clientMap[c.id_cliente];
+    c.cliente_restricao = cInfo ? cInfo.restricao : false;
+    c.cliente_limite_credito = cInfo ? cInfo.limite_credito : 0;
+    c.cliente_credito = cInfo ? cInfo.credito : 0;
+  });
+
+  const cobrancasStats = sortByConferenceRecency(mappedCobrancas);
   const cobrancas = cobrancasStats.slice(0, 500);
 
   if (cobrancasStats.length === 0) {

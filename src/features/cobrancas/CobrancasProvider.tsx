@@ -152,8 +152,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       const empresaOption = getEmpresaRecebedoraByProposta(proposta);
-      const idEmpresa = empresaOption?.id ?? 1;
-      const nomeEmpresa = empresaOption?.nome ?? proposta.empresa;
+      const idEmpresa = values.id_empresa ?? (empresaOption?.id ?? 1);
+      const nomeEmpresa = values.empresa ?? (empresaOption?.nome ?? proposta.empresa);
 
       let isScenario1 = false;
       if (values.tipoCobranca === "E-FATURADO") {

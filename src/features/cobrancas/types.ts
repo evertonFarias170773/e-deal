@@ -120,6 +120,9 @@ export type Cobranca = {
   historico: CobrancaHistoricoEvento[];
   propostasChat: PropostaChatFinanceiro[];
   creditoAnalise?: CreditoAnaliseMock;
+  cliente_restricao?: boolean;
+  cliente_limite_credito?: number;
+  cliente_credito?: number;
 };
 
 export type CreditAnalysisResult = {
@@ -154,4 +157,6 @@ export type CriarCobrancaFormValues = {
   capturaAutomatica: boolean;
   parcelaSelecionada?: CobrancaParcelaSimulada;
   modeloFatu?: "BOLETO" | "DEPÓSITO";
+  id_empresa?: number;
+  empresa?: string;
 };

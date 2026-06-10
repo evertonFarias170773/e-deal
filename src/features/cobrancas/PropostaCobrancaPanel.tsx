@@ -38,6 +38,45 @@ type PropostaCobrancaPanelProps = {
   onlyModal?: boolean;
 };
 
+function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number; empresa: string } {
+  const empresaPadrao = proposta.cliente?.empresaPadrao?.trim();
+  
+  if (empresaPadrao && empresaPadrao !== "Não informado" && empresaPadrao !== "Não Informado") {
+    const normalized = empresaPadrao.toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (normalized.includes("eireli") || normalized.includes("grafica expressa") || normalized.includes("grafica")) {
+      if (normalized.includes("biro")) {
+        return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
+      }
+      return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
+    }
+    if (normalized.includes("biro")) {
+      return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
+    }
+    if (normalized.includes("e3") || normalized.includes("brindes")) {
+      return { id_empresa: 3, empresa: "E3 BRINDES LTDA" };
+    }
+  }
+
+  const propEmpresa = proposta.empresa?.trim() || "";
+  const normalizedProp = propEmpresa.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (normalizedProp.includes("eireli") || normalizedProp.includes("grafica expressa") || normalizedProp.includes("grafica")) {
+    if (normalizedProp.includes("biro")) {
+      return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
+    }
+    return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
+  }
+  if (normalizedProp.includes("biro")) {
+    return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
+  }
+  if (normalizedProp.includes("e3") || normalizedProp.includes("brindes")) {
+    return { id_empresa: 3, empresa: "E3 BRINDES LTDA" };
+  }
+
+  return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
+}
+
 export function PropostaCobrancaPanel({
   proposta,
   isModalOpen,
@@ -50,27 +89,24 @@ export function PropostaCobrancaPanel({
   const { createCobranca, getCobrancasByProposta, source, cobrancas } = useCobrancas();
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [isSaving, setIsSaving] = useState(false);
-  const idEmpresaReal = source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : null;
-  const empresa = source === "supabase"
-    ? EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === idEmpresaReal)
-    : getEmpresaRecebedoraByProposta(proposta);
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
-  const liberacaoStatus = getLiberacaoPedidoStatus(cobrancasDaProposta);
-  const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
-  const isControlled = typeof isModalOpen === "boolean";
   const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
   const totalCobradoReal = cobrancasAtivas.reduce((total, item) => total + getValorCobranca(item), 0);
   const totalCobradoRealRounded = roundMoney(totalCobradoReal);
+  const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
   const hasCobrancaExcedente = totalCobradoRealRounded > totalPropostaRounded;
   const totalGerado = Math.min(totalCobradoRealRounded, totalPropostaRounded);
-  const saldoRestante = Math.max(totalPropostaRounded - totalCobradoRealRounded, 0);
+  const isControlled = typeof isModalOpen === "boolean";
   const modalOpen = (isControlled ? Boolean(isModalOpen) : internalModalOpen) && (saldoRestante > 0);
   const situacaoFinanceira = getSituacaoFinanceiraPropostaLabel(cobrancasDaProposta);
+  const liberacaoStatus = getLiberacaoPedidoStatus(cobrancasDaProposta);
+  const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
 
   function buildInitialFormState(): CriarCobrancaFormValues {
     const cobrancaComOs = cobrancasDaProposta.find((item) => item.os_ideal && item.os_ideal.trim() !== "");
     const defaultOsIdeal = cobrancaComOs ? cobrancaComOs.os_ideal.trim() : "";
+    const initialEmp = getInitialEmpresaFromProposta(proposta);
 
     return {
       ...criarCobrancaInitialValues,
@@ -83,11 +119,16 @@ export function PropostaCobrancaPanel({
       condicaoPagamento: proposta.formaPagamento,
       vencimento: "2026-05-30",
       osIdeal: defaultOsIdeal,
-      modeloFatu: "BOLETO"
+      modeloFatu: "BOLETO",
+      id_empresa: initialEmp.id_empresa,
+      empresa: initialEmp.empresa
     };
   }
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
+
+  const idEmpresaReal = form.id_empresa ?? (source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : 1);
+  const empresa = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === idEmpresaReal) || EMPRESAS_RECEBEDORAS_FIXAS[0];
   const [realCreditAnalysis, setRealCreditAnalysis] = useState<CreditAnalysisResult | null>(null);
   const [isLoadingCredit, setIsLoadingCredit] = useState(false);
   const [nowTime, setNowTime] = useState<number>(0);
@@ -496,7 +537,26 @@ export function PropostaCobrancaPanel({
             >
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Empresa recebedora">
-                  <input readOnly value={empresa?.labelCurta ?? proposta.empresa} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                  <select
+                    value={form.id_empresa ?? 1}
+                    onChange={(event) => {
+                      const selectedId = Number(event.target.value);
+                      const matched = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === selectedId);
+                      if (matched) {
+                        patchForm({
+                          id_empresa: matched.id,
+                          empresa: matched.nome
+                        });
+                      }
+                    }}
+                    className={inputClass}
+                  >
+                    {EMPRESAS_RECEBEDORAS_FIXAS.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nome}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="Forma de pagamento selecionada">
                   <input readOnly value={getCobrancaTipoLabel(form.tipoCobranca)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
@@ -825,7 +885,26 @@ export function PropostaCobrancaPanel({
               >
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Empresa recebedora">
-                    <input readOnly value={empresa?.labelCurta ?? proposta.empresa} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                  <select
+                    value={form.id_empresa ?? 1}
+                    onChange={(event) => {
+                      const selectedId = Number(event.target.value);
+                      const matched = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === selectedId);
+                      if (matched) {
+                        patchForm({
+                          id_empresa: matched.id,
+                          empresa: matched.nome
+                        });
+                      }
+                    }}
+                    className={inputClass}
+                  >
+                    {EMPRESAS_RECEBEDORAS_FIXAS.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nome}
+                      </option>
+                    ))}
+                  </select>
                   </Field>
                   <Field label="Forma de pagamento selecionada">
                     <input readOnly value={getCobrancaTipoLabel(form.tipoCobranca)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
@@ -1059,6 +1138,20 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
   const { deleteCobranca } = useCobrancas();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
+  const handleAbrirCheckout = async (url: string) => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast({
+        type: "success",
+        title: "Link do checkout copiado."
+      });
+    } catch (err) {
+      console.error("[PropostaCobrancaPanel] Erro ao copiar link do checkout:", err);
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   async function handleDelete(id: string, status: string | undefined) {
     if (status?.trim().toUpperCase() === "PAID") {
       showToast({ type: "error", title: "Não é permitido excluir cobrança paga." });
@@ -1208,14 +1301,13 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                 ) : isPix ? (
                   <>
                     {cobranca.url_cobranca && (
-                      <a
-                        href={cobranca.url_cobranca}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
                         className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
                       >
                         Abrir checkout
-                      </a>
+                      </button>
                     )}
                     {cobranca.pix_copia_cola && (
                       <button
@@ -1231,7 +1323,7 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                         className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         title="Copiar código PIX"
                       >
-                        Copiar PIX
+                        Pix Copia e cola
                       </button>
                     )}
                   </>
@@ -1247,14 +1339,13 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                         Abrir checkout cartão
                       </a>
                     ) : cobranca.url_cobranca ? (
-                      <a
-                        href={cobranca.url_cobranca}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
                         className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
                       >
                         Escolher parcelas
-                      </a>
+                      </button>
                     ) : (
                       <button
                         disabled
@@ -1267,14 +1358,13 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                   </>
                 ) : (
                   cobranca.url_cobranca && !isFaturado && (
-                    <a
-                      href={cobranca.url_cobranca}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
                       className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
                     >
                       Abrir checkout
-                    </a>
+                    </button>
                   )
                 )}
 
@@ -1368,14 +1458,30 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                   ) : isPix ? (
                     <>
                       {cobranca.url_cobranca && (
-                        <a
-                          href={cobranca.url_cobranca}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
                           className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
                         >
-                          Checkout
-                        </a>
+                          Abrir checkout
+                        </button>
+                      )}
+                      {cobranca.pix_copia_cola && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(cobranca.pix_copia_cola || "");
+                              showToast({ type: "success", title: "PIX Copia e Cola copiado!" });
+                            } catch {
+                              showToast({ type: "error", title: "Erro ao copiar PIX." });
+                            }
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                          title="Copiar código PIX"
+                        >
+                          Pix Copia e cola
+                        </button>
                       )}
                     </>
                   ) : isCard ? (
@@ -1390,14 +1496,13 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                           Abrir checkout cartão
                         </a>
                       ) : cobranca.url_cobranca ? (
-                        <a
-                          href={cobranca.url_cobranca}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
                           className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
                         >
                           Escolher parcelas
-                        </a>
+                        </button>
                       ) : (
                         <button
                           disabled
@@ -1409,14 +1514,13 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                     </>
                   ) : (
                     cobranca.url_cobranca && !isFaturado && (
-                      <a
-                        href={cobranca.url_cobranca}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
                         className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
                       >
-                        Checkout
-                      </a>
+                        Abrir checkout
+                      </button>
                     )
                   )}
                   <Link

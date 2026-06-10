@@ -6,7 +6,7 @@ import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { isCreditoPendente } from "@/features/cobrancas/cobrancas-utils";
+import { isCreditoPendente, isPendenteAprovacao } from "@/features/cobrancas/cobrancas-utils";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import type { Cobranca } from "@/features/cobrancas/types";
@@ -152,6 +152,46 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     }
   }
 
+  async function handleAutorizarFaturamento() {
+    if (!cobranca.id) {
+      showToast({ type: "error", title: "ID da cobrança inválido para autorização." });
+      return;
+    }
+
+    if (cobranca.status !== "A_VENCER") {
+      showToast({ type: "error", title: "Apenas cobranças com status A_VENCER podem ser autorizadas." });
+      return;
+    }
+
+    const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
+    const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+    if (!isEFaturado) {
+      showToast({ type: "error", title: "Apenas faturamentos (E-Faturado) podem ser autorizados." });
+      return;
+    }
+
+    const confirmed = window.confirm("Autorizar faturamento desta cobrança?");
+    if (!confirmed) {
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const operador = user?.name || "Operador Financeiro";
+      const success = await liberarCobrancaReal(cobranca.id, operador);
+      if (success) {
+        showToast({ type: "success", title: "Faturamento autorizado com sucesso!" });
+      }
+    } catch (error) {
+      showToast({
+        type: "error",
+        title: error instanceof Error ? error.message : "Falha ao autorizar faturamento."
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
   const items = [
     { label: "Ver cobrança", onClick: () => router.push(`/cobrancas/${cobranca.id}`) },
     { label: "Abrir proposta", onClick: () => router.push(`/orcamentos/${cobranca.id_int}`) },
@@ -160,15 +200,21 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       label: "Abrir chat da proposta",
       onClick: () => openChat(cobranca.id_int, { clienteNome: cobranca.cliente, idCliente: cobranca.id_cliente })
     },
-    // Real Supabase confirmation actions (Liberar OS / Voltar para fila)
+    // Real Supabase confirmation actions (Liberar OS / Autorizar faturamento / Voltar para fila)
     ...((cobranca.status === "PAID" || cobranca.status === "A_VENCER")
       ? [
           !cobranca.confirmado
-            ? {
-                label: isUpdating ? "Liberando..." : "Liberar OS",
-                disabled: isUpdating,
-                onClick: () => void handleLiberarOSReal()
-              }
+            ? isPendenteAprovacao(cobranca)
+              ? {
+                  label: isUpdating ? "Autorizando..." : "Autorizar faturamento",
+                  disabled: isUpdating,
+                  onClick: () => void handleAutorizarFaturamento()
+                }
+              : {
+                  label: isUpdating ? "Liberando..." : "Liberar OS",
+                  disabled: isUpdating,
+                  onClick: () => void handleLiberarOSReal()
+                }
             : {
                 label: isUpdating ? "Estornando..." : "Voltar para lista principal",
                 disabled: isUpdating,
