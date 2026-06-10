@@ -42,6 +42,8 @@ export type MockUser = {
   perfilSlug?: PerfilSlug | string;
   /** Permissões resolvidas do perfil ou fallback legado. */
   permissoes?: string[];
+  /** ID do perfil atribuído via public.perfis (Fase 1). Opcional. */
+  id_perfil?: number | null;
 };
 
 export type Company = {

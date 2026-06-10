@@ -198,13 +198,14 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
         )}
         style={{ borderColor: "var(--sidebar-border)" }}
       >
-        <div
+        <Link
+          href="/minha-conta"
           className={cn(
-            "flex items-center rounded-2xl p-3",
+            "flex items-center rounded-2xl p-3 transition hover:opacity-90",
             isCollapsed ? "justify-center" : "gap-3"
           )}
-          style={{ background: "var(--sidebar-hover-bg)" }}
-          title={isCollapsed ? user?.name : undefined}
+          style={{ background: "var(--sidebar-hover-bg)", cursor: "pointer" }}
+          title={isCollapsed ? user?.name : "Minha Conta (Diagnóstico)"}
         >
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
@@ -228,7 +229,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
               </p>
             </div>
           ) : null}
-        </div>
+        </Link>
       </div>
     </aside>
   );

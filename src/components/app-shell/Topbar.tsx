@@ -369,9 +369,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
           )}
 
           <ThemeToggle />
-          <div className="lg:hidden">
-            <UserMenu />
-          </div>
+          <UserMenu />
         </div>
       </div>
     </header>

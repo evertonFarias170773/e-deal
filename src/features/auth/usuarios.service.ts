@@ -252,7 +252,8 @@ export async function fetchUsuarioEnriquecido(
       isSuperAdmin: perfilResolvido ? permissoes.includes("*") : fallback.isSuperAdmin,
       isSeller: perfilResolvido ? permissoes.includes("propostas.create") : fallback.isSeller,
       perfilSlug,
-      permissoes
+      permissoes,
+      id_perfil: row.id_perfil
     };
 
     return enriched;
