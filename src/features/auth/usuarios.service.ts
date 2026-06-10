@@ -173,6 +173,33 @@ function normalizeSetor(setor: string | null): UserSector {
   return validSetores.includes(upper as UserSector) ? (upper as UserSector) : "ADMIN";
 }
 
+function resolveSector(setorLegado: string | null, slug: string): UserSector {
+  if (setorLegado) {
+    const upper = setorLegado.toUpperCase();
+    const validSetores: UserSector[] = ["COMERCIAL", "FINANCEIRO", "FISCAL", "PRODUCAO", "ADMIN"];
+    if (validSetores.includes(upper as UserSector)) {
+      return upper as UserSector;
+    }
+  }
+
+  // Se setor for null ou inválido, inferir a partir do slug do perfil
+  switch (slug) {
+    case "super_admin":
+    case "admin":
+      return "ADMIN";
+    case "financeiro":
+      return "FINANCEIRO";
+    case "fiscal":
+      return "FISCAL";
+    case "producao":
+      return "PRODUCAO";
+    case "vendedor":
+      return "COMERCIAL";
+    default:
+      return "ADMIN";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Função principal: buscar e enriquecer usuário
 // ---------------------------------------------------------------------------
@@ -246,11 +273,12 @@ export async function fetchUsuarioEnriquecido(
       name: row.nome_usuario || authDisplayName || (authEmail?.split("@")[0] ?? "Usuário"),
       email: row.email || authEmail || "",
       avatarUrl: row.avatar ?? undefined,
-      sector: normalizeSetor(row.setor),
+      sector: resolveSector(row.setor, perfilSlug),
       companyId: row.id_empresa ?? 1,
       isAdmin: perfilResolvido ? permissoes.includes("*") || permissoes.includes("admin.usuarios.view") : fallback.isAdmin,
       isSuperAdmin: perfilResolvido ? permissoes.includes("*") : fallback.isSuperAdmin,
       isSeller: perfilResolvido ? permissoes.includes("propostas.create") : fallback.isSeller,
+      isGerente: perfilResolvido ? permissoes.includes("*") || permissoes.includes("admin.usuarios.view") : (row.is_admin || row.is_super_adm),
       perfilSlug,
       permissoes,
       id_perfil: row.id_perfil

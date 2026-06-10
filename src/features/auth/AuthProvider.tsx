@@ -15,7 +15,21 @@ function resolveMockUser(email: string): MockUser {
     return mockSellerUser;
   }
 
-  return mockCurrentUser;
+  if (normalizedEmail === mockCurrentUser.email.toLowerCase()) {
+    return mockCurrentUser;
+  }
+
+  // Se for qualquer outro e-mail, retornar um usuário básico limitado (operador/guest)
+  return {
+    id: "guest-user",
+    name: "Usuário",
+    email: normalizedEmail,
+    sector: "COMERCIAL",
+    companyId: 1,
+    isAdmin: false,
+    isSuperAdmin: false,
+    isSeller: false
+  };
 }
 
 function buildFallbackUser(email: string): MockUser {
