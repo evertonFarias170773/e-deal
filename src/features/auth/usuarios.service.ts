@@ -9,6 +9,20 @@
  * - Resolve perfil via id_perfil → public.perfis (quando disponível)
  * - Fallback obrigatório via campos legados: is_super_adm, is_admin, is_vendedor, setor
  * - NUNCA lança exceção que possa bloquear o login — retorna null em caso de falha
+ *
+ * MODELO DE PERMISSÕES — Decisão de arquitetura Fase 1:
+ * O campo `permissoes` em public.perfis é um ARRAY SIMPLES DE STRINGS (jsonb).
+ * Ex: ["cobrancas.view", "cobrancas.aprovar", "fiscal.emitir"]
+ *
+ * Formato: "<modulo>.<acao>"
+ * Wildcard: ["*"] = acesso irrestrito (apenas super_admin)
+ *
+ * NÃO é um objeto por módulo. Isso é intencional para Fase 1.
+ * Se a arquitetura evoluir para { modulo: { acao: boolean } } no futuro,
+ * a migration deve ser explicitamente aprovada antes.
+ *
+ * TODO Fase 2: alinhar permissões de "pedidos.*" / "os.*" / "producao.*"
+ * com os módulos reais implementados (OS, Expedição, Boletim).
  */
 
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -47,11 +61,14 @@ type PerfilRow = {
 
 const PERMISSOES_SUPER_ADMIN: string[] = ["*"];
 
+// TODO Fase 2: renomear pedidos.* → os.* / producao.* quando os módulos reais
+// (OS, Boletim, Expedição) estiverem mapeados. Por ora, "pedidos" serve como
+// placeholder para o módulo de produção/OS existente.
 const PERMISSOES_ADMIN: string[] = [
   "propostas.view", "propostas.create", "propostas.edit", "propostas.aprovar",
   "cobrancas.view", "cobrancas.aprovar", "cobrancas.emitir_boleto",
   "financeiro.view", "financeiro.aprovar",
-  "pedidos.view", "pedidos.create", "pedidos.edit",
+  "pedidos.view", "pedidos.create", "pedidos.edit", // TODO: alinhar com OS real
   "cadastros.view", "cadastros.edit",
   "fiscal.view", "fiscal.emitir",
   "admin.usuarios.view", "admin.usuarios.edit"
@@ -59,7 +76,7 @@ const PERMISSOES_ADMIN: string[] = [
 
 const PERMISSOES_VENDEDOR: string[] = [
   "propostas.view", "propostas.create", "propostas.edit",
-  "pedidos.view", "pedidos.create",
+  "pedidos.view", "pedidos.create", // TODO: alinhar com OS real
   "cadastros.view", "cadastros.edit",
   "cobrancas.view"
 ];
@@ -76,7 +93,7 @@ const PERMISSOES_FISCAL: string[] = [
 ];
 
 const PERMISSOES_PRODUCAO: string[] = [
-  "pedidos.view", "pedidos.edit",
+  "pedidos.view", "pedidos.edit", // TODO: alinhar com OS real
   "propostas.view", "cadastros.view"
 ];
 
@@ -246,20 +263,42 @@ export async function fetchUsuarioEnriquecido(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers de verificação de permissão (para uso futuro no frontend)
+// Helpers de verificação de permissão
 // ---------------------------------------------------------------------------
 
 /**
+ * Verifica explicitamente se o array de permissões contém o wildcard "*".
+ * O wildcard só deve estar presente no perfil `super_admin`.
+ *
+ * Separado em função própria para tornar a verificação audível e testável.
+ */
+export function isSuperAdminByPermissao(permissoes: string[] | undefined): boolean {
+  return Array.isArray(permissoes) && permissoes.includes("*");
+}
+
+/**
  * Verifica se o usuário tem uma permissão específica.
- * Suporte ao wildcard "*" (super_admin).
+ *
+ * Ordem de verificação:
+ * 1. user é null/undefined → false
+ * 2. permissoes ausente/vazio → fallback legado (isSuperAdmin || isAdmin)
+ * 3. wildcard "*" presente → true (super_admin tem tudo)
+ * 4. codigo exato no array → true
+ * 5. default → false
  */
 export function hasPermissao(user: MockUser | null | undefined, codigo: string): boolean {
   if (!user) return false;
+
+  // Sem permissoes resolvidas: usar fallback legado
   if (!user.permissoes || user.permissoes.length === 0) {
-    // Fallback: super admin e admin têm tudo
     return user.isSuperAdmin || user.isAdmin;
   }
-  return user.permissoes.includes("*") || user.permissoes.includes(codigo);
+
+  // Verificação explícita de wildcard (super_admin)
+  if (isSuperAdminByPermissao(user.permissoes)) return true;
+
+  // Verificação da permissão específica
+  return user.permissoes.includes(codigo);
 }
 
 /**
