@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Search, Trash2, X, Edit2 } from "lucide-react";
+import { Copy, Search, Trash2, X, Edit2, AlertTriangle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
@@ -41,6 +41,25 @@ import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDeta
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+
+const normalizeName = (val: string | undefined | null) => {
+  if (!val) return "";
+  return val.trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+const areFreightsEqual = (f1: PropostaFrete, f2: PropostaFrete) => {
+  const t1 = normalizeName(f1.transportadora);
+  const t2 = normalizeName(f2.transportadora);
+  const s1 = normalizeName(f1.servico);
+  const s2 = normalizeName(f2.servico);
+  return t1 === t2 && s1 === s2;
+};
+
+const getStableFreightKey = (f: PropostaFrete): string => {
+  const normTrans = normalizeName(f.transportadora);
+  const normServ = normalizeName(f.servico);
+  return `${normTrans}|${normServ}`;
+};
 
 type OrcamentoFormPageProps = {
   mode: "new" | "edit";
@@ -666,8 +685,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       setForm((prev) => {
         // Capture previous choice details
         const currentChosen = prev.fretes.find((f) => f.id === prev.freteEscolhidoId || f.escolhido);
-        const chosenServico = currentChosen?.servico;
-        const chosenTransportadora = currentChosen?.transportadora;
         const isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
 
         // Keep manual fretes
@@ -679,12 +696,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         let foundMatch = false;
 
         const updatedResults = allResults.map((newFrete) => {
-          if (
-            currentChosen &&
-            !isManual &&
-            newFrete.transportadora === chosenTransportadora &&
-            newFrete.servico === chosenServico
-          ) {
+          if (currentChosen && !isManual && areFreightsEqual(newFrete, currentChosen)) {
             nextEscolhidoId = newFrete.id;
             foundMatch = true;
             return { ...newFrete, escolhido: true };
@@ -707,12 +719,25 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           nextEscolhidoId = currentChosen.id;
           foundMatch = true;
           if (!isManual) {
+            let obs = currentChosen.observacao;
+            if (obs && obs.includes("(Preservado)")) {
+              // Keep it
+            } else {
+              obs = obs ? `${obs} (Preservado)` : "Frete preservado";
+            }
+
+            const isRetirada = 
+              normalizeName(currentChosen.transportadora).includes("retirada") || 
+              normalizeName(currentChosen.transportadora).includes("retira") ||
+              normalizeName(currentChosen.servico).includes("retirada") ||
+              normalizeName(currentChosen.servico).includes("retira");
+
             preservedFretes.push({
               ...currentChosen,
               escolhido: true,
-              observacao: currentChosen.observacao && currentChosen.observacao.includes("(Preservado)")
-                ? currentChosen.observacao
-                : (currentChosen.observacao ? `${currentChosen.observacao} (Preservado)` : "Frete preservado")
+              observacao: obs,
+              pesoUsado: isRetirada ? resumo.pesoTotal : currentChosen.pesoUsado,
+              valor: isRetirada ? 0.00 : currentChosen.valor
             });
           } else {
             manualFretes.forEach((f) => {
@@ -730,9 +755,29 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         }
 
         const merged = [...updatedResults, ...manualFretes, ...preservedFretes];
+
+        // De-duplicate by stable key (transportadora + servico)
+        const uniqueMerged: PropostaFrete[] = [];
+        const seenKeys = new Set<string>();
+
+        // Add chosen freight first to guarantee it is kept if duplicate
+        const chosenFreight = merged.find(f => f.escolhido || f.id === nextEscolhidoId);
+        if (chosenFreight) {
+          uniqueMerged.push(chosenFreight);
+          seenKeys.add(getStableFreightKey(chosenFreight));
+        }
+
+        merged.forEach((f) => {
+          const key = getStableFreightKey(f);
+          if (!seenKeys.has(key)) {
+            uniqueMerged.push(f);
+            seenKeys.add(key);
+          }
+        });
+
         return {
           ...prev,
-          fretes: merged,
+          fretes: uniqueMerged,
           freteEscolhidoId: nextEscolhidoId
         };
       });
@@ -1130,8 +1175,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
     // Find currently selected frete
     const currentChosen = form.fretes.find((f) => f.id === form.freteEscolhidoId || f.escolhido);
-    const chosenServico = currentChosen?.servico;
-    const chosenTransportadora = currentChosen?.transportadora;
     const isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
 
     // Keep manual fretes
@@ -1158,12 +1201,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }
 
     const updatedResults = allResults.map((newFrete) => {
-      if (
-        currentChosen &&
-        !isManual &&
-        newFrete.transportadora === chosenTransportadora &&
-        newFrete.servico === chosenServico
-      ) {
+      if (currentChosen && !isManual && areFreightsEqual(newFrete, currentChosen)) {
         nextEscolhidoId = newFrete.id;
         foundMatch = true;
         return { ...newFrete, escolhido: true };
@@ -1186,12 +1224,25 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       nextEscolhidoId = currentChosen.id;
       foundMatch = true;
       if (!isManual) {
+        let obs = currentChosen.observacao;
+        if (obs && obs.includes("(Preservado)")) {
+          // Keep it
+        } else {
+          obs = obs ? `${obs} (Preservado)` : "Frete preservado";
+        }
+
+        const isRetirada = 
+          normalizeName(currentChosen.transportadora).includes("retirada") || 
+          normalizeName(currentChosen.transportadora).includes("retira") ||
+          normalizeName(currentChosen.servico).includes("retirada") ||
+          normalizeName(currentChosen.servico).includes("retira");
+
         preservedFretes.push({
           ...currentChosen,
           escolhido: true,
-          observacao: currentChosen.observacao && currentChosen.observacao.includes("(Preservado)")
-            ? currentChosen.observacao
-            : (currentChosen.observacao ? `${currentChosen.observacao} (Preservado)` : "Frete preservado")
+          observacao: obs,
+          pesoUsado: isRetirada ? resumo.pesoTotal : currentChosen.pesoUsado,
+          valor: isRetirada ? 0.00 : currentChosen.valor
         });
       } else {
         manualFretes.forEach((f) => {
@@ -1208,9 +1259,29 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }
 
     const merged = [...updatedResults, ...manualFretes, ...preservedFretes];
+
+    // De-duplicate by stable key (transportadora + servico)
+    const uniqueMerged: PropostaFrete[] = [];
+    const seenKeys = new Set<string>();
+
+    // Add chosen freight first to guarantee it is kept if duplicate
+    const chosenFreight = merged.find(f => f.escolhido || f.id === nextEscolhidoId);
+    if (chosenFreight) {
+      uniqueMerged.push(chosenFreight);
+      seenKeys.add(getStableFreightKey(chosenFreight));
+    }
+
+    merged.forEach((f) => {
+      const key = getStableFreightKey(f);
+      if (!seenKeys.has(key)) {
+        uniqueMerged.push(f);
+        seenKeys.add(key);
+      }
+    });
+
     setForm((prev) => ({
       ...prev,
-      fretes: merged,
+      fretes: uniqueMerged,
       freteEscolhidoId: nextEscolhidoId
     }));
 
@@ -1499,6 +1570,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       setIsSaving(false);
     }
   }
+
+  const hasPreservedFreight = form.fretes.some(
+    (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
+  );
 
   return (
     <div className="space-y-6">
@@ -2002,6 +2077,20 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     * A cotação utiliza o CEP do endereço selecionado e o peso total da proposta em gramas ({formatWeightFromGrams(resumo.pesoTotal)}).
                   </p>
                 </div>
+
+                {hasPreservedFreight && (
+                  <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-3xl flex items-start gap-3 text-amber-800 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-amber-600" />
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-950">
+                        Cotação Defasada
+                      </h4>
+                      <p className="text-xs mt-1 font-medium leading-normal text-amber-900">
+                        Frete escolhido anteriormente não retornou na nova cotação. Revise antes de salvar.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid gap-3 md:grid-cols-2">
                   {form.fretes.map((frete) => (
