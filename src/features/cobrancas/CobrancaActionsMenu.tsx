@@ -11,6 +11,7 @@ import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import { AutorizarFaturamentoModal } from "./AutorizarFaturamentoModal";
+import { ConfirmarLiberacaoModal } from "./ConfirmarLiberacaoModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cobranca } from "@/features/cobrancas/types";
 
@@ -44,6 +45,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isAutorizarModalOpen, setIsAutorizarModalOpen] = useState(false);
+  const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
   const {
     cancelCobranca,
     deleteCobranca,
@@ -130,52 +132,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     }
   }
 
-  async function handleLiberarOSReal() {
-    if (!cobranca.id) {
-      showToast({ type: "error", title: "ID da cobrança inválido para liberação." });
-      return;
-    }
 
-    const confirmed = window.confirm("Tem certeza que quer liberar esta proposta para produção?");
-    if (!confirmed) {
-      return;
-    }
-
-    setIsUpdating(true);
-    try {
-      const operador = user?.name || "Operador Financeiro";
-      const success = await liberarCobrancaReal(cobranca.id, operador);
-      if (success) {
-        const client = getSupabaseClient();
-        if (client) {
-          try {
-            await client.from("propostas_chat").insert([
-              {
-                id_int: cobranca.id_int,
-                id_cliente: cobranca.id_cliente,
-                mensagem: "Cobrança conferida e liberada para os próximos fluxos operacionais: expedição, fiscal, boletos e produção.",
-                tipo: "SISTEMA",
-                autor_nome: user?.name || "Sistema",
-                setor: "Financeiro",
-                visivel_externo: false
-              }
-            ]);
-          } catch (chatErr) {
-            console.warn("Falha ao registrar historico de liberacao no chat:", chatErr);
-          }
-        }
-        await refreshCobrancas();
-        showToast({ type: "success", title: "OS liberada para produção com sucesso!" });
-      }
-    } catch (error) {
-      showToast({
-        type: "error",
-        title: error instanceof Error ? error.message : "Falha ao liberar OS."
-      });
-    } finally {
-      setIsUpdating(false);
-    }
-  }
 
   async function handleVoltarFilaReal() {
     if (!cobranca.id) {
@@ -267,9 +224,14 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
           : (cobranca.status === "PAID" || cobranca.status === "A_VENCER")
             ? [
                 {
-                  label: isUpdating ? "Liberando..." : "Liberar OS",
-                  disabled: isUpdating,
-                  onClick: () => void handleLiberarOSReal()
+                  label: "Confirmar Conferência",
+                  onClick: () => {
+                    if (!cobranca.id) {
+                      showToast({ type: "error", title: "ID da cobrança inválido para liberação." });
+                      return;
+                    }
+                    setIsLiberarModalOpen(true);
+                  }
                 }
               ]
             : []
@@ -345,6 +307,11 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       <AutorizarFaturamentoModal
         isOpen={isAutorizarModalOpen}
         onClose={() => setIsAutorizarModalOpen(false)}
+        cobranca={cobranca}
+      />
+      <ConfirmarLiberacaoModal
+        isOpen={isLiberarModalOpen}
+        onClose={() => setIsLiberarModalOpen(false)}
         cobranca={cobranca}
       />
     </>
