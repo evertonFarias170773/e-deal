@@ -675,6 +675,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   }, [cobrancasStats, source]);
 
   const liberarCobrancaReal = useCallback(async (id: string, confirmadoPor: string, status?: string, confirmado = true, acao?: string): Promise<boolean> => {
+    // confirmado=true em pagamentos_v2 representa liberação operacional da cobrança para os próximos fluxos. Não significa criação de pedido de produção nem geração de OS física.
     if (!id) {
       throw new Error("ID de cobranca invalido.");
     }

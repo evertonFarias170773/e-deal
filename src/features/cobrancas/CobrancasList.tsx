@@ -65,6 +65,7 @@ function isFilaPadrao(cobranca: Cobranca) {
   );
 }
 
+// confirmado=true em pagamentos_v2 representa liberação operacional da cobrança para os próximos fluxos. Não significa criação de pedido de produção nem geração de OS física.
 function isBaseConfirmada(cobranca: Cobranca) {
   const status = (cobranca.status || "").trim().toUpperCase();
 

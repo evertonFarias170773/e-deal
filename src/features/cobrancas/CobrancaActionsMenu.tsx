@@ -146,6 +146,25 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       const operador = user?.name || "Operador Financeiro";
       const success = await liberarCobrancaReal(cobranca.id, operador);
       if (success) {
+        const client = getSupabaseClient();
+        if (client) {
+          try {
+            await client.from("propostas_chat").insert([
+              {
+                id_int: cobranca.id_int,
+                id_cliente: cobranca.id_cliente,
+                mensagem: "Cobrança conferida e liberada para os próximos fluxos operacionais: expedição, fiscal, boletos e produção.",
+                tipo: "SISTEMA",
+                autor_nome: user?.name || "Sistema",
+                setor: "Financeiro",
+                visivel_externo: false
+              }
+            ]);
+          } catch (chatErr) {
+            console.warn("Falha ao registrar historico de liberacao no chat:", chatErr);
+          }
+        }
+        await refreshCobrancas();
         showToast({ type: "success", title: "OS liberada para produção com sucesso!" });
       }
     } catch (error) {
