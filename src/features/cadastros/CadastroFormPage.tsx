@@ -1536,6 +1536,20 @@ function CompleteForm({
           <Field label="Ultima compra"><input type="date" value={form.ultimaCompra} onChange={(event) => onUpdate("ultimaCompra", event.target.value)} className={inputClass} /></Field>
           <Field label="Total compras"><input value={form.totalCompras} onChange={(event) => onUpdate("totalCompras", event.target.value)} className={inputClass} /></Field>
           <Field label="Formas de pagamento"><select value={form.padraoPagamento} onChange={(event) => onUpdate("padraoPagamento", event.target.value)} className={inputClass}>{paymentOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+          <Field label="Padrão de pagamento faturado (Somente Leitura)">
+            <div className="relative">
+              <input
+                type="text"
+                value={form.padraoPagamento}
+                readOnly
+                disabled
+                className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 outline-none cursor-not-allowed opacity-80"
+              />
+              <p className="mt-1.5 text-[11px] text-amber-700 font-semibold leading-relaxed">
+                ⚠️ <strong>Conflito Técnico:</strong> A coluna do banco <code>padrao_pagamento</code> já é usada para as formas de pagamento comerciais (acima). Este campo está desabilitado para escrita para evitar corromper a forma de pagamento ativa.
+              </p>
+            </div>
+          </Field>
           <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => onUpdate("percentualBonus", event.target.value)} className={inputClass} /></Field>
           <Field label="Motivo erro"><input value={form.motivoErro} onChange={(event) => onUpdate("motivoErro", event.target.value)} className={inputClass} /></Field>
           <Field label="CPF erro"><input value={form.cpfErro} onChange={(event) => onUpdate("cpfErro", event.target.value)} className={inputClass} /></Field>

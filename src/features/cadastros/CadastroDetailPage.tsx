@@ -453,6 +453,14 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
                 ["Verificado", cadastro.verificado ? "Sim" : "Nao"]
               ]}
             />
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 text-xs">
+              <p className="font-bold flex items-center gap-1.5">
+                ⚠️ Conflito Técnico no Padrão Faturado
+              </p>
+              <p className="mt-1 leading-relaxed text-amber-700">
+                A coluna do banco de dados <code>padrao_pagamento</code> está sendo exibida acima como &quot;Pagamento padrao&quot; (que representa a forma de pagamento comercial geral). O padrão de pagamento faturado é lido a partir do mesmo campo, configurando um conflito estrutural. Por isso, a gravação estrutural desse campo como faturado independente está desativada para manter a integridade dos termos comerciais gerais.
+              </p>
+            </div>
           </DetailCard>
 
           <DetailCard title="Enderecos">

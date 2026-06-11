@@ -1,12 +1,14 @@
 "use client";
 
+import React, { Fragment, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, UserRound, ChevronDown } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { navigationItems } from "@/constants/navigation";
 import { cn } from "@/lib/utils";
 import { ThemedLogo } from "@/components/app-shell/ThemedLogo";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 type SidebarProps = {
   isCollapsed: boolean;
@@ -16,6 +18,7 @@ type SidebarProps = {
 export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
+  const [isConfigExpanded, setIsConfigExpanded] = useState(false);
 
   return (
     <aside
@@ -97,11 +100,22 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
       </div>
 
       {/* Navegação */}
-      <nav className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
-        {navigationItems.map((item) => {
-          const Icon = item.icon;
-          const isActive =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+      <nav className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1 pb-8">
+        {(() => {
+          const canViewConfig =
+            user?.isSuperAdmin ||
+            user?.isAdmin ||
+            hasPermissao(user, "admin.usuarios.view") ||
+            hasPermissao(user, "admin.usuarios.edit");
+
+          return navigationItems.map((item) => {
+            if (item.href === "/configuracoes" && !canViewConfig) {
+              return null;
+            }
+
+            const Icon = item.icon;
+            const isActive =
+              pathname === item.href || pathname.startsWith(`${item.href}/`);
 
           const baseClass = cn(
             "group relative flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150",
@@ -151,43 +165,100 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
             );
           }
 
+          const isConfig = item.href === "/configuracoes";
+          const handleConfigClick = (e: React.MouseEvent) => {
+            if (isConfig && !isCollapsed) {
+              e.preventDefault();
+              setIsConfigExpanded(!isConfigExpanded);
+            }
+          };
+
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={baseClass}
-              style={activeStyle}
-              title={isCollapsed ? item.label : undefined}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLAnchorElement).style.background = "var(--sidebar-hover-bg)";
-                  (e.currentTarget as HTMLAnchorElement).style.color = "var(--sidebar-hover-text)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
-                  (e.currentTarget as HTMLAnchorElement).style.color = "var(--sidebar-text)";
-                }
-              }}
-            >
-              <Icon
-                className="h-4 w-4 shrink-0"
-                style={{ color: isActive ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
-              />
-              {!isCollapsed ? (
-                <span className="truncate">{item.label}</span>
-              ) : (
-                <span
-                  className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-xl group-hover:block"
-                  style={{ background: "var(--sidebar-active-bg)" }}
+            <Fragment key={item.href}>
+              <Link
+                href={item.href}
+                onClick={handleConfigClick}
+                className={baseClass}
+                style={activeStyle}
+                title={isCollapsed ? item.label : undefined}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLAnchorElement).style.background = "var(--sidebar-hover-bg)";
+                    (e.currentTarget as HTMLAnchorElement).style.color = "var(--sidebar-hover-text)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
+                    (e.currentTarget as HTMLAnchorElement).style.color = "var(--sidebar-text)";
+                  }
+                }}
+              >
+                <Icon
+                  className="h-4 w-4 shrink-0"
+                  style={{ color: isActive ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
+                />
+                {!isCollapsed ? (
+                  <>
+                    <span className="truncate">{item.label}</span>
+                    {isConfig && (
+                      <ChevronDown 
+                        className={cn(
+                          "ml-auto h-3.5 w-3.5 transition-transform duration-200 text-neutral-400",
+                          isConfigExpanded && "rotate-180"
+                        )} 
+                      />
+                    )}
+                  </>
+                ) : (
+                  <span
+                    className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-xl group-hover:block"
+                    style={{ background: "var(--sidebar-active-bg)" }}
+                  >
+                    {item.label}
+                  </span>
+                )}
+              </Link>
+              
+              {/* Subitens de Configurações ou outros menus agrupados */}
+              {!isCollapsed && item.children && item.children.length > 0 && (!isConfig || isConfigExpanded) && (
+                <div 
+                  className="ml-5 mt-0.5 mb-1.5 pl-4 border-l space-y-0.5 flex flex-col" 
+                  style={{ borderColor: "var(--sidebar-border)" }}
                 >
-                  {item.label}
-                </span>
+                  {item.children.map((child) => {
+                    const isChildActive = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                    return (
+                      <Link
+                        key={child.href}
+                        href={child.href}
+                        className={cn(
+                          "rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-150 flex items-center justify-between",
+                          child.disabled && "opacity-40 pointer-events-none"
+                        )}
+                        style={{
+                          color: isChildActive 
+                            ? "var(--sidebar-active-text)" 
+                            : "var(--sidebar-text-muted)",
+                          background: isChildActive 
+                            ? "var(--sidebar-active-bg)" 
+                            : "transparent"
+                        }}
+                      >
+                        <span className="truncate">{child.label}</span>
+                        {child.disabled && (
+                          <span className="text-[8px] uppercase tracking-wider scale-90 opacity-60">breve</span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-            </Link>
+            </Fragment>
           );
-        })}
+
+        });
+      })()}
       </nav>
 
       {/* Rodapé — usuário */}

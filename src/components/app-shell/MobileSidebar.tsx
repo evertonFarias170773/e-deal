@@ -1,11 +1,11 @@
-"use client";
-
-import { useEffect } from "react";
+import { useEffect, Fragment, useState } from "react";
 import Link from "next/link";
-import { X } from "lucide-react";
+import { X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigationItems } from "@/constants/navigation";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 type MobileSidebarProps = {
   isOpen: boolean;
@@ -14,6 +14,8 @@ type MobileSidebarProps = {
 
 export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const [isConfigExpanded, setIsConfigExpanded] = useState(false);
 
   // Close MobileSidebar on ESC key press
   useEffect(() => {
@@ -82,11 +84,22 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
         </div>
 
         {/* Navegação */}
-        <nav className="space-y-0.5">
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
-            const isActive =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+        <nav className="space-y-0.5 pb-8">
+          {(() => {
+            const canViewConfig =
+              user?.isSuperAdmin ||
+              user?.isAdmin ||
+              hasPermissao(user, "admin.usuarios.view") ||
+              hasPermissao(user, "admin.usuarios.edit");
+
+            return navigationItems.map((item) => {
+              if (item.href === "/configuracoes" && !canViewConfig) {
+                return null;
+              }
+
+              const Icon = item.icon;
+              const isActive =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
 
             const itemStyle = isActive
               ? {
@@ -121,28 +134,84 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
               );
             }
 
+            const isConfig = item.href === "/configuracoes";
+            const handleConfigClick = (e: React.MouseEvent) => {
+              if (isConfig) {
+                e.preventDefault();
+                setIsConfigExpanded(!isConfigExpanded);
+              } else {
+                onClose();
+              }
+            };
+
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors"
+              <Fragment key={item.href}>
+                <Link
+                  href={item.href}
+                  onClick={handleConfigClick}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors"
+                  )}
+                  style={itemStyle}
+                >
+                  <Icon
+                    className="h-4 w-4 shrink-0"
+                    style={{
+                      color: isActive
+                        ? "var(--sidebar-icon-active)"
+                        : "var(--sidebar-icon)"
+                    }}
+                  />
+                  {item.label}
+                  {isConfig && (
+                    <ChevronDown 
+                      className={cn(
+                        "ml-auto h-4 w-4 transition-transform duration-200 text-neutral-400",
+                        isConfigExpanded && "rotate-180"
+                      )} 
+                    />
+                  )}
+                </Link>
+
+                {/* Subitens de Configurações ou outros menus agrupados no mobile */}
+                {item.children && item.children.length > 0 && (!isConfig || isConfigExpanded) && (
+                  <div 
+                    className="ml-6 mt-1 mb-2 pl-4 border-l space-y-0.5 flex flex-col" 
+                    style={{ borderColor: "var(--sidebar-border)" }}
+                  >
+                    {item.children.map((child) => {
+                      const isChildActive = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onClose}
+                          className={cn(
+                            "rounded-lg px-2.5 py-2 text-xs font-medium transition-all duration-150 flex items-center justify-between",
+                            child.disabled && "opacity-40 pointer-events-none"
+                          )}
+                          style={{
+                            color: isChildActive 
+                              ? "var(--sidebar-active-text)" 
+                              : "var(--sidebar-text-muted)",
+                            background: isChildActive 
+                              ? "var(--sidebar-active-bg)" 
+                              : "transparent"
+                          }}
+                        >
+                          <span className="truncate">{child.label}</span>
+                          {child.disabled && (
+                            <span className="text-[8px] uppercase tracking-wider scale-90 opacity-60">breve</span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
-                style={itemStyle}
-              >
-                <Icon
-                  className="h-4 w-4 shrink-0"
-                  style={{
-                    color: isActive
-                      ? "var(--sidebar-icon-active)"
-                      : "var(--sidebar-icon)"
-                  }}
-                />
-                {item.label}
-              </Link>
+              </Fragment>
             );
-          })}
+          });
+        })()}
         </nav>
       </div>
     </div>

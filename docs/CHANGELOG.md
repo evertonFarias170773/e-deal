@@ -1,5 +1,66 @@
 # Changelog
 
+## 2026-06-11
+
+### Adicionado
+- **Módulo Menu / Verificação CPF/CNPJ**:
+  - Nova página de verificação de documentos `/verificacao` com proxy seguro `/api/verificacao` no backend retornando simulações de consulta.
+  - Link na Sidebar apontando para `/verificacao` com o ícone `ShieldCheck`.
+- **Módulo Orçamentos / Frete RS**:
+  - Opção de frete "Retirada Local (Sem custo)" automática para propostas com destino no estado do Rio Grande do Sul (UF = "RS").
+- **Módulo Conferência / Cancelamento com Motivo**:
+  - Novo modal `CancelCobrancaModal` para capturar o motivo de cancelamento obrigatório antes de prosseguir.
+  - Gravação de mensagens de sistema em `propostas_chat` informando o cancelamento e seu motivo.
+
+### Alterado
+- **Módulo Orçamentos / Ajustes de Frete**:
+  - Correção na inicialização do `lastQuotedKey` utilizando volumes calculados dinamicamente para evitar requisições de cotação automáticas indesejadas no mount.
+  - Implementação de mesclagem de fretes para manter a seleção do usuário ativa (`currentChosen`), convertendo fretes antigos não retornados na API em fretes "preservados" com a tag `(Preservado)`.
+  - Remoção de nomes de serviço duplicados no gerador de texto WhatsApp.
+- **Módulo Conferência / Fila Geral e Status**:
+  - Badge de status de faturamentos não-confirmados `"PAID"` ("Pago / A liberar") ajustado para azul claro (`"info"`).
+  - Exclusão de faturamentos pendentes de aprovação da Fila Geral de Conferência, mantendo-os exclusivos sob o filtro de faturados/pendentes.
+  - Implementação de novo filtro `"CANCELADO"` para exibir cobranças com status cancelado.
+  - Remoção completa de ações físicas de exclusão ("Excluir cobrança") dos painéis e menus de ação.
+  - Habilitação de cancelamento seguro para cobranças reais do Supabase (atualização para status `CANCELADO` no banco).
+- **Módulo Conferência / Análise de Crédito**:
+  - Inclusão de editor numérico de limite de crédito (`limite_credito` em `clientes`) no modal de análise de crédito.
+  - Reavaliação automática via RPC `fn_analise_credito_cliente` após atualizar o limite e liberação automática do faturamento se o limite for suficiente.
+- **Módulo Cadastro Cliente / Exibição de Faturado**:
+  - Campo "Padrão de pagamento faturado" configurado como somente leitura em `CadastroFormPage.tsx` e acompanhado de alerta visual proeminente de Conflito Técnico nas telas de formulário e detalhe.
+
+- **Fase 3 — Bloqueios Visuais por Permissão (UX/Frontend)**:
+  - Ocultação do menu "Configurações" na Sidebar desktop e mobile para usuários que não possuam as permissões `admin.usuarios.view` ou `admin.usuarios.edit`.
+  - Bloqueio de acesso por URL direto para as páginas `/configuracoes` e `/configuracoes/usuarios`, exibindo a tela de Acesso Restrito para usuários não autorizados.
+  - Diferenciação visual entre visualização (`admin.usuarios.view`, que oculta ações de edição) e alteração (`admin.usuarios.edit`).
+  - Ocultação dinâmica da coluna "Ações" e botões de "Alterar Perfil" na listagem de usuários mantendo o alinhamento perfeito de layout em desktop e mobile.
+  - Mapeamento e documentação detalhada de pontos operacionais nos módulos de Propostas e Financeiro para proteção em fases futuras.
+
+- **Fase 4.1 — Permissões de Negócio (Orçamentos/Propostas)**:
+  - Bloqueio dinâmico no frontend de 3 ações comerciais críticas:
+    1. **Cancelamento de Proposta:** Ocultado completamente em listas, detalhes, atalhos de teclado e menus de ação (exige `propostas.cancelar` ou privilégios de Admin/SuperAdmin).
+    2. **Alteração de Vendedor:** Campo no formulário travado como somente leitura (exige `propostas.alterar_vendedor` ou privilégios de Admin/Gerente/SuperAdmin).
+    3. **Desconto Geral:** Campo bloqueado para edição com aviso visual explicativo (exige `propostas.desconto_geral` ou privilégios de Admin/Gerente/SuperAdmin).
+  - Preservado o fluxo operacional e fallbacks para vendedores comuns operarem normalmente.
+
+- **Fase 4.2 — Painel Administrativo de Permissões (Editor de Catálogo)**:
+  - Rota administrativa `/configuracoes/perfis` integrada para edição visual do catálogo `public.perfis`.
+  - Editor com checkboxes organizados por módulos através de acordeões colapsáveis.
+  - Bloqueio rígido no cliente para evitar alteração do perfil `super_admin` (fixo em `["*"]`) e impedir o uso do curinga `"*"` em outros perfis.
+  - Trava de segurança para impedir a desmarcação da permissão `admin.usuarios.edit` no perfil do próprio operador autenticado (proteção contra auto-privação).
+  - Modal de diff detalhado (`ConfirmacaoDiffModal`) com visualização de permissões adicionadas (`+` em verde) e removidas (`-` em vermelho) antes do salvamento.
+  - Salvamento restrito apenas à coluna `permissoes` de `public.perfis`, com interceptação e tratamento amigável de erro de RLS (falta de política de UPDATE).
+
+### Alterado
+- **Ajustes de UX da Sidebar e MobileSidebar (Configurações)**:
+  - Transformado o item principal "Configurações" em um grupo colapsável/expansível.
+  - Definida a inicialização fechada (`false` por padrão) para os submenus de configurações, respeitando a diretiva de permanecerem ocultos.
+  - Ajustado o espaçamento inferior (`pb-8`) do contêiner de rolagem de navegação na Sidebar desktop e MobileSidebar para evitar que o último submenu ("Parâmetros Fiscais") seja cortado na visualização.
+  - Sincronização e correspondência de 100% dos submenus com os cards de Hub de Configurações.
+- **Documentação de Encerramento**:
+  - Criada a documentação consolidada [PERFIS-PERMISSOES.md](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/docs/PERFIS-PERMISSOES.md) detalhando o status das fases, limitações de RLS e roadmaps.
+  - Atualização dos arquivos [MODULOS-IMPLEMENTADOS.md](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/docs/MODULOS-IMPLEMENTADOS.md) e [PROXIMOS-PASSOS.md](file:///d:/PROJETO%20IDEAL%20ANTIGRAVITY/docs/PROXIMOS-PASSOS.md).
+
 ## 2026-06-10
 
 ### Adicionado

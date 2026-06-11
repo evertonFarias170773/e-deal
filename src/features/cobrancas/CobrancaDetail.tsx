@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import { ArrowLeft } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
@@ -55,6 +57,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { getCobrancaById, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const cobranca = getCobrancaById(cobrancaId) as NonNullable<ReturnType<typeof getCobrancaById>>;
 
   if (!cobranca) {
@@ -86,20 +89,7 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
     showToast({ type: "success", title: successTitle });
   }
 
-  function handleCancel() {
-    if (source === "supabase") {
-      showToast({ type: "warning", title: "Cancelamento manual indisponível para cobranças reais." });
-      return;
-    }
-    const confirmed = window.confirm("Cancelar cobrança? Esta ação altera apenas o estado visual.");
 
-    if (!confirmed) {
-      return;
-    }
-
-    cancelCobranca(cobrancaAtual.id, "Cancelamento solicitado a partir do detalhe.");
-    showToast({ type: "warning", title: "Cobrança cancelada." });
-  }
 
   function handleLiberarPedido() {
     if (source === "supabase") {
@@ -375,10 +365,10 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
                 )
               )}
 
-              {cobrancaAtual.status !== "CANCELADO" && source !== "supabase" && (
+              {cobrancaAtual.status !== "CANCELADO" && (
                 <button
                   type="button"
-                  onClick={handleCancel}
+                  onClick={() => setIsCancelModalOpen(true)}
                   className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center"
                 >
                   Cancelar cobrança
@@ -389,6 +379,11 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
           </div>
         </div>
       </div>
+      <CancelCobrancaModal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        cobrancaId={cobrancaAtual.id}
+      />
     </div>
   );
 }

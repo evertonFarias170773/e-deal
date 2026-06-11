@@ -9,6 +9,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { isCreditoPendente, isPendenteAprovacao } from "@/features/cobrancas/cobrancas-utils";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
+import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import type { Cobranca } from "@/features/cobrancas/types";
 
 type CobrancaActionsMenuProps = {
@@ -23,50 +24,13 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const { openChat } = useGlobalChat();
   const [isUpdating, setIsUpdating] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const {
     cancelCobranca,
     deleteCobranca,
     liberarCobrancaReal,
     voltarCobrancaFilaReal
   } = useCobrancas();
-
-  async function handleDelete() {
-    if (cobranca.status?.trim().toUpperCase() === "PAID") {
-      showToast({ type: "error", title: "Não é permitido excluir cobrança paga." });
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Tem certeza que deseja excluir esta cobrança? Esta ação não deve ser feita se o cliente já recebeu ou usou o link de pagamento."
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setIsUpdating(true);
-    try {
-      const result = await deleteCobranca(cobranca.id);
-      if (result.success) {
-        showToast({ type: "success", title: "Cobrança excluída com sucesso." });
-        if (typeof window !== "undefined" && window.location.pathname.endsWith(`/cobrancas/${cobranca.id}`)) {
-          router.push("/cobrancas");
-        }
-      } else {
-        showToast({
-          type: "error",
-          title: result.errorMessage || "Erro ao excluir cobrança."
-        });
-      }
-    } catch (error) {
-      showToast({
-        type: "error",
-        title: error instanceof Error ? error.message : "Falha ao excluir cobrança."
-      });
-    } finally {
-      setIsUpdating(false);
-    }
-  }
 
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
     if (!value) {
@@ -78,23 +42,31 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     showToast({ type: "success", title: successTitle });
   }
 
-  function handleCancel() {
-    const confirmed = window.confirm("Cancelar cobrança? Esta ação altera apenas o estado visual.");
-
-    if (!confirmed) {
-      return;
-    }
-
-    cancelCobranca(cobranca.id, "Cancelamento solicitado pelo usuário.");
-    showToast({ type: "warning", title: "Cobrança cancelada." });
-  }
-
   function handleAnaliseCredito() {
     if (!cobranca.id_cliente) {
       showToast({ type: "warning", title: "Cliente não identificado para análise de crédito." });
       return;
     }
     setIsCreditModalOpen(true);
+  }
+
+  async function handleCreditApproved() {
+    setIsUpdating(true);
+    try {
+      const operador = user?.name || "Sistema";
+      const success = await liberarCobrancaReal(cobranca.id, operador);
+      if (success) {
+        showToast({ type: "success", title: "Faturamento aprovado automaticamente (limite suficiente)!" });
+        setIsCreditModalOpen(false);
+      }
+    } catch (error) {
+      showToast({
+        type: "error",
+        title: error instanceof Error ? error.message : "Falha ao liberar faturamento."
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   }
 
   async function handleLiberarOSReal() {
@@ -260,15 +232,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       label: "Cancelar cobrança",
       destructive: true,
       disabled: cobranca.status === "CANCELADO",
-      onClick: handleCancel
-    },
-    ...(cobranca.status?.trim().toUpperCase() !== "PAID" ? [
-      {
-        label: "Excluir cobrança",
-        destructive: true,
-        onClick: () => void handleDelete()
-      }
-    ] : [])
+      onClick: () => setIsCancelModalOpen(true)
+    }
   ];
 
   return (
@@ -281,6 +246,12 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         isOpen={isCreditModalOpen}
         onClose={() => setIsCreditModalOpen(false)}
         cobranca={cobranca}
+        onCreditApproved={handleCreditApproved}
+      />
+      <CancelCobrancaModal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        cobrancaId={cobranca.id}
       />
     </>
   );

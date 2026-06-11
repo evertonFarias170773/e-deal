@@ -24,6 +24,7 @@ import {
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import type { Proposta } from "@/features/orcamentos/types";
@@ -192,6 +193,23 @@ export function OrcamentosListPageReal() {
   const { showToast } = useAppToast();
   const { user } = useAuth();
   const { getCobrancasByProposta } = useCobrancas();
+
+  const canCancelarProposta = Boolean(
+    user?.isSuperAdmin ||
+    user?.isAdmin ||
+    hasPermissao(user, "propostas.cancelar")
+  );
+
+  useEffect(() => {
+    if (user) {
+      console.log("[Auditoria Homologação Fase 4.1] Listagem de Propostas:", {
+        usuario: user.email || user.name || `ID: ${user.id}`,
+        acao: "visualizar_botao_cancelamento_listagem",
+        permissaoAvaliada: "propostas.cancelar",
+        resultado: canCancelarProposta
+      });
+    }
+  }, [user, canCancelarProposta]);
   const [selectedPropostaForCobranca, setSelectedPropostaForCobranca] = useState<Proposta | null>(null);
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
   const [isLoadingCobrancaProposta, setIsLoadingCobrancaProposta] = useState(false);
@@ -558,7 +576,7 @@ export function OrcamentosListPageReal() {
       },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
       ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
-      { label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }
+      ...(canCancelarProposta ? [{ label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }] : [])
     ];
   }
 

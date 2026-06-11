@@ -13,14 +13,22 @@ import { listUsuariosComPerfil, listPerfisDoCatalogo, updatePerfilUsuario } from
 import { resolvePerfilEfetivo } from "../utils/resolution";
 import { AlterarPerfilModal } from "./AlterarPerfilModal";
 import { useAppToast } from "@/components/common/AppToast";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 
 export function UsuariosPerfisList() {
+  const { user } = useAuth();
   const [usuarios, setUsuarios] = useState<UsuarioComPerfil[]>([]);
   const [perfis, setPerfis] = useState<PerfilDoCatalogo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const canEdit =
+    user?.isSuperAdmin ||
+    user?.isAdmin ||
+    hasPermissao(user, "admin.usuarios.edit");
 
   // Estados do Modal
   const [selectedUser, setSelectedUser] = useState<UsuarioComPerfil | null>(null);
@@ -269,10 +277,13 @@ export function UsuariosPerfisList() {
             onChange={(e) => setFiltros({ ...filtros, perfilSlug: e.target.value })}
             className="w-full rounded-xl border px-3 py-2.5 text-sm bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             style={{ borderColor: "var(--border)" }}
+            disabled={perfis.length === 0}
           >
-            <option value="" className="bg-neutral-950 text-white">Todos os Perfis</option>
+            <option value="">
+              {perfis.length === 0 ? "Nenhum perfil carregado (Erro RLS)" : "Todos os Perfis"}
+            </option>
             {perfis.map(p => (
-              <option key={p.id} value={p.slug} className="bg-neutral-950 text-white">{p.nome}</option>
+              <option key={p.id} value={p.slug}>{p.nome}</option>
             ))}
           </select>
 
@@ -283,11 +294,20 @@ export function UsuariosPerfisList() {
             className="w-full rounded-xl border px-3 py-2.5 text-sm bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             style={{ borderColor: "var(--border)" }}
           >
-            <option value="" className="bg-neutral-950 text-white">Todas as Origens</option>
-            <option value="banco" className="bg-neutral-950 text-white">Apenas Perfil do Banco</option>
-            <option value="fallback" className="bg-neutral-950 text-white">Apenas Fallback Legado</option>
+            <option value="">Todas as Origens</option>
+            <option value="banco">Apenas Perfil do Banco</option>
+            <option value="fallback">Apenas Fallback Legado</option>
           </select>
         </div>
+
+        {perfis.length === 0 && !isLoading && (
+          <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/10 p-3 text-xs text-amber-700 dark:text-amber-400 flex items-center gap-2">
+            <span>⚠️</span>
+            <span>
+              <strong>Atenção:</strong> Nenhum perfil foi carregado do catálogo do banco. Se você está logado, isso pode indicar que a Row Level Security (RLS) da tabela <code>public.perfis</code> está bloqueando a leitura para o seu nível de acesso.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 📋 Tabela/Grid de Usuários */}
@@ -312,7 +332,7 @@ export function UsuariosPerfisList() {
                     <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Empresa</th>
                     <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Perfil Efetivo</th>
                     <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Origem</th>
-                    <th className="p-4 text-xs font-bold text-muted-foreground uppercase text-center">Ações</th>
+                    {canEdit && <th className="p-4 text-xs font-bold text-muted-foreground uppercase text-center">Ações</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y" style={{ borderColor: "var(--border)" }}>
@@ -353,16 +373,18 @@ export function UsuariosPerfisList() {
                           </span>
                         )}
                       </td>
-                      <td className="p-4 text-center">
-                        <button
-                          onClick={() => setSelectedUser(user)}
-                          className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 text-foreground transition"
-                          style={{ borderColor: "var(--border)" }}
-                        >
-                          <UserCog className="h-3.5 w-3.5" />
-                          Alterar Perfil
-                        </button>
-                      </td>
+                      {canEdit && (
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => setSelectedUser(user)}
+                            className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 text-foreground transition"
+                            style={{ borderColor: "var(--border)" }}
+                          >
+                            <UserCog className="h-3.5 w-3.5" />
+                            Alterar Perfil
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -410,14 +432,16 @@ export function UsuariosPerfisList() {
 
                   <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: "var(--border)" }}>
                     <span className="text-[10px] text-muted-foreground">Empresa #{user.id_empresa || 1}</span>
-                    <button
-                      onClick={() => setSelectedUser(user)}
-                      className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 text-foreground transition"
-                      style={{ borderColor: "var(--border)" }}
-                    >
-                      <UserCog className="h-3.5 w-3.5" />
-                      Alterar Perfil
-                    </button>
+                    {canEdit && (
+                      <button
+                        onClick={() => setSelectedUser(user)}
+                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 text-foreground transition"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        <UserCog className="h-3.5 w-3.5" />
+                        Alterar Perfil
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

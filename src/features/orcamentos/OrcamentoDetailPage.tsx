@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { getLiberacaoPedidoLabel, getLiberacaoPedidoStatus } from "@/features/cobrancas/cobrancas-utils";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -45,6 +46,23 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const { openChat } = useGlobalChat();
   const { proposta, loading, error } = useOrcamentoDetail(idInt);
   const [chatResumo, setChatResumo] = useState<PropostaChatResumo | null>(null);
+
+  const canCancelarProposta = Boolean(
+    user?.isSuperAdmin ||
+    user?.isAdmin ||
+    hasPermissao(user, "propostas.cancelar")
+  );
+
+  useEffect(() => {
+    if (user) {
+      console.log("[Auditoria Homologação Fase 4.1] Detalhe de Proposta:", {
+        usuario: user.email || user.name || `ID: ${user.id}`,
+        acao: "visualizar_botao_cancelamento",
+        permissaoAvaliada: "propostas.cancelar",
+        resultado: canCancelarProposta
+      });
+    }
+  }, [user, canCancelarProposta]);
 
   const fetchChatResumo = useCallback(async () => {
     try {
@@ -307,7 +325,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
                 ...(saldoRestante > 0 && !isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
-                {
+                ...(canCancelarProposta ? [{
                   label: "Cancelar proposta",
                   destructive: true,
                   onClick: () => {
@@ -323,7 +341,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                       setor: "Comercial"
                     }).catch((err) => console.warn("[Cancel Proposta Timeline Error]", err));
                   }
-                }
+                }] : [])
               ]}
             />
           </div>

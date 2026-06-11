@@ -10,62 +10,71 @@ interface AnaliseCreditoModalProps {
   isOpen: boolean;
   onClose: () => void;
   cobranca: Cobranca;
+  onCreditApproved?: () => void;
 }
 
-export function AnaliseCreditoModal({ isOpen, onClose, cobranca }: AnaliseCreditoModalProps) {
+export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApproved }: AnaliseCreditoModalProps) {
   const [creditAnalysis, setCreditAnalysis] = useState<CreditAnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [novoLimite, setNovoLimite] = useState("");
+  const [isUpdatingLimit, setIsUpdatingLimit] = useState(false);
+
   const hasNoClient = !cobranca.id_cliente;
   const displayError = error || (hasNoClient ? "Cliente não identificado para análise de crédito." : null);
 
+  async function fetchCredit() {
+    if (!cobranca.id_cliente) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const client = getSupabaseClient();
+      if (!client) {
+        setError("Cliente Supabase não inicializado.");
+        return;
+      }
+
+      const { data, error: rpcError } = await client.rpc("fn_analise_credito_cliente", {
+        p_id_cliente: Number(cobranca.id_cliente)
+      });
+
+      if (rpcError) {
+        console.error("Erro na RPC de crédito:", rpcError);
+        setError("Não foi possível carregar os dados de crédito no banco.");
+      } else if (data && data.length > 0) {
+        const result = data[0] as CreditAnalysisResult;
+        setCreditAnalysis(result);
+
+        if (result.status_credito?.toUpperCase() === "APROVADO") {
+          onCreditApproved?.();
+        }
+      } else {
+        setError("Nenhum registro de análise de crédito encontrado para este cliente.");
+      }
+    } catch (err) {
+      console.error("Exceção ao buscar análise de crédito:", err);
+      setError("Ocorreu um erro ao consultar as informações financeiras.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!isOpen || !cobranca.id_cliente) return;
-
-    let active = true;
-    async function fetchCredit() {
-      setIsLoading(true);
-      try {
-        const client = getSupabaseClient();
-        if (!client) {
-          setError("Cliente Supabase não inicializado.");
-          return;
-        }
-
-        const { data, error: rpcError } = await client.rpc("fn_analise_credito_cliente", {
-          p_id_cliente: Number(cobranca.id_cliente)
-        });
-
-        if (active) {
-          if (rpcError) {
-            console.error("Erro na RPC de crédito:", rpcError);
-            setError("Não foi possível carregar os dados de crédito no banco.");
-          } else if (data && data.length > 0) {
-            setCreditAnalysis(data[0] as CreditAnalysisResult);
-          } else {
-            setError("Nenhum registro de análise de crédito encontrado para este cliente.");
-          }
-        }
-      } catch (err) {
-        console.error("Exceção ao buscar análise de crédito:", err);
-        if (active) {
-          setError("Ocorreu um erro ao consultar as informações financeiras.");
-        }
-      } finally {
-        if (active) {
-          setIsLoading(false);
-        }
-      }
-    }
-
     void fetchCredit();
+
     return () => {
-      active = false;
       setCreditAnalysis(null);
       setError(null);
     };
   }, [isOpen, cobranca.id_cliente]);
+
+  useEffect(() => {
+    if (creditAnalysis) {
+      setNovoLimite(String(creditAnalysis.limite_credito ?? 0));
+    }
+  }, [creditAnalysis]);
 
   // Prevent background scrolling when open
   useEffect(() => {
@@ -76,6 +85,41 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca }: AnaliseCredit
       document.body.style.overflow = previousOverflow;
     };
   }, [isOpen]);
+
+  async function handleUpdateLimit() {
+    if (!cobranca.id_cliente) return;
+    const limitNum = Number(String(novoLimite).replace(",", "."));
+    if (isNaN(limitNum) || limitNum < 0) {
+      alert("Informe um limite numérico válido (maior ou igual a zero).");
+      return;
+    }
+
+    setIsUpdatingLimit(true);
+    try {
+      const client = getSupabaseClient();
+      if (!client) {
+        alert("Cliente Supabase não inicializado.");
+        return;
+      }
+
+      const { error: updateError } = await client
+        .from("clientes")
+        .update({ limite_credito: limitNum })
+        .eq("id_cliente", Number(cobranca.id_cliente));
+
+      if (updateError) {
+        console.error("Erro ao atualizar limite de crédito:", updateError);
+        alert("Erro ao atualizar o limite de crédito: " + updateError.message);
+      } else {
+        await fetchCredit();
+      }
+    } catch (err) {
+      console.error("Erro ao atualizar limite:", err);
+      alert("Ocorreu um erro ao atualizar o limite de crédito.");
+    } finally {
+      setIsUpdatingLimit(false);
+    }
+  }
 
   if (!isOpen) return null;
 
@@ -96,7 +140,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca }: AnaliseCredit
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto space-y-6 pr-1">
-          {isLoading ? (
+          {isLoading && !creditAnalysis ? (
             <div className="p-8 text-center flex flex-col items-center justify-center gap-3">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#0b2f4a] border-t-transparent" />
               <span className="text-sm text-slate-600 font-semibold">Buscando informações financeiras do cliente...</span>
@@ -116,6 +160,32 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca }: AnaliseCredit
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</p>
                 <p className="text-base font-bold text-slate-900 mt-1">{cobranca.cliente}</p>
                 <p className="text-xs text-slate-500 mt-1">ID Cliente: {cobranca.id_cliente} • Documento: {cobranca.documento || "-"}</p>
+              </div>
+
+              {/* Editor de Limite de Crédito */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-end gap-3 justify-between">
+                <div className="flex-1 space-y-1">
+                  <label htmlFor="credit_limit_input" className="text-xs font-semibold text-slate-700 block">
+                    Atualizar Limite de Crédito
+                  </label>
+                  <input
+                    id="credit_limit_input"
+                    type="text"
+                    value={novoLimite}
+                    onChange={(e) => setNovoLimite(e.target.value)}
+                    disabled={isUpdatingLimit}
+                    placeholder="Digite o novo limite..."
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#0f9f9a] focus:ring-2 focus:ring-[#dff8f6] disabled:opacity-50"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUpdateLimit}
+                  disabled={isUpdatingLimit || !novoLimite.trim()}
+                  className="rounded-xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:opacity-50 h-[38px] shrink-0"
+                >
+                  {isUpdatingLimit ? "Atualizando..." : "Atualizar Limite"}
+                </button>
               </div>
 
               {/* Grid de Informações */}

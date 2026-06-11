@@ -3,10 +3,10 @@
 import React from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
-import { UsuariosPerfisList } from "@/features/usuarios-perfis/components/UsuariosPerfisList";
+import { PerfisPermissoesPanel } from "@/features/usuarios-perfis/components/PerfisPermissoesPanel";
 import { AcessoNegado } from "@/features/usuarios-perfis/components/AcessoNegado";
 
-export default function ConfigUsuariosPage() {
+export default function ConfigPerfisPage() {
   const { user } = useAuth();
 
   if (!user) {
@@ -22,12 +22,11 @@ export default function ConfigUsuariosPage() {
     );
   }
 
-  // ⚠️ Regra de Acesso: Apenas is_super_adm, is_admin ou permissão específica (leitura ou escrita)
+  // ⚠️ Regra de Acesso: Apenas is_super_adm, is_admin ou permissão específica (de escrita em usuários/perfis)
   const isAuthorized =
     user.isSuperAdmin ||
     user.isAdmin ||
-    hasPermissao(user, "admin.usuarios.edit") ||
-    hasPermissao(user, "admin.usuarios.view");
+    hasPermissao(user, "admin.usuarios.edit");
 
   if (!isAuthorized) {
     return (
@@ -42,15 +41,15 @@ export default function ConfigUsuariosPage() {
       {/* Cabeçalho da Seção */}
       <div className="border-b pb-5" style={{ borderColor: "var(--border)" }}>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Configurações de Acesso
+          Perfis e Permissões
         </h1>
         <p className="text-sm mt-1 text-muted-foreground">
-          Gestão centralizada de permissões e vinculação de perfis de operadores.
+          Gerenciamento de permissões granulares dos perfis de acesso do catálogo.
         </p>
       </div>
 
-      {/* Componente Principal de Listagem e Gestão */}
-      <UsuariosPerfisList />
+      {/* Painel Principal */}
+      <PerfisPermissoesPanel />
     </div>
   );
 }

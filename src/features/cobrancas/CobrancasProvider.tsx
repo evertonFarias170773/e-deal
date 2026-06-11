@@ -21,7 +21,7 @@ type CobrancasContextValue = {
   source: CobrancasReadSource;
   createCobranca: (values: CriarCobrancaFormValues, proposta?: Proposta) => Promise<Cobranca>;
   confirmPagamento: (id: string) => void;
-  cancelCobranca: (id: string, motivo: string) => void;
+  cancelCobranca: (id: string, motivo: string) => Promise<{ success: boolean; errorMessage?: string }>;
   deleteCobranca: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
   liberarParaPedido: (idInt: number) => boolean;
   refreshCobrancas: () => Promise<CobrancasReadResult>;
@@ -508,9 +508,42 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setCobrancasStats(updateCob);
   }, [source, cobrancas, cobrancasStats]);
 
-  const cancelCobranca = useCallback((id: string, motivo: string) => {
+  const cancelCobranca = useCallback(async (id: string, motivo: string): Promise<{ success: boolean; errorMessage?: string }> => {
+    const cob = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
+    if (!cob) {
+      return { success: false, errorMessage: "Cobrança não encontrada." };
+    }
+
     if (source === "supabase") {
-      return;
+      const client = getSupabaseClient();
+      if (!client) {
+        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+      }
+
+      const { error: updateError } = await client
+        .from("pagamentos_v2")
+        .update({ status: "CANCELADO" })
+        .eq("id", id);
+
+      if (updateError) {
+        console.error("[cancelCobranca] Erro ao cancelar cobrança no Supabase:", updateError);
+        return { success: false, errorMessage: updateError.message || "Erro ao cancelar cobrança no banco." };
+      }
+
+      const msg = `Cobrança cancelada. Motivo: ${motivo}`;
+      try {
+        await registrarMensagemSistemaProposta({
+          idInt: cob.id_int,
+          idCliente: cob.id_cliente,
+          mensagem: msg,
+          setor: "Financeiro"
+        });
+      } catch (chatErr) {
+        console.warn("[cancelCobranca] Falha ao registrar histórico no chat:", chatErr);
+      }
+
+      await refreshCobrancas();
+      return { success: true };
     }
 
     const updateCob = (list: Cobranca[]): Cobranca[] =>
@@ -540,7 +573,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
     setCobrancas(updateCob);
     setCobrancasStats(updateCob);
-  }, [source]);
+    return { success: true };
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
 
   const deleteCobranca = useCallback(async (id: string): Promise<{ success: boolean; errorMessage?: string }> => {
     const cobranca = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);

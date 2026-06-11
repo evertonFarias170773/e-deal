@@ -76,18 +76,11 @@
 
 ## Perfis e Permissões
 
-- **Fase 2 — UI de Gestão de Usuários e Perfis**:
-  - Implementar interface visual administrativa para permitir que usuários administradores associem contas de usuário a perfis de `public.perfis`.
-  - Habilitar edição exclusiva da coluna `public.usuarios.id_perfil`.
-  - Manter o fallback legado ativo de forma transparente para usuários com `id_perfil` nulo.
-  - Não realizar nenhuma alteração de RLS ou segurança de rede nesta etapa.
-- **Fase 3 — Bloqueios Visuais Leves**:
-  - Ocultar ou desabilitar botões e links críticos da interface com base nos helpers de permissão.
-  - Evitar bloqueios de rotas completas ou menus inteiros que possam travar o operador de forma confusa devido a falhas de fallback.
-  - Validar a usabilidade e o comportamento visual por módulo comercial de forma isolada.
-- **Fase 4 — Row-Level Security (RLS)**:
-  - Implementar políticas rígidas de segurança de rede no Supabase somente após o término e validação completa das fases de frontend.
-  - Desenvolver um plano de segurança individual por tabela, devido ao alto risco operacional de travar escritas no ERP de produção.
+- **Fase 5 — RLS Operacional de Bancos de Dados (Segurança Profunda)**:
+  - Criar política controlada de `UPDATE` para a tabela `public.perfis` no Supabase para liberar o salvamento real das permissões modificadas no painel.
+  - Implementar políticas de Row-Level Security (RLS) granulares associadas às permissões do catálogo.
+  - Desenvolver e homologar as políticas de RLS tabela por tabela (`public.propostas`, `public.clientes`, `public.cobrancas`, etc.) em ambiente de testes para evitar travar as escritas e leituras do ERP de produção.
+  - Avaliar o impacto das novas políticas contra integrações externas (FlutterFlow, n8n) que acessam o banco diretamente.
 
 ## Integração futura
 

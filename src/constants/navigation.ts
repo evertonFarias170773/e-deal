@@ -11,6 +11,7 @@ import {
   Package,
   ReceiptText,
   Settings,
+  ShieldCheck,
   Truck,
   Users
 } from "lucide-react";
@@ -19,6 +20,7 @@ import type { NavigationItem } from "@/lib/types";
 export const navigationItems: NavigationItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: Gauge },
   { label: "Cadastros", href: "/cadastros", icon: Users },
+  { label: "Verificação CPF/CNPJ", href: "/verificacao", icon: ShieldCheck },
   { label: "Produtos", href: "/produtos", icon: Package },
   { label: "Orcamentos", href: "/orcamentos", icon: ClipboardList },
   { label: "Pendências", href: "/pendencias", icon: CheckSquare },
@@ -30,6 +32,19 @@ export const navigationItems: NavigationItem[] = [
   { label: "OS / Producao", href: "/os-producao", icon: Building2 },
   { label: "Expedicao", href: "/expedicao", icon: Truck },
   { label: "Relatorios", href: "/relatorios", icon: BarChart3, disabled: true },
-  { label: "Configuracoes", href: "/configuracoes/usuarios", icon: Settings }
+  {
+    label: "Configuracoes",
+    href: "/configuracoes",
+    icon: Settings,
+    children: [
+      { label: "Usuários e Perfis", href: "/configuracoes/usuarios" },
+      { label: "Perfis e Permissões", href: "/configuracoes/perfis" },
+      { label: "Empresas", href: "/configuracoes/empresas", disabled: true },
+      { label: "Integrações", href: "/configuracoes/integracoes", disabled: true },
+      { label: "Faturamento e Cobranças", href: "/configuracoes/faturamento", disabled: true },
+      { label: "Parâmetros Fiscais", href: "/configuracoes/fiscal", disabled: true }
+    ]
+  }
 ];
+
 

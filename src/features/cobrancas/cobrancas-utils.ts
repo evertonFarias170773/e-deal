@@ -135,11 +135,19 @@ export function getConferenciaStatusTone(
     return "success";
   }
 
+  if (cobranca.status === "CANCELADO") {
+    return "neutral";
+  }
+
   if (cobranca.confirmado) {
     return "success";
   }
 
-  if (cobranca.status === "PAID" || cobranca.status === "A_VENCER") {
+  if (cobranca.status === "PAID") {
+    return "info";
+  }
+
+  if (cobranca.status === "A_VENCER") {
     return "warning";
   }
 

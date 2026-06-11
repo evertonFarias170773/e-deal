@@ -54,10 +54,16 @@ export function buildPropostaInformalText({
   }
 
   let freteMsg = "";
-  const freteEscolhido = frete && frete.transportadora && frete.transportadora !== "Frete nao definido" && frete.transportadora !== "Retirada Local";
+  const isRetirada = frete && (frete.transportadora === "Retirada Local" || frete.id === "frete_retira_balcao");
+  const freteEscolhido = frete && frete.transportadora && frete.transportadora !== "Frete nao definido" && !isRetirada;
   if (freteEscolhido) {
-    freteMsg = `Frete via ${frete.transportadora}${frete.servico ? ` (${frete.servico})` : ""}: ${formatPlainCurrency(frete.valor)} (prazo de ${frete.prazo})`;
-  } else if (frete && frete.transportadora === "Retirada Local") {
+    const transportadoraLower = frete.transportadora.toLowerCase();
+    const servicoLower = frete.servico?.toLowerCase() ?? "";
+    const isDuplicate = servicoLower && (transportadoraLower.includes(servicoLower) || servicoLower.includes(transportadoraLower));
+    const servicoText = (frete.servico && !isDuplicate) ? ` (${frete.servico})` : "";
+    
+    freteMsg = `Frete via ${frete.transportadora}${servicoText}: ${formatPlainCurrency(frete.valor)} (prazo de ${frete.prazo})`;
+  } else if (isRetirada) {
     freteMsg = `Frete: Retirada Local (Sem custo)`;
   } else {
     freteMsg = "Como ainda não definimos o frete, me avisa se precisa que eu verifique o valor para o seu endereço?";
@@ -175,7 +181,7 @@ export function createItemFromProduto(produto: Produto, quantidade = 1000, bonus
 export function createFretesMock(endereco?: CadastroEndereco, id_int = 0, pesoUsado = 0): PropostaFrete[] {
   const destino = endereco ? `${endereco.cidade}/${endereco.uf}` : "destino nao definido";
 
-  return [
+  const mocks: PropostaFrete[] = [
     {
       id: "frete_sedex",
       id_int,
@@ -221,6 +227,22 @@ export function createFretesMock(endereco?: CadastroEndereco, id_int = 0, pesoUs
       pesoUsado
     }
   ];
+
+  if (endereco?.uf?.toUpperCase() === "RS") {
+    mocks.push({
+      id: "frete_retira_balcao",
+      id_int,
+      transportadora: "Retirada Local",
+      servico: "Sem custo",
+      valor: 0.00,
+      prazo: "Imediato",
+      observacao: "Retirar pessoalmente no balcão da empresa",
+      escolhido: false,
+      pesoUsado
+    });
+  }
+
+  return mocks;
 }
 
 export function calculateResumo(

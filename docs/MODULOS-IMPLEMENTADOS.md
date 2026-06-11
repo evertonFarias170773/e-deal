@@ -267,8 +267,11 @@ Funcionalidades:
 - desconto individual por item em percentual ou valor;
 - cotações de frete simuladas salvas e visualizadas na proposta;
 - resumo visual com subtotal bruto, descontos individuais, acréscimo de tabela especial/bônus, desconto geral permitido por perfil, frete, total e peso;
-- proposta informal copiável para WhatsApp com dados reais estruturados;
-- salvamento em lote transacional seguro usando conciliação no Supabase (atualiza proposta, itens e variações e exclui itens desvinculados fisicamente).
+- proposta informal copiável para WhatsApp com dados reais estruturados (com remoção de nomes de serviço duplicados);
+- salvamento em lote transacional seguro usando conciliação no Supabase (atualiza proposta, itens e variações e exclui itens desvinculados fisicamente);
+- opção de frete automática "Retirada Local (Sem custo)" para propostas com UF de destino = "RS";
+- preservação do frete selecionado pelo usuário ao alterar itens do orçamento, mantendo-o como frete "preservado" caso não seja retornado pelas cotações automáticas da API;
+- correção de cotações automáticas indevidas no mount através do ajuste na inicialização de chaves de frete com volumes corretos.
 
 Pendências:
 
@@ -351,7 +354,12 @@ Funcionalidades:
 - remoção de botões de atalho redundantes para conferência financeira global no painel e orçamentos, limpando a navegação operacional do vendedor;
 - higienização de termos mockados/simulados em toasts, diálogos, timeline e detalhe de cobranças;
 - integração do módulo com Orçamentos para gerar e acompanhá-la diretamente no detalhe da proposta;
-- validação manual concluída para OS Ideal obrigatório, empresa herdada da proposta, bloqueio visual do Birô, geração mockada de PIX/boleto/cartão/faturado e conferência da lista financeira com liberação por proposta.
+- validação manual concluída para OS Ideal obrigatório, empresa herdada da proposta, bloqueio visual do Birô, geração mockada de PIX/boleto/cartão/faturado e conferência da lista financeira com liberação por proposta;
+- status de faturamentos pendentes `"PAID"` ("Pago / A liberar") estilizado em azul claro (`"info"`);
+- exclusão de faturamentos pendentes de confirmação da fila geral de conferência;
+- filtro de status `"CANCELADO"` incluído na listagem de cobranças;
+- remoção completa de exclusões físicas ("Excluir cobrança") e implementação de cancelamento com motivo obrigatório (`CancelCobrancaModal`), salvando em `propostas_chat` o motivo e atualizando status para `CANCELADO` no banco de dados;
+- modal de análise de crédito aprimorado com editor de limite de crédito (`limite_credito`), reavaliação via RPC e aprovação automática.
 
 Pendências:
 
@@ -497,35 +505,72 @@ Funcionalidades:
 - Interface em Dark Mode: estilização do drawer de chat, timeline e painel lateral de pendências revisada para suporte total a dark mode, eliminando backgrounds brancos fixos;
 - Erros Semânticos em Português: tradução completa de erros do banco de dados (RLS, formato UUID, chaves estrangeiras, restrições CHECK) na camada de serviço para diálogos operacionais legíveis e amigáveis ao usuário final.
 
-## Perfis e Permissões (Fase 1)
+## Perfis e Permissões (Fases 1, 2, 3, 4.1 e 4.2)
 
-Status: Tabela `public.perfis` padronizada como catálogo oficial e integrada ao `AuthProvider` com enriquecimento assíncrono e fallback legado.
+Status: Concluídas todas as fases de frontend e visualização planejadas para esta etapa:
+* Fase 1 (Modelagem & Autenticação)
+* Fase 2 (Gestão Administrativa de Usuários)
+* Fase 3 (UX & Bloqueios de Acesso por URL/Menus)
+* Fase 4.1 (Controles de Negócio no Módulo Orçamentos)
+* Fase 4.2 (Painel de Edição de Permissões por Perfil)
+* Ajuste final de menu lateral colapsável/retrátil consistente e correspondência 100% dos submenus com os cards.
 
 Componentes principais:
 - `AuthProvider` (`src/features/auth/AuthProvider.tsx`)
 - `usuarios.service.ts` (`src/features/auth/usuarios.service.ts`)
 - `MinhaContaPage` (`src/app/(erp)/minha-conta/page.tsx` - Diagnóstico de Acesso)
 - `UserMenu` (`src/components/app-shell/UserMenu.tsx` - Dropdown)
+- `ConfigUsuariosPage` (`src/app/(erp)/configuracoes/usuarios/page.tsx` - Gestão Administrativa de Usuários)
+- `ConfiguracoesHubPage` (`src/app/(erp)/configuracoes/page.tsx` - Hub de Configurações)
+- `PerfisPermissoesPanel` (`src/features/usuarios-perfis/components/PerfisPermissoesPanel.tsx` - Editor de Permissões)
+- `ConfirmacaoDiffModal` (`src/features/usuarios-perfis/components/ConfirmacaoDiffModal.tsx` - Modal de Diff)
+- `UsuariosPerfisList` (`src/features/usuarios-perfis/components/UsuariosPerfisList.tsx` - Listagem de Usuários)
+- `AlterarPerfilModal` (`src/features/usuarios-perfis/components/AlterarPerfilModal.tsx` - Modal de alteração de perfil de usuário)
+- `Sidebar` / `MobileSidebar` (`src/components/app-shell/` - Navegação com submenus expansíveis/retráteis)
 
 Módulos no banco:
 - `public.perfis` (catálogo oficial)
 - `public.usuarios` (FK `id_perfil`)
 
-Funcionalidades da Fase 1:
-- Padronização e higienização estrutural de `public.perfis` (exclusão de 15 colunas legadas e 5 constraints legadas).
-- Configuração de UNIQUE no `slug` e nova PRIMARY KEY na coluna `id` (serial).
-- Seed dos 7 perfis base (`super_admin`, `admin`, `financeiro`, `vendedor`, `producao`, `fiscal`, `operador`) com permissões em formato de array JSONB de strings.
-- Adição da coluna `id_perfil` (nullable FK) na tabela `public.usuarios`.
-- Enriquecimento de perfil e permissões pós-login integrado de forma assíncrona para não atrasar a inicialização da UI.
-- Lógica de fallback para compatibilidade com dados legados (`is_super_adm`, `is_admin`, `is_vendedor`, `setor`).
-- Tratamento explícito de wildcard `"*"` para super administrador nos helpers de validação.
-- Rota de diagnóstico `/minha-conta` exibindo em tempo real dados de privilégios de acesso e permissões ativas.
-- Menu de usuário transformado em dropdown no cabeçalho superior (sempre visível em todas as resoluções), contendo atalhos rápidos e ação de logout (**Sair**) integrada.
-- Proteção contra vazamento de estado administrativo (*stale state*) e normalização dinâmica de setor com base no perfil.
+Funcionalidades implementadas:
+- **Fase 1 (Banco & Autenticação)**: Padronização e higienização estrutural de `public.perfis`. Seed dos 7 perfis base. FK `id_perfil` em `public.usuarios`. Enriquecimento de sessão assíncrono pós-login. Rota de diagnóstico `/minha-conta`. Dropdown `UserMenu` unificado.
+- **Fase 2 (Painel Administrativo)**: Criação da rota `/configuracoes` como Hub inicial de configurações. Camada de serviço de escrita real restrita a `id_perfil` (whitelist de gravação). Diálogo de confirmação com visualização de transição "Perfil Atual -> Perfil Futuro". Emissão de logs de auditoria no console.
+- **Fase 3 (Bloqueios Visuais)**: Ocultação do menu "Configurações" na Sidebar (desktop e mobile) se o usuário não possuir as permissões `admin.usuarios.view` ou `admin.usuarios.edit`. Bloqueio de rotas direto pela URL. Diferenciação visual entre leitura (`admin.usuarios.view`, que oculta ações de edição) e alteração (`admin.usuarios.edit`). Ocultação limpa da coluna "Ações" e botões "Alterar Perfil" sem quebrar o layout. Mapeamento de ações críticas nos módulos de Propostas e Financeiro.
+- **Fase 4.1 (Permissões de Negócio)**: Ocultação de cancelamento de proposta (exige `propostas.cancelar`), bloqueio de edição do vendedor (exige `propostas.alterar_vendedor`) e bloqueio com aviso no desconto geral (exige `propostas.desconto_geral`) no módulo de Orçamentos/Propostas.
+- **Fase 4.2 (Painel de Permissões)**: Editor em duas colunas em `/configuracoes/perfis` com checkboxes colapsáveis por módulo. Travas rígidas contra alteração do perfil `super_admin`, uso de wildcard `"*"` em outros perfis e desmarcação de `admin.usuarios.edit` no próprio perfil ativo do operador (auto-privação). Visualização de diff (`ConfirmacaoDiffModal`) antes de salvar. Interceptação e tratamento amigável de erro de RLS.
+- **Ajustes de UX da Sidebar**: Grupo "Configurações" expansível/retrátil, iniciando fechado (`false` por padrão) para os submenus e contendo espaçamento inferior de scroll (`pb-8`) para exibição perfeita do último item ("Parâmetros Fiscais") em desktop e mobile.
 
 Pendências para próximas fases:
-- Bloquear menções, rotas, submenus ou botões da interface usando os novos helpers de permissões.
-- Interface visual de gerenciamento de usuários e alteração de perfis.
+- **Fase 5 — RLS Operacional**: Criação da política de UPDATE na tabela `public.perfis` no Supabase e implementação de políticas de RLS granulares nas tabelas operacionais comerciais e financeiras.
+
+## Verificação CPF/CNPJ (Novo Módulo)
+
+Status: Rota e página de consulta simulada integradas.
+
+Rotas:
+- `/verificacao`
+- `/api/verificacao` (Proxy API de backend)
+
+Componentes principais:
+- `VerificacaoPage` (`src/features/verificacao/VerificacaoPage.tsx`)
+- Link na Sidebar (`src/constants/navigation.ts`)
+
+Funcionalidades:
+- Item de menu "Verificação CPF/CNPJ" na Sidebar apontando para `/verificacao`;
+- Consultas simuladas de CPF e CNPJ integradas com proxy seguro no backend;
+- Exibição de relatórios cadastrais em interface de alta densidade e micro-animações.
+
+## Cadastro de Clientes (Aprimoramento)
+
+Status: Sinalização de conflito estrutural integrada.
+
+Componentes principais:
+- `CadastroFormPage`
+- `CadastroDetailPage`
+
+Funcionalidades:
+- Exibição do campo "Padrão de pagamento faturado" como Somente Leitura nas telas de formulário e detalhe;
+- Exibição de avisos de conflito estrutural instruindo o operador sobre a coluna `padrao_pagamento` e sua relação com formas de pagamento comerciais gerais.
 
 ## Demais módulos
 

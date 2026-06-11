@@ -31,7 +31,7 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { useDashboardFinanceiroSnapshot } from "@/features/cobrancas/hooks/useDashboardFinanceiroSnapshot";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
 
-type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "EMITIR_BOLETOS" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO";
+type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "EMITIR_BOLETOS" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
@@ -42,6 +42,7 @@ const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
   { value: "BOLETO", label: "Boleto" },
   { value: "FATURADO", label: "Faturado" },
   { value: "CARTAO", label: "Cartão" },
+  { value: "CANCELADO", label: "Cancelados" },
   { value: "TODOS", label: "Todos os tipos" }
 ];
 
@@ -57,7 +58,7 @@ function isFilaPadrao(cobranca: Cobranca) {
   const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
 
   if (isEFaturado) {
-    return isPendenteAprovacao(cobranca) && isEmpresaValida(cobranca);
+    return false;
   }
 
   return (
@@ -145,7 +146,12 @@ function matchesTipoFiltro(cobranca: Cobranca, tipo: TipoFiltro) {
   }
 
   if (tipo === "FATURADO") {
-    return cobranca.tipo_cobranca === "E-FATURADO";
+    const tipoNormalizado = String(cobranca.tipo_cobranca).trim().toUpperCase().replace(/_/g, "-");
+    return tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+  }
+
+  if (tipo === "CANCELADO") {
+    return cobranca.status === "CANCELADO";
   }
 
   return cobranca.tipo_cobranca === "CREDIT_CARD" || cobranca.tipo_cobranca === "CARD_PARCELADO";
@@ -295,17 +301,19 @@ export function CobrancasList() {
           ? cobrancasStats.filter(isConfirmadoDia)
           : tipo === "EMITIR_BOLETOS"
             ? cobrancasStats.filter(isEmitirBoletos)
-            : statusFilter === "CONFIRMADOS"
-              ? cobrancasStats.filter(isBaseConfirmada)
-              : tipo === "TODOS"
-                ? cobrancasStats.filter(isFilaPadrao)
-                : cobrancasStats.filter(isBaseConfirmada);
+            : tipo === "CANCELADO"
+              ? cobrancasStats.filter((c) => c.status === "CANCELADO")
+              : statusFilter === "CONFIRMADOS"
+                ? cobrancasStats.filter(isBaseConfirmada)
+                : tipo === "TODOS"
+                  ? cobrancasStats.filter(isFilaPadrao)
+                  : cobrancasStats.filter(isBaseConfirmada);
 
     return base
       .filter((cobranca) => {
         const matchesSearch = cobrancaMatchesSearch(cobranca, search);
         const matchesTipo =
-          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "EMITIR_BOLETOS"
+          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "EMITIR_BOLETOS" || tipo === "CANCELADO"
             ? true
             : matchesTipoFiltro(cobranca, tipo);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;

@@ -60,7 +60,13 @@ export type NavigationItem = {
   icon: LucideIcon;
   badge?: string;
   disabled?: boolean;
+  children?: {
+    label: string;
+    href: string;
+    disabled?: boolean;
+  }[];
 };
+
 
 export type StatusTone = "success" | "info" | "warning" | "danger" | "neutral" | "special";
 

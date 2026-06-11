@@ -96,3 +96,34 @@ export async function updatePerfilUsuario(
     throw new Error(`Não foi possível salvar a alteração: ${error.message}`);
   }
 }
+
+/**
+ * Atualiza unicamente a coluna `permissoes` na tabela `public.perfis`.
+ * 
+ * ⚠️ Rígida segurança de escrita: O payload de gravação contém estritamente o campo 'permissoes'.
+ * Nenhuma outra coluna (como slug, nome, descricao) é aceita ou enviada, mitigando riscos em produção.
+ */
+export async function updatePermissoesPerfil(
+  idPerfil: number,
+  permissoes: string[]
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client) {
+    throw new Error("Cliente Supabase não configurado no ambiente.");
+  }
+
+  // Whitelist explícita de campos a serem modificados: apenas permissoes.
+  const payload = {
+    permissoes: permissoes
+  };
+
+  const { error } = await client
+    .from("perfis")
+    .update(payload)
+    .eq("id", idPerfil);
+
+  if (error) {
+    console.error("[UsuariosPerfisService] Erro ao atualizar permissões do perfil:", error.message);
+    throw new Error(`Não foi possível salvar as permissões: ${error.message}`);
+  }
+}

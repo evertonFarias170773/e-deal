@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAuth } from "@/features/auth/AuthProvider";
 import type { Cadastro, CadastroContato, CadastroEndereco } from "@/features/cadastros/types";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import type {
   Proposta,
   PropostaFormState,
@@ -144,7 +145,32 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const router = useRouter();
   const { showToast } = useAppToast();
   const { user } = useAuth();
-  const canManageCommercialRules = Boolean(user?.isAdmin || user?.isGerente || user?.isSuperAdmin);
+
+  const canAlterarVendedor = Boolean(
+    user?.isSuperAdmin ||
+    user?.isAdmin ||
+    user?.isGerente ||
+    hasPermissao(user, "propostas.alterar_vendedor")
+  );
+
+  const canEditarDescontoGeral = Boolean(
+    user?.isSuperAdmin ||
+    user?.isAdmin ||
+    user?.isGerente ||
+    hasPermissao(user, "propostas.desconto_geral")
+  );
+
+  useEffect(() => {
+    if (user) {
+      console.log("[Auditoria Homologação Fase 4.1] Formulário de Proposta:", {
+        usuario: user.email || user.name || `ID: ${user.id}`,
+        permissoesAvaliadas: {
+          "propostas.alterar_vendedor": canAlterarVendedor,
+          "propostas.desconto_geral": canEditarDescontoGeral
+        }
+      });
+    }
+  }, [user, canAlterarVendedor, canEditarDescontoGeral]);
 
   // Catalog state from Supabase
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -185,7 +211,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [isQuotingAzul, setIsQuotingAzul] = useState(false);
   const [isQuotingTransp, setIsQuotingTransp] = useState(false);
   const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
-  const [lastQuotedKey, setLastQuotedKey] = useState<string>(() => proposta ? getFreightKey(proposta.enderecoEntrega?.cep, proposta.enderecoEntrega?.cidade, proposta.enderecoEntrega?.uf, proposta.resumo.pesoTotal, 1) : "");
+  const [lastQuotedKey, setLastQuotedKey] = useState<string>(() => proposta ? getFreightKey(proposta.enderecoEntrega?.cep, proposta.enderecoEntrega?.cidade, proposta.enderecoEntrega?.uf, proposta.resumo.pesoTotal, Math.max(1, Math.ceil(proposta.resumo.pesoTotal / 14500))) : "");
   const [isManualFreteModalOpen, setIsManualFreteModalOpen] = useState(false);
   const [manualFreteDraft, setManualFreteDraft] = useState({
     servico: "",
@@ -247,7 +273,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     return list;
   }, [dbVendedores, loadingVendedores, proposta?.vendedor]);
 
-  const vendedorExibido = canManageCommercialRules
+  const vendedorExibido = canAlterarVendedor
     ? form.vendedor
     : (cliente && getClienteVendedorPadrao(cliente) && getClienteVendedorPadrao(cliente) !== "Não informado")
       ? getClienteVendedorPadrao(cliente)
@@ -623,6 +649,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       ]);
 
       const allResults = [...sedexResults, ...azulResults, ...transpResults];
+      if (uf?.toUpperCase() === "RS") {
+        allResults.push({
+          id: "frete_retira_balcao",
+          id_int: proposta?.id_int ?? 0,
+          transportadora: "Retirada Local",
+          servico: "Sem custo",
+          valor: 0.00,
+          prazo: "Imediato",
+          observacao: "Retirar pessoalmente no balcão da empresa",
+          escolhido: false,
+          pesoUsado: resumo.pesoTotal
+        });
+      }
 
       setForm((prev) => {
         // Capture previous choice details
@@ -663,14 +702,25 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           });
         }
 
-        // If there was a selection previously and it is no longer available:
+        const preservedFretes: PropostaFrete[] = [];
         if (currentChosen && !foundMatch) {
-          showToast({
-            type: "warning",
-            title: "Frete indisponível",
-            description: "O frete escolhido anteriormente não está disponível na nova cotação. Selecione uma nova opção."
-          });
-          nextEscolhidoId = "";
+          nextEscolhidoId = currentChosen.id;
+          foundMatch = true;
+          if (!isManual) {
+            preservedFretes.push({
+              ...currentChosen,
+              escolhido: true,
+              observacao: currentChosen.observacao && currentChosen.observacao.includes("(Preservado)")
+                ? currentChosen.observacao
+                : (currentChosen.observacao ? `${currentChosen.observacao} (Preservado)` : "Frete preservado")
+            });
+          } else {
+            manualFretes.forEach((f) => {
+              if (f.id === currentChosen.id) {
+                f.escolhido = true;
+              }
+            });
+          }
         }
 
         // Auto-select first option only if there was no previous choice
@@ -679,7 +729,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           nextEscolhidoId = updatedResults[0].id;
         }
 
-        const merged = [...updatedResults, ...manualFretes];
+        const merged = [...updatedResults, ...manualFretes, ...preservedFretes];
         return {
           ...prev,
           fretes: merged,
@@ -696,7 +746,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
 
   function updateField<K extends keyof PropostaFormState>(field: K, value: PropostaFormState[K]) {
-    if (field === "vendedor" && !canManageCommercialRules && !form.clienteNaoCadastrado) {
+    if (field === "vendedor" && !canAlterarVendedor && !form.clienteNaoCadastrado) {
       return;
     }
 
@@ -1093,6 +1143,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     let foundMatch = false;
 
     const allResults = [...sedexResults, ...azulResults, ...transpResults];
+    if (uf?.toUpperCase() === "RS") {
+      allResults.push({
+        id: "frete_retira_balcao",
+        id_int: form.id_int ? Number(form.id_int) : 0,
+        transportadora: "Retirada Local",
+        servico: "Sem custo",
+        valor: 0.00,
+        prazo: "Imediato",
+        observacao: "Retirar pessoalmente no balcão da empresa",
+        escolhido: false,
+        pesoUsado: resumo.pesoTotal
+      });
+    }
 
     const updatedResults = allResults.map((newFrete) => {
       if (
@@ -1118,13 +1181,25 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       });
     }
 
+    const preservedFretes: PropostaFrete[] = [];
     if (currentChosen && !foundMatch) {
-      showToast({
-        type: "warning",
-        title: "Frete indisponível",
-        description: "O frete escolhido anteriormente não está disponível na nova cotação. Selecione uma nova opção."
-      });
-      nextEscolhidoId = "";
+      nextEscolhidoId = currentChosen.id;
+      foundMatch = true;
+      if (!isManual) {
+        preservedFretes.push({
+          ...currentChosen,
+          escolhido: true,
+          observacao: currentChosen.observacao && currentChosen.observacao.includes("(Preservado)")
+            ? currentChosen.observacao
+            : (currentChosen.observacao ? `${currentChosen.observacao} (Preservado)` : "Frete preservado")
+        });
+      } else {
+        manualFretes.forEach((f) => {
+          if (f.id === currentChosen.id) {
+            f.escolhido = true;
+          }
+        });
+      }
     }
 
     if (!currentChosen && updatedResults.length > 0) {
@@ -1132,7 +1207,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       nextEscolhidoId = updatedResults[0].id;
     }
 
-    const merged = [...updatedResults, ...manualFretes];
+    const merged = [...updatedResults, ...manualFretes, ...preservedFretes];
     setForm((prev) => ({
       ...prev,
       fretes: merged,
@@ -1253,8 +1328,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     const isSellerEmpty = !isNonEmpty(vendedorAtual);
     const isCompanyEmpty = !isNonEmpty(form.empresa);
 
-    const hasUnauthorizedGeneralDiscount = !canManageCommercialRules && Number(form.descontoGeralValor) > 0;
-    const sellerChangedWithoutPermission = Boolean(cliente && vendedorAtual !== getClienteVendedorPadrao(cliente) && !canManageCommercialRules);
+    const hasUnauthorizedGeneralDiscount = !canEditarDescontoGeral && Number(form.descontoGeralValor) > 0;
+    const sellerChangedWithoutPermission = Boolean(cliente && vendedorAtual !== getClienteVendedorPadrao(cliente) && !canAlterarVendedor);
 
     const fields = [
       !form.clienteNaoCadastrado && !isNonEmpty(form.clienteId) ? "clienteId" : null,
@@ -1382,7 +1457,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }
 
   async function handleSave() {
-    const vendedorParaSalvar = cliente && !canManageCommercialRules ? getClienteVendedorPadrao(cliente) : form.vendedor;
+    const vendedorParaSalvar = cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor;
 
     if (!validateBeforeSave(vendedorParaSalvar)) {
       return;
@@ -1622,7 +1697,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     </select>
                   </Field>
                   <Field label="Vendedor">
-                    {canManageCommercialRules || form.clienteNaoCadastrado ? (
+                    {canAlterarVendedor || form.clienteNaoCadastrado ? (
                       <select value={form.vendedor} onChange={(event) => updateField("vendedor", event.target.value)} className={inputClass}>
                         <option value="">Selecione o vendedor</option>
                         {vendedorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -1630,10 +1705,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     ) : (
                       <input value={vendedorExibido} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                     )}
-                    <p className={`text-xs ${canManageCommercialRules || form.clienteNaoCadastrado ? "text-amber-700" : "text-slate-500"}`}>
-                      {canManageCommercialRules || form.clienteNaoCadastrado
+                    <p className={`text-xs ${canAlterarVendedor || form.clienteNaoCadastrado ? "text-amber-700" : "text-slate-500"}`}>
+                      {canAlterarVendedor || form.clienteNaoCadastrado
                         ? "Selecione o vendedor responsável."
-                        : "Vendedor definido pelo cadastro do cliente."}
+                        : "Vendedor definido pelo cadastro do cliente (Somente leitura)."}
                     </p>
                     {!loadingVendedores && dbVendedores.length === 0 && (
                       <p className="text-xs text-rose-600 mt-1 font-semibold">
@@ -2029,22 +2104,36 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
               <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
-              {canManageCommercialRules ? (
-                <div className="mt-4 grid gap-3 grid-cols-[75px_1fr] items-start">
+              <div className="mt-4">
+                <div className="grid gap-3 grid-cols-[75px_1fr] items-start">
                   <Field label="Tipo">
-                    <select value={form.descontoGeralTipo} onChange={(event) => updateField("descontoGeralTipo", event.target.value as TipoDescontoProposta)} className={inputClass}>
+                    <select
+                      value={form.descontoGeralTipo}
+                      onChange={(event) => updateField("descontoGeralTipo", event.target.value as TipoDescontoProposta)}
+                      disabled={!canEditarDescontoGeral}
+                      className={`${inputClass} ${!canEditarDescontoGeral ? "bg-slate-100 cursor-not-allowed text-slate-500 opacity-80" : ""}`}
+                    >
                       <option value="PERCENTUAL">%</option>
                       <option value="VALOR">R$</option>
                     </select>
                   </Field>
                   <Field label="Desconto geral">
                     {/* Nota técnica: O desconto geral é temporário (cálculo em memória) e não é persistido no banco de dados. */}
-                    <input value={form.descontoGeralValor} onChange={(event) => updateField("descontoGeralValor", event.target.value)} className={inputClass} placeholder="0,00" />
+                    <input
+                      value={form.descontoGeralValor}
+                      onChange={(event) => updateField("descontoGeralValor", event.target.value)}
+                      disabled={!canEditarDescontoGeral}
+                      className={`${inputClass} ${!canEditarDescontoGeral ? "bg-slate-100 cursor-not-allowed text-slate-500 opacity-80" : ""}`}
+                      placeholder="0,00"
+                    />
                   </Field>
                 </div>
-              ) : (
-                <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">Desconto geral disponível apenas para admin/gerente.</p>
-              )}
+                {!canEditarDescontoGeral && (
+                  <p className="mt-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-1.5 shadow-sm">
+                    🔒 Edição restrita a administradores e gerentes.
+                  </p>
+                )}
+              </div>
             </FormSection>
 
             <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
@@ -2517,6 +2606,23 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
   const clienteNaoCadastrado = proposta?.clienteNaoCadastrado ?? (cliente ? (cliente.idCliente === null || cliente.idCliente === undefined || Number(cliente.idCliente) === 0) : false);
 
   let fretes = proposta?.fretes ?? (endereco ? createFretesMock(endereco, proposta?.id_int ?? 0, proposta?.resumo.pesoTotal ?? 0) : []);
+  const enderecoUf = endereco?.uf ?? (clienteNaoCadastrado ? (proposta?.enderecoEntrega?.uf ?? "") : "");
+  if (enderecoUf?.toUpperCase() === "RS") {
+    const hasRetira = fretes.some((f) => f.id === "frete_retira_balcao");
+    if (!hasRetira) {
+      fretes = [...fretes, {
+        id: "frete_retira_balcao",
+        id_int: proposta?.id_int ?? 0,
+        transportadora: "Retirada Local",
+        servico: "Sem custo",
+        valor: 0.00,
+        prazo: "Imediato",
+        observacao: "Retirar pessoalmente no balcão da empresa",
+        escolhido: false,
+        pesoUsado: proposta?.resumo.pesoTotal ?? 0
+      }];
+    }
+  }
   let chosenFrete = fretes.find((f) => f.escolhido) || fretes[0];
 
   if (isAvulso) {

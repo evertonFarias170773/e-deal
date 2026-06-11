@@ -197,16 +197,29 @@ export function AlterarPerfilModal({
               onChange={(e) => setSelectedPerfilId(e.target.value)}
               className="w-full rounded-xl border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-transparent text-foreground"
               style={{ borderColor: "var(--border)" }}
-              disabled={isSaving}
+              disabled={isSaving || perfis.length === 0}
             >
-              <option value="fallback" className="bg-neutral-950 text-white">🔄 Usar Fallback Legado (id_perfil = null)</option>
+              <option value="fallback">
+                {perfis.length === 0 
+                  ? "🔄 Usar Fallback Legado (Nenhum perfil disponível - RLS)" 
+                  : "🔄 Usar Fallback Legado (id_perfil = null)"}
+              </option>
               {perfis.map((p) => (
-                <option key={p.id} value={String(p.id)} className="bg-neutral-950 text-white">
+                <option key={p.id} value={String(p.id)}>
                   🛡️ {p.nome} ({p.slug})
                 </option>
               ))}
             </select>
           </div>
+
+          {perfis.length === 0 && (
+            <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/10 p-3.5 text-xs text-red-700 dark:text-red-400 flex items-center gap-2">
+              <span>⚠️</span>
+              <span>
+                <strong>Aviso RLS:</strong> Não há perfis disponíveis no catálogo do banco para seleção. Apenas o modo fallback legado está acessível.
+              </span>
+            </div>
+          )}
 
           {/* Aviso se escolher Fallback Legado */}
           {selectedPerfilId === "fallback" && (
