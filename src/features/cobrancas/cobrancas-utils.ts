@@ -66,19 +66,38 @@ export function getDataReferenciaFaturamento(cobranca: Pick<Cobranca, "paid_at" 
 }
 
 export function isPendenteAprovacao(
-  cobranca: Pick<Cobranca, "tipo_cobranca" | "confirmado" | "status" | "cliente_restricao" | "cliente_limite_credito" | "cliente_credito" | "valor">
+  cobranca: Pick<
+    Cobranca,
+    | "tipo_cobranca"
+    | "confirmado"
+    | "status"
+    | "cliente_restricao"
+    | "cliente_limite_credito"
+    | "cliente_credito"
+    | "valor"
+    | "confirmado_por"
+  >
 ) {
   const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
   const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
   const statusUpper = (cobranca.status || "").trim().toUpperCase();
 
-  return (
-    isEFaturado &&
-    cobranca.confirmado !== true &&
-    statusUpper !== "CANCELADO" &&
-    statusUpper !== "PAID" &&
-    statusUpper !== "A_VENCER"
-  );
+  if (!isEFaturado) return false;
+  if (cobranca.confirmado === true) return false;
+  if (statusUpper === "CANCELADO" || statusUpper === "PAID") return false;
+
+  // Se for A_VENCER, verificamos se tem limite ou se foi autorizado manualmente
+  if (statusUpper === "A_VENCER") {
+    const limiteDisponivel = Number(cobranca.cliente_limite_credito || 0) - Number(cobranca.cliente_credito || 0);
+    const hasCreditApproved = !cobranca.cliente_restricao && (limiteDisponivel >= Number(cobranca.valor || 0));
+    const isManuallyAuthorized = Boolean(cobranca.confirmado_por);
+
+    if (hasCreditApproved || isManuallyAuthorized) {
+      return false; // Autorizado (automaticamente ou manualmente) -> NÃO é pendente financeiro
+    }
+  }
+
+  return true; // Todos os outros casos (como A_RECEBER, ou A_VENCER sem limite e sem autorização manual) são pendentes
 }
 
 

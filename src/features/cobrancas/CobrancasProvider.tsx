@@ -690,7 +690,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         confirmado: finalConfirmado,
         confirmado_por: finalConfirmadoPor,
         data_confirmacao: finalDataConfirmacao,
-        status
+        status,
+        ...(isAutorizacao ? { aprovado_por: confirmadoPor } : {})
       });
 
       if (!result.success || !result.updated) {
@@ -712,7 +713,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           ? ({
               ...item,
               confirmado: finalConfirmado,
-              confirmado_por: finalConfirmado ? confirmadoPor : undefined,
+              confirmado_por: finalConfirmado ? confirmadoPor : (isAutorizacao ? confirmadoPor : undefined),
               data_confirmacao: finalConfirmado ? mockConfirmadoAt : undefined,
               status: status || item.status
             } as Cobranca)
