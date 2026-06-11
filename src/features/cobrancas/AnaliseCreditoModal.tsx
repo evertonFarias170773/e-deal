@@ -24,7 +24,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
   const hasNoClient = !cobranca.id_cliente;
   const displayError = error || (hasNoClient ? "Cliente não identificado para análise de crédito." : null);
 
-  async function fetchCredit() {
+  async function fetchCredit(isUpdate = false) {
     if (!cobranca.id_cliente) return;
     setIsLoading(true);
     setError(null);
@@ -46,9 +46,14 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
         const result = data[0] as CreditAnalysisResult;
         setCreditAnalysis(result);
 
-        const isAprovado = result.status_credito?.toUpperCase() === "APROVADO" &&
-                           Number(result.limite_disponivel) >= Number(cobranca.valor);
-        if (isAprovado) {
+        const limitDisp = Number(result.limite_disponivel) || 0;
+        const statusCred = (result.status_credito || "").trim().toUpperCase();
+        
+        const msgLower = (result.mensagem || "").toLowerCase();
+        const temMensagemImpeditiva = msgLower.includes("restrição") || msgLower.includes("bloqueado") || msgLower.includes("atraso") || msgLower.includes("excedido");
+
+        const isAprovado = (statusCred === "APROVADO" || limitDisp >= Number(cobranca.valor)) && !temMensagemImpeditiva;
+        if (isAprovado && isUpdate) {
           onCreditApproved?.();
         }
       } else {
@@ -64,7 +69,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
 
   useEffect(() => {
     if (!isOpen || !cobranca.id_cliente) return;
-    void fetchCredit();
+    void fetchCredit(false);
 
     return () => {
       setCreditAnalysis(null);
@@ -113,7 +118,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
         console.error("Erro ao atualizar limite de crédito:", updateError);
         alert("Erro ao atualizar o limite de crédito: " + updateError.message);
       } else {
-        await fetchCredit();
+        await fetchCredit(true);
       }
     } catch (err) {
       console.error("Erro ao atualizar limite:", err);
@@ -206,7 +211,13 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
 
               {/* Status Alert */}
               {(() => {
-                const isAprovado = creditAnalysis.status_credito?.toUpperCase() === "APROVADO" || (creditAnalysis.limite_disponivel >= cobranca.valor && creditAnalysis.qtd_pagamentos_atrasados === 0);
+                const limitDisp = Number(creditAnalysis.limite_disponivel) || 0;
+                const statusCred = (creditAnalysis.status_credito || "").trim().toUpperCase();
+                
+                const msgLower = (creditAnalysis.mensagem || "").toLowerCase();
+                const temMensagemImpeditiva = msgLower.includes("restrição") || msgLower.includes("bloqueado") || msgLower.includes("atraso") || msgLower.includes("excedido");
+
+                const isAprovado = (statusCred === "APROVADO" || limitDisp >= Number(cobranca.valor)) && !temMensagemImpeditiva;
                 return (
                   <div className={`rounded-2xl border p-4 flex gap-3 items-start ${isAprovado ? "border-teal-200 bg-teal-50 text-teal-800" : "border-orange-200 bg-orange-50 text-orange-800"}`}>
                     {isAprovado ? (
