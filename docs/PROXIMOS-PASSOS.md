@@ -74,7 +74,23 @@
 - Criar telas mockadas de NF-e e NFS-e.
 - Representar status, validações, documentos, DANFE/DANFSE e XML.
 
+## Perfis e Permissões
+
+- **Fase 2 — UI de Gestão de Usuários e Perfis**:
+  - Implementar interface visual administrativa para permitir que usuários administradores associem contas de usuário a perfis de `public.perfis`.
+  - Habilitar edição exclusiva da coluna `public.usuarios.id_perfil`.
+  - Manter o fallback legado ativo de forma transparente para usuários com `id_perfil` nulo.
+  - Não realizar nenhuma alteração de RLS ou segurança de rede nesta etapa.
+- **Fase 3 — Bloqueios Visuais Leves**:
+  - Ocultar ou desabilitar botões e links críticos da interface com base nos helpers de permissão.
+  - Evitar bloqueios de rotas completas ou menus inteiros que possam travar o operador de forma confusa devido a falhas de fallback.
+  - Validar a usabilidade e o comportamento visual por módulo comercial de forma isolada.
+- **Fase 4 — Row-Level Security (RLS)**:
+  - Implementar políticas rígidas de segurança de rede no Supabase somente após o término e validação completa das fases de frontend.
+  - Desenvolver um plano de segurança individual por tabela, devido ao alto risco operacional de travar escritas no ERP de produção.
+
 ## Integração futura
+
 
 - Conectar Supabase apenas depois da aprovação visual.
 - Integrar módulo por módulo.
