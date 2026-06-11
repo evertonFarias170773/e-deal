@@ -42,23 +42,50 @@ import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTrans
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
+const removeAccents = (str: string): string => {
+  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+};
+
 const normalizeName = (val: string | undefined | null) => {
   if (!val) return "";
   return val.trim().toLowerCase().replace(/\s+/g, " ");
 };
 
+const normalizeFreteKey = (f: { transportadora: string; servico: string }): string => {
+  let trans = removeAccents(f.transportadora || "")
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, " ");
+
+  // Remover termos genéricos como "TRANSPORTADORA", "TRANS.", "TRANSP."
+  trans = trans
+    .replace(/\bTRANSPORTADORA\b/g, "")
+    .replace(/\bTRANS\.\b/g, "")
+    .replace(/\bTRANSP\.\b/g, "")
+    .replace(/\bTRANS\b/g, "")
+    .replace(/\bTRANSP\b/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  let serv = removeAccents(f.servico || "")
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, " ");
+
+  // Quando serviço for igual ou contido no nome da transportadora, não usar serviço como diferenciador.
+  if (trans.includes(serv) || serv.includes(trans)) {
+    serv = "";
+  }
+
+  return `${trans}|${serv}`.trim();
+};
+
 const areFreightsEqual = (f1: PropostaFrete, f2: PropostaFrete) => {
-  const t1 = normalizeName(f1.transportadora);
-  const t2 = normalizeName(f2.transportadora);
-  const s1 = normalizeName(f1.servico);
-  const s2 = normalizeName(f2.servico);
-  return t1 === t2 && s1 === s2;
+  return normalizeFreteKey(f1) === normalizeFreteKey(f2);
 };
 
 const getStableFreightKey = (f: PropostaFrete): string => {
-  const normTrans = normalizeName(f.transportadora);
-  const normServ = normalizeName(f.servico);
-  return `${normTrans}|${normServ}`;
+  return normalizeFreteKey(f);
 };
 
 type OrcamentoFormPageProps = {
