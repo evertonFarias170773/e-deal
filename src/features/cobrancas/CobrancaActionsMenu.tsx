@@ -10,6 +10,8 @@ import { isCreditoPendente, isPendenteAprovacao } from "@/features/cobrancas/cob
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
+import { AutorizarFaturamentoModal } from "./AutorizarFaturamentoModal";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cobranca } from "@/features/cobrancas/types";
 
 type CobrancaActionsMenuProps = {
@@ -17,19 +19,38 @@ type CobrancaActionsMenuProps = {
   label?: string;
 };
 
+function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
+  const idEmpresa = Number(cobranca.id_empresa);
+  return Number.isFinite(idEmpresa) && idEmpresa !== 0;
+}
+
+function isEmitirBoletos(cobranca: Cobranca) {
+  const tipo = cobranca.tipo_cobranca as string;
+  return (
+    (tipo === "E-Faturado" || tipo === "E-FATURADO") &&
+    cobranca.boleto_enviadoo === false &&
+    cobranca.confirmado === true &&
+    isEmpresaValida(cobranca)
+  );
+}
+
 export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { user } = useAuth();
   const { openChat } = useGlobalChat();
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isUpdatingBoleto, setIsUpdatingBoleto] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isAutorizarModalOpen, setIsAutorizarModalOpen] = useState(false);
   const {
     cancelCobranca,
     deleteCobranca,
     liberarCobrancaReal,
-    voltarCobrancaFilaReal
+    voltarCobrancaFilaReal,
+    emitirBoletoReal,
+    refreshCobrancas
   } = useCobrancas();
 
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
@@ -40,6 +61,31 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
 
     await navigator.clipboard?.writeText(value);
     showToast({ type: "success", title: successTitle });
+  }
+
+  async function handleEmitirBoletoAction() {
+    setIsUpdatingBoleto(true);
+    try {
+      const result = await emitirBoletoReal(cobranca.id);
+      if (result.success) {
+        showToast({
+          type: "success",
+          title: "Boleto emitido e enviado ao cliente com sucesso."
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: result.errorMessage || "Falha ao emitir boleto."
+        });
+      }
+    } catch (err) {
+      showToast({
+        type: "error",
+        title: err instanceof Error ? err.message : "Erro desconhecido ao emitir boleto."
+      });
+    } finally {
+      setIsUpdatingBoleto(false);
+    }
   }
 
   function handleAnaliseCredito() {
@@ -54,8 +100,23 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     setIsUpdating(true);
     try {
       const operador = user?.name || "Sistema";
-      const success = await liberarCobrancaReal(cobranca.id, operador);
+      const success = await liberarCobrancaReal(cobranca.id, operador, "A_VENCER", false);
       if (success) {
+        const client = getSupabaseClient();
+        if (client) {
+          await client.from("propostas_chat").insert([
+            {
+              id_int: cobranca.id_int,
+              id_cliente: cobranca.id_cliente,
+              mensagem: "Faturamento liberado após atualização do limite de crédito. Encaminhado para conferência humana.",
+              tipo: "SISTEMA",
+              autor_nome: user?.name || "Sistema",
+              setor: "Financeiro",
+              visivel_externo: false
+            }
+          ]);
+        }
+        await refreshCobrancas();
         showToast({ type: "success", title: "Faturamento aprovado automaticamente (limite suficiente)!" });
         setIsCreditModalOpen(false);
       }
@@ -123,45 +184,39 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       setIsUpdating(false);
     }
   }
-
-  async function handleAutorizarFaturamento() {
-    if (!cobranca.id) {
-      showToast({ type: "error", title: "ID da cobrança inválido para autorização." });
-      return;
-    }
-
-    if (cobranca.status !== "A_VENCER") {
-      showToast({ type: "error", title: "Apenas cobranças com status A_VENCER podem ser autorizadas." });
-      return;
-    }
-
-    const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
-    const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
-    if (!isEFaturado) {
-      showToast({ type: "error", title: "Apenas faturamentos (E-Faturado) podem ser autorizados." });
-      return;
-    }
-
-    const confirmed = window.confirm("Autorizar faturamento desta cobrança?");
-    if (!confirmed) {
-      return;
-    }
-
-    setIsUpdating(true);
-    try {
-      const operador = user?.name || "Operador Financeiro";
-      const success = await liberarCobrancaReal(cobranca.id, operador);
-      if (success) {
-        showToast({ type: "success", title: "Faturamento autorizado com sucesso!" });
-      }
-    } catch (error) {
-      showToast({
-        type: "error",
-        title: error instanceof Error ? error.message : "Falha ao autorizar faturamento."
-      });
-    } finally {
-      setIsUpdating(false);
-    }
+  if (isEmitirBoletos(cobranca)) {
+    return (
+      <>
+        <ActionsMenu
+          label={label}
+          items={[
+            { label: "Ver cobrança", onClick: () => router.push(`/cobrancas/${cobranca.id}`) },
+            { label: "Abrir proposta", onClick: () => router.push(`/orcamentos/${cobranca.id_int}`) },
+            { label: "Ver cliente", onClick: () => router.push(`/cadastros/${cobranca.id_cliente}`) },
+            {
+              label: "Abrir chat da proposta",
+              onClick: () => openChat(cobranca.id_int, { clienteNome: cobranca.cliente, idCliente: cobranca.id_cliente })
+            },
+            {
+              label: isUpdatingBoleto ? "Emitindo..." : "Emitir boleto",
+              disabled: isUpdatingBoleto,
+              onClick: () => void handleEmitirBoletoAction()
+            },
+            {
+              label: "Cancelar cobrança",
+              destructive: true,
+              disabled: cobranca.status === "CANCELADO",
+              onClick: () => setIsCancelModalOpen(true)
+            }
+          ]}
+        />
+        <CancelCobrancaModal
+          isOpen={isCancelModalOpen}
+          onClose={() => setIsCancelModalOpen(false)}
+          cobrancaId={cobranca.id}
+        />
+      </>
+    );
   }
 
   const items = [
@@ -173,27 +228,42 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       onClick: () => openChat(cobranca.id_int, { clienteNome: cobranca.cliente, idCliente: cobranca.id_cliente })
     },
     // Real Supabase confirmation actions (Liberar OS / Autorizar faturamento / Voltar para fila)
-    ...((cobranca.status === "PAID" || cobranca.status === "A_VENCER")
-      ? [
-          !cobranca.confirmado
-            ? isPendenteAprovacao(cobranca)
-              ? {
-                  label: isUpdating ? "Autorizando..." : "Autorizar faturamento",
-                  disabled: isUpdating,
-                  onClick: () => void handleAutorizarFaturamento()
+    ...(
+      !cobranca.confirmado
+        ? isPendenteAprovacao(cobranca)
+          ? (user?.isAdmin || user?.isSuperAdmin)
+            ? [
+                {
+                  label: "Autorizar faturamento",
+                  onClick: () => {
+                    if (!cobranca.id) {
+                      showToast({ type: "error", title: "ID da cobrança inválido para autorização." });
+                      return;
+                    }
+                    setIsAutorizarModalOpen(true);
+                  }
                 }
-              : {
+              ]
+            : []
+          : (cobranca.status === "PAID" || cobranca.status === "A_VENCER")
+            ? [
+                {
                   label: isUpdating ? "Liberando..." : "Liberar OS",
                   disabled: isUpdating,
                   onClick: () => void handleLiberarOSReal()
                 }
-            : {
+              ]
+            : []
+        : (cobranca.status === "PAID" || cobranca.status === "A_VENCER")
+          ? [
+              {
                 label: isUpdating ? "Estornando..." : "Voltar para lista principal",
                 disabled: isUpdating,
                 onClick: () => void handleVoltarFilaReal()
               }
-        ]
-      : []),
+            ]
+          : []
+    ),
     ...(cobranca.tipo_cobranca?.toUpperCase() === "E-FATURADO" &&
     cobranca.status === "A_VENCER" &&
     Boolean(cobranca.confirmado) &&
@@ -252,6 +322,11 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         isOpen={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}
         cobrancaId={cobranca.id}
+      />
+      <AutorizarFaturamentoModal
+        isOpen={isAutorizarModalOpen}
+        onClose={() => setIsAutorizarModalOpen(false)}
+        cobranca={cobranca}
       />
     </>
   );

@@ -46,7 +46,9 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
         const result = data[0] as CreditAnalysisResult;
         setCreditAnalysis(result);
 
-        if (result.status_credito?.toUpperCase() === "APROVADO") {
+        const isAprovado = result.status_credito?.toUpperCase() === "APROVADO" &&
+                           Number(result.limite_disponivel) >= Number(cobranca.valor);
+        if (isAprovado) {
           onCreditApproved?.();
         }
       } else {

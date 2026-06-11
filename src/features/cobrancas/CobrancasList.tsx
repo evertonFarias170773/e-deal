@@ -53,38 +53,26 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
   return Number.isFinite(idEmpresa) && idEmpresa !== 0;
 }
 
+// Regra definitiva: status PAID/A_VENCER indica condição financeira. confirmado=false indica aguardando conferência humana. confirmado=true indica liberado para produção.
 function isFilaPadrao(cobranca: Cobranca) {
-  const tipoNormalizado = String(cobranca.tipo_cobranca).trim().toUpperCase().replace(/_/g, "-");
-  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+  const status = (cobranca.status || "").trim().toUpperCase();
 
-  if (isEFaturado) {
-    return false;
-  }
+  if (status === "CANCELADO") return false;
 
   return (
-    !Boolean(cobranca.confirmado) &&
-    (cobranca.status === "PAID" || cobranca.status === "A_VENCER") &&
-    isEmpresaValida(cobranca)
+    (status === "PAID" || status === "A_VENCER") &&
+    cobranca.confirmado === false
   );
 }
 
 function isBaseConfirmada(cobranca: Cobranca) {
-  if (isPendenteAprovacao(cobranca)) {
-    return false;
-  }
+  const status = (cobranca.status || "").trim().toUpperCase();
 
-  const tipoNormalizado = String(cobranca.tipo_cobranca).trim().toUpperCase().replace(/_/g, "-");
-  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
-
-  if (isEFaturado) {
-    return Boolean(cobranca.confirmado) && (cobranca.status === "PAID" || cobranca.status === "A_VENCER") && isEmpresaValida(cobranca);
-  }
+  if (status === "CANCELADO") return false;
 
   return (
-    Boolean(cobranca.confirmado) &&
-    (cobranca.status === "PAID" || cobranca.status === "A_VENCER") &&
-    Boolean(cobranca.paid_at) &&
-    isEmpresaValida(cobranca)
+    (status === "PAID" || status === "A_VENCER") &&
+    cobranca.confirmado === true
   );
 }
 
@@ -115,11 +103,11 @@ function getEmpresaLabelVisual(nome: string) {
 }
 
 function isEmitirBoletos(cobranca: Cobranca) {
+  const tipo = cobranca.tipo_cobranca as string;
   return (
-    cobranca.tipo_cobranca?.toUpperCase() === "E-FATURADO" &&
-    cobranca.status === "A_VENCER" &&
-    Boolean(cobranca.confirmado) &&
-    !Boolean(cobranca.boleto_enviadoo) &&
+    (tipo === "E-Faturado" || tipo === "E-FATURADO") &&
+    cobranca.boleto_enviadoo === false &&
+    cobranca.confirmado === true &&
     isEmpresaValida(cobranca)
   );
 }

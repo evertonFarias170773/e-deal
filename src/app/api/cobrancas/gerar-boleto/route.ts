@@ -207,12 +207,16 @@ export async function POST(request: Request) {
       pdfUrl
     });
 
-    // Atualiza o registro no Supabase com pdfUrl (na coluna pix_copia_cola e url_pdf)
+    const linhaDigitavel = webhookResult.linha_digitavel || webhookResult.linhaDigitavel || webhookResult.barcode || webhookResult.linhaDigitavelFormatada || null;
+
+    // Atualiza o registro no Supabase com pdfUrl (na coluna pix_copia_cola e url_pdf), boleto_enviadoo e linha_digitavel se houver
     const { data: updatedData, error: updateError } = await supabase
       .from("pagamentos_v2")
       .update({
         pix_copia_cola: pdfUrl,
-        url_pdf: pdfUrl
+        url_pdf: pdfUrl,
+        boleto_enviadoo: true,
+        ...(linhaDigitavel ? { linha_digitavel: linhaDigitavel } : {})
       })
       .eq("id", cobrancaId)
       .select();

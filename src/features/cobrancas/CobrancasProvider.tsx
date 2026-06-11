@@ -28,8 +28,9 @@ type CobrancasContextValue = {
   getCobrancaById: (id: string) => Cobranca | undefined;
   getCobrancaByToken: (token: string) => Cobranca | undefined;
   getCobrancasByProposta: (idInt: number) => Cobranca[];
-  liberarCobrancaReal: (id: string, confirmadoPor: string) => Promise<boolean>;
+  liberarCobrancaReal: (id: string, confirmadoPor: string, status?: string, confirmado?: boolean, acao?: string) => Promise<boolean>;
   voltarCobrancaFilaReal: (id: string) => Promise<boolean>;
+  emitirBoletoReal: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
 };
 
 const STORAGE_KEY = "erp_ideal_mock_cobrancas_v6";
@@ -673,16 +674,22 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return true;
   }, [cobrancasStats, source]);
 
-  const liberarCobrancaReal = useCallback(async (id: string, confirmadoPor: string): Promise<boolean> => {
+  const liberarCobrancaReal = useCallback(async (id: string, confirmadoPor: string, status?: string, confirmado = true, acao?: string): Promise<boolean> => {
     if (!id) {
       throw new Error("ID de cobranca invalido.");
     }
 
+    const isAutorizacao = acao === "autorizar_faturamento";
+    const finalConfirmado = isAutorizacao ? false : confirmado;
+    const finalConfirmadoPor = finalConfirmado ? confirmadoPor : null;
+    const finalDataConfirmacao = finalConfirmado ? new Date().toISOString() : null;
+
     if (source === "supabase") {
       const result = await updatePagamentoV2StatusConfirmacao(id, {
-        confirmado: true,
-        confirmado_por: confirmadoPor,
-        data_confirmacao: new Date().toISOString()
+        confirmado: finalConfirmado,
+        confirmado_por: finalConfirmadoPor,
+        data_confirmacao: finalDataConfirmacao,
+        status
       });
 
       if (!result.success || !result.updated) {
@@ -703,9 +710,10 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         item.id === id
           ? ({
               ...item,
-              confirmado: true,
-              confirmado_por: confirmadoPor,
-              data_confirmacao: mockConfirmadoAt
+              confirmado: finalConfirmado,
+              confirmado_por: finalConfirmado ? confirmadoPor : undefined,
+              data_confirmacao: finalConfirmado ? mockConfirmadoAt : undefined,
+              status: status || item.status
             } as Cobranca)
           : item
       );
@@ -754,6 +762,170 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return true;
   }, [source]);
 
+  const emitirBoletoReal = useCallback(async (id: string): Promise<{ success: boolean; errorMessage?: string }> => {
+    const cobranca = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
+    if (!cobranca) {
+      return { success: false, errorMessage: "Cobrança não encontrada." };
+    }
+
+    if (source === "supabase") {
+      const client = getSupabaseClient();
+      if (!client) {
+        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+      }
+
+      // 1. Obter dados complementares do cliente, contato e endereço
+      let email = "";
+      let whats = "";
+      let contato = "";
+      let logradouro = "";
+      let complemento = "";
+      let cidade = "";
+      let uf = "";
+      let zipCode = "";
+
+      try {
+        const { data: clientData } = await client
+          .from("clientes")
+          .select("email, email_financeiro, email_contato, whatsapp_1, whatsapp_2")
+          .eq("id_cliente", cobranca.id_cliente)
+          .maybeSingle();
+
+        if (clientData) {
+          email = clientData.email_financeiro || clientData.email || clientData.email_contato || "";
+          whats = clientData.whatsapp_1 || clientData.whatsapp_2 || "";
+        }
+
+        const { data: contactData } = await client
+          .from("contatos")
+          .select("nome_contato, whats, e_mail")
+          .eq("id_cliente", cobranca.id_cliente)
+          .limit(1);
+
+        if (contactData && contactData.length > 0) {
+          contato = contactData[0].nome_contato || "";
+          if (!email) email = contactData[0].e_mail || "";
+          if (!whats) whats = contactData[0].whats || "";
+        }
+
+        const { data: addressData } = await client
+          .from("enderecos")
+          .select("cep, endereco, numero, complemento, cidade, uf")
+          .eq("id_cliente", cobranca.id_cliente)
+          .limit(1);
+
+        if (addressData && addressData.length > 0) {
+          const addr = addressData[0];
+          logradouro = `${addr.endereco || ""}${addr.numero ? ", " + addr.numero : ""}`;
+          complemento = addr.complemento || "";
+          cidade = addr.cidade || "";
+          uf = addr.uf || "";
+          zipCode = addr.cep || "";
+        }
+      } catch (err) {
+        console.warn("Erro ao buscar dados complementares do cliente:", err);
+      }
+
+      if (!email) {
+        return { success: false, errorMessage: "Cliente sem e-mail cadastrado para geração do boleto." };
+      }
+
+      // 2. Chamar a rota local de geração de boleto
+      const webhookPayload = {
+        cobrancaId: cobranca.id,
+        idEmpresa: cobranca.id_empresa || 1,
+        external_reference_id: cobranca.id_int,
+        valor_total: roundMoney(cobranca.valor),
+        name: cobranca.cliente,
+        id_pagamento: cobranca.id_pagamento || String(cobranca.id_int),
+        documento: cobranca.documento,
+        email,
+        logradouro,
+        complemento,
+        cidade,
+        UF: uf,
+        zip_code: zipCode,
+        qtd_parcelas: 1,
+        intervalo: 0,
+        inicia_em: 3,
+        multa: 0,
+        juros: 0,
+        descricao: cobranca.descricao || `Boleto E-Faturado da proposta #${cobranca.id_int}`,
+        id_cliente: cobranca.id_cliente,
+        nf: "",
+        status: "A_VENCER",
+        "e-faturado": true,
+        contato,
+        whats,
+        enviar_whats: false,
+        avulso: false,
+        is_prorrogado: false,
+        empresa: cobranca.empresa
+      };
+
+      const response = await fetch("/api/cobrancas/gerar-boleto", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(webhookPayload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return { success: false, errorMessage: `Erro ao emitir boleto: ${errorText}` };
+      }
+
+      const resJson = await response.json();
+      if (!resJson.success) {
+        return { success: false, errorMessage: resJson.message || "Erro retornado da API do boleto." };
+      }
+
+      // 3. Registrar na timeline propostas_chat
+      await registrarMensagemSistemaProposta({
+        idInt: cobranca.id_int,
+        idCliente: cobranca.id_cliente,
+        mensagem: "Boleto emitido e enviado ao cliente.",
+        setor: "Financeiro"
+      });
+
+      await refreshCobrancas();
+      return { success: true };
+    } else {
+      // Mock/fallback local storage
+      const nowStr = new Date().toISOString();
+      const updatedList = (list: Cobranca[]) =>
+        list.map((item) =>
+          item.id === id
+            ? ({
+                ...item,
+                boleto_enviadoo: true,
+                linha_digitavel: "34191.79001 01043.513184 91020.150008 7 90000000000000",
+                url_pdf: "https://example.com/boleto-mock.pdf"
+              } as Cobranca)
+            : item
+        );
+      
+      setCobrancas(updatedList);
+      setCobrancasStats(updatedList);
+
+      const target = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
+      if (target) {
+        target.propostasChat = [
+          {
+            id: `msg_${nowStr}`,
+            data: nowStr,
+            autor: "Sistema",
+            mensagem: "Boleto emitido e enviado ao cliente.",
+            categoria: "SISTEMA"
+          },
+          ...target.propostasChat
+        ];
+      }
+
+      return { success: true };
+    }
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
 
   const value = useMemo<CobrancasContextValue>(
     () => ({
@@ -771,7 +943,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         cobrancas.find((item) => item.token_publico === token) ?? cobrancasStats.find((item) => item.token_publico === token),
       getCobrancasByProposta: (idInt: number) => cobrancasStats.filter((item) => item.id_int === idInt),
       liberarCobrancaReal,
-      voltarCobrancaFilaReal
+      voltarCobrancaFilaReal,
+      emitirBoletoReal
     }),
     [
       cobrancas,
@@ -784,7 +957,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       liberarParaPedido,
       refreshCobrancas,
       liberarCobrancaReal,
-      voltarCobrancaFilaReal
+      voltarCobrancaFilaReal,
+      emitirBoletoReal
     ]
   );
 

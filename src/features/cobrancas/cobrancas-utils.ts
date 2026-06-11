@@ -70,8 +70,15 @@ export function isPendenteAprovacao(
 ) {
   const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
   const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+  const statusUpper = (cobranca.status || "").trim().toUpperCase();
 
-  return isEFaturado && cobranca.status === "A_VENCER" && !cobranca.confirmado;
+  return (
+    isEFaturado &&
+    cobranca.confirmado !== true &&
+    statusUpper !== "CANCELADO" &&
+    statusUpper !== "PAID" &&
+    statusUpper !== "A_VENCER"
+  );
 }
 
 
@@ -87,32 +94,30 @@ export function getDataHoraListaCobranca(cobranca: Pick<Cobranca, "status" | "pa
 export function getConferenciaStatusLabel(
   cobranca: Pick<Cobranca, "status" | "confirmado" | "tipo_cobranca" | "cliente_restricao" | "cliente_limite_credito" | "cliente_credito" | "valor">
 ) {
-  const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
-  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+  const statusUpper = (cobranca.status || "").trim().toUpperCase();
 
-  if (isEFaturado) {
-    if (cobranca.status === "CANCELADO") {
-      return "Cancelado";
-    }
-    if (isPendenteAprovacao(cobranca)) {
-      return "Aguardando financeiro";
-    }
+  if (statusUpper === "CANCELADO") {
+    return "Cancelado";
+  }
+
+  if (isPendenteAprovacao(cobranca)) {
+    return "Aguardando financeiro";
+  }
+
+  // Regra definitiva: status PAID/A_VENCER indica condição financeira. confirmado=false indica aguardando conferência humana. confirmado=true indica liberado para produção.
+  if ((statusUpper === "PAID" || statusUpper === "A_VENCER") && cobranca.confirmado) {
     return "Liberado";
   }
 
-  if (cobranca.confirmado) {
-    return "Liberado";
-  }
-
-  if (cobranca.status === "PAID") {
+  if (statusUpper === "PAID" && !cobranca.confirmado) {
     return "Pago / A liberar";
   }
 
-  if (cobranca.status === "A_VENCER") {
-    return "A vencer / A liberar";
+  if (statusUpper === "A_VENCER" && !cobranca.confirmado) {
+    return "Faturamento autorizado / A liberar";
   }
 
-  if (cobranca.status === "A_RECEBER") {
+  if (statusUpper === "A_RECEBER") {
     return "A receber";
   }
 
@@ -122,33 +127,26 @@ export function getConferenciaStatusLabel(
 export function getConferenciaStatusTone(
   cobranca: Pick<Cobranca, "status" | "confirmado" | "tipo_cobranca" | "cliente_restricao" | "cliente_limite_credito" | "cliente_credito" | "valor">
 ) {
-  const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
-  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+  const statusUpper = (cobranca.status || "").trim().toUpperCase();
 
-  if (isEFaturado) {
-    if (cobranca.status === "CANCELADO") {
-      return "neutral";
-    }
-    if (isPendenteAprovacao(cobranca)) {
-      return "warning";
-    }
-    return "success";
-  }
-
-  if (cobranca.status === "CANCELADO") {
+  if (statusUpper === "CANCELADO") {
     return "neutral";
   }
 
-  if (cobranca.confirmado) {
+  if (isPendenteAprovacao(cobranca)) {
+    return "warning";
+  }
+
+  if ((statusUpper === "PAID" || statusUpper === "A_VENCER") && cobranca.confirmado) {
     return "success";
   }
 
-  if (cobranca.status === "PAID") {
+  if (statusUpper === "PAID" && !cobranca.confirmado) {
     return "info";
   }
 
-  if (cobranca.status === "A_VENCER") {
-    return "warning";
+  if (statusUpper === "A_VENCER" && !cobranca.confirmado) {
+    return "info";
   }
 
   return "info";

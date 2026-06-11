@@ -443,6 +443,7 @@ export async function updatePagamentoV2StatusConfirmacao(
     confirmado: boolean;
     confirmado_por: string | null;
     data_confirmacao: string | null;
+    status?: string;
   }
 ): Promise<{ success: boolean; updated?: Cobranca | null; errorMessage?: string }> {
   const config = getSupabaseConfig();
