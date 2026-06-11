@@ -497,6 +497,36 @@ Funcionalidades:
 - Interface em Dark Mode: estilização do drawer de chat, timeline e painel lateral de pendências revisada para suporte total a dark mode, eliminando backgrounds brancos fixos;
 - Erros Semânticos em Português: tradução completa de erros do banco de dados (RLS, formato UUID, chaves estrangeiras, restrições CHECK) na camada de serviço para diálogos operacionais legíveis e amigáveis ao usuário final.
 
+## Perfis e Permissões (Fase 1)
+
+Status: Tabela `public.perfis` padronizada como catálogo oficial e integrada ao `AuthProvider` com enriquecimento assíncrono e fallback legado.
+
+Componentes principais:
+- `AuthProvider` (`src/features/auth/AuthProvider.tsx`)
+- `usuarios.service.ts` (`src/features/auth/usuarios.service.ts`)
+- `MinhaContaPage` (`src/app/(erp)/minha-conta/page.tsx` - Diagnóstico de Acesso)
+- `UserMenu` (`src/components/app-shell/UserMenu.tsx` - Dropdown)
+
+Módulos no banco:
+- `public.perfis` (catálogo oficial)
+- `public.usuarios` (FK `id_perfil`)
+
+Funcionalidades da Fase 1:
+- Padronização e higienização estrutural de `public.perfis` (exclusão de 15 colunas legadas e 5 constraints legadas).
+- Configuração de UNIQUE no `slug` e nova PRIMARY KEY na coluna `id` (serial).
+- Seed dos 7 perfis base (`super_admin`, `admin`, `financeiro`, `vendedor`, `producao`, `fiscal`, `operador`) com permissões em formato de array JSONB de strings.
+- Adição da coluna `id_perfil` (nullable FK) na tabela `public.usuarios`.
+- Enriquecimento de perfil e permissões pós-login integrado de forma assíncrona para não atrasar a inicialização da UI.
+- Lógica de fallback para compatibilidade com dados legados (`is_super_adm`, `is_admin`, `is_vendedor`, `setor`).
+- Tratamento explícito de wildcard `"*"` para super administrador nos helpers de validação.
+- Rota de diagnóstico `/minha-conta` exibindo em tempo real dados de privilégios de acesso e permissões ativas.
+- Menu de usuário transformado em dropdown no cabeçalho superior (sempre visível em todas as resoluções), contendo atalhos rápidos e ação de logout (**Sair**) integrada.
+- Proteção contra vazamento de estado administrativo (*stale state*) e normalização dinâmica de setor com base no perfil.
+
+Pendências para próximas fases:
+- Bloquear menções, rotas, submenus ou botões da interface usando os novos helpers de permissões.
+- Interface visual de gerenciamento de usuários e alteração de perfis.
+
 ## Demais módulos
 
 Status: pendentes/em breve.

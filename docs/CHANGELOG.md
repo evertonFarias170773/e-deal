@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-06-10
+
+### Adicionado
+- **Fase 1 — Perfis e Permissões (Catálogo Corretivo)**:
+  - Padronização da tabela `public.perfis` como catálogo oficial de perfis do ERP.
+  - Eliminação de constraints legadas (`perfis_pkey`, `perfis_user_id_fkey`, `perfis_nome_usuario_key`, `perfis_genero_check`, `perfis_status_check`) e drop de 15 colunas legadas não-oficiais para deixar exatamente as 8 colunas oficiais.
+  - Criação da nova PRIMARY KEY na coluna `id` (serial) e UNIQUE constraint na coluna `slug`.
+  - Vinculação de `public.usuarios` com `public.perfis` via FK nullable `id_perfil` (com validação condicional para não recriar).
+  - Seed dos 7 perfis base: `super_admin`, `admin`, `financeiro`, `vendedor`, `producao`, `fiscal` e `operador` com listas de permissões em JSONB.
+  - Implementação de enriquecimento de sessão assíncrono no `AuthProvider.tsx` pós-login/refresh de página.
+  - Lógica de fallback legado prioritário em `usuarios.service.ts` baseada em `is_super_adm`, `is_admin`, `is_vendedor` e `setor`.
+  - Helpers de verificação de permissão `hasPermissao`, `hasAnyPermissao` e `hasAllPermissoes` com suporte a wildcard `"*"` de `super_admin`.
+  - Página de diagnóstico temporária `/minha-conta` exibindo metadados de acesso, permissões ativas e método de resolução.
+  - Dropdown interativo no menu do usuário (`UserMenu.tsx`) com atalho para Diagnóstico e opção de logout (**Sair**) unificado no desktop e mobile.
+  - Correção de vazamento de estado administrativo (*stale state* / *stale privileges*) e normalização dinâmica de setor com base no perfil.
+
 ## 2026-06-09
 
 ### Adicionado

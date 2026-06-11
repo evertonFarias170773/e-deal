@@ -72,6 +72,15 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
 | `public.pagamentos_v2` | Qualquer campo de cobrança | `READ`, `UPDATE`, `INSERT` | `LIBERADO` | Escrita controlada liberada inicialmente para PIX real da empresa 1, integrado ao fluxo de cobrança real reutilizando o backend financeiro existente. | Crítico | `select * from public.pagamentos_v2 where id_int = :id_int;` | `2026-05-30` / Fase Financeira | Integração com o fluxo real de cobrança PIX ativo. |
 | `public.pagamentos_v2` | Qualquer campo | `DELETE` | `BLOQUEADO` | Remoção de registros de cobrança e pagamentos é estritamente proibida por conformidade fiscal e financeira. | Crítico | Não aplicável. | Permanente | Bloqueado. |
 
+## Perfis e Permissões
+
+| Tabela | Campo | Operações | Status | Motivo da decisão | Risco | Validação pós-gravação | Data/fase da liberação | Observações técnicas |
+|---|---|---|---|---|---|---|---|---|
+| `public.perfis` | Todos os campos (`id`, `slug`, `nome`, `descricao`, `permissoes`, `ativo`, `created_at`, `updated_at`) | `READ` | `LIBERADO` | Catálogo de perfis oficial lido pelo `AuthProvider` para enriquecimento dinâmico de privilégios de acesso e permissões ativas. | Baixo | `select * from public.perfis order by slug;` | `2026-06-10` / Fase 1 | Apenas leitura liberada. |
+| `public.perfis` | Qualquer campo | `UPDATE`, `INSERT`, `DELETE` | `BLOQUEADO` | Escrita e deleção de perfis na UI ainda não foram planejadas ou implementadas nesta fase. Catálogo é gerenciado via script/migration SQL. | Crítico | Não aplicável. | Permanente nesta fase | Tabela de sistema crítica de segurança. Alterações via código ou formulários são proibidas. |
+| `public.usuarios` | `id_perfil` | `READ` | `LIBERADO` | Utilizado para cruzamento e enriquecimento do perfil do usuário autenticado no app. | Baixo | `select id_perfil from public.usuarios where id = :auth_id;` | `2026-06-10` / Fase 1 | Coluna FK nullable para suportar fallback de dados legados. |
+| `public.usuarios` | `id_perfil` | `UPDATE`, `INSERT` | `BLOQUEADO` | A alteração de perfil do usuário não possui fluxo visual na UI e está travada na aplicação nesta etapa. | Alto | Não aplicável. | Permanente nesta fase | A vinculação de perfis será habilitada na interface de gestão de usuários em fases futuras. |
+
 ## Observações de uso
 
 - Esta matriz não substitui o checklist técnico de cada mudança.
@@ -86,3 +95,4 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
   - data/fase;
   - validação pós-gravação;
   - observações técnicas.
+

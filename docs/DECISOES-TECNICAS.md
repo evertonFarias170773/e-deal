@@ -380,4 +380,55 @@ Motivo:
 - **Mitigação do Consumo de Conexões WebSocket**: O Supabase cobra e limita o número de conexões realtime ativas. Se o painel da Topbar, a página `/pendencias` e o Drawer lateral estabelecessem conexões separadas, um único usuário com duas abas abertas poderia exaurir facilmente as cotas de conexão do projeto.
 - **Eficiência de Rede**: Uma única conexão ativa na aba recebe a alteração e despacha o evento localmente via JavaScript no navegador do usuário. Os componentes inscritos no Custom Event reagem imediatamente sem requisições de rede adicionais ou subscriptions duplicadas.
 
+## Perfis e Permissões (Fase 1)
+
+### Catálogo Centralizado em `public.perfis`
+
+Decisão: Padronizar a tabela existente `public.perfis` como o catálogo oficial de perfis de acesso do ERP Ideal.
+
+Motivo:
+- **Reaproveitamento de Estrutura**: A tabela já existia no banco com dados legados sem uso ativo. Em vez de criar tabelas com novos nomes (ex: `perfis_acesso`), foi realizada uma higienização segura (backup de segurança, drop de 15 colunas legadas e remoção de 5 constraints legadas de chaves primárias e estrangeiras incompatíveis).
+- **Padronização**: A tabela ficou exclusivamente com as 8 colunas oficiais: `id` (serial PK), `slug` (text UNIQUE NOT NULL), `nome`, `descricao`, `permissoes` (jsonb NOT NULL DEFAULT '[]'), `ativo`, `created_at` e `updated_at`.
+
+### FK `id_perfil` Nullable em `public.usuarios`
+
+Decisão: A vinculação na tabela `public.usuarios` com a tabela `public.perfis` foi feita através de uma chave estrangeira `id_perfil` definida como opcional (`nullable`).
+
+Motivo:
+- **Transição Suave**: Permite que os usuários atuais permaneçam com `id_perfil = null` enquanto a transição de permissões está em homologação.
+- **Fallback Legado Ativo**: Na ausência de um perfil associado (`id_perfil = null`), o sistema aciona automaticamente o fallback baseado em flags legadas (`is_super_adm`, `is_admin`, `is_vendedor`) e a coluna `setor`, garantindo que ninguém perca acesso operacional durante a transição.
+
+### Armazenamento de Permissões como Array JSONB de Strings
+
+Decisão: As permissões no catálogo de perfis são guardadas na coluna `permissoes` como um array simples de strings (ex: `["cobrancas.view", "cobrancas.confirmar"]`).
+
+Motivo:
+- **Simplicidade de Validação**: Facilita a leitura e a escrita direta na base via painel do Supabase.
+- **Flexibilidade**: Permite o uso de wildcard `"*"` atribuído ao perfil `super_admin` para liberar acesso irrestrito, resolvido nativamente no helper de permissão `hasPermissao()`.
+
+### Enriquecimento Assíncrono de Usuário
+
+Decisão: O carregamento de dados detalhados do perfil e permissões do usuário logado é realizado após a autenticação inicial de forma assíncrona.
+
+Motivo:
+- **Desempenho de Inicialização**: O `AuthProvider` inicializa imediatamente a sessão com o JWT do Supabase Auth para liberar a interface e, em paralelo, executa a busca de enriquecimento do perfil.
+- **Isolamento de Erros**: Se o fetch das permissões ou perfil falhar por instabilidade de rede, a aplicação não quebra, recorrendo imediatamente ao fallback legado.
+
+### Prevenção de Vazamento de Privilégios (*Stale State*)
+
+Decisão: Limpeza completa de todo e qualquer estado local referente ao perfil enriquecido no momento do logout (`signOut`). Caso o e-mail do usuário não seja reconhecido no enrichment, é gerado um "guest-user" neutro.
+
+Motivo:
+- **Segurança de Acesso**: Evita que ao trocar de usuário no mesmo navegador os privilégios administrativos do usuário anterior permaneçam ativos em cache no estado do React (*stale state*).
+- **Guest-User Restrito**: Um e-mail não cadastrado na base de usuários não ganha privilégios de fallback administrativo por engano, mantendo a tela vazia/bloqueada.
+
+### Normalização Dinâmica de Setor na UI
+
+Decisão: Caso o campo `setor` esteja vazio ou nulo no cadastro do usuário (`public.usuarios`), o sistema infere o setor operacional com base no `perfilSlug`.
+
+Motivo:
+- **Correção de Badge**: Impede que usuários com setores desconfigurados no banco sejam renderizados incorretamente como "ADMIN" ou fiquem com o divisor visual nulo na Topbar.
+- **Consistência Visual**: Alinha a identidade visual do cargo exibido no menu do usuário com as regras operacionais do ERP.
+
+
 
