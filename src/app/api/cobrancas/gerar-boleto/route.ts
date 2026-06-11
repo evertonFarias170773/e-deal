@@ -231,7 +231,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      data: updatedData && updatedData[0] ? updatedData[0] : null
+      data: updatedData && updatedData[0] ? updatedData[0] : null,
+      integration: {
+        url_pdf: pdfUrl,
+        linha_digitavel: linhaDigitavel,
+        nosso_numero: webhookResult.nosso_numero || webhookResult.nossoNumero || null,
+        id_boleto_c6: webhookResult.id_boleto_c6 || webhookResult.idBoletoC6 || webhookResult.boleto_id || null
+      }
     });
   } catch (error: unknown) {
     console.error("[API][GerarBoleto] Excecao na API route:", error);

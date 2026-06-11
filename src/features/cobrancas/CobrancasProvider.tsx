@@ -775,7 +775,56 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: "Cliente Supabase não inicializado." };
       }
 
-      // 1. Obter dados complementares do cliente, contato e endereço
+      // 1. Verificar duplicidade na tabela public.boletos
+      // Priorizar busca por id_pagamento se existir, caso contrário usar id_int como fallback.
+      let existingBoletos: any[] = [];
+      if (cobranca.id_pagamento && cobranca.id_pagamento.trim() !== "") {
+        const { data, error } = await client
+          .from("boletos")
+          .select("id, id_int, id_pagamento, status")
+          .eq("id_pagamento", cobranca.id_pagamento);
+        if (error) {
+          console.error("Erro ao verificar boletos por id_pagamento:", error);
+          return { success: false, errorMessage: `Erro ao verificar boletos existentes: ${error.message}` };
+        }
+        if (data) {
+          existingBoletos = data;
+        }
+      } else {
+        const { data, error } = await client
+          .from("boletos")
+          .select("id, id_int, id_pagamento, status")
+          .eq("id_int", cobranca.id_int);
+        if (error) {
+          console.error("Erro ao verificar boletos por id_int fallback:", error);
+          return { success: false, errorMessage: `Erro ao verificar boletos existentes (fallback id_int): ${error.message}` };
+        }
+        if (data) {
+          existingBoletos = data;
+        }
+      }
+
+      const statusInativos = ["CANCELADO", "CANCELADA", "ESTORNADO", "ERRO", "FALHA"];
+      const temBoletoAtivo = existingBoletos.some((b) => {
+        const status = b.status;
+        if (status === null || status === undefined) {
+          return true; // Trata status null/undefined como ativo para evitar reemissão indevida
+        }
+        const statusStr = String(status).trim();
+        if (statusStr === "") {
+          return true; // Trata status vazio como ativo
+        }
+        return !statusInativos.includes(statusStr.toUpperCase());
+      });
+
+      if (temBoletoAtivo) {
+        return {
+          success: false,
+          errorMessage: "Já existe boleto lançado para esta proposta/cobrança. Abra o registro existente no Contas a Receber."
+        };
+      }
+
+      // 2. Obter dados complementares do cliente, contato e endereço
       let email = "";
       let whats = "";
       let contato = "";
@@ -831,7 +880,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: "Cliente sem e-mail cadastrado para geração do boleto." };
       }
 
-      // 2. Chamar a rota local de geração de boleto
+      // 3. Chamar a rota local de geração de boleto
       const webhookPayload = {
         cobrancaId: cobranca.id,
         idEmpresa: cobranca.id_empresa || 1,
@@ -882,11 +931,41 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: resJson.message || "Erro retornado da API do boleto." };
       }
 
-      // 3. Registrar na timeline propostas_chat
+      // 4. Inserir na tabela public.boletos
+      const boletoData = {
+        id_int: cobranca.id_int,
+        id_pagamento: cobranca.id_pagamento || null,
+        id_cliente: cobranca.id_cliente,
+        valor: cobranca.valor,
+        vencimento: cobranca.vencimento || null,
+        empresa: cobranca.empresa,
+        id_empresa: cobranca.id_empresa,
+        nome_cliente: cobranca.cliente,
+        documento: cobranca.documento,
+        linha_digitavel: resJson.integration?.linha_digitavel || null,
+        url_pdf: resJson.integration?.url_pdf || null,
+        status: "A_VENCER",
+        nosso_numero: resJson.integration?.nosso_numero || null,
+        id_boleto_c6: resJson.integration?.id_boleto_c6 || null
+      };
+
+      const { error: insertError } = await client
+        .from("boletos")
+        .insert([boletoData]);
+
+      if (insertError) {
+        console.error("Erro ao registrar boleto no Contas a Receber:", insertError);
+        return {
+          success: false,
+          errorMessage: `Boleto gerado, mas ocorreu um erro ao registrar no Contas a Receber: ${insertError.message}`
+        };
+      }
+
+      // 5. Registrar na timeline propostas_chat
       await registrarMensagemSistemaProposta({
         idInt: cobranca.id_int,
         idCliente: cobranca.id_cliente,
-        mensagem: "Boleto emitido e enviado ao cliente.",
+        mensagem: "Boleto emitido e lançado no Contas a Receber.",
         setor: "Financeiro"
       });
 
@@ -917,7 +996,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
             id: `msg_${nowStr}`,
             data: nowStr,
             autor: "Sistema",
-            mensagem: "Boleto emitido e enviado ao cliente.",
+            mensagem: "Boleto emitido e lançado no Contas a Receber.",
             categoria: "SISTEMA"
           },
           ...target.propostasChat
