@@ -30,5 +30,6 @@ export const navigationItems: NavigationItem[] = [
   { label: "OS / Producao", href: "/os-producao", icon: Building2 },
   { label: "Expedicao", href: "/expedicao", icon: Truck },
   { label: "Relatorios", href: "/relatorios", icon: BarChart3, disabled: true },
-  { label: "Configuracoes", href: "/configuracoes", icon: Settings, disabled: true }
+  { label: "Configuracoes", href: "/configuracoes/usuarios", icon: Settings }
 ];
+
