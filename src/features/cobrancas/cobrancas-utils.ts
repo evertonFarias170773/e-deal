@@ -86,18 +86,16 @@ export function isPendenteAprovacao(
   if (cobranca.confirmado === true) return false;
   if (statusUpper === "CANCELADO" || statusUpper === "PAID") return false;
 
-  // Se for A_VENCER, verificamos se tem limite ou se foi autorizado manualmente
+  // Se for A_VENCER, verificamos se foi explicitamente autorizado/liberado (manual ou via limite)
   if (statusUpper === "A_VENCER") {
-    const limiteDisponivel = Number(cobranca.cliente_limite_credito || 0) - Number(cobranca.cliente_credito || 0);
-    const hasCreditApproved = !cobranca.cliente_restricao && (limiteDisponivel >= Number(cobranca.valor || 0));
     const isManuallyAuthorized = Boolean(cobranca.confirmado_por);
 
-    if (hasCreditApproved || isManuallyAuthorized) {
+    if (isManuallyAuthorized) {
       return false; // Autorizado (automaticamente ou manualmente) -> NÃO é pendente financeiro
     }
   }
 
-  return true; // Todos os outros casos (como A_RECEBER, ou A_VENCER sem limite e sem autorização manual) são pendentes
+  return true; // Todos os outros casos (como A_RECEBER, ou A_VENCER sem autorização explícita) são pendentes
 }
 
 

@@ -102,7 +102,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     setIsUpdating(true);
     try {
       const operador = user?.name || "Sistema";
-      const success = await liberarCobrancaReal(cobranca.id, operador, "A_VENCER", false);
+      const success = await liberarCobrancaReal(cobranca.id, operador, "A_VENCER", false, "autorizar_faturamento");
       if (success) {
         const client = getSupabaseClient();
         if (client) {
