@@ -108,18 +108,43 @@ function normalize(value: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-function getFreightKey(
-  cep: string | undefined,
-  cidade: string | undefined,
-  uf: string | undefined,
-  pesoTotalGramas: number,
-  volumes: number
+function getDestinationKey(
+  clienteNaoCadastrado: boolean,
+  cepLivre: string | undefined,
+  cidadeLivre: string | undefined,
+  ufLivre: string | undefined,
+  nomeClienteLivre: string | undefined,
+  enderecoId: string | undefined,
+  currentAddress: { cep?: string; cidade?: string; uf?: string } | undefined
 ): string {
-  const cleanCep = cep ? cep.replace(/\D/g, "") : "";
-  const cleanCidade = cidade ? normalize(cidade) : "";
-  const cleanUf = uf ? uf.toLowerCase().trim() : "";
-  const weight = Math.round(pesoTotalGramas);
-  return `${cleanCep}_${cleanCidade}_${cleanUf}_${weight}_${volumes}`;
+  if (clienteNaoCadastrado) {
+    const cep = cepLivre ? cepLivre.replace(/\D/g, "") : "";
+    const city = cidadeLivre ? normalizeName(cidadeLivre) : "";
+    const uf = ufLivre ? ufLivre.toLowerCase().trim() : "";
+    const name = nomeClienteLivre ? normalizeName(nomeClienteLivre) : "";
+    return `free_${cep}_${city}_${uf}_${name}`;
+  } else {
+    const cep = currentAddress?.cep ? currentAddress.cep.replace(/\D/g, "") : "";
+    const city = currentAddress?.cidade ? normalizeName(currentAddress.cidade) : "";
+    const uf = currentAddress?.uf ? currentAddress.uf.toLowerCase().trim() : "";
+    const addrId = enderecoId || "";
+    return `db_${addrId}_${cep}_${city}_${uf}`;
+  }
+}
+
+function getShipmentKey(
+  pesoTotal: number,
+  volumes: number,
+  itens: PropostaItem[]
+): string {
+  const itemsStr = (itens || []).map((it) => {
+    const varStr = (it.variacoesEscolhidas || [])
+      .map((v) => v.id_variacao)
+      .sort((a, b) => a - b)
+      .join(",");
+    return `${it.id_produto}:${it.quantidade}:${varStr}`;
+  }).join("|");
+  return `${pesoTotal.toFixed(3)}_${volumes}_${itemsStr}`;
 }
 
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
@@ -257,7 +282,31 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [isQuotingAzul, setIsQuotingAzul] = useState(false);
   const [isQuotingTransp, setIsQuotingTransp] = useState(false);
   const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
-  const [lastQuotedKey, setLastQuotedKey] = useState<string>(() => proposta ? getFreightKey(proposta.enderecoEntrega?.cep, proposta.enderecoEntrega?.cidade, proposta.enderecoEntrega?.uf, proposta.resumo.pesoTotal, Math.max(1, Math.ceil(proposta.resumo.pesoTotal / 14500))) : "");
+  const [lastDestinationKey, setLastDestinationKey] = useState<string>(() => {
+    if (!proposta) return "";
+    const isNaoCadastrado = proposta.clienteNaoCadastrado ?? (proposta.cliente ? (proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0) : false);
+    const cepLivre = isNaoCadastrado ? (proposta.enderecoEntrega?.cep ?? "") : "";
+    const cidadeLivre = isNaoCadastrado ? (proposta.enderecoEntrega?.cidade ?? "") : "";
+    const ufLivre = isNaoCadastrado ? (proposta.enderecoEntrega?.uf ?? "") : "";
+    const nomeClienteLivre = isNaoCadastrado ? (proposta.cliente?.nome ?? "") : "";
+    const enderecoId = isNaoCadastrado ? "" : (proposta.enderecoEntrega?.id ?? "");
+    return getDestinationKey(
+      isNaoCadastrado,
+      cepLivre,
+      cidadeLivre,
+      ufLivre,
+      nomeClienteLivre,
+      enderecoId,
+      proposta.enderecoEntrega
+    );
+  });
+
+  const [lastShipmentKey, setLastShipmentKey] = useState<string>(() => {
+    if (!proposta) return "";
+    const w = proposta.resumo.pesoTotal;
+    const v = Math.max(1, Math.ceil(w / 14500));
+    return getShipmentKey(w, v, proposta.itens);
+  });
   const [isManualFreteModalOpen, setIsManualFreteModalOpen] = useState(false);
   const [manualFreteDraft, setManualFreteDraft] = useState({
     servico: "",
@@ -381,12 +430,31 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }, [combinedAddresses, form.enderecoId]);
 
   const isFreightOutdated = useMemo(() => {
-    const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
-    const cidade = form.clienteNaoCadastrado ? form.cidadeLivre : currentAddress?.cidade;
-    const uf = form.clienteNaoCadastrado ? form.ufLivre : currentAddress?.uf;
-    const key = getFreightKey(cep, cidade, uf, resumo.pesoTotal, volumes);
-    return lastQuotedKey !== key;
-  }, [form.clienteNaoCadastrado, form.cepLivre, form.cidadeLivre, form.ufLivre, currentAddress, resumo.pesoTotal, volumes, lastQuotedKey]);
+    const currentDestKey = getDestinationKey(
+      form.clienteNaoCadastrado ?? false,
+      form.cepLivre,
+      form.cidadeLivre,
+      form.ufLivre,
+      form.nomeClienteLivre,
+      form.enderecoId,
+      currentAddress
+    );
+    const currentShipKey = getShipmentKey(resumo.pesoTotal, volumes, form.itens);
+    return lastDestinationKey !== currentDestKey || lastShipmentKey !== currentShipKey;
+  }, [
+    form.clienteNaoCadastrado,
+    form.nomeClienteLivre,
+    form.cepLivre,
+    form.cidadeLivre,
+    form.ufLivre,
+    form.enderecoId,
+    currentAddress,
+    resumo.pesoTotal,
+    volumes,
+    form.itens,
+    lastDestinationKey,
+    lastShipmentKey
+  ]);
 
   const hasValidCepForFreight = useMemo(() => {
     const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
@@ -623,17 +691,29 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     if (form.isAvulso) {
       return;
     }
-    const cep = currentAddress?.cep;
-    const cidade = currentAddress?.cidade;
-    const uf = currentAddress?.uf;
+    const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
+    const cidade = form.clienteNaoCadastrado ? form.cidadeLivre : currentAddress?.cidade;
+    const uf = form.clienteNaoCadastrado ? form.ufLivre : currentAddress?.uf;
     if (!cep || resumo.pesoTotal <= 0 || volumes <= 0) {
       return;
     }
 
-    const currentKey = getFreightKey(cep, cidade, uf, resumo.pesoTotal, volumes);
-    if (currentKey === lastQuotedKey) {
+    const currentDestKey = getDestinationKey(
+      form.clienteNaoCadastrado ?? false,
+      form.cepLivre,
+      form.cidadeLivre,
+      form.ufLivre,
+      form.nomeClienteLivre,
+      form.enderecoId,
+      currentAddress
+    );
+    const currentShipKey = getShipmentKey(resumo.pesoTotal, volumes, form.itens);
+
+    if (currentDestKey === lastDestinationKey && currentShipKey === lastShipmentKey) {
       return;
     }
+
+    const isDestChanged = currentDestKey !== lastDestinationKey;
 
     const timer = setTimeout(async () => {
       setIsQuotingSedex(true);
@@ -710,17 +790,21 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       }
 
       setForm((prev) => {
-        // Capture previous choice details
-        const currentChosen = prev.fretes.find((f) => f.id === prev.freteEscolhidoId || f.escolhido);
-        const isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
-
-        // Keep manual fretes
-        const manualFretes = prev.fretes.filter(
-          (f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual"
-        );
-
+        // Preservação de frete só vale para mudanças de peso/produto no mesmo destino. Mudança de endereço invalida a cotação anterior.
         let nextEscolhidoId = "";
         let foundMatch = false;
+
+        const manualFretes = prev.fretes
+          .filter((f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual")
+          .map((f) => ({ ...f, escolhido: false }));
+
+        let currentChosen = prev.fretes.find((f) => f.id === prev.freteEscolhidoId || f.escolhido);
+        let isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
+
+        if (isDestChanged) {
+          currentChosen = undefined;
+          isManual = false;
+        }
 
         const updatedResults = allResults.map((newFrete) => {
           if (currentChosen && !isManual && areFreightsEqual(newFrete, currentChosen)) {
@@ -775,8 +859,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           }
         }
 
-        // Auto-select first option only if there was no previous choice
-        if (!currentChosen && updatedResults.length > 0) {
+        // Auto-select first option only if there was no previous choice and destination did not change
+        if (!currentChosen && !isDestChanged && updatedResults.length > 0) {
           updatedResults[0].escolhido = true;
           nextEscolhidoId = updatedResults[0].id;
         }
@@ -809,11 +893,27 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         };
       });
 
-      setLastQuotedKey(currentKey);
+      setLastDestinationKey(currentDestKey);
+      setLastShipmentKey(currentShipKey);
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [currentAddress, resumo.pesoTotal, volumes, lastQuotedKey, resumo.subtotalProdutos, form.isAvulso, showToast]);
+  }, [
+    form.clienteNaoCadastrado,
+    form.nomeClienteLivre,
+    form.cepLivre,
+    form.cidadeLivre,
+    form.ufLivre,
+    form.enderecoId,
+    currentAddress,
+    resumo.pesoTotal,
+    volumes,
+    lastDestinationKey,
+    lastShipmentKey,
+    resumo.subtotalProdutos,
+    form.isAvulso,
+    showToast
+  ]);
 
 
 
@@ -1133,6 +1233,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       return;
     }
 
+    const currentDestKey = getDestinationKey(
+      form.clienteNaoCadastrado ?? false,
+      form.cepLivre,
+      form.cidadeLivre,
+      form.ufLivre,
+      form.nomeClienteLivre,
+      form.enderecoId,
+      currentAddress
+    );
+    const currentShipKey = getShipmentKey(resumo.pesoTotal, volumes, form.itens);
+
+    const isDestChanged = currentDestKey !== lastDestinationKey;
+
     setIsQuotingSedex(true);
     setIsQuotingAzul(true);
 
@@ -1201,13 +1314,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     ]);
 
     // Find currently selected frete
-    const currentChosen = form.fretes.find((f) => f.id === form.freteEscolhidoId || f.escolhido);
-    const isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
+    let currentChosen = form.fretes.find((f) => f.id === form.freteEscolhidoId || f.escolhido);
+    let isManual = currentChosen && (currentChosen.id.startsWith("manual_") || currentChosen.observacao === "Cadastro manual");
 
     // Keep manual fretes
-    const manualFretes = form.fretes.filter(
-      (f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual"
-    );
+    const manualFretes = form.fretes
+      .filter((f) => f.id.startsWith("manual_") || f.observacao === "Cadastro manual")
+      .map((f) => ({ ...f, escolhido: false }));
+
+    if (isDestChanged) {
+      // Preservação de frete só vale para mudanças de peso/produto no mesmo destino. Mudança de endereço invalida a cotação anterior.
+      currentChosen = undefined;
+      isManual = false;
+    }
 
     let nextEscolhidoId = "";
     let foundMatch = false;
@@ -1280,7 +1399,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       }
     }
 
-    if (!currentChosen && updatedResults.length > 0) {
+    // Auto-select first option only if there was no previous choice and destination did not change
+    if (!currentChosen && !isDestChanged && updatedResults.length > 0) {
       updatedResults[0].escolhido = true;
       nextEscolhidoId = updatedResults[0].id;
     }
@@ -1312,8 +1432,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       freteEscolhidoId: nextEscolhidoId
     }));
 
-    const currentKey = getFreightKey(cep, cidade, uf, resumo.pesoTotal, volumes);
-    setLastQuotedKey(currentKey);
+    setLastDestinationKey(currentDestKey);
+    setLastShipmentKey(currentShipKey);
 
     // Toast warnings/success consolidation
     const errorsList = [];
