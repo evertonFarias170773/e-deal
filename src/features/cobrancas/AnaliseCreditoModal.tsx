@@ -20,6 +20,12 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
 
   const [novoLimite, setNovoLimite] = useState("");
   const [isUpdatingLimit, setIsUpdatingLimit] = useState(false);
+  const [warningPending, setWarningPending] = useState(false);
+
+  const handleNovoLimiteChange = (val: string) => {
+    setNovoLimite(val);
+    setWarningPending(false);
+  };
 
   const hasNoClient = !cobranca.id_cliente;
   const displayError = error || (hasNoClient ? "Cliente não identificado para análise de crédito." : null);
@@ -73,7 +79,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
           if (isAprovado) {
             onCreditApproved?.();
           } else {
-            alert("Limite atualizado, mas a cobrança permanece pendente por impedimento financeiro.");
+            setWarningPending(true);
           }
         }
       } else {
@@ -89,11 +95,13 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
 
   useEffect(() => {
     if (!isOpen || !cobranca.id_cliente) return;
+    setWarningPending(false);
     void fetchCredit(false);
 
     return () => {
       setCreditAnalysis(null);
       setError(null);
+      setWarningPending(false);
     };
   }, [isOpen, cobranca.id_cliente]);
 
@@ -122,6 +130,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
     }
 
     setIsUpdatingLimit(true);
+    setWarningPending(false);
     try {
       const client = getSupabaseClient();
       if (!client) {
@@ -199,7 +208,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
                     id="credit_limit_input"
                     type="text"
                     value={novoLimite}
-                    onChange={(e) => setNovoLimite(e.target.value)}
+                    onChange={(e) => handleNovoLimiteChange(e.target.value)}
                     disabled={isUpdatingLimit}
                     placeholder="Digite o novo limite..."
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#0f9f9a] focus:ring-2 focus:ring-[#dff8f6] disabled:opacity-50"
@@ -228,6 +237,19 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
                 />
                 <InfoBox label="Risco de Crédito" value={creditAnalysis.risco_credito || "-"} />
               </div>
+
+              {/* Alerta de Impedimento Financeiro Pós-Atualização */}
+              {warningPending && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex gap-3 items-start text-amber-800 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <ShieldAlert className="h-5 w-5 mt-0.5 shrink-0 text-amber-600" />
+                  <div>
+                    <p className="font-semibold text-xs uppercase tracking-wider text-amber-950">Aviso Financeiro</p>
+                    <p className="mt-1 text-sm leading-relaxed font-semibold">
+                      Limite atualizado, mas a cobrança permanece pendente por impedimento financeiro.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Status Alert */}
               {(() => {
