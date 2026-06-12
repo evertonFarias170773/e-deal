@@ -49,12 +49,32 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
         const limitDisp = Number(result.limite_disponivel) || 0;
         const statusCred = (result.status_credito || "").trim().toUpperCase();
         
-        const msgLower = (result.mensagem || "").toLowerCase();
-        const temMensagemImpeditiva = msgLower.includes("restrição") || msgLower.includes("bloqueado") || msgLower.includes("atraso") || msgLower.includes("excedido");
+        const msg = result.mensagem || "";
+        const msgLower = msg.toLowerCase();
+        const temMensagemImpeditiva =
+          msgLower.includes("restrição") ||
+          msgLower.includes("restricao") ||
+          msgLower.includes("bloqueado") ||
+          msgLower.includes("atraso") ||
+          msgLower.includes("excedido") ||
+          msgLower.includes("pendente") ||
+          msgLower.includes("vencido") ||
+          msgLower.includes("sem limite") ||
+          msgLower.includes("requer avaliação") ||
+          msgLower.includes("requer avaliacao") ||
+          msgLower.includes("financeiro");
 
-        const isAprovado = (statusCred === "APROVADO" || limitDisp >= Number(cobranca.valor)) && !temMensagemImpeditiva;
-        if (isAprovado && isUpdate) {
-          onCreditApproved?.();
+        const hasEnoughLimit = limitDisp >= Number(cobranca.valor);
+        const isStatusAprovado = statusCred === "APROVADO";
+
+        const isAprovado = hasEnoughLimit && isStatusAprovado && !temMensagemImpeditiva;
+
+        if (isUpdate) {
+          if (isAprovado) {
+            onCreditApproved?.();
+          } else {
+            alert("Limite atualizado, mas a cobrança permanece pendente por impedimento financeiro.");
+          }
         }
       } else {
         setError("Nenhum registro de análise de crédito encontrado para este cliente.");
