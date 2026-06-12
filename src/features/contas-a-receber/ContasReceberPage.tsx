@@ -1454,7 +1454,17 @@ function RecebivelDetailModal({
           <p className="mt-2 text-sm leading-6 text-slate-700">{item.observacao || "Nenhuma observação ou descrição vinculada."}</p>
         </div>
 
-        {(item.url_pdf || item.pdf_storage) && (
+        {item.tipo === "BOLETO" && !item.url_pdf && !item.pdf_storage ? (
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              disabled
+              className="w-full rounded-2xl bg-slate-50 text-slate-400 border border-slate-200 px-4 py-3 text-sm font-semibold cursor-not-allowed"
+            >
+              PDF ainda não disponível
+            </button>
+          </div>
+        ) : (item.url_pdf || item.pdf_storage) && (
           <div className="mt-4 flex gap-2">
             <button
               type="button"

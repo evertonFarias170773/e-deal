@@ -84,40 +84,41 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       setCobrancas(result.cobrancas);
       setCobrancasStats(result.cobrancasStats);
       setSource("supabase");
-
-      // Buscar todos os id_int da tabela public.boletos no banco de dados (excluindo os cancelados)
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data: boletosData, error } = await client
-            .from("boletos")
-            .select("id_int, status");
-          if (error) {
-            console.error("[CobrancasProvider] Erro ao buscar id_int de boletos:", error);
-          } else if (boletosData) {
-            const ids = new Set<number>();
-            boletosData.forEach((b) => {
-              if (b.id_int !== null && b.id_int !== undefined) {
-                if (b.status !== "CANCELADO") {
-                  ids.add(Number(b.id_int));
-                }
-              }
-            });
-            setExistingBoletoIdInts(ids);
-          }
-        } catch (err) {
-          console.error("[CobrancasProvider] Erro inesperado ao buscar boletos:", err);
-        }
-      }
     } else if (stored) {
       setCobrancas(stored);
       setCobrancasStats(result.cobrancasStats);
       setSource("mock");
-      setExistingBoletoIdInts(new Set());
     } else {
       setCobrancas(result.cobrancas.length > 0 ? result.cobrancas : createInitialState());
       setCobrancasStats(result.cobrancasStats.length > 0 ? result.cobrancasStats : createInitialState());
       setSource(result.source);
+    }
+
+    // Buscar todos os id_int da tabela public.boletos no banco de dados (excluindo os cancelados)
+    // independentemente do source dos dados (seja mock ou supabase, a verificação de duplicidade de boleto é sempre real)
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data: boletosData, error } = await client
+          .from("boletos")
+          .select("id_int, status");
+        if (error) {
+          console.error("[CobrancasProvider] Erro ao buscar id_int de boletos:", error);
+        } else if (boletosData) {
+          const ids = new Set<number>();
+          boletosData.forEach((b) => {
+            if (b.id_int !== null && b.id_int !== undefined) {
+              if (b.status !== "CANCELADO") {
+                ids.add(Number(b.id_int));
+              }
+            }
+          });
+          setExistingBoletoIdInts(ids);
+        }
+      } catch (err) {
+        console.error("[CobrancasProvider] Erro inesperado ao buscar boletos:", err);
+      }
+    } else {
       setExistingBoletoIdInts(new Set());
     }
 

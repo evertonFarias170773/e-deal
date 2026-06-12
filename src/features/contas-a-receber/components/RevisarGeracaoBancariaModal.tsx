@@ -274,8 +274,8 @@ export function RevisarGeracaoBancariaModal({
         const nossoNumero = c6Data.nosso_numero || c6Data.our_number;
         const linhaDigitavel = c6Data.linha_digitavel || c6Data.digitable_line;
         const codigoBarras = c6Data.codigo_barras || c6Data.bar_code;
-        const urlPdf = c6Data.url_pdf || c6Data.pdf_storage;
-        const pdfStorage = c6Data.pdf_storage;
+        const urlPdf = c6Data.url_pdf || c6Data.pdf_storage || c6Data.url || c6Data.pdf || null;
+        const pdfStorage = c6Data.pdf_storage || null;
 
         if (idBoleto) dbUpdates.id_boleto_c6 = idBoleto;
         if (nossoNumero) dbUpdates.nosso_numero = nossoNumero;
@@ -736,9 +736,9 @@ export function RevisarGeracaoBancariaModal({
                                     type="button"
                                     disabled
                                     className="px-3 py-1.5 bg-slate-50 text-slate-400 border border-slate-100 cursor-not-allowed rounded-xl text-xs font-semibold"
-                                    title="PDF disponível após confirmação da geração bancária."
+                                    title="O PDF deste boleto ainda não foi retornado pelo banco."
                                   >
-                                    PDF indisponível
+                                    PDF ainda não disponível
                                   </button>
                                 )}
  

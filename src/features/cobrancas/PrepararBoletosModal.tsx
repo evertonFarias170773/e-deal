@@ -355,22 +355,33 @@ export function PrepararBoletosModal({
       }
 
       // Sucesso na transação real do Supabase: fazer update do boleto_enviadoo em pagamentos_v2
+      console.log('[PrepararBoletosModal] Iniciando UPDATE pagamentos_v2. Set boleto_enviadoo = true. ID:', cobranca.id, 'id_int:', cobranca.id_int);
       try {
-        const { error: patchError } = await client
+        const { data: patchData, error: patchError } = await client
           .from("pagamentos_v2")
           .update({ boleto_enviadoo: true })
-          .eq("id", cobranca.id);
+          .eq("id", cobranca.id)
+          .select();
+        
+        console.log('[PrepararBoletosModal] UPDATE pagamentos_v2 retorno:', { data: patchData, error: patchError });
         
         if (patchError) {
-          console.error("[PrepararBoletosModal] Falha ao atualizar pagamentos_v2.boleto_enviadoo:", patchError);
+          console.error("[PrepararBoletosModal] ERRO ao atualizar pagamentos_v2.boleto_enviadoo:", JSON.stringify(patchError, null, 2));
           showToast({
             type: "warning",
-            title: "Aviso",
-            description: "Os boletos foram gerados, mas não foi possível atualizar o status da cobrança no banco."
+            title: "Aviso de Sincronização",
+            description: `Boletos gerados, mas falha ao marcar enviado no financeiro: ${patchError.message}`
           });
+        } else {
+          console.log("[PrepararBoletosModal] pagamentos_v2 atualizado com sucesso:", patchData);
         }
       } catch (patchErr) {
-        console.error("[PrepararBoletosModal] Erro ao fazer patch em pagamentos_v2:", patchErr);
+        console.error("[PrepararBoletosModal] Erro inesperado ao fazer UPDATE em pagamentos_v2:", patchErr);
+        showToast({
+          type: "warning",
+          title: "Erro de Conexão",
+          description: "Os boletos foram gerados, mas a rede falhou ao sincronizar o status no financeiro."
+        });
       }
 
       // Independentemente do PATCH de boleto_enviadoo, marcamos como preparado localmente
