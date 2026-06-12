@@ -188,33 +188,81 @@ export function RevisarGeracaoBancariaModal({
   };
 
   const handleRegisterBoleto = async (boleto: SupabaseBoletoRow) => {
+    if (boleto.deposito_conta) {
+      showToast({
+        type: "warning",
+        title: "Aviso",
+        description: "Depósito em conta não é elegível para registro bancário."
+      });
+      return;
+    }
+
     setRegisteringBoletoId(boleto.id);
     setBoletoErrors(prev => {
       const next = { ...prev };
       delete next[boleto.id];
       return next;
     });
-    try {
-      const result = await registerBoletoViaN8n(boleto);
-      const client = getSupabaseClient();
 
-      if (client && result && result.data) {
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast({
+        type: "error",
+        title: "Erro",
+        description: "Cliente Supabase não inicializado."
+      });
+      setRegisteringBoletoId(null);
+      return;
+    }
+
+    try {
+      // 1. Salvar alterações locais do boleto no banco de dados antes de registrar
+      const { error: preSaveError } = await client
+        .from("boletos")
+        .update({
+          vencimento: boleto.vencimento ? new Date(String(boleto.vencimento)).toISOString().split('T')[0] : null,
+          valor: boleto.valor !== null && boleto.valor !== undefined ? Number(boleto.valor) : null,
+          descricao: boleto.descricao ? String(boleto.descricao) : null,
+          deposito_conta: !!boleto.deposito_conta,
+          multa: boleto.multa !== null && boleto.multa !== undefined ? Number(boleto.multa) : null,
+          juros_dia: boleto.juros_dia !== null && boleto.juros_dia !== undefined ? Number(boleto.juros_dia) : null,
+        })
+        .eq("id", boleto.id);
+
+      if (preSaveError) {
+        throw new Error(`Erro ao atualizar dados do boleto antes do registro: ${preSaveError.message}`);
+      }
+
+      // 2. Chamar o webhook
+      const result = await registerBoletoViaN8n(boleto);
+
+      // 3. Atualizar dados retornados
+      if (result && result.data) {
         const c6Data = result.data;
+
+        // Validar status retornado (limitar aos status financeiros padronizados do ERP)
+        let validatedStatus = "A_VENCER";
+        if (c6Data.status && ["A_RECEBER", "A_VENCER", "PAID", "CANCELADO"].includes(String(c6Data.status))) {
+          validatedStatus = String(c6Data.status);
+        }
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dbUpdates: Record<string, any> = {
-          status: "A_VENCER"
+          status: validatedStatus
         };
         const idBoleto = c6Data.id_boleto_c6 || c6Data.id;
         const nossoNumero = c6Data.nosso_numero || c6Data.our_number;
         const linhaDigitavel = c6Data.linha_digitavel || c6Data.digitable_line;
         const codigoBarras = c6Data.codigo_barras || c6Data.bar_code;
         const urlPdf = c6Data.url_pdf || c6Data.pdf_storage;
+        const pdfStorage = c6Data.pdf_storage;
 
         if (idBoleto) dbUpdates.id_boleto_c6 = idBoleto;
         if (nossoNumero) dbUpdates.nosso_numero = nossoNumero;
         if (linhaDigitavel) dbUpdates.linha_digitavel = linhaDigitavel;
         if (codigoBarras) dbUpdates.codigo_barras = codigoBarras;
         if (urlPdf) dbUpdates.url_pdf = urlPdf;
+        if (pdfStorage) dbUpdates.pdf_storage = pdfStorage;
 
         if (Object.keys(dbUpdates).length > 0) {
           const { error: updateError } = await client
@@ -223,7 +271,8 @@ export function RevisarGeracaoBancariaModal({
             .eq("id", boleto.id);
 
           if (updateError) {
-            console.error("[RevisarGeracaoBancariaModal] failed to update database with C6 info:", updateError);
+            console.error("[RevisarGeracaoBancariaModal] falha ao atualizar boletos com retorno C6:", updateError);
+            throw new Error(`Boleto registrado, mas erro ao salvar dados no banco: ${updateError.message}`);
           }
         }
       }
@@ -234,22 +283,19 @@ export function RevisarGeracaoBancariaModal({
         description: "Boleto registrado com sucesso no banco."
       });
 
-      // Reler o boleto do Supabase para obter os campos finais atualizados pelo workflow do n8n
-      if (client) {
-        const { data: updatedBoleto, error } = await client
-          .from("boletos")
-          .select("*")
-          .eq("id", boleto.id)
-          .maybeSingle();
+      // 4. Reler do Supabase para atualizar a listagem local
+      const { data: updatedBoleto, error: fetchError } = await client
+        .from("boletos")
+        .select("*")
+        .eq("id", boleto.id)
+        .maybeSingle();
 
-        if (error) throw error;
+      if (fetchError) throw fetchError;
 
-        if (updatedBoleto) {
-          // Atualiza a listagem local do modal
-          setBoletosForReview(prev =>
-            prev.map(b => b.id === boleto.id ? updatedBoleto : b)
-          );
-        }
+      if (updatedBoleto) {
+        setBoletosForReview(prev =>
+          prev.map(b => b.id === boleto.id ? updatedBoleto : b)
+        );
       }
 
       if (onSaveSuccess) {
@@ -641,7 +687,12 @@ export function RevisarGeracaoBancariaModal({
                         )}
 
                         {/* Card Footer Actions */}
-                        {!boleto.deposito_conta && (
+                        {boleto.deposito_conta ? (
+                          <div className="border-t border-slate-100 pt-3 flex items-center gap-2 text-amber-600 bg-amber-50/50 p-2.5 rounded-xl border border-amber-200/50">
+                            <Info className="h-4 w-4 shrink-0 text-amber-500" />
+                            <span className="text-xs font-medium">Depósito em conta não é elegível para registro bancário.</span>
+                          </div>
+                        ) : (
                           <div className="border-t border-slate-100 pt-3 flex flex-wrap gap-2 items-center justify-end">
                             {isRegistered ? (
                               <div className="flex flex-wrap gap-2 w-full justify-end">
@@ -659,9 +710,9 @@ export function RevisarGeracaoBancariaModal({
                                     type="button"
                                     disabled
                                     className="px-3 py-1.5 bg-slate-50 text-slate-400 border border-slate-100 cursor-not-allowed rounded-xl text-xs font-semibold"
-                                    title="PDF disponível após confirmação da função de geração."
+                                    title="PDF disponível após confirmação da geração bancária."
                                   >
-                                    PDF disponível após confirmação da função de geração.
+                                    PDF indisponível
                                   </button>
                                 )}
 

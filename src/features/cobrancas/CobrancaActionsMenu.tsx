@@ -12,6 +12,8 @@ import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import { AutorizarFaturamentoModal } from "./AutorizarFaturamentoModal";
 import { ConfirmarLiberacaoModal } from "./ConfirmarLiberacaoModal";
+import { PrepararBoletosModal } from "./PrepararBoletosModal";
+import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cobranca } from "@/features/cobrancas/types";
 
@@ -41,17 +43,17 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const { user } = useAuth();
   const { openChat } = useGlobalChat();
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isUpdatingBoleto, setIsUpdatingBoleto] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isAutorizarModalOpen, setIsAutorizarModalOpen] = useState(false);
   const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
+  const [isPrepararBoletosOpen, setIsPrepararBoletosOpen] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [justLaunchedExtRef, setJustLaunchedExtRef] = useState("");
+
   const {
-    cancelCobranca,
-    deleteCobranca,
     liberarCobrancaReal,
     voltarCobrancaFilaReal,
-    emitirBoletoReal,
     refreshCobrancas
   } = useCobrancas();
 
@@ -63,31 +65,6 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
 
     await navigator.clipboard?.writeText(value);
     showToast({ type: "success", title: successTitle });
-  }
-
-  async function handleEmitirBoletoAction() {
-    setIsUpdatingBoleto(true);
-    try {
-      const result = await emitirBoletoReal(cobranca.id);
-      if (result.success) {
-        showToast({
-          type: "success",
-          title: "Boleto emitido e enviado ao cliente com sucesso."
-        });
-      } else {
-        showToast({
-          type: "error",
-          title: result.errorMessage || "Falha ao emitir boleto."
-        });
-      }
-    } catch (err) {
-      showToast({
-        type: "error",
-        title: err instanceof Error ? err.message : "Erro desconhecido ao emitir boleto."
-      });
-    } finally {
-      setIsUpdatingBoleto(false);
-    }
   }
 
   function handleAnaliseCredito() {
@@ -132,8 +109,6 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     }
   }
 
-
-
   async function handleVoltarFilaReal() {
     if (!cobranca.id) {
       showToast({ type: "error", title: "ID da cobrança inválido para estorno." });
@@ -160,6 +135,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       setIsUpdating(false);
     }
   }
+
   if (isEmitirBoletos(cobranca)) {
     return (
       <>
@@ -174,9 +150,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
               onClick: () => openChat(cobranca.id_int, { clienteNome: cobranca.cliente, idCliente: cobranca.id_cliente })
             },
             {
-              label: isUpdatingBoleto ? "Emitindo..." : "Emitir boleto",
-              disabled: isUpdatingBoleto,
-              onClick: () => void handleEmitirBoletoAction()
+              label: "Preparar boletos",
+              onClick: () => setIsPrepararBoletosOpen(true)
             },
             {
               label: "Cancelar cobrança",
@@ -190,6 +165,27 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
           isOpen={isCancelModalOpen}
           onClose={() => setIsCancelModalOpen(false)}
           cobrancaId={cobranca.id}
+        />
+        <PrepararBoletosModal
+          isOpen={isPrepararBoletosOpen}
+          onClose={() => setIsPrepararBoletosOpen(false)}
+          cobranca={cobranca}
+          onSuccess={(extRef) => {
+            setIsPrepararBoletosOpen(false);
+            setJustLaunchedExtRef(extRef);
+            setIsReviewModalOpen(true);
+            void refreshCobrancas();
+          }}
+        />
+        <RevisarGeracaoBancariaModal
+          isOpen={isReviewModalOpen}
+          onClose={() => setIsReviewModalOpen(false)}
+          extReference={justLaunchedExtRef}
+          nomeCliente={cobranca.cliente}
+          valorTotalNf={cobranca.valor}
+          onSaveSuccess={() => {
+            void refreshCobrancas();
+          }}
         />
       </>
     );
@@ -251,13 +247,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     !Boolean(cobranca.boleto_enviadoo)
       ? [
           {
-            label: "Emitir boleto",
-            onClick: () => {
-              showToast({
-                type: "info",
-                title: "Ação de emissão de boleto executada com sucesso."
-              });
-            }
+            label: "Preparar boletos",
+            onClick: () => setIsPrepararBoletosOpen(true)
           }
         ]
       : []),
@@ -313,6 +304,27 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         isOpen={isLiberarModalOpen}
         onClose={() => setIsLiberarModalOpen(false)}
         cobranca={cobranca}
+      />
+      <PrepararBoletosModal
+        isOpen={isPrepararBoletosOpen}
+        onClose={() => setIsPrepararBoletosOpen(false)}
+        cobranca={cobranca}
+        onSuccess={(extRef) => {
+          setIsPrepararBoletosOpen(false);
+          setJustLaunchedExtRef(extRef);
+          setIsReviewModalOpen(true);
+          void refreshCobrancas();
+        }}
+      />
+      <RevisarGeracaoBancariaModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        extReference={justLaunchedExtRef}
+        nomeCliente={cobranca.cliente}
+        valorTotalNf={cobranca.valor}
+        onSaveSuccess={() => {
+          void refreshCobrancas();
+        }}
       />
     </>
   );
