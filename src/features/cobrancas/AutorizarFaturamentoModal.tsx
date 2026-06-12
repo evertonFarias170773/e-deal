@@ -16,7 +16,7 @@ interface AutorizarFaturamentoModalProps {
 }
 
 export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess }: AutorizarFaturamentoModalProps) {
-  const { liberarCobrancaReal, refreshCobrancas } = useCobrancas();
+  const { liberarCobrancaReal } = useCobrancas();
   const { user } = useAuth();
   const { showToast } = useAppToast();
   const [observacao, setObservacao] = useState("");
@@ -79,7 +79,6 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
           description: "A cobrança foi autorizada com sucesso e enviada para a fila de conferência."
         });
 
-        await refreshCobrancas();
         onSuccess?.();
         onClose();
       } else {

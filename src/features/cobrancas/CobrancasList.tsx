@@ -86,7 +86,7 @@ function isConfirmadoDia(cobranca: Cobranca) {
   if (!isBaseConfirmada(cobranca)) {
     return false;
   }
-  const dateVal = cobranca.paid_at || cobranca.data_confirmacao || cobranca.created_at;
+  const dateVal = cobranca.paid_at || cobranca.data_confirmacao;
   if (!dateVal) {
     return false;
   }
@@ -108,23 +108,34 @@ function getEmpresaLabelVisual(nome: string) {
   return nome;
 }
 
-function isEmitirBoletos(cobranca: Cobranca) {
-  const tipo = cobranca.tipo_cobranca as string;
+function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>) {
+  const tipo = (cobranca.tipo_cobranca || "").toUpperCase();
+  const status = (cobranca.status || "").toUpperCase();
+  
+  const isEFaturado = tipo === "E-FATURADO";
+  const isCorrectStatus = status === "A_RECEBER" || status === "A_VENCER";
+  const isConfirmedIfAvencer = status !== "A_VENCER" || cobranca.confirmado === true;
+  const isBoletoEnviadooFalse = cobranca.boleto_enviadoo === false;
+  
+  const hasNoMatchingBoleto = !existingBoletoIdInts || !cobranca.id_int || !existingBoletoIdInts.has(Number(cobranca.id_int));
+  
   return (
-    (tipo === "E-Faturado" || tipo === "E-FATURADO") &&
-    cobranca.boleto_enviadoo === false &&
-    cobranca.confirmado === true &&
+    isEFaturado &&
+    isCorrectStatus &&
+    isConfirmedIfAvencer &&
+    isBoletoEnviadooFalse &&
+    hasNoMatchingBoleto &&
     isEmpresaValida(cobranca)
   );
 }
 
-function matchesTipoFiltro(cobranca: Cobranca, tipo: TipoFiltro) {
+function matchesTipoFiltro(cobranca: Cobranca, tipo: TipoFiltro, existingBoletoIdInts?: Set<number>) {
   if (tipo === "PENDENTES_APROVACAO") {
     return isPendenteAprovacao(cobranca);
   }
 
   if (tipo === "EMITIR_BOLETOS") {
-    return isEmitirBoletos(cobranca);
+    return isEmitirBoletos(cobranca, existingBoletoIdInts);
   }
 
   if (tipo === "TODOS") {
@@ -173,7 +184,7 @@ function getInitialDates() {
 
 export function CobrancasList() {
   const router = useRouter();
-  const { cobrancasStats, source, refreshCobrancas } = useCobrancas();
+  const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts } = useCobrancas();
   const { showToast } = useAppToast();
   const [search, setSearch] = useState("");
   const [tipo, setTipo] = useState<TipoFiltro>("TODOS");
@@ -294,7 +305,7 @@ export function CobrancasList() {
         : tipo === "CONFIRMADOS_DIA"
           ? cobrancasStats.filter(isConfirmadoDia)
           : tipo === "EMITIR_BOLETOS"
-            ? cobrancasStats.filter(isEmitirBoletos)
+            ? cobrancasStats.filter((c) => isEmitirBoletos(c, existingBoletoIdInts))
             : tipo === "CANCELADO"
               ? cobrancasStats.filter((c) => c.status === "CANCELADO")
               : statusFilter === "CONFIRMADOS"
@@ -309,13 +320,13 @@ export function CobrancasList() {
         const matchesTipo =
           tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "EMITIR_BOLETOS" || tipo === "CANCELADO"
             ? true
-            : matchesTipoFiltro(cobranca, tipo);
+            : matchesTipoFiltro(cobranca, tipo, existingBoletoIdInts);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
 
         return matchesSearch && matchesTipo && matchesEmpresa;
       })
       .slice(0, 500);
-  }, [cobrancasStats, empresa, search, tipo, statusFilter]);
+  }, [cobrancasStats, empresa, search, tipo, statusFilter, existingBoletoIdInts]);
 
   const empresaDestinoSelecionada = empresaDestinoId ? getEmpresaRecebedoraFixaById(empresaDestinoId) ?? null : null;
 
@@ -664,8 +675,18 @@ export function CobrancasList() {
           { header: "Valor", cell: (cobranca) => formatCurrency(cobranca.valor), align: "right" },
           { header: "Tipo", cell: (cobranca) => getTipoCobrancaLabel(cobranca.tipo_cobranca) },
           {
-            header: "Data/Hora",
+            header: statusFilter === "CONFIRMADOS" ? "Confirmação" : "Data/Hora",
             cell: (cobranca) => {
+              if (statusFilter === "CONFIRMADOS") {
+                const dateVal = cobranca.data_confirmacao;
+                const operador = cobranca.confirmado_por || "";
+                return (
+                  <div>
+                    <p className="font-semibold text-slate-950">{dateVal ? formatDateTime(dateVal) : "—"}</p>
+                    {operador && <p className="text-xs text-slate-500">{operador}</p>}
+                  </div>
+                );
+              }
               const reference = getDataHoraListaCobranca(cobranca) || cobranca.created_at;
               return <span>{formatDateTime(reference)}</span>;
             }
@@ -687,7 +708,14 @@ export function CobrancasList() {
               <p>Empresa: {renderEmpresaEditavel(cobranca)}</p>
               <p>Valor: <strong className="text-slate-900">{formatCurrency(cobranca.valor)}</strong></p>
               <p>Tipo: {getTipoCobrancaLabel(cobranca.tipo_cobranca)}</p>
-              <p>Data/Hora: {formatDateTime(getDataReferenciaCobranca(cobranca) || cobranca.created_at)}</p>
+              {statusFilter === "CONFIRMADOS" ? (
+                <>
+                  <p>Confirmação: <strong className="text-slate-900">{cobranca.data_confirmacao ? formatDateTime(cobranca.data_confirmacao) : "—"}</strong></p>
+                  {cobranca.confirmado_por && <p>Confirmado por: <strong className="text-slate-900">{cobranca.confirmado_por}</strong></p>}
+                </>
+              ) : (
+                <p>Data/Hora: {formatDateTime(getDataReferenciaCobranca(cobranca) || cobranca.created_at)}</p>
+              )}
               <p>OS: {cobranca.os_ideal || "—"}</p>
               <p>Liberação: <strong className="text-slate-900">{getLiberacaoPedidoLabel(getLiberacaoPedidoStatus(cobrancasStats.filter((item) => item.id_int === cobranca.id_int)))}</strong></p>
             </div>

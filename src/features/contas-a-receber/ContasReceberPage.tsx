@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -32,6 +33,26 @@ import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancaria
 type ActiveTab = "CARTEIRA" | "BOLETOS" | "VENCIMENTOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
 type StatusFilter = "TODOS" | "A_VENCER" | "VENCIDOS" | "PAID" | "VENCIDO" | "CANCELADO" | "NAO_REGISTRADO";
+
+function getResolvedPdfUrl(urlOrPath?: string): string {
+  if (!urlOrPath) return "";
+  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
+    return urlOrPath;
+  }
+  const parts = urlOrPath.split("/");
+  if (parts.length > 1) {
+    const bucket = parts[0];
+    const path = parts.slice(1).join("/");
+    const client = getSupabaseClient();
+    if (client) {
+      const { data } = client.storage.from(bucket).getPublicUrl(path);
+      if (data?.publicUrl) {
+        return data.publicUrl;
+      }
+    }
+  }
+  return urlOrPath;
+}
 
 interface C6PaymentInfo {
   date: string;
@@ -252,7 +273,7 @@ export function ContasReceberPage() {
       showToast({ type: "warning", title: "Este item não possui PDF de boleto associado." });
       return;
     }
-    window.open(url, "_blank");
+    window.open(getResolvedPdfUrl(url), "_blank");
   }
 
   async function handleDeleteBoletoFromBank(boleto: BoletoDepositoMock) {
@@ -1233,7 +1254,7 @@ function RecebivelActions({
 
   actionItems.push(
     { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-    { label: "Abrir PDF Boleto", disabled: !item.url_pdf, onClick: () => onPdf(item.url_pdf) },
+    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) },
     { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
     { label: "Cancelar recebível", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
   );
@@ -1306,9 +1327,8 @@ function BoletoActions({
 
   actionItems.push(
     { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-    { label: "Abrir PDF Boleto", disabled: !item.url_pdf, onClick: () => onPdf(item.url_pdf) },
+    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) },
     { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
-    { label: "Prorrogar vencimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onProrrogar(item.id) },
     { label: "Cancelar boleto", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
   );
 
@@ -1434,11 +1454,11 @@ function RecebivelDetailModal({
           <p className="mt-2 text-sm leading-6 text-slate-700">{item.observacao || "Nenhuma observação ou descrição vinculada."}</p>
         </div>
 
-        {item.url_pdf && (
+        {(item.url_pdf || item.pdf_storage) && (
           <div className="mt-4 flex gap-2">
             <button
               type="button"
-              onClick={() => window.open(item.url_pdf, "_blank")}
+              onClick={() => window.open(getResolvedPdfUrl(item.url_pdf || item.pdf_storage), "_blank")}
               className="w-full rounded-2xl bg-[#0f9f9a] text-white px-4 py-3 text-sm font-semibold transition hover:bg-[#0c7c78]"
             >
               Visualizar PDF do boleto

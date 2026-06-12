@@ -27,12 +27,23 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
   return Number.isFinite(idEmpresa) && idEmpresa !== 0;
 }
 
-function isEmitirBoletos(cobranca: Cobranca) {
-  const tipo = cobranca.tipo_cobranca as string;
+function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>) {
+  const tipo = (cobranca.tipo_cobranca || "").toUpperCase();
+  const status = (cobranca.status || "").toUpperCase();
+  
+  const isEFaturado = tipo === "E-FATURADO";
+  const isCorrectStatus = status === "A_RECEBER" || status === "A_VENCER";
+  const isConfirmedIfAvencer = status !== "A_VENCER" || cobranca.confirmado === true;
+  const isBoletoEnviadooFalse = cobranca.boleto_enviadoo === false;
+  
+  const hasNoMatchingBoleto = !existingBoletoIdInts || !cobranca.id_int || !existingBoletoIdInts.has(Number(cobranca.id_int));
+  
   return (
-    (tipo === "E-Faturado" || tipo === "E-FATURADO") &&
-    cobranca.boleto_enviadoo === false &&
-    cobranca.confirmado === true &&
+    isEFaturado &&
+    isCorrectStatus &&
+    isConfirmedIfAvencer &&
+    isBoletoEnviadooFalse &&
+    hasNoMatchingBoleto &&
     isEmpresaValida(cobranca)
   );
 }
@@ -54,7 +65,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const {
     liberarCobrancaReal,
     voltarCobrancaFilaReal,
-    refreshCobrancas
+    refreshCobrancas,
+    existingBoletoIdInts
   } = useCobrancas();
 
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
@@ -95,7 +107,6 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
             }
           ]);
         }
-        await refreshCobrancas();
         showToast({ type: "success", title: "Faturamento aprovado automaticamente (limite suficiente)!" });
         setIsCreditModalOpen(false);
       }
@@ -136,7 +147,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     }
   }
 
-  if (isEmitirBoletos(cobranca)) {
+  if (isEmitirBoletos(cobranca, existingBoletoIdInts)) {
     return (
       <>
         <ActionsMenu

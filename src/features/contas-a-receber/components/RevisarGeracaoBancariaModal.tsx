@@ -17,6 +17,26 @@ function Alert({ children }: { children: React.ReactNode; variant?: string }) {
   );
 }
 
+function getResolvedPdfUrl(urlOrPath?: string): string {
+  if (!urlOrPath) return "";
+  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
+    return urlOrPath;
+  }
+  const parts = urlOrPath.split("/");
+  if (parts.length > 1) {
+    const bucket = parts[0];
+    const path = parts.slice(1).join("/");
+    const client = getSupabaseClient();
+    if (client) {
+      const { data } = client.storage.from(bucket).getPublicUrl(path);
+      if (data?.publicUrl) {
+        return data.publicUrl;
+      }
+    }
+  }
+  return urlOrPath;
+}
+
 interface RevisarGeracaoBancariaModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -328,18 +348,11 @@ export function RevisarGeracaoBancariaModal({
       const client = getSupabaseClient();
 
       if (client) {
-        // Fallback local no Supabase por segurança
+        // Fallback local no Supabase por segurança: marcar como CANCELADO mas manter histórico do C6
         const { error: updateError } = await client
           .from("boletos")
           .update({
-            id_boleto_c6: null,
-            nosso_numero: null,
-            linha_digitavel: null,
-            codigo_barras: null,
-            url_pdf: null,
-            pdf_storage: null,
-            status: "A_VENCER",
-            deposito_conta: false
+            status: "CANCELADO"
           })
           .eq("id", boleto.id);
 
@@ -530,7 +543,7 @@ export function RevisarGeracaoBancariaModal({
                 <div className="space-y-4">
                   {boletosForReview.map((boleto, idx) => {
                     const isRegistered = !!(boleto.id_boleto_c6 || boleto.nosso_numero || boleto.linha_digitavel);
-                    const isValDisabled = isRegistered || !!boleto.deposito_conta;
+                    const isValDisabled = isRegistered || !!boleto.deposito_conta || boleto.status === "CANCELADO";
                     
                     return (
                       <div
@@ -542,7 +555,11 @@ export function RevisarGeracaoBancariaModal({
                             Parcela {boleto.parcela}/{boleto.total_parcelas}
                           </span>
                           <div className="flex items-center gap-2">
-                            {boleto.deposito_conta ? (
+                            {boleto.status === "CANCELADO" ? (
+                              <span className="px-2 py-0.5 bg-rose-50 text-rose-700 font-bold border border-rose-200 rounded-lg text-[10px]">
+                                Boleto Cancelado
+                              </span>
+                            ) : boleto.deposito_conta ? (
                               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 rounded-lg text-[10px]">
                                 Depósito em Conta
                               </span>
@@ -592,6 +609,7 @@ export function RevisarGeracaoBancariaModal({
                             </label>
                             <input
                               type="date"
+                              disabled={boleto.status === "CANCELADO"}
                               value={boleto.vencimento ? String(boleto.vencimento).substring(0, 10) : ""}
                               onChange={(e) => handleBoletoChange(idx, "vencimento", e.target.value)}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
@@ -605,6 +623,7 @@ export function RevisarGeracaoBancariaModal({
                             </label>
                             <input
                               type="text"
+                              disabled={boleto.status === "CANCELADO"}
                               value={boleto.descricao ? String(boleto.descricao) : ""}
                               onChange={(e) => handleBoletoChange(idx, "descricao", e.target.value)}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none"
@@ -619,6 +638,7 @@ export function RevisarGeracaoBancariaModal({
                             <input
                               type="number"
                               step="0.01"
+                              disabled={boleto.status === "CANCELADO"}
                               value={boleto.multa !== null && boleto.multa !== undefined ? Number(boleto.multa) : ""}
                               onChange={(e) => handleBoletoChange(idx, "multa", e.target.value === "" ? null : Number(e.target.value))}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
@@ -633,6 +653,7 @@ export function RevisarGeracaoBancariaModal({
                             <input
                               type="number"
                               step="0.0001"
+                              disabled={boleto.status === "CANCELADO"}
                               value={boleto.juros_dia !== null && boleto.juros_dia !== undefined ? Number(boleto.juros_dia) : ""}
                               onChange={(e) => handleBoletoChange(idx, "juros_dia", e.target.value === "" ? null : Number(e.target.value))}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
@@ -644,7 +665,7 @@ export function RevisarGeracaoBancariaModal({
                             <input
                               type="checkbox"
                               id={`deposito-conta-${boleto.id}`}
-                              disabled={isRegistered}
+                              disabled={isRegistered || boleto.status === "CANCELADO"}
                               checked={!!boleto.deposito_conta}
                               onChange={(e) => {
                                 const checked = e.target.checked;
@@ -687,7 +708,12 @@ export function RevisarGeracaoBancariaModal({
                         )}
 
                         {/* Card Footer Actions */}
-                        {boleto.deposito_conta ? (
+                        {boleto.status === "CANCELADO" ? (
+                          <div className="border-t border-slate-100 pt-3 flex items-center gap-2 text-red-600 bg-red-50/50 p-2.5 rounded-xl border border-red-200/50">
+                            <Info className="h-4 w-4 shrink-0 text-red-500" />
+                            <span className="text-xs font-medium">Boleto CANCELADO. Nenhuma ação disponível.</span>
+                          </div>
+                        ) : boleto.deposito_conta ? (
                           <div className="border-t border-slate-100 pt-3 flex items-center gap-2 text-amber-600 bg-amber-50/50 p-2.5 rounded-xl border border-amber-200/50">
                             <Info className="h-4 w-4 shrink-0 text-amber-500" />
                             <span className="text-xs font-medium">Depósito em conta não é elegível para registro bancário.</span>
@@ -700,7 +726,7 @@ export function RevisarGeracaoBancariaModal({
                                 {boleto.url_pdf || boleto.pdf_storage ? (
                                   <button
                                     type="button"
-                                    onClick={() => window.open(String(boleto.url_pdf || boleto.pdf_storage), "_blank")}
+                                    onClick={() => window.open(getResolvedPdfUrl(String(boleto.url_pdf || boleto.pdf_storage)), "_blank")}
                                     className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 transition rounded-xl text-xs font-semibold"
                                   >
                                     Visualizar PDF
@@ -715,7 +741,7 @@ export function RevisarGeracaoBancariaModal({
                                     PDF indisponível
                                   </button>
                                 )}
-
+ 
                                 {/* Copiar Linha Digitável */}
                                 <button
                                   type="button"
@@ -730,13 +756,13 @@ export function RevisarGeracaoBancariaModal({
                                 >
                                   Copiar Linha Digitável
                                 </button>
-
+ 
                                 {/* Copiar Link */}
                                 <button
                                   type="button"
                                   disabled={!(boleto.url_pdf || boleto.pdf_storage)}
                                   onClick={() => {
-                                    const link = boleto.url_pdf || boleto.pdf_storage;
+                                    const link = getResolvedPdfUrl(String(boleto.url_pdf || boleto.pdf_storage));
                                     if (link) {
                                       void navigator.clipboard.writeText(String(link));
                                       showToast({ type: "success", title: "Link do PDF copiado!" });
@@ -746,9 +772,9 @@ export function RevisarGeracaoBancariaModal({
                                 >
                                   Copiar Link
                                 </button>
-
+ 
                                 {/* Excluir boleto do banco */}
-                                {boleto.id_boleto_c6 && boleto.status !== "PAID" && boleto.status !== "CANCELADO" && (
+                                {boleto.id_boleto_c6 && boleto.status !== "PAID" && (
                                   <button
                                     type="button"
                                     disabled={deletingBoletoId === boleto.id}
@@ -767,7 +793,7 @@ export function RevisarGeracaoBancariaModal({
                                 )}
                               </div>
                             ) : (
-                              boleto.status !== "PAID" && boleto.status !== "CANCELADO" && (
+                              boleto.status !== "PAID" && (
                                 <button
                                   type="button"
                                   disabled={registeringBoletoId === boleto.id || isSavingReview || isLoadingReviewBoletos || cadastralErrors.length > 0}

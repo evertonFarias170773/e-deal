@@ -31,6 +31,8 @@ type CobrancasContextValue = {
   liberarCobrancaReal: (id: string, confirmadoPor: string, status?: string, confirmado?: boolean, acao?: string) => Promise<boolean>;
   voltarCobrancaFilaReal: (id: string) => Promise<boolean>;
   emitirBoletoReal: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
+  existingBoletoIdInts: Set<number>;
+  marcarComoBoletosPreparadosLocal: (id: string, idInt: number) => void;
 };
 
 const STORAGE_KEY = "erp_ideal_mock_cobrancas_v6";
@@ -63,6 +65,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [cobrancasStats, setCobrancasStats] = useState<Cobranca[]>(createInitialState);
   const [source, setSource] = useState<CobrancasReadSource>("mock");
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
+  const [existingBoletoIdInts, setExistingBoletoIdInts] = useState<Set<number>>(new Set());
   const isMountedRef = useRef(true);
 
   const loadData = useCallback(async (): Promise<CobrancasReadResult> => {
@@ -81,18 +84,59 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       setCobrancas(result.cobrancas);
       setCobrancasStats(result.cobrancasStats);
       setSource("supabase");
+
+      // Buscar todos os id_int da tabela public.boletos no banco de dados (excluindo os cancelados)
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data: boletosData, error } = await client
+            .from("boletos")
+            .select("id_int, status");
+          if (error) {
+            console.error("[CobrancasProvider] Erro ao buscar id_int de boletos:", error);
+          } else if (boletosData) {
+            const ids = new Set<number>();
+            boletosData.forEach((b) => {
+              if (b.id_int !== null && b.id_int !== undefined) {
+                if (b.status !== "CANCELADO") {
+                  ids.add(Number(b.id_int));
+                }
+              }
+            });
+            setExistingBoletoIdInts(ids);
+          }
+        } catch (err) {
+          console.error("[CobrancasProvider] Erro inesperado ao buscar boletos:", err);
+        }
+      }
     } else if (stored) {
       setCobrancas(stored);
       setCobrancasStats(result.cobrancasStats);
       setSource("mock");
+      setExistingBoletoIdInts(new Set());
     } else {
       setCobrancas(result.cobrancas.length > 0 ? result.cobrancas : createInitialState());
       setCobrancasStats(result.cobrancasStats.length > 0 ? result.cobrancasStats : createInitialState());
       setSource(result.source);
+      setExistingBoletoIdInts(new Set());
     }
 
     setHasLoadedStorage(true);
     return result;
+  }, []);
+
+  const marcarComoBoletosPreparadosLocal = useCallback((id: string, idInt: number) => {
+    setCobrancas((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, boleto_enviadoo: true } : c))
+    );
+    setCobrancasStats((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, boleto_enviadoo: true } : c))
+    );
+    setExistingBoletoIdInts((prev) => {
+      const next = new Set(prev);
+      next.add(idInt);
+      return next;
+    });
   }, []);
 
   const refreshCobrancas = useCallback(async () => {
@@ -1025,7 +1069,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       getCobrancasByProposta: (idInt: number) => cobrancasStats.filter((item) => item.id_int === idInt),
       liberarCobrancaReal,
       voltarCobrancaFilaReal,
-      emitirBoletoReal
+      emitirBoletoReal,
+      existingBoletoIdInts,
+      marcarComoBoletosPreparadosLocal
     }),
     [
       cobrancas,
@@ -1039,7 +1085,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       refreshCobrancas,
       liberarCobrancaReal,
       voltarCobrancaFilaReal,
-      emitirBoletoReal
+      emitirBoletoReal,
+      existingBoletoIdInts,
+      marcarComoBoletosPreparadosLocal
     ]
   );
 

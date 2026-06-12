@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { X, FileText, AlertTriangle, Loader2, CheckCircle2, Calendar } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
@@ -51,6 +52,7 @@ export function PrepararBoletosModal({
   onSuccess
 }: PrepararBoletosModalProps) {
   const { showToast } = useAppToast();
+  const { marcarComoBoletosPreparadosLocal } = useCobrancas();
   const [step, setStep] = useState<"FORM" | "SUCCESS">("FORM");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -352,7 +354,28 @@ export function PrepararBoletosModal({
         throw new Error(error.message || 'Erro desconhecido ao inserir boletos');
       }
 
-      // Sucesso na transação real do Supabase
+      // Sucesso na transação real do Supabase: fazer update do boleto_enviadoo em pagamentos_v2
+      try {
+        const { error: patchError } = await client
+          .from("pagamentos_v2")
+          .update({ boleto_enviadoo: true })
+          .eq("id", cobranca.id);
+        
+        if (patchError) {
+          console.error("[PrepararBoletosModal] Falha ao atualizar pagamentos_v2.boleto_enviadoo:", patchError);
+          showToast({
+            type: "warning",
+            title: "Aviso",
+            description: "Os boletos foram gerados, mas não foi possível atualizar o status da cobrança no banco."
+          });
+        }
+      } catch (patchErr) {
+        console.error("[PrepararBoletosModal] Erro ao fazer patch em pagamentos_v2:", patchErr);
+      }
+
+      // Independentemente do PATCH de boleto_enviadoo, marcamos como preparado localmente
+      marcarComoBoletosPreparadosLocal(cobranca.id, Number(cobranca.id_int));
+
       setStep("SUCCESS");
     } catch (err) {
       const error = err as { message?: string; details?: string; hint?: string; code?: string };

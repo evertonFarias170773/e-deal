@@ -16,7 +16,7 @@ interface ConfirmarLiberacaoModalProps {
 }
 
 export function ConfirmarLiberacaoModal({ isOpen, onClose, cobranca, onSuccess }: ConfirmarLiberacaoModalProps) {
-  const { liberarCobrancaReal, refreshCobrancas } = useCobrancas();
+  const { liberarCobrancaReal } = useCobrancas();
   const { user } = useAuth();
   const { showToast } = useAppToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -68,7 +68,6 @@ export function ConfirmarLiberacaoModal({ isOpen, onClose, cobranca, onSuccess }
           description: "Cobrança liberada com sucesso para os próximos fluxos operacionais."
         });
 
-        await refreshCobrancas();
         onSuccess?.();
         onClose();
       } else {
