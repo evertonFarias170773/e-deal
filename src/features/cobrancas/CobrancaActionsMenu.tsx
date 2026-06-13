@@ -27,6 +27,18 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
   return Number.isFinite(idEmpresa) && idEmpresa !== 0;
 }
 
+/**
+ * Determina se a cobrança é elegível para aparecer na fila "Emitir Boletos".
+ *
+ * DEFINIÇÕES DE TERMINOLOGIA:
+ * 1) "Boleto Preparado" = O faturamento já foi processado e existem registros correspondentes criados na tabela `public.boletos` (pelo id_int).
+ * 2) "Boleto Registrado" = O boleto preparado já foi associado ao banco emissor (C6 Bank) e possui dados de registro (id_boleto_c6, linha_digitavel, etc.).
+ *
+ * INDICADOR AUXILIAR (pagamentos_v2.boleto_enviadoo):
+ * - O campo `boleto_enviadoo` da tabela `pagamentos_v2` funciona como um indicador auxiliar/legado de controle.
+ * - Por segurança e flexibilidade, a fila "Emitir Boletos" NÃO deve depender exclusivamente do valor desse campo.
+ * - A regra de desqualificação prioritária é a existência de qualquer boleto ativo (não cancelado) em `public.boletos` para o id_int correspondente.
+ */
 function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>) {
   const tipo = (cobranca.tipo_cobranca || "").toUpperCase();
   const status = (cobranca.status || "").toUpperCase();
@@ -34,16 +46,21 @@ function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>)
   const isEFaturado = tipo === "E-FATURADO";
   const isCorrectStatus = status === "A_RECEBER" || status === "A_VENCER";
   const isConfirmedIfAvencer = status !== "A_VENCER" || cobranca.confirmado === true;
-  const isBoletoEnviadooFalse = cobranca.boleto_enviadoo === false;
   
-  const hasNoMatchingBoleto = !existingBoletoIdInts || !cobranca.id_int || !existingBoletoIdInts.has(Number(cobranca.id_int));
+  // A proposta já tem boletos preparados no banco?
+  const jaTemBoletoPreparado = !!(existingBoletoIdInts && cobranca.id_int && existingBoletoIdInts.has(Number(cobranca.id_int)));
+  
+  // Indicador auxiliar de boleto enviado
+  const isBoletoEnviadoAux = cobranca.boleto_enviadoo === true;
+  
+  // Não pode aparecer na fila se já estiver preparado ou enviado
+  const isBoletoNaoPreparado = !isBoletoEnviadoAux && !jaTemBoletoPreparado;
   
   return (
     isEFaturado &&
     isCorrectStatus &&
     isConfirmedIfAvencer &&
-    isBoletoEnviadooFalse &&
-    hasNoMatchingBoleto &&
+    isBoletoNaoPreparado &&
     isEmpresaValida(cobranca)
   );
 }
