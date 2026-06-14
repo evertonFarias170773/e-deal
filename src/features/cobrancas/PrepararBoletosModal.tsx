@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { X, FileText, AlertTriangle, Loader2, CheckCircle2, Calendar } from "lucide-react";
@@ -51,9 +52,10 @@ export function PrepararBoletosModal({
   cobranca,
   onSuccess
 }: PrepararBoletosModalProps) {
+  const router = useRouter();
   const { showToast } = useAppToast();
   const { marcarComoBoletosPreparadosLocal } = useCobrancas();
-  const [step, setStep] = useState<"FORM" | "SUCCESS">("FORM");
+  const [step] = useState<"FORM" | "SUCCESS">("FORM");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -63,7 +65,7 @@ export function PrepararBoletosModal({
   const [hasNfe, setHasNfe] = useState(false);
 
   // Installment Config parameters
-  const [valorEntrada, setValorEntrada] = useState<number>(0);
+  const valorEntrada = 0;
   const [qtdParcelas, setQtdParcelas] = useState<number>(1);
   const [diasPraInicio, setDiasPraInicio] = useState<number>(30);
   const [intervalo, setIntervalo] = useState<number>(30);
@@ -387,7 +389,14 @@ export function PrepararBoletosModal({
       // Independentemente do PATCH de boleto_enviadoo, marcamos como preparado localmente
       marcarComoBoletosPreparadosLocal(cobranca.id, Number(cobranca.id_int));
 
-      setStep("SUCCESS");
+      showToast({
+        type: "success",
+        title: "Sucesso!",
+        description: "Contas a receber criado com sucesso. Redirecionando..."
+      });
+
+      onClose();
+      router.push(`/contas-a-receber?search=${cobranca.id_int}&autoRegister=true`);
     } catch (err) {
       const error = err as { message?: string; details?: string; hint?: string; code?: string };
       console.error('[PrepararBoletosModal] Erro ao salvar parcelas:', {
@@ -483,18 +492,7 @@ export function PrepararBoletosModal({
 
                 <div className="border-t border-slate-200 pt-4 space-y-4">
                   <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1">Valor de entrada (R$)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={valorEntrada}
-                        onChange={(e) => setValorEntrada(Number(e.target.value))}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
-                      />
-                    </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 mb-1">Qtd de parcelas futuras</label>
                       <input
@@ -525,7 +523,7 @@ export function PrepararBoletosModal({
                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
                       />
                     </div>
-                    <div className="md:col-span-4 flex justify-end">
+                    <div className="md:col-span-3 flex justify-end">
                       <button
                         type="button"
                         onClick={handleGerarParcelas}

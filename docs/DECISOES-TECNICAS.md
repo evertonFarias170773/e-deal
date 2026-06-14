@@ -430,5 +430,29 @@ Motivo:
 - **Correção de Badge**: Impede que usuários com setores desconfigurados no banco sejam renderizados incorretamente como "ADMIN" ou fiquem com o divisor visual nulo na Topbar.
 - **Consistência Visual**: Alinha a identidade visual do cargo exibido no menu do usuário com as regras operacionais do ERP.
 
+## Produção em duas fases (Módulo Produção)
+
+DECISÃO: Produção será implementada em duas fases.
+
+Fase 1: Catálogo de Imposição.
+Fase 2: Execução Operacional.
+
+Justificativa:
+- Evitar acoplamento prematuro com:
+  - propostas
+  - pedidos
+  - produtos
+  - ordens de serviço
+- Permitir evolução incremental e validação do fluxo antes da criação das entidades operacionais.
+
+### Padrões de Banco para Novas Tabelas de Produção
+
+Decisão:
+- **Chaves Primárias**: UUID como padrão de chave primária.
+- **Vínculo Multiempresa**: Coluna `empresa_id` (ou `id_empresa`) obrigatória para todas as novas tabelas do módulo.
+- **Segurança RLS**: Row-Level Security (RLS) habilitado por padrão em todas as tabelas criadas.
+- **Exclusão Lógica**: Soft delete preferencial para evitar deleção física de dados do catálogo.
+- **Segurança de Usuários**: Não criar sistemas paralelos de usuários, utilizando estritamente a autenticação nativa e a tabela `public.usuarios` centralizada.
+
 
 

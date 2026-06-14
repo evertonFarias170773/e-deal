@@ -33,7 +33,10 @@ export const tiposCobrancaMock: Array<{ id: CobrancaTipo; label: string; descric
   { id: "BOLETO", label: "Boleto", descricao: "Gera linha digitável e PDF." },
   { id: "CREDIT_CARD", label: "Cartão de crédito (Antigo)", descricao: "Cria checkout para cobrança à vista no cartão." },
   { id: "CARD_PARCELADO", label: "Cartão de crédito", descricao: "Simula checkout de cartão com juros/taxa ou à vista." },
-  { id: "E-FATURADO", label: "Faturado", descricao: "Valida crédito do cliente e envia para análise financeira." }
+  { id: "E-FATURADO", label: "Faturado", descricao: "Valida crédito do cliente e envia para análise financeira." },
+  { id: "E-RETRABALHO", label: "E-Retrabalho", descricao: "Faturamento interno para retrabalho de produção." },
+  { id: "E-PERMUTA", label: "E-Permuta", descricao: "Faturamento interno para permuta comercial." },
+  { id: "E-AMOSTRA", label: "E-Amostra", descricao: "Faturamento interno para envio de amostras." }
 ];
 
 const tipoDisponibilidadePorEmpresa: Record<string, Record<CobrancaTipo, boolean>> = {
@@ -42,21 +45,30 @@ const tipoDisponibilidadePorEmpresa: Record<string, Record<CobrancaTipo, boolean
     BOLETO: true,
     CREDIT_CARD: true,
     CARD_PARCELADO: true,
-    "E-FATURADO": true
+    "E-FATURADO": true,
+    "E-RETRABALHO": true,
+    "E-PERMUTA": true,
+    "E-AMOSTRA": true
   },
   "Ideal Biro": {
     PIX: true,
     BOLETO: false,
     CREDIT_CARD: false,
     CARD_PARCELADO: false,
-    "E-FATURADO": true
+    "E-FATURADO": true,
+    "E-RETRABALHO": true,
+    "E-PERMUTA": true,
+    "E-AMOSTRA": true
   },
   "E3 Brindes": {
     PIX: true,
     BOLETO: true,
     CREDIT_CARD: true,
     CARD_PARCELADO: true,
-    "E-FATURADO": true
+    "E-FATURADO": true,
+    "E-RETRABALHO": true,
+    "E-PERMUTA": true,
+    "E-AMOSTRA": true
   }
 };
 
@@ -640,9 +652,9 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues, proposta
     return vencDate.getTime() < Date.now();
   });
 
-  const hasCredit = proposta.cliente.creditoDisponivel >= roundedValor;
-  const isScenario1 = values.tipoCobranca === "E-FATURADO" && hasCredit && !hasOverdue;
-  const creditoPendente = values.tipoCobranca === "E-FATURADO";
+  const isFaturadoType = String(values.tipoCobranca).trim().toUpperCase().startsWith("E-");
+  const isScenario1 = false; // Todos os subtipos E-* entram como pendência e exigem autorização
+  const creditoPendente = isFaturadoType;
 
   const cobranca: Cobranca = {
     id: `cob_${timestamp}`,
@@ -651,10 +663,10 @@ export function createCobrancaFromForm(values: CriarCobrancaFormValues, proposta
     id_int: proposta.id_int,
     id_cliente: proposta.cliente.idCliente,
     valor: roundedValor,
-    status: values.tipoCobranca === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
+    status: isFaturadoType ? "A_VENCER" : "A_RECEBER",
     tipo_cobranca: values.tipoCobranca,
     created_at: new Date(timestamp).toISOString(),
-    paid_at: (values.tipoCobranca === "E-FATURADO" && isScenario1) ? new Date(timestamp).toISOString() : undefined,
+    paid_at: undefined,
     vencimento: values.vencimento || undefined,
     cliente: proposta.cliente.nome,
     empresa: empresa.nome,

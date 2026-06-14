@@ -13,3 +13,6 @@ export type { MockChatMessage } from "./hooks/usePedidosMockDb";
 export { humanizeStatus } from "@/lib/formatters/status";
 export { formatCurrency } from "@/lib/formatters/currency";
 export { formatDate } from "@/lib/formatters/date";
+export * from "./services/pedidos-producao.service";
+export * from "./services/boletim-propostas.service";
+

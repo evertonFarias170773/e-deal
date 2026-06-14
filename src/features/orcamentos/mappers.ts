@@ -255,7 +255,10 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
   const valorTotalDb = pickNumber(row, ["valor_total"]);
   const valorDb = pickNumber(row, ["valor"]) ?? 0;
   const valorFreteDb = pickNumber(row, ["valor_frete"]) ?? 0;
-  const total = (valorTotalDb !== null && valorTotalDb !== undefined) ? valorTotalDb : (valorDb + valorFreteDb);
+  let total = (valorTotalDb !== null && valorTotalDb !== undefined) ? valorTotalDb : (valorDb + valorFreteDb);
+  if (total === valorFreteDb && valorDb > 0) {
+    total = valorDb + valorFreteDb;
+  }
   const isAvulsoRaw = parseBooleanLike(row.is_avulso);
   const isAvulso = isAvulsoRaw === true;
   const modelo: OrcamentoListItem["modelo"] = isAvulso ? "AVULSO" : "PROPOSTA";

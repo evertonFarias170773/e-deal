@@ -12,11 +12,18 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-export function InfoBox({ label, value, detail }: { label: string; value: string; detail?: string }) {
+export function InfoBox({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "danger" | "success" }) {
+  const bgClass = tone === "danger" 
+    ? "bg-red-50 border border-red-200 text-red-900" 
+    : tone === "success"
+      ? "bg-teal-50 border border-teal-200 text-teal-900"
+      : "bg-slate-50 border border-slate-100/50";
+  const valClass = tone === "danger" ? "text-red-700 font-bold" : "text-slate-900";
+  
   return (
-    <div className="rounded-2xl bg-slate-50 p-4">
+    <div className={`rounded-2xl p-4 transition ${bgClass}`}>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+      <p className={`mt-1 text-sm font-semibold ${valClass}`}>{value}</p>
       {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
     </div>
   );

@@ -183,6 +183,8 @@ Funcionalidades:
 - novo produto com `INSERT` real controlado por whitelist;
 - validação de `id_produto` manual, obrigatório, numérico e único antes do `INSERT`;
 - edição com `UPDATE` real controlado por whitelist e `id_produto` somente leitura;
+- novos campos operacionais de produção salvos no `UPDATE` real: `id_formato` (referenciando `id_formato_num`), `id_modelo_cor` (referenciando `id_modelo_cor_num`), `quantidade_minima_venda` (número inteiro >= 1) e `tipo_blocagem` (texto livre);
+- selects integrados com os catálogos reais de `producao_formatos` e `producao_cores` na edição do produto, com filtragem dinâmica cruzando o UUID de formato para cores;
 - valores comerciais (`valorUnt`, `valorFixo`, `valor_custo`) editáveis com conversão numérica segura;
 - dados fiscais editáveis no formulário e exibidos no detalhe;
 - upload real de imagens para Supabase Storage no bucket `e-deal`, pasta `produtos/`;
@@ -259,6 +261,8 @@ Funcionalidades:
 - destaque em azul suave e badge descritivo ("Endereço de sócio" ou "Endereço de vínculo comercial") para endereços cujo tipo for comprador (`tipo === "comprador"`);
 - renomeada a Seção 4 do formulário para "4. Dados de faturamento" com descrição correspondente;
 - seletor de produtos customizado `ProductSearchSelector` com dropdown reativo pesquisando produtos por código, nome e apelido sobre o catálogo real retornado da API, com categorias (tags) dinâmicas e aviso de catálogo vazio;
+- inicialização da quantidade do item adicionado respeitando a quantidade mínima cadastrada no produto `produto.quantidade_minima_venda` (com fallback para 1000);
+- validação que impede salvar o item individual ou submeter a proposta geral se a quantidade informada for menor do que a quantidade mínima configurada no produto (exibe toast explicativo apontando o produto e o mínimo exigido);
 - validação de duplicidade que impede a inclusão repetida de um produto no orçamento (exibe toast de aviso);
 - produtos da proposta com tags rápidas, quantidade, valores base herdados, prazo, peso, descrição editável e subtotal;
 - carregamento em tempo real de variações globais e opções de cada produto via `listProdutoVariacaoVinculos`;
@@ -571,6 +575,54 @@ Componentes principais:
 Funcionalidades:
 - Exibição do campo "Padrão de pagamento faturado" como Somente Leitura nas telas de formulário e detalhe;
 - Exibição de avisos de conflito estrutural instruindo o operador sobre a coluna `padrao_pagamento` e sua relação com formas de pagamento comerciais gerais.
+
+# Produção (Fase 1 Concluída)
+
+Status: Fase 1 de Artes e Modelos implementada e validada em ambiente real de produção do Next.js + Supabase. A listagem principal de Pedidos e Kanban de Produção/OS foi esvaziada de dados mockados e direcionada a um service de transição segura (`listarPedidosProducao` retornando `[]`), pois as tabelas `public.pedidos` e `public.pedidos_modelos` estão vazias no Supabase e a origem real ("boletim finalizado") ainda não foi conectada.
+* Fase 1 (Modelagem, Serviço de Upload, Tratamento de Concorrência, Timeline no Chat e Painel Visual) 100% Concluída.
+* Catálogo de Imposição modelado.
+
+Componentes principais:
+- `types.ts` (`src/features/producao/types.ts` - Tipos oficiais da produção)
+- `producao-artes.service.ts` (`src/features/producao/services/producao-artes.service.ts` - Lógica real do banco, upload e timeline)
+- `pedidos-producao.service.ts` (`src/features/pedidos/services/pedidos-producao.service.ts` - Service de transição segura para listagem de pedidos de produção)
+- `ProducaoArtesPanel.tsx` (`src/features/producao/components/ProducaoArtesPanel.tsx` - Painel visual de controle reativo de modelos e upload)
+- Rota `/producao` (`src/app/(erp)/producao/page.tsx` - Rota segura isolada de teste)
+- Integração do alternador no `PedidoDetailPage` (`src/features/pedidos/PedidoDetailPage.tsx` - Permite selecionar entre Simulador Local e Supabase Real)
+
+Módulos no banco (validados e criados):
+- `public.pedidos_modelos`: Armazena subdivisões de modelos por lote operacional de impressão.
+- `public.pedidos_artes`: Guarda histórico e versões das artes gráficas do modelo. Possui constraint `unique(id_modelo, versao)` e relação `ON DELETE RESTRICT` para preservar o histórico operacional das artes.
+
+Funcionalidades e Regras de Negócio Implementadas:
+- **Ausência de Novo Bucket**: Uso estrito do bucket público existente `chat-ideal`.
+- **Caminho Estruturado**: Arquivos salvos em `propostas/{id_int}/artes/{id_modelo}/{timestamp}_{nomeArquivo}` para total rastreabilidade.
+- **Versionamento Incremental**: Determinação da versão como `maior versão atual + 1` com loop de auto-retry no service para lidar de forma transparente com colisões de chave única `unique(id_modelo, versao)` em acessos simultâneos, retornando erro limpo e amigável apenas em última instância.
+- **Ausência de pedidos_historico**: Uso de `public.propostas_chat` como timeline do fluxo operacional. Timeline registra uploads de arte e comentários/mudanças de status sob o tipo `PRODUCAO` no setor `Pre-impressao`, contendo anexos no formato JSONB contendo bucket, path, nome do arquivo, mime-type, tamanho, versão e id_modelo.
+- **RLS/Policies e Segurança**: Nenhuma RLS ou trigger SQL foi alterada automaticamente de forma destrutiva. O script SQL de migration (`docs/migrations/20260613_create_producao_artes.sql`) está documentado e sugerido em formato comentado.
+- **Painel Visual Reativo**: Painel de gerenciamento no frontend exibindo os badges de status, quantidade, intervalos de numeração e observações do modelo de pedido, permitindo upload reativo de artes e a alteração instantânea de status de artes gráficas em tempo real (atualizando o modelo ativo correspondente e inserindo comentários na timeline do chat).
+
+Pendências para próximas fases:
+- **Fase 2 — Ocorrências e Kanban**: Fluxo de produção física com OS unificadas, chãos de fábrica adicionais e integração de cards Kanban.
+
+## Abertura de OS (Boletim de Entrada)
+
+Status: Escrita real controlada implementada para criação do pedido pai na tabela `public.pedidos` a partir do salvamento de boletim, mantendo demais tabelas somente leitura.
+
+Componentes principais:
+- `boletim-propostas.service.ts` (`src/features/pedidos/services/boletim-propostas.service.ts` - Regras de elegibilidade e persistência do pedido)
+- `BoletimFormPage.tsx` (`src/features/pedidos/BoletimFormPage.tsx` - Interface integrada com busca reativa, validações e salvamento real)
+
+Funcionalidades e Regras de Elegibilidade:
+- **Elegibilidade Rígida**: Exibição e seleção permitidas apenas para propostas com status `'APROVADO'`, com `id_int` e `id_vendedor` preenchidos, que possuam ao menos 1 produto em `produtos_proposta` e que não possuam pedido em `public.pedidos`.
+- **Filtro Seguro de Volume**: Limitação a no máximo 20 propostas recentes realizada após a aplicação completa dos filtros de elegibilidade.
+- **Tratamento Case-Sensitive**: Uso correto do campo `cnpjCpf` case-sensitive, tolerando documentos nulos.
+- **Validação de Seleção Direta**: Ao digitar ou tentar selecionar uma proposta, validação estrita com retorno de erro detalhado na interface (Toasts explicativos sobre propostas não aprovadas, sem produtos, com pedido aberto, etc.).
+- **Busca Avançada com Debounce**: Pesquisa com debounce de 400ms por número, cliente ou documento, com exibição de feedback amigável se nenhum resultado for encontrado.
+- **Abertura Controlada de Pedido**: Ação "Salvar Boletim" executa uma chamada ao Supabase criando 1 registro pai na tabela `public.pedidos` com metadados operacionais (`BOLETIM_FINALIZADO`, `APROVADO`, `PENDENTE`, `BLOQUEADO`), `id_cliente = null` (prevenção contra conflito de tipo UUID), `id_vendedor` e valores recalculados da proposta.
+- **Validação Antecipada Contra Duplicados**: Verificação da existência prévia do `id_int` na tabela `public.pedidos` antes do insert, abortando o fluxo e apresentando toast `"Pedido já aberto para esta proposta"` em caso de colisão.
+- **Mensagem descritiva e Toast tardio**: O toast de sucesso `"Boletim salvo e pedido aberto com sucesso"` é exibido exclusivamente após o retorno com confirmação do Supabase. Se a RLS ou restrições do banco falharem, o erro é exibido e a tela não exibe sucesso falso.
+- **Isolamento de Tabelas Filhas**: A gravação é estritamente isolada do pedido pai; tabelas de modelos (`public.pedidos_modelos`) e de versões de arte (`public.pedidos_artes`) não são afetadas.
 
 ## Demais módulos
 

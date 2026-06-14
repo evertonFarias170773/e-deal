@@ -39,7 +39,11 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
  * - Por segurança e flexibilidade, a fila "Emitir Boletos" NÃO deve depender exclusivamente do valor desse campo.
  * - A regra de desqualificação prioritária é a existência de qualquer boleto ativo (não cancelado) em `public.boletos` para o id_int correspondente.
  */
-function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>) {
+function isEmitirBoletos(
+  cobranca: Cobranca,
+  existingBoletoIdInts?: Set<number>,
+  hasBoletoHistoryIdInts?: Set<number>
+) {
   const tipo = (cobranca.tipo_cobranca || "").toUpperCase();
   const status = (cobranca.status || "").toUpperCase();
   
@@ -50,17 +54,25 @@ function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>)
   // A proposta já tem boletos preparados no banco?
   const jaTemBoletoPreparado = !!(existingBoletoIdInts && cobranca.id_int && existingBoletoIdInts.has(Number(cobranca.id_int)));
   
-  // Indicador auxiliar de boleto enviado
-  const isBoletoEnviadoAux = cobranca.boleto_enviadoo === true;
+  // A proposta possui histórico de boletos no banco?
+  const temHistoricoBoletos = !!(hasBoletoHistoryIdInts && cobranca.id_int && hasBoletoHistoryIdInts.has(Number(cobranca.id_int)));
   
-  // Não pode aparecer na fila se já estiver preparado ou enviado
-  const isBoletoNaoPreparado = !isBoletoEnviadoAux && !jaTemBoletoPreparado;
+  // REGRA DE LEGADO:
+  // Se boleto_enviadoo = true mas não houver histórico de boletos no banco de dados,
+  // é uma cobrança legada inconsistente. Ela NÃO deve aparecer na fila.
+  // Se boleto_enviadoo = true e houver histórico de boletos, ela só pode aparecer/reemitir se todos os boletos estiverem cancelados.
+  // Se boleto_enviadoo = false, ela é elegível normalmente.
+  const isBoletoEnviadoValido = !cobranca.boleto_enviadoo || (!jaTemBoletoPreparado && temHistoricoBoletos);
+  
+  // Não pode aparecer na fila se já houver boletos preparados ativos
+  const isBoletoNaoPreparado = !jaTemBoletoPreparado;
   
   return (
     isEFaturado &&
     isCorrectStatus &&
     isConfirmedIfAvencer &&
     isBoletoNaoPreparado &&
+    isBoletoEnviadoValido &&
     isEmpresaValida(cobranca)
   );
 }
@@ -83,7 +95,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     liberarCobrancaReal,
     voltarCobrancaFilaReal,
     refreshCobrancas,
-    existingBoletoIdInts
+    existingBoletoIdInts,
+    hasBoletoHistoryIdInts
   } = useCobrancas();
 
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
@@ -164,7 +177,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     }
   }
 
-  if (isEmitirBoletos(cobranca, existingBoletoIdInts)) {
+  if (isEmitirBoletos(cobranca, existingBoletoIdInts, hasBoletoHistoryIdInts)) {
     return (
       <>
         <ActionsMenu
@@ -211,6 +224,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
           extReference={justLaunchedExtRef}
           nomeCliente={cobranca.cliente}
           valorTotalNf={cobranca.valor}
+          idInt={cobranca.id_int || undefined}
           onSaveSuccess={() => {
             void refreshCobrancas();
           }}
@@ -272,7 +286,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     ...(cobranca.tipo_cobranca?.toUpperCase() === "E-FATURADO" &&
     cobranca.status === "A_VENCER" &&
     Boolean(cobranca.confirmado) &&
-    !Boolean(cobranca.boleto_enviadoo)
+    !(existingBoletoIdInts && cobranca.id_int && existingBoletoIdInts.has(Number(cobranca.id_int)))
       ? [
           {
             label: "Preparar boletos",
@@ -350,6 +364,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         extReference={justLaunchedExtRef}
         nomeCliente={cobranca.cliente}
         valorTotalNf={cobranca.valor}
+        idInt={cobranca.id_int || undefined}
         onSaveSuccess={() => {
           void refreshCobrancas();
         }}

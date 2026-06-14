@@ -119,3 +119,23 @@ src/features/orcamentos/services/
 ```
 
 Os services reais devem substituir gradualmente os mocks, mantendo as telas e componentes com o menor acoplamento possível.
+
+## Arquitetura do Módulo Produção
+
+Separação obrigatória:
+
+Catálogo:
+* producao_formatos
+* producao_numeracoes
+* producao_saidas
+* producao_cores
+* producao_modelos_imposicao
+
+Execução Operacional (planejada):
+* producao_lotes_impressao
+* producao_lote_itens
+* producao_os_log
+
+Regra:
+O catálogo pode existir independentemente da execução operacional.
+Nenhuma tabela operacional foi aprovada nesta fase.

@@ -36,8 +36,11 @@ export type SupabaseProdutoRow = {
   icms_origem?: SupabaseValue;
   icms_situacao_tributaria?: SupabaseValue;
   pis_situacao_tributaria?: SupabaseValue;
-  cofins_situacao_tributaria?: SupabaseValue;
   informacoes_fiscais?: SupabaseValue;
+  id_formato?: SupabaseValue;
+  id_modelo_cor?: SupabaseValue;
+  quantidade_minima_venda?: SupabaseValue;
+  tipo_blocagem?: SupabaseValue;
 };
 
 export type SupabaseProdutoFotoRow = {

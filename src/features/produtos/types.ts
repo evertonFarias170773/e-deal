@@ -78,6 +78,10 @@ export type Produto = {
   pis_situacao_tributaria: string;
   cofins_situacao_tributaria: string;
   informacoes_fiscais: string;
+  id_formato?: number | null;
+  id_modelo_cor?: number | null;
+  quantidade_minima_venda?: number | null;
+  tipo_blocagem?: string | null;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
 };
@@ -118,6 +122,10 @@ export type ProdutoFormState = {
   ativo: boolean;
   is_estoque: boolean;
   is_variacao: boolean;
+  id_formato: string;
+  id_modelo_cor: string;
+  quantidade_minima_venda: string;
+  tipo_blocagem: string;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
 };

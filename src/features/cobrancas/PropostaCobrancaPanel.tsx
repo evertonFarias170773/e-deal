@@ -127,6 +127,7 @@ export function PropostaCobrancaPanel({
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
 
+  const isFaturado = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca);
   const idEmpresaReal = form.id_empresa ?? (source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : 1);
   const empresa = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === idEmpresaReal) || EMPRESAS_RECEBEDORAS_FIXAS[0];
   const [realCreditAnalysis, setRealCreditAnalysis] = useState<CreditAnalysisResult | null>(null);
@@ -141,12 +142,12 @@ export function PropostaCobrancaPanel({
   }, []);
 
   // Reset credit analysis state during render when criteria changes
-  if ((form.tipoCobranca !== "E-FATURADO" || source !== "supabase" || !proposta.cliente.idCliente) && realCreditAnalysis !== null) {
+  if ((!isFaturado || source !== "supabase" || !proposta.cliente.idCliente) && realCreditAnalysis !== null) {
     setRealCreditAnalysis(null);
   }
 
   useEffect(() => {
-    if (form.tipoCobranca !== "E-FATURADO" || source !== "supabase" || !proposta.cliente.idCliente) {
+    if (!isFaturado || source !== "supabase" || !proposta.cliente.idCliente) {
       return;
     }
 
@@ -177,7 +178,7 @@ export function PropostaCobrancaPanel({
     return () => {
       active = false;
     };
-  }, [form.tipoCobranca, proposta.cliente.idCliente, source]);
+  }, [isFaturado, proposta.cliente.idCliente, source]);
 
   const tipoDisponivel = source === "supabase"
     ? (form.tipoCobranca === "PIX"
@@ -186,7 +187,7 @@ export function PropostaCobrancaPanel({
           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
           : form.tipoCobranca === "CARD_PARCELADO"
             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-            : form.tipoCobranca === "E-FATURADO"
+            : isFaturado
               ? true
               : false)
     : isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
@@ -198,7 +199,7 @@ export function PropostaCobrancaPanel({
           ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Boleto real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
           : form.tipoCobranca === "CARD_PARCELADO"
             ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
-            : form.tipoCobranca === "E-FATURADO"
+            : isFaturado
               ? ""
               : "Esta forma de pagamento está em preparação para o ambiente real.")
     : getMensagemTipoIndisponivel(proposta.empresa, form.tipoCobranca);
@@ -432,12 +433,17 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if ((form.tipoCobranca === "BOLETO" || form.tipoCobranca === "E-FATURADO") && !form.vencimento) {
+    if ((form.tipoCobranca === "BOLETO" || isFaturado) && !form.vencimento) {
       showToast({ type: "error", title: "Informe a data de vencimento para continuar." });
       return;
     }
 
-    if (!shouldBypass && form.tipoCobranca === "E-FATURADO" && analiseCredito.qtdAtrasados > 0) {
+    if (isFaturado && !form.observacao?.trim()) {
+      showToast({ type: "error", title: "A observação do faturamento (condição desejada) é obrigatória." });
+      return;
+    }
+
+    if (!shouldBypass && isFaturado && analiseCredito.qtdAtrasados > 0) {
       setShowPendingAlert(true);
       return;
     }
@@ -456,7 +462,8 @@ export function PropostaCobrancaPanel({
       }
       const created = await createCobranca(payload, proposta);
 
-      if (payload.tipoCobranca === "E-FATURADO" && !created?.paid_at) {
+      const isFaturadoPayload = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(payload.tipoCobranca);
+      if (isFaturadoPayload && !created?.paid_at) {
         showToast({
           type: "warning",
           title: "Faturamento em análise",
@@ -584,18 +591,18 @@ export function PropostaCobrancaPanel({
                     </p>
                   )}
                 </Field>
-                {form.tipoCobranca === "BOLETO" || form.tipoCobranca === "E-FATURADO" ? (
+                {form.tipoCobranca === "BOLETO" || isFaturado ? (
                   <Field label="Data de vencimento *">
                     <input type="date" value={form.vencimento} onChange={(event) => patchForm({ vencimento: event.target.value })} className={inputClass} />
                   </Field>
                 ) : null}
                 <div className="md:col-span-2">
-                  <Field label="Observações">
+                  <Field label={isFaturado ? "Observações (Condição comercial solicitada) *" : "Observações"}>
                     <textarea
                       value={form.observacao}
                       onChange={(event) => patchForm({ observacao: event.target.value })}
-                      className={`${inputClass} min-h-24 resize-y`}
-                      placeholder="Observação opcional"
+                      className={`${inputClass} min-h-24 resize-y ${isFaturado && !form.observacao?.trim() ? "border-red-300 focus:border-red-500 focus:ring-red-100" : ""}`}
+                      placeholder={isFaturado ? "Informe a condição desejada, ex.: 14/28 dias (obrigatório)" : "Observação opcional"}
                     />
                   </Field>
                 </div>
@@ -609,7 +616,9 @@ export function PropostaCobrancaPanel({
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
                 {opcoesPagamento.map((opcao) => {
                   const Icon = opcao.icon;
-                  const selected = form.tipoCobranca === opcao.id;
+                  const selected = opcao.id === "E-FATURADO"
+                    ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
+                    : form.tipoCobranca === opcao.id;
                   const available = source === "supabase"
                     ? (opcao.id === "PIX"
                         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
@@ -648,17 +657,32 @@ export function PropostaCobrancaPanel({
                   );
                 })}
               </div>
+              {isFaturado && (
+                <div className="mt-4 border-t border-slate-100 pt-4 flex flex-col gap-1.5 max-w-md">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Subtipo do faturamento</label>
+                  <select
+                    value={form.tipoCobranca}
+                    onChange={(e) => patchForm({ tipoCobranca: e.target.value as CobrancaTipo })}
+                    className={inputClass}
+                  >
+                    <option value="E-FATURADO">E-Faturado</option>
+                    <option value="E-RETRABALHO">E-Retrabalho</option>
+                    <option value="E-PERMUTA">E-Permuta</option>
+                    <option value="E-AMOSTRA">E-Amostra</option>
+                  </select>
+                </div>
+              )}
               {!tipoDisponivel ? (
                 <p className="mt-3 text-xs text-orange-700">{indisponibilidadeMensagem || "Indisponível para esta empresa."}</p>
               ) : null}
             </PanelCard>
 
-            {form.tipoCobranca === "E-FATURADO" ? (
+            {isFaturado ? (
               <PanelCard
                 title="Campos mínimos do faturado"
                 description="Condição comercial e aviso resumido de crédito."
               >
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="max-w-md">
                   <Field label="Condição comercial">
                     <input
                       value={form.condicaoPagamento}
@@ -666,16 +690,6 @@ export function PropostaCobrancaPanel({
                       className={inputClass}
                       placeholder="Ex.: Faturado 28 dias"
                     />
-                  </Field>
-                  <Field label="Modelo de faturamento">
-                    <select
-                      value={form.modeloFatu || "BOLETO"}
-                      onChange={(event) => patchForm({ modeloFatu: event.target.value as "BOLETO" | "DEPÓSITO" })}
-                      className={inputClass}
-                    >
-                      <option value="BOLETO">BOLETO</option>
-                      <option value="DEPÓSITO">DEPÓSITO</option>
-                    </select>
                   </Field>
                 </div>
 
@@ -689,7 +703,7 @@ export function PropostaCobrancaPanel({
                     <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
                       <InfoBox label="Limite de crédito" value={formatCurrency(analiseCredito.limite)} />
                       <InfoBox label="Utilizado" value={formatCurrency(analiseCredito.utilizado)} />
-                      <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel)} />
+                      <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel - form.valor)} />
                       {source === "supabase" && (
                         <InfoBox label="Saldo de carteira" value={formatCurrency(analiseCredito.saldoCarteira || 0)} />
                       )}
@@ -697,7 +711,8 @@ export function PropostaCobrancaPanel({
                       <InfoBox 
                         label="Faturamentos vencidos" 
                         value={analiseCredito.qtdAtrasados > 0 ? `${analiseCredito.qtdAtrasados} pendente(s)` : "Nenhum atraso"} 
-                        detail={analiseCredito.qtdAtrasados > 0 ? "Requer análise financeira" : "Histórico regular"}
+                        detail={analiseCredito.qtdAtrasados > 0 ? "Requer avaliação do financeiro" : "Histórico regular"}
+                        tone={analiseCredito.qtdAtrasados > 0 ? "danger" : undefined}
                       />
                       <InfoBox label="Risco de crédito" value={analiseCredito.risco} />
                     </div>
@@ -706,7 +721,7 @@ export function PropostaCobrancaPanel({
                       <div className="rounded-2xl border p-4 border-teal-200 bg-teal-50 text-teal-800">
                         <p className="font-semibold">Limite operacional disponível.</p>
                         <p className="mt-1 text-sm leading-6">
-                          Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER.
+                          Cliente possui limite livre e sem atrasos. A cobrança entrará como pendência financeira aguardando autorização operacional do financeiro.
                         </p>
                       </div>
                     ) : null}
@@ -932,18 +947,18 @@ export function PropostaCobrancaPanel({
                       </p>
                     )}
                   </Field>
-                  {form.tipoCobranca === "BOLETO" || form.tipoCobranca === "E-FATURADO" ? (
+                  {form.tipoCobranca === "BOLETO" || isFaturado ? (
                     <Field label="Data de vencimento *">
                       <input type="date" value={form.vencimento} onChange={(event) => patchForm({ vencimento: event.target.value })} className={inputClass} />
                     </Field>
                   ) : null}
                   <div className="md:col-span-2">
-                    <Field label="Observações">
+                    <Field label={isFaturado ? "Observações (Condição comercial solicitada) *" : "Observações"}>
                       <textarea
                         value={form.observacao}
                         onChange={(event) => patchForm({ observacao: event.target.value })}
-                        className={`${inputClass} min-h-24 resize-y`}
-                        placeholder="Observação opcional"
+                        className={`${inputClass} min-h-24 resize-y ${isFaturado && !form.observacao?.trim() ? "border-red-300 focus:border-red-500 focus:ring-red-100" : ""}`}
+                        placeholder={isFaturado ? "Informe a condição desejada, ex.: 14/28 dias (obrigatório)" : "Observação opcional"}
                       />
                     </Field>
                   </div>
@@ -957,7 +972,9 @@ export function PropostaCobrancaPanel({
                 <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
                   {opcoesPagamento.map((opcao) => {
                     const Icon = opcao.icon;
-                    const selected = form.tipoCobranca === opcao.id;
+                    const selected = opcao.id === "E-FATURADO"
+                      ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
+                      : form.tipoCobranca === opcao.id;
                     const available = source === "supabase"
                       ? (opcao.id === "PIX"
                           ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
@@ -996,6 +1013,21 @@ export function PropostaCobrancaPanel({
                     );
                   })}
                 </div>
+                {isFaturado && (
+                  <div className="mt-4 border-t border-slate-100 pt-4 flex flex-col gap-1.5 max-w-md">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Subtipo do faturamento</label>
+                    <select
+                      value={form.tipoCobranca}
+                      onChange={(e) => patchForm({ tipoCobranca: e.target.value as CobrancaTipo })}
+                      className={inputClass}
+                    >
+                      <option value="E-FATURADO">E-Faturado</option>
+                      <option value="E-RETRABALHO">E-Retrabalho</option>
+                      <option value="E-PERMUTA">E-Permuta</option>
+                      <option value="E-AMOSTRA">E-Amostra</option>
+                    </select>
+                  </div>
+                )}
                 {!tipoDisponivel ? (
                   <p className="mt-3 text-xs text-orange-700">{indisponibilidadeMensagem || "Indisponível para esta empresa."}</p>
                 ) : null}
@@ -1003,12 +1035,12 @@ export function PropostaCobrancaPanel({
 
               {/* Painel de parcelas removido por solicitação */}
 
-              {form.tipoCobranca === "E-FATURADO" ? (
+              {isFaturado ? (
                 <PanelCard
                   title="Campos mínimos do faturado"
                   description="Condição comercial e aviso resumido de crédito."
                 >
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="max-w-md">
                     <Field label="Condição comercial">
                       <input
                         value={form.condicaoPagamento}
@@ -1016,16 +1048,6 @@ export function PropostaCobrancaPanel({
                         className={inputClass}
                         placeholder="Ex.: Faturado 28 dias"
                       />
-                    </Field>
-                    <Field label="Modelo de faturamento">
-                      <select
-                        value={form.modeloFatu || "BOLETO"}
-                        onChange={(event) => patchForm({ modeloFatu: event.target.value as "BOLETO" | "DEPÓSITO" })}
-                        className={inputClass}
-                      >
-                        <option value="BOLETO">BOLETO</option>
-                        <option value="DEPÓSITO">DEPÓSITO</option>
-                      </select>
                     </Field>
                   </div>
 
@@ -1039,7 +1061,7 @@ export function PropostaCobrancaPanel({
                       <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
                         <InfoBox label="Limite de crédito" value={formatCurrency(analiseCredito.limite)} />
                         <InfoBox label="Utilizado" value={formatCurrency(analiseCredito.utilizado)} />
-                        <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel)} />
+                        <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel - form.valor)} />
                         {source === "supabase" && (
                           <InfoBox label="Saldo de carteira" value={formatCurrency(analiseCredito.saldoCarteira || 0)} />
                         )}
@@ -1047,7 +1069,8 @@ export function PropostaCobrancaPanel({
                         <InfoBox 
                           label="Faturamentos vencidos" 
                           value={analiseCredito.qtdAtrasados > 0 ? `${analiseCredito.qtdAtrasados} pendente(s)` : "Nenhum atraso"} 
-                          detail={analiseCredito.qtdAtrasados > 0 ? "Requer análise financeira" : "Histórico regular"}
+                          detail={analiseCredito.qtdAtrasados > 0 ? "Requer avaliação do financeiro" : "Histórico regular"}
+                          tone={analiseCredito.qtdAtrasados > 0 ? "danger" : undefined}
                         />
                         <InfoBox label="Risco de crédito" value={analiseCredito.risco} />
                       </div>
@@ -1056,7 +1079,7 @@ export function PropostaCobrancaPanel({
                         <div className="rounded-2xl border p-4 border-teal-200 bg-teal-50 text-teal-800">
                           <p className="font-semibold">Limite operacional disponível.</p>
                           <p className="mt-1 text-sm leading-6">
-                            Cliente atende aos critérios para liberação de faturamento comercial (limite livre e sem atrasos). Gravar gerará status A_VENCER.
+                            Cliente possui limite livre e sem atrasos. A cobrança entrará como pendência financeira aguardando autorização operacional do financeiro.
                           </p>
                         </div>
                       ) : null}

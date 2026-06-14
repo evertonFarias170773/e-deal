@@ -10,7 +10,6 @@ import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
 import {
   PRODUCT_IMAGES_BUCKET,
@@ -18,7 +17,11 @@ import {
   listProdutos,
   updateProdutoReal,
   uploadProdutoFotoReal,
-  type ProdutoWriteInput
+  listarFormatosProducao,
+  listarCoresProducao,
+  type ProdutoWriteInput,
+  type FormatoProducao,
+  type CorProducao
 } from "@/features/produtos/services/produtos.service";
 import {
   listVariacoesGlobais,
@@ -32,9 +35,9 @@ import type {
   ProdutoCategoria,
   ProdutoFormState,
   ProdutoNivelSeguranca,
-  ProdutoVariacaoDetalhada,
-  VariacaoGlobal
+  ProdutoVariacaoDetalhada
 } from "@/features/produtos/types";
+import { parseDecimalInput } from "@/features/produtos/mappers";
 
 type ProdutoFormPageProps = {
   mode: "new" | "edit";
@@ -105,6 +108,9 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   const [selectedFiscalSourceId, setSelectedFiscalSourceId] = useState("");
   const [isLoadingFiscalSource, setIsLoadingFiscalSource] = useState(false);
   const [variacoesGlobais, setVariacoesGlobais] = useState<VariacaoGlobalJoin[]>([]);
+  const [formatos, setFormatos] = useState<FormatoProducao[]>([]);
+  const [cores, setCores] = useState<CorProducao[]>([]);
+  const [isLoadingCatalogos, setIsLoadingCatalogos] = useState(false);
 
   const title = mode === "new" ? "Novo produto" : `Editar produto #${produto?.id_produto}`;
   const subtitle =
@@ -113,10 +119,10 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       : "Edite produto real em public.produtos. Código operacional e exclusões seguem bloqueados.";
   const criticalChanged = Boolean(
     produto &&
-      (Number(form.valorUnt) !== produto.valorUnt ||
-        Number(form.valorFixo) !== produto.valorFixo ||
-        Number(form.valor_custo) !== produto.valor_custo ||
-        Number(form.peso) !== produto.peso ||
+      ((parseDecimalInput(form.valorUnt) ?? 0) !== produto.valorUnt ||
+        (parseDecimalInput(form.valorFixo) ?? 0) !== produto.valorFixo ||
+        (parseDecimalInput(form.valor_custo) ?? 0) !== produto.valor_custo ||
+        (parseDecimalInput(form.peso) ?? 0) !== produto.peso ||
         form.prazo !== produto.prazo)
   );
   const filteredVariationBank = useMemo(() => {
@@ -199,6 +205,47 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       };
     }
   }, [mode, produto?.id_produto]);
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      setIsLoadingCatalogos(true);
+      try {
+        const [formatosData, coresData] = await Promise.all([
+          listarFormatosProducao(),
+          listarCoresProducao()
+        ]);
+        if (!active) return;
+        setFormatos(formatosData);
+        setCores(coresData);
+      } catch (err) {
+        console.error("Erro ao carregar catálogos de produção:", err);
+      } finally {
+        if (active) setIsLoadingCatalogos(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filteredCores = useMemo(() => {
+    if (!form.id_formato) {
+      return cores;
+    }
+    const selectedFormatObj = formatos.find((f) => f.id_formato_num.toString() === form.id_formato);
+    if (!selectedFormatObj) {
+      return cores;
+    }
+    return cores.filter(
+      (c) =>
+        !c.formato_id ||
+        c.formato_id === selectedFormatObj.id ||
+        c.id_modelo_cor_num.toString() === form.id_modelo_cor
+    );
+  }, [cores, formatos, form.id_formato, form.id_modelo_cor]);
 
   function updateField<K extends keyof ProdutoFormState>(field: K, value: ProdutoFormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -385,10 +432,10 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       nivelSeg: form.nivelSeg,
       fraseCons: form.fraseCons,
       prazo: form.prazo,
-      peso: parseNumericInput(form.peso),
-      valorUnt: parseNumericInput(form.valorUnt),
-      valorFixo: parseNumericInput(form.valorFixo),
-      valor_custo: parseNumericInput(form.valor_custo),
+      peso: parseDecimalInput(form.peso),
+      valorUnt: parseDecimalInput(form.valorUnt),
+      valorFixo: parseDecimalInput(form.valorFixo),
+      valor_custo: parseDecimalInput(form.valor_custo),
       cod_beneficio: form.cod_beneficio,
       ncm: form.ncm,
       descri_ncm: form.descri_ncm,
@@ -406,52 +453,84 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       icms_situacao_tributaria: form.icms_situacao_tributaria,
       pis_situacao_tributaria: form.pis_situacao_tributaria,
       cofins_situacao_tributaria: form.cofins_situacao_tributaria,
-      informacoes_fiscais: form.informacoes_fiscais
+      informacoes_fiscais: form.informacoes_fiscais,
+      id_formato: form.id_formato ? Number(form.id_formato) : null,
+      id_modelo_cor: form.id_modelo_cor ? Number(form.id_modelo_cor) : null,
+      quantidade_minima_venda: form.quantidade_minima_venda ? Number(form.quantidade_minima_venda) : null,
+      tipo_blocagem: form.tipo_blocagem ? form.tipo_blocagem.trim() : null
     };
   }
 
   async function handleSave() {
     const parsedIdProduto = Number(form.id_produto);
-    const parsedPeso = parseNumericInput(form.peso);
-    const parsedValorUnt = parseNumericInput(form.valorUnt);
-    const parsedValorFixo = parseNumericInput(form.valorFixo);
-    const parsedValorCusto = parseNumericInput(form.valor_custo);
     const parsedCodOrigem = parseNumericInput(form.cod_origem);
+    const parsedQtdMin = form.quantidade_minima_venda.trim() ? Number(form.quantidade_minima_venda) : null;
+
+    const validateDecimal = (val: string) => {
+      const trimmed = val.trim();
+      if (!trimmed) {
+        return { isValid: true, value: null };
+      }
+      const parsed = parseDecimalInput(val);
+      return { isValid: parsed !== null, value: parsed };
+    };
+
+    const pesoVal = validateDecimal(form.peso);
+    const valorUntVal = validateDecimal(form.valorUnt);
+    const valorFixoVal = validateDecimal(form.valorFixo);
+    const valorCustoVal = validateDecimal(form.valor_custo);
+    
     const missingFields = [
       !form.id_produto ? "id_produto" : null,
       !form.nomeReal.trim() ? "nomeReal" : null
     ].filter(Boolean) as string[];
+    
     const hasInvalidCodOrigem =
       typeof parsedCodOrigem === "number" &&
       (!Number.isInteger(parsedCodOrigem) || parsedCodOrigem < -32768 || parsedCodOrigem > 32767);
+      
+    const hasInvalidQtdMin =
+      parsedQtdMin !== null &&
+      (!Number.isInteger(parsedQtdMin) || parsedQtdMin < 1);
 
     if (
       missingFields.length ||
       !Number.isInteger(parsedIdProduto) ||
       parsedIdProduto <= 0 ||
-      Number.isNaN(parsedPeso) ||
-      Number.isNaN(parsedValorUnt) ||
-      Number.isNaN(parsedValorFixo) ||
-      Number.isNaN(parsedValorCusto) ||
+      !pesoVal.isValid ||
+      !valorUntVal.isValid ||
+      !valorFixoVal.isValid ||
+      !valorCustoVal.isValid ||
       Number.isNaN(parsedCodOrigem) ||
-      hasInvalidCodOrigem
+      hasInvalidCodOrigem ||
+      hasInvalidQtdMin
     ) {
       const invalidFields = [
         ...missingFields,
         !Number.isInteger(parsedIdProduto) || parsedIdProduto <= 0 ? "id_produto" : null,
-        Number.isNaN(parsedPeso) ? "peso" : null,
-        Number.isNaN(parsedValorUnt) ? "valorUnt" : null,
-        Number.isNaN(parsedValorFixo) ? "valorFixo" : null,
-        Number.isNaN(parsedValorCusto) ? "valor_custo" : null,
-        Number.isNaN(parsedCodOrigem) || hasInvalidCodOrigem ? "cod_origem" : null
+        !pesoVal.isValid ? "peso" : null,
+        !valorUntVal.isValid ? "valorUnt" : null,
+        !valorFixoVal.isValid ? "valorFixo" : null,
+        !valorCustoVal.isValid ? "valor_custo" : null,
+        Number.isNaN(parsedCodOrigem) || hasInvalidCodOrigem ? "cod_origem" : null,
+        hasInvalidQtdMin ? "quantidade_minima_venda" : null
       ].filter(Boolean) as string[];
+      
       setErrorFields(Array.from(new Set(invalidFields)));
       setMessage({
         tone: "danger",
         title: "Não foi possível salvar",
-        description: "Revise ID, nome e campos numéricos antes de salvar."
+        description: hasInvalidQtdMin
+          ? "Quantidade mínima deve ser um número inteiro maior ou igual a 1."
+          : "Revise ID, nome e campos numéricos antes de salvar."
       });
-      showToast({ type: "error", title: "Não foi possível salvar", description: "Revise os campos destacados antes de continuar." });
+      showToast({ 
+        type: "error", 
+        title: "Não foi possível salvar", 
+        description: hasInvalidQtdMin
+          ? "Quantidade mínima deve ser um número inteiro maior ou igual a 1."
+          : "Revise os campos destacados antes de continuar." 
+      });
       return;
     }
 
@@ -601,6 +680,55 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           <Field label="Formato">
             <input value={form.formato} onChange={(event) => updateField("formato", event.target.value)} className={getInputClass(errorFields.includes("formato"))} placeholder="25x2cm, A6, PVC 0,76mm" />
           </Field>
+          <Field label="Formato (Produção)">
+            <select
+              value={form.id_formato}
+              onChange={(event) => updateField("id_formato", event.target.value)}
+              className={getInputClass(errorFields.includes("id_formato"))}
+              disabled={isLoadingCatalogos}
+            >
+              <option value="">Selecione um formato operacional</option>
+              {formatos.map((fmt) => (
+                <option key={fmt.id_formato_num} value={fmt.id_formato_num.toString()}>
+                  {fmt.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Modelo / Cor (Produção)">
+            <select
+              value={form.id_modelo_cor}
+              onChange={(event) => updateField("id_modelo_cor", event.target.value)}
+              className={getInputClass(errorFields.includes("id_modelo_cor"))}
+              disabled={isLoadingCatalogos}
+            >
+              <option value="">Selecione um modelo/cor</option>
+              {filteredCores.map((c) => (
+                <option key={c.id_modelo_cor_num} value={c.id_modelo_cor_num.toString()}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Quantidade mínima vendida">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={form.quantidade_minima_venda}
+              onChange={(event) => updateField("quantidade_minima_venda", event.target.value)}
+              className={getInputClass(errorFields.includes("quantidade_minima_venda"))}
+              placeholder="Ex: 1000"
+            />
+          </Field>
+          <Field label="Tipo de blocagem">
+            <input
+              value={form.tipo_blocagem}
+              onChange={(event) => updateField("tipo_blocagem", event.target.value)}
+              className={getInputClass(errorFields.includes("tipo_blocagem"))}
+              placeholder="Ex: Blc de 25, Individual, Cartela"
+            />
+          </Field>
           <div className="md:col-span-2 xl:col-span-4">
             <Field label="Descricao">
               <textarea value={form.descricao} onChange={(event) => updateField("descricao", event.target.value)} className={`${inputClass} min-h-28 resize-y`} />
@@ -612,13 +740,13 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       <FormSection title="Valores" description="Preços e custo interno liberados nesta fase com conversão numérica segura. Campo vazio vira null.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Valor unitario">
-            <input value={form.valorUnt} onChange={(event) => updateField("valorUnt", event.target.value)} className={getInputClass(errorFields.includes("valorUnt"))} />
+            <input type="text" inputMode="decimal" value={form.valorUnt} onChange={(event) => updateField("valorUnt", event.target.value)} className={getInputClass(errorFields.includes("valorUnt"))} />
           </Field>
           <Field label="Valor fixo">
-            <input value={form.valorFixo} onChange={(event) => updateField("valorFixo", event.target.value)} className={getInputClass(errorFields.includes("valorFixo"))} />
+            <input type="text" inputMode="decimal" value={form.valorFixo} onChange={(event) => updateField("valorFixo", event.target.value)} className={getInputClass(errorFields.includes("valorFixo"))} />
           </Field>
           <Field label="Valor custo">
-            <input value={form.valor_custo} onChange={(event) => updateField("valor_custo", event.target.value)} className={getInputClass(errorFields.includes("valor_custo"))} />
+            <input type="text" inputMode="decimal" value={form.valor_custo} onChange={(event) => updateField("valor_custo", event.target.value)} className={getInputClass(errorFields.includes("valor_custo"))} />
           </Field>
           <Field label="Produto ativo">
             <select value={form.ativo ? "SIM" : "NAO"} onChange={(event) => updateField("ativo", event.target.value === "SIM")} className={inputClass}>
@@ -632,7 +760,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       <FormSection title="Producao" description="Peso é salvo em gramas. A conversão para kg acontece apenas na exibição.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field label="Peso (g)">
-            <input value={form.peso} onChange={(event) => updateField("peso", event.target.value)} className={inputClass} placeholder="177" />
+            <input type="text" inputMode="decimal" value={form.peso} onChange={(event) => updateField("peso", event.target.value)} className={getInputClass(errorFields.includes("peso"))} placeholder="177" />
           </Field>
           <Field label="Prazo">
             <input value={form.prazo} onChange={(event) => updateField("prazo", event.target.value)} className={getInputClass(errorFields.includes("prazo"))} placeholder="3 dias uteis" />
@@ -1169,6 +1297,10 @@ function createInitialState(produto?: Produto): ProdutoFormState {
     ativo: produto?.ativo ?? true,
     is_estoque: produto?.is_estoque ?? false,
     is_variacao: produto?.is_variacao ?? false,
+    id_formato: produto?.id_formato?.toString() ?? "",
+    id_modelo_cor: produto?.id_modelo_cor?.toString() ?? "",
+    quantidade_minima_venda: produto?.quantidade_minima_venda?.toString() ?? "",
+    tipo_blocagem: produto?.tipo_blocagem ?? "",
     fotos: produto?.fotos ?? [],
     variacoes: produto?.variacoes ?? []
   };

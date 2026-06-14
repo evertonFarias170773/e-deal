@@ -506,3 +506,27 @@ export async function updatePagamentoV2StatusConfirmacao(
   };
 }
 
+export async function consultarDetalhesBoletoC6(idBoletoC6: string, idEmpresa: number) {
+  const response = await fetch("https://10074.hostoo.net.br/webhook/consulta-paid-c6", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      cod_C6: idBoletoC6,
+      id_empresa: idEmpresa
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Erro na consulta C6: Status HTTP ${response.status}`);
+  }
+
+  const rawData = await response.json();
+  const data = Array.isArray(rawData) ? rawData[0] : rawData;
+
+  console.log("[pagamentos-v2.service] Retorno bruto C6:", JSON.stringify(data, null, 2));
+
+  return data;
+}
+

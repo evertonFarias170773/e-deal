@@ -5,7 +5,8 @@ import {
   mapSupabaseProdutoRowsToProdutos,
   mapSupabaseProdutoVariacaoRowToVariacao,
   type ProdutosReadResult,
-  type ProdutosResumo
+  type ProdutosResumo,
+  parseDecimalInput
 } from "@/features/produtos/mappers";
 import type { Produto, ProdutoFoto, ProdutoVariacaoDetalhada } from "@/features/produtos/types";
 import type { SupabaseProdutoFotoRow, SupabaseProdutoRow, SupabaseProdutoVariacaoRow } from "@/features/produtos/types.supabase";
@@ -58,7 +59,11 @@ type ProdutoWriteField =
   | "icms_situacao_tributaria"
   | "pis_situacao_tributaria"
   | "cofins_situacao_tributaria"
-  | "informacoes_fiscais";
+  | "informacoes_fiscais"
+  | "id_formato"
+  | "id_modelo_cor"
+  | "quantidade_minima_venda"
+  | "tipo_blocagem";
 
 export type ProdutoWriteInput = Partial<Record<ProdutoWriteField, string | number | boolean | string[] | null>>;
 
@@ -158,7 +163,11 @@ export const PRODUTOS_UPDATE_FIELD_WHITELIST = [
   "icms_situacao_tributaria",
   "pis_situacao_tributaria",
   "cofins_situacao_tributaria",
-  "informacoes_fiscais"
+  "informacoes_fiscais",
+  "id_formato",
+  "id_modelo_cor",
+  "quantidade_minima_venda",
+  "tipo_blocagem"
 ] as const satisfies readonly ProdutoWriteField[];
 
 export const PRODUTOS_DELETE_BLOCKED_MESSAGE =
@@ -201,7 +210,11 @@ export const PRODUTOS_SELECT = [
   "icms_situacao_tributaria",
   "pis_situacao_tributaria",
   "cofins_situacao_tributaria",
-  "informacoes_fiscais"
+  "informacoes_fiscais",
+  "id_formato",
+  "id_modelo_cor",
+  "quantidade_minima_venda",
+  "tipo_blocagem"
 ].join(",");
 
 const FOTOS_SELECT = "id,nomeProduto,imagensURL,idProduto";
@@ -217,19 +230,29 @@ function normalizeProdutoWriteValue(field: ProdutoWriteField, value: ProdutoWrit
   }
 
   if (
-    field === "id_produto" ||
     field === "peso" ||
     field === "valorUnt" ||
     field === "valorFixo" ||
-    field === "valor_custo" ||
-    field === "cod_origem"
+    field === "valor_custo"
+  ) {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+    return parseDecimalInput(String(value));
+  }
+
+  if (
+    field === "id_produto" ||
+    field === "cod_origem" ||
+    field === "id_formato" ||
+    field === "id_modelo_cor" ||
+    field === "quantidade_minima_venda"
   ) {
     if (typeof value === "string" && !value.trim()) {
       return null;
     }
-
-    const parsed = typeof value === "string" ? Number(value.replace(/\./g, "").replace(",", ".")) : Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? parsed : null;
   }
 
   if (field === "ativo" || field === "is_estoque" || field === "is_variacao" || field === "is_multiplo") {
@@ -287,7 +310,7 @@ function sanitizeStorageFileName(fileName: string) {
   return `${normalizedBaseName || "imagem"}${normalizedExtension ? `.${normalizedExtension}` : ""}`;
 }
 
-function buildEmptyResult(warnings: string[] = []): ProdutosReadResult {
+function buildEmptyResult(warnings: string[] = [], error: string | null = null): ProdutosReadResult {
   return {
     source: "supabase",
     produtos: [],
@@ -298,7 +321,8 @@ function buildEmptyResult(warnings: string[] = []): ProdutosReadResult {
       comFotos: 0
     },
     categorias: [],
-    warnings
+    warnings,
+    error
   };
 }
 
@@ -462,8 +486,8 @@ export async function listProdutos(params: ProdutosListParams = {}): Promise<Pro
     .range(from, to)
     .returns<SupabaseProdutoRow[]>();
   if (error) {
-    console.log("[Produtos][List] leitura real falhou.", { error });
-    return [];
+    console.error("[Produtos][List] leitura real falhou.", error);
+    throw new Error(error.message || "Erro ao consultar a tabela public.produtos.");
   }
 
   const relationsResult = await fetchProdutoRelations();
@@ -903,7 +927,10 @@ export async function uploadProdutoFotoReal({
 export async function getProdutosReadOnlyList(): Promise<ProdutosReadResult> {
   const client = getSupabaseClient();
   if (!client) {
-    return buildEmptyResult(["Supabase indisponível. Nenhum produto real foi carregado."]);
+    return buildEmptyResult(
+      ["Supabase indisponível. Nenhum produto real foi carregado."],
+      "Supabase indisponível."
+    );
   }
 
   try {
@@ -920,10 +947,57 @@ export async function getProdutosReadOnlyList(): Promise<ProdutosReadResult> {
       produtos,
       resumo: produtos.length ? resumo : buildResumoFromProdutos(produtos),
       categorias: Array.from(new Set([...categorias, ...categoriasFromProdutos])).sort((a, b) => a.localeCompare(b, "pt-BR")),
-      warnings: [`Leitura real aplicada em public.produtos com ${produtos.length} registros.`]
+      warnings: [`Leitura real aplicada em public.produtos com ${produtos.length} registros.`],
+      error: null
     };
   } catch (error) {
-    console.log("[Produtos][List] erro inesperado na leitura real.", { error });
-    return buildEmptyResult(["Não foi possível carregar produtos reais neste momento."]);
+    const err = error as Error;
+    console.error("[Produtos][List] erro inesperado na leitura real.", err);
+    return buildEmptyResult(
+      ["Não foi possível carregar produtos reais neste momento."],
+      err?.message || "Erro inesperado ao listar produtos."
+    );
   }
 }
+
+export type FormatoProducao = {
+  id: string;
+  id_formato_num: number;
+  name: string;
+};
+
+export type CorProducao = {
+  id: string;
+  id_modelo_cor_num: number;
+  name: string;
+  formato_id: string | null;
+};
+
+export async function listarFormatosProducao(): Promise<FormatoProducao[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  const { data, error } = await client
+    .from("producao_formatos")
+    .select("id, id_formato_num, name")
+    .order("id_formato_num", { ascending: true });
+  if (error) {
+    console.error("[Produtos] erro ao listar formatos:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function listarCoresProducao(): Promise<CorProducao[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  const { data, error } = await client
+    .from("producao_cores")
+    .select("id, id_modelo_cor_num, name, formato_id")
+    .order("id_modelo_cor_num", { ascending: true });
+  if (error) {
+    console.error("[Produtos] erro ao listar cores:", error);
+    return [];
+  }
+  return data ?? [];
+}
+

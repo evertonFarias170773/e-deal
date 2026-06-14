@@ -147,3 +147,5 @@ export interface PedidoMock {
   modelos: ModeloMock[];
 }
 
+export type PedidoProducaoListItem = PedidoMock;
+

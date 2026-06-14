@@ -2734,6 +2734,7 @@ export function NotasFiscaisPage() {
         extReference={selectedNfeForReview?.ref || ""}
         nomeCliente={selectedNfeForReview?.nome || selectedNfeForReview?.fantasia || undefined}
         valorTotalNf={selectedNfeForReview?.valor_total_nf}
+        idInt={selectedNfeForReview?.id_int || undefined}
         onSaveSuccess={() => {
           if (selectedNfeForReview) {
             void refreshFinanceiroStatusForRef(selectedNfeForReview.ref);

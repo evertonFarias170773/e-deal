@@ -29,6 +29,7 @@ import type {
 } from "@/lib/mocks/contas-receber.mock";
 import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/services/contas-receber.service";
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
+import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
 type ActiveTab = "CARTEIRA" | "BOLETOS" | "VENCIMENTOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
@@ -72,6 +73,7 @@ const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 t
 export function ContasReceberPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { recalcularBoletoIdIntsLocal } = useCobrancas();
   const [activeTab, setActiveTab] = useState<ActiveTab>("CARTEIRA");
   const [recebiveis, setRecebiveis] = useState<BoletoDepositoMock[]>([]);
   const [boletosDepositos, setBoletosDepositos] = useState<BoletoDepositoMock[]>([]);
@@ -96,6 +98,7 @@ export function ContasReceberPage() {
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [selectedBoletoRef, setSelectedBoletoRef] = useState<string | null>(null);
   const [selectedBoletoCliente, setSelectedBoletoCliente] = useState<string | null>(null);
+  const [selectedBoletoIdInt, setSelectedBoletoIdInt] = useState<number | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [deletingBoletoId, setDeletingBoletoId] = useState<string | null>(null);
   const [confirmDeleteBoleto, setConfirmDeleteBoleto] = useState<BoletoDepositoMock | null>(null);
@@ -175,6 +178,44 @@ export function ContasReceberPage() {
       isMounted = false;
     };
   }, [refreshTrigger]);
+  
+  // Efeito para abertura automática inteligente do modal de registro bancário
+  useEffect(() => {
+    if (isLoadingSource) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const autoRegister = params.get("autoRegister") === "true";
+    const searchParam = params.get("search");
+
+    if (autoRegister && searchParam) {
+      const idIntBuscado = Number(searchParam);
+      if (!Number.isNaN(idIntBuscado)) {
+        // Procurar boletos elegíveis para registro bancário da proposta buscada
+        const elegiveis = boletosDepositos.filter(item => 
+          item.id_int === idIntBuscado &&
+          item.status !== "CANCELADO" &&
+          !item.deposito_conta &&
+          !item.id_boleto_c6 &&
+          !item.linha_digitavel
+        );
+
+        if (elegiveis.length > 0) {
+          const primeiro = elegiveis[0];
+          setTimeout(() => {
+            setSelectedBoletoRef(primeiro.ext_reference || primeiro.id);
+            setSelectedBoletoCliente(primeiro.cliente);
+            setSelectedBoletoIdInt(primeiro.id_int);
+            setReviewModalOpen(true);
+          }, 0);
+        }
+
+        // Limpar autoRegister da URL para evitar loops e reabertura indesejada
+        params.delete("autoRegister");
+        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState(null, '', newUrl);
+      }
+    }
+  }, [isLoadingSource, boletosDepositos]);
 
   const filterState = useMemo(() => ({
     search,
@@ -286,18 +327,11 @@ export function ContasReceberPage() {
       const { getSupabaseClient } = await import("@/lib/supabase/client");
       const client = getSupabaseClient();
       if (client) {
-        // Fallback update no Supabase local por segurança
+        // Fallback update no Supabase local por segurança: marcar como CANCELADO mas manter histórico do C6
         const { error: updateError } = await client
           .from("boletos")
           .update({
-            id_boleto_c6: null,
-            nosso_numero: null,
-            linha_digitavel: null,
-            codigo_barras: null,
-            url_pdf: null,
-            pdf_storage: null,
-            status: "A_VENCER",
-            deposito_conta: false
+            status: "CANCELADO"
           })
           .eq("id", boleto.id);
 
@@ -310,6 +344,10 @@ export function ContasReceberPage() {
         type: "success",
         title: "Boleto removido do banco. O contas a receber foi mantido."
       });
+
+      if (boleto.id_int) {
+        await recalcularBoletoIdIntsLocal(Number(boleto.id_int));
+      }
 
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
@@ -331,23 +369,8 @@ export function ContasReceberPage() {
     }
     setIsC6Querying(true);
     try {
-      const response = await fetch("https://10074.hostoo.net.br/webhook/consulta-paid-c6", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          cod_C6: boleto.id_boleto_c6,
-          id_empresa: Number(boleto.id_empresa || 1)
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erro na consulta C6: Status HTTP ${response.status}`);
-      }
-
-      const rawData = await response.json();
-      const data = Array.isArray(rawData) ? rawData[0] : rawData;
+      const { consultarDetalhesBoletoC6 } = await import("@/features/cobrancas/services/pagamentos-v2.service");
+      const data = await consultarDetalhesBoletoC6(boleto.id_boleto_c6, Number(boleto.id_empresa || 1));
 
       if (!data) {
         throw new Error("Nenhum dado retornado da consulta C6.");
@@ -466,6 +489,161 @@ export function ContasReceberPage() {
       });
     } finally {
       setIsC6Updating(false);
+    }
+  }
+
+  async function handleConsultarPdfC6(boleto: BoletoDepositoMock) {
+    if (!boleto.id_boleto_c6) {
+      showToast({ type: "warning", title: "Código C6 não encontrado no boleto." });
+      return;
+    }
+
+    showToast({
+      type: "info",
+      title: "Consultando PDF...",
+      description: "Buscando informações do boleto no C6 Bank."
+    });
+
+    try {
+      const { consultarDetalhesBoletoC6 } = await import("@/features/cobrancas/services/pagamentos-v2.service");
+      const c6Data = await consultarDetalhesBoletoC6(boleto.id_boleto_c6, Number(boleto.id_empresa || 1));
+
+      if (!c6Data) {
+        throw new Error("Nenhum dado retornado do C6 Bank.");
+      }
+
+      // Mapeamento amplo de URL e storage
+      const urlPdf = c6Data.url_pdf || c6Data.pdf_url || c6Data.pdfUrl || c6Data.urlPdf || c6Data.pdf_storage || c6Data.url || c6Data.pdf || c6Data.caminho_pdf || c6Data.boleto_pdf || null;
+      const pdfStorage = c6Data.pdf_storage || c6Data.pdfStorage || c6Data.storage_path || null;
+
+      if (!urlPdf) {
+        showToast({
+          type: "warning",
+          title: "PDF ainda não disponível no C6",
+          description: "O boleto foi consultado com sucesso, mas nenhuma URL de PDF foi retornada."
+        });
+        return;
+      }
+
+      // Conexão Supabase
+      const { getSupabaseClient } = await import("@/lib/supabase/client");
+      const client = getSupabaseClient();
+      if (!client) {
+        throw new Error("Conexão com o banco de dados (Supabase) não inicializada.");
+      }
+
+      // Update na tabela boletos
+      const { data: updatedData, error: updateError } = await client
+        .from("boletos")
+        .update({
+          url_pdf: urlPdf,
+          pdf_storage: pdfStorage
+        })
+        .eq("id_boleto_c6", boleto.id_boleto_c6)
+        .select();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      if (!updatedData || updatedData.length === 0) {
+        throw new Error("Não foi possível atualizar o boleto no banco de dados.");
+      }
+
+      // Atualizar estado local para feedback imediato
+      setRecebiveis((current) =>
+        current.map((item) =>
+          item.id_boleto_c6 === boleto.id_boleto_c6
+            ? { ...item, url_pdf: urlPdf, pdf_storage: pdfStorage }
+            : item
+        )
+      );
+      setBoletosDepositos((current) =>
+        current.map((item) =>
+          item.id_boleto_c6 === boleto.id_boleto_c6
+            ? { ...item, url_pdf: urlPdf, pdf_storage: pdfStorage }
+            : item
+        )
+      );
+
+      showToast({
+        type: "success",
+        title: "PDF atualizado!",
+        description: "A URL do PDF foi obtida do C6 e salva com sucesso."
+      });
+
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] failed to consult PDF:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao consultar PDF",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+
+  async function handleGerarPdfBoletoInterno(boleto: BoletoDepositoMock) {
+    if (!boleto.id) {
+      showToast({ type: "warning", title: "ID do boleto não encontrado." });
+      return;
+    }
+
+    // A ação Gerar/Regerar PDF do Boleto só deve aparecer se o boleto já tiver: linha_digitavel, codigo_barras, id_boleto_c6
+    // Se faltar qualquer um desses campos, bloquear com mensagem clara.
+    if (!boleto.linha_digitavel || !boleto.codigo_barras || !boleto.id_boleto_c6) {
+      showToast({
+        type: "error",
+        title: "Campos obrigatórios ausentes",
+        description: "Não é possível gerar o PDF. O boleto deve possuir linha digitável, código de barras e identificador C6 registrados."
+      });
+      return;
+    }
+
+    showToast({
+      type: "info",
+      title: "Gerando PDF...",
+      description: "Gerando PDF interno do boleto via Edge Function."
+    });
+
+    try {
+      const { gerarBoletoPdfInterno } = await import("@/features/contas-a-receber/services/contas-receber.service");
+      const res = await gerarBoletoPdfInterno(boleto.id, boleto.id_empresa);
+
+      if (!res.success) {
+        throw new Error(res.errorMessage || "Falha na geração do PDF.");
+      }
+
+      // Atualizar estado local imediatamente para habilitar "Abrir PDF Boleto" sem F5
+      setRecebiveis((current) =>
+        current.map((item) =>
+          item.id === boleto.id
+            ? { ...item, url_pdf: res.url, pdf_storage: res.path }
+            : item
+        )
+      );
+      setBoletosDepositos((current) =>
+        current.map((item) =>
+          item.id === boleto.id
+            ? { ...item, url_pdf: res.url, pdf_storage: res.path }
+            : item
+        )
+      );
+
+      showToast({
+        type: "success",
+        title: "PDF atualizado!",
+        description: "O PDF interno do boleto foi criado e salvo com sucesso."
+      });
+
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] failed to generate PDF:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao gerar PDF",
+        description: err instanceof Error ? err.message : String(err)
+      });
     }
   }
 
@@ -606,12 +784,15 @@ export function ContasReceberPage() {
           onRegister={(item) => {
             setSelectedBoletoRef(item.ext_reference || null);
             setSelectedBoletoCliente(item.cliente);
+            setSelectedBoletoIdInt(item.id_int || null);
             setReviewModalOpen(true);
           }}
           onConsultaC6={(item) => {
             setSelectedBoletoForC6Query(item);
             setC6QueryResult(null);
           }}
+          onConsultarPdf={handleConsultarPdfC6}
+          onGerarPdfBoleto={handleGerarPdfBoletoInterno}
         />
       ) : null}
 
@@ -629,6 +810,7 @@ export function ContasReceberPage() {
           onRegister={(item) => {
             setSelectedBoletoRef(item.ext_reference || null);
             setSelectedBoletoCliente(item.cliente);
+            setSelectedBoletoIdInt(item.id_int || null);
             setReviewModalOpen(true);
           }}
           onDeleteFromBank={(item) => {
@@ -638,6 +820,8 @@ export function ContasReceberPage() {
             setSelectedBoletoForC6Query(item);
             setC6QueryResult(null);
           }}
+          onConsultarPdf={handleConsultarPdfC6}
+          onGerarPdfBoleto={handleGerarPdfBoletoInterno}
         />
       ) : null}
 
@@ -668,9 +852,11 @@ export function ContasReceberPage() {
           setReviewModalOpen(false);
           setSelectedBoletoRef(null);
           setSelectedBoletoCliente(null);
+          setSelectedBoletoIdInt(null);
         }}
         extReference={selectedBoletoRef || ""}
         nomeCliente={selectedBoletoCliente || undefined}
+        idInt={selectedBoletoIdInt || undefined}
         onSaveSuccess={() => {
           setRefreshTrigger(prev => prev + 1);
         }}
@@ -903,7 +1089,9 @@ function GroupedSection({
   onProrrogar,
   onRegister,
   onDeleteFromBank,
-  onConsultaC6
+  onConsultaC6,
+  onConsultarPdf,
+  onGerarPdfBoleto
 }: {
   title: string;
   tone: "danger" | "warning" | "info" | "success" | "neutral";
@@ -920,6 +1108,8 @@ function GroupedSection({
   onRegister?: (item: BoletoDepositoMock) => void;
   onDeleteFromBank?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
+  onConsultarPdf?: (item: BoletoDepositoMock) => void;
+  onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
 }) {
   if (items.length === 0) return null;
 
@@ -964,9 +1154,24 @@ function GroupedSection({
               { header: "Dt. Pagto", cell: (item: BoletoDepositoMock) => item.paid_at ? formatPaidAtDate(item.paid_at) : "-", align: "center" as const }
             ] : []),
             { header: "Linha/Ref.", cell: (item) => item.linha_digitavel ?? item.referencia ?? "-" },
-            { header: "Ações", cell: (item) => <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} />, align: "right" }
+            { header: "Ações", cell: (item) => {
+              const isVisualAReceberCriado = getVisualStatus(item, today) === "A_RECEBER_CRIADO";
+              return (
+                <div className="flex items-center justify-end gap-2">
+                  {isVisualAReceberCriado && onRegister && (
+                    <button
+                      onClick={() => onRegister(item)}
+                      className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition"
+                    >
+                      Registrar
+                    </button>
+                  )}
+                  <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+                </div>
+              );
+            }, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} onRegister={onRegister!} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
         />
       ) : (
         <ResponsiveList<BoletoDepositoMock>
@@ -985,9 +1190,24 @@ function GroupedSection({
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
             { header: "Venc.", cell: (item) => formatLocalDate(item.vencimento), align: "center" },
             { header: "Conf.", cell: (item) => <StatusBadge status={item.confirmado ? "CONFIRMADO" : "NAO_CONFIRMADO"} tone={item.confirmado ? "success" : "neutral"} />, align: "center" },
-            { header: "Ações", cell: (item) => <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />, align: "right" }
+            { header: "Ações", cell: (item) => {
+              const isVisualAReceberCriado = getVisualStatus(item, today) === "A_RECEBER_CRIADO";
+              return (
+                <div className="flex items-center justify-end gap-2">
+                  {isVisualAReceberCriado && onRegister && (
+                    <button
+                      onClick={() => onRegister(item)}
+                      className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition"
+                    >
+                      Registrar
+                    </button>
+                  )}
+                  <RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+                </div>
+              );
+            }, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} onRegister={onRegister} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
         />
       )}
     </div>
@@ -1004,7 +1224,9 @@ function CarteiraTab({
   onDetail,
   onNavigate,
   onRegister,
-  onConsultaC6
+  onConsultaC6,
+  onConsultarPdf,
+  onGerarPdfBoleto
 }: {
   items: BoletoDepositoMock[];
   today: string;
@@ -1016,6 +1238,8 @@ function CarteiraTab({
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
+  onConsultarPdf?: (item: BoletoDepositoMock) => void;
+  onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
 }) {
   const vencidos = useMemo(() => items.filter((item) => isVisualVencido(item, today)), [items, today]);
   const previsaoFutura = useMemo(() => items.filter((item) => item.status === "A_VENCER"), [items]);
@@ -1039,10 +1263,10 @@ function CarteiraTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
     </div>
   );
 }
@@ -1059,7 +1283,9 @@ function BoletosDepositosTab({
   onNavigate,
   onRegister,
   onDeleteFromBank,
-  onConsultaC6
+  onConsultaC6,
+  onConsultarPdf,
+  onGerarPdfBoleto
 }: {
   items: BoletoDepositoMock[];
   today: string;
@@ -1073,6 +1299,8 @@ function BoletosDepositosTab({
   onRegister: (item: BoletoDepositoMock) => void;
   onDeleteFromBank: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
+  onConsultarPdf?: (item: BoletoDepositoMock) => void;
+  onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
 }) {
   const vencidos = useMemo(() => items.filter((item) => isVisualVencido(item, today)), [items, today]);
   const previsaoFutura = useMemo(() => items.filter((item) => item.status === "A_VENCER"), [items]);
@@ -1096,10 +1324,10 @@ function BoletosDepositosTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
     </div>
   );
 }
@@ -1218,6 +1446,8 @@ function RecebivelActions({
   onNavigate,
   onRegister,
   onConsultaC6,
+  onConsultarPdf,
+  onGerarPdfBoleto,
   label
 }: {
   item: BoletoDepositoMock;
@@ -1229,9 +1459,12 @@ function RecebivelActions({
   onNavigate: (path: string) => void;
   onRegister?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
+  onConsultarPdf?: (item: BoletoDepositoMock) => void;
+  onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
   label?: string;
 }) {
   const showConsultaC6 = !!item.id_boleto_c6 && item.status !== "PAID" && item.tipo === "BOLETO";
+  const showConsultarPdf = !!item.id_boleto_c6 && !item.url_pdf && !item.pdf_storage && item.tipo === "BOLETO";
 
   const actionItems: Array<{
     label: string;
@@ -1245,11 +1478,25 @@ function RecebivelActions({
   ];
 
   if (item.tipo === "BOLETO" && onRegister) {
-    actionItems.push({ label: "Revisar geração bancária", onClick: () => onRegister(item) });
+    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Revisar geração bancária";
+    actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
   }
 
   if (showConsultaC6 && onConsultaC6) {
     actionItems.push({ label: "Consultar pagamento C6", onClick: () => onConsultaC6(item) });
+  }
+
+  if (showConsultarPdf && onConsultarPdf) {
+    actionItems.push({ label: "Consultar PDF no C6", onClick: () => onConsultarPdf(item) });
+  }
+
+  // A ação Gerar/Regerar PDF do Boleto só deve aparecer se o boleto já tiver: linha_digitavel, codigo_barras, id_boleto_c6
+  if (item.tipo === "BOLETO" && onGerarPdfBoleto && item.linha_digitavel && item.codigo_barras && item.id_boleto_c6) {
+    const temPdf = !!(item.url_pdf || item.pdf_storage);
+    actionItems.push({
+      label: temPdf ? "Regerar PDF do Boleto" : "Gerar PDF do Boleto",
+      onClick: () => onGerarPdfBoleto(item)
+    });
   }
 
   actionItems.push(
@@ -1279,6 +1526,8 @@ function BoletoActions({
   onRegister,
   onDeleteFromBank,
   onConsultaC6,
+  onConsultarPdf,
+  onGerarPdfBoleto,
   label
 }: {
   item: BoletoDepositoMock;
@@ -1292,12 +1541,15 @@ function BoletoActions({
   onRegister?: (item: BoletoDepositoMock) => void;
   onDeleteFromBank?: (item: BoletoDepositoMock) => void;
   onConsultaC6?: (item: BoletoDepositoMock) => void;
+  onConsultarPdf?: (item: BoletoDepositoMock) => void;
+  onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
   label?: string;
 }) {
   const isRegistered = !!(item.id_boleto_c6 || item.nosso_numero || item.linha_digitavel);
   const showRegister = !!onRegister && item.tipo === "BOLETO" && !item.deposito_conta && !isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
   const showDelete = !!onDeleteFromBank && item.tipo === "BOLETO" && !item.deposito_conta && isRegistered && item.status !== "PAID" && item.status !== "CANCELADO";
   const showConsultaC6 = !!item.id_boleto_c6 && item.status !== "PAID" && item.tipo === "BOLETO";
+  const showConsultarPdf = !!item.id_boleto_c6 && !item.url_pdf && !item.pdf_storage && item.tipo === "BOLETO";
 
   const actionItems: Array<{
     label: string;
@@ -1310,7 +1562,8 @@ function BoletoActions({
   ];
 
   if (item.tipo === "BOLETO" && onRegister) {
-    actionItems.push({ label: "Revisar geração bancária", onClick: () => onRegister(item) });
+    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Revisar geração bancária";
+    actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
   }
 
   if (showRegister) {
@@ -1325,10 +1578,24 @@ function BoletoActions({
     actionItems.push({ label: "Consultar pagamento C6", onClick: () => onConsultaC6(item) });
   }
 
+  if (showConsultarPdf && onConsultarPdf) {
+    actionItems.push({ label: "Consultar PDF no C6", onClick: () => onConsultarPdf(item) });
+  }
+
+  // A ação Gerar/Regerar PDF do Boleto só deve aparecer se o boleto já tiver: linha_digitavel, codigo_barras, id_boleto_c6
+  if (item.tipo === "BOLETO" && onGerarPdfBoleto && item.linha_digitavel && item.codigo_barras && item.id_boleto_c6) {
+    const temPdf = !!(item.url_pdf || item.pdf_storage);
+    actionItems.push({
+      label: temPdf ? "Regerar PDF do Boleto" : "Gerar PDF do Boleto",
+      onClick: () => onGerarPdfBoleto(item)
+    });
+  }
+
   actionItems.push(
     { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
     { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) },
     { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
+    { label: "Prorrogar vencimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onProrrogar(item.id) },
     { label: "Cancelar boleto", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
   );
 
@@ -1340,7 +1607,19 @@ function BoletoActions({
   );
 }
 
-function RecebivelCard({ item, today, actions }: { item: BoletoDepositoMock; today: string; actions: ReactNode }) {
+function RecebivelCard({
+  item,
+  today,
+  actions,
+  onRegister
+}: {
+  item: BoletoDepositoMock;
+  today: string;
+  actions: ReactNode;
+  onRegister?: (item: BoletoDepositoMock) => void;
+}) {
+  const isVisualAReceberCriado = getVisualStatus(item, today) === "A_RECEBER_CRIADO";
+
   return (
     <article className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -1361,7 +1640,17 @@ function RecebivelCard({ item, today, actions }: { item: BoletoDepositoMock; tod
         )}
         <p>Conf.: {item.confirmado ? "Sim" : "Não"}</p>
       </div>
-      <div className="mt-4 flex justify-end">{actions}</div>
+      <div className="mt-4 flex justify-end gap-2 items-center">
+        {isVisualAReceberCriado && onRegister && (
+          <button
+            onClick={() => onRegister(item)}
+            className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition shrink-0"
+          >
+            Registrar boleto no banco
+          </button>
+        )}
+        {actions}
+      </div>
     </article>
   );
 }

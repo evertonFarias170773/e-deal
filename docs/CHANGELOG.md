@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-06-14
+
+### Adicionado
+- **Escrita Real Controlada na Abertura de OS (Salvar Boletim)**:
+  - **Ação Salvar Boletim**: Integração com o banco de dados Supabase na ação de salvar da tela "Abertura de OS — Boletim de Entrada", realizando o `INSERT` real do registro pai na tabela `public.pedidos`.
+  - **Função no Service**: Adicionada a função `criarPedidoParaBoletim` no service `boletim-propostas.service.ts` para persistir dados estruturados de cabeçalho, com `id_cliente = null` (preparado para UUID posterior) e campos operacionais (`status_pedido = 'BOLETIM_FINALIZADO'`, `status_pagamento = 'APROVADO'`, `status_arte = 'PENDENTE'`, `status_producao = 'BLOQUEADO'`, `status_expedicao = 'BLOQUEADO'`, `valor_total` recalculado e data do pedido automática).
+  - **Prevenção de Duplicados e Validação Reativa**: Reavaliação rigorosa da elegibilidade e consulta de existência prévia do `id_int` na tabela `public.pedidos` antes do insert, bloqueando com toast explicativo `"Pedido já aberto para esta proposta"` em caso de duplicidade detectada.
+  - **Tratamento de Erros e Confirmação**: Exibição de toasts informativos somente após o retorno do Supabase (tratando RLS com erro claro se necessário), impedindo sucessos falsos e redirecionando para `/pedidos` apenas após persistência real.
+- **Refinamento de Abertura de OS (Boletim de Entrada)**:
+  - **Service Somente Leitura**: Criação de `src/features/pedidos/services/boletim-propostas.service.ts` com funções `listarPropostasLiberadasParaBoletim`, `buscarPropostasLiberadasParaBoletim` e `obterPropostaLiberadaParaBoletim` integradas ao Supabase.
+  - **Regra Completa de Elegibilidade**: Validação estrita dos critérios: status 'APROVADO', `id_int` e `id_vendedor` não nulos, pelo menos 1 registro em `produtos_proposta` e nenhum registro em `pedidos`. Limitação final em 20 registros aplicada somente no JS após filtragem de elegibilidade.
+  - **cnpjCpf Case-Sensitive**: Busca e tratamento case-sensitive da coluna `cnpjCpf` no banco de dados. Documentos nulos são tolerados e não bloqueiam propostas.
+  - **Validação de Seleção Direta e Mensagens Amigáveis**: Integração de validação por ID em `BoletimFormPage.tsx` exibindo toasts de erro com motivos operacionais claros ("Proposta ainda não aprovada", "Proposta sem produtos", etc.) quando inelegível.
+  - **Busca e Teclado**: Adicionados debounce de 400ms, mensagem de feedback no input se nada for encontrado, e atalho para a tecla `Enter` para validação e seleção direta por ID.
+- **Módulo Produção / OS (Esvaziamento da Fila de Produção)**:
+  - **Service Isolado**: Criação de `src/features/pedidos/services/pedidos-producao.service.ts` com a função `listarPedidosProducao` retornando array vazio (`[]`) e tipo `PedidoProducaoListItem`. Isso isola o módulo de pedidos de acoplamentos invertidos com a pasta de produção.
+  - **Transição de PCP**: Alteração das telas `PedidosListPage.tsx` e `PedidosKanbanPage.tsx` para consumirem a listagem do novo service ao invés do mock de banco de dados do `localStorage` direto.
+  - **Estado Vazio Conforme Fluxo**: Exibição do componente `<EmptyState />` abaixo dos filtros e badges de resumo (com totais zerados) com título `"Nenhum pedido em produção"` e descrição `"Os pedidos aparecerão aqui quando forem liberados pelo boletim finalizado."`.
+  - **Documentação de Transição**: Registro de que as tabelas `public.pedidos` e `public.pedidos_modelos` estão vazias no Supabase e de que o fluxo do "boletim finalizado" ainda não foi conectado às tabelas.
+- **Módulo Produtos / Orçamentos (Campos de Produção e Validação de Mínimo)**:
+  - **Migration de Banco de Dados (Docs)**: Preparação do script SQL `docs/migrations/20260614_add_produtos_producao_fields.sql` para adicionar campos operacionais de produção (`id_formato`, `id_modelo_cor`, `quantidade_minima_venda`, `tipo_blocagem`) na tabela `public.produtos`, definindo chaves estrangeiras com os catálogos operacionais e check constraint `>= 1` para a quantidade mínima.
+  - **Camada de Modelos e Serviços**: Atualização dos tipos `Produto` e `ProdutoFormState` em `src/features/produtos/types.ts` e `SupabaseProdutoRow` em `types.supabase.ts`; atualização do mapper de banco para converter os novos campos; inclusão das colunas de produção no `UPDATE` real (não no `INSERT`) no service de produtos; e implementação de listagem para formatos e cores (`listarFormatosProducao` e `listarCoresProducao`).
+  - **Formulário de Edição de Produtos**: Adicionados selects integrados com os catálogos reais de formatos e cores no bloco "Dados principais" de `/produtos/[id]/editar`, com filtragem dinâmica de cores cruzando o UUID de formatos, input numérico com validação estrita (inteiro >= 1) de quantidade mínima, e input de texto livre para tipo de blocagem.
+  - **Validação em Orçamentos**: Inicialização dinâmica da quantidade do produto adicionado em `OrcamentoFormPage.tsx` respeitando o mínimo `produto.quantidade_minima_venda` (com fallback para 1000); validação do item ao salvar individualmente e validação global antes de salvar o orçamento geral, barrando a operação com toast explicativo apontando o produto e o mínimo exigido.
+  - **Matriz de Segurança**: Registro da liberação controlada de escrita do `UPDATE` em `docs/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`.
+  - **Tratamento de Erro na Listagem**: Correção para que falhas de RLS, schema ou conexão não sejam confundidas com catálogo vazio. Implementação de exibição de banner de erro claro no topo da listagem de produtos e rodapé correspondente caso a leitura falhe.
+- **Módulo Pedidos / Produção (Fase 1 - Artes - Concluída)**:
+  - **Tabelas de Banco de Dados**: Criação e validação das tabelas `public.pedidos_modelos` e `public.pedidos_artes` com restrição de chave estrangeira `ON DELETE RESTRICT` e índices de performance operacionais, sem alteração de RLS, triggers ou RPCs.
+  - **Bucket de Storage**: Utilização estrita do bucket público `chat-ideal` com caminhos estruturados em `propostas/{id_int}/artes/{id_modelo}/{timestamp}_{nomeArquivo}`, sem criação de novo bucket.
+  - **Regra de Versionamento & Concorrência**: Lógica de versionamento incremental baseada em `maior versão atual + 1` com loop de auto-retry no service para gerenciar colisões de chave única `unique(id_modelo, versao)` por transações simultâneas.
+  - **Timeline no Chat**: Ausência de tabela `pedidos_historico`. Utilização de `public.propostas_chat` como timeline under o tipo `PRODUCAO` no setor `Pre-impressao`, contendo anexos no formato JSONB contendo bucket, path, nome do arquivo, mime-type, tamanho, versão e id_modelo.
+  - **Types TypeScript**: Estruturação de types em `src/features/producao/types.ts` mapeando os schemas das tabelas (`PedidoModelo`, `PedidoArte`, `StatusArteProducao`, `StatusProducaoModelo`).
+  - **Camada de Serviços**: Criação de funções operacionais em `src/features/producao/services/producao-artes.service.ts` (`listarModelosPorPedido`, `listarArtesPorModelo`, `listarArtesPorPedido`, `criarModelo`, `uploadNovaVersaoArte`, `atualizarStatusArte`, `registrarEventoProducaoChat`).
+  - **Interface do Usuário**: Criação do painel visual reativo `src/features/producao/components/ProducaoArtesPanel.tsx` para gerenciar o upload de novas versões de arte e controle/mudança de status em tempo real.
+  - **Integração no Detalhe do Pedido & Rota**: Integração do painel na rota segura `/producao` (`src/app/(erp)/producao/page.tsx`) e na aba de Artes do `PedidoDetailPage.tsx` através de um alternador amigável (Modo Simulador Local vs Conexão Real Supabase).
+
+## 2026-06-13
+
+### Adicionado
+- **Módulo Produção / Imposição**:
+  - Aprovada arquitetura do módulo Produção;
+  - Aprovada Fase 1 (catálogo);
+  - Aprovadas tabelas:
+    - `producao_formatos`
+    - `producao_numeracoes`
+    - `producao_saidas`
+    - `producao_cores`
+    - `producao_modelos_imposicao`
+  - Fase operacional mantida para revisão posterior;
+  - Definida estratégia de separação entre catálogo e execução operacional.
+
 ## 2026-06-11
 
 ### Adicionado

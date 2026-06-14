@@ -830,12 +830,48 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
     const subtotalProdutos = proposalRow.is_avulso
       ? Number(proposalRow.valor ?? 0)
       : mappedItens.reduce((sum, it) => sum + it.subtotal, 0);
+
+    // Fetch discount
+    let descontoGeralTipo: "VALOR" | "PERCENTUAL" = "VALOR";
+    let descontoGeralValor = 0;
+    let descontoGeralCalculado = 0;
+
+    const { data: discountRow, error: discountError } = await client
+      .from("desconto_proposta")
+      .select("*")
+      .eq("id_int", idInt)
+      .eq("tipo_desconto", "DESCONTO_GERAL")
+      .maybeSingle();
+
+    if (discountError) {
+      console.error("[OrcamentosService] Erro ao buscar desconto da proposta:", discountError);
+    } else if (discountRow) {
+      const valorPercentual = Number(discountRow.valor_percentual ?? 0);
+      const valorNominal = Number(discountRow.valor_nominal ?? 0);
+
+      if (valorPercentual > 0) {
+        descontoGeralTipo = "PERCENTUAL";
+        descontoGeralValor = valorPercentual;
+        descontoGeralCalculado = (subtotalProdutos * valorPercentual) / 100;
+      } else {
+        descontoGeralTipo = "VALOR";
+        descontoGeralValor = valorNominal;
+        descontoGeralCalculado = valorNominal;
+      }
+    }
+
     const pesoTotal = proposalRow.is_avulso
       ? 0
       : mappedItens.reduce((sum, it) => sum + it.pesoTotal, 0);
-    const valorTotal = proposalRow.is_avulso
-      ? Number(proposalRow.valor_total ?? (subtotalProdutos + freteValor))
-      : (subtotalProdutos + freteValor);
+
+    let valorTotal = proposalRow.is_avulso
+      ? Number(proposalRow.valor_total ?? (subtotalProdutos + freteValor - descontoGeralCalculado))
+      : (subtotalProdutos + freteValor - descontoGeralCalculado);
+
+    // Guardrail: never show only freight as total if there are products
+    if (valorTotal === freteValor && subtotalProdutos > 0) {
+      valorTotal = subtotalProdutos + freteValor - descontoGeralCalculado;
+    }
 
     const proposta: Proposta = {
       id: `prop_${idInt}`,
@@ -856,17 +892,17 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
         descontosIndividuais: 0,
         acrescimoBonus: 0,
         subtotalProdutos,
-        descontoGeralTipo: "VALOR",
-        descontoGeralValor: 0,
-        descontoGeral: 0,
+        descontoGeralTipo: descontoGeralTipo,
+        descontoGeralValor: descontoGeralValor,
+        descontoGeral: descontoGeralCalculado,
         frete: freteValor,
         valorTotal,
         pesoTotal,
         prazoProducao: "7 dias",
         prazoEntrega: chosenFrete.prazo
       },
-      descontoGeralTipo: "VALOR",
-      descontoGeralValor: 0,
+      descontoGeralTipo: descontoGeralTipo,
+      descontoGeralValor: descontoGeralValor,
       formaPagamento: proposalRow.forma_pagamento || "A combinar",
       cobrancaStatus: "NAO_GERADA",
       observacoes: proposalRow.obs_proposta || "",
@@ -1046,17 +1082,33 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       }
     }
 
-    // Calculo de valores totais
-    const subtotalProdutos = formState.isAvulso
+    // Calculo de valores resumo e totais
+    const subtotalProdutosBase = formState.isAvulso
       ? (Number(String(formState.valorProdutosManual || "0").replace(",", ".")) || 0)
-      : (calculateResumo(
-          formState.itens,
-          formState.fretes,
-          Number(formState.descontoGeralValor) || 0,
-          formState.descontoGeralTipo
-        ).subtotalProdutos);
+      : (formState.itens.reduce((total, item) => total + item.subtotal, 0));
 
-    const valorTotal = subtotalProdutos + freteValor;
+    const resumo = formState.isAvulso ? {
+      subtotalProdutos: subtotalProdutosBase,
+      subtotalBrutoProdutos: subtotalProdutosBase,
+      descontosIndividuais: 0,
+      acrescimoBonus: 0,
+      descontoGeralTipo: "VALOR" as TipoDescontoProposta,
+      descontoGeralValor: 0,
+      descontoGeral: 0,
+      frete: freteValor,
+      valorTotal: subtotalProdutosBase + freteValor,
+      pesoTotal: 0,
+      prazoProducao: "A combinar",
+      prazoEntrega: "A combinar"
+    } : calculateResumo(
+      formState.itens,
+      formState.fretes,
+      Number(formState.descontoGeralValor) || 0,
+      formState.descontoGeralTipo
+    );
+
+    const subtotalProdutos = resumo.subtotalProdutos;
+    const valorTotal = resumo.valorTotal;
 
     if (subtotalProdutos <= 0) {
       return {
@@ -1069,26 +1121,6 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     if (valorTotal <= 0) {
       return { success: false, errorMessage: "O valor total da proposta deve ser maior que R$ 0,00." };
     }
-
-    const resumo = formState.isAvulso ? {
-      subtotalProdutos,
-      subtotalBrutoProdutos: subtotalProdutos,
-      descontosIndividuais: 0,
-      acrescimoBonus: 0,
-      descontoGeralTipo: "VALOR" as TipoDescontoProposta,
-      descontoGeralValor: 0,
-      descontoGeral: 0,
-      frete: freteValor,
-      valorTotal,
-      pesoTotal: 0,
-      prazoProducao: "A combinar",
-      prazoEntrega: "A combinar"
-    } : calculateResumo(
-      formState.itens,
-      formState.fretes,
-      Number(formState.descontoGeralValor) || 0,
-      formState.descontoGeralTipo
-    );
 
     const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && isNonEmpty(cepText);
     if (hasWeightAndCep && !chosenFrete) {
@@ -1372,6 +1404,58 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       }
     }
 
+    // --- PERSISTÊNCIA DO DESCONTO GERAL DA PROPOSTA ---
+    const descontoValor = Number(formState.descontoGeralValor) || 0;
+    const isPercent = formState.descontoGeralTipo === "PERCENTUAL";
+    const valorNominal = isPercent ? 0 : descontoValor;
+    const valorPercentual = isPercent ? descontoValor : 0;
+
+    // 1. Verificar se já existe um registro DESCONTO_GERAL para o id_int
+    const { data: existingDiscount, error: checkError } = await client
+      .from("desconto_proposta")
+      .select("id")
+      .eq("id_int", id_int!)
+      .eq("tipo_desconto", "DESCONTO_GERAL")
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("[OrcamentosService] Erro ao verificar desconto_proposta:", checkError);
+    }
+
+    if (existingDiscount) {
+      // 2. Fazer UPDATE
+      const { error: updateDiscountError } = await client
+        .from("desconto_proposta")
+        .update({
+          valor_nominal: valorNominal,
+          valor_percentual: valorPercentual,
+          descricao: "Desconto geral da proposta",
+          validade: null
+        })
+        .eq("id", existingDiscount.id);
+
+      if (updateDiscountError) {
+        console.error("[OrcamentosService] Erro ao atualizar desconto_proposta:", updateDiscountError);
+        throw new Error(`Erro ao atualizar desconto geral da proposta: ${updateDiscountError.message}`);
+      }
+    } else if (descontoValor > 0) {
+      // 3. Fazer INSERT
+      const { error: insertDiscountError } = await client
+        .from("desconto_proposta")
+        .insert({
+          id_int: id_int!,
+          tipo_desconto: "DESCONTO_GERAL",
+          valor_nominal: valorNominal,
+          valor_percentual: valorPercentual,
+          descricao: "Desconto geral da proposta"
+        });
+
+      if (insertDiscountError) {
+        console.error("[OrcamentosService] Erro ao criar desconto_proposta:", insertDiscountError);
+        throw new Error(`Erro ao criar desconto geral da proposta: ${insertDiscountError.message}`);
+      }
+    }
+
     return { success: true, id_int: id_int! };
   } catch (err) {
     console.error("[OrcamentosService] Falha ao salvar proposta:", err);
@@ -1518,6 +1602,38 @@ export async function duplicarProposta(
     const novoIdInt = Number(data);
     if (!novoIdInt || isNaN(novoIdInt)) {
       return { success: false, errorMessage: "Retorno da duplicação inválido." };
+    }
+
+    // Copiar desconto geral se existir e não foi copiado pela RPC
+    try {
+      const { data: origDiscount } = await client
+        .from("desconto_proposta")
+        .select("*")
+        .eq("id_int", idIntOrigem)
+        .eq("tipo_desconto", "DESCONTO_GERAL")
+        .maybeSingle();
+
+      if (origDiscount) {
+        // Verificar se já foi copiado pela RPC
+        const { data: newDiscount } = await client
+          .from("desconto_proposta")
+          .select("id")
+          .eq("id_int", novoIdInt)
+          .eq("tipo_desconto", "DESCONTO_GERAL")
+          .maybeSingle();
+
+        if (!newDiscount) {
+          await client.from("desconto_proposta").insert({
+            id_int: novoIdInt,
+            tipo_desconto: "DESCONTO_GERAL",
+            valor_nominal: origDiscount.valor_nominal,
+            valor_percentual: origDiscount.valor_percentual,
+            descricao: origDiscount.descricao || "Desconto geral da proposta"
+          });
+        }
+      }
+    } catch (discountCopyErr) {
+      console.error("[OrcamentosService] Erro ao duplicar desconto geral da proposta:", discountCopyErr);
     }
 
     // Registrar mensagens nos chats de forma assíncrona (não-bloqueante)

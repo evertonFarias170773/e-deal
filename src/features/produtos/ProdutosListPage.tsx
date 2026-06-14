@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Boxes, ImageIcon, Package, Search, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Boxes, ImageIcon, Package, Search, SlidersHorizontal } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -49,7 +49,7 @@ function produtoMatchesSearch(produto: Produto, search: string) {
 export function ProdutosListPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { produtos, source, warnings, resumo, categorias, isLoading } = useProdutosReadOnlyData();
+  const { produtos, source, warnings, resumo, categorias, isLoading, error } = useProdutosReadOnlyData();
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState<"TODAS" | ProdutoCategoria>("TODAS");
   const [status, setStatus] = useState<StatusFilter>("TODOS");
@@ -234,6 +234,20 @@ export function ProdutosListPage() {
         ) : null}
       </section>
 
+      {error ? (
+        <div className="rounded-3xl border border-red-200 bg-red-50 p-5 text-red-800">
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+            <div>
+              <h3 className="font-semibold text-red-950">Falha ao carregar produtos do Supabase. Verifique schema, RLS ou conexão.</h3>
+              <p className="mt-1 text-sm text-red-700">
+                Ocorreu um erro ao consultar a tabela public.produtos. Detalhes técnicos: {error}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ResponsiveList<Produto>
         items={filteredProdutos}
         getKey={(produto) => produto.id}
@@ -329,9 +343,11 @@ export function ProdutosListPage() {
       />
 
       {!isLoading ? (
-        <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+        <section className={`rounded-3xl border border-dashed p-4 text-sm ${error ? "border-red-300 bg-red-50 text-red-800" : "border-slate-300 bg-slate-50 text-slate-600"}`}>
           <p>
-            {warnings[0] ?? `Dados reais carregados em public.produtos (${produtos.length} registros).`}
+            {error 
+              ? `Falha na leitura real do Supabase: ${error}`
+              : (warnings[0] ?? `Dados reais carregados em public.produtos (${produtos.length} registros).`)}
           </p>
         </section>
       ) : null}

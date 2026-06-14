@@ -16,6 +16,7 @@ export type ProdutosReadResult = {
   resumo: ProdutosResumo;
   categorias: string[];
   warnings: string[];
+  error?: string | null;
 };
 
 export function sortProdutosByIdAsc(produtos: Produto[]) {
@@ -24,6 +25,42 @@ export function sortProdutosByIdAsc(produtos: Produto[]) {
 
 function toText(value: unknown) {
   return value === null || value === undefined ? "" : String(value).trim();
+}
+
+export function parseDecimalInput(value: string): number | null {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const cleaned = trimmed
+    .replace(/\s/g, "")
+    .replace(/R\$/gi, "");
+
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+
+  let normalized = cleaned;
+
+  if (hasComma && hasDot) {
+    // padrão brasileiro: 1.234,56
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (hasComma) {
+    // exemplo: 0,16
+    normalized = cleaned.replace(",", ".");
+  } else {
+    // exemplo: 0.16 ou 40
+    normalized = cleaned;
+  }
+
+  const parsed = Number(normalized);
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function toNumber(value: unknown) {
@@ -36,9 +73,7 @@ function toNumber(value: unknown) {
   }
 
   if (typeof value === "string") {
-    const normalized = value.replace(/\./g, "").replace(",", ".").replace(/[^\d.-]/g, "");
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : null;
+    return parseDecimalInput(value);
   }
 
   return null;
@@ -230,6 +265,10 @@ export function mapSupabaseProdutoRowToProduto(
     pis_situacao_tributaria: pickText(raw, ["pis_situacao_tributaria"]),
     cofins_situacao_tributaria: pickText(raw, ["cofins_situacao_tributaria"]),
     informacoes_fiscais: pickText(raw, ["informacoes_fiscais"]),
+    id_formato: pickNumber(raw, ["id_formato"]),
+    id_modelo_cor: pickNumber(raw, ["id_modelo_cor"]),
+    quantidade_minima_venda: pickNumber(raw, ["quantidade_minima_venda"]),
+    tipo_blocagem: pickText(raw, ["tipo_blocagem"]) || null,
     fotos,
     variacoes
   };

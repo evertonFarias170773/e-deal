@@ -3,20 +3,31 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
-import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
-import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, User, Calendar, Scale, CheckCircle2, Clock, AlertTriangle, ShieldAlert, Plus } from "lucide-react";
+import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, CheckCircle2, AlertTriangle, ShieldAlert, Plus } from "lucide-react";
+import { EmptyState } from "@/components/common/EmptyState";
+import { listarPedidosProducao } from "./services/pedidos-producao.service";
+import type { PedidoProducaoListItem } from "./types";
 
 export function PedidosListPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { openChat } = useGlobalChat();
-  const { pedidos, isLoaded, toggleUrgente } = usePedidosMockDb();
+  const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      const data = await listarPedidosProducao();
+      setPedidos(data);
+      setIsLoaded(true);
+    }
+    void load();
+  }, []);
 
   // Search & Filter State
   const [search, setSearch] = useState("");
@@ -403,7 +414,14 @@ export function PedidosListPage() {
 
       {/* Grid de Pedidos */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 rounded-xl overflow-hidden shadow-xs">
-        {sortedPedidos.length > 0 ? (
+        {pedidos.length === 0 ? (
+          <div className="p-4">
+            <EmptyState
+              title="Nenhum pedido em produção"
+              description="Os pedidos aparecerão aqui quando forem liberados pelo boletim finalizado."
+            />
+          </div>
+        ) : sortedPedidos.length > 0 ? (
           !isCompact ? (
             /* VISUAL PRINCIPAL PCP: TABELA INDUSTRIAL */
             <div className="overflow-x-auto">

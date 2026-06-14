@@ -18,9 +18,15 @@ import {
   ChevronDown
 } from "lucide-react";
 import { PedidoMock, ProdutoMock, ModeloMock, PedidoStatus, ArteStatus, ProducaoStatus } from "./types";
-import { getOrcamentosReadOnlyData, getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
+import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import type { Proposta } from "@/features/orcamentos/types";
-import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
+import {
+  listarPropostasLiberadasParaBoletim,
+  buscarPropostasLiberadasParaBoletim,
+  obterPropostaLiberadaParaBoletim,
+  criarPedidoParaBoletim,
+  type PropostaLiberadaBoletim
+} from "./services/boletim-propostas.service";
 
 export interface GabaritoItem {
   id: string;
@@ -71,10 +77,12 @@ function generateUniqueId(prefix: string): string {
 export function BoletimFormPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { addPedido, pedidos, addChatMessage } = usePedidosMockDb();
+  const { pedidos } = usePedidosMockDb();
 
   // Proposal selection and loading states
-  const [propostas, setPropostas] = useState<OrcamentoListItem[]>([]);
+  const [propostas, setPropostas] = useState<PropostaLiberadaBoletim[]>([]);
+  const [recentes, setRecentes] = useState<PropostaLiberadaBoletim[]>([]);
+  const [searchFeedback, setSearchFeedback] = useState<string | null>(null);
   const [loadingPropostas, setLoadingPropostas] = useState(false);
   const [propostaBusca, setPropostaBusca] = useState("");
   const [selectedProposta, setSelectedProposta] = useState<Proposta | null>(null);
@@ -284,26 +292,66 @@ export function BoletimFormPage() {
 
   // Load proposals list on mount
   useEffect(() => {
-    async function loadPropostas() {
+    async function loadRecentPropostas() {
       setLoadingPropostas(true);
       try {
-        const res = await getOrcamentosReadOnlyData("all");
-        const filtered = (res.propostas || []).filter(
-          (p) => p.modelo !== "AVULSO" && p.isAvulsoRaw !== true
-        );
-        setPropostas(filtered);
+        const res = await listarPropostasLiberadasParaBoletim();
+        setRecentes(res);
+        setPropostas(res);
       } catch (err) {
-        console.error("Erro ao buscar propostas:", err);
+        console.error("Erro ao buscar propostas recentes:", err);
       } finally {
         setLoadingPropostas(false);
       }
     }
-    loadPropostas();
+    loadRecentPropostas();
   }, []);
+
+  // Search proposals with debounce
+  useEffect(() => {
+    if (!propostaBusca.trim()) {
+      Promise.resolve().then(() => {
+        setPropostas(recentes);
+        setSearchFeedback(null);
+      });
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setLoadingPropostas(true);
+      setSearchFeedback(null);
+      try {
+        const results = await buscarPropostasLiberadasParaBoletim(propostaBusca);
+        setPropostas(results);
+        if (results.length === 0) {
+          setSearchFeedback("Nenhuma proposta elegível encontrada para esta busca.");
+        }
+      } catch (err) {
+        console.error("Erro ao buscar propostas:", err);
+        setSearchFeedback("Erro ao realizar a busca.");
+      } finally {
+        setLoadingPropostas(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [propostaBusca, recentes]);
 
   const selectProposta = async (idInt: number) => {
     setLoadingDetails(true);
     try {
+      // Validar elegibilidade da proposta antes de carregar
+      const check = await obterPropostaLiberadaParaBoletim(idInt);
+      if (!check.success) {
+        showToast({
+          type: "error",
+          title: "Proposta Bloqueada",
+          description: check.error || "Esta proposta não está elegível para abertura de boletim."
+        });
+        setLoadingDetails(false);
+        return;
+      }
+
       const details = await getPropostaDetailById(idInt);
       if (details) {
         setSelectedProposta(details);
@@ -415,6 +463,16 @@ export function BoletimFormPage() {
       const found = propostas.find((p) => p.id_int === numericId);
       if (found) {
         await selectProposta(found.id_int);
+      }
+    }
+  };
+
+  const handlePropostaKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const numericId = parseInt(propostaBusca, 10);
+      if (!isNaN(numericId)) {
+        await selectProposta(numericId);
       }
     }
   };
@@ -641,7 +699,7 @@ export function BoletimFormPage() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedProposta) {
@@ -664,7 +722,7 @@ export function BoletimFormPage() {
       return;
     }
 
-    // Validate quantities and technical specifications (ranges, VDP CSV, etc.)
+    // Validate quantities and technical specifications
     for (const p of produtos) {
       for (const m of p.modelos) {
         if ((Number(m.quantidade) || 0) <= 0) {
@@ -699,141 +757,66 @@ export function BoletimFormPage() {
       }
     }
 
-    // Prepare complete hierarchical structure matching mock database
-    const estimatedWeight = calculateTotalWeight();
-    const finalProdutos: ProdutoMock[] = produtos.map((p) => {
-      const prodQtd = p.modelos.reduce((sum, m) => sum + (Number(m.quantidade) || 0), 0);
-      return {
-        id: p.id,
-        nome: p.nome,
-        quantidade: prodQtd,
-        quantidadeOriginal: p.quantidadeOriginal,
-        pesoEstimado: parseFloat((estimatedWeight * (prodQtd / (totalQuantidade || 1))).toFixed(2)),
-        modelos: p.modelos.map((m) => ({
-          ...m,
-          quantidade: Number(m.quantidade) || 0,
-          numeracaoInicial: m.numeracaoInicial ? Number(m.numeracaoInicial) : undefined,
-          numeracaoFinal: m.numeracaoFinal ? Number(m.numeracaoFinal) : undefined,
-          designerResponsavel: selectedDesigner
-        }))
-      };
-    });
+    setLoadingDetails(true);
+    try {
+      const idInt = selectedProposta.id_int;
 
-    const canStartProd = selectedProposta ? canStartProduction(selectedProposta) : false;
-    const financialBlock = !canStartProd;
-    const blockReason = financialBlock ? "Produção bloqueada até confirmação financeira" : undefined;
-
-    // Consolidate sector configurations for all active PCP sectors
-    const activeSectors = Array.from(new Set(produtos.map(p => p.setor || "IMPRESSÃO")));
-    const firstActiveSector = activeSectors[0] || "IMPRESSÃO";
-    const primaryConfig = sectorConfigs[firstActiveSector] || sectorConfigs["IMPRESSÃO"];
-
-    const verniz = primaryConfig.verniz;
-    const laminacao = primaryConfig.laminacao;
-    const corte = primaryConfig.corte || "Corte Reto";
-    const furo = primaryConfig.furo;
-    const acabamentoEspecial = primaryConfig.acabamentoEspecial;
-    const observacoesAcabamento = primaryConfig.observacoesAcabamento;
-
-    const consolidatedSectorsText = activeSectors.map((sector) => {
-      const config = sectorConfigs[sector] || {
-        instrucoesImpressao: "",
-        verniz: "Nenhum",
-        laminacao: "Nenhum",
-        corte: "Corte Reto",
-        furo: "Nenhum",
-        acabamentoEspecial: "",
-        observacoesAcabamento: "",
-        tipoImpressao: "Laser",
-        capaContraCapa: "Não",
-        blocagem: "Sem blocagem",
-        impressora: "C280"
-      };
-
-      if (sector === "IMPRESSÃO") {
-        return `--- SETOR PCP: IMPRESSÃO ---
-Tipo de Impressão: ${config.tipoImpressao || "Laser"}
-Capa e Contra Capa?: ${config.capaContraCapa || "Não"}
-Blocagem: ${config.blocagem || "Sem blocagem"}
-Impressora: ${config.impressora || "C280"}
-Especificações de Impressão: ${config.instrucoesImpressao || "Padrão"}
-ACABAMENTOS TÉCNICOS:
-- Verniz: ${config.verniz}
-- Laminação: ${config.laminacao}
-- Furo: ${config.furo}
-- Acabamento Especial: ${config.acabamentoEspecial || "Nenhum"}
-- Observações de Acabamento: ${config.observacoesAcabamento || "Sem observações adicionais"}`;
+      // 1. Validar elegibilidade da proposta novamente e verificar se já existe no banco
+      const check = await obterPropostaLiberadaParaBoletim(idInt);
+      if (!check.success) {
+        if (check.error === "Pedido já aberto para esta proposta") {
+          showToast({
+            type: "error",
+            title: "Pedido Já Aberto",
+            description: "Pedido já aberto para esta proposta"
+          });
+        } else {
+          showToast({
+            type: "error",
+            title: "Proposta Bloqueada",
+            description: check.error || "Esta proposta não cumpre as regras de elegibilidade."
+          });
+        }
+        setLoadingDetails(false);
+        return;
       }
 
-      return `--- SETOR PCP: ${sector} ---
-Especificações de Impressão: ${config.instrucoesImpressao || "Padrão"}
-ACABAMENTOS TÉCNICOS:
-- Verniz: ${config.verniz}
-- Laminação: ${config.laminacao}
-- Corte: ${config.corte || "Corte Reto"}
-- Furo: ${config.furo}
-- Acabamento Especial: ${config.acabamentoEspecial || "Nenhum"}
-- Observações de Acabamento: ${config.observacoesAcabamento || "Sem observações adicionais"}`;
-    }).join("\n\n");
+      // 2. Criar pedido no Supabase
+      const result = await criarPedidoParaBoletim({
+        id_int: idInt,
+        descricao: `${clienteNome} - Boletim de entrada`,
+        obs: obsCriticas || null
+      });
 
-    const finalInstrucoesImpressao = consolidatedSectorsText;
+      if (!result.success || !result.id) {
+        showToast({
+          type: "error",
+          title: "Erro ao Salvar Boletim",
+          description: result.error || "Não foi possível abrir o pedido no Supabase."
+        });
+        setLoadingDetails(false);
+        return;
+      }
 
-    const newPedido: Omit<PedidoMock, "id_int" | "modelos"> = {
-      clienteNome,
-      contatoNome,
-      idCliente: selectedProposta ? (selectedProposta.cliente.idCliente || 300000 + Math.floor(Math.random() * 9000)) : 300000 + Math.floor(Math.random() * 9000),
-      empresa,
-      vendedor,
-      dataPedido: new Date().toISOString().split("T")[0],
-      dataPrevistaEntrega,
-      statusPedido: "NOVO" as PedidoStatus,
-      urgente,
-      formaPagamento: `${formaPagamento} | Frete: ${transporte}`,
-      valorTotal: selectedProposta ? selectedProposta.resumo.valorTotal : totalQuantidade * 1.5,
-      pesoTeorico: estimatedWeight,
-      volumes: Number(volumes) || 1,
-      obs: obsCriticas,
-      briefingOperacional,
-      observacoesGerais,
-      dadosEvento: dadosEventoNome ? {
-        nome: dadosEventoNome,
-        data: dadosEventoData || dataPrevistaEntrega,
-        local: dadosEventoLocal || "Nacional"
-      } : undefined,
-      instrucoesDesign,
-      instrucoesImpressao: finalInstrucoesImpressao,
-      anexos: attachments,
-      verniz,
-      laminacao,
-      corte,
-      furo,
-      acabamentoEspecial,
-      observacoesAcabamento,
-      designerResponsavelOS: selectedDesigner,
-      produtos: finalProdutos,
-      financialBlock,
-      blockReason
-    };
+      // 3. Sucesso!
+      showToast({
+        type: "success",
+        title: "Boletim Salvo",
+        description: "Boletim salvo e pedido aberto com sucesso"
+      });
 
-    const nextId = addPedido(newPedido);
+      router.push("/pedidos");
 
-    if (atribuidoDesigner) {
-      addChatMessage(
-        nextId,
-        "Sistema",
-        "Sistema",
-        "SISTEMA",
-        `Arte destinada para ${selectedDesigner}.`
-      );
+    } catch (error) {
+      console.error("Erro ao processar salvamento do boletim:", error);
+      showToast({
+        type: "error",
+        title: "Erro Inesperado",
+        description: "Ocorreu um erro inesperado ao salvar o boletim de entrada."
+      });
+    } finally {
+      setLoadingDetails(false);
     }
-
-    showToast({
-      type: "success",
-      title: "Boletim Salvo",
-      description: `Ficha Operacional da OS #${nextId} cadastrada com sucesso.`
-    });
-
-    router.push("/pedidos");
   };
 
   const canStartProd = selectedProposta ? canStartProduction(selectedProposta) : false;
@@ -895,6 +878,7 @@ ACABAMENTOS TÉCNICOS:
               placeholder="Digite o número da proposta (ex: 16821)..."
               value={propostaBusca}
               onChange={handlePropostaChange}
+              onKeyDown={handlePropostaKeyDown}
               list="propostas-datalist"
               className="w-full h-8.5 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold focus:outline-none text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-blue-600 dark:focus:border-blue-400 focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-400"
             />
@@ -905,12 +889,17 @@ ACABAMENTOS TÉCNICOS:
                 </option>
               ))}
             </datalist>
+            {searchFeedback && (
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-1">
+                {searchFeedback}
+              </p>
+            )}
           </div>
 
           <div className="space-y-1">
             <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase block">Propostas Recentes</span>
             <div className="flex flex-wrap gap-1.5 mt-1">
-              {propostas.slice(0, 5).map((p) => (
+              {recentes.slice(0, 5).map((p) => (
                 <button
                   key={p.id_int}
                   type="button"
@@ -925,7 +914,7 @@ ACABAMENTOS TÉCNICOS:
                   }`}
                 >
                   <span>#{p.id_int}</span>
-                  <span className="opacity-70 font-sans font-normal">({p.clienteNome.split(" ")[0]})</span>
+                  <span className="opacity-70 font-sans font-normal">({(p.clienteNome || "").split(" ")[0]})</span>
                 </button>
               ))}
             </div>

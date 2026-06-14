@@ -7,6 +7,7 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
 import { updateBoletoInDb, registerBoletoViaN8n, deleteBoletoFromBankViaN8n } from "@/features/nfe/services/nfe.service";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
+import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
 function Alert({ children }: { children: React.ReactNode; variant?: string }) {
   return (
@@ -43,6 +44,7 @@ interface RevisarGeracaoBancariaModalProps {
   extReference: string;
   nomeCliente?: string;
   valorTotalNf?: number;
+  idInt?: number;
   onSaveSuccess?: () => void;
 }
 
@@ -52,9 +54,11 @@ export function RevisarGeracaoBancariaModal({
   extReference,
   nomeCliente,
   valorTotalNf,
+  idInt,
   onSaveSuccess
 }: RevisarGeracaoBancariaModalProps) {
   const { showToast } = useAppToast();
+  const { recalcularBoletoIdIntsLocal } = useCobrancas();
   const [boletosForReview, setBoletosForReview] = useState<SupabaseBoletoRow[]>([]);
   const [isLoadingReviewBoletos, setIsLoadingReviewBoletos] = useState(false);
   const [isSavingReview, setIsSavingReview] = useState(false);
@@ -64,6 +68,11 @@ export function RevisarGeracaoBancariaModal({
   const [deletingBoletoId, setDeletingBoletoId] = useState<string | null>(null);
   const [confirmDeleteBoleto, setConfirmDeleteBoleto] = useState<SupabaseBoletoRow | null>(null);
   const [boletoErrors, setBoletoErrors] = useState<Record<string, string>>({});
+
+  const [isRegisteringAll, setIsRegisteringAll] = useState(false);
+  const [currentRegisterIndex, setCurrentRegisterIndex] = useState(0);
+  const [totalToRegister, setTotalToRegister] = useState(0);
+  const [confirmRegisterAll, setConfirmRegisterAll] = useState(false);
 
   const [cadastralErrors, setCadastralErrors] = useState<string[]>([]);
   const [idCliente, setIdCliente] = useState<number | null>(null);
@@ -255,6 +264,7 @@ export function RevisarGeracaoBancariaModal({
 
       // 2. Chamar o webhook
       const result = await registerBoletoViaN8n(boleto);
+      console.log("[RevisarGeracaoBancariaModal] Retorno do webhook n8n para boleto individual:", JSON.stringify(result, null, 2));
 
       // 3. Atualizar dados retornados
       if (result && result.data) {
@@ -266,16 +276,15 @@ export function RevisarGeracaoBancariaModal({
           validatedStatus = String(c6Data.status);
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dbUpdates: Record<string, any> = {
+        const dbUpdates: Record<string, string | null> = {
           status: validatedStatus
         };
         const idBoleto = c6Data.id_boleto_c6 || c6Data.id;
         const nossoNumero = c6Data.nosso_numero || c6Data.our_number;
         const linhaDigitavel = c6Data.linha_digitavel || c6Data.digitable_line;
         const codigoBarras = c6Data.codigo_barras || c6Data.bar_code;
-        const urlPdf = c6Data.url_pdf || c6Data.pdf_storage || c6Data.url || c6Data.pdf || null;
-        const pdfStorage = c6Data.pdf_storage || null;
+        const urlPdf = c6Data.url_pdf || c6Data.pdf_url || c6Data.pdfUrl || c6Data.urlPdf || c6Data.pdf_storage || c6Data.url || c6Data.pdf || c6Data.caminho_pdf || c6Data.boleto_pdf || null;
+        const pdfStorage = c6Data.pdf_storage || c6Data.pdfStorage || c6Data.storage_path || null;
 
         if (idBoleto) dbUpdates.id_boleto_c6 = idBoleto;
         if (nossoNumero) dbUpdates.nosso_numero = nossoNumero;
@@ -316,6 +325,9 @@ export function RevisarGeracaoBancariaModal({
         setBoletosForReview(prev =>
           prev.map(b => b.id === boleto.id ? updatedBoleto : b)
         );
+        if (updatedBoleto.id_int) {
+          await recalcularBoletoIdIntsLocal(Number(updatedBoleto.id_int));
+        }
       }
 
       if (onSaveSuccess) {
@@ -381,6 +393,10 @@ export function RevisarGeracaoBancariaModal({
         title: "Boleto removido do banco. O contas a receber foi mantido."
       });
 
+      if (boleto.id_int) {
+        await recalcularBoletoIdIntsLocal(Number(boleto.id_int));
+      }
+
       if (onSaveSuccess) {
         onSaveSuccess();
       }
@@ -393,6 +409,184 @@ export function RevisarGeracaoBancariaModal({
       });
     } finally {
       setDeletingBoletoId(null);
+    }
+  };
+
+  const handleRegisterAllBoletos = async () => {
+    const idIntDoModal = idInt;
+    if (!idIntDoModal) {
+      showToast({
+        type: "error",
+        title: "Erro de Associação",
+        description: "Não foi possível determinar o id_int da proposta atual do modal para registrar os boletos em lote."
+      });
+      return;
+    }
+
+    // Filtrar boletos elegíveis da listagem atual
+    const eligible = boletosForReview.filter(b => {
+      const statusStr = String(b.status || "").trim().toUpperCase();
+      if (statusStr === "CANCELADO") return false;
+      if (b.deposito_conta) return false;
+      if (b.id_boleto_c6 || b.linha_digitavel || b.codigo_barras) return false;
+      if (b.valor === null || b.valor === undefined || Number(b.valor) <= 0) return false;
+      if (!b.vencimento) return false;
+      return true;
+    });
+
+    if (eligible.length === 0) {
+      showToast({
+        type: "info",
+        title: "Nenhum boleto elegível",
+        description: "Todos os boletos já estão registrados ou não são elegíveis."
+      });
+      return;
+    }
+
+    // Trava de segurança: COUNT(DISTINCT id_int) = 1
+    const distinctIdInts = new Set(eligible.map(b => Number(b.id_int)).filter(Boolean));
+    if (distinctIdInts.size > 1) {
+      showToast({
+        type: "error",
+        title: "Trava de Segurança de Lote",
+        description: "Não é permitido registrar em lote boletos de propostas diferentes (Múltiplos id_int detectados)."
+      });
+      return;
+    }
+
+    // Garantir explicitamente que todos os boletos processados possuem boleto.id_int === idInt do modal/proposta atual
+    const hasDifferentIdInt = eligible.some(b => Number(b.id_int) !== Number(idIntDoModal));
+    if (hasDifferentIdInt) {
+      showToast({
+        type: "error",
+        title: "Trava de Segurança de Lote",
+        description: `Todos os boletos elegíveis devem pertencer ao id_int ${idIntDoModal} da proposta atual.`
+      });
+      return;
+    }
+
+    setIsRegisteringAll(true);
+    setCurrentRegisterIndex(0);
+    setTotalToRegister(eligible.length);
+
+    try {
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Cliente Supabase não inicializado.");
+
+      for (let i = 0; i < eligible.length; i++) {
+        setCurrentRegisterIndex(i);
+        const boleto = eligible[i];
+
+        if (Number(boleto.id_int) !== Number(idIntDoModal)) {
+          throw new Error(`[Boleto Parcela ${boleto.parcela}] Erro: id_int do boleto (${boleto.id_int}) é divergente do id_int do modal atual (${idIntDoModal}).`);
+        }
+
+        try {
+          setBoletoErrors(prev => {
+            const next = { ...prev };
+            delete next[boleto.id];
+            return next;
+          });
+
+          const { error: preSaveError } = await client
+            .from("boletos")
+            .update({
+              vencimento: boleto.vencimento ? new Date(String(boleto.vencimento)).toISOString().split('T')[0] : null,
+              valor: boleto.valor !== null && boleto.valor !== undefined ? Number(boleto.valor) : null,
+              descricao: boleto.descricao ? String(boleto.descricao) : null,
+              deposito_conta: !!boleto.deposito_conta,
+              multa: boleto.multa !== null && boleto.multa !== undefined ? Number(boleto.multa) : null,
+              juros_dia: boleto.juros_dia !== null && boleto.juros_dia !== undefined ? Number(boleto.juros_dia) : null,
+            })
+            .eq("id", boleto.id);
+
+          if (preSaveError) {
+            throw new Error(`Erro ao atualizar dados antes do registro: ${preSaveError.message}`);
+          }
+
+          const result = await registerBoletoViaN8n(boleto);
+          console.log("[RevisarGeracaoBancariaModal] Retorno do webhook n8n para boleto em lote:", JSON.stringify(result, null, 2));
+
+          if (result && result.data) {
+            const c6Data = result.data;
+            let validatedStatus = "A_VENCER";
+            if (c6Data.status && ["A_RECEBER", "A_VENCER", "PAID", "CANCELADO"].includes(String(c6Data.status))) {
+              validatedStatus = String(c6Data.status);
+            }
+
+            const dbUpdates: Record<string, string | null> = {
+              status: validatedStatus
+            };
+            const idBoleto = c6Data.id_boleto_c6 || c6Data.id;
+            const nossoNumero = c6Data.nosso_numero || c6Data.our_number;
+            const linhaDigitavel = c6Data.linha_digitavel || c6Data.digitable_line;
+            const codigoBarras = c6Data.codigo_barras || c6Data.bar_code;
+            const urlPdf = c6Data.url_pdf || c6Data.pdf_url || c6Data.pdfUrl || c6Data.urlPdf || c6Data.pdf_storage || c6Data.url || c6Data.pdf || c6Data.caminho_pdf || c6Data.boleto_pdf || null;
+            const pdfStorage = c6Data.pdf_storage || c6Data.pdfStorage || c6Data.storage_path || null;
+
+            if (idBoleto) dbUpdates.id_boleto_c6 = idBoleto;
+            if (nossoNumero) dbUpdates.nosso_numero = nossoNumero;
+            if (linhaDigitavel) dbUpdates.linha_digitavel = linhaDigitavel;
+            if (codigoBarras) dbUpdates.codigo_barras = codigoBarras;
+            if (urlPdf) dbUpdates.url_pdf = urlPdf;
+            if (pdfStorage) dbUpdates.pdf_storage = pdfStorage;
+
+            if (Object.keys(dbUpdates).length > 0) {
+              const { error: updateError } = await client
+                .from("boletos")
+                .update(dbUpdates)
+                .eq("id", boleto.id);
+
+              if (updateError) {
+                throw new Error(`Boleto registrado, mas erro ao salvar dados no banco: ${updateError.message}`);
+              }
+            }
+          }
+
+          const { data: updatedBoleto, error: fetchError } = await client
+            .from("boletos")
+            .select("*")
+            .eq("id", boleto.id)
+            .maybeSingle();
+
+          if (fetchError) throw fetchError;
+
+          if (updatedBoleto) {
+            setBoletosForReview(prev =>
+              prev.map(b => b.id === boleto.id ? updatedBoleto : b)
+            );
+
+            if (updatedBoleto.id_int) {
+              await recalcularBoletoIdIntsLocal(Number(updatedBoleto.id_int));
+            }
+          }
+
+        } catch (innerErr) {
+          const innerMsg = innerErr instanceof Error ? innerErr.message : "Erro desconhecido.";
+          setBoletoErrors(prev => ({ ...prev, [boleto.id]: innerMsg }));
+          throw new Error(`[Boleto Parcela ${boleto.parcela}] ${innerMsg}`);
+        }
+      }
+
+      showToast({
+        type: "success",
+        title: "Sucesso!",
+        description: `Todos os ${eligible.length} boletos foram registrados com sucesso.`
+      });
+
+      if (onSaveSuccess) {
+        onSaveSuccess();
+      }
+
+    } catch (err) {
+      console.error("[RevisarGeracaoBancariaModal] Erro ao registrar boletos em lote:", err);
+      showToast({
+        type: "error",
+        title: "Registro em Lote Interrompido",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsRegisteringAll(false);
     }
   };
 
@@ -436,7 +630,9 @@ export function RevisarGeracaoBancariaModal({
   const displayDoc = boletosForReview[0]?.documento || "Não informado";
   const displayTotalNf = valorTotalNf !== undefined
     ? valorTotalNf
-    : boletosForReview.reduce((acc, b) => acc + Number(b.valor || 0), 0);  return (
+    : boletosForReview.reduce((acc, b) => acc + Number(b.valor || 0), 0);
+
+  return (
     <>
       <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-3xl w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
@@ -544,6 +740,8 @@ export function RevisarGeracaoBancariaModal({
                   {boletosForReview.map((boleto, idx) => {
                     const isRegistered = !!(boleto.id_boleto_c6 || boleto.nosso_numero || boleto.linha_digitavel);
                     const isValDisabled = isRegistered || !!boleto.deposito_conta || boleto.status === "CANCELADO";
+                    const isGeneralDisabled = isRegistered || boleto.status === "CANCELADO" || isRegisteringAll || registeringBoletoId === boleto.id;
+                    const isFieldValDisabled = isValDisabled || isRegisteringAll || registeringBoletoId === boleto.id;
                     
                     return (
                       <div
@@ -587,7 +785,7 @@ export function RevisarGeracaoBancariaModal({
                               <input
                                 type="number"
                                 step="0.01"
-                                disabled={isValDisabled}
+                                disabled={isFieldValDisabled}
                                 value={boleto.valor !== null && boleto.valor !== undefined ? Number(boleto.valor) : ""}
                                 onChange={(e) => handleBoletoChange(idx, "valor", e.target.value === "" ? null : Number(e.target.value))}
                                 className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white disabled:bg-slate-50 disabled:text-slate-500 focus:border-[#0b2f4a] outline-none font-mono"
@@ -609,7 +807,7 @@ export function RevisarGeracaoBancariaModal({
                             </label>
                             <input
                               type="date"
-                              disabled={boleto.status === "CANCELADO"}
+                              disabled={isGeneralDisabled}
                               value={boleto.vencimento ? String(boleto.vencimento).substring(0, 10) : ""}
                               onChange={(e) => handleBoletoChange(idx, "vencimento", e.target.value)}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
@@ -623,7 +821,7 @@ export function RevisarGeracaoBancariaModal({
                             </label>
                             <input
                               type="text"
-                              disabled={boleto.status === "CANCELADO"}
+                              disabled={isGeneralDisabled}
                               value={boleto.descricao ? String(boleto.descricao) : ""}
                               onChange={(e) => handleBoletoChange(idx, "descricao", e.target.value)}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none"
@@ -638,7 +836,7 @@ export function RevisarGeracaoBancariaModal({
                             <input
                               type="number"
                               step="0.01"
-                              disabled={boleto.status === "CANCELADO"}
+                              disabled={isFieldValDisabled}
                               value={boleto.multa !== null && boleto.multa !== undefined ? Number(boleto.multa) : ""}
                               onChange={(e) => handleBoletoChange(idx, "multa", e.target.value === "" ? null : Number(e.target.value))}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
@@ -653,7 +851,7 @@ export function RevisarGeracaoBancariaModal({
                             <input
                               type="number"
                               step="0.0001"
-                              disabled={boleto.status === "CANCELADO"}
+                              disabled={isFieldValDisabled}
                               value={boleto.juros_dia !== null && boleto.juros_dia !== undefined ? Number(boleto.juros_dia) : ""}
                               onChange={(e) => handleBoletoChange(idx, "juros_dia", e.target.value === "" ? null : Number(e.target.value))}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
@@ -665,7 +863,7 @@ export function RevisarGeracaoBancariaModal({
                             <input
                               type="checkbox"
                               id={`deposito-conta-${boleto.id}`}
-                              disabled={isRegistered || boleto.status === "CANCELADO"}
+                              disabled={isRegistered || boleto.status === "CANCELADO" || isRegisteringAll || registeringBoletoId === boleto.id}
                               checked={!!boleto.deposito_conta}
                               onChange={(e) => {
                                 const checked = e.target.checked;
@@ -709,7 +907,7 @@ export function RevisarGeracaoBancariaModal({
 
                         {/* Card Footer Actions */}
                         {boleto.status === "CANCELADO" ? (
-                          <div className="border-t border-slate-100 pt-3 flex items-center gap-2 text-red-600 bg-red-50/50 p-2.5 rounded-xl border border-red-200/50">
+                          <div className="border-t border-slate-100 pt-3 flex items-center gap-2 text-red-600 bg-red-50/50 p-2.5 rounded-xl border border-red-200/50 animate-in fade-in duration-200">
                             <Info className="h-4 w-4 shrink-0 text-red-500" />
                             <span className="text-xs font-medium">Boleto CANCELADO. Nenhuma ação disponível.</span>
                           </div>
@@ -741,7 +939,7 @@ export function RevisarGeracaoBancariaModal({
                                     PDF ainda não disponível
                                   </button>
                                 )}
- 
+
                                 {/* Copiar Linha Digitável */}
                                 <button
                                   type="button"
@@ -756,7 +954,7 @@ export function RevisarGeracaoBancariaModal({
                                 >
                                   Copiar Linha Digitável
                                 </button>
- 
+
                                 {/* Copiar Link */}
                                 <button
                                   type="button"
@@ -772,12 +970,12 @@ export function RevisarGeracaoBancariaModal({
                                 >
                                   Copiar Link
                                 </button>
- 
+
                                 {/* Excluir boleto do banco */}
                                 {boleto.id_boleto_c6 && boleto.status !== "PAID" && (
                                   <button
                                     type="button"
-                                    disabled={deletingBoletoId === boleto.id}
+                                    disabled={deletingBoletoId === boleto.id || isRegisteringAll || isSavingReview || registeringBoletoId !== null}
                                     onClick={() => setConfirmDeleteBoleto(boleto)}
                                     className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 transition rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
                                   >
@@ -796,7 +994,7 @@ export function RevisarGeracaoBancariaModal({
                               boleto.status !== "PAID" && (
                                 <button
                                   type="button"
-                                  disabled={registeringBoletoId === boleto.id || isSavingReview || isLoadingReviewBoletos || cadastralErrors.length > 0}
+                                  disabled={registeringBoletoId !== null || isRegisteringAll || isSavingReview || isLoadingReviewBoletos || cadastralErrors.length > 0}
                                   title={cadastralErrors.length > 0 ? "Corrija as pendências de cadastro descritas no topo antes de registrar" : undefined}
                                   onClick={() => setConfirmRegisterBoleto(boleto)}
                                   className="px-4 py-2 bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 text-white transition rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 min-w-[150px]"
@@ -821,30 +1019,49 @@ export function RevisarGeracaoBancariaModal({
 
                 {/* Registro Bancário Section */}
                 {(() => {
-                  const pendingBankReg = boletosForReview.filter(b => {
-                    const isRegistered = !!(b.id_boleto_c6 || b.nosso_numero || b.linha_digitavel);
-                    return !b.deposito_conta && !isRegistered;
+                  const idIntDoModal = idInt;
+                  if (!idIntDoModal) return null;
+                  
+                  const eligibleBoletos = boletosForReview.filter(b => {
+                    const statusStr = String(b.status || "").trim().toUpperCase();
+                    if (statusStr === "CANCELADO") return false;
+                    if (b.deposito_conta) return false;
+                    if (b.id_boleto_c6 || b.linha_digitavel || b.codigo_barras) return false;
+                    if (b.valor === null || b.valor === undefined || Number(b.valor) <= 0) return false;
+                    if (!b.vencimento) return false;
+                    return true;
                   });
-                  if (pendingBankReg.length > 0) {
+
+                  // Trava de lote: só renderizar se COUNT(DISTINCT id_int) = 1 e for correspondente ao modal atual
+                  const distinctIdInts = new Set(eligibleBoletos.map(b => Number(b.id_int)).filter(Boolean));
+                  const isLoteValido = distinctIdInts.size === 1 && Number(Array.from(distinctIdInts)[0]) === Number(idIntDoModal);
+
+                  if (eligibleBoletos.length > 1 && isLoteValido) {
                     return (
-                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
+                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3 font-sans">
                         <div className="flex items-center gap-2">
                           <Info className="h-4.5 w-4.5 text-blue-600" />
-                          <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Registro Bancário</span>
+                          <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Registro Bancário em Lote</span>
                         </div>
                         <p className="text-xs text-slate-500 leading-relaxed">
-                          Existem {pendingBankReg.length} boleto(s) elegível(is) para registro no banco. Boletos marcados como &quot;Depósito em conta&quot; não são elegíveis para registro bancário.
+                          Existem {eligibleBoletos.length} boletos elegíveis para registro no banco. Você pode registrá-los em lote abaixo ou individualmente nos cards acima.
                         </p>
                         <button
                           type="button"
-                          disabled
-                          className="w-full px-4 py-2.5 text-xs font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-xl cursor-not-allowed flex items-center justify-center gap-1.5"
+                          disabled={isRegisteringAll || registeringBoletoId !== null || isSavingReview || isLoadingReviewBoletos || cadastralErrors.length > 0}
+                          title={cadastralErrors.length > 0 ? "Corrija as pendências de cadastro descritas no topo antes de registrar" : undefined}
+                          onClick={() => setConfirmRegisterAll(true)}
+                          className="w-full px-4 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition rounded-xl flex items-center justify-center gap-1.5 shadow-sm"
                         >
-                          Registrar boletos no banco (C6 Bank)
+                          {isRegisteringAll ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Registrando {currentRegisterIndex + 1} de {totalToRegister} boletos...
+                            </>
+                          ) : (
+                            "Registrar todos os boletos desta proposta"
+                          )}
                         </button>
-                        <p className="text-[10px] text-slate-400 italic text-center leading-normal">
-                          A integração de registro via API n8n/C6 está sendo preparada para o próximo ciclo de desenvolvimento.
-                        </p>
                       </div>
                     );
                   }
@@ -859,7 +1076,7 @@ export function RevisarGeracaoBancariaModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={isSavingReview}
+              disabled={isSavingReview || isRegisteringAll || registeringBoletoId !== null}
               className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 disabled:opacity-50 transition rounded-xl"
             >
               Cancelar
@@ -867,7 +1084,7 @@ export function RevisarGeracaoBancariaModal({
             <button
               type="button"
               onClick={handleSaveReview}
-              disabled={isSavingReview || isLoadingReviewBoletos || boletosForReview.length === 0}
+              disabled={isSavingReview || isRegisteringAll || registeringBoletoId !== null || isLoadingReviewBoletos || boletosForReview.length === 0}
               className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[140px]"
             >
               {isSavingReview ? (
@@ -879,9 +1096,50 @@ export function RevisarGeracaoBancariaModal({
                 "Salvar Alterações"
               )}
             </button>
-          </div>
         </div>
       </div>
+    </div>
+
+      {/* Confirmation Dialog for Batch Bank Registration */}
+      {confirmRegisterAll && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="p-3 bg-amber-50 text-amber-500 rounded-2xl">
+                <AlertTriangle className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">
+                  Confirmar Registro em Lote
+                </h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  Todos os boletos elegíveis para esta proposta serão registrados sequencialmente no banco. Deseja prosseguir?
+                </p>
+              </div>
+            </div>
+            
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                onClick={() => setConfirmRegisterAll(false)}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmRegisterAll(false);
+                  void handleRegisterAllBoletos();
+                }}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition"
+              >
+                Registrar todos os boletos desta proposta
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Dialog for Bank Registration */}
       {confirmRegisterBoleto && (

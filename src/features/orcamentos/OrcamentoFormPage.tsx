@@ -1093,19 +1093,21 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       return;
     }
 
+    const initialQty = produto.quantidade_minima_venda ?? 1000;
+
     try {
       const vinculos = await listProdutoVariacaoVinculos(produto.id_produto);
       const enrichedProduto = {
         ...produto,
         variacoes: vinculos
       };
-      const item = createItemFromProduto(enrichedProduto, 1000, bonusPercent, false);
+      const item = createItemFromProduto(enrichedProduto, initialQty, bonusPercent, false);
       updateField("itens", [...form.itens, item]);
       setOpenItemIds((current) => ({ ...current, [item.id]: true }));
       showToast({ type: "success", title: "Produto adicionado", description: `${produto.nomeReal} incluído no orçamento.` });
     } catch (err) {
       console.error("Erro ao carregar variações do produto:", err);
-      const item = createItemFromProduto(produto, 1000, bonusPercent, false);
+      const item = createItemFromProduto(produto, initialQty, bonusPercent, false);
       updateField("itens", [...form.itens, item]);
       setOpenItemIds((current) => ({ ...current, [item.id]: true }));
       showToast({ type: "success", title: "Produto adicionado", description: `${produto.nomeReal} incluído no orçamento.` });
@@ -1165,6 +1167,19 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         type: "error",
         title: "Quantidade inválida",
         description: "A quantidade do item deve ser maior que zero."
+      });
+      return;
+    }
+
+    if (
+      item.produto.quantidade_minima_venda !== null &&
+      item.produto.quantidade_minima_venda !== undefined &&
+      item.quantidade < item.produto.quantidade_minima_venda
+    ) {
+      showToast({
+        type: "error",
+        title: "Quantidade mínima exigida",
+        description: `Quantidade mínima para este produto: ${item.produto.quantidade_minima_venda} unidades.`
       });
       return;
     }
@@ -1532,6 +1547,22 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     const isNonEmpty = (value: unknown): boolean => {
       return value !== null && value !== undefined && String(value).trim() !== "";
     };
+
+    const itemWithMinQtyError = !form.isAvulso && form.itens.find((item) =>
+      item.produto.quantidade_minima_venda !== null &&
+      item.produto.quantidade_minima_venda !== undefined &&
+      item.quantidade < item.produto.quantidade_minima_venda
+    );
+
+    if (itemWithMinQtyError) {
+      showToast({
+        type: "error",
+        title: "Quantidade mínima não atendida",
+        description: `O produto "${itemWithMinQtyError.produto.nomeReal}" exige a quantidade mínima de ${itemWithMinQtyError.produto.quantidade_minima_venda} unidades.`
+      });
+      setErrorFields([`quantidade_${itemWithMinQtyError.id}`]);
+      return false;
+    }
 
     const missingRequiredVariation = !form.isAvulso && form.itens.some((item) =>
       item.produto.variacoes.some(

@@ -2,7 +2,7 @@ import type { Proposta } from "@/features/orcamentos/types";
 
 export type CobrancaStatus = "A_RECEBER" | "A_VENCER" | "PAID" | "CANCELADO";
 
-export type CobrancaTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" | "E-FATURADO";
+export type CobrancaTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" | "E-FATURADO" | "E-RETRABALHO" | "E-PERMUTA" | "E-AMOSTRA";
 
 export type EmpresaRecebedoraOption = {
   id: number;

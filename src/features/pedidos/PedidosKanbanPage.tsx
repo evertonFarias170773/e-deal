@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
-import { PageHeader } from "@/components/common/PageHeader";
-import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
+import { EmptyState } from "@/components/common/EmptyState";
+import { listarPedidosProducao } from "./services/pedidos-producao.service";
+import type { PedidoProducaoListItem } from "./types";
 import {
   Flame,
   AlertCircle,
@@ -85,14 +85,22 @@ export function PedidosKanbanPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { openChat } = useGlobalChat();
-  const {
-    pedidos,
-    isLoaded,
-    moverEtapaPedido,
-    toggleUrgente,
-    pausarProducao,
-    liberarPausa
-  } = usePedidosMockDb();
+  const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
+
+  useEffect(() => {
+    async function load() {
+      const data = await listarPedidosProducao();
+      setPedidos(data);
+    }
+    void load();
+  }, []);
+
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  const moverEtapaPedido = (idInt: number, status: string) => {};
+  const toggleUrgente = (idInt: number) => {};
+  const pausarProducao = (idInt: number, reason: string) => {};
+  const liberarPausa = (idInt: number) => {};
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [search, setSearch] = useState("");
@@ -787,7 +795,14 @@ export function PedidosKanbanPage() {
       </div>
 
       {/* Main Kanban Board View */}
-      {renderKanbanBoard(false)}
+      {pedidos.length > 0 ? (
+        renderKanbanBoard(false)
+      ) : (
+        <EmptyState
+          title="Nenhum pedido em produção"
+          description="Os pedidos aparecerão aqui quando forem liberados pelo boletim finalizado."
+        />
+      )}
 
       {/* FULLSCREEN overlay / TV MODE */}
       {isFullscreen && (

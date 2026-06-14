@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { Cobranca, CriarCobrancaFormValues, CreditAnalysisResult } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
-import { canLiberarParaPedido, roundMoney } from "@/features/cobrancas/cobrancas-utils";
+import { canLiberarParaPedido, roundMoney, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getCobrancasReadOnlyData,
@@ -32,7 +32,9 @@ type CobrancasContextValue = {
   voltarCobrancaFilaReal: (id: string) => Promise<boolean>;
   emitirBoletoReal: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
   existingBoletoIdInts: Set<number>;
+  hasBoletoHistoryIdInts: Set<number>;
   marcarComoBoletosPreparadosLocal: (id: string, idInt: number) => void;
+  recalcularBoletoIdIntsLocal: (idInt: number) => Promise<void>;
 };
 
 const STORAGE_KEY = "erp_ideal_mock_cobrancas_v6";
@@ -66,6 +68,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [source, setSource] = useState<CobrancasReadSource>("mock");
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [existingBoletoIdInts, setExistingBoletoIdInts] = useState<Set<number>>(new Set());
+  const [hasBoletoHistoryIdInts, setHasBoletoHistoryIdInts] = useState<Set<number>>(new Set());
   const isMountedRef = useRef(true);
 
   const loadData = useCallback(async (): Promise<CobrancasReadResult> => {
@@ -94,32 +97,40 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       setSource(result.source);
     }
 
-    // Buscar todos os id_int da tabela public.boletos no banco de dados (excluindo os cancelados)
+    // Buscar todos os id_int da tabela public.boletos no banco de dados
     // independentemente do source dos dados (seja mock ou supabase, a verificação de duplicidade de boleto é sempre real)
+    // Definimos limit(30000) e selecionamos apenas id_int,status para otimizar desempenho e evitar problemas de paginação do Supabase
     const client = getSupabaseClient();
     if (client) {
       try {
         const { data: boletosData, error } = await client
           .from("boletos")
-          .select("id_int, status");
+          .select("id_int, status")
+          .limit(30000);
         if (error) {
           console.error("[CobrancasProvider] Erro ao buscar id_int de boletos:", error);
         } else if (boletosData) {
           const ids = new Set<number>();
+          const historyIds = new Set<number>();
           boletosData.forEach((b) => {
             if (b.id_int !== null && b.id_int !== undefined) {
-              if (b.status !== "CANCELADO") {
-                ids.add(Number(b.id_int));
+              const idIntNum = Number(b.id_int);
+              historyIds.add(idIntNum); // Adiciona todos ao histórico, inclusive CANCELADO
+              const statusStr = String(b.status || "").trim().toUpperCase();
+              if (statusStr !== "CANCELADO") {
+                ids.add(idIntNum); // Adiciona apenas ativos ao existingBoletoIdInts
               }
             }
           });
           setExistingBoletoIdInts(ids);
+          setHasBoletoHistoryIdInts(historyIds);
         }
       } catch (err) {
         console.error("[CobrancasProvider] Erro inesperado ao buscar boletos:", err);
       }
     } else {
       setExistingBoletoIdInts(new Set());
+      setHasBoletoHistoryIdInts(new Set());
     }
 
     setHasLoadedStorage(true);
@@ -138,6 +149,65 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       next.add(idInt);
       return next;
     });
+    setHasBoletoHistoryIdInts((prev) => {
+      const next = new Set(prev);
+      next.add(idInt);
+      return next;
+    });
+  }, []);
+
+  const recalcularBoletoIdIntsLocal = useCallback(async (idInt: number) => {
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    try {
+      console.log('[CobrancasProvider] Recalculando boletos para id_int:', idInt);
+      const { data: boletosData, error } = await client
+        .from("boletos")
+        .select("status")
+        .eq("id_int", idInt);
+
+      if (error) {
+        console.error("[CobrancasProvider] Erro ao recalcular boletos do id_int:", idInt, error);
+        return;
+      }
+
+      if (boletosData) {
+        const temHistorico = boletosData.length > 0;
+        
+        // Verificar se existe qualquer boleto ativo (ou seja, status !== 'CANCELADO')
+        const temBoletoAtivo = boletosData.some((b) => {
+          const statusStr = String(b.status || "").trim().toUpperCase();
+          return statusStr !== "CANCELADO";
+        });
+
+        console.log('[CobrancasProvider] Resultado recalculado para id_int:', idInt, 'temBoletoAtivo:', temBoletoAtivo, 'temHistorico:', temHistorico);
+
+        setExistingBoletoIdInts((prev) => {
+          const next = new Set(prev);
+          if (temBoletoAtivo) {
+            next.add(idInt);
+          } else {
+            next.delete(idInt);
+            console.log('[CobrancasProvider] Removido id_int de existingBoletoIdInts local:', idInt);
+          }
+          return next;
+        });
+
+        setHasBoletoHistoryIdInts((prev) => {
+          const next = new Set(prev);
+          if (temHistorico) {
+            next.add(idInt);
+          } else {
+            next.delete(idInt);
+            console.log('[CobrancasProvider] Removido id_int de hasBoletoHistoryIdInts local:', idInt);
+          }
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error("[CobrancasProvider] Erro inesperado ao recalcular boletos:", err);
+    }
   }, []);
 
   const refreshCobrancas = useCallback(async () => {
@@ -201,53 +271,28 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const idEmpresa = values.id_empresa ?? (empresaOption?.id ?? 1);
       const nomeEmpresa = values.empresa ?? (empresaOption?.nome ?? proposta.empresa);
 
-      let isScenario1 = false;
-      if (values.tipoCobranca === "E-FATURADO") {
-        try {
-          const { data: analysis, error: rpcError } = await client.rpc("fn_analise_credito_cliente", {
-            p_id_cliente: proposta.cliente.idCliente
-          });
+       const isFaturadoType = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(values.tipoCobranca);
 
-          if (!rpcError && analysis && analysis.length > 0) {
-            const analysisObj = analysis[0] as CreditAnalysisResult;
-            const limiteDisponivel = Number(analysisObj.limite_disponivel) || 0;
-            const qtdAtrasados = Number(analysisObj.qtd_pagamentos_atrasados) || 0;
-            
-            isScenario1 = limiteDisponivel >= roundMoney(values.valor) && qtdAtrasados === 0;
-          }
-        } catch (rpcErr) {
-          console.error("Erro RPC fn_analise_credito_cliente no provider:", rpcErr);
-          const hasOverdue = cobrancas.some((cob) => {
-            if (cob.id_cliente !== proposta.cliente.idCliente || cob.status === "PAID" || cob.status === "CANCELADO" || !cob.vencimento) {
-              return false;
-            }
-            const vencDate = new Date(cob.vencimento + "T23:59:59");
-            return vencDate.getTime() < Date.now();
-          });
-          isScenario1 = proposta.cliente.creditoDisponivel >= roundMoney(values.valor) && !hasOverdue;
-        }
-      }
-
-      // 1. Criar registro inicial em pagamentos_v2
-      const payloadInicial = {
-        id_int: proposta.id_int,
-        id_cliente: proposta.cliente.idCliente,
-        cliente: proposta.cliente.nome,
-        documento: proposta.cliente.documento,
-        valor: roundMoney(values.valor),
-        status: values.tipoCobranca === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
-        tipo_cobranca: values.tipoCobranca,
-        empresa: nomeEmpresa,
-        id_empresa: idEmpresa,
-        os_ideal: values.osIdeal.trim(),
-        atendente: proposta.vendedor || proposta.cliente.vendedor || "Sistema",
-        descricao: values.descricao || `Cobrança ${values.tipoCobranca} da proposta #${proposta.id_int}`,
-        vencimento: values.vencimento || null,
-        obs_v2: values.observacao || null,
-        confirmado: false,
-        forma_fatu: values.tipoCobranca === "E-FATURADO" ? (values.modeloFatu || "BOLETO") : null,
-        paid_at: (values.tipoCobranca === "E-FATURADO" && isScenario1) ? new Date().toISOString() : null
-      };
+       // 1. Criar registro inicial em pagamentos_v2
+       const payloadInicial = {
+         id_int: proposta.id_int,
+         id_cliente: proposta.cliente.idCliente,
+         cliente: proposta.cliente.nome,
+         documento: proposta.cliente.documento,
+         valor: roundMoney(values.valor),
+         status: isFaturadoType ? "A_VENCER" : "A_RECEBER",
+         tipo_cobranca: values.tipoCobranca,
+         empresa: nomeEmpresa,
+         id_empresa: idEmpresa,
+         os_ideal: values.osIdeal.trim(),
+         atendente: proposta.vendedor || proposta.cliente.vendedor || "Sistema",
+         descricao: values.descricao || `Cobrança ${values.tipoCobranca} da proposta #${proposta.id_int}`,
+         vencimento: values.vencimento || null,
+         obs_v2: values.observacao || null,
+         confirmado: false,
+         forma_fatu: isFaturadoType ? (values.modeloFatu || "BOLETO") : null,
+         paid_at: null
+       };
 
       const { data: createdRows, error: insertError } = await client
         .from("pagamentos_v2")
@@ -354,12 +399,14 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
                       loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
 
-        // Registrar timeline usando a nova função padronizada
-        const msg = values.tipoCobranca === "E-FATURADO"
-          ? (isScenario1 
-              ? "E-Faturado registrado com crédito disponível. Aguardando confirmação do financeiro."
-              : "E-Faturado enviado para análise financeira.")
-          : `Registrada nova cobrança CARTÃO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+        const isFaturadoType = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(values.tipoCobranca);
+        let msg = "";
+        if (isFaturadoType) {
+          const label = getTipoCobrancaLabel(values.tipoCobranca);
+          msg = `${label} enviado para análise financeira. Observações: ${values.observacao || "Nenhuma"}`;
+        } else {
+          msg = `Registrada nova cobrança CARTÃO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+        }
 
         void registrarMensagemSistemaProposta({
           idInt: proposta.id_int,
@@ -381,10 +428,10 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           id_int: proposta.id_int,
           id_cliente: proposta.cliente.idCliente,
           valor: values.valor,
-          status: values.tipoCobranca === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
+          status: isFaturadoType ? "A_VENCER" : "A_RECEBER",
           tipo_cobranca: values.tipoCobranca,
           created_at: new Date().toISOString(),
-          paid_at: (values.tipoCobranca === "E-FATURADO" && isScenario1) ? new Date().toISOString() : undefined,
+          paid_at: undefined,
           vencimento: values.vencimento || undefined,
           cliente: proposta.cliente.nome,
           empresa: proposta.empresa,
@@ -395,7 +442,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           id_empresa: idEmpresa,
           token_publico: tokenPublico,
           url_cobranca: urlCobranca,
-          forma_fatu: values.tipoCobranca === "E-FATURADO" ? (values.modeloFatu || "BOLETO") : undefined,
+          forma_fatu: isFaturadoType ? (values.modeloFatu || "BOLETO") : undefined,
           proposta: {
             id_int: proposta.id_int,
             statusProposta: proposta.status,
@@ -823,7 +870,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
       // 1. Verificar duplicidade na tabela public.boletos
       // Priorizar busca por id_pagamento se existir, caso contrário usar id_int como fallback.
-      let existingBoletos: any[] = [];
+      let existingBoletos: Array<{ id: string; id_int: number | null; id_pagamento: string | null; status: string | null }> = [];
       if (cobranca.id_pagamento && cobranca.id_pagamento.trim() !== "") {
         const { data, error } = await client
           .from("boletos")
@@ -1072,7 +1119,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       voltarCobrancaFilaReal,
       emitirBoletoReal,
       existingBoletoIdInts,
-      marcarComoBoletosPreparadosLocal
+      hasBoletoHistoryIdInts,
+      marcarComoBoletosPreparadosLocal,
+      recalcularBoletoIdIntsLocal
     }),
     [
       cobrancas,
@@ -1088,7 +1137,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       voltarCobrancaFilaReal,
       emitirBoletoReal,
       existingBoletoIdInts,
-      marcarComoBoletosPreparadosLocal
+      hasBoletoHistoryIdInts,
+      marcarComoBoletosPreparadosLocal,
+      recalcularBoletoIdIntsLocal
     ]
   );
 

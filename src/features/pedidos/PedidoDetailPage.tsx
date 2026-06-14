@@ -10,6 +10,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
 import ModelosManagerPanel from "./components/ModelosManagerPanel";
+import { ProducaoArtesPanel } from "@/features/producao";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 
@@ -89,6 +90,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
   const [typedAuthor, setTypedAuthor] = useState("Atendente");
   const [selectedSector, setSelectedSector] = useState("Comercial");
   const [timelineFilter, setTimelineFilter] = useState("Tudo");
+  const [showRealPanel, setShowRealPanel] = useState(false);
 
   // Local Scale / Expedição State
   const [volumes, setVolumes] = useState(1);
@@ -875,15 +877,47 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
 
         {/* TAB ARTES */}
         {activeTab === "artes" && (
-          <ModelosManagerPanel
-            idInt={idInt}
-            produtos={pedido.produtos}
-            onUploadArte={(modeloId, fileName) => uploadArteModelo(idInt, modeloId, fileName)}
-            onLiberarArte={(modeloId) => liberarArteModelo(idInt, modeloId)}
-            onEnviarAprovacaoCliente={(modeloId) => enviarParaAprovacaoCliente(idInt, modeloId)}
-            onAdicionarComentarioInterno={(modeloId, text) => salvarComentarioInternoModelo(idInt, modeloId, text)}
-            onRegistrarDecisaoCliente={(token, status, comentario, clienteNome) => registrarDecisaoCliente(token, status, comentario, clienteNome)}
-          />
+          <div className="space-y-4">
+            <div className="flex flex-wrap justify-between items-center bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 gap-2">
+              <span className="text-xs font-bold text-slate-500 uppercase">Modo de Visualização da Produção</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowRealPanel(false)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+                    !showRealPanel
+                      ? "bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 border-slate-900"
+                      : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
+                  }`}
+                >
+                  Simulador Local (Mock)
+                </button>
+                <button
+                  onClick={() => setShowRealPanel(true)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+                    showRealPanel
+                      ? "bg-blue-600 border-blue-600 text-white"
+                      : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
+                  }`}
+                >
+                  Conexão Real Supabase (Fase 1)
+                </button>
+              </div>
+            </div>
+
+            {showRealPanel ? (
+              <ProducaoArtesPanel idInt={idInt} idCliente={pedido?.idCliente} />
+            ) : (
+              <ModelosManagerPanel
+                idInt={idInt}
+                produtos={pedido.produtos}
+                onUploadArte={(modeloId, fileName) => uploadArteModelo(idInt, modeloId, fileName)}
+                onLiberarArte={(modeloId) => liberarArteModelo(idInt, modeloId)}
+                onEnviarAprovacaoCliente={(modeloId) => enviarParaAprovacaoCliente(idInt, modeloId)}
+                onAdicionarComentarioInterno={(modeloId, text) => salvarComentarioInternoModelo(idInt, modeloId, text)}
+                onRegistrarDecisaoCliente={(token, status, comentario, clienteNome) => registrarDecisaoCliente(token, status, comentario, clienteNome)}
+              />
+            )}
+          </div>
         )}
 
         {/* TAB PRODUCAO */}

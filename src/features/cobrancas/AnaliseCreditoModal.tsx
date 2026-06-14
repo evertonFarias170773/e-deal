@@ -232,8 +232,9 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
                 <InfoBox label="Saldo de Carteira" value={formatCurrency(creditAnalysis.saldo_carteira)} />
                 <InfoBox 
                   label="Faturamentos Vencidos" 
-                  value={creditAnalysis.qtd_pagamentos_atrasados > 0 ? `${creditAnalysis.qtd_pagamentos_atrasados} pendente(s)` : "Nenhum atraso"}
+                  value={creditAnalysis.qtd_pagamentos_atrasados > 0 ? `${creditAnalysis.qtd_pagamentos_atrasados} faturamento(s) em atraso — Requer avaliação do financeiro` : "Nenhum atraso"}
                   detail={creditAnalysis.qtd_pagamentos_atrasados > 0 ? "Requer avaliação do financeiro" : "Histórico regular"}
+                  tone={creditAnalysis.qtd_pagamentos_atrasados > 0 ? "danger" : undefined}
                 />
                 <InfoBox label="Risco de Crédito" value={creditAnalysis.risco_credito || "-"} />
               </div>
@@ -284,7 +285,19 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end pt-4 border-t border-slate-100">
+        <div className="flex items-center justify-between pt-4 border-t border-slate-100 w-full">
+          {cobranca.cliente ? (
+            <a
+              href={`/contas-a-receber?search=${encodeURIComponent(cobranca.cliente)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#123f61]"
+            >
+              Ver Contas a Receber do Cliente
+            </a>
+          ) : (
+            <div />
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -298,12 +311,17 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
   );
 }
 
-function InfoBox({ label, value, detail }: { label: string; value: string; detail?: string }) {
+function InfoBox({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "danger" }) {
+  const bgClass = tone === "danger"
+    ? "bg-red-50 border border-red-200 text-red-900"
+    : "bg-slate-50 border border-slate-100/50";
+  const valClass = tone === "danger" ? "text-red-700 font-bold" : "text-slate-900";
+
   return (
-    <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100/50">
+    <div className={`rounded-2xl p-4 transition ${bgClass}`}>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-base font-bold text-slate-900 truncate">{value}</p>
-      {detail ? <p className="mt-0.5 text-xs text-slate-500">{detail}</p> : null}
+      <p className={`mt-1 text-sm md:text-base font-bold leading-snug ${valClass}`} title={value}>{value}</p>
+      {detail ? <p className={`mt-0.5 text-xs ${tone === "danger" ? "text-red-500 font-semibold" : "text-slate-500"}`}>{detail}</p> : null}
     </div>
   );
 }

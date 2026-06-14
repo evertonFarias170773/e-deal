@@ -79,7 +79,7 @@ export function isPendenteAprovacao(
   >
 ) {
   const tipoNormalizado = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
-  const isEFaturado = tipoNormalizado === "E-FATURADO" || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
+  const isEFaturado = tipoNormalizado.startsWith("E-") || tipoNormalizado === "EFATURADO" || tipoNormalizado === "FATURADO";
   const statusUpper = (cobranca.status || "").trim().toUpperCase();
 
   if (!isEFaturado) return false;
@@ -353,6 +353,9 @@ export function getTipoCobrancaLabel(tipo: string) {
   if (normalized === "CREDIT_CARD") return "Cartão de crédito";
   if (normalized === "CARD_PARCELADO") return "Cartão de crédito";
   if (normalized === "E-FATURADO") return "E-Faturado";
+  if (normalized === "E-RETRABALHO") return "E-Retrabalho";
+  if (normalized === "E-PERMUTA") return "E-Permuta";
+  if (normalized === "E-AMOSTRA" || normalized === "E-AMOSTRAS") return "E-Amostra";
 
   return titleCase(
     normalized
@@ -368,8 +371,9 @@ export function isPagamentoAprovado(cobranca: Cobranca) {
 }
 
 export function isCreditoPendente(cobranca: Cobranca) {
+  const tipoUpper = (cobranca.tipo_cobranca || "").trim().toUpperCase();
   return (
-    cobranca.tipo_cobranca === "E-FATURADO" &&
+    tipoUpper.startsWith("E-") &&
     Boolean(cobranca.creditoPendente || cobranca.creditoAnalise?.statusAnalise === "AGUARDANDO_FINANCEIRO")
   );
 }

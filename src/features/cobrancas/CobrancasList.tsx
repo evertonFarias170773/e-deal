@@ -120,7 +120,11 @@ function getEmpresaLabelVisual(nome: string) {
  * - Por segurança e flexibilidade, a fila "Emitir Boletos" NÃO deve depender exclusivamente do valor desse campo.
  * - A regra de desqualificação prioritária é a existência de qualquer boleto ativo (não cancelado) em `public.boletos` para o id_int correspondente.
  */
-function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>) {
+function isEmitirBoletos(
+  cobranca: Cobranca,
+  existingBoletoIdInts?: Set<number>,
+  hasBoletoHistoryIdInts?: Set<number>
+) {
   const tipo = (cobranca.tipo_cobranca || "").toUpperCase();
   const status = (cobranca.status || "").toUpperCase();
   
@@ -131,28 +135,41 @@ function isEmitirBoletos(cobranca: Cobranca, existingBoletoIdInts?: Set<number>)
   // A proposta já tem boletos preparados no banco?
   const jaTemBoletoPreparado = !!(existingBoletoIdInts && cobranca.id_int && existingBoletoIdInts.has(Number(cobranca.id_int)));
   
-  // Indicador auxiliar de boleto enviado
-  const isBoletoEnviadoAux = cobranca.boleto_enviadoo === true;
+  // A proposta possui histórico de boletos no banco?
+  const temHistoricoBoletos = !!(hasBoletoHistoryIdInts && cobranca.id_int && hasBoletoHistoryIdInts.has(Number(cobranca.id_int)));
   
-  // Não pode aparecer na fila se já estiver preparado ou enviado
-  const isBoletoNaoPreparado = !isBoletoEnviadoAux && !jaTemBoletoPreparado;
+  // REGRA DE LEGADO:
+  // Se boleto_enviadoo = true mas não houver histórico de boletos no banco de dados,
+  // é uma cobrança legada inconsistente. Ela NÃO deve aparecer na fila.
+  // Se boleto_enviadoo = true e houver histórico de boletos, ela só pode aparecer/reemitir se todos os boletos estiverem cancelados.
+  // Se boleto_enviadoo = false, ela é elegível normalmente.
+  const isBoletoEnviadoValido = !cobranca.boleto_enviadoo || (!jaTemBoletoPreparado && temHistoricoBoletos);
+  
+  // Não pode aparecer na fila se já houver boletos preparados ativos
+  const isBoletoNaoPreparado = !jaTemBoletoPreparado;
   
   return (
     isEFaturado &&
     isCorrectStatus &&
     isConfirmedIfAvencer &&
     isBoletoNaoPreparado &&
+    isBoletoEnviadoValido &&
     isEmpresaValida(cobranca)
   );
 }
 
-function matchesTipoFiltro(cobranca: Cobranca, tipo: TipoFiltro, existingBoletoIdInts?: Set<number>) {
+function matchesTipoFiltro(
+  cobranca: Cobranca,
+  tipo: TipoFiltro,
+  existingBoletoIdInts?: Set<number>,
+  hasBoletoHistoryIdInts?: Set<number>
+) {
   if (tipo === "PENDENTES_APROVACAO") {
     return isPendenteAprovacao(cobranca);
   }
 
   if (tipo === "EMITIR_BOLETOS") {
-    return isEmitirBoletos(cobranca, existingBoletoIdInts);
+    return isEmitirBoletos(cobranca, existingBoletoIdInts, hasBoletoHistoryIdInts);
   }
 
   if (tipo === "TODOS") {
@@ -201,7 +218,7 @@ function getInitialDates() {
 
 export function CobrancasList() {
   const router = useRouter();
-  const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts } = useCobrancas();
+  const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts, hasBoletoHistoryIdInts } = useCobrancas();
   const { showToast } = useAppToast();
   const [search, setSearch] = useState("");
   const [tipo, setTipo] = useState<TipoFiltro>("TODOS");
@@ -322,7 +339,7 @@ export function CobrancasList() {
         : tipo === "CONFIRMADOS_DIA"
           ? cobrancasStats.filter(isConfirmadoDia)
           : tipo === "EMITIR_BOLETOS"
-            ? cobrancasStats.filter((c) => isEmitirBoletos(c, existingBoletoIdInts))
+            ? cobrancasStats.filter((c) => isEmitirBoletos(c, existingBoletoIdInts, hasBoletoHistoryIdInts))
             : tipo === "CANCELADO"
               ? cobrancasStats.filter((c) => c.status === "CANCELADO")
               : statusFilter === "CONFIRMADOS"
@@ -337,7 +354,7 @@ export function CobrancasList() {
         const matchesTipo =
           tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "EMITIR_BOLETOS" || tipo === "CANCELADO"
             ? true
-            : matchesTipoFiltro(cobranca, tipo, existingBoletoIdInts);
+            : matchesTipoFiltro(cobranca, tipo, existingBoletoIdInts, hasBoletoHistoryIdInts);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
 
         return matchesSearch && matchesTipo && matchesEmpresa;

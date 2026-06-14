@@ -19,7 +19,10 @@ export function useDashboardFinanceiroSnapshot({ cobrancasStats, mesSelecionado 
     [cobrancasStats, mesSelecionado]
   );
   const requestKey = useMemo(
-    () => `${mesSelecionado}:${cobrancasStats.map((cobranca) => cobranca.id).join("|")}`,
+    () => {
+      const stateStr = cobrancasStats.map((c) => `${c.id}:${c.status || ""}:${c.confirmado}`).join("|");
+      return `${mesSelecionado}:${stateStr}`;
+    },
     [cobrancasStats, mesSelecionado]
   );
 
