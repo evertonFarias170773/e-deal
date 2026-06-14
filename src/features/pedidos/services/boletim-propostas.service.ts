@@ -7,7 +7,7 @@ export interface PropostaLiberadaBoletim {
   clienteNome: string;
   documento: string | null;
   vendedor: string;
-  id_vendedor: number | null;
+  id_vendedor: string | null;
   status_interno: string;
   valor_total: number;
   created_at: string;
@@ -105,7 +105,7 @@ export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLib
       clienteNome: String(row.cliente || ""),
       documento: row.cnpjCpf ? String(row.cnpjCpf) : null,
       vendedor: String(row.vendedor || ""),
-      id_vendedor: row.id_vendedor ? Number(row.id_vendedor) : null,
+      id_vendedor: row.id_vendedor ? String(row.id_vendedor) : null,
       status_interno: String(row.status_interno || ""),
       valor_total: valor_total_calc,
       created_at: String(row.created_at || ""),
@@ -212,7 +212,7 @@ export async function buscarPropostasLiberadasParaBoletim(
       clienteNome: String(row.cliente || ""),
       documento: row.cnpjCpf ? String(row.cnpjCpf) : null,
       vendedor: String(row.vendedor || ""),
-      id_vendedor: row.id_vendedor ? Number(row.id_vendedor) : null,
+      id_vendedor: row.id_vendedor ? String(row.id_vendedor) : null,
       status_interno: String(row.status_interno || ""),
       valor_total: valor_total_calc,
       created_at: String(row.created_at || ""),
@@ -314,7 +314,7 @@ export async function obterPropostaLiberadaParaBoletim(
     clienteNome: String(proposalRow.cliente || ""),
     documento: proposalRow.cnpjCpf ? String(proposalRow.cnpjCpf) : null,
     vendedor: String(proposalRow.vendedor || ""),
-    id_vendedor: proposalRow.id_vendedor ? Number(proposalRow.id_vendedor) : null,
+    id_vendedor: proposalRow.id_vendedor ? String(proposalRow.id_vendedor) : null,
     status_interno: String(proposalRow.status_interno || ""),
     valor_total: valor_total_calc,
     created_at: String(proposalRow.created_at || ""),
@@ -378,10 +378,10 @@ export async function criarPedidoParaBoletim(
   }
 
   const idVendedorRaw = propostaRow.id_vendedor;
-  if (idVendedorRaw === null || idVendedorRaw === undefined) {
+  if (idVendedorRaw === null || idVendedorRaw === undefined || String(idVendedorRaw).trim() === "") {
     return { success: false, error: "Proposta sem vendedor vinculado. Não é possível abrir OS." };
   }
-  const idVendedor = Number(idVendedorRaw);
+  const idVendedor = String(idVendedorRaw).trim();
 
   // Validar se existe ao menos 1 produto em public.produtos_proposta para esse id_int
   const { data: productsData, error: productsError } = await client
