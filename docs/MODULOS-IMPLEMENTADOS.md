@@ -633,6 +633,21 @@ Funcionalidades e Regras de Elegibilidade:
 - **Padronização do Campo de Observações**:
   - Consolidação das observações textuais em blocos rígidos no campo `obs` do pedido pai: `[Observações críticas]`, `[Impressão]` e `[Acabamento]`.
 
+## Fila Geral de OS / Pedidos (PCP)
+
+Status: Leitura real conectada ao Supabase na aba "Fila Geral". A listagem de pedidos agora consome diretamente a tabela `public.pedidos`, com enriquecimento opcional de dados a partir de `public.propostas`.
+
+Componentes principais:
+- `pedidos-producao.service.ts` (`src/features/pedidos/services/pedidos-producao.service.ts` - Contém a função `listarPedidosOperacionais` para buscar os pedidos no banco e realizar o link opcional/resiliente com as propostas)
+- `PedidosListPage.tsx` (`src/features/pedidos/PedidosListPage.tsx` - Interface principal da Fila Operacional atualizada para carregar dados reais, filtrar por novos status de cabeçalho, calcular progressos com campos do banco e exibir "Ainda sem modelos" de forma elegante)
+
+Funcionalidades Implementadas:
+- **Leitura Direta da Tabela public.pedidos**: Substituição do mock local/localStorage por leitura real no Supabase na aba Fila Geral.
+- **Enriquecimento Resiliente de Propostas**: A busca por dados da proposta (cliente, vendedor, empresa) é tolerante a falhas. Caso o RLS ou erro de rede impeçam o acesso a `public.propostas`, as informações básicas do pedido (`descricao`, `id_int`, `valor_total`) são utilizadas como fallback automático para que a linha nunca seja omitida.
+- **Pills de Modelos Adaptativas**: Se o pedido ainda não contiver modelos em `public.pedidos_modelos`, exibe a mensagem de feedback `"Ainda sem modelos"` sem quebrar o layout.
+- **Remoção de Aviso Local**: O aviso sobre salvamento em `localStorage` foi removido especificamente para a Fila Geral, preservando a integridade visual para dados reais.
+- **Resumo Financeiro e Cards de Métricas**: Cards reativos (`Tudo`, `Bloqueados`, `Produção`, `Aguardando Cliente`, `Expedição`) atualizados para cruzar os novos status operacionais (`status_producao === 'BLOQUEADO'`, `status_expedicao === 'BLOQUEADO'`, etc.).
+
 ## Demais módulos
 
 Status: pendentes/em breve.

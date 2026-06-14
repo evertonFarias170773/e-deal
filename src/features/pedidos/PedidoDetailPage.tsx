@@ -8,7 +8,9 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
-import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
+import { usePedidosMockDb, type MockChatMessage } from "./hooks/usePedidosMockDb";
+import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
+import type { PedidoProducaoListItem } from "./types";
 import ModelosManagerPanel from "./components/ModelosManagerPanel";
 import { ProducaoArtesPanel } from "@/features/producao";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -40,6 +42,9 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
     registrarDecisaoCliente
   } = usePedidosMockDb();
 
+  const [pedido, setPedido] = useState<PedidoProducaoListItem | null>(null);
+  const [loadingReal, setLoadingReal] = useState(true);
+  const [showRealPanel, setShowRealPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<"resumo" | "dados_comerciais" | "produtos" | "artes" | "producao" | "expedicao" | "timeline">("resumo");
 
   useEffect(() => {
@@ -47,10 +52,46 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
       if (tab && ["resumo", "dados_comerciais", "produtos", "artes", "producao", "expedicao", "timeline"].includes(tab)) {
-        setActiveTab(tab as any);
+        setActiveTab(tab as "resumo" | "dados_comerciais" | "produtos" | "artes" | "producao" | "expedicao" | "timeline");
       }
     }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function loadOrder() {
+      if (!isLoaded) return;
+      setLoadingReal(true);
+      try {
+        const dbPedido = await obterPedidoOperacionalPorIdOuIdInt(idInt);
+        if (active) {
+          if (dbPedido) {
+            setPedido(dbPedido);
+            setShowRealPanel(true);
+          } else {
+            const mockPedido = pedidos.find((p) => p.id_int === idInt);
+            setPedido(mockPedido || null);
+            setShowRealPanel(false);
+          }
+        }
+      } catch (err) {
+        console.error("[PedidoDetailPage] Erro ao carregar pedido do Supabase:", err);
+        if (active) {
+          const mockPedido = pedidos.find((p) => p.id_int === idInt);
+          setPedido(mockPedido || null);
+          setShowRealPanel(false);
+        }
+      } finally {
+        if (active) {
+          setLoadingReal(false);
+        }
+      }
+    }
+    void loadOrder();
+    return () => {
+      active = false;
+    };
+  }, [idInt, isLoaded, pedidos]);
 
   // Hotkey listener
   useEffect(() => {
@@ -85,12 +126,11 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
   }, [router, idInt, toggleUrgente, showToast]);
 
   // Local Chat / Timeline State
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatMessages, setChatMessages] = useState<MockChatMessage[]>([]);
   const [typedMessage, setTypedMessage] = useState("");
   const [typedAuthor, setTypedAuthor] = useState("Atendente");
   const [selectedSector, setSelectedSector] = useState("Comercial");
   const [timelineFilter, setTimelineFilter] = useState("Tudo");
-  const [showRealPanel, setShowRealPanel] = useState(false);
 
   // Local Scale / Expedição State
   const [volumes, setVolumes] = useState(1);
@@ -324,10 +364,8 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
     }
   };
 
-  const pedido = pedidos.find((p) => p.id_int === idInt);
-
   // Load chat messages
-  const reloadChat = useEffect(() => {
+  useEffect(() => {
     if (isLoaded && pedido) {
       setChatMessages(getChatMessages(idInt));
     }
@@ -345,12 +383,12 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
     };
   }, [idInt, getChatMessages]);
 
-  if (!isLoaded) {
+  if (!isLoaded || loadingReal) {
     return (
       <div className="flex h-96 items-center justify-center">
         <div className="text-center space-y-2">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#0b2f4a] border-t-transparent mx-auto"></div>
-          <p className="text-slate-500 font-semibold text-sm">Carregando detalhes do pedido mockado...</p>
+          <p className="text-slate-500 font-semibold text-sm">Carregando detalhes do pedido...</p>
         </div>
       </div>
     );
@@ -360,7 +398,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center max-w-lg mx-auto mt-12 space-y-4">
         <h2 className="text-lg font-bold text-red-800">Pedido não encontrado</h2>
-        <p className="text-sm text-red-600">Não foi possível localizar o pedido de ID #{idInt} no localStorage.</p>
+        <p className="text-sm text-red-600">Pedido não encontrado no banco de dados.</p>
         <div className="pt-2">
           <Link
             href="/pedidos"
@@ -416,10 +454,13 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
   };
 
   const calculateGeneralProgress = () => {
+    if (!pedido) return 0;
     if (pedido.statusPedido === "PRONTO_EXPEDICAO" || pedido.statusPedido === "EXPEDIDO") return 100;
     if (pedido.statusPedido === "REVISAO_FINAL") return 90;
-    const artesAprovadas = pedido.modelos.filter((m) => m.statusArte === "LIBERADA" || m.statusArte === "NAO_NECESSARIA").length;
-    const artesTotal = pedido.modelos.length;
+    const modelosList = pedido.modelos || [];
+    const artesTotal = modelosList.length;
+    if (artesTotal === 0) return 0;
+    const artesAprovadas = modelosList.filter((m) => m.statusArte === "LIBERADA" || m.statusArte === "NAO_NECESSARIA").length;
     const artesProg = (artesAprovadas / artesTotal) * 50; // 50% max para arte
     const prodProg = pedido.statusPedido === "EM_IMPRESSAO" ? 20 : pedido.statusPedido === "EM_ACABAMENTO" ? 35 : 0;
     return Math.round(artesProg + prodProg);
@@ -778,99 +819,107 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                 <span>Relação de Produtos e Especificações</span>
               </h3>
               <span className="text-xs text-slate-500 font-semibold">
-                Total de Itens: {pedido.produtos?.reduce((acc, p) => acc + p.quantidade, 0).toLocaleString("pt-BR")} un.
+                Total de Itens: {(pedido.produtos || []).reduce((acc, p) => acc + p.quantidade, 0).toLocaleString("pt-BR")} un.
               </span>
             </div>
 
             <div className="space-y-6 font-sans">
-              {pedido.produtos?.map((prod) => (
-                <div key={prod.id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
-                  {/* Cabeçalho do Produto */}
-                  <div className="flex flex-wrap justify-between items-center gap-3">
-                    <div className="space-y-1">
-                      <span className="bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 text-[9px] font-extrabold px-2 py-0.5 rounded uppercase">PRODUTO PRINCIPAL</span>
-                      <h4 className="text-lg font-black text-slate-900 dark:text-slate-100">{prod.nome}</h4>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs font-semibold">
-                      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-2 px-3 rounded-xl shadow-xs">
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold">Peso Est.</span>
-                        <strong className="text-slate-800 dark:text-slate-200">{prod.pesoEstimado.toFixed(2)} kg</strong>
-                      </div>
-                      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-2 px-3 rounded-xl shadow-xs">
-                        <span className="text-slate-400 block text-[9px] uppercase font-bold">Qtd Total</span>
-                        <strong className="text-blue-600 dark:text-blue-400">{prod.quantidade.toLocaleString("pt-BR")} un.</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Tabela/Especificações dos Modelos Aninhados */}
-                  <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-xs">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-100 dark:bg-slate-950 text-slate-500 uppercase text-[9px] font-extrabold tracking-wider border-b border-slate-200 dark:border-slate-800">
-                            <th className="py-2.5 px-4">Modelo / Subitem</th>
-                            <th className="py-2.5 px-3">Setor</th>
-                            <th className="py-2.5 px-3">Qtd</th>
-                            <th className="py-2.5 px-3">Cor Material</th>
-                            <th className="py-2.5 px-3">Ficha Técnica</th>
-                            <th className="py-2.5 px-3">Status Arte</th>
-                            <th className="py-2.5 px-4 text-right">Ação</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                          {prod.modelos.map((m) => (
-                            <tr key={m.id} className="hover:bg-slate-50/55 dark:hover:bg-slate-950/20 font-medium">
-                              <td className="py-3 px-4">
-                                <p className="font-extrabold text-slate-900 dark:text-slate-100">{m.nomeModelo}</p>
-                                <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {m.id}</p>
-                              </td>
-                              <td className="py-3 px-3">
-                                <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded font-semibold text-[10px] uppercase">
-                                  {m.setor}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3 font-extrabold text-slate-800 dark:text-slate-200">
-                                {m.quantidade.toLocaleString("pt-BR")}
-                              </td>
-                              <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
-                                {m.corMaterial || "Padrão"}
-                              </td>
-                              <td className="py-3 px-3 text-[10px] text-slate-500 space-y-0.5">
-                                <div>• Numeração: <strong className="text-slate-700 dark:text-slate-300">{m.configImpressao.tipoNumeracao}</strong></div>
-                                {m.configImpressao.tipoNumeracao !== "SEM_NUMERACAO" && (
-                                  <div>• Intervalo: <strong className="text-slate-700 dark:text-slate-300">{m.numeracaoInicial ?? 1} - {m.numeracaoFinal ?? m.quantidade}</strong></div>
-                                )}
-                                <div>• Acabamento: <strong className="text-slate-700 dark:text-slate-300">{m.verso ? "Frente/Verso" : "Apenas Frente"}</strong></div>
-                                {m.bloco && <div>• Pacote: <strong className="text-slate-700 dark:text-slate-300">{m.bloco}</strong></div>}
-                              </td>
-                              <td className="py-3 px-3">
-                                <StatusBadge status={m.statusArte} />
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveTab("artes");
-                                    showToast({
-                                      type: "info",
-                                      title: "Navegação rápida",
-                                      description: `Direcionado para a aba de Artes do modelo: ${m.nomeModelo}`
-                                    });
-                                  }}
-                                  className="px-2.5 py-1 bg-slate-900 dark:bg-slate-50 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded text-[10px] font-bold transition"
-                                >
-                                  Ver Arte
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+              {!pedido.produtos || pedido.produtos.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/10 p-8 text-center">
+                  <Package className="mx-auto h-12 w-12 text-slate-450" />
+                  <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-slate-200">Ainda sem produtos cadastrados</h3>
+                  <p className="mt-2 text-sm text-slate-500">Esta proposta/pedido ainda não possui produtos de produção vinculados.</p>
                 </div>
-              ))}
+              ) : (
+                pedido.produtos.map((prod) => (
+                  <div key={prod.id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+                    {/* Cabeçalho do Produto */}
+                    <div className="flex flex-wrap justify-between items-center gap-3">
+                      <div className="space-y-1">
+                        <span className="bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 text-[9px] font-extrabold px-2 py-0.5 rounded uppercase">PRODUTO PRINCIPAL</span>
+                        <h4 className="text-lg font-black text-slate-900 dark:text-slate-100">{prod.nome}</h4>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs font-semibold">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-2 px-3 rounded-xl shadow-xs">
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">Peso Est.</span>
+                          <strong className="text-slate-800 dark:text-slate-200">{prod.pesoEstimado.toFixed(2)} kg</strong>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-2 px-3 rounded-xl shadow-xs">
+                          <span className="text-slate-400 block text-[9px] uppercase font-bold">Qtd Total</span>
+                          <strong className="text-blue-600 dark:text-blue-400">{prod.quantidade.toLocaleString("pt-BR")} un.</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Tabela/Especificações dos Modelos Aninhados */}
+                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="bg-slate-100 dark:bg-slate-950 text-slate-500 uppercase text-[9px] font-extrabold tracking-wider border-b border-slate-200 dark:border-slate-800">
+                              <th className="py-2.5 px-4">Modelo / Subitem</th>
+                              <th className="py-2.5 px-3">Setor</th>
+                              <th className="py-2.5 px-3">Qtd</th>
+                              <th className="py-2.5 px-3">Cor Material</th>
+                              <th className="py-2.5 px-3">Ficha Técnica</th>
+                              <th className="py-2.5 px-3">Status Arte</th>
+                              <th className="py-2.5 px-4 text-right">Ação</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                            {(prod.modelos || []).map((m) => (
+                              <tr key={m.id} className="hover:bg-slate-50/55 dark:hover:bg-slate-950/20 font-medium">
+                                <td className="py-3 px-4">
+                                  <p className="font-extrabold text-slate-900 dark:text-slate-100">{m.nomeModelo}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {m.id}</p>
+                                </td>
+                                <td className="py-3 px-3">
+                                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded font-semibold text-[10px] uppercase">
+                                    {m.setor}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 font-extrabold text-slate-800 dark:text-slate-200">
+                                  {m.quantidade.toLocaleString("pt-BR")}
+                                </td>
+                                <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
+                                  {m.corMaterial || "Padrão"}
+                                </td>
+                                <td className="py-3 px-3 text-[10px] text-slate-500 space-y-0.5">
+                                  <div>• Numeração: <strong className="text-slate-700 dark:text-slate-300">{m.configImpressao.tipoNumeracao}</strong></div>
+                                  {m.configImpressao.tipoNumeracao !== "SEM_NUMERACAO" && (
+                                    <div>• Intervalo: <strong className="text-slate-700 dark:text-slate-300">{m.numeracaoInicial ?? 1} - {m.numeracaoFinal ?? m.quantidade}</strong></div>
+                                  )}
+                                  <div>• Acabamento: <strong className="text-slate-700 dark:text-slate-300">{m.verso ? "Frente/Verso" : "Apenas Frente"}</strong></div>
+                                  {m.bloco && <div>• Pacote: <strong className="text-slate-700 dark:text-slate-300">{m.bloco}</strong></div>}
+                                </td>
+                                <td className="py-3 px-3">
+                                  <StatusBadge status={m.statusArte} />
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveTab("artes");
+                                      showToast({
+                                        type: "info",
+                                        title: "Navegação rápida",
+                                        description: `Direcionado para a aba de Artes do modelo: ${m.nomeModelo}`
+                                      });
+                                    }}
+                                    className="px-2.5 py-1 bg-slate-900 dark:bg-slate-50 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded text-[10px] font-bold transition"
+                                  >
+                                    Ver Arte
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1024,8 +1073,15 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
 
             {/* Listagem de Fichas por Produto/Modelo */}
             <div className="space-y-6">
-              {pedido.produtos?.map((prod) => (
-                <div key={prod.id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+              {!pedido.produtos || pedido.produtos.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-350 bg-slate-50 dark:bg-slate-900/10 p-8 text-center">
+                  <FileText className="mx-auto h-12 w-12 text-slate-400" />
+                  <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-slate-200">Ainda sem modelos/lotes cadastrados</h3>
+                  <p className="mt-2 text-sm text-slate-500">Esta proposta/pedido ainda não possui modelos de produção vinculados.</p>
+                </div>
+              ) : (
+                pedido.produtos.map((prod) => (
+                  <div key={prod.id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
                   {/* Cabeçalho do Produto */}
                   <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
                     <div className="space-y-0.5">
@@ -1033,13 +1089,13 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                       <h4 className="text-base font-extrabold text-slate-800 dark:text-slate-200">{prod.nome}</h4>
                     </div>
                     <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-bold px-3 py-1 rounded-full">
-                      {prod.modelos.length} Modelo(s)
+                      {(prod.modelos || []).length} Modelo(s)
                     </span>
                   </div>
 
                   {/* Lista de Fichas Técnicas por Modelo */}
                   <div className="grid gap-5">
-                    {prod.modelos.map((m) => {
+                    {(prod.modelos || []).map((m) => {
                       const isLocked = Boolean(pedido.blockReason) || pedido.financialBlock;
                       return (
                         <div key={m.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-xs space-y-4">
@@ -1251,7 +1307,8 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                     })}
                   </div>
                 </div>
-              ))}
+              )))
+              }
             </div>
           </div>
         )}

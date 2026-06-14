@@ -1,6 +1,8 @@
 export function humanizeStatus(status: string) {
   const statusMap: Record<string, string> = {
     // PedidoStatus
+    BOLETIM_FINALIZADO: "Boletim Finalizado",
+    BLOQUEADO: "Bloqueado",
     NOVO: "Novo",
     ARTE_EM_ANDAMENTO: "Arte em Andamento",
     AGUARDANDO_APROVACAO_CLIENTE: "Aguardando Cliente",

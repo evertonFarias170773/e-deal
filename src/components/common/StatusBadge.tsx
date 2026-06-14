@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 
 const toneByStatus: Record<string, StatusTone> = {
   // PedidoStatus
+  BOLETIM_FINALIZADO: "info",
+  BLOQUEADO: "danger",
   NOVO: "info",
   ARTE_EM_ANDAMENTO: "info",
   AGUARDANDO_APROVACAO_CLIENTE: "warning",

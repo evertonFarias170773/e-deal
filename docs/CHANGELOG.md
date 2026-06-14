@@ -3,6 +3,12 @@
 ## 2026-06-14
 
 ### Adicionado
+- **Conexão Real da Fila Geral de OS (Leitura no Supabase)**:
+  - **Função no Service**: Adicionada a função `listarPedidosOperacionais()` em `pedidos-producao.service.ts` realizando `READ` na tabela `public.pedidos` ordenada por `data_pedido desc nulls last`.
+  - **Enriquecimento Resiliente**: Busca opcional e tolerante a falhas/RLS na tabela `public.propostas` para obter `cliente`, `vendedor` e `empresa`. Caso a consulta a `propostas` falhe ou retorne vazio, o pedido continua sendo exibido com as informações disponíveis no próprio pedido.
+  - **Modelos**: Exibição dos pedidos sem depender de `pedidos_modelos`. Se o pedido não possuir modelos cadastrados, apresenta a mensagem `"Ainda sem modelos"`.
+  - **Remoção de Aviso Local**: Ocultado/removido o aviso de `localStorage` especificamente para a Fila Geral, mantendo as demais abas inalteradas.
+  - **Badges de Status**: Mapeados os novos status `BOLETIM_FINALIZADO`, `BLOQUEADO`, `PENDENTE`, `APROVADO` em `humanizeStatus` e no `StatusBadge`.
 - **Escrita Real Controlada na Abertura de OS (Salvar Boletim)**:
   - **Ação Salvar Boletim**: Integração com o banco de dados Supabase na ação de salvar da tela "Abertura de OS — Boletim de Entrada", realizando o `INSERT` real do registro pai na tabela `public.pedidos`.
   - **Função no Service**: Adicionada a função `criarPedidoParaBoletim` no service `boletim-propostas.service.ts` para persistir dados estruturados de cabeçalho, com `id_cliente = null` (preparado para UUID posterior) e campos operacionais (`status_pedido = 'BOLETIM_FINALIZADO'`, `status_pagamento = 'APROVADO'`, `status_arte = 'PENDENTE'`, `status_producao = 'BLOQUEADO'`, `status_expedicao = 'BLOQUEADO'`, `valor_total` recalculado e data do pedido automática).

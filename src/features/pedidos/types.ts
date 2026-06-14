@@ -1,4 +1,8 @@
 export type PedidoStatus =
+  | "BOLETIM_FINALIZADO"
+  | "APROVADO"
+  | "PENDENTE"
+  | "BLOQUEADO"
   | "NOVO"
   | "ARTE_EM_ANDAMENTO"
   | "AGUARDANDO_APROVACAO_CLIENTE"
@@ -147,5 +151,11 @@ export interface PedidoMock {
   modelos: ModeloMock[];
 }
 
-export type PedidoProducaoListItem = PedidoMock;
+export interface PedidoProducaoListItem extends PedidoMock {
+  status_pedido?: string;
+  status_pagamento?: string;
+  status_arte?: string;
+  status_producao?: string;
+  status_expedicao?: string;
+}
 

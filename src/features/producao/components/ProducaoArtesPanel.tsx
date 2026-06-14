@@ -254,7 +254,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
     return (
       <div className="rounded-3xl border border-dashed border-slate-350 bg-slate-50 p-8 text-center">
         <FileText className="mx-auto h-12 w-12 text-slate-400" />
-        <h3 className="mt-4 text-base font-semibold text-slate-900">Nenhum modelo cadastrado</h3>
+        <h3 className="mt-4 text-base font-semibold text-slate-900">Ainda sem modelos/lotes cadastrados</h3>
         <p className="mt-2 text-sm text-slate-500">Esta proposta/pedido ainda não possui modelos de produção vinculados.</p>
       </div>
     );
@@ -466,7 +466,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-sm text-slate-500 flex flex-col items-center justify-center">
                     <Clock className="h-8 w-8 text-slate-400 mb-2" />
-                    <span>Nenhuma arte enviada para este modelo. Aguardando envio da primeira versão.</span>
+                    <span>Nenhuma arte enviada</span>
                   </div>
                 )}
               </div>

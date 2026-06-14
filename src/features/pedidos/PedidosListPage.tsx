@@ -10,8 +10,8 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, CheckCircle2, AlertTriangle, ShieldAlert, Plus } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
-import { listarPedidosProducao } from "./services/pedidos-producao.service";
-import type { PedidoProducaoListItem } from "./types";
+import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
+import type { PedidoProducaoListItem, ProdutoMock, ModeloMock } from "./types";
 
 export function PedidosListPage() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export function PedidosListPage() {
 
   useEffect(() => {
     async function load() {
-      const data = await listarPedidosProducao();
+      const data = await listarPedidosOperacionais();
       setPedidos(data);
       setIsLoaded(true);
     }
@@ -80,6 +80,10 @@ export function PedidosListPage() {
   };
 
   const getStatusTone = (status: string) => {
+    if (status === "BOLETIM_FINALIZADO") return "info";
+    if (status === "APROVADO") return "success";
+    if (status === "PENDENTE") return "warning";
+    if (status === "BLOQUEADO") return "danger";
     if (status === "NOVO") return "info";
     if (status === "ARTE_EM_ANDAMENTO") return "info";
     if (status === "AGUARDANDO_APROVACAO_CLIENTE" || status === "AGUARDANDO_APROVACAO_ATENDENTE") return "warning";
@@ -96,14 +100,14 @@ export function PedidosListPage() {
     return "bg-amber-100 text-amber-855 border-amber-200 dark:bg-amber-955 dark:text-amber-400 dark:border-amber-905"; // AGUARDANDO_CLIENTE, EM_REVISAO_INTERNA
   };
 
-  const calculateArteProgress = (pedido: any) => {
-    const modelosList = pedido.produtos ? pedido.produtos.flatMap((p: any) => p.modelos) : pedido.modelos || [];
+  const calculateArteProgress = (pedido: PedidoProducaoListItem) => {
+    const modelosList = pedido.produtos ? pedido.produtos.flatMap((p: ProdutoMock) => p.modelos) : pedido.modelos || [];
     if (!modelosList.length) return 0;
-    const aprovadas = modelosList.filter((m: any) => m.statusArte === "LIBERADA" || m.statusArte === "NAO_NECESSARIA").length;
+    const aprovadas = modelosList.filter((m: ModeloMock) => m.statusArte === "LIBERADA" || m.statusArte === "NAO_NECESSARIA").length;
     return Math.round((aprovadas / modelosList.length) * 100);
   };
 
-  const calculateProducaoProgress = (pedido: any) => {
+  const calculateProducaoProgress = (pedido: PedidoProducaoListItem) => {
     if (pedido.statusPedido === "PRONTO_EXPEDICAO" || pedido.statusPedido === "EXPEDIDO") return 100;
     if (pedido.statusPedido === "REVISAO_FINAL") return 80;
     if (pedido.statusPedido === "EM_ACABAMENTO") return 60;
@@ -111,24 +115,33 @@ export function PedidosListPage() {
     return 0;
   };
 
-  const isPedidoAtrasado = (p: any) => {
+  const isPedidoAtrasado = (p: PedidoProducaoListItem) => {
     if (p.statusPedido === "EXPEDIDO" || p.statusPedido === "CANCELADO") return false;
     const deliveryDate = new Date(p.dataPrevistaEntrega);
     const today = new Date("2026-06-02");
     return deliveryDate < today;
   };
 
-  const isPedidoBloqueado = (p: any) => {
-    return p.financialBlock || Boolean(p.blockReason);
+  const isPedidoBloqueado = (p: PedidoProducaoListItem) => {
+    return p.financialBlock || Boolean(p.blockReason) || p.status_producao === "BLOQUEADO" || p.status_expedicao === "BLOQUEADO";
   };
 
   // Filter calculations
   const totalCount = pedidos.length;
   const atrasadosCount = pedidos.filter(p => isPedidoAtrasado(p)).length;
   const urgentesCount = pedidos.filter(p => p.urgente).length;
-  const producaoCount = pedidos.filter(p => ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido)).length;
-  const expedicaoCount = pedidos.filter(p => ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido)).length;
-  const aguardandoClienteCount = pedidos.filter(p => p.statusPedido === "AGUARDANDO_APROVACAO_CLIENTE").length;
+  const producaoCount = pedidos.filter(p => 
+    ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido) ||
+    ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL", "PRODUCAO"].includes(p.status_producao || "")
+  ).length;
+  const expedicaoCount = pedidos.filter(p => 
+    ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido) ||
+    ["PRONTO_EXPEDICAO", "EXPEDIDO", "PRONTO", "EXPEDICAO"].includes(p.status_expedicao || "")
+  ).length;
+  const aguardandoClienteCount = pedidos.filter(p => 
+    p.statusPedido === "AGUARDANDO_APROVACAO_CLIENTE" ||
+    p.status_arte === "AGUARDANDO_CLIENTE"
+  ).length;
   const bloqueadosCount = pedidos.filter(p => isPedidoBloqueado(p)).length;
   const hojeCount = pedidos.filter(p => p.dataPrevistaEntrega === "2026-06-02" && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO").length;
   const semanaCount = pedidos.filter(p => {
@@ -148,9 +161,9 @@ export function PedidosListPage() {
       (p.dadosEvento?.nome && p.dadosEvento.nome.toLowerCase().includes(search.toLowerCase())) ||
       (p.obs && p.obs.toLowerCase().includes(search.toLowerCase())) ||
       (p.briefingOperacional && p.briefingOperacional.toLowerCase().includes(search.toLowerCase())) ||
-      (p.produtos && p.produtos.some((prod: any) => 
+      (p.produtos && p.produtos.some((prod: ProdutoMock) => 
         prod.nome.toLowerCase().includes(search.toLowerCase()) ||
-        prod.modelos.some((m: any) => m.nomeModelo.toLowerCase().includes(search.toLowerCase()))
+        prod.modelos.some((m: ModeloMock) => m.nomeModelo.toLowerCase().includes(search.toLowerCase()))
       ));
 
     const matchesEmpresa =
@@ -165,11 +178,11 @@ export function PedidosListPage() {
     } else if (activeFilter === "urgente") {
       matchesQuickFilter = p.urgente;
     } else if (activeFilter === "producao") {
-      matchesQuickFilter = ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido);
+      matchesQuickFilter = ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido) || ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL", "PRODUCAO"].includes(p.status_producao || "");
     } else if (activeFilter === "expedicao") {
-      matchesQuickFilter = ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido);
+      matchesQuickFilter = ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido) || ["PRONTO_EXPEDICAO", "EXPEDIDO", "PRONTO", "EXPEDICAO"].includes(p.status_expedicao || "");
     } else if (activeFilter === "aguardando_cliente") {
-      matchesQuickFilter = p.statusPedido === "AGUARDANDO_APROVACAO_CLIENTE";
+      matchesQuickFilter = p.statusPedido === "AGUARDANDO_APROVACAO_CLIENTE" || p.status_arte === "AGUARDANDO_CLIENTE";
     } else if (activeFilter === "bloqueado") {
       matchesQuickFilter = isPedidoBloqueado(p);
     } else if (activeFilter === "hoje") {
@@ -236,7 +249,7 @@ export function PedidosListPage() {
           <div>
             <h4 className="font-bold uppercase tracking-wider text-xs">PCP / Fila Operacional Gráfica</h4>
             <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
-              Fila estruturada de alta densidade para gestão rápida do fluxo gráfico. Todas as alterações são salvas localmente (`localStorage`).
+              Fila estruturada de alta densidade para gestão rápida do fluxo gráfico. Sincronizado com o banco de dados Supabase.
             </p>
           </div>
         </div>
@@ -329,7 +342,7 @@ export function PedidosListPage() {
           <button
             key={btn.key}
             type="button"
-            onClick={() => setActiveFilter(btn.key as any)}
+            onClick={() => setActiveFilter(btn.key as typeof activeFilter)}
             className={`p-2 border rounded-xl flex flex-col justify-between text-left transition select-none ${
               activeFilter === btn.key 
                 ? "bg-[#0b2f4a] border-[#0b2f4a] text-white" 
@@ -380,6 +393,8 @@ export function PedidosListPage() {
             className="w-full h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none"
           >
             <option value="all">Fase do Pedido: Todos</option>
+            <option value="BOLETIM_FINALIZADO">Boletim Finalizado</option>
+            <option value="BLOQUEADO">Bloqueado/Bloqueio</option>
             <option value="NOVO">Novo</option>
             <option value="ARTE_EM_ANDAMENTO">Arte em Desenvolvimento</option>
             <option value="AGUARDANDO_APROVACAO_CLIENTE">Prova Digital no Cliente</option>
@@ -398,7 +413,7 @@ export function PedidosListPage() {
         <div>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
             className="w-full h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none"
           >
             <option value="recente">Ordem: Recentes</option>
@@ -505,21 +520,27 @@ export function PedidosListPage() {
                         {/* Modelos pills */}
                         <td className="py-3.5 px-3">
                           <div className="flex flex-wrap gap-1 max-w-[180px]">
-                            {models.slice(0, 3).map((m) => (
-                              <span
-                                key={m.id}
-                                className={`text-[9px] font-bold border rounded-md px-1.5 py-0.2 uppercase tracking-wide truncate max-w-[100px] ${getArteBadgeColor(
-                                  m.statusArte
-                                )}`}
-                                title={`${m.nomeModelo} - ${m.statusArte}`}
-                              >
-                                {m.nomeModelo.split(" (")[0]}
-                              </span>
-                            ))}
-                            {models.length > 3 && (
-                              <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 p-0.5 px-1 rounded-md">
-                                +{models.length - 3}
-                              </span>
+                            {models.length === 0 ? (
+                              <span className="text-slate-400 text-[10px] italic">Ainda sem modelos</span>
+                            ) : (
+                              <>
+                                {models.slice(0, 3).map((m) => (
+                                  <span
+                                    key={m.id}
+                                    className={`text-[9px] font-bold border rounded-md px-1.5 py-0.2 uppercase tracking-wide truncate max-w-[100px] ${getArteBadgeColor(
+                                      m.statusArte
+                                    )}`}
+                                    title={`${m.nomeModelo} - ${m.statusArte}`}
+                                  >
+                                    {m.nomeModelo.split(" (")[0]}
+                                  </span>
+                                ))}
+                                {models.length > 3 && (
+                                  <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 p-0.5 px-1 rounded-md">
+                                    +{models.length - 3}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
