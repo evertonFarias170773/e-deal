@@ -17,7 +17,7 @@ import {
   Eye,
   ChevronDown
 } from "lucide-react";
-import { PedidoMock, ProdutoMock, ModeloMock, PedidoStatus, ArteStatus, ProducaoStatus } from "./types";
+import { ModeloMock, ArteStatus, ProducaoStatus } from "./types";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import type { Proposta } from "@/features/orcamentos/types";
 import {
@@ -106,7 +106,6 @@ export function BoletimFormPage() {
   const [dadosEventoLocal, setDadosEventoLocal] = useState("");
 
   const [briefingOperacional, setBriefingOperacional] = useState("");
-  const [observacoesGerais, setObservacoesGerais] = useState("");
   const [obsCriticas, setObsCriticas] = useState("");
 
   // Block 5 & 6 & 7: Technical Briefing, Design & Logistics & Finishes
@@ -208,29 +207,7 @@ export function BoletimFormPage() {
     impressora: "C280"
   });
 
-  const [sectorConfigs, setSectorConfigs] = useState<Record<string, SectorTechnicalConfig>>({
-    IMPRESSÃO: initialSectorConfig(),
-    TEX: {
-      ...initialSectorConfig(),
-      metodoImpressao: "serigrafia",
-      corte: "Corte Reto"
-    },
-    FLEXO: {
-      ...initialSectorConfig(),
-      metodoImpressao: "flexografia",
-      corte: "Corte Reto"
-    }
-  });
 
-  const updateSectorConfigField = (sector: string, field: keyof SectorTechnicalConfig, value: string) => {
-    setSectorConfigs((prev) => ({
-      ...prev,
-      [sector]: {
-        ...prev[sector],
-        [field]: value
-      }
-    }));
-  };
 
   // Helper to compute active count per designer
   const getDesignerActiveCount = (designerId: string) => {
@@ -404,7 +381,6 @@ export function BoletimFormPage() {
         
         // Briefing comercial relevante
         setBriefingOperacional(details.observacoes || "");
-        setObservacoesGerais("");
         
         // Prazo / Data prevista de entrega
         const deadlineDate = parsePrazoToDate(details.resumo?.prazoProducao || "");
@@ -412,24 +388,6 @@ export function BoletimFormPage() {
         
         setObsImpressao("");
         setObsAcabamento("");
-        
-        // Reset sector configurations to default values
-        setSectorConfigs({
-          IMPRESSÃO: initialSectorConfig(),
-          TEXTIL: {
-            ...initialSectorConfig(),
-            metodoImpressao: "serigrafia",
-            corte: "Corte Reto"
-          },
-          PVP: {
-            ...initialSectorConfig()
-          },
-          FLEXO: {
-            ...initialSectorConfig(),
-            metodoImpressao: "flexografia",
-            corte: "Corte Reto"
-          }
-        });
 
         // Mapear produtos
         const mapped = details.itens.map((item, index) => {
@@ -616,7 +574,7 @@ export function BoletimFormPage() {
     );
   };
 
-  const getRowValidationError = (p: FormProduto, m: ModeloMock, allModels: ModeloMock[]) => {
+  const getRowValidationError = (p: FormProduto, m: ModeloMock) => {
     if (m.configImpressao.tipoNumeracao === "SEQUENCIAL") {
       const start = m.numeracaoInicial || 0;
       if (start <= 0) {
@@ -782,7 +740,7 @@ export function BoletimFormPage() {
           return;
         }
 
-        const validationError = getRowValidationError(p, m, p.modelos);
+        const validationError = getRowValidationError(p, m);
         if (validationError && validationError.type === "error") {
           showToast({
             type: "error",
@@ -1240,7 +1198,7 @@ export function BoletimFormPage() {
 
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                       {p.modelos.map((m) => {
-                        const validation = getRowValidationError(p, m, p.modelos);
+                        const validation = getRowValidationError(p, m);
                         return (
                           <div 
                             key={m.id} 

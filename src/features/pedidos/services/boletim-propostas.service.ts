@@ -339,7 +339,7 @@ export interface CriarPedidoResult {
 
 /**
  * Cria o registro do pedido pai na tabela public.pedidos do Supabase
- * após validar a elegibilidade da proposta.
+ * após validar a elegibilidade da proposta diretamente no banco de dados.
  */
 export async function criarPedidoParaBoletim(
   input: CriarPedidoInput
@@ -351,30 +351,108 @@ export async function criarPedidoParaBoletim(
 
   const idInt = input.id_int;
 
-  // 1. Validar elegibilidade da proposta novamente
-  const check = await obterPropostaLiberadaParaBoletim(idInt);
-  if (!check.success || !check.proposta) {
-    return { success: false, error: check.error || "Proposta inelegível para abertura de boletim." };
+  // 1. Reconsultar diretamente o Supabase (public.propostas) usando maybeSingle()
+  const { data: propostaRow, error: propostaError } = await client
+    .from("propostas")
+    .select("id, id_int, cliente, id_vendedor, vendedor, status_interno, valor_total, valor")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  if (propostaError) {
+    console.error("[BoletimPropostasService] Erro ao buscar proposta para validação:", {
+      code: propostaError.code,
+      details: propostaError.details,
+      hint: propostaError.hint,
+      message: propostaError.message
+    });
+    return { success: false, error: `Erro ao consultar proposta no banco de dados: ${propostaError.message}` };
   }
 
-  const proposta = check.proposta;
+  if (!propostaRow) {
+    return { success: false, error: "Proposta não encontrada" };
+  }
+
+  // Validações de elegibilidade da proposta obtida
+  if (propostaRow.status_interno !== "APROVADO") {
+    return { success: false, error: "Proposta ainda não aprovada" };
+  }
+
+  const idVendedorRaw = propostaRow.id_vendedor;
+  if (idVendedorRaw === null || idVendedorRaw === undefined) {
+    return { success: false, error: "Proposta sem vendedor vinculado. Não é possível abrir OS." };
+  }
+  const idVendedor = Number(idVendedorRaw);
+
+  // Validar se existe ao menos 1 produto em public.produtos_proposta para esse id_int
+  const { data: productsData, error: productsError } = await client
+    .from("produtos_proposta")
+    .select("id")
+    .eq("id_int", idInt);
+
+  if (productsError) {
+    console.error("[BoletimPropostasService] Erro ao consultar produtos da proposta:", {
+      code: productsError.code,
+      details: productsError.details,
+      hint: productsError.hint,
+      message: productsError.message
+    });
+    return { success: false, error: `Erro ao consultar produtos da proposta: ${productsError.message}` };
+  }
+
+  if (!productsData || productsData.length === 0) {
+    return { success: false, error: "Proposta sem produtos vinculados" };
+  }
+
+  // Validar se não existe pedido em public.pedidos para esse id_int
+  const { data: pedidosData, error: pedidosError } = await client
+    .from("pedidos")
+    .select("id")
+    .eq("id_int", idInt);
+
+  if (pedidosError) {
+    console.error("[BoletimPropostasService] Erro ao verificar pedidos existentes:", {
+      code: pedidosError.code,
+      details: pedidosError.details,
+      hint: pedidosError.hint,
+      message: pedidosError.message
+    });
+    return { success: false, error: `Erro ao verificar pedidos existentes: ${pedidosError.message}` };
+  }
+
+  if (pedidosData && pedidosData.length > 0) {
+    return { success: false, error: "Pedido já aberto para esta proposta" };
+  }
+
+  const valor_total_calc = (propostaRow.valor_total && Number(propostaRow.valor_total) !== 0)
+    ? Number(propostaRow.valor_total)
+    : (Number(propostaRow.valor) || 0);
 
   // 2. Montar payload do pedido
   const payload = {
-    id_int: proposta.id_int,
-    id_vendedor: proposta.id_vendedor,
+    id_int: Number(propostaRow.id_int),
+    id_vendedor: idVendedor,
     id_cliente: null,
     status_pedido: "BOLETIM_FINALIZADO",
     status_pagamento: "APROVADO",
     status_arte: "PENDENTE",
     status_producao: "BLOQUEADO",
     status_expedicao: "BLOQUEADO",
-    descricao: input.descricao || `${proposta.cliente} - Boletim de entrada`,
-    valor_total: proposta.valor_total,
+    descricao: input.descricao || `${propostaRow.cliente} - Boletim de entrada`,
+    valor_total: valor_total_calc,
     forma_pagamento: null,
     obs: input.obs || null,
     data_pedido: new Date().toISOString()
   };
+
+  // Validação de payload final antes do insert
+  if (!payload.id_vendedor) {
+    throw new Error("Payload inválido: id_vendedor ausente antes do INSERT.");
+  }
+
+  // Log do payload em desenvolvimento
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[Boletim] Payload pedido pai", payload);
+  }
 
   // 3. Executar o INSERT
   const { data, error } = await client
@@ -384,7 +462,12 @@ export async function criarPedidoParaBoletim(
     .single();
 
   if (error) {
-    console.error("[BoletimPropostasService] Erro ao cadastrar pedido pai:", error);
+    console.error("[BoletimPropostasService] Erro ao cadastrar pedido pai:", {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      message: error.message
+    });
     if (error.code === "42501") {
       return { success: false, error: "Permissão negada (RLS) para cadastrar o pedido." };
     }
