@@ -25,7 +25,11 @@ import {
   buscarPropostasLiberadasParaBoletim,
   obterPropostaLiberadaParaBoletim,
   criarPedidoParaBoletim,
-  type PropostaLiberadaBoletim
+  listarDesigners,
+  listarGabaritos,
+  type PropostaLiberadaBoletim,
+  type DesignerUsuario,
+  type GabaritoProducao
 } from "./services/boletim-propostas.service";
 
 export interface GabaritoItem {
@@ -121,8 +125,38 @@ export function BoletimFormPage() {
   const [gabaritoSearchQuery, setGabaritoSearchQuery] = useState("");
   const [selectedGabaritoPreview, setSelectedGabaritoPreview] = useState<GabaritoItem | null>(null);
 
+  const [obsImpressao, setObsImpressao] = useState("");
+  const [obsAcabamento, setObsAcabamento] = useState("");
+  const [designersList, setDesignersList] = useState<DesignerUsuario[]>([]);
+  const [gabaritosList, setGabaritosList] = useState<GabaritoProducao[]>([]);
+
   useEffect(() => {
     setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [designersData, gabaritosData] = await Promise.all([
+          listarDesigners(),
+          listarGabaritos()
+        ]);
+        setDesignersList(designersData);
+        
+        if (gabaritosData && gabaritosData.length > 0) {
+          setGabaritosList(gabaritosData);
+        } else {
+          setGabaritosList(MOCK_GABARITOS.map(g => ({
+            id: g.id,
+            id_gabarito: null,
+            name: g.nome
+          })));
+        }
+      } catch (err) {
+        console.error("Erro ao carregar designers e gabaritos:", err);
+      }
+    }
+    loadData();
   }, []);
 
   useEffect(() => {
@@ -137,9 +171,8 @@ export function BoletimFormPage() {
     };
   }, [openGabaritoDropdown]);
 
-  const filteredGabaritos = MOCK_GABARITOS.filter(g =>
-    g.nome.toLowerCase().includes(gabaritoSearchQuery.toLowerCase()) ||
-    g.descricao.toLowerCase().includes(gabaritoSearchQuery.toLowerCase())
+  const filteredGabaritos = gabaritosList.filter(g =>
+    g.name.toLowerCase().includes(gabaritoSearchQuery.toLowerCase())
   );
 
   // Technical configurations per sector
@@ -199,17 +232,16 @@ export function BoletimFormPage() {
     }));
   };
 
-  const designers = ["Felipe Neto", "Emily Boeira", "Edison Jr", "Bruno Lopes", "Amanda Souza"];
-
   // Helper to compute active count per designer
-  const getDesignerActiveCount = (designerName: string) => {
+  const getDesignerActiveCount = (designerId: string) => {
     if (!pedidos) return 0;
+    const designerName = designersList.find(d => d.user_id === designerId)?.nome_usuario || designerId;
     let count = 0;
     pedidos.forEach((p) => {
       if (p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO") {
         p.produtos?.forEach((prod) => {
           prod.modelos?.forEach((m) => {
-            if (m.designerResponsavel === designerName && m.statusArte !== "LIBERADA" && m.statusArte !== "IMPRESSA" && m.statusArte !== "NAO_NECESSARIA") {
+            if ((m.designerResponsavel === designerId || m.designerResponsavel === designerName) && m.statusArte !== "LIBERADA" && m.statusArte !== "IMPRESSA" && m.statusArte !== "NAO_NECESSARIA") {
               count++;
             }
           });
@@ -217,6 +249,13 @@ export function BoletimFormPage() {
       }
     });
     return count;
+  };
+
+  const getGabaritoName = (val?: string) => {
+    if (!val) return "Selecione ou pesquise...";
+    const found = gabaritosList.find(g => String(g.id_gabarito || g.id) === val || g.name === val);
+    if (found) return found.name;
+    return val;
   };
 
   const handleAddMockAttachment = () => {
@@ -371,13 +410,19 @@ export function BoletimFormPage() {
         const deadlineDate = parsePrazoToDate(details.resumo?.prazoProducao || "");
         setDataPrevistaEntrega(deadlineDate);
         
+        setObsImpressao("");
+        setObsAcabamento("");
+        
         // Reset sector configurations to default values
         setSectorConfigs({
           IMPRESSÃO: initialSectorConfig(),
-          TEX: {
+          TEXTIL: {
             ...initialSectorConfig(),
             metodoImpressao: "serigrafia",
             corte: "Corte Reto"
+          },
+          PVP: {
+            ...initialSectorConfig()
           },
           FLEXO: {
             ...initialSectorConfig(),
@@ -393,9 +438,11 @@ export function BoletimFormPage() {
           const catUpper = (item.produto?.categoria || "").toUpperCase();
           
           if (nameUpper.includes("TEX") || catUpper.includes("TEX") || nameUpper.includes("CORDÃO") || nameUpper.includes("FITA") || nameUpper.includes("TECIDO")) {
-            sector = "TEX";
+            sector = "TEXTIL";
           } else if (nameUpper.includes("FLEXO") || catUpper.includes("FLEXO") || nameUpper.includes("RÓTULO") || nameUpper.includes("ETIQUETA")) {
             sector = "FLEXO";
+          } else if (nameUpper.includes("PVP") || catUpper.includes("PVP")) {
+            sector = "PVP";
           }
 
           return {
@@ -692,10 +739,11 @@ export function BoletimFormPage() {
     });
     setDataHoraAtribuicao(formattedDate);
 
+    const designerName = designersList.find(d => d.user_id === selectedDesigner)?.nome_usuario || selectedDesigner;
     showToast({
       type: "success",
       title: "Designer Atribuído",
-      description: `Arte destinada para ${selectedDesigner} com sucesso.`
+      description: `Arte destinada para ${designerName} com sucesso.`
     });
   };
 
@@ -781,11 +829,13 @@ export function BoletimFormPage() {
         return;
       }
 
+      const formattedObs = `[Observações críticas]\n${obsCriticas.trim() || "-"}\n\n[Impressão]\n${obsImpressao.trim() || "-"}\n\n[Acabamento]\n${obsAcabamento.trim() || "-"}`;
+
       // 2. Criar pedido no Supabase
       const result = await criarPedidoParaBoletim({
         id_int: idInt,
         descricao: `${clienteNome} - Boletim de entrada`,
-        obs: obsCriticas || null
+        obs: formattedObs
       });
 
       if (!result.success || !result.id) {
@@ -1164,7 +1214,8 @@ export function BoletimFormPage() {
                             className="h-6 px-1.5 rounded border border-slate-350 dark:border-slate-700 bg-white dark:bg-slate-900 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 cursor-pointer"
                           >
                             <option value="IMPRESSÃO">IMPRESSÃO</option>
-                            <option value="TEX">TEX</option>
+                            <option value="TEXTIL">TEXTIL</option>
+                            <option value="PVP">PVP</option>
                             <option value="FLEXO">FLEXO</option>
                           </select>
                         </div>
@@ -1187,331 +1238,324 @@ export function BoletimFormPage() {
                       </button>
                     </div>
 
-                    <div className="overflow-x-auto select-none">
-                      <table className="w-full text-left text-[10px] border-collapse min-w-[800px]">
-                        <thead>
-                          <tr className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 uppercase text-[9px] font-black border-b border-slate-300 dark:border-slate-800">
-                            <th className="py-2 px-2.5 w-[25%]">Lote / Modelo</th>
-                            <th className="py-2 px-2.5 w-[15%]">Cor / Material</th>
-                            <th className="py-2 px-2.5 w-[10%] text-right font-mono">Qtd</th>
-                            <th className="py-2 px-2.5 w-[15%] text-center">Setor PCP</th>
-                            <th className="py-2 px-2.5 w-[10%] text-center">F+V</th>
-                            <th className="py-2 px-2.5 w-[12%] text-center">RFID</th>
-                            <th className="py-2 px-2.5 w-[10%] text-center">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                          {p.modelos.map((m) => {
-                            const validation = getRowValidationError(p, m, p.modelos);
-                            return (
-                              <React.Fragment key={m.id}>
-                                {/* LINHA 1: INFORMAÇÕES GERAIS E FÍSICAS */}
-                                <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-850/20 align-middle">
-                                  {/* Lote / Modelo */}
-                                  <td className="py-1.5 px-1.5">
-                                    <input
-                                      type="text"
-                                      placeholder="Ex: Lote VIP"
-                                      required
-                                      value={m.nomeModelo}
-                                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "nomeModelo", e.target.value)}
-                                      className="w-full h-7 px-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                                    />
-                                    {validation && (
-                                      <div className={`text-[8px] font-bold px-1 py-0.5 rounded leading-none mt-1 ${
-                                        validation.type === 'error' 
-                                          ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400 border border-red-200/40 dark:border-red-900/30' 
-                                          : 'bg-amber-50 text-amber-700 dark:bg-amber-955/30 dark:text-amber-450 border border-amber-200/40 dark:border-amber-900/30'
-                                      }`}>
-                                        {validation.message}
-                                      </div>
-                                    )}
-                                  </td>
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      {p.modelos.map((m) => {
+                        const validation = getRowValidationError(p, m, p.modelos);
+                        return (
+                          <div 
+                            key={m.id} 
+                            className="border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 p-4 space-y-3 relative shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition"
+                          >
+                            {/* Header do Card (Título do Lote + Botão Deletar) */}
+                            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase text-[#0b2f4a] dark:text-slate-350 tracking-wider">
+                                  Lote / Modelo
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                                  {p.setor || "IMPRESSÃO"}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeModelRow(p.id, m.id)}
+                                className="text-slate-400 hover:text-red-500 transition"
+                                title="Remover Lote"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
 
-                                  {/* Cor / Material Dropdown */}
-                                  <td className="py-1.5 px-1.5">
-                                    <select
-                                      value={m.corMaterial || "Branco"}
-                                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelField(p.id, m.id, "corMaterial", e.target.value)}
-                                      className="w-full h-7 px-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100"
-                                    >
-                                      <option value="Branco">Branco</option>
-                                      <option value="Azul">Azul</option>
-                                      <option value="Vermelho">Vermelho</option>
-                                      <option value="Verde">Verde</option>
-                                      <option value="Amarelo">Amarelo</option>
-                                      <option value="Preto">Preto</option>
-                                      <option value="Dourado">Dourado</option>
-                                      <option value="Prata">Prata</option>
-                                      <option value="Transparente">Transparente</option>
-                                      <option value="Personalizado">Personalizado</option>
-                                    </select>
-                                  </td>
+                            {/* Linha 1: Nome, Cor/Material e Qtd */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Nome do Lote *</label>
+                                <input
+                                  type="text"
+                                  placeholder="Ex: Lote VIP"
+                                  required
+                                  value={m.nomeModelo}
+                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "nomeModelo", e.target.value)}
+                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                                />
+                                {validation && (
+                                  <div className={`text-[8px] font-bold px-1 py-0.5 rounded leading-tight mt-1 ${
+                                    validation.type === 'error' 
+                                      ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400 border border-red-200/40' 
+                                      : 'bg-amber-50 text-amber-700 dark:bg-amber-955/30 dark:text-amber-450 border border-amber-200/40'
+                                  }`}>
+                                    {validation.message}
+                                  </div>
+                                )}
+                              </div>
 
-                                  {/* Qtd */}
-                                  <td className="py-1.5 px-1.5">
-                                    <input
-                                      type="number"
-                                      min={1}
-                                      required
-                                      value={m.quantidade}
-                                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "quantidade", Number(e.target.value) || 0)}
-                                      className="w-full h-7 px-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-right font-mono font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100"
-                                    />
-                                  </td>
+                              <div className="space-y-1">
+                                <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-455 uppercase block">Cor / Material</label>
+                                <select
+                                  value={m.corMaterial || "Branco"}
+                                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelField(p.id, m.id, "corMaterial", e.target.value)}
+                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-955 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100"
+                                >
+                                  <option value="Branco">Branco</option>
+                                  <option value="Azul">Azul</option>
+                                  <option value="Vermelho">Vermelho</option>
+                                  <option value="Verde">Verde</option>
+                                  <option value="Amarelo">Amarelo</option>
+                                  <option value="Preto">Preto</option>
+                                  <option value="Dourado">Dourado</option>
+                                  <option value="Prata">Prata</option>
+                                  <option value="Transparente">Transparente</option>
+                                  <option value="Personalizado">Personalizado</option>
+                                </select>
+                              </div>
 
-                                  {/* Setor PCP (Badge static) */}
-                                  <td className="py-1.5 px-1.5 text-center">
-                                    <span className="px-2 py-1 rounded text-[9px] font-extrabold bg-[#0b2f4a]/5 dark:bg-blue-900/20 text-[#0b2f4a] dark:text-blue-300 border border-slate-200 dark:border-slate-800">
-                                      {m.setor || "IMPRESSÃO"}
-                                    </span>
-                                  </td>
+                              <div className="space-y-1">
+                                <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Quantidade *</label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  required
+                                  value={m.quantidade}
+                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "quantidade", Number(e.target.value) || 0)}
+                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-right font-mono font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100"
+                                />
+                              </div>
+                            </div>
 
-                                  {/* Frente / Verso */}
-                                  <td className="py-1.5 px-1.5 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={m.verso}
-                                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "verso", e.target.checked)}
-                                      className="h-3.5 w-3.5 rounded border-slate-400 dark:border-slate-700 text-purple-600 focus:ring-purple-500 bg-white dark:bg-slate-950 mx-auto block cursor-pointer"
-                                      title="Frente e Verso (F+V)"
-                                    />
-                                  </td>
+                            {/* Linha 2: Checkboxes Frente/Verso, RFID e Numeração */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                              <div className="flex items-center gap-3 bg-white dark:bg-slate-950 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="checkbox"
+                                    id={`verso-${m.id}`}
+                                    checked={m.verso}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "verso", e.target.checked)}
+                                    className="h-4 w-4 rounded border-slate-450 dark:border-slate-700 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                  />
+                                  <label htmlFor={`verso-${m.id}`} className="text-[9px] font-extrabold text-slate-600 dark:text-slate-450 uppercase cursor-pointer select-none">
+                                    Frente + Verso (F+V)
+                                  </label>
+                                </div>
+                              </div>
 
-                                  {/* RFID */}
-                                  <td className="py-1.5 px-1.5 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={m.observacoesTecnicas?.includes("RFID: Sim")}
-                                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                        const isRfid = e.target.checked;
-                                        const baseNotes = m.observacoesTecnicas?.replace("RFID: Sim.", "").replace("RFID: Não.", "").trim() || "";
-                                        updateModelField(
-                                          p.id, 
-                                          m.id, 
-                                          "observacoesTecnicas", 
-                                          isRfid ? (baseNotes ? `${baseNotes} RFID: Sim.` : "RFID: Sim.") : (baseNotes ? `${baseNotes} RFID: Não.` : "RFID: Não.")
-                                        );
-                                      }}
-                                      className="h-3.5 w-3.5 rounded border-slate-400 dark:border-slate-700 text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-950 mx-auto block cursor-pointer"
-                                      title="Embutir Chip RFID/NFC"
-                                    />
-                                  </td>
+                              <div className="flex items-center gap-3 bg-white dark:bg-slate-955 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="checkbox"
+                                    id={`rfid-${m.id}`}
+                                    checked={m.observacoesTecnicas?.includes("RFID: Sim")}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                      const isRfid = e.target.checked;
+                                      const baseNotes = m.observacoesTecnicas?.replace("RFID: Sim.", "").replace("RFID: Não.", "").trim() || "";
+                                      updateModelField(
+                                        p.id, 
+                                        m.id, 
+                                        "observacoesTecnicas", 
+                                        isRfid ? (baseNotes ? `${baseNotes} RFID: Sim.` : "RFID: Sim.") : (baseNotes ? `${baseNotes} RFID: Não.` : "RFID: Não.")
+                                      );
+                                    }}
+                                    className="h-4 w-4 rounded border-slate-400 dark:border-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                  />
+                                  <label htmlFor={`rfid-${m.id}`} className="text-[9px] font-extrabold text-slate-600 dark:text-slate-450 uppercase cursor-pointer select-none">
+                                    RFID / NFC Integrado
+                                  </label>
+                                </div>
+                              </div>
 
-                                  {/* Ação */}
-                                  <td className="py-1.5 px-1.5 text-center">
+                              <div className="space-y-1">
+                                <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Tipo de Numeração</label>
+                                <select
+                                  value={m.configImpressao.tipoNumeracao}
+                                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
+                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100"
+                                >
+                                  <option value="SEM_NUMERACAO">Sem Numeração</option>
+                                  <option value="SEQUENCIAL">Sequencial</option>
+                                  <option value="CUSTOMIZADA">Customizada (CSV)</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Linha 3: Gabarito e Faixas / CSV */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                              {/* Gabarito Combobox */}
+                              <div className="space-y-1 relative">
+                                <label className="text-[8px] font-extrabold text-slate-550 dark:text-slate-450 uppercase block">Gabarito Operacional</label>
+                                <div className="flex items-center gap-1">
+                                  <div className="relative flex-1">
                                     <button
                                       type="button"
-                                      onClick={() => removeModelRow(p.id, m.id)}
-                                      className="text-slate-400 hover:text-red-500 transition mx-auto block"
-                                      title="Remover Lote"
+                                      onClick={(e) => {
+                                        if (openGabaritoDropdown === m.id) {
+                                          setOpenGabaritoDropdown(null);
+                                        } else {
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setDropdownPosition({
+                                            top: rect.bottom,
+                                            left: rect.left,
+                                            width: Math.max(rect.width, 220)
+                                          });
+                                          setOpenGabaritoDropdown(m.id);
+                                          setGabaritoSearchQuery("");
+                                        }
+                                      }}
+                                      className="w-full h-8 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between gap-1 shadow-sm hover:border-slate-450 dark:hover:border-slate-650 transition"
                                     >
-                                      <Trash2 className="h-4 w-4" />
+                                      <span className="truncate">
+                                        {getGabaritoName(m.gabaritoNumeracao)}
+                                      </span>
+                                      <ChevronDown className="h-3.5 w-3.5 text-slate-550 dark:text-slate-400 shrink-0" />
                                     </button>
-                                  </td>
-                                </tr>
 
-                                {/* LINHA 2: CONFIGURAÇÕES DE SERIALIZAÇÃO E DADOS VARIÁVEIS */}
-                                <tr className="bg-slate-50/60 dark:bg-slate-900/30 text-[9px] align-middle">
-                                  <td className="py-1.5 px-1.5 pl-6 text-slate-500 dark:text-slate-455 font-black uppercase text-[8px] tracking-wide select-none">
-                                    ↳ Especificações
-                                  </td>
-
-                                  {/* Numeração Dropdown */}
-                                  <td className="py-1.5 px-1.5">
-                                    <div className="space-y-0.5">
-                                      <span className="text-[8px] font-extrabold text-slate-600 dark:text-slate-400 uppercase block leading-none">Numeração</span>
-                                      <select
-                                        value={m.configImpressao.tipoNumeracao}
-                                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
-                                        className="w-full h-7 px-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100"
-                                      >
-                                        <option value="SEM_NUMERACAO">Sem Numeração</option>
-                                        <option value="SEQUENCIAL">Sequencial</option>
-                                        <option value="CUSTOMIZADA">Customizada (CSV)</option>
-                                      </select>
-                                    </div>
-                                  </td>
-
-                                  {/* Gabarito Combobox Pesquisável */}
-                                  <td className="py-1.5 px-1.5">
-                                    <div className="space-y-0.5 relative">
-                                      <span className="text-[8px] font-extrabold text-slate-600 dark:text-slate-400 uppercase block leading-none">Gabarito</span>
-                                      
-                                      <div className="flex items-center gap-1">
-                                        <div className="relative flex-1">
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              if (openGabaritoDropdown === m.id) {
-                                                setOpenGabaritoDropdown(null);
-                                              } else {
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                setDropdownPosition({
-                                                  top: rect.bottom,
-                                                  left: rect.left,
-                                                  width: Math.max(rect.width, 220)
-                                                });
-                                                setOpenGabaritoDropdown(m.id);
-                                                setGabaritoSearchQuery("");
-                                              }
-                                            }}
-                                            className="w-full h-7 px-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between gap-1 shadow-sm hover:border-slate-400 dark:hover:border-slate-600 transition-colors"
-                                          >
-                                            <span className="truncate">
-                                              {m.gabaritoNumeracao || "Selecione ou pesquise..."}
-                                            </span>
-                                            <ChevronDown className="h-3 w-3 text-slate-500 dark:text-slate-450 shrink-0" />
-                                          </button>
-
-                                          {openGabaritoDropdown === m.id && isMounted && createPortal(
-                                            <>
-                                              <div 
-                                                className="fixed inset-0 z-40" 
-                                                onClick={() => setOpenGabaritoDropdown(null)}
-                                              />
-                                              <div 
-                                                style={{
-                                                  position: "fixed",
-                                                  top: `${(dropdownPosition?.top ?? 0) + 4}px`,
-                                                  left: `${dropdownPosition?.left ?? 0}px`,
-                                                  width: `${dropdownPosition?.width ?? 220}px`,
-                                                }}
-                                                className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg z-50 text-[10px] font-bold overflow-hidden flex flex-col"
-                                              >
-                                                {/* Campo de Busca Interno */}
-                                                <div className="p-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-                                                  <input
-                                                    type="text"
-                                                    autoFocus
-                                                    placeholder="Digitar para filtrar..."
-                                                    value={gabaritoSearchQuery}
-                                                    onChange={(e) => setGabaritoSearchQuery(e.target.value)}
-                                                    className="w-full h-6 px-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 focus:outline-none focus:ring-1 focus:ring-blue-500 text-[10px] text-slate-900 dark:text-slate-100 font-medium"
-                                                  />
-                                                </div>
-                                                
-                                                {/* Lista de Opções */}
-                                                <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                                                  {filteredGabaritos.length === 0 ? (
-                                                    <div className="p-2 text-slate-400 italic text-center">Nenhum encontrado</div>
-                                                  ) : (
-                                                    filteredGabaritos.map((g) => (
-                                                      <button
-                                                        key={g.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                          updateModelField(p.id, m.id, "gabaritoNumeracao", g.nome);
-                                                          setOpenGabaritoDropdown(null);
-                                                        }}
-                                                        className={`w-full text-left p-2 hover:bg-slate-100 dark:hover:bg-slate-900 block transition-colors ${
-                                                          m.gabaritoNumeracao === g.nome 
-                                                            ? "bg-blue-50/50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400" 
-                                                            : "text-slate-800 dark:text-slate-200"
-                                                        }`}
-                                                      >
-                                                        <div>{g.nome}</div>
-                                                        <div className="text-[7.5px] font-normal text-slate-450 dark:text-slate-500 truncate">{g.descricao}</div>
-                                                      </button>
-                                                    ))
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </>,
-                                            document.body
-                                          )}
-                                        </div>
-
-                                        {/* Botão Ver Gabarito (Olho) */}
-                                        {m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const found = MOCK_GABARITOS.find(g => g.nome === m.gabaritoNumeracao);
-                                              if (found) {
-                                                setSelectedGabaritoPreview(found);
-                                              }
-                                            }}
-                                            className="h-7 w-7 rounded border border-slate-350 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-650 dark:text-slate-400 hover:bg-slate-150 dark:hover:bg-slate-800 flex items-center justify-center shrink-0 transition"
-                                            title="Ver gabarito visual"
-                                          >
-                                            <Eye className="h-3.5 w-3.5" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </td>
-
-                                  {/* Faixas de Numeração */}
-                                  <td className="py-1.5 px-1.5" colSpan={2}>
-                                    <div className="space-y-0.5">
-                                      <span className="text-[8px] font-extrabold text-slate-600 dark:text-slate-400 uppercase block leading-none">Faixa Numérica (Início / Fim)</span>
-                                      <div className="flex gap-1 w-full">
-                                        <input
-                                          type="number"
-                                          placeholder="Inic"
-                                          disabled={m.configImpressao.tipoNumeracao !== "SEQUENCIAL"}
-                                          value={m.numeracaoInicial || ""}
-                                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
-                                          className="w-1/2 h-7 px-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 disabled:bg-slate-100 dark:disabled:bg-slate-900/60 text-right focus:outline-none font-mono font-bold text-slate-900 dark:text-slate-100"
+                                    {openGabaritoDropdown === m.id && isMounted && createPortal(
+                                      <>
+                                        <div 
+                                          className="fixed inset-0 z-40" 
+                                          onClick={() => setOpenGabaritoDropdown(null)}
                                         />
-                                        <input
-                                          type="number"
-                                          placeholder="Fim"
-                                          readOnly
-                                          value={m.configImpressao.tipoNumeracao === "SEQUENCIAL" ? (m.numeracaoFinal || "") : ""}
-                                          className="w-1/2 h-7 px-1.5 rounded border border-slate-205 dark:border-slate-800 bg-slate-105 dark:bg-slate-900 cursor-not-allowed text-right font-mono font-bold text-slate-500 dark:text-slate-450 focus:outline-none"
-                                        />
-                                      </div>
-                                    </div>
-                                  </td>
-
-                                  {/* Planilha Excel/CSV (Mock Import) */}
-                                  <td className="py-1.5 px-1.5" colSpan={2}>
-                                    <div className="space-y-0.5">
-                                      <span className="text-[8px] font-extrabold text-slate-600 dark:text-slate-400 uppercase block leading-none">Importação Planilha (.CSV)</span>
-                                      <div className="flex items-center gap-1.5">
-                                        {m.configImpressao.tipoNumeracao === "CUSTOMIZADA" ? (
-                                          <div className="flex items-center gap-1 w-full">
-                                            {m.csvDadosVariaveisUrl ? (
-                                              <div className="flex items-center justify-between border border-emerald-300 dark:border-emerald-900 bg-emerald-50/20 dark:bg-emerald-950/10 px-2 py-1 rounded text-[9px] font-bold text-emerald-700 dark:text-emerald-450 w-full h-7">
-                                                <span className="truncate max-w-[130px] font-mono text-[9px]">{m.csvDadosVariaveisUrl}</span>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => updateModelField(p.id, m.id, "csvDadosVariaveisUrl", "")}
-                                                  className="text-red-500 hover:text-red-700 ml-1 font-bold text-[11px] leading-none"
-                                                  title="Remover planilha"
-                                                >
-                                                  ×
-                                                </button>
-                                              </div>
+                                        <div 
+                                          style={{
+                                            position: "fixed",
+                                            top: `${(dropdownPosition?.top ?? 0) + 4}px`,
+                                            left: `${dropdownPosition?.left ?? 0}px`,
+                                            width: `${dropdownPosition?.width ?? 220}px`,
+                                          }}
+                                          className="bg-white dark:bg-slate-955 border border-slate-300 dark:border-slate-700 rounded-lg shadow-lg z-50 text-[10px] font-bold overflow-hidden flex flex-col"
+                                        >
+                                          {/* Campo de Busca Interno */}
+                                          <div className="p-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                                            <input
+                                              type="text"
+                                              autoFocus
+                                              placeholder="Digitar para filtrar..."
+                                              value={gabaritoSearchQuery}
+                                              onChange={(e) => setGabaritoSearchQuery(e.target.value)}
+                                              className="w-full h-6 px-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 focus:outline-none focus:ring-1 focus:ring-blue-500 text-[10px] text-slate-900 dark:text-slate-100 font-medium"
+                                            />
+                                          </div>
+                                          
+                                          {/* Lista de Opções */}
+                                          <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                                            {filteredGabaritos.length === 0 ? (
+                                              <div className="p-2 text-slate-400 italic text-center">Nenhum encontrado</div>
                                             ) : (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleMockImportCSV(p.id, m.id, m.nomeModelo)}
-                                                className="w-full h-7 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded border border-slate-300 dark:border-slate-750 font-black text-[9px] transition"
-                                              >
-                                                Importar CSV
-                                              </button>
+                                              filteredGabaritos.map((g) => {
+                                                const val = String(g.id_gabarito !== null && g.id_gabarito !== undefined ? g.id_gabarito : g.id);
+                                                return (
+                                                  <button
+                                                    key={g.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                      updateModelField(p.id, m.id, "gabaritoNumeracao", val);
+                                                      setOpenGabaritoDropdown(null);
+                                                    }}
+                                                    className={`w-full text-left p-2 hover:bg-slate-100 dark:hover:bg-slate-900 block transition-colors ${
+                                                      m.gabaritoNumeracao === val 
+                                                        ? "bg-blue-50/50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400" 
+                                                        : "text-slate-800 dark:text-slate-200"
+                                                    }`}
+                                                  >
+                                                    <div>{g.name}</div>
+                                                  </button>
+                                                );
+                                              })
                                             )}
                                           </div>
-                                        ) : (
-                                          <input
-                                            type="text"
-                                            placeholder="—"
-                                            disabled
-                                            className="w-full h-7 px-1.5 rounded border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 text-center text-slate-400 font-bold focus:outline-none text-[10px]"
-                                          />
-                                        )}
-                                      </div>
+                                        </div>
+                                      </>,
+                                      document.body
+                                    )}
+                                  </div>
+
+                                  {/* Botão Ver Gabarito (Olho) */}
+                                  {m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const foundInDb = gabaritosList.find(g => String(g.id_gabarito || g.id) === m.gabaritoNumeracao || g.name === m.gabaritoNumeracao);
+                                        const mockFound = MOCK_GABARITOS.find(g => g.nome === m.gabaritoNumeracao || g.id === m.gabaritoNumeracao || (foundInDb && g.nome === foundInDb.name));
+                                        if (mockFound) {
+                                          setSelectedGabaritoPreview(mockFound);
+                                        } else if (foundInDb) {
+                                          setSelectedGabaritoPreview({
+                                            id: foundInDb.id,
+                                            nome: foundInDb.name,
+                                            descricao: "Gabarito carregado dinamicamente do banco de dados.",
+                                            previewImageUrl: ""
+                                          });
+                                        }
+                                      }}
+                                      className="h-8 w-8 rounded-lg border border-slate-350 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-655 dark:text-slate-400 hover:bg-slate-150 dark:hover:bg-slate-800 flex items-center justify-center shrink-0 transition"
+                                      title="Ver gabarito visual"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Faixas de Numeração ou CSV */}
+                              <div className="space-y-1">
+                                {m.configImpressao.tipoNumeracao === "SEQUENCIAL" ? (
+                                  <div>
+                                    <label className="text-[8px] font-extrabold text-slate-550 dark:text-slate-450 uppercase block">Faixa Numérica (Início / Fim)</label>
+                                    <div className="flex gap-2 w-full">
+                                      <input
+                                        type="number"
+                                        placeholder="Início"
+                                        required
+                                        value={m.numeracaoInicial || ""}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
+                                        className="w-1/2 h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-right focus:outline-none font-mono font-bold text-slate-900 dark:text-slate-100 text-[10px]"
+                                      />
+                                      <input
+                                        type="number"
+                                        placeholder="Fim"
+                                        readOnly
+                                        value={m.numeracaoFinal || ""}
+                                        className="w-1/2 h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-right font-mono font-bold text-slate-500 dark:text-slate-455 focus:outline-none text-[10px]"
+                                      />
                                     </div>
-                                  </td>
-                                </tr>
-                              </React.Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                                  </div>
+                                ) : m.configImpressao.tipoNumeracao === "CUSTOMIZADA" ? (
+                                  <div>
+                                    <label className="text-[8px] font-extrabold text-slate-550 dark:text-slate-455 uppercase block text-left">Planilha de Dados (.CSV)</label>
+                                    {m.csvDadosVariaveisUrl ? (
+                                      <div className="flex items-center justify-between border border-emerald-300 dark:border-emerald-900 bg-emerald-50/20 dark:bg-emerald-950/10 px-2 py-1 rounded text-[9px] font-bold text-emerald-700 dark:text-emerald-450 h-8">
+                                        <span className="truncate max-w-[130px] font-mono text-[9px]">{m.csvDadosVariaveisUrl}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateModelField(p.id, m.id, "csvDadosVariaveisUrl", "")}
+                                          className="text-red-500 hover:text-red-700 ml-1 font-bold text-xs"
+                                          title="Remover planilha"
+                                        >
+                                          ×
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMockImportCSV(p.id, m.id, m.nomeModelo)}
+                                        className="w-full h-8 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-200 rounded-lg border border-slate-300 dark:border-slate-750 font-black text-[9px] transition"
+                                      >
+                                        Importar CSV Variáveis
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <label className="text-[8px] font-extrabold text-slate-450 dark:text-slate-500 uppercase block">Especificação de Dados</label>
+                                    <div className="h-8 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-400 font-bold text-[9px]">
+                                      Sem Numeração Variável
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
 
                   {/* Totalizer and Limit Warning */}
@@ -1570,9 +1614,9 @@ export function BoletimFormPage() {
                     className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none font-bold text-slate-900 dark:text-slate-100 text-[10px]"
                   >
                     <option value="">Selecione o Designer...</option>
-                    {designers.map(d => (
-                      <option key={d} value={d}>
-                        {d} ({getDesignerActiveCount(d)} ativas)
+                    {designersList.map(d => (
+                      <option key={d.user_id} value={d.user_id}>
+                        {d.nome_usuario} ({d.email}) - {getDesignerActiveCount(d.user_id)} ativas
                       </option>
                     ))}
                   </select>
@@ -1582,11 +1626,13 @@ export function BoletimFormPage() {
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-2 space-y-1">
                   <span className="text-[8px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-wider block">Painel de Carga (Equipe)</span>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[8px]">
-                    {designers.map(d => {
-                      const activeCount = getDesignerActiveCount(d);
+                    {designersList.map(d => {
+                      const activeCount = getDesignerActiveCount(d.user_id);
                       return (
-                        <div key={d} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850/40 last:border-b-0 pb-0.5">
-                          <span className="text-slate-550 dark:text-slate-400 truncate max-w-[60px]">{d.split(" ")[0]}</span>
+                        <div key={d.user_id} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850/40 last:border-b-0 pb-0.5">
+                          <span className="text-slate-550 dark:text-slate-400 truncate max-w-[95px]" title={`${d.nome_usuario} (${d.email})`}>
+                            {d.nome_usuario.split(" ")[0]}
+                          </span>
                           <span className={`font-mono font-bold px-1 rounded-sm ${
                             activeCount >= 5 
                               ? "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400" 
@@ -1662,247 +1708,50 @@ export function BoletimFormPage() {
                                   ))}
                                 </div>
                               ) : (
-                                <p className="text-[9px] text-slate-450 italic mt-0.5">Nenhum arquivo ou referência anexada ao briefing do layout.</p>
+                                <p className="text-[9px] text-slate-450 italic mt-0.5">
+                                  Nenhum arquivo ou referência anexada ao briefing do layout.
+                                </p>
                               )}
                             </div>
                           </div>
 
-                          {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7) */}
-                                  {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7) */}
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between border-b border-slate-300 dark:border-slate-800 pb-1">
+                          {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS) */}
+                          <div className="bg-slate-50/80 dark:bg-slate-900/40 border border-slate-300 dark:border-slate-800 p-4 rounded-xl space-y-4 shadow-sm">
+                            <div className="flex items-center justify-between border-b border-slate-300 dark:border-slate-700 pb-1">
                               <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
-                                Configurações Técnicas por Setor PCP
+                                Configurações Técnicas e Acabamento (PCP)
                               </h3>
-                              <span className="text-[9px] font-bold text-slate-550 dark:text-slate-400">
-                                Blocos 6 e 7 Dinâmicos
+                              <span className="text-[9px] font-bold text-[#0b2f4a] dark:text-blue-450">
+                                Blocos 6 e 7 Padronizados
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                              {Array.from(new Set(produtos.map(p => p.setor || "IMPRESSÃO"))).map((sector) => {
-                                const config = sectorConfigs[sector] || {
-                                  instrucoesImpressao: "",
-                                  verniz: "Nenhum",
-                                  laminacao: "Nenhuma",
-                                  corte: "Corte Reto",
-                                  furo: "Sem Furo",
-                                  acabamentoEspecial: "Nenhum",
-                                  observacoesAcabamento: "",
-                                  tipoImpressao: "Laser",
-                                  capaContraCapa: "Não",
-                                  blocagem: "Sem blocagem",
-                                  impressora: "C280"
-                                };
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-extrabold text-slate-700 dark:text-slate-355 uppercase block">
+                                  Observações Técnicas de Impressão (Bloco 6)
+                                </label>
+                                <textarea
+                                  placeholder="Especificações de impressão, perfil de qualidade, tipo de tinta..."
+                                  rows={4}
+                                  value={obsImpressao}
+                                  onChange={(e) => setObsImpressao(e.target.value)}
+                                  className="w-full p-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-955 resize-y focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                                />
+                              </div>
 
-                                const updateSectorField = (field: string, value: string) => {
-                                  setSectorConfigs(prev => ({
-                                    ...prev,
-                                    [sector]: {
-                                      ...prev[sector],
-                                      [field]: value
-                                    }
-                                  }));
-                                };
-
-                                const sectorProducts = produtos.filter(p => (p.setor || "IMPRESSÃO") === sector).map(p => p.nome);
-
-                                return (
-                                  <div key={sector} className="bg-slate-50/85 dark:bg-slate-900/30 border border-slate-300 dark:border-slate-800/80 p-3.5 rounded-xl space-y-3 shadow-xs">
-                                    {/* Header do Setor com Badges de Produtos Associados */}
-                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-[10px] font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
-                                          Setor {sector}
-                                        </span>
-                                        <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md bg-blue-100/80 text-blue-900 dark:bg-blue-900/30 dark:text-blue-300">
-                                          PCP
-                                        </span>
-                                      </div>
-                                      <div className="flex flex-wrap gap-1 max-w-[65%] justify-end">
-                                        {sectorProducts.map((pName, idx) => (
-                                          <span key={idx} className="text-[8px] font-extrabold px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-350 truncate max-w-[120px]" title={pName}>
-                                            {pName}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-
-                                    {sector === "IMPRESSÃO" ? (
-                                      <>
-                                        {/* Campos de Impressão (Bloco 6) */}
-                                        <div className="space-y-2">
-                                          <span className="text-[9px] font-extrabold text-slate-700 dark:text-slate-350 uppercase block border-b border-slate-200 dark:border-slate-800 pb-0.5">
-                                            Especificações de Impressão
-                                          </span>
-                                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                            {/* Tipo de Impressão */}
-                                            <div className="space-y-0.5">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Tipo de Impressão</label>
-                                              <select
-                                                value={config.tipoImpressao || "Laser"}
-                                                onChange={(e) => updateSectorField("tipoImpressao", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="Laser">Laser</option>
-                                                <option value="Jato de tinta">Jato de tinta</option>
-                                                <option value="Ribbon">Ribbon</option>
-                                              </select>
-                                            </div>
-
-                                            {/* Capa e contra capa? */}
-                                            <div className="space-y-0.5">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Capa e Contra Capa?</label>
-                                              <select
-                                                value={config.capaContraCapa || "Não"}
-                                                onChange={(e) => updateSectorField("capaContraCapa", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="Sim">Sim</option>
-                                                <option value="Não">Não</option>
-                                              </select>
-                                            </div>
-
-                                            {/* Blocagem */}
-                                            <div className="space-y-0.5">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Blocagem</label>
-                                              <select
-                                                value={config.blocagem || "Sem blocagem"}
-                                                onChange={(e) => updateSectorField("blocagem", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="25">25</option>
-                                                <option value="50">50</option>
-                                                <option value="100">100</option>
-                                                <option value="Sem blocagem">Sem blocagem</option>
-                                                <option value="Outro">Outro</option>
-                                              </select>
-                                            </div>
-
-                                            {/* Impressora */}
-                                            <div className="space-y-0.5">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Impressora</label>
-                                              <select
-                                                value={config.impressora || "C280"}
-                                                onChange={(e) => updateSectorField("impressora", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="C280">C280</option>
-                                                <option value="C1100">C1100</option>
-                                                <option value="ColorJet">ColorJet</option>
-                                              </select>
-                                            </div>
-                                          </div>
-
-                                          <div className="space-y-1">
-                                            <label className="text-[8px] font-extrabold text-slate-750 dark:text-slate-350 uppercase block">
-                                              Instruções de Impressão
-                                            </label>
-                                            <textarea
-                                              placeholder="Instruções gerais para o setor de IMPRESSÃO..."
-                                              rows={2}
-                                              value={config.instrucoesImpressao}
-                                              onChange={(e) => updateSectorField("instrucoesImpressao", e.target.value)}
-                                              className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-750 bg-white dark:bg-slate-950 resize-none focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        {/* Acabamentos Técnicos (Bloco 7) */}
-                                        <div className="space-y-2 pt-1">
-                                          <span className="text-[9px] font-extrabold text-slate-700 dark:text-slate-350 uppercase block border-b border-slate-200 dark:border-slate-800 pb-0.5">
-                                            Acabamentos do Setor
-                                          </span>
-                                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                            {/* Verniz */}
-                                            <div className="space-y-0.5">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Verniz</label>
-                                              <select
-                                                value={config.verniz}
-                                                onChange={(e) => updateSectorField("verniz", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="Nenhum">Nenhum</option>
-                                                <option value="Verniz Total Brilho">Total Brilho</option>
-                                                <option value="Verniz Localizado UV">Localizado UV</option>
-                                                <option value="Verniz Holográfico">Holográfico</option>
-                                              </select>
-                                            </div>
-
-                                            {/* Laminação */}
-                                            <div className="space-y-0.5">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Laminação</label>
-                                              <select
-                                                value={config.laminacao}
-                                                onChange={(e) => updateSectorField("laminacao", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-955 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="Nenhuma">Nenhuma</option>
-                                                <option value="BOPP Brilho">BOPP Brilho</option>
-                                                <option value="BOPP Fosco">BOPP Fosco</option>
-                                                <option value="Soft Touch">Soft Touch</option>
-                                                <option value="Laminação Holográfica">Holográfica</option>
-                                              </select>
-                                            </div>
-
-                                            {/* Furo */}
-                                            <div className="space-y-0.5">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Furo</label>
-                                              <select
-                                                value={config.furo}
-                                                onChange={(e) => updateSectorField("furo", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="Sem Furo">Sem Furo</option>
-                                                <option value="Furo 5mm (Padrão)">Furo 5mm</option>
-                                                <option value="Furo Ovo (Crachá)">Furo Ovo</option>
-                                                <option value="Furo Jacaré">Furo Jacaré</option>
-                                              </select>
-                                            </div>
-
-                                            {/* Especial */}
-                                            <div className="space-y-0.5 sm:col-span-3">
-                                              <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Acabamento Especial</label>
-                                              <select
-                                                value={config.acabamentoEspecial}
-                                                onChange={(e) => updateSectorField("acabamentoEspecial", e.target.value)}
-                                                className="w-full h-7 px-1 rounded bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-750 text-[9px] font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-                                              >
-                                                <option value="Nenhum">Nenhum</option>
-                                                <option value="Hot Stamping Dourado">Hot Stamping Dourado</option>
-                                                <option value="Hot Stamping Prata">Hot Stamping Prata</option>
-                                                <option value="Relevo Seco">Relevo Seco</option>
-                                                <option value="Ilhós Aplicado">Ilhós Aplicado</option>
-                                              </select>
-                                            </div>
-                                          </div>
-
-                                          {/* Obs de Acabamento */}
-                                          <div className="space-y-1 pt-1">
-                                            <label className="text-[8px] font-extrabold text-slate-700 dark:text-slate-350 uppercase">
-                                              Obs de Acabamento
-                                            </label>
-                                            <textarea
-                                              placeholder="Detalhes adicionais de acabamento específicos para este setor..."
-                                              rows={1.5}
-                                              value={config.observacoesAcabamento}
-                                              onChange={(e) => updateSectorField("observacoesAcabamento", e.target.value)}
-                                              className="w-full p-2 rounded border border-slate-300 dark:border-slate-750 bg-white dark:bg-slate-955 resize-none focus:outline-none text-[9px] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                                            />
-                                          </div>
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <div className="flex flex-col items-center justify-center p-6 bg-slate-100/50 dark:bg-slate-950/20 border border-dashed border-slate-300 dark:border-slate-800 rounded-lg">
-                                        <span className="text-slate-400 select-none text-base mb-1">⚙️</span>
-                                        <p className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 text-center uppercase tracking-wider">
-                                          Configuração específica de {sector} será definida depois.
-                                        </p>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                              <div className="space-y-1">
+                                <label className="text-[10px] font-extrabold text-slate-700 dark:text-slate-355 uppercase block">
+                                  Observações Técnicas de Acabamento (Bloco 7)
+                                </label>
+                                <textarea
+                                  placeholder="Laminação, verniz, furos, corte especial, blocagem, ilhós..."
+                                  rows={4}
+                                  value={obsAcabamento}
+                                  onChange={(e) => setObsAcabamento(e.target.value)}
+                                  className="w-full p-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-955 resize-y focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                                />
+                              </div>
                             </div>
                           </div>
 

@@ -63,7 +63,9 @@ type ProdutoWriteField =
   | "id_formato"
   | "id_modelo_cor"
   | "quantidade_minima_venda"
-  | "tipo_blocagem";
+  | "tipo_blocagem"
+  | "id_gabarito"
+  | "setor_pcp";
 
 export type ProdutoWriteInput = Partial<Record<ProdutoWriteField, string | number | boolean | string[] | null>>;
 
@@ -126,7 +128,9 @@ export const PRODUTOS_INSERT_FIELD_WHITELIST = [
   "icms_situacao_tributaria",
   "pis_situacao_tributaria",
   "cofins_situacao_tributaria",
-  "informacoes_fiscais"
+  "informacoes_fiscais",
+  "id_gabarito",
+  "setor_pcp"
 ] as const satisfies readonly ProdutoWriteField[];
 
 export const PRODUTOS_UPDATE_FIELD_WHITELIST = [
@@ -167,7 +171,9 @@ export const PRODUTOS_UPDATE_FIELD_WHITELIST = [
   "id_formato",
   "id_modelo_cor",
   "quantidade_minima_venda",
-  "tipo_blocagem"
+  "tipo_blocagem",
+  "id_gabarito",
+  "setor_pcp"
 ] as const satisfies readonly ProdutoWriteField[];
 
 export const PRODUTOS_DELETE_BLOCKED_MESSAGE =
@@ -214,7 +220,9 @@ export const PRODUTOS_SELECT = [
   "id_formato",
   "id_modelo_cor",
   "quantidade_minima_venda",
-  "tipo_blocagem"
+  "tipo_blocagem",
+  "id_gabarito",
+  "setor_pcp"
 ].join(",");
 
 const FOTOS_SELECT = "id,nomeProduto,imagensURL,idProduto";
@@ -246,7 +254,8 @@ function normalizeProdutoWriteValue(field: ProdutoWriteField, value: ProdutoWrit
     field === "cod_origem" ||
     field === "id_formato" ||
     field === "id_modelo_cor" ||
-    field === "quantidade_minima_venda"
+    field === "quantidade_minima_venda" ||
+    field === "id_gabarito"
   ) {
     if (typeof value === "string" && !value.trim()) {
       return null;
@@ -999,5 +1008,29 @@ export async function listarCoresProducao(): Promise<CorProducao[]> {
     return [];
   }
   return data ?? [];
+}
+
+export interface GabaritoProducao {
+  id: string;
+  id_gabarito: number | null;
+  name: string;
+}
+
+export async function listarGabaritos(): Promise<GabaritoProducao[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  const { data, error } = await client
+    .from("producao_numeracoes")
+    .select("*")
+    .order("name", { ascending: true });
+  if (error) {
+    console.error("[Produtos] erro ao listar gabaritos:", error);
+    return [];
+  }
+  return (data || []).map((d) => ({
+    id: String(d.id),
+    id_gabarito: "id_gabarito" in d ? (d.id_gabarito !== null ? Number(d.id_gabarito) : null) : null,
+    name: String(d.name || "")
+  }));
 }
 

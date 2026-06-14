@@ -41,6 +41,8 @@ export type SupabaseProdutoRow = {
   id_modelo_cor?: SupabaseValue;
   quantidade_minima_venda?: SupabaseValue;
   tipo_blocagem?: SupabaseValue;
+  id_gabarito?: SupabaseValue;
+  setor_pcp?: SupabaseValue;
 };
 
 export type SupabaseProdutoFotoRow = {

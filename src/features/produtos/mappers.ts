@@ -269,6 +269,8 @@ export function mapSupabaseProdutoRowToProduto(
     id_modelo_cor: pickNumber(raw, ["id_modelo_cor"]),
     quantidade_minima_venda: pickNumber(raw, ["quantidade_minima_venda"]),
     tipo_blocagem: pickText(raw, ["tipo_blocagem"]) || null,
+    id_gabarito: pickNumber(raw, ["id_gabarito"]),
+    setor_pcp: pickText(raw, ["setor_pcp"]) || null,
     fotos,
     variacoes
   };

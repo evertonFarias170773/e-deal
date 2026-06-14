@@ -19,9 +19,11 @@ import {
   uploadProdutoFotoReal,
   listarFormatosProducao,
   listarCoresProducao,
+  listarGabaritos,
   type ProdutoWriteInput,
   type FormatoProducao,
-  type CorProducao
+  type CorProducao,
+  type GabaritoProducao
 } from "@/features/produtos/services/produtos.service";
 import {
   listVariacoesGlobais,
@@ -110,6 +112,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   const [variacoesGlobais, setVariacoesGlobais] = useState<VariacaoGlobalJoin[]>([]);
   const [formatos, setFormatos] = useState<FormatoProducao[]>([]);
   const [cores, setCores] = useState<CorProducao[]>([]);
+  const [gabaritos, setGabaritos] = useState<GabaritoProducao[]>([]);
   const [isLoadingCatalogos, setIsLoadingCatalogos] = useState(false);
 
   const title = mode === "new" ? "Novo produto" : `Editar produto #${produto?.id_produto}`;
@@ -212,13 +215,15 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     void (async () => {
       setIsLoadingCatalogos(true);
       try {
-        const [formatosData, coresData] = await Promise.all([
+        const [formatosData, coresData, gabaritosData] = await Promise.all([
           listarFormatosProducao(),
-          listarCoresProducao()
+          listarCoresProducao(),
+          listarGabaritos()
         ]);
         if (!active) return;
         setFormatos(formatosData);
         setCores(coresData);
+        setGabaritos(gabaritosData);
       } catch (err) {
         console.error("Erro ao carregar catálogos de produção:", err);
       } finally {
@@ -457,7 +462,9 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       id_formato: form.id_formato ? Number(form.id_formato) : null,
       id_modelo_cor: form.id_modelo_cor ? Number(form.id_modelo_cor) : null,
       quantidade_minima_venda: form.quantidade_minima_venda ? Number(form.quantidade_minima_venda) : null,
-      tipo_blocagem: form.tipo_blocagem ? form.tipo_blocagem.trim() : null
+      tipo_blocagem: form.tipo_blocagem ? form.tipo_blocagem.trim() : null,
+      id_gabarito: form.id_gabarito ? Number(form.id_gabarito) : null,
+      setor_pcp: form.setor_pcp ? form.setor_pcp.trim() : null
     };
   }
 
@@ -728,6 +735,34 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
               className={getInputClass(errorFields.includes("tipo_blocagem"))}
               placeholder="Ex: Blc de 25, Individual, Cartela"
             />
+          </Field>
+          <Field label="Setor PCP (Produção)">
+            <select
+              value={form.setor_pcp}
+              onChange={(event) => updateField("setor_pcp", event.target.value)}
+              className={getInputClass(errorFields.includes("setor_pcp"))}
+            >
+              <option value="">Selecione o setor PCP padrão</option>
+              <option value="IMPRESSÃO">IMPRESSÃO</option>
+              <option value="TEXTIL">TEXTIL</option>
+              <option value="PVP">PVP</option>
+              <option value="FLEXO">FLEXO</option>
+            </select>
+          </Field>
+          <Field label="Gabarito padrão (Produção)">
+            <select
+              value={form.id_gabarito}
+              onChange={(event) => updateField("id_gabarito", event.target.value)}
+              className={getInputClass(errorFields.includes("id_gabarito"))}
+              disabled={isLoadingCatalogos}
+            >
+              <option value="">Selecione o gabarito padrão</option>
+              {gabaritos.map((g) => (
+                <option key={g.id} value={g.id_gabarito !== null ? g.id_gabarito.toString() : ""}>
+                  {g.name} {g.id_gabarito !== null ? `(Código: ${g.id_gabarito})` : ""}
+                </option>
+              ))}
+            </select>
           </Field>
           <div className="md:col-span-2 xl:col-span-4">
             <Field label="Descricao">
@@ -1301,6 +1336,8 @@ function createInitialState(produto?: Produto): ProdutoFormState {
     id_modelo_cor: produto?.id_modelo_cor?.toString() ?? "",
     quantidade_minima_venda: produto?.quantidade_minima_venda?.toString() ?? "",
     tipo_blocagem: produto?.tipo_blocagem ?? "",
+    id_gabarito: produto?.id_gabarito?.toString() ?? "",
+    setor_pcp: produto?.setor_pcp ?? "",
     fotos: produto?.fotos ?? [],
     variacoes: produto?.variacoes ?? []
   };

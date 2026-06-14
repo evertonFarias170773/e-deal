@@ -607,11 +607,12 @@ Pendências para próximas fases:
 
 ## Abertura de OS (Boletim de Entrada)
 
-Status: Escrita real controlada implementada para criação do pedido pai na tabela `public.pedidos` a partir do salvamento de boletim, mantendo demais tabelas somente leitura.
+Status: Escrita real controlada implementada para criação do pedido pai na tabela `public.pedidos` a partir do salvamento de boletim, com suporte a atributos de produção dinâmicos (Gabarito / Setor PCP), observações padronizadas e UI de Lotes refatorada em cards.
 
 Componentes principais:
-- `boletim-propostas.service.ts` (`src/features/pedidos/services/boletim-propostas.service.ts` - Regras de elegibilidade e persistência do pedido)
-- `BoletimFormPage.tsx` (`src/features/pedidos/BoletimFormPage.tsx` - Interface integrada com busca reativa, validações e salvamento real)
+- `boletim-propostas.service.ts` (`src/features/pedidos/services/boletim-propostas.service.ts` - Regras de elegibilidade, loaders dinâmicos de designers/gabaritos e persistência do pedido)
+- `BoletimFormPage.tsx` (`src/features/pedidos/BoletimFormPage.tsx` - Interface integrada com busca reativa, validações, grid de cards de lotes e salvamento real)
+- `ProdutoFormPage.tsx` (`src/features/produtos/ProdutoFormPage.tsx` - Interface de edição de produto para vincular gabaritos e setores PCP padrão)
 
 Funcionalidades e Regras de Elegibilidade:
 - **Elegibilidade Rígida**: Exibição e seleção permitidas apenas para propostas com status `'APROVADO'`, com `id_int` e `id_vendedor` preenchidos, que possuam ao menos 1 produto em `produtos_proposta` e que não possuam pedido em `public.pedidos`.
@@ -622,7 +623,15 @@ Funcionalidades e Regras de Elegibilidade:
 - **Abertura Controlada de Pedido**: Ação "Salvar Boletim" executa uma chamada ao Supabase criando 1 registro pai na tabela `public.pedidos` com metadados operacionais (`BOLETIM_FINALIZADO`, `APROVADO`, `PENDENTE`, `BLOQUEADO`), `id_cliente = null` (prevenção contra conflito de tipo UUID), `id_vendedor` e valores recalculados da proposta.
 - **Validação Antecipada Contra Duplicados**: Verificação da existência prévia do `id_int` na tabela `public.pedidos` antes do insert, abortando o fluxo e apresentando toast `"Pedido já aberto para esta proposta"` em caso de colisão.
 - **Mensagem descritiva e Toast tardio**: O toast de sucesso `"Boletim salvo e pedido aberto com sucesso"` é exibido exclusivamente após o retorno com confirmação do Supabase. Se a RLS ou restrições do banco falharem, o erro é exibido e a tela não exibe sucesso falso.
-- **Isolamento de Tabelas Filhas**: A gravação é estritamente isolada do pedido pai; tabelas de modelos (`public.pedidos_modelos`) e de versões de arte (`public.pedidos_artes`) não são afetadas.
+- **Isolamento de Tabelas Filhas**: A gravação é estritamente isolada do pedido pai; tabelas de modelos (`public.pedidos_modelos`) e de versões de arte (`public.pedidos_artes`) não são afetadas na gravação inicial (Fase 2).
+- **Atributos Dinâmicos de Produção**:
+  - Busca de designers reais em `public.usuarios` (`is_designer = true`) para preenchimento de responsáveis de arte.
+  - Busca de gabaritos reais em `public.producao_numeracoes` para associação em lotes de pedidos e gabarito padrão de produtos.
+  - Campos adicionados no cadastro de produtos: `id_gabarito` (Gabarito Padrão) e `setor_pcp` (Setor PCP Padrão: `IMPRESSÃO`, `TEXTIL`, `PVP`, `FLEXO`).
+- **Refatoração Visual de Lotes (Interface)**:
+  - Substituição da tabela de lotes por um grid moderno de cards individuais (`grid-cols-1 xl:grid-cols-2 gap-4`), melhorando sensivelmente a legibilidade e manuseio dos dados de produção.
+- **Padronização do Campo de Observações**:
+  - Consolidação das observações textuais em blocos rígidos no campo `obs` do pedido pai: `[Observações críticas]`, `[Impressão]` e `[Acabamento]`.
 
 ## Demais módulos
 

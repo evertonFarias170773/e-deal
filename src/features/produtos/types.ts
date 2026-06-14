@@ -82,6 +82,8 @@ export type Produto = {
   id_modelo_cor?: number | null;
   quantidade_minima_venda?: number | null;
   tipo_blocagem?: string | null;
+  id_gabarito?: number | null;
+  setor_pcp?: string | null;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
 };
@@ -126,6 +128,8 @@ export type ProdutoFormState = {
   id_modelo_cor: string;
   quantidade_minima_venda: string;
   tipo_blocagem: string;
+  id_gabarito: string;
+  setor_pcp: string;
   fotos: ProdutoFoto[];
   variacoes: ProdutoVariacaoDetalhada[];
 };

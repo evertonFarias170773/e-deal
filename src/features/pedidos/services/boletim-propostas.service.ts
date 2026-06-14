@@ -398,3 +398,71 @@ export async function criarPedidoParaBoletim(
   return { success: true, id: String(data.id) };
 }
 
+export interface DesignerUsuario {
+  user_id: string;
+  nome_usuario: string;
+  email: string;
+}
+
+export interface GabaritoProducao {
+  id: string;
+  id_gabarito: number | null;
+  name: string;
+}
+
+/**
+ * Busca todos os usuários configurados como designers (is_designer = true).
+ */
+export async function listarDesigners(): Promise<DesignerUsuario[]> {
+  const client = getSupabaseClient();
+  if (!client) {
+    console.warn("[BoletimPropostasService] Supabase client não inicializado.");
+    return [];
+  }
+
+  const { data, error } = await client
+    .from("usuarios")
+    .select("user_id, nome_usuario, email")
+    .eq("is_designer", true)
+    .order("nome_usuario", { ascending: true });
+
+  if (error || !data) {
+    console.error("[BoletimPropostasService] Erro ao buscar designers:", error);
+    return [];
+  }
+
+  return data.map((d) => ({
+    user_id: String(d.user_id),
+    nome_usuario: String(d.nome_usuario || ""),
+    email: String(d.email || "")
+  }));
+}
+
+/**
+ * Busca todos os gabaritos cadastrados em public.producao_numeracoes.
+ */
+export async function listarGabaritos(): Promise<GabaritoProducao[]> {
+  const client = getSupabaseClient();
+  if (!client) {
+    console.warn("[BoletimPropostasService] Supabase client não inicializado.");
+    return [];
+  }
+
+  const { data, error } = await client
+    .from("producao_numeracoes")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (error || !data) {
+    console.error("[BoletimPropostasService] Erro ao buscar gabaritos:", error);
+    return [];
+  }
+
+  return data.map((d) => ({
+    id: String(d.id),
+    id_gabarito: "id_gabarito" in d ? (d.id_gabarito !== null ? Number(d.id_gabarito) : null) : null,
+    name: String(d.name || "")
+  }));
+}
+
+
