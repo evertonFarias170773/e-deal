@@ -492,13 +492,13 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
 
   return (
     <div className="space-y-6">
-      {/* Banner de Protótipo UX */}
-      <div className="rounded-lg border-2 border-amber-500 bg-amber-500/10 dark:bg-amber-500/5 p-4 text-slate-900 dark:text-slate-100 flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+      {/* Banner de OS Operacional */}
+      <div className="rounded-lg border-2 border-blue-500 bg-blue-500/10 dark:bg-blue-500/5 p-4 text-slate-900 dark:text-slate-100 flex items-start gap-3">
+        <ClipboardList className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
         <div>
-          <h4 className="font-black text-sm uppercase tracking-wider text-amber-600 dark:text-amber-400">PAINEL OPERACIONAL DE DETALHES (PROTÓTIPO DE UX)</h4>
-          <p className="text-xs text-slate-600 dark:text-slate-350 mt-1 leading-relaxed font-medium">
-            Simulação de OS, ficha técnica e balança de despacho. Todas as modificações persistem no banco de dados local temporário (localStorage).
+          <h4 className="font-black text-sm uppercase tracking-wider text-blue-600 dark:text-blue-400">Ficha Operacional de OS</h4>
+          <p className="text-xs text-slate-605 dark:text-slate-350 mt-1 leading-relaxed font-medium">
+            Visualização consolidada de produção, especificações e acompanhamento de lotes conectados diretamente ao Supabase.
           </p>
         </div>
       </div>
@@ -534,7 +534,9 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
             Detalhe #{pedido.id_int}
           </span>
         </div>
-        <span className="bg-slate-100 text-slate-800 text-[10px] font-bold px-2 py-1 rounded">PREVIEW UX</span>
+        {!showRealPanel && (
+          <span className="bg-slate-100 text-slate-800 text-[10px] font-bold px-2 py-1 rounded">PREVIEW UX</span>
+        )}
       </div>
 
       <PageHeader
@@ -551,14 +553,16 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
             )}
             <button
               onClick={() => toggleUrgente(idInt)}
-              className="h-9 px-3.5 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-black uppercase tracking-wider transition"
+              disabled={showRealPanel}
+              className="h-9 px-3.5 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-black uppercase tracking-wider transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Toggle Urgência
             </button>
             <select
               value={pedido.statusPedido}
               onChange={(e) => updatePedidoStatus(idInt, e.target.value as any)}
-              className="h-9 px-3 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none"
+              disabled={showRealPanel}
+              className="h-9 px-3 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="NOVO">Mudar Status: Novo</option>
               <option value="ARTE_EM_ANDAMENTO">Arte em Andamento</option>
@@ -995,7 +999,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
             </div>
 
             {/* Controle de Pausa da OS Unificada */}
-            {pedido.blockReason ? (
+            {!showRealPanel && (pedido.blockReason ? (
               <div className="bg-amber-50 dark:bg-amber-950/20 border-l-4 border-l-amber-500 border-y border-r border-amber-200 dark:border-amber-900/50 rounded-xl p-5 text-amber-900 dark:text-amber-200 flex flex-wrap justify-between items-center gap-4 shadow-xs">
                 <div className="space-y-1">
                   <h4 className="font-extrabold text-sm flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
@@ -1069,7 +1073,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                   </button>
                 </div>
               </div>
-            )}
+            ))}
 
             {/* Listagem de Fichas por Produto/Modelo */}
             <div className="space-y-6">
@@ -1314,7 +1318,13 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
         )}
 
         {/* TAB EXPEDIÇÃO */}
-        {activeTab === "expedicao" && (() => {
+        {activeTab === "expedicao" && (showRealPanel ? (
+          <div className="rounded-3xl border border-dashed border-slate-350 bg-slate-50 dark:bg-slate-900/10 p-8 text-center font-sans">
+            <Truck className="mx-auto h-12 w-12 text-slate-400" />
+            <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-slate-200">Expedição ainda não iniciada</h3>
+            <p className="mt-2 text-sm text-slate-500">Este pedido aguarda a conclusão das etapas de produção e faturamento.</p>
+          </div>
+        ) : (() => {
           const totalPesoReal = volumesList.reduce((acc, v) => acc + (Number(v.peso) || 0), 0);
           const desvioPesoReal = pedido.pesoTeorico === 0 ? 0 : Math.abs(totalPesoReal - pedido.pesoTeorico) / pedido.pesoTeorico;
           const isPesoDivergenteReal = desvioPesoReal > 0.05;
@@ -1745,7 +1755,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               </div>
             </div>
           );
-        })()}
+        })())}
 
         {/* TAB TIMELINE */}
         {activeTab === "timeline" && (

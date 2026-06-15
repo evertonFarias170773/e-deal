@@ -91,6 +91,94 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
     }
   }
 
+  // 3. Buscar os produtos reais associados ao pedido de public.produtos_proposta
+  let produtos: any[] = [];
+  try {
+    const { data: produtosRows, error: produtosError } = await client
+      .from("produtos_proposta")
+      .select("*")
+      .eq("id_int", row.id_int);
+
+    if (produtosError) {
+      console.warn("[pedidos-detalhe.service] Erro ao buscar produtos da proposta:", produtosError.message);
+    } else if (produtosRows) {
+      produtos = produtosRows.map((p) => ({
+        id: `prod_${p.id}`,
+        db_id: p.id,
+        nome: p.nome_produto || "Produto",
+        quantidade: Number(p.qtd || 0),
+        pesoEstimado: Number(p.peso_base || 0),
+        setor: "IMPRESSÃO",
+        modelos: []
+      }));
+    }
+  } catch (e) {
+    console.warn("[pedidos-detalhe.service] Falha ao carregar produtos do pedido:", e);
+  }
+
+  // 4. Buscar os modelos reais cadastrados de public.pedidos_modelos
+  let modelos: any[] = [];
+  try {
+    const { data: modelosRows, error: modelosError } = await client
+      .from("pedidos_modelos")
+      .select("*")
+      .eq("id_int", row.id_int)
+      .order("ordem", { ascending: true });
+
+    if (modelosError) {
+      console.warn("[pedidos-detalhe.service] Erro ao buscar modelos do pedido:", modelosError.message);
+    } else if (modelosRows) {
+      modelos = modelosRows.map((m) => ({
+        id: m.id,
+        id_produto_proposta_origem: m.id_produto_proposta_origem,
+        nomeModelo: m.nome_modelo,
+        quantidade: Number(m.quantidade || 0),
+        statusArte: m.status_arte,
+        statusProducao: m.status_producao,
+        setor: "Digital",
+        numeracaoInicial: m.numeracao_inicio !== null ? Number(m.numeracao_inicio) : undefined,
+        numeracaoFinal: m.numeracao_fim !== null ? Number(m.numeracao_fim) : undefined,
+        verso: m.verso || false,
+        corMaterial: m.cor_material || "Branco",
+        observacoesTecnicas: m.descricao || "",
+        configImpressao: {
+          tipoNumeracao: m.tipo_numeracao || "SEM_NUMERACAO",
+          qrCode: false,
+          codBarras: false
+        },
+        historicoArtes: [],
+        tokenAprovacao: ""
+      }));
+    }
+  } catch (e) {
+    console.warn("[pedidos-detalhe.service] Falha ao carregar modelos do pedido:", e);
+  }
+
+  // 5. Associar modelos aos seus produtos correspondentes
+  if (produtos.length === 0 && modelos.length > 0) {
+    produtos.push({
+      id: "prod_virtual",
+      nome: "Lotes / Modelos Cadastrados",
+      quantidade: modelos.reduce((acc, curr) => acc + curr.quantidade, 0),
+      pesoEstimado: 0,
+      setor: "Digital",
+      modelos: modelos
+    });
+  } else {
+    produtos.forEach((prod) => {
+      prod.modelos = modelos.filter(
+        (m) => m.id_produto_proposta_origem === prod.db_id
+      );
+    });
+    // Adicionar quaisquer modelos não mapeados ao primeiro produto
+    const unmappedModels = modelos.filter(
+      (m) => !produtos.some((prod) => prod.db_id === m.id_produto_proposta_origem)
+    );
+    if (unmappedModels.length > 0 && produtos[0]) {
+      produtos[0].modelos.push(...unmappedModels);
+    }
+  }
+
   return {
     id: row.id,
     id_int: row.id_int !== null ? Number(row.id_int) : 0,
@@ -112,7 +200,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
     valorTotal: row.valor_total !== null ? Number(row.valor_total) : 0,
     pesoTeorico: 0,
     obs: row.obs || "",
-    produtos: [],
-    modelos: []
+    produtos,
+    modelos
   } as PedidoProducaoListItem;
 }

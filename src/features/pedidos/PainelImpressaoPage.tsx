@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
+import { PedidoProducaoListItem, ModeloMock } from "./types";
+import { listarPedidosOperacionais, listarModelosImpressao } from "./services/pedidos-producao.service";
 import { useAppToast } from "@/components/common/AppToast";
 import {
   Flame,
@@ -16,19 +17,31 @@ import {
   Layers,
   RefreshCw
 } from "lucide-react";
-import { PedidoMock, ModeloMock } from "./types";
 
 export function PainelImpressaoPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const {
-    pedidos,
-    isLoaded,
-    iniciarImpressaoModelo,
-    finalizarImpressaoModelo,
-    pausarProducao,
-    liberarPausa
-  } = usePedidosMockDb();
+  const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
+  const [modelos, setModelos] = useState<any[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [pedidosData, modelosData] = await Promise.all([
+          listarPedidosOperacionais(),
+          listarModelosImpressao()
+        ]);
+        setPedidos(pedidosData);
+        setModelos(modelosData);
+      } catch (err) {
+        console.error("Erro ao carregar fila de impressão:", err);
+      } finally {
+        setIsLoaded(true);
+      }
+    }
+    void load();
+  }, []);
 
   const [currentTime, setCurrentTime] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -96,51 +109,11 @@ export function PainelImpressaoPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [router, isFullscreen, showToast]);
 
-  const handleStartPrint = (idInt: number, modeloId: string) => {
-    iniciarImpressaoModelo(idInt, modeloId);
-    showToast({
-      type: "success",
-      title: "Impressão Iniciada",
-      description: `Lote da OS #${idInt} carregado na impressora.`
-    });
-  };
-
-  const handleFinishPrint = (idInt: number, modeloId: string) => {
-    finalizarImpressaoModelo(idInt, modeloId);
-    showToast({
-      type: "success",
-      title: "Lote Concluído",
-      description: `Lote impresso e encaminhado para o Acabamento.`
-    });
-  };
-
-  const handlePausePrint = (idInt: number) => {
-    setSelectedPedidoId(idInt);
-    setPauseReason("");
-    setIsPauseModalOpen(true);
-  };
-
-  const submitPausa = () => {
-    if (selectedPedidoId !== null && pauseReason.trim()) {
-      pausarProducao(selectedPedidoId, pauseReason);
-      setIsPauseModalOpen(false);
-      setSelectedPedidoId(null);
-      showToast({
-        type: "warning",
-        title: "Impressão Interrompida",
-        description: `Motivo: "${pauseReason}"`
-      });
-    }
-  };
-
-  const handleResumePrint = (idInt: number) => {
-    liberarPausa(idInt);
-    showToast({
-      type: "success",
-      title: "Produção Retomada",
-      description: "Pausa removida com sucesso."
-    });
-  };
+  const handleStartPrint = (_idInt: number, _modeloId: string) => {};
+  const handleFinishPrint = (_idInt: number, _modeloId: string) => {};
+  const handlePausePrint = (_idInt: number) => {};
+  const submitPausa = () => {};
+  const handleResumePrint = (_idInt: number) => {};
 
   if (!isLoaded) {
     return (
@@ -155,19 +128,38 @@ export function PainelImpressaoPage() {
 
   // Type definitions
   interface PrintItem {
-    pedido: PedidoMock;
+    pedido: PedidoProducaoListItem;
     modelo: ModeloMock;
   }
 
-  // Gather all items
+  // Gather all items from models
   const allItems: PrintItem[] = [];
-  pedidos.forEach((p) => {
-    p.modelos.forEach((m) => {
-      allItems.push({ pedido: p, modelo: m });
-    });
+  modelos.forEach((m) => {
+    const p = pedidos.find(o => o.id_int === m.id_int);
+    if (p) {
+      allItems.push({
+        pedido: p,
+        modelo: {
+          id: m.id,
+          nomeModelo: m.nome_modelo,
+          quantidade: m.quantidade,
+          statusArte: m.status_arte,
+          statusProducao: m.status_producao,
+          obsImpressao: m.obs_impressao || undefined,
+          setor: "Digital",
+          configImpressao: {
+            tipoNumeracao: m.tipo_numeracao || "Sem Numeração",
+            qrCode: false,
+            codBarras: false
+          },
+          historicoArtes: [],
+          tokenAprovacao: ""
+        }
+      });
+    }
   });
 
-  const getItemStatus = (p: PedidoMock, m: ModeloMock) => {
+  const getItemStatus = (p: PedidoProducaoListItem, m: ModeloMock) => {
     if (p.financialBlock) return "BLOQUEADO FINANCEIRO";
     if (p.blockReason) return "PAUSADO OPERACIONAL";
     if (m.statusProducao === "EM_ACABAMENTO" || m.statusProducao === "CONCLUIDA") return "CONCLUÍDO";
@@ -333,10 +325,10 @@ export function PainelImpressaoPage() {
 
     if (sortedItems.length === 0) {
       return (
-        <div className={`rounded-xl border p-12 text-center text-slate-400 dark:text-slate-600 bg-white dark:bg-slate-900 border-slate-200/40 dark:border-slate-800/30`}>
+        <div className="rounded-xl border p-12 text-center text-slate-400 dark:text-slate-600 bg-white dark:bg-slate-900 border-slate-200/40 dark:border-slate-800/30">
           <Printer className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-700" />
-          <p className="font-bold">Nenhum lote na fila de impressão</p>
-          <p className="text-[10px] mt-0.5">Ajuste os filtros superiores ou registre novas ordens.</p>
+          <p className="font-bold">Nenhum item liberado para impressão</p>
+          <p className="text-[10px] mt-0.5">Os itens aparecerão aqui quando os modelos/lotes forem cadastrados no boletim.</p>
         </div>
       );
     }
@@ -599,26 +591,17 @@ export function PainelImpressaoPage() {
 
   return (
     <div className="space-y-6">
-      {/* Banner de Alerta do Protótipo */}
-      <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-blue-900 flex items-start justify-between gap-4">
-        <div className="flex gap-3">
-          <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-bold text-sm">PAINEL DO OPERADOR - IMPRESSÃO (PROTÓTIPO)</h4>
-            <p className="text-xs text-blue-700 mt-1">
-              Fila priorizada de PCP. Atalhos ativos: <strong className="font-extrabold">U</strong> (Alternar Urgência),{" "}
-              <strong className="font-extrabold">L</strong> (Fila Geral) e <strong className="font-extrabold">K</strong>{" "}
-              (Kanban).
-            </p>
-          </div>
+      {/* Banner de Fila de Impressão */}
+      <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-blue-900 flex items-start gap-3 text-xs">
+        <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+        <div>
+          <h4 className="font-bold text-sm">PCP - Fila de Impressão</h4>
+          <p className="text-xs text-blue-700 mt-1">
+            Fila priorizada de PCP. Atalhos ativos: <strong className="font-extrabold">U</strong> (Alternar Urgência),{" "}
+            <strong className="font-extrabold">L</strong> (Fila Geral) e <strong className="font-extrabold">K</strong>{" "}
+            (Kanban). Conectado ao Supabase.
+          </p>
         </div>
-        <button
-          onClick={resetLocalStorage}
-          className="shrink-0 flex items-center gap-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-xl px-3 py-1.5 text-xs font-bold transition"
-        >
-          <RefreshCw className="h-3 w-3" />
-          <span>Resetar Dados</span>
-        </button>
       </div>
 
       {renderHeaderSelector()}

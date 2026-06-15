@@ -118,3 +118,46 @@ export async function listarPedidosOperacionais(): Promise<PedidoProducaoListIte
     } as PedidoProducaoListItem;
   });
 }
+
+/**
+ * Busca todos os modelos de pedidos cadastrados diretamente de public.pedidos_modelos.
+ * Retorna uma lista de modelos operacionais para a fila de impressão.
+ */
+export async function listarModelosImpressao(): Promise<any[]> {
+  const client = getSupabaseClient();
+  if (!client) {
+    console.warn("[pedidos-producao.service] Supabase client não inicializado.");
+    return [];
+  }
+
+  const { data, error } = await client
+    .from("pedidos_modelos")
+    .select(`
+      id,
+      id_int,
+      id_pedido,
+      id_item,
+      id_produto_proposta_origem,
+      nome_modelo,
+      descricao,
+      quantidade,
+      tipo_numeracao,
+      numeracao_inicio,
+      numeracao_fim,
+      obs_impressao,
+      status_arte,
+      status_producao,
+      ordem,
+      created_at
+    `)
+    .order("ordem", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("[pedidos-producao.service] Erro ao buscar modelos da base de dados:", error);
+    return [];
+  }
+
+  return data || [];
+}
+

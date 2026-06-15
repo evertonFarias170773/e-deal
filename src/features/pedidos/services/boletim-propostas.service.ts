@@ -305,6 +305,21 @@ export async function obterPropostaLiberadaParaBoletim(
     return { success: false, error: "Pedido já aberto para esta proposta" };
   }
 
+  // 5b. Verifica se já existem modelos
+  const { data: modelsData, error: modelsError } = await client
+    .from("pedidos_modelos")
+    .select("id")
+    .eq("id_int", idInt);
+
+  if (modelsError) {
+    console.error("[BoletimPropostasService] Erro ao verificar modelos existentes:", modelsError);
+    return { success: false, error: "Erro ao consultar modelos existentes." };
+  }
+
+  if (modelsData && modelsData.length > 0) {
+    return { success: false, error: "Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura." };
+  }
+
   // Elegível!
   const valor_total_calc = (proposalRow.valor_total && Number(proposalRow.valor_total) !== 0) ? Number(proposalRow.valor_total) : (Number(proposalRow.valor) || 0);
   const proposta: PropostaLiberadaBoletim = {
@@ -421,6 +436,21 @@ export async function criarPedidoParaBoletim(
 
   if (pedidosData && pedidosData.length > 0) {
     return { success: false, error: "Pedido já aberto para esta proposta" };
+  }
+
+  // Validar se não existem modelos em public.pedidos_modelos para esse id_int
+  const { data: modelsData, error: modelsError } = await client
+    .from("pedidos_modelos")
+    .select("id")
+    .eq("id_int", idInt);
+
+  if (modelsError) {
+    console.error("[BoletimPropostasService] Erro ao verificar modelos existentes:", modelsError);
+    return { success: false, error: `Erro ao verificar modelos existentes: ${modelsError.message}` };
+  }
+
+  if (modelsData && modelsData.length > 0) {
+    return { success: false, error: "Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura." };
   }
 
   const valor_total_calc = (propostaRow.valor_total && Number(propostaRow.valor_total) !== 0)
@@ -547,5 +577,93 @@ export async function listarGabaritos(): Promise<GabaritoProducao[]> {
     name: String(d.name || "")
   }));
 }
+
+export interface ModeloBoletimInput {
+  id_produto_proposta_origem: number | null;
+  nome_modelo: string;
+  descricao: string | null;
+  quantidade: number;
+  tipo_numeracao: string | null;
+  numeracao_inicio: number | null;
+  numeracao_fim: number | null;
+  obs_impressao: string | null;
+}
+
+/**
+ * Salva a lista de modelos de pedidos na tabela public.pedidos_modelos
+ * após verificar a existência prévia de registros para evitar duplicação.
+ */
+export async function salvarModelosBoletim(
+  idInt: number,
+  idPedido: string,
+  modelosInput: ModeloBoletimInput[]
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: "Conexão com o banco de dados não disponível." };
+  }
+
+  // 1. Validar inputs básicos
+  for (const m of modelosInput) {
+    if (m.quantidade <= 0) {
+      return { success: false, error: "A quantidade de cada lote/modelo deve ser maior que zero." };
+    }
+    if (!m.nome_modelo.trim()) {
+      return { success: false, error: "O nome de cada lote/modelo é obrigatório." };
+    }
+  }
+
+  if (!idPedido) {
+    return { success: false, error: "ID do pedido pai não fornecido." };
+  }
+  if (!idInt) {
+    return { success: false, error: "ID interno (id_int) não fornecido." };
+  }
+
+  // 2. Anti-duplicidade: verificar se já existem modelos para esse id_int
+  const { data: existingModelos, error: queryError } = await client
+    .from("pedidos_modelos")
+    .select("id")
+    .eq("id_int", idInt);
+
+  if (queryError) {
+    console.error("[BoletimPropostasService] Erro ao consultar modelos existentes:", queryError);
+    return { success: false, error: `Erro ao verificar duplicidade de modelos: ${queryError.message}` };
+  }
+
+  if (existingModelos && existingModelos.length > 0) {
+    return { success: false, error: "Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura." };
+  }
+
+  // 3. Mapear os dados para o payload
+  const payloads = modelosInput.map((m, idx) => ({
+    id_int: idInt,
+    id_pedido: idPedido,
+    id_produto_proposta_origem: m.id_produto_proposta_origem || null,
+    nome_modelo: m.nome_modelo,
+    descricao: m.descricao || null,
+    quantidade: m.quantidade,
+    tipo_numeracao: m.tipo_numeracao || null,
+    numeracao_inicio: m.numeracao_inicio || null,
+    numeracao_fim: m.numeracao_fim || null,
+    obs_impressao: m.obs_impressao || null,
+    status_arte: "PENDENTE",
+    status_producao: "BLOQUEADO",
+    ordem: idx + 1
+  }));
+
+  // 4. Inserir em lote no Supabase
+  const { error: insertError } = await client
+    .from("pedidos_modelos")
+    .insert(payloads);
+
+  if (insertError) {
+    console.error("[BoletimPropostasService] Erro ao salvar modelos de pedido:", insertError);
+    return { success: false, error: insertError.message || "Falha ao salvar lotes/modelos no Supabase." };
+  }
+
+  return { success: true };
+}
+
 
 

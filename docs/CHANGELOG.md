@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-15
+
+### Adicionado
+- **Persistência Real de Modelos/Lotes no Boletim de Entrada (`public.pedidos_modelos`)**:
+  - **Função no Service**: Adicionada a função `salvarModelosBoletim` no service `boletim-propostas.service.ts` para persistir dados estruturados em lote na tabela `public.pedidos_modelos`.
+  - **Verificações de Segurança (Anti-duplicidade)**: Integrado no service (`obterPropostaLiberadaParaBoletim`, `criarPedidoParaBoletim` e `salvarModelosBoletim`) a consulta ativa em `public.pedidos_modelos` por `id_int` para abortar de forma segura em caso de existência prévia de lotes, exibindo a mensagem: `"Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura."`.
+  - **Validação Rigorosa de Quantidades**: Implementada a validação de soma total de lotes por produto, abortando a inserção inteira antes de salvar qualquer modelo caso `modelsSum !== maxQty`.
+  - **Transacionalidade Prática**: Execução do `INSERT` em lote em uma única chamada `insert(array)` para garantir atomicidade.
+
+### Alterado
+- **Desativação de Mocks e Alinhamento com Supabase (PCP/Produção)**:
+  - **Fila de Impressão (`PainelImpressaoPage.tsx`)**: Conectada diretamente ao Supabase. Criada a função `listarModelosImpressao()` em `pedidos-producao.service.ts` para buscar dados reais na tabela `public.pedidos_modelos`. Como a tabela real está vazia, o painel exibe de forma consistente KPIs zerados e o estado vazio personalizado ("Nenhum item liberado para impressão"). Desativados e tornados no-op todos os botões de simulação operacional (iniciar, pausar, concluir, retomar) para pedidos reais do banco de dados.
+  - **Painel de Expedição (`ExpedicaoPage.tsx`)**: Substituição de mock database (`usePedidosMockDb`) por leitura real no Supabase via `listarPedidosOperacionais()`. Pedidos com `status_expedicao === 'BLOQUEADO'` são filtrados e não aparecem na fila ativa. Quando não há itens ativos/concluídos para expedir, a tela exibe o estado vazio unificado ("Nenhum pedido em expedição"). Todos os inputs de peso e botões de despacho/balança foram desativados para dados do banco de dados, e o botão "Reset Mock" foi removido.
+  - **Kanban de Produção (`PedidosKanbanPage.tsx`)**: Atualizado para carregar pedidos reais via `listarPedidosOperacionais()`. Adicionado o status `BOLETIM_FINALIZADO` ao mapeamento da coluna "Novo / Boletim" para possibilitar a exibição da OS real `#17799`. Todos os botões de mudança de status de coluna e ações rápidas (urgente, pausa) no card foram desativados/ocultados. Removido o botão "Resetar Base" do banner superior.
+  - **Fila Geral (`PedidosListPage.tsx`)**: Removido o botão "Resetar Base" que executava limpeza de mock do `localStorage`.
+  - **Validação Técnica**: Executado build de produção Next.js e verificação rigorosa de TypeScript. Toda a camada operando de forma segura no modo **somente leitura** sem qualquer escrita no banco de dados.
+
 ## 2026-06-14
 
 ### Adicionado

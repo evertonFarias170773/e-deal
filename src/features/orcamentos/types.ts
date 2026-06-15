@@ -16,6 +16,7 @@ export type TipoDescontoProposta = "PERCENTUAL" | "VALOR";
 
 export type PropostaItem = {
   id: string;
+  id_produto_proposta_origem?: number;
   id_produto: number;
   produto: Produto;
   nome: string;

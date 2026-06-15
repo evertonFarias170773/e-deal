@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
+import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -25,12 +25,27 @@ import {
   RefreshCw
 } from "lucide-react";
 import { formatDate } from "@/lib/formatters/date";
-import { PedidoMock } from "./types";
+import type { PedidoProducaoListItem } from "./types";
 
 export function ExpedicaoPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { pedidos, isLoaded, updatePedidoStatus, despacharPedido } = usePedidosMockDb();
+  const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await listarPedidosOperacionais();
+        setPedidos(data);
+      } catch (err) {
+        console.error("Erro ao carregar pedidos para expedição:", err);
+      } finally {
+        setIsLoaded(true);
+      }
+    }
+    void load();
+  }, []);
 
   const [search, setSearch] = useState("");
   const [filterUrgente, setFilterUrgente] = useState(false);
@@ -152,9 +167,15 @@ export function ExpedicaoPage() {
     );
   }
 
+  // Safe no-op for mock action
+  const despacharPedido = (_idInt: number, _pesoAferido: number, _volumes: number) => {};
+
   // Filter lists
   const aguardandoExpedicao = pedidos.filter((p) => {
-    const matchesStatus = p.statusPedido === "PRONTO_EXPEDICAO";
+    // Pedidos with status_expedicao === 'BLOQUEADO' are NOT active expedition items.
+    if (p.status_expedicao === "BLOQUEADO") return false;
+
+    const matchesStatus = p.statusPedido === "PRONTO_EXPEDICAO" || p.status_expedicao === "PRONTO_EXPEDICAO";
     const matchesSearch =
       p.clienteNome.toLowerCase().includes(search.toLowerCase()) ||
       String(p.id_int).includes(search);
@@ -163,14 +184,14 @@ export function ExpedicaoPage() {
   });
 
   const despachadosHoje = pedidos.filter((p) => {
-    const matchesStatus = p.statusPedido === "EXPEDIDO";
+    const matchesStatus = p.statusPedido === "EXPEDIDO" || p.status_expedicao === "EXPEDIDO";
     const matchesSearch =
       p.clienteNome.toLowerCase().includes(search.toLowerCase()) ||
       String(p.id_int).includes(search);
     return matchesStatus && matchesSearch;
   });
 
-  const handleDispatchWeight = (pedido: PedidoMock) => {
+  const handleDispatchWeight = (pedido: PedidoProducaoListItem) => {
     const expectedVol = pedido.volumes || 1;
     const count = getVolumesCount(pedido.id_int, expectedVol);
     
@@ -222,7 +243,7 @@ export function ExpedicaoPage() {
         </Link>
         <Link
           href="/pedidos/impressao"
-          className="px-3.5 py-2 font-bold rounded-xl text-slate-600 hover:bg-slate-100 transition"
+          className="px-3.5 py-2 font-bold rounded-xl text-slate-605 hover:bg-slate-100 transition"
         >
           Fila de Impressão
         </Link>
@@ -239,14 +260,6 @@ export function ExpedicaoPage() {
           <span>{currentTime}</span>
         </div>
       )}
-        <button
-          onClick={resetLocalStorage}
-          className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-xl px-2.5 py-1.5 text-[10px] font-bold transition border border-slate-200 dark:border-slate-700"
-          title="Resetar dados mock do localStorage"
-        >
-          <RefreshCw className="h-3 w-3" />
-          <span>Reset Mock</span>
-        </button>
     </div>
   );
 
@@ -298,7 +311,14 @@ export function ExpedicaoPage() {
       </section>
 
       {/* Lista Principal */}
-      <div className={`grid ${isCompact ? "gap-4" : "gap-6"} md:grid-cols-2`}>
+      {aguardandoExpedicao.length === 0 && despachadosHoje.length === 0 ? (
+        <div className="rounded-xl border p-12 text-center text-slate-400 dark:text-slate-600 bg-white dark:bg-slate-900 border-slate-200/40 dark:border-slate-800/30">
+          <Truck className="h-8 w-8 mx-auto mb-2 text-slate-300 dark:text-slate-700" />
+          <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">Nenhum pedido em expedição</p>
+          <p className="text-[11px] mt-0.5 text-slate-500">Os pedidos aparecerão aqui quando forem concluídos na produção.</p>
+        </div>
+      ) : (
+        <div className={`grid ${isCompact ? "gap-4" : "gap-6"} md:grid-cols-2`}>
         {/* Lado Esquerdo: Aguardando Pesagem/Despacho */}
         <div className={`bg-slate-50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-800/80 rounded-xl ${isCompact ? "p-3.5 space-y-3" : "p-5 space-y-4"}`}>
           <div className="border-b border-slate-200 dark:border-slate-800 pb-2 flex justify-between items-center text-xs font-black uppercase text-slate-500">
@@ -387,9 +407,10 @@ export function ExpedicaoPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-slate-400">Volumes:</span>
                         <select
+                          disabled={true}
                           value={currentVol}
                           onChange={(e) => handleVolumesCountChange(pedido.id_int, Number(e.target.value))}
-                          className="h-7 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none"
+                          className="h-7 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-400 focus:outline-none cursor-not-allowed"
                         >
                           <option value={1}>1 volume</option>
                           <option value={2}>2 volumes</option>
@@ -408,16 +429,17 @@ export function ExpedicaoPage() {
                             <Scale className="absolute left-3 top-2 h-3.5 w-3.5 text-slate-400" />
                             <input
                               type="text"
-                              placeholder="Peso Real Balança (kg)..."
-                              value={pesoInputs[`${pedido.id_int}-0`] || ""}
+                              disabled={true}
+                              placeholder="Pesagem desativada nesta etapa..."
+                              value=""
                               onChange={(e) => handleVolumeWeightChange(pedido.id_int, 0, e.target.value)}
-                              className="w-full h-8 pl-9 pr-3 rounded-lg border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                              className="w-full h-8 pl-9 pr-3 rounded-lg border border-slate-200 dark:border-slate-800 text-xs focus:outline-none bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed font-medium"
                             />
                           </div>
                           <button
-                            onClick={() => handleDispatchWeight(pedido)}
-                            disabled={!isAllWeighed || isDivergente || pedido.financialBlock}
-                            className="h-8 px-4 bg-blue-600 disabled:opacity-50 text-white font-extrabold rounded-lg hover:bg-blue-700 text-xs flex items-center gap-1 transition"
+                            type="button"
+                            disabled={true}
+                            className="h-8 px-4 bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-550 font-extrabold rounded-lg text-xs flex items-center gap-1 cursor-not-allowed opacity-60"
                           >
                             <Truck className="h-3.5 w-3.5" />
                             <span>Despachar</span>
@@ -434,10 +456,11 @@ export function ExpedicaoPage() {
                                   <Scale className="absolute left-2.5 top-1.5 h-3 w-3 text-slate-400" />
                                   <input
                                     type="text"
+                                    disabled={true}
                                     placeholder="kg"
-                                    value={pesoInputs[`${pedido.id_int}-${idx}`] || ""}
+                                    value=""
                                     onChange={(e) => handleVolumeWeightChange(pedido.id_int, idx, e.target.value)}
-                                    className="w-full h-7 pl-7 pr-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                                    className="w-full h-7 pl-7 pr-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
                                   />
                                 </div>
                               </div>
@@ -445,12 +468,12 @@ export function ExpedicaoPage() {
                           </div>
                           
                           <button
-                            onClick={() => handleDispatchWeight(pedido)}
-                            disabled={!isAllWeighed || isDivergente || pedido.financialBlock}
-                            className="w-full h-8 bg-blue-600 disabled:opacity-50 text-white font-extrabold rounded-lg hover:bg-blue-700 text-xs flex items-center justify-center gap-1 transition mt-2"
+                            type="button"
+                            disabled={true}
+                            className="w-full h-8 bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-550 font-extrabold rounded-lg text-xs flex items-center justify-center gap-1 cursor-not-allowed opacity-60 mt-2"
                           >
                             <Truck className="h-3.5 w-3.5" />
-                            <span>Despachar Todos os {currentVol} Volumes ({totalWeight.toFixed(2)} kg)</span>
+                            <span>Despachar Desativado</span>
                           </button>
                         </div>
                       )}
@@ -551,6 +574,7 @@ export function ExpedicaoPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

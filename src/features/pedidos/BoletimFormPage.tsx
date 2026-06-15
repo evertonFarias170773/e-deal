@@ -25,6 +25,7 @@ import {
   buscarPropostasLiberadasParaBoletim,
   obterPropostaLiberadaParaBoletim,
   criarPedidoParaBoletim,
+  salvarModelosBoletim,
   listarDesigners,
   listarGabaritos,
   type PropostaLiberadaBoletim,
@@ -265,6 +266,7 @@ export function BoletimFormPage() {
 
   interface FormProduto {
     id: string;
+    id_produto_proposta_origem?: number;
     nome: string;
     quantidade: number;
     quantidadeOriginal?: number;
@@ -403,8 +405,13 @@ export function BoletimFormPage() {
             sector = "PVP";
           }
 
+          const dbIdMatch = item.id.match(/^item_(\d+)$/);
+          const dbIdFallback = dbIdMatch ? Number(dbIdMatch[1]) : undefined;
+          const dbId = item.id_produto_proposta_origem || dbIdFallback;
+
           return {
             id: generateUniqueId(`prod_${item.id_produto || index}`),
+            id_produto_proposta_origem: dbId,
             nome: item.nome,
             quantidade: item.quantidade,
             quantidadeOriginal: item.quantidade, // Store fixed original total
@@ -753,11 +760,11 @@ export function BoletimFormPage() {
 
       const modelsSum = p.modelos.reduce((sum, m) => sum + (Number(m.quantidade) || 0), 0);
       const maxQty = p.quantidadeOriginal || p.quantidade;
-      if (modelsSum > maxQty) {
+      if (modelsSum !== maxQty) {
         showToast({
           type: "error",
-          title: "Limite de Quantidade Excedido",
-          description: `A soma das quantidades dos lotes para "${p.nome}" (${modelsSum}) excede a quantidade total contratada na proposta (${maxQty}).`
+          title: "Divergência de Quantidade",
+          description: `A soma das quantidades dos lotes para "${p.nome}" (${modelsSum}) deve ser exatamente igual à quantidade total contratada na proposta (${maxQty}).`
         });
         return;
       }
@@ -806,7 +813,33 @@ export function BoletimFormPage() {
         return;
       }
 
-      // 3. Sucesso!
+      // 3. Mapear e Salvar Modelos/Lotes no Supabase
+      const modelosPayload = produtos.flatMap(p => 
+        p.modelos.map(m => ({
+          id_produto_proposta_origem: p.id_produto_proposta_origem || null,
+          nome_modelo: m.nomeModelo || p.nome,
+          descricao: m.observacoesTecnicas || null,
+          quantidade: Number(m.quantidade),
+          tipo_numeracao: m.configImpressao.tipoNumeracao || null,
+          numeracao_inicio: m.numeracaoInicial !== undefined ? Number(m.numeracaoInicial) : null,
+          numeracao_fim: m.numeracaoFinal !== undefined ? Number(m.numeracaoFinal) : null,
+          obs_impressao: m.comentarioInterno || null
+        }))
+      );
+
+      const modelsResult = await salvarModelosBoletim(idInt, result.id, modelosPayload);
+
+      if (!modelsResult.success) {
+        showToast({
+          type: "error",
+          title: "Erro ao Salvar Modelos",
+          description: modelsResult.error || "O pedido pai foi criado, mas não foi possível salvar os lotes no Supabase."
+        });
+        setLoadingDetails(false);
+        return;
+      }
+
+      // 4. Sucesso!
       showToast({
         type: "success",
         title: "Boletim Salvo",

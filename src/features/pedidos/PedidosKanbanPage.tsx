@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAppToast } from "@/components/common/AppToast";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { EmptyState } from "@/components/common/EmptyState";
-import { listarPedidosProducao } from "./services/pedidos-producao.service";
+import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
 import type { PedidoProducaoListItem } from "./types";
 import {
   Flame,
@@ -35,7 +35,7 @@ import { PedidoMock, PedidoStatus } from "./types";
 import { formatDate } from "@/lib/formatters/date";
 
 const COLUNAS_KANBAN: { label: string; statusList: PedidoStatus[] }[] = [
-  { label: "Novo / Boletim", statusList: ["NOVO"] },
+  { label: "Novo / Boletim", statusList: ["NOVO", "BOLETIM_FINALIZADO"] },
   { label: "Arte", statusList: ["ARTE_EM_ANDAMENTO"] },
   { label: "Aprovação Cliente", statusList: ["AGUARDANDO_APROVACAO_CLIENTE"] },
   { label: "Aguardando OS", statusList: ["AGUARDANDO_APROVACAO_ATENDENTE", "AGUARDANDO_OS"] },
@@ -89,7 +89,7 @@ export function PedidosKanbanPage() {
 
   useEffect(() => {
     async function load() {
-      const data = await listarPedidosProducao();
+      const data = await listarPedidosOperacionais();
       setPedidos(data);
     }
     void load();
@@ -539,23 +539,21 @@ export function PedidosKanbanPage() {
                       {/* Action buttons (only if not TV mode) */}
                       {!isTv && (
                         <div className="flex justify-between items-center border-t border-slate-100 dark:border-slate-800/50 pt-2 mt-1 gap-1">
-                          {/* Left/Right movement */}
-                          <div className="flex gap-0.5 shrink-0">
+                          {/* Left/Right movement - Hidden/Disabled */}
+                          <div className="flex gap-0.5 shrink-0 opacity-20 cursor-not-allowed">
                             <button
                               type="button"
-                              onClick={() => handleMoveLeft(pedido, colIdx)}
-                              disabled={colIdx === 0}
-                              className="h-6 w-6 rounded border border-slate-200/60 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center disabled:opacity-20 transition"
-                              title="Voltar Etapa"
+                              disabled={true}
+                              className="h-6 w-6 rounded border border-slate-200/60 dark:border-slate-800 text-slate-400 flex items-center justify-center cursor-not-allowed"
+                              title="Mudança de status desativada"
                             >
                               <ArrowLeft className="h-3 w-3" />
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleMoveRight(pedido, colIdx)}
-                              disabled={colIdx === COLUNAS_KANBAN.length - 1}
-                              className="h-6 w-6 rounded border border-slate-200/60 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center disabled:opacity-20 transition"
-                              title="Avançar Etapa"
+                              disabled={true}
+                              className="h-6 w-6 rounded border border-slate-200/60 dark:border-slate-800 text-slate-400 flex items-center justify-center cursor-not-allowed"
+                              title="Mudança de status desativada"
                             >
                               <ArrowRight className="h-3 w-3" />
                             </button>
@@ -566,20 +564,13 @@ export function PedidosKanbanPage() {
                             {/* Urgent toggle */}
                             <button
                               type="button"
-                              onClick={() => {
-                                toggleUrgente(pedido.id_int);
-                                showToast({
-                                  type: "info",
-                                  title: "Urgência Alterada",
-                                  description: `Pedido #${pedido.id_int} alterado.`
-                                });
-                              }}
-                              className={`h-6 w-6 rounded border flex items-center justify-center transition shrink-0 ${
+                              disabled={true}
+                              className={`h-6 w-6 rounded border flex items-center justify-center transition shrink-0 cursor-not-allowed opacity-50 ${
                                 pedido.urgente
                                   ? "bg-red-50 border-red-200/60 text-red-750 dark:bg-red-955 dark:border-red-900/50 dark:text-red-400"
-                                  : "border-slate-200/60 dark:border-slate-800 text-slate-400 hover:bg-slate-105 dark:hover:bg-slate-800"
+                                  : "border-slate-200/60 dark:border-slate-800 text-slate-400"
                               }`}
-                              title="Marcar Urgente"
+                              title="Urgência desativada nesta etapa"
                             >
                               <Flame className="h-3.5 w-3.5" />
                             </button>
@@ -587,9 +578,9 @@ export function PedidosKanbanPage() {
                             {/* Pause production toggle */}
                             <button
                               type="button"
-                              onClick={() => handlePauseToggle(pedido)}
-                              className="h-6 w-6 rounded border border-slate-200/60 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition shrink-0"
-                              title={pedido.blockReason ? "Retomar Produção" : "Pausar Produção"}
+                              disabled={true}
+                              className="h-6 w-6 rounded border border-slate-200/60 dark:border-slate-800 text-slate-400 cursor-not-allowed opacity-50 flex items-center justify-center transition shrink-0"
+                              title="Pausa desativada nesta etapa"
                             >
                               {pedido.blockReason ? (
                                 <PlayCircle className="h-3.5 w-3.5 text-teal-650" />
@@ -655,13 +646,6 @@ export function PedidosKanbanPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={resetLocalStorage}
-          className="shrink-0 flex items-center gap-1 bg-blue-100 hover:bg-blue-205 text-blue-805 rounded-lg px-2.5 py-1 text-[11px] font-bold transition"
-        >
-          <RefreshCw className="h-3 w-3" />
-          <span>Resetar Base</span>
-        </button>
       </div>
 
       {/* Header e Seleção de modo TV */}

@@ -576,10 +576,13 @@ Funcionalidades:
 - Exibição do campo "Padrão de pagamento faturado" como Somente Leitura nas telas de formulário e detalhe;
 - Exibição de avisos de conflito estrutural instruindo o operador sobre a coluna `padrao_pagamento` e sua relação com formas de pagamento comerciais gerais.
 
-# Produção (Fase 1 Concluída)
+# Produção (Fase 1 Concluída & Desativação de Mocks)
 
-Status: Fase 1 de Artes e Modelos implementada e validada em ambiente real de produção do Next.js + Supabase. A listagem principal de Pedidos e Kanban de Produção/OS foi esvaziada de dados mockados e direcionada a um service de transição segura (`listarPedidosProducao` retornando `[]`), pois as tabelas `public.pedidos` e `public.pedidos_modelos` estão vazias no Supabase e a origem real ("boletim finalizado") ainda não foi conectada.
-* Fase 1 (Modelagem, Serviço de Upload, Tratamento de Concorrência, Timeline no Chat e Painel Visual) 100% Concluída.
+Status: Fila Geral, Fila de Impressão, Expedição, Kanban e Detalhes da OS 100% alinhados com dados reais do Supabase (somente leitura). Toda a persistência em localStorage e mocks operacionais foram desativados para estas telas.
+* Fila de Impressão opera a partir de `public.pedidos_modelos`. Como está com 0 registros, exibe estado vazio correto e KPIs zerados.
+* Fila de Expedição opera a partir de `public.pedidos` e oculta pedidos bloqueados (`status_expedicao === 'BLOQUEADO'`), exibindo estado vazio correto e desabilitando pesagem/despacho físico.
+* Kanban exibe pedidos reais na coluna "Novo / Boletim" (suporta `BOLETIM_FINALIZADO`), com botões de mudança de status e botões rápidos desativados/ocultados.
+* Botões "Resetar Base" e "Reset Mock" foram completamente removidos de todas as listagens.
 * Catálogo de Imposição modelado.
 
 Componentes principais:
@@ -607,10 +610,10 @@ Pendências para próximas fases:
 
 ## Abertura de OS (Boletim de Entrada)
 
-Status: Escrita real controlada implementada para criação do pedido pai na tabela `public.pedidos` a partir do salvamento de boletim, com suporte a atributos de produção dinâmicos (Gabarito / Setor PCP), observações padronizadas e UI de Lotes refatorada em cards.
+Status: Escrita real implementada tanto para a criação do pedido pai na tabela `public.pedidos` quanto para o salvamento em lote de modelos operacionais na tabela `public.pedidos_modelos`. Possui validações rígidas de quantitativos e verificações contra duplicidade.
 
 Componentes principais:
-- `boletim-propostas.service.ts` (`src/features/pedidos/services/boletim-propostas.service.ts` - Regras de elegibilidade, loaders dinâmicos de designers/gabaritos e persistência do pedido)
+- `boletim-propostas.service.ts` (`src/features/pedidos/services/boletim-propostas.service.ts` - Regras de elegibilidade, loaders dinâmicos de designers/gabaritos, criação do pedido pai e inserção atômica em lote dos modelos operacionais com anti-duplicidade estrita)
 - `BoletimFormPage.tsx` (`src/features/pedidos/BoletimFormPage.tsx` - Interface integrada com busca reativa, validações, grid de cards de lotes e salvamento real)
 - `ProdutoFormPage.tsx` (`src/features/produtos/ProdutoFormPage.tsx` - Interface de edição de produto para vincular gabaritos e setores PCP padrão)
 

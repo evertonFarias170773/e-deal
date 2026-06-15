@@ -734,6 +734,7 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
 
       mappedItens.push({
         id: `item_${item.id}`,
+        id_produto_proposta_origem: Number(item.id),
         id_produto: item.id_produto,
         produto: finalProduct,
         nome: item.nome_produto || finalProduct.nomeReal,

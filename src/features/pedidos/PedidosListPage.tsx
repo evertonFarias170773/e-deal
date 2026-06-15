@@ -253,13 +253,6 @@ export function PedidosListPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={resetLocalStorage}
-          className="shrink-0 flex items-center gap-1 bg-blue-100 hover:bg-blue-205 text-blue-805 rounded-lg px-2.5 py-1 text-[11px] font-bold transition"
-        >
-          <RefreshCw className="h-3 w-3" />
-          <span>Resetar Base</span>
-        </button>
       </div>
 
       {/* Header compact */}
