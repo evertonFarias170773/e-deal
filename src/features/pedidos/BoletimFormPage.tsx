@@ -15,7 +15,8 @@ import {
   FileText,
   AlertCircle,
   Eye,
-  ChevronDown
+  ChevronDown,
+  ExternalLink
 } from "lucide-react";
 import { ModeloMock, ArteStatus, ProducaoStatus } from "./types";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
@@ -36,6 +37,7 @@ import {
   serializePedidosObs
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 export interface GabaritoItem {
   id: string;
@@ -140,6 +142,9 @@ export function BoletimFormPage() {
 
   const [obsImpressao, setObsImpressao] = useState("");
   const [obsAcabamento, setObsAcabamento] = useState("");
+  const [supportFiles, setSupportFiles] = useState<{ name: string; url: string; size?: number; created_at?: string }[]>([]);
+  const [loadingSupportFiles, setLoadingSupportFiles] = useState(false);
+  const [uploadingSupportFile, setUploadingSupportFile] = useState(false);
   const [designersList, setDesignersList] = useState<DesignerUsuario[]>([]);
   const [gabaritosList, setGabaritosList] = useState<GabaritoProducao[]>([]);
 
@@ -208,6 +213,10 @@ export function BoletimFormPage() {
           if (parsed.designer && parsed.designer.user_id) {
             setSelectedDesigner(parsed.designer.user_id);
             setAtribuidoDesigner(true);
+          }
+
+          if (idIntParam) {
+            fetchSupportFiles(Number(idIntParam));
           }
 
           const mapped = pedido.produtos.map((p) => ({
@@ -789,37 +798,250 @@ export function BoletimFormPage() {
     );
   };
   
-  const handleAtribuirDesigner = () => {
-    if (!selectedDesigner) return;
+  const fetchSupportFiles = async (idInt: number) => {
+    setLoadingSupportFiles(true);
+    try {
+      const client = getSupabaseClient();
+      if (!client) return;
 
-    setProdutos((prev) =>
-      prev.map((p) => ({
-        ...p,
-        modelos: p.modelos.map((m) => ({
-          ...m,
-          designerResponsavel: selectedDesigner,
-          statusArte: "DESIGN_ATRIBUIDO" as ArteStatus
-        }))
-      }))
-    );
+      const prefix = `pedidos-anexos/${idInt}/design/`;
+      const { data, error } = await client.storage.from("chat-ideal").list(prefix);
+      if (error) {
+        console.error("Error listing support files:", error);
+        return;
+      }
 
-    setAtribuidoDesigner(true);
-    const now = new Date();
-    const formattedDate = now.toLocaleString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-    setDataHoraAtribuicao(formattedDate);
+      if (data) {
+        const files = data
+          .filter((f: any) => f.name !== ".emptyFolderPlaceholder")
+          .map((f: any) => {
+            const path = `pedidos-anexos/${idInt}/design/${f.name}`;
+            const { data: urlData } = client.storage.from("chat-ideal").getPublicUrl(path);
+            return {
+              name: f.name,
+              url: urlData?.publicUrl || "",
+              size: f.metadata?.size || (f as any).size,
+              created_at: f.created_at ?? undefined
+            };
+          });
+        setSupportFiles(files);
+      }
+    } catch (err) {
+      console.error("Error in fetchSupportFiles:", err);
+    } finally {
+      setLoadingSupportFiles(false);
+    }
+  };
 
-    const designerName = designersList.find(d => d.user_id === selectedDesigner)?.nome_usuario || selectedDesigner;
-    showToast({
-      type: "success",
-      title: "Designer Atribuído",
-      description: `Arte destinada para ${designerName} com sucesso.`
-    });
+  const handleUploadSupportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSizeBytes) {
+      showToast({
+        type: "error",
+        title: "Arquivo muito grande",
+        description: "O tamanho do arquivo não deve exceder 10MB."
+      });
+      return;
+    }
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "application/pdf",
+      "image/svg+xml",
+      "application/zip",
+      "application/x-zip-compressed"
+    ];
+
+    const extension = file.name.split(".").pop();
+    const allowedExtensions = ["jpg", "jpeg", "png", "pdf", "ai", "cdr", "svg", "zip"];
+    const fileExt = extension?.toLowerCase() || "";
+
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
+      showToast({
+        type: "error",
+        title: "Tipo de arquivo não suportado",
+        description: "Apenas JPG, PNG, PDF, SVG, AI, CDR e ZIP são permitidos."
+      });
+      return;
+    }
+
+    setUploadingSupportFile(true);
+    try {
+      const client = getSupabaseClient();
+      if (!client) {
+        showToast({
+          type: "error",
+          title: "Erro de Conexão",
+          description: "Supabase client is not available."
+        });
+        return;
+      }
+
+      // Name sanitization
+      const parts = file.name.split(".");
+      parts.pop();
+      const baseName = parts.join(".") || "anexo";
+      const normalizedBaseName = baseName
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9-_]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .toLowerCase();
+      const normalizedExtension = fileExt.replace(/[^a-zA-Z0-9]/g, "");
+      const sanitizedName = normalizedExtension 
+        ? `${normalizedBaseName}.\u0024{normalizedExtension}`
+        : normalizedBaseName;
+
+      // Note: use simple template string escape
+      const sanitizedNameFinal = normalizedExtension 
+        ? `${normalizedBaseName}.${normalizedExtension}`
+        : normalizedBaseName;
+
+      const timestamp = Date.now();
+      const idInt = Number(idIntParam);
+      const uploadPath = `pedidos-anexos/${idInt}/design/${timestamp}_${sanitizedNameFinal}`;
+
+      const { data: uploadData, error: uploadError } = await client.storage
+        .from("chat-ideal")
+        .upload(uploadPath, file, {
+          cacheControl: "3600",
+          contentType: file.type || "application/octet-stream",
+          upsert: false
+        });
+
+      if (uploadError || !uploadData) {
+        showToast({
+          type: "error",
+          title: "Erro no Upload",
+          description: uploadError?.message || "Não foi possível enviar o arquivo para o storage."
+        });
+        return;
+      }
+
+      showToast({
+        type: "success",
+        title: "Arquivo Anexado",
+        description: `Arquivo ${file.name} anexado com sucesso.`
+      });
+
+      e.target.value = "";
+      await fetchSupportFiles(idInt);
+    } catch (err: any) {
+      console.error("Error uploading support file:", err);
+      showToast({
+        type: "error",
+        title: "Erro Inesperado",
+        description: err.message || "Erro desconhecido ao enviar arquivo."
+      });
+    } finally {
+      setUploadingSupportFile(false);
+    }
+  };
+
+  const handleRemoveSupportFile = async (fileName: string) => {
+    if (!window.confirm("Deseja realmente remover este arquivo de apoio?")) return;
+    try {
+      const client = getSupabaseClient();
+      if (!client) return;
+
+      const path = `pedidos-anexos/${idIntParam}/design/${fileName}`;
+      const { error } = await client.storage.from("chat-ideal").remove([path]);
+      if (error) {
+        showToast({
+          type: "error",
+          title: "Erro ao remover arquivo",
+          description: error.message || "Não foi possível remover o arquivo do storage."
+        });
+        return;
+      }
+
+      showToast({
+        type: "success",
+        title: "Arquivo Removido",
+        description: "O arquivo foi removido com sucesso."
+      });
+
+      if (idIntParam) {
+        fetchSupportFiles(Number(idIntParam));
+      }
+    } catch (err: any) {
+      console.error("Error removing support file:", err);
+      showToast({
+        type: "error",
+        title: "Erro inesperado",
+        description: err.message || "Erro ao tentar remover arquivo."
+      });
+    }
+  };
+
+  const handleSalvarBriefingEDesigner = async () => {
+    if (!selectedDesigner) {
+      showToast({
+        type: "error",
+        title: "Designer não selecionado",
+        description: "Selecione um designer antes de salvar."
+      });
+      return;
+    }
+
+    setLoadingDetails(true);
+    try {
+      const designerObj = designersList.find(d => d.user_id === selectedDesigner);
+      const designerInput = designerObj ? {
+        user_id: designerObj.user_id,
+        nome: designerObj.nome_usuario || designerObj.user_id,
+        email: designerObj.email || ""
+      } : null;
+
+      const serializedObs = serializePedidosObs({
+        designer: designerInput,
+        orientacoesDesign: instrucoesDesign,
+        obsCriticas: obsCriticas
+      }, existingObs);
+
+      const result = await atualizarOrientacoesBoletim(Number(idIntParam), serializedObs);
+
+      if (!result.success) {
+        showToast({
+          type: "error",
+          title: "Erro ao salvar",
+          description: result.error || "Não foi possível salvar o briefing e o designer."
+        });
+        return;
+      }
+
+      setExistingObs(serializedObs);
+      setAtribuidoDesigner(true);
+
+      const now = new Date();
+      const formattedDate = now.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+      setDataHoraAtribuicao(formattedDate);
+
+      showToast({
+        type: "success",
+        title: "Briefing Atribuído",
+        description: `Briefing atribuído para ${designerObj?.nome_usuario || selectedDesigner}`
+      });
+    } catch (error: any) {
+      console.error("Erro ao salvar briefing e designer:", error);
+      showToast({
+        type: "error",
+        title: "Erro inesperado",
+        description: error.message || "Erro desconhecido ao salvar briefing."
+      });
+    } finally {
+      setLoadingDetails(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1782,15 +2004,16 @@ export function BoletimFormPage() {
           </div>
 
           {/* BLOCO 5 — LAYOUT (DESIGN) */}
+          {/* BLOCO 5 — BRIEFING E DESIGN */}
           <div className="bg-slate-50/80 dark:bg-slate-900/40 border border-slate-300 dark:border-slate-800 p-4 rounded-xl space-y-3 shadow-sm">
             <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-300 dark:border-slate-700 pb-1 flex items-center gap-1.5">
-              BLOCO 5 — Layout (Design)
+              BLOCO 5 — Briefing e Design
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {/* Briefing da Arte */}
               <div className="md:col-span-2 space-y-1">
-                <label className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase">Briefing da Arte / Layout</label>
+                <label className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase">Briefing da arte / layout</label>
                 <textarea
                   placeholder="Orientações de arte (logotipos, fontes, paleta de cores, posicionamentos de numeração)."
                   rows={3}
@@ -1806,7 +2029,7 @@ export function BoletimFormPage() {
               {/* Designer Responsável & Equipe */}
               <div className="space-y-2">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase block">Designer Responsável *</label>
+                  <label className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase block">Designer responsável *</label>
                   <select
                     required
                     value={selectedDesigner}
@@ -1840,8 +2063,8 @@ export function BoletimFormPage() {
                             activeCount >= 5 
                               ? "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400" 
                               : activeCount >= 3 
-                              ? "bg-amber-50 text-amber-700 dark:bg-amber-955/20 dark:text-amber-400" 
-                              : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-450"
+                              ? "bg-amber-50 text-amber-700 dark:bg-amber-955/20 dark:text-amber-455" 
+                              : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-455"
                           }`}>
                             {activeCount}
                           </span>
@@ -1858,22 +2081,22 @@ export function BoletimFormPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleAtribuirDesigner}
-                  disabled={!selectedDesigner || !instrucoesDesign.trim() || produtos.length === 0 || !produtos.some(p => p.modelos.length > 0)}
+                  onClick={handleSalvarBriefingEDesigner}
+                  disabled={!selectedDesigner || loadingDetails}
                   className={`h-8 px-4 rounded-lg font-bold text-[10px] uppercase transition flex items-center gap-1.5 shadow-sm ${
-                    (!selectedDesigner || !instrucoesDesign.trim() || produtos.length === 0 || !produtos.some(p => p.modelos.length > 0))
+                    (!selectedDesigner || loadingDetails)
                       ? "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-650 cursor-not-allowed border border-slate-350/30"
                       : "bg-blue-600 hover:bg-blue-700 text-white border border-blue-700/20 hover:scale-[1.01] active:scale-[0.99]"
                   }`}
                 >
-                  Atribuir arte ao designer
+                  {loadingDetails ? "Salvando..." : "Salvar briefing e designer"}
                 </button>
               </div>
 
-              {atribuidoDesigner && (
+              {atribuidoDesigner && selectedDesigner && (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/15 border border-emerald-250 dark:border-emerald-900/45 text-emerald-800 dark:text-emerald-450 text-[10px] font-bold shadow-xs">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span>Arte atribuída para {selectedDesigner}</span>
+                  <span>Briefing atribuído para {designersList.find(d => d.user_id === selectedDesigner)?.nome_usuario || selectedDesigner}</span>
                   <span className="opacity-75 font-mono text-[9px]">({dataHoraAtribuicao})</span>
                 </div>
               )}
@@ -1882,43 +2105,102 @@ export function BoletimFormPage() {
             {/* Upload Area / Attachments */}
             <div className="border-t border-slate-200/40 dark:border-slate-800/30 pt-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">Anexos de Referência & Briefing</span>
-                <button
-                  type="button"
-                  onClick={handleAddMockAttachment}
-                  className="h-6.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition border border-slate-205 dark:border-slate-800"
-                >
-                  <span>📎 Anexar Referência</span>
-                </button>
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+                  Arquivos de apoio para o designer
+                </span>
+                
+                {isEditing && (
+                  <button
+                    type="button"
+                    disabled={uploadingSupportFile}
+                    onClick={() => {
+                      const inputEl = document.getElementById("support-file-input") as HTMLInputElement;
+                      if (inputEl) inputEl.click();
+                    }}
+                    className="h-6.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition border border-slate-205 dark:border-slate-800"
+                  >
+                    {uploadingSupportFile ? "Enviando..." : "📎 Anexar arquivos"}
+                  </button>
+                )}
               </div>
 
-              {attachments.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-1.5">
-                  {attachments.map((att) => (
-                    <div key={att.url} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] shadow-xs">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-slate-400 select-none">📄</span>
-                        <span className="font-bold truncate text-slate-700 dark:text-slate-300 max-w-[120px]" title={att.name}>{att.name}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAttachment(att.url)}
-                        className="text-slate-400 hover:text-red-500 font-bold transition ml-1"
-                      >
-                                        Remover
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-[9px] text-slate-450 italic mt-0.5">
-                                  Nenhum arquivo ou referência anexada ao briefing do layout.
+              {isEditing ? (
+                <>
+                  <input
+                    type="file"
+                    id="support-file-input"
+                    className="hidden"
+                    accept=".jpg,.jpeg,.png,.pdf,.ai,.cdr,.svg,.zip"
+                    onChange={handleUploadSupportFile}
+                  />
+
+                  {loadingSupportFiles ? (
+                    <div className="text-[9px] text-slate-500 animate-pulse italic">
+                      Carregando arquivos de apoio...
+                    </div>
+                  ) : supportFiles.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-1.5">
+                      {supportFiles.map((file) => {
+                        const fileExt = file.name.split(".").pop()?.toUpperCase() || "ARQUIVO";
+                        const formatFileSize = (bytes: any) => {
+                          if (bytes === undefined || bytes === null) return "";
+                          if (bytes === 0) return "0 Bytes";
+                          const k = 1024;
+                          const sizes = ["Bytes", "KB", "MB", "GB"];
+                          const i = Math.floor(Math.log(bytes) / Math.log(k));
+                          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+                        };
+
+                        return (
+                          <div key={file.name} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] shadow-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <FileText className="h-4 w-4 text-blue-600 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="font-bold truncate text-slate-700 dark:text-slate-300 max-w-[130px]" title={file.name}>
+                                  {file.name.substring(file.name.indexOf("_") + 1)}
                                 </p>
-                              )}
+                                <p className="text-[8px] text-slate-400">
+                                  {fileExt} {file.size ? `• ${formatFileSize(file.size)}` : ""}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                              <a
+                                href={file.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline font-bold text-[9px] flex items-center gap-0.5"
+                              >
+                                Download
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSupportFile(file.name)}
+                                className="text-red-500 hover:text-red-700 font-bold text-[9px]"
+                              >
+                                Remover
+                              </button>
                             </div>
                           </div>
-
-                          {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS) */}
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[9px] text-slate-450 italic mt-0.5">
+                      Nenhum arquivo de apoio anexado para esta OS.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[9px] text-slate-450 italic mt-0.5">
+                  Para pedidos novos, os arquivos de apoio poderão ser carregados no Storage após a abertura da OS (modo edição).
+                </p>
+              )}
+            </div>
+          </div>
+          
+          {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS) */}
                           <div className="bg-slate-50/80 dark:bg-slate-900/40 border border-slate-300 dark:border-slate-800 p-4 rounded-xl space-y-4 shadow-sm">
                             <div className="flex items-center justify-between border-b border-slate-300 dark:border-slate-700 pb-1">
                               <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">

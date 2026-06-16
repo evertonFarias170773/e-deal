@@ -18,6 +18,7 @@ import { formatDate } from "@/lib/formatters/date";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { listarArtesDoModelo, anexarArteVersao1 } from "./services/pedidos-artes.service";
 import type { PedidoArte } from "@/features/producao/types";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { Loader2, Upload } from "lucide-react";
 
 interface PedidoDetailPageProps {
@@ -53,6 +54,8 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
   const [isRealDbOrder, setIsRealDbOrder] = useState(false);
   const [artesMap, setArtesMap] = useState<Record<string, PedidoArte[]>>({});
   const [uploadingModelId, setUploadingModelId] = useState<string | null>(null);
+  const [supportFiles, setSupportFiles] = useState<{ name: string; url: string; size?: number; created_at?: string }[]>([]);
+  const [loadingSupportFiles, setLoadingSupportFiles] = useState(false);
   const [activeTab, setActiveTab] = useState<"resumo" | "dados_comerciais" | "produtos" | "artes" | "producao" | "expedicao" | "timeline">("resumo");
 
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -130,6 +133,50 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       active = false;
     };
   }, [activeTab, isRealDbOrder, pedido]);
+
+  // Load support files (Briefing files) from Storage when activeTab is "artes"
+  useEffect(() => {
+    let active = true;
+    async function fetchSupportFiles() {
+      if (activeTab !== "artes" || !idInt) return;
+      setLoadingSupportFiles(true);
+      try {
+        const client = getSupabaseClient();
+        if (!client) return;
+
+        const prefix = `pedidos-anexos/${idInt}/design/`;
+        const { data, error } = await client.storage.from("chat-ideal").list(prefix);
+        if (error) {
+          console.error("[PedidoDetailPage] Erro ao listar arquivos de apoio:", error);
+          return;
+        }
+
+        if (data && active) {
+          const files = data
+            .filter(f => f.name !== ".emptyFolderPlaceholder")
+            .map(f => {
+              const path = `pedidos-anexos/${idInt}/design/${f.name}`;
+              const { data: urlData } = client.storage.from("chat-ideal").getPublicUrl(path);
+              return {
+                name: f.name,
+                url: urlData?.publicUrl || "",
+                size: f.metadata?.size || (f as any).size,
+                created_at: f.created_at ?? undefined
+              };
+            });
+          setSupportFiles(files);
+        }
+      } catch (err) {
+        console.error("[PedidoDetailPage] Erro ao buscar arquivos de apoio:", err);
+      } finally {
+        if (active) setLoadingSupportFiles(false);
+      }
+    }
+    void fetchSupportFiles();
+    return () => {
+      active = false;
+    };
+  }, [activeTab, idInt]);
 
   // Hotkey listener
   useEffect(() => {
@@ -653,7 +700,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               {tab === "resumo" && "Resumo / Boletim"}
               {tab === "dados_comerciais" && "Dados Comerciais"}
               {tab === "produtos" && `Produtos (${pedido.produtos?.length || 0})`}
-              {tab === "artes" && `Artes / Aprovação`}
+              {tab === "artes" && `Anexos / Artes`}
               {tab === "producao" && "Produção / Ficha"}
               {tab === "expedicao" && "Expedição / Pesagem"}
               {tab === "timeline" && `Timeline (${chatMessages.length})`}
@@ -1028,7 +1075,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                     } catch (err) {
                       console.error("Erro no fluxo de upload:", err);
                       showToast({
-                        type: "error",
+                type: "error",
                         title: "Erro no Upload",
                         description: err instanceof Error ? err.message : "Erro inesperado."
                       });
@@ -1042,11 +1089,63 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <FileText className="h-5 w-5 text-blue-600" />
-                    <span>Upload e Histórico de Artes (Real)</span>
+                    <span>Anexos e Arquivos para Design (v1)</span>
                   </h3>
-                  <span className="text-xs text-slate-500 font-semibold bg-slate-100 dark:bg-slate-850 px-2.5 py-1 rounded-lg">
-                    Aguardando Aprovação
+                  <span className="text-xs text-slate-550 dark:text-slate-400 font-semibold bg-slate-100 dark:bg-slate-850 px-2.5 py-1 rounded-lg">
+                    Consulta e Anexos Iniciais
                   </span>
+                </div>
+
+                {/* Seção de Arquivos de Apoio Gerais do Briefing da OS */}
+                <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-205 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider flex items-center gap-1.5">
+                      <Paperclip className="h-4 w-4 text-blue-600" />
+                      <span>Arquivos de Apoio / Briefing da OS (Geral)</span>
+                    </h3>
+                  </div>
+                  {loadingSupportFiles ? (
+                    <div className="text-[10px] text-slate-550 italic animate-pulse">Carregando arquivos de apoio...</div>
+                  ) : supportFiles.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {supportFiles.map((file) => {
+                        const fileExt = file.name.split(".").pop()?.toUpperCase() || "ARQUIVO";
+                        return (
+                          <div key={file.name} className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] shadow-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="h-4 w-4 text-blue-600 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="font-bold truncate text-slate-800 dark:text-slate-200 max-w-[130px]" title={file.name}>
+                                  {file.name.substring(file.name.indexOf("_") + 1)}
+                                </p>
+                                <p className="text-[8px] text-slate-450">
+                                  {fileExt} {file.size ? `• ${(file.size / 1024 / 1024).toFixed(2)} MB` : ""}
+                                </p>
+                              </div>
+                            </div>
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline font-bold text-[9px] shrink-0 ml-2 flex items-center gap-0.5"
+                            >
+                              Download
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-slate-450 italic">Nenhum arquivo de apoio carregado para esta OS.</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/40 pb-2 pt-4">
+                  <h4 className="text-sm font-bold text-slate-700 dark:text-slate-355 flex items-center gap-1.5">
+                    <Package className="h-4 w-4 text-slate-500" />
+                    <span>Artes e Anexos por Modelo / Lote</span>
+                  </h4>
                 </div>
 
                 {(!pedido || !pedido.produtos || pedido.produtos.length === 0) ? (
