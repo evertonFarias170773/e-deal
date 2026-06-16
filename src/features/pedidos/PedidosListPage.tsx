@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, CheckCircle2, AlertTriangle, ShieldAlert, Plus, Edit } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
+import { PageHeader } from "@/components/common/PageHeader";
 import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
 import type { PedidoProducaoListItem, ProdutoMock, ModeloMock } from "./types";
 
@@ -241,109 +242,108 @@ export function PedidosListPage() {
   }
 
   return (
-    <div className="space-y-5 font-sans">
+    <div className="space-y-6 font-sans">
       {/* Banner de Protótipo UX */}
-      <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-3.5 text-blue-900 flex items-start justify-between gap-4 text-xs">
-        <div className="flex gap-2">
-          <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+      <div className="rounded-3xl border border-sky-100 bg-sky-50/50 p-5 text-sky-900 shadow-xs">
+        <div className="flex gap-3">
+          <AlertCircle className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
           <div>
-            <h4 className="font-bold uppercase tracking-wider text-xs">PCP / Fila Operacional Gráfica</h4>
-            <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+            <h4 className="font-semibold text-sm">PCP / Fila Operacional Gráfica</h4>
+            <p className="text-xs text-sky-850 mt-1 leading-relaxed">
               Fila estruturada de alta densidade para gestão rápida do fluxo gráfico. Sincronizado com o banco de dados Supabase.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Header compact */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/40 dark:border-slate-800/30 pb-3">
-        <div>
-          <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Clipboard className="h-5 w-5 text-[#0b2f4a]" />
-            <span>Fila Operacional de OS</span>
-          </h2>
-          <p className="text-xs text-slate-500 font-semibold">Controle integrado de ordens de serviço por produto e modelo</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/pedidos/novo"
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Novo Boletim (Abertura OS)</span>
-          </Link>
-          <button
-            onClick={() => setIsCompact(!isCompact)}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition flex items-center gap-1.5 ${
-              isCompact
-                ? "bg-[#0b2f4a] border-[#0b2f4a] text-white"
-                : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-800 dark:text-slate-355"
-            }`}
-          >
-            <Layers className="h-3.5 w-3.5" />
-            <span>{isCompact ? "Modo Tabela PCP" : "Modo Planilha Super Densa"}</span>
-          </button>
-        </div>
-      </div>
+      {/* Header com PageHeader global */}
+      <PageHeader
+        title="Fila Operacional de OS"
+        subtitle="Controle integrado de ordens de serviço por produto e modelo."
+        context="Produção / OS"
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/pedidos/novo"
+              className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shadow-sm transition"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Novo Boletim (Abertura OS)</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setIsCompact(!isCompact)}
+              className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition flex items-center gap-1.5 border ${
+                isCompact
+                  ? "bg-[#0b2f4a] border-[#0b2f4a] text-white"
+                  : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-800 dark:text-slate-355 shadow-sm"
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>{isCompact ? "Modo Tabela PCP" : "Modo Planilha Super Densa"}</span>
+            </button>
+          </div>
+        }
+      />
 
       {/* Navegação de Modos */}
-      <div className="flex justify-between items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 p-1.5 rounded-xl text-xs">
-        <div className="flex flex-wrap gap-1">
+      <section className="rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-3">
+        <div className="flex flex-wrap gap-1.5">
           <Link
             href="/pedidos"
-            className="px-3 py-1.5 font-bold rounded-lg bg-[#0b2f4a] text-white transition"
+            className="rounded-2xl px-4 py-2.5 text-sm font-semibold bg-[#0b2f4a] text-white transition shadow-sm"
           >
             Fila Geral
           </Link>
           <Link
             href="/pedidos/kanban"
-            className="px-3 py-1.5 font-bold rounded-lg text-slate-650 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="rounded-2xl px-4 py-2.5 text-sm font-semibold transition text-slate-650 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
           >
             Kanban Board
           </Link>
           <Link
             href="/pedidos/impressao"
-            className="px-3 py-1.5 font-bold rounded-lg text-slate-650 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="rounded-2xl px-4 py-2.5 text-sm font-semibold transition text-slate-650 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
           >
             Fila de Impressão
           </Link>
           <Link
             href="/expedicao"
-            className="px-3 py-1.5 font-bold rounded-lg text-slate-650 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            className="rounded-2xl px-4 py-2.5 text-sm font-semibold transition text-slate-650 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
           >
             Painel Expedição
           </Link>
         </div>
-        <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-mono font-bold px-2 py-1 rounded hidden sm:inline">
+        <span className="bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 text-xs font-mono font-bold px-3 py-1.5 rounded-xl mr-2">
           PCP Fila Geral ({filteredPedidos.length} / {totalCount})
         </span>
-      </div>
+      </section>
 
       {/* Filtros Rápidos (Barra de Badges) */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
+      <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-2">
         {[
-          { key: "all", label: "Tudo", count: totalCount, style: "border-slate-200 dark:border-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-400" },
-          { key: "atrasado", label: "Atrasados", count: atrasadosCount, style: "border-red-200 bg-red-50/20 text-red-700 dark:border-red-950 dark:text-red-400 hover:bg-red-50/50" },
-          { key: "urgente", label: "Urgentes", count: urgentesCount, style: "border-red-250 bg-red-50 text-red-800 dark:border-red-900/50 dark:text-red-400 hover:bg-red-100/40 animate-pulse" },
-          { key: "producao", label: "Produção", count: producaoCount, style: "border-orange-200 bg-orange-50/20 text-orange-700 dark:border-orange-900 dark:text-orange-400 hover:bg-orange-50/50" },
-          { key: "expedicao", label: "Expedição", count: expedicaoCount, style: "border-teal-200 bg-teal-50/15 text-teal-700 dark:border-teal-900 dark:text-teal-400 hover:bg-teal-50/50" },
-          { key: "aguardando_cliente", label: "Aguardando Clie.", count: aguardandoClienteCount, style: "border-blue-200 bg-blue-50/10 text-blue-700 dark:border-blue-900 dark:text-blue-400 hover:bg-blue-50/50" },
-          { key: "bloqueado", label: "Bloqueados", count: bloqueadosCount, style: "border-amber-200 bg-amber-50/20 text-amber-700 dark:border-amber-900 dark:text-amber-450 hover:bg-amber-50/50" },
-          { key: "hoje", label: "Prazo Hoje", count: hojeCount, style: "border-slate-200 bg-slate-100 text-slate-800 dark:border-slate-700 dark:text-slate-200 hover:bg-slate-200/55" },
-          { key: "semana", label: "Esta Semana", count: semanaCount, style: "border-purple-200 bg-purple-50/10 text-purple-700 dark:border-purple-900 dark:text-purple-400 hover:bg-purple-50/50" }
+          { key: "all", label: "Tudo", count: totalCount, style: "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:text-slate-400" },
+          { key: "atrasado", label: "Atrasados", count: atrasadosCount, style: "border-red-100 bg-red-50/30 text-red-700 hover:bg-red-50/60 dark:border-red-950 dark:bg-red-950/20 dark:text-red-400" },
+          { key: "urgente", label: "Urgentes", count: urgentesCount, style: "border-red-200 bg-red-100/30 text-red-800 hover:bg-red-100/60 dark:border-red-900/40 dark:bg-red-950/35 dark:text-red-400 animate-pulse" },
+          { key: "producao", label: "Produção", count: producaoCount, style: "border-orange-100 bg-orange-50/30 text-orange-700 hover:bg-orange-50/60 dark:border-orange-900/40 dark:bg-orange-950/20 dark:text-orange-400" },
+          { key: "expedicao", label: "Expedição", count: expedicaoCount, style: "border-teal-100 bg-teal-50/30 text-teal-700 hover:bg-teal-50/60 dark:border-teal-900/40 dark:bg-teal-950/20 dark:text-teal-400" },
+          { key: "aguardando_cliente", label: "Aguardando Clie.", count: aguardandoClienteCount, style: "border-blue-100 bg-blue-50/30 text-blue-700 hover:bg-blue-50/60 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-400" },
+          { key: "bloqueado", label: "Bloqueados", count: bloqueadosCount, style: "border-amber-100 bg-amber-50/30 text-amber-700 hover:bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-955/20 dark:text-amber-450" },
+          { key: "hoje", label: "Prazo Hoje", count: hojeCount, style: "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200" },
+          { key: "semana", label: "Esta Semana", count: semanaCount, style: "border-purple-100 bg-purple-50/30 text-purple-700 hover:bg-purple-50/60 dark:border-purple-900/40 dark:bg-purple-950/20 dark:text-purple-400" }
         ].map((btn) => (
           <button
             key={btn.key}
             type="button"
             onClick={() => setActiveFilter(btn.key as typeof activeFilter)}
-            className={`p-2 border rounded-xl flex flex-col justify-between text-left transition select-none ${
+            className={`p-3 border rounded-2xl flex flex-col justify-between text-left transition select-none shadow-sm ${
               activeFilter === btn.key 
-                ? "bg-[#0b2f4a] border-[#0b2f4a] text-white" 
+                ? "bg-[#0b2f4a] border-[#0b2f4a] text-white dark:bg-[#123f61] dark:border-[#123f61]" 
                 : btn.style
             }`}
           >
-            <span className="text-[10px] font-black uppercase tracking-wider block truncate w-full">{btn.label}</span>
-            <strong className={`font-mono mt-1 text-sm ${activeFilter === btn.key ? "text-white" : ""}`}>
+            <span className="text-[10px] font-bold uppercase tracking-wider block truncate w-full">{btn.label}</span>
+            <strong className={`font-mono mt-1.5 text-sm ${activeFilter === btn.key ? "text-white" : ""}`}>
               {btn.count}
             </strong>
           </button>
@@ -351,25 +351,25 @@ export function PedidosListPage() {
       </div>
 
       {/* Caixa de Busca e Filtros Avançados */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/40 p-4 rounded-xl shadow-xs grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+      <div className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
         {/* Campo Busca */}
-        <div className="relative col-span-1 md:col-span-1">
-          <Search className="absolute left-3 top-2.5 h-4.5 w-4.5 text-slate-400" />
+        <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+          <Search className="h-4.5 w-4.5 text-slate-400 shrink-0" />
           <input
             type="text"
-            placeholder="Buscar por OS, Cliente, Vendedor, Modelo..."
+            placeholder="Buscar por OS, Cliente, Vendedor..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs focus:outline-none text-slate-800 dark:text-slate-200"
+            className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder-slate-400"
           />
-        </div>
+        </label>
 
         {/* Empresa dropdown */}
         <div>
           <select
             value={filterEmpresa}
             onChange={(e) => setFilterEmpresa(e.target.value)}
-            className="w-full h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
           >
             <option value="all">Todas as Empresas</option>
             <option value="Ideal Grafica">Ideal Gráfica</option>
@@ -383,7 +383,7 @@ export function PedidosListPage() {
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="w-full h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
           >
             <option value="all">Fase do Pedido: Todos</option>
             <option value="BOLETIM_FINALIZADO">Boletim Finalizado</option>
@@ -407,7 +407,7 @@ export function PedidosListPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            className="w-full h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none"
+            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
           >
             <option value="recente">Ordem: Recentes</option>
             <option value="antigo">Ordem: FIFO (Antigos)</option>
@@ -421,7 +421,7 @@ export function PedidosListPage() {
       </div>
 
       {/* Grid de Pedidos */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/30 rounded-xl overflow-hidden shadow-xs">
+      <div className="bg-white dark:bg-slate-900 border border-[#d7e5e8] dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
         {pedidos.length === 0 ? (
           <div className="p-4">
             <EmptyState
@@ -435,7 +435,7 @@ export function PedidosListPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-50/50 dark:bg-slate-950/30 text-slate-500 uppercase text-[9px] font-black tracking-wider border-b border-slate-200/40 dark:border-slate-800/30">
+                  <tr className="bg-slate-50/55 dark:bg-slate-950/30 text-slate-500 uppercase text-[9px] font-black tracking-wider border-b border-slate-200 dark:border-slate-800">
                     <th className="py-2.5 px-4 w-28">Nº OS / Empresa</th>
                     <th className="py-2.5 px-3">Cliente</th>
                     <th className="py-2.5 px-3">Fase & Status</th>

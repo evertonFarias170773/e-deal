@@ -643,7 +643,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
             <button
               onClick={() => toggleUrgente(idInt)}
               disabled={showRealPanel}
-              className="h-9 px-3.5 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-black uppercase tracking-wider transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9.5 px-4 rounded-2xl border border-slate-200 dark:border-slate-850 bg-white hover:bg-slate-50 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-wider transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
               Toggle Urgência
             </button>
@@ -651,7 +651,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               value={pedido.statusPedido}
               onChange={(e) => updatePedidoStatus(idInt, e.target.value as PedidoStatus)}
               disabled={showRealPanel}
-              className="h-9 px-3 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9.5 px-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
             >
               <option value="NOVO">Mudar Status: Novo</option>
               <option value="ARTE_EM_ANDAMENTO">Arte em Andamento</option>
@@ -670,7 +670,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       />
 
       {/* Progresso Geral */}
-      <section className="rounded-xl border border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm space-y-2">
+      <section className="rounded-3xl border border-[#d7e5e8] dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-3">
         <div className="flex justify-between text-sm font-semibold">
           <span className="text-slate-500">Progresso Geral das Etapas (Arte + Manufatura):</span>
           <span className="text-slate-950 dark:text-slate-100">{calculateGeneralProgress()}% Concluído</span>
@@ -684,17 +684,17 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       </section>
 
       {/* Tabs */}
-      <section className="rounded-xl border-2 border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 p-1.5 shadow-sm">
+      <section className="rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-sm">
         <div className="flex gap-1.5 overflow-x-auto font-sans">
           {(["resumo", "dados_comerciais", "produtos", "artes", "producao", "expedicao", "timeline"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition uppercase tracking-wider border ${
+              className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition uppercase tracking-wider ${
                 activeTab === tab
-                  ? "bg-[#0b2f4a] border-[#0b2f4a] text-white dark:bg-sky-600 dark:border-sky-600 dark:text-white shadow-md scale-102"
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-900 hover:text-[#0b2f4a] dark:hover:text-sky-400"
+                  ? "bg-[#0b2f4a] text-white shadow-sm"
+                  : "text-slate-650 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
               }`}
             >
               {tab === "resumo" && "Resumo / Boletim"}
@@ -710,7 +710,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       </section>
 
       {/* Tab Content */}
-      <section className="rounded-lg border-2 border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm font-sans">
+      <section className="rounded-3xl border border-[#d7e5e8] bg-white p-6 shadow-sm font-sans">
         {/* TAB RESUMO */}
         {activeTab === "resumo" && (
           <div className="space-y-6">
@@ -727,7 +727,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
 
             <div className="grid gap-6 md:grid-cols-2">
               {/* Card 1: Briefing Operacional */}
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-3 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-3 shadow-xs">
                 <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <FileText className="h-4 w-4 text-blue-500" />
                   Briefing Operacional
@@ -746,7 +746,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               </div>
 
               {/* Card 2: Dados do Evento */}
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-4 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-4 shadow-xs">
                 <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="h-4 w-4 text-amber-500" />
                   Dados do Evento
@@ -781,7 +781,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               </div>
 
               {/* Card 3: Instruções para Design */}
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-3 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-3 shadow-xs">
                 <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <User className="h-4 w-4 text-teal-500" />
                   Instruções para Design
@@ -792,7 +792,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               </div>
 
               {/* Card 4: Instruções para Impressão */}
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-3 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-3 shadow-xs">
                 <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Printer className="h-4 w-4 text-purple-500" />
                   Instruções para Impressão
@@ -803,7 +803,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               </div>
 
               {/* Card 5: Anexos do Pedido */}
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-3 md:col-span-2 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-3 md:col-span-2 shadow-xs">
                 <h4 className="font-extrabold text-xs text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Paperclip className="h-4 w-4 text-slate-500" />
                   Anexos e Documentos de Briefing ({pedido.anexos?.length || 0})
@@ -851,7 +851,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
               </h3>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-2 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-2 shadow-xs">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Informações do Cliente</span>
                 <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{pedido.clienteNome}</p>
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -860,7 +860,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                 </div>
               </div>
 
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-2 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-2 shadow-xs">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Comercial & Financeiro</span>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   Forma de Pagamento: <strong className="text-slate-950 dark:text-slate-100">{pedido.formaPagamento}</strong>
@@ -868,7 +868,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                 <p className="text-xs text-slate-500">Valor Total: {formatCurrency(pedido.valorTotal)}</p>
               </div>
 
-              <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 p-5 rounded-xl space-y-2 shadow-xs">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 space-y-2 shadow-xs">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Responsáveis</span>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Vendedor: {pedido.vendedor}</p>
                 {pedido.contatoNome && (
@@ -879,7 +879,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
             </div>
 
             {(pedido.financialBlock || pedido.blockReason) && (
-              <div className="bg-red-50/70 dark:bg-red-950/20 border-2 border-red-500 border-l-8 text-red-900 dark:text-red-300 p-5 rounded-lg space-y-3 shadow-sm">
+              <div className="bg-red-50/30 dark:bg-red-950/20 border border-red-200 dark:border-red-900 border-l-8 border-l-red-600 dark:border-l-l-red-600 text-red-900 dark:text-red-300 p-5 rounded-3xl space-y-3 shadow-sm">
                 <h4 className="font-black text-sm flex items-center gap-1.5 uppercase tracking-wider text-red-700 dark:text-red-400">
                   <ShieldAlert className="h-5 w-5 text-red-600 dark:text-red-450 shrink-0" />
                   <span>BLOQUEIOS OU RESTRIÇÕES ATIVAS NA PRODUÇÃO</span>
@@ -925,7 +925,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                 </div>
               ) : (
                 pedido.produtos.map((prod) => (
-                  <div key={prod.id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+                  <div key={prod.id} className="rounded-2xl border border-[#d7e5e8] dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/25 p-5 shadow-sm space-y-4">
                     {/* Cabeçalho do Produto */}
                     <div className="flex flex-wrap justify-between items-center gap-3">
                       <div className="space-y-1">
@@ -945,11 +945,11 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                     </div>
 
                     {/* Tabela/Especificações dos Modelos Aninhados */}
-                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-xs">
+                    <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-sm">
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead>
-                            <tr className="bg-slate-100 dark:bg-slate-950 text-slate-500 uppercase text-[9px] font-extrabold tracking-wider border-b border-slate-200 dark:border-slate-800">
+                            <tr className="bg-slate-50 dark:bg-slate-950 text-slate-550 uppercase text-[9px] font-black tracking-wider border-b border-slate-200 dark:border-slate-800">
                               <th className="py-2.5 px-4">Modelo / Subitem</th>
                               <th className="py-2.5 px-3">Setor</th>
                               <th className="py-2.5 px-3">Qtd</th>
@@ -999,7 +999,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                                         description: `Direcionado para a aba de Artes do modelo: ${m.nomeModelo}`
                                       });
                                     }}
-                                    className="px-2.5 py-1 bg-slate-900 dark:bg-slate-50 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded text-[10px] font-bold transition"
+                                    className="px-3 py-1.5 bg-[#0b2f4a] dark:bg-slate-50 hover:bg-[#123f61] dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-xl text-[10px] font-bold transition shadow-sm"
                                   >
                                     Ver Arte
                                   </button>
@@ -1097,7 +1097,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                 </div>
 
                 {/* Seção de Arquivos de Apoio Gerais do Briefing da OS */}
-                <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-205 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+                <div className="rounded-2xl border border-[#d7e5e8] dark:border-slate-800 bg-slate-50/50 dark:bg-slate-955/25 p-5 shadow-sm space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
                     <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider flex items-center gap-1.5">
                       <Paperclip className="h-4 w-4 text-blue-600" />
@@ -1156,7 +1156,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                   </div>
                 ) : (
                   pedido.produtos.map((prod) => (
-                    <div key={prod.id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+                    <div key={prod.id} className="rounded-2xl border border-[#d7e5e8] dark:border-slate-800 bg-slate-50/50 dark:bg-slate-955/25 p-5 shadow-sm space-y-4">
                       {/* Cabeçalho do Produto */}
                       <div className="flex flex-wrap justify-between items-center gap-3">
                         <div className="space-y-1">
@@ -1177,7 +1177,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                           const latestArte = hasArte ? modelArtes[modelArtes.length - 1] : null;
 
                           return (
-                            <div key={m.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+                            <div key={m.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-sm hover:shadow-md transition">
                               <div className="space-y-1.5 min-w-[200px]">
                                 <div className="flex items-center gap-2">
                                   <span className="font-extrabold text-slate-900 dark:text-slate-100">{m.nomeModelo}</span>
@@ -1200,7 +1200,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                                       <p className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[200px]" title={latestArte.nome_arquivo}>
                                         {latestArte.nome_arquivo}
                                       </p>
-                                      <div className="flex gap-2 text-[10px] text-slate-500 font-semibold mt-0.5">
+                                      <div className="flex gap-2 text-[10px] text-slate-550 font-semibold mt-0.5">
                                         <span>Versão {latestArte.versao}</span>
                                         <span>•</span>
                                         <span className="text-amber-600 dark:text-amber-400">Arte anexada — aguardando revisão</span>
@@ -1211,7 +1211,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                                         href={latestArte.url_arquivo}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-450 transition"
+                                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-650 dark:text-slate-400 transition"
                                         title="Visualizar arquivo"
                                       >
                                         <ExternalLink className="h-4 w-4" />
@@ -1237,7 +1237,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                                         inputEl.click();
                                       }
                                     }}
-                                    className="h-9 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+                                    className="h-9.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
                                   >
                                     {uploadingModelId === m.id ? (
                                       <>
@@ -1255,7 +1255,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                                   <button
                                     type="button"
                                     disabled
-                                    className="h-9 px-4 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 text-xs font-bold rounded-xl cursor-not-allowed"
+                                    className="h-9.5 px-4 bg-slate-100 dark:bg-slate-850 text-slate-400 dark:text-slate-655 text-xs font-bold rounded-2xl cursor-not-allowed"
                                     title="Este modelo já possui arte anexada. Versionamento será liberado em etapa futura."
                                   >
                                     Bloqueado (v1 já anexada)
