@@ -665,5 +665,182 @@ export async function salvarModelosBoletim(
   return { success: true };
 }
 
+export interface ParsedObs {
+  obsCriticas: string;
+  designer: {
+    user_id: string;
+    nome: string;
+    email: string;
+  } | null;
+  orientacoesDesign: string;
+  obsImpressao: string;
+  obsAcabamento: string;
+}
+
+export function parsePedidosObs(obsText: string | null | undefined): ParsedObs {
+  const text = obsText || "";
+  const result: ParsedObs = {
+    obsCriticas: "",
+    designer: null,
+    orientacoesDesign: "",
+    obsImpressao: "",
+    obsAcabamento: ""
+  };
+
+  const tags = [
+    { key: "obsCriticas", header: "[Observações críticas]" },
+    { key: "designer", header: "[Designer]" },
+    { key: "orientacoesDesign", header: "[Orientações para design]" },
+    { key: "obsImpressao", header: "[Impressão]" },
+    { key: "obsAcabamento", header: "[Acabamento]" }
+  ];
+
+  const extractBlock = (tagHeader: string): string => {
+    const startIdx = text.indexOf(tagHeader);
+    if (startIdx === -1) return "";
+    const contentStart = startIdx + tagHeader.length;
+    let endIdx = text.length;
+    for (const otherTag of tags) {
+      if (otherTag.header === tagHeader) continue;
+      const idx = text.indexOf(otherTag.header, contentStart);
+      if (idx !== -1 && idx < endIdx) {
+        endIdx = idx;
+      }
+    }
+    return text.substring(contentStart, endIdx).trim();
+  };
+
+  const obsCritContent = extractBlock("[Observações críticas]");
+  const designerContent = extractBlock("[Designer]");
+  const designContent = extractBlock("[Orientações para design]");
+  const impContent = extractBlock("[Impressão]");
+  const acabContent = extractBlock("[Acabamento]");
+
+  const firstTagIndex = Math.min(
+    ...tags.map(t => {
+      const idx = text.indexOf(t.header);
+      return idx === -1 ? Infinity : idx;
+    })
+  );
+  let legacyContent = "";
+  if (firstTagIndex !== Infinity && firstTagIndex > 0) {
+    legacyContent = text.substring(0, firstTagIndex).trim();
+  } else if (firstTagIndex === Infinity) {
+    legacyContent = text.trim();
+  }
+
+  result.obsCriticas = obsCritContent || legacyContent || "";
+  result.orientacoesDesign = designContent || "";
+  result.obsImpressao = impContent || "";
+  result.obsAcabamento = acabContent || "";
+
+  if (designerContent) {
+    const userIdMatch = designerContent.match(/user_id:\s*([^\n\r]+)/i);
+    const nomeMatch = designerContent.match(/nome:\s*([^\n\r]+)/i);
+    const emailMatch = designerContent.match(/email:\s*([^\n\r]+)/i);
+
+    if (userIdMatch || nomeMatch || emailMatch) {
+      result.designer = {
+        user_id: userIdMatch ? userIdMatch[1].trim() : "",
+        nome: nomeMatch ? nomeMatch[1].trim() : "",
+        email: emailMatch ? emailMatch[1].trim() : ""
+      };
+    }
+  }
+
+  return result;
+}
+
+export interface SerializeObsInput {
+  obsCriticas?: string;
+  designer?: {
+    user_id: string;
+    nome: string;
+    email: string;
+  } | null;
+  orientacoesDesign?: string;
+  obsImpressao?: string;
+  obsAcabamento?: string;
+}
+
+export function serializePedidosObs(input: SerializeObsInput, existingObsText: string | null | undefined): string {
+  const parsed = parsePedidosObs(existingObsText);
+
+  const finalCriticas = input.obsCriticas !== undefined ? input.obsCriticas : parsed.obsCriticas;
+  const finalDesigner = input.designer !== undefined ? input.designer : parsed.designer;
+  const finalOrientacoes = input.orientacoesDesign !== undefined ? input.orientacoesDesign : parsed.orientacoesDesign;
+  const finalImpressao = input.obsImpressao !== undefined ? input.obsImpressao : parsed.obsImpressao;
+  const finalAcabamento = input.obsAcabamento !== undefined ? input.obsAcabamento : parsed.obsAcabamento;
+
+  let serialized = "";
+  serialized += `[Observações críticas]\n${finalCriticas.trim() || "-"}\n\n`;
+
+  if (finalDesigner) {
+    serialized += `[Designer]\nuser_id: ${finalDesigner.user_id}\nnome: ${finalDesigner.nome}\nemail: ${finalDesigner.email}\n\n`;
+  }
+
+  serialized += `[Orientações para design]\n${finalOrientacoes.trim() || "-"}\n\n`;
+  serialized += `[Impressão]\n${finalImpressao.trim() || "-"}\n\n`;
+  serialized += `[Acabamento]\n${finalAcabamento.trim() || "-"}`;
+
+  return serialized;
+}
+
+export interface AtualizarBoletimResult {
+  success: boolean;
+  error?: string;
+  details?: string;
+  hint?: string;
+  code?: string;
+}
+
+export async function atualizarOrientacoesBoletim(
+  idPedidoOuIdInt: string | number,
+  obsText: string
+): Promise<AtualizarBoletimResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: "Conexão com o banco de dados não disponível." };
+  }
+
+  const paramStr = String(idPedidoOuIdInt).trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramStr);
+
+  let query = client.from("pedidos").update({ obs: obsText });
+
+  if (isUuid) {
+    query = query.eq("id", paramStr);
+  } else {
+    const cleanNumStr = paramStr.replace("#", "");
+    const idInt = Number(cleanNumStr);
+    if (!isNaN(idInt)) {
+      query = query.eq("id_int", idInt);
+    } else {
+      return { success: false, error: "Parâmetro identificador do pedido inválido." };
+    }
+  }
+
+  const { error } = await query;
+
+  if (error) {
+    console.error("[BoletimPropostasService] Erro ao atualizar orientações do boletim:", {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      message: error.message
+    });
+    return {
+      success: false,
+      error: error.message || "Erro desconhecido ao salvar o boletim.",
+      details: error.details || undefined,
+      hint: error.hint || undefined,
+      code: error.code || undefined
+    };
+  }
+
+  return { success: true };
+}
+
+
 
 

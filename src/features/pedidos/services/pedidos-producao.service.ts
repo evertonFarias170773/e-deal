@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { PedidoProducaoListItem, PedidoStatus } from "../types";
+import type { PedidoModelo } from "@/features/producao/types";
 
 /**
  * Busca a lista de pedidos em produção.
@@ -123,7 +124,7 @@ export async function listarPedidosOperacionais(): Promise<PedidoProducaoListIte
  * Busca todos os modelos de pedidos cadastrados diretamente de public.pedidos_modelos.
  * Retorna uma lista de modelos operacionais para a fila de impressão.
  */
-export async function listarModelosImpressao(): Promise<any[]> {
+export async function listarModelosImpressao(): Promise<PedidoModelo[]> {
   const client = getSupabaseClient();
   if (!client) {
     console.warn("[pedidos-producao.service] Supabase client não inicializado.");
@@ -148,7 +149,8 @@ export async function listarModelosImpressao(): Promise<any[]> {
       status_arte,
       status_producao,
       ordem,
-      created_at
+      created_at,
+      updated_at
     `)
     .order("ordem", { ascending: true })
     .order("created_at", { ascending: true });

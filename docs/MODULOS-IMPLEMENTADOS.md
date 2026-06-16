@@ -578,17 +578,18 @@ Funcionalidades:
 
 # Produção (Fase 1 Concluída & Desativação de Mocks)
 
-Status: Fila Geral, Fila de Impressão, Expedição, Kanban e Detalhes da OS 100% alinhados com dados reais do Supabase (somente leitura). Toda a persistência em localStorage e mocks operacionais foram desativados para estas telas.
+Status: Fila Geral, Fila de Impressão, Expedição, Kanban e Detalhes da OS 100% alinhados com dados reais do Supabase. A aba "Artes/Aprovação" na Ficha de OS agora possui persistência real no Supabase para upload da Versão 1 de artes na tabela `public.pedidos_artes` integrada ao bucket `chat-ideal`. Toda a persistência em localStorage e mocks operacionais foram desativados para estas telas em produção.
 * Fila de Impressão opera a partir de `public.pedidos_modelos`. Como está com 0 registros, exibe estado vazio correto e KPIs zerados.
 * Fila de Expedição opera a partir de `public.pedidos` e oculta pedidos bloqueados (`status_expedicao === 'BLOQUEADO'`), exibindo estado vazio correto e desabilitando pesagem/despacho físico.
 * Kanban exibe pedidos reais na coluna "Novo / Boletim" (suporta `BOLETIM_FINALIZADO`), com botões de mudança de status e botões rápidos desativados/ocultados.
-* Botões "Resetar Base" e "Reset Mock" foram completamente removidos de todas as listagens.
+* Botões "Resetar Base" and "Reset Mock" foram completamente removidos de todas as listagens.
 * Catálogo de Imposição modelado.
 
 Componentes principais:
 - `types.ts` (`src/features/producao/types.ts` - Tipos oficiais da produção)
 - `producao-artes.service.ts` (`src/features/producao/services/producao-artes.service.ts` - Lógica real do banco, upload e timeline)
 - `pedidos-producao.service.ts` (`src/features/pedidos/services/pedidos-producao.service.ts` - Service de transição segura para listagem de pedidos de produção)
+- `pedidos-artes.service.ts` (`src/features/pedidos/services/pedidos-artes.service.ts` - Service de controle de artes reais versão 1)
 - `ProducaoArtesPanel.tsx` (`src/features/producao/components/ProducaoArtesPanel.tsx` - Painel visual de controle reativo de modelos e upload)
 - Rota `/producao` (`src/app/(erp)/producao/page.tsx` - Rota segura isolada de teste)
 - Integração do alternador no `PedidoDetailPage` (`src/features/pedidos/PedidoDetailPage.tsx` - Permite selecionar entre Simulador Local e Supabase Real)
@@ -650,6 +651,22 @@ Funcionalidades Implementadas:
 - **Pills de Modelos Adaptativas**: Se o pedido ainda não contiver modelos em `public.pedidos_modelos`, exibe a mensagem de feedback `"Ainda sem modelos"` sem quebrar o layout.
 - **Remoção de Aviso Local**: O aviso sobre salvamento em `localStorage` foi removido especificamente para a Fila Geral, preservando a integridade visual para dados reais.
 - **Resumo Financeiro e Cards de Métricas**: Cards reativos (`Tudo`, `Bloqueados`, `Produção`, `Aguardando Cliente`, `Expedição`) atualizados para cruzar os novos status operacionais (`status_producao === 'BLOQUEADO'`, `status_expedicao === 'BLOQUEADO'`, etc.).
+
+## Edição de Boletim / OS (PCP)
+
+Status: 100% concluído. Habilita a edição e atualização das orientações de Boletins/OS existentes via rota `/pedidos/boletim?id_int={id_int}&modo=edicao`, restringindo a edição apenas a campos de design e preservando a integridade de dados financeiros, logísticos e de modelos.
+
+Componentes principais:
+- `BoletimFormPage.tsx` (`src/features/pedidos/BoletimFormPage.tsx` - Carregamento do pedido existente, exibição de banner de aviso no modo edição, aplicação de 19 bloqueios em campos e botões estruturais/logísticos/financeiros, e submit integrado com o service)
+- `boletim-propostas.service.ts` (`src/features/pedidos/services/boletim-propostas.service.ts` - Implementação das funções de parseamento e serialização do campo estruturado `obs` e da função `atualizarOrientacoesBoletim` para atualizar apenas o campo `obs` em `public.pedidos`)
+- `PedidoDetailPage.tsx` (`src/features/pedidos/PedidoDetailPage.tsx` - Inclusão de botão "Editar Boletim / OS" no cabeçalho e renomeação da aba "Artes / Aprovação" para "Anexos / Artes" com layout de consulta simplificado)
+- `PedidosListPage.tsx` (`src/features/pedidos/PedidosListPage.tsx` - Adicionado botão/link "Editar" nas visualizações normal (card) e compacta (planilha))
+
+Funcionalidades e Regras de Segurança:
+- **Lock System (19 bloqueios)**: Bloqueio estrito em inputs, selects, toggles e botões que alteram quantidades, faturamento, financeiro, frete, volumes, ou que adicionem/deletem lotes/modelos.
+- **Aviso Visual**: Exibição de banner de alerta no topo informando que o Boletim está no modo de edição e que apenas os campos de design e orientações técnicas estão liberados.
+- **Persistência Segura**: A alteração é gravada apenas no campo `obs` em `public.pedidos` usando formato bracketed estruturado (`[Observações críticas]`, `[Impressão]`, `[Acabamento]`). Nenhuma outra coluna da tabela `pedidos`, nem a tabela de modelos `pedidos_modelos` ou `pedidos_artes` é alterada na gravação da edição.
+- **Renomeação de Aba**: Aba "Artes / Aprovação" renomeada para "Anexos / Artes" para refletir o upload inicial e consulta da Versão 1, eliminando botões redundantes.
 
 ## Demais módulos
 

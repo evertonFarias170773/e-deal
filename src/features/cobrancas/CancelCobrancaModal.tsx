@@ -18,11 +18,13 @@ export function CancelCobrancaModal({ isOpen, onClose, cobrancaId, onSuccess }: 
   const [motivo, setMotivo] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (isOpen) {
       setMotivo("");
     }
   }, [isOpen]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!isOpen) return;

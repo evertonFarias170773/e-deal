@@ -23,6 +23,7 @@ export function usePedidosMockDb() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Initialize DB in localStorage if not exists
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -49,6 +50,7 @@ export function usePedidosMockDb() {
       setIsLoaded(true);
     }
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const saveDb = useCallback((newPedidos: PedidoMock[]) => {
     const synchronized = newPedidos.map(p => ({
@@ -90,7 +92,7 @@ export function usePedidosMockDb() {
     if (stored) {
       try {
         return JSON.parse(stored);
-      } catch (e) {
+      } catch {
         return [];
       }
     }
@@ -101,11 +103,11 @@ export function usePedidosMockDb() {
     if (storedDb) {
       try {
         const parsedDb = JSON.parse(storedDb);
-        const found = parsedDb.find((p: any) => p.id_int === idInt);
+        const found = parsedDb.find((p: PedidoMock) => p.id_int === idInt);
         if (found) {
           statusPedido = found.statusPedido;
         }
-      } catch (e) {}
+      } catch {}
     }
 
     const defaults: MockChatMessage[] = [
@@ -625,7 +627,7 @@ export function usePedidosMockDb() {
           "PRODUCAO",
           "✅ Pausa operacional resolvida. Pedido liberado para retomar a produção."
         );
-        const { blockReason, tempoParadoMinutos, ...rest } = p;
+        const { blockReason: _blockReason, tempoParadoMinutos: _tempoParadoMinutos, ...rest } = p;
         return rest as PedidoMock;
       }
       return p;

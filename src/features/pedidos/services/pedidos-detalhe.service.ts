@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { PedidoProducaoListItem, PedidoStatus } from "../types";
+import type { PedidoProducaoListItem, PedidoStatus, ProdutoMock, ModeloMock } from "../types";
 
 /**
  * Busca um pedido operacional na tabela public.pedidos por UUID (id) ou id_int.
@@ -92,7 +92,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
   }
 
   // 3. Buscar os produtos reais associados ao pedido de public.produtos_proposta
-  let produtos: any[] = [];
+  let produtos: (ProdutoMock & { db_id?: number })[] = [];
   try {
     const { data: produtosRows, error: produtosError } = await client
       .from("produtos_proposta")
@@ -117,7 +117,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
   }
 
   // 4. Buscar os modelos reais cadastrados de public.pedidos_modelos
-  let modelos: any[] = [];
+  let modelos: (ModeloMock & { id_produto_proposta_origem?: number | null })[] = [];
   try {
     const { data: modelosRows, error: modelosError } = await client
       .from("pedidos_modelos")

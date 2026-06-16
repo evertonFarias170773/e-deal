@@ -92,10 +92,12 @@ export interface ModeloMock {
 
 export interface ProdutoMock {
   id: string;
+  db_id?: number;
   nome: string; // ex: Triband, Pulseira Tyvek, Credencial
   quantidade: number;
   pesoEstimado: number; // em kg
   quantidadeOriginal?: number; // Qtd total da proposta
+  setor?: string;
   modelos: ModeloMock[];
 }
 
@@ -152,6 +154,8 @@ export interface PedidoMock {
 }
 
 export interface PedidoProducaoListItem extends PedidoMock {
+  id?: string;
+  descricao?: string;
   status_pedido?: string;
   status_pagamento?: string;
   status_arte?: string;

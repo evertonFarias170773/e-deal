@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
-import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, CheckCircle2, AlertTriangle, ShieldAlert, Plus } from "lucide-react";
+import { Search, Flame, AlertCircle, RefreshCw, MessageSquare, Clipboard, Layers, CheckCircle2, AlertTriangle, ShieldAlert, Plus, Edit } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
 import type { PedidoProducaoListItem, ProdutoMock, ModeloMock } from "./types";
@@ -603,6 +603,13 @@ export function PedidosListPage() {
                               <MessageSquare className="h-3.5 w-3.5" />
                             </button>
                             <Link
+                              href={`/pedidos/boletim?id_int=${p.id_int}&modo=edicao`}
+                              className="h-7 w-7 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-850 flex items-center justify-center transition shrink-0"
+                              title="Editar Boletim / OS"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </Link>
+                            <Link
                               href={`/pedidos/${p.id_int}`}
                               className="h-7 px-2.5 bg-[#0b2f4a] hover:bg-[#123f61] text-white rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition"
                               title="Abrir Ficha"
@@ -716,6 +723,13 @@ export function PedidosListPage() {
                             >
                               Chat
                             </button>
+                            <span className="text-slate-300">|</span>
+                            <Link
+                              href={`/pedidos/boletim?id_int=${p.id_int}&modo=edicao`}
+                              className="text-amber-600 hover:text-amber-805 dark:text-amber-400 dark:hover:text-amber-300 px-1 hover:underline text-[10px]"
+                            >
+                              Editar
+                            </Link>
                             <span className="text-slate-300">|</span>
                             <Link
                               href={`/pedidos/${p.id_int}`}

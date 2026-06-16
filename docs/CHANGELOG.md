@@ -1,8 +1,26 @@
 # Changelog
 
+## 2026-06-16
+
+### Adicionado
+- **Edição de Boletim/OS existente (`/pedidos/boletim?id_int={id_int}&modo=edicao`)**:
+  - **Identificação do Modo**: Mapeamento do parâmetro `modo=edicao` e do identificador do pedido para habilitar a edição controlada.
+  - **Banner de Alerta**: Exibição de cabeçalho informativo avisando que o Boletim está no modo de edição e que apenas orientações técnicas e de design estão editáveis.
+  - **Lock System (19 bloqueios)**: Aplicação sistemática de bloqueio de escrita (readonly/disabled) e ocultamento de ações que alteram quantitativos, faturamento, financeiro, frete, volumes, ou que inserem/removem lotes na OS.
+  - **Persistência de Observações**: Implementação no service das funções `parsePedidosObs`, `serializePedidosObs` e `atualizarOrientacoesBoletim` para ler e salvar as observações no campo `obs` de `public.pedidos` de forma isolada, em formato bracketed estruturado.
+  - **Integração de Botões na Fila Geral**: Links/botões "Editar" colocados tanto na visualização padrão (card) quanto na visualização compacta de planilha.
+  - **Aba "Anexos / Artes"**: Aba "Artes / Aprovação" renomeada na Ficha de OS (`PedidoDetailPage.tsx`) para "Anexos / Artes", com botão "Editar Boletim / OS" no cabeçalho.
+
 ## 2026-06-15
 
 ### Adicionado
+- **Upload Inicial de Arte Versão 1 no Ficha de OS (`public.pedidos_artes`)**:
+  - **Novo Service**: Criado o service `pedidos-artes.service.ts` contendo as funções `listarArtesDoModelo` e `anexarArteVersao1`.
+  - **Fluxo de Upload e Registro de Arte**: Implementada validação de extensões permitidas (`jpeg`, `png`, `pdf`) e limite de tamanho de até 10MB. O upload ocorre no bucket público `chat-ideal` sob a pasta `pedidos-artes/{id_int}/{id_modelo}/...` e cria a respectiva linha de controle na tabela `public.pedidos_artes` com `versao = 1` e status `PENDENTE`.
+  - **Segurança de Versão Única**: Bloqueio ativo caso o modelo já possua arte cadastrada.
+  - **Identidade Segura**: Envio do UUID válido do usuário (`enviado_por_uid`) ou null se ausente/inválido.
+  - **Aba Artes/Aprovação na Ficha**: Atualizada para renderizar os lotes e suas artes correspondentes vindos do Supabase. Botões e simuladores de mocks foram desativados para pedidos reais do banco.
+
 - **Persistência Real de Modelos/Lotes no Boletim de Entrada (`public.pedidos_modelos`)**:
   - **Função no Service**: Adicionada a função `salvarModelosBoletim` no service `boletim-propostas.service.ts` para persistir dados estruturados em lote na tabela `public.pedidos_modelos`.
   - **Verificações de Segurança (Anti-duplicidade)**: Integrado no service (`obterPropostaLiberadaParaBoletim`, `criarPedidoParaBoletim` e `salvarModelosBoletim`) a consulta ativa em `public.pedidos_modelos` por `id_int` para abortar de forma segura em caso de existência prévia de lotes, exibindo a mensagem: `"Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura."`.

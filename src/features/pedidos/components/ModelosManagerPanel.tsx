@@ -658,7 +658,7 @@ export default function ModelosManagerPanel({
                                 <ShieldAlert className="h-4 w-4" />
                                 Motivo de Rejeição:
                               </span>
-                              <p className="italic font-semibold text-[11px]">"{m.comentarioCliente}"</p>
+                              <p className="italic font-semibold text-[11px]">&quot;{m.comentarioCliente}&quot;</p>
                             </div>
                           )}
 
@@ -682,7 +682,7 @@ export default function ModelosManagerPanel({
                             {m.comentarioInterno ? (
                               <div className="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/40 dark:border-amber-900/30 rounded-xl p-3 text-xs relative space-y-1">
                                 <span className="font-black text-amber-800 dark:text-amber-450 block text-[8px] uppercase tracking-wider">Anotação Operacional:</span>
-                                <p className="text-slate-800 dark:text-slate-350 italic font-medium leading-relaxed">"{m.comentarioInterno}"</p>
+                                <p className="text-slate-800 dark:text-slate-350 italic font-medium leading-relaxed">&quot;{m.comentarioInterno}&quot;</p>
                                 <button
                                   type="button"
                                   onClick={() => onAdicionarComentarioInterno(m.id, "")}

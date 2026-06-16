@@ -93,6 +93,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
     }
   }
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isOpen || !cobranca.id_cliente) return;
     setWarningPending(false);
@@ -110,6 +111,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
       setNovoLimite(String(creditAnalysis.limite_credito ?? 0));
     }
   }, [creditAnalysis]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Prevent background scrolling when open
   useEffect(() => {

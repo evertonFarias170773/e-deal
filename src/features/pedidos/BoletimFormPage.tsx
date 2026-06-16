@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
 import { useAppToast } from "@/components/common/AppToast";
 import {
@@ -30,8 +30,12 @@ import {
   listarGabaritos,
   type PropostaLiberadaBoletim,
   type DesignerUsuario,
-  type GabaritoProducao
+  type GabaritoProducao,
+  atualizarOrientacoesBoletim,
+  parsePedidosObs,
+  serializePedidosObs
 } from "./services/boletim-propostas.service";
+import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
 
 export interface GabaritoItem {
   id: string;
@@ -81,6 +85,15 @@ function generateUniqueId(prefix: string): string {
 
 export function BoletimFormPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const modoParam = searchParams ? searchParams.get("modo") : null;
+  const idIntParam = searchParams ? searchParams.get("id_int") : null;
+  const isEditing = modoParam === "edicao" && !!idIntParam;
+
+  const [loadedPedidoId, setLoadedPedidoId] = useState<string | null>(null);
+  const [existingObs, setExistingObs] = useState<string | null>(null);
+  const [hasLoadedExisting, setHasLoadedExisting] = useState(false);
+
   const { showToast } = useAppToast();
   const { pedidos } = usePedidosMockDb();
 
@@ -158,6 +171,103 @@ export function BoletimFormPage() {
     }
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!isEditing || !idIntParam || hasLoadedExisting) return;
+
+    async function loadPedidoExistente() {
+      setLoadingDetails(true);
+      try {
+        const pedido = await obterPedidoOperacionalPorIdOuIdInt(Number(idIntParam));
+        if (pedido) {
+          setLoadedPedidoId(pedido.id || null);
+          setExistingObs(pedido.obs || "");
+          setHasLoadedExisting(true);
+          
+          setSelectedProposta({
+            id_int: Number(idIntParam),
+            status: pedido.status_pedido || "APROVADO",
+            cobrancaStatus: "PAGA"
+          } as any);
+
+          setClienteNome(pedido.clienteNome || "");
+          setContatoNome(pedido.contatoNome || "Contato Principal");
+          setEmpresa(pedido.empresa || "Ideal Grafica");
+          setVendedor(pedido.vendedor || "Everton Farias");
+          setFormaPagamento(pedido.formaPagamento || "Pix a vista");
+
+          const deadlineDate = pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "";
+          setDataPrevistaEntrega(deadlineDate);
+
+          const parsed = parsePedidosObs(pedido.obs);
+          setObsCriticas(parsed.obsCriticas || "");
+          setInstrucoesDesign(parsed.orientacoesDesign || "");
+          setObsImpressao(parsed.obsImpressao || "");
+          setObsAcabamento(parsed.obsAcabamento || "");
+
+          if (parsed.designer && parsed.designer.user_id) {
+            setSelectedDesigner(parsed.designer.user_id);
+            setAtribuidoDesigner(true);
+          }
+
+          const mapped = pedido.produtos.map((p) => ({
+            id: p.id,
+            id_produto_proposta_origem: p.db_id,
+            nome: p.nome,
+            quantidade: p.quantidade,
+            quantidadeOriginal: p.quantidade,
+            setor: p.setor || "IMPRESSÃO",
+            modelos: p.modelos.map((m) => ({
+              id: m.id,
+              nomeModelo: m.nomeModelo,
+              quantidade: m.quantidade,
+              statusArte: m.statusArte,
+              statusProducao: m.statusProducao,
+              setor: m.setor || p.setor || "IMPRESSÃO",
+              corMaterial: m.corMaterial,
+              verso: m.verso,
+              bloco: m.bloco || "Bloco A",
+              observacoesTecnicas: m.observacoesTecnicas,
+              configImpressao: {
+                tipoNumeracao: m.configImpressao?.tipoNumeracao || "SEM_NUMERACAO",
+                qrCode: m.configImpressao?.qrCode || false,
+                codBarras: m.configImpressao?.codBarras || false,
+                codBarrasTipo: m.configImpressao?.codBarrasTipo || ""
+              },
+              numeracaoInicial: m.numeracaoInicial,
+              numeracaoFinal: m.numeracaoFinal,
+              tokenAprovacao: m.tokenAprovacao || `token_${Math.floor(Math.random() * 10000000)}`,
+              historicoArtes: m.historicoArtes || []
+            }))
+          }));
+          setProdutos(mapped);
+
+          showToast({
+            type: "success",
+            title: "Boletim Carregado para Edição",
+            description: `Dados do pedido operacional #${idIntParam} carregados.`
+          });
+        } else {
+          showToast({
+            type: "error",
+            title: "Pedido não encontrado",
+            description: `Não encontramos um pedido ativo correspondente ao código #${idIntParam}.`
+          });
+        }
+      } catch (err) {
+        console.error("Erro ao carregar pedido existente:", err);
+        showToast({
+          type: "error",
+          title: "Erro ao Carregar Pedido",
+          description: "Falha na leitura dos dados do pedido no Supabase."
+        });
+      } finally {
+        setLoadingDetails(false);
+      }
+    }
+
+    loadPedidoExistente();
+  }, [isEditing, idIntParam, designersList, hasLoadedExisting]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -735,6 +845,56 @@ export function BoletimFormPage() {
       return;
     }
 
+    if (isEditing) {
+      setLoadingDetails(true);
+      try {
+        const designerObj = designersList.find(d => d.user_id === selectedDesigner);
+        const designerInput = designerObj ? {
+          user_id: designerObj.user_id,
+          nome: designerObj.nome_usuario || designerObj.user_id,
+          email: designerObj.email || ""
+        } : null;
+
+        const serializedObs = serializePedidosObs({
+          obsCriticas,
+          designer: designerInput,
+          orientacoesDesign: instrucoesDesign,
+          obsImpressao,
+          obsAcabamento
+        }, existingObs);
+
+        const result = await atualizarOrientacoesBoletim(Number(idIntParam), serializedObs);
+
+        if (!result.success) {
+          showToast({
+            type: "error",
+            title: "Erro ao Atualizar Boletim",
+            description: result.error || "Não foi possível atualizar as orientações no Supabase."
+          });
+          setLoadingDetails(false);
+          return;
+        }
+
+        showToast({
+          type: "success",
+          title: "Boletim Finalizado",
+          description: "Orientações e especificações técnicas de design atualizadas com sucesso"
+        });
+
+        router.push(`/pedidos/${idIntParam}`);
+      } catch (error) {
+        console.error("Erro ao processar atualização do boletim:", error);
+        showToast({
+          type: "error",
+          title: "Erro Inesperado",
+          description: "Ocorreu um erro inesperado ao salvar as alterações."
+        });
+      } finally {
+        setLoadingDetails(false);
+      }
+      return;
+    }
+
     // Validate quantities and technical specifications
     for (const p of produtos) {
       for (const m of p.modelos) {
@@ -868,7 +1028,7 @@ export function BoletimFormPage() {
       <div className="flex justify-between items-center border-b border-slate-200/50 dark:border-slate-800/40 pb-3">
         <div className="flex items-center gap-2">
           <Link
-            href="/pedidos"
+            href={isEditing ? `/pedidos/${idIntParam}` : "/pedidos"}
             className="h-8 w-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-850 flex items-center justify-center transition shrink-0"
             title="Voltar"
           >
@@ -877,7 +1037,7 @@ export function BoletimFormPage() {
           <div>
             <h2 className="text-base font-black text-[#0b2f4a] dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
               <FileText className="h-4 w-4" />
-              <span>Abertura de OS — Boletim de Entrada</span>
+              <span>{isEditing ? "Edição de OS — Boletim de Entrada" : "Abertura de OS — Boletim de Entrada"}</span>
             </h2>
             <p className="text-[10px] text-slate-550 dark:text-slate-500 font-semibold">
               Ficha operacional técnica inicial de PCP gráfico e comercial.
@@ -891,12 +1051,37 @@ export function BoletimFormPage() {
             className="h-9 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm transition"
           >
             <Save className="h-4 w-4" />
-            <span>Salvar Boletim</span>
+            <span>{isEditing ? "Salvar Alterações" : "Salvar Boletim"}</span>
           </button>
         )}
       </div>
 
-      <div className="bg-slate-50/80 dark:bg-slate-900/40 border border-slate-300 dark:border-slate-800 p-4 rounded-xl space-y-3 shadow-sm">
+      {isEditing && (
+        <div className="bg-blue-50 dark:bg-blue-955/20 border border-blue-200 dark:border-blue-900/50 p-4 rounded-xl flex items-start gap-3 shadow-sm">
+          <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse"></div>
+            <div>
+              <strong className="text-blue-700 dark:text-blue-400 font-black uppercase text-[10px] tracking-wide block">Modo Edição de OS</strong>
+              <p className="text-[10px] text-slate-550 dark:text-slate-400 font-semibold mt-0.5">
+                Os dados de faturamento, cliente, quantidades e especificações técnicas de lotes estão bloqueados por segurança. Apenas designer, orientações, observações críticas e briefings técnicos de produção estão liberados.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {isEditing ? (
+        <div className="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-4 rounded-xl space-y-2 shadow-sm">
+          <h3 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider">
+            1. Proposta/Orçamento Comercial de Origem
+          </h3>
+          <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+            Você está editando as orientações técnicas do pedido operacional correspondente à proposta <span className="font-mono text-blue-600 dark:text-blue-400 font-black">#{idIntParam}</span>. A proposta de origem e o faturamento estão vinculados de forma definitiva.
+          </div>
+        </div>
+      ) : (
+        <div className="bg-slate-50/80 dark:bg-slate-900/40 border border-slate-300 dark:border-slate-800 p-4 rounded-xl space-y-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider">
@@ -962,6 +1147,7 @@ export function BoletimFormPage() {
           </div>
         </div>
       </div>
+      )}
 
       {!selectedProposta ? (
         <div className="bg-slate-50/20 dark:bg-slate-955/5 border border-dashed border-slate-200 dark:border-slate-800 p-12 text-center rounded-xl space-y-2">
@@ -1078,9 +1264,11 @@ export function BoletimFormPage() {
                     <input
                       type="date"
                       required
+                      readOnly={isEditing}
+                      disabled={isEditing}
                       value={dataPrevistaEntrega}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDataPrevistaEntrega(e.target.value)}
-                      className="w-full h-8.5 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none font-mono font-bold text-slate-900 dark:text-slate-100 focus:border-blue-600 dark:focus:border-blue-400 focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-400"
+                      className={`w-full h-8.5 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none font-mono font-bold focus:border-blue-600 dark:focus:border-blue-400 focus:ring-1 focus:ring-blue-600 dark:focus:ring-blue-400 ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500 dark:text-slate-400" : "bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100"}`}
                     />
                   </div>
 
@@ -1098,9 +1286,10 @@ export function BoletimFormPage() {
                     <input
                       type="checkbox"
                       id="urgente-toggle"
+                      disabled={isEditing}
                       checked={urgente}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrgente(e.target.checked)}
-                      className="h-4.5 w-4.5 text-red-600 focus:ring-red-500 border-slate-400 dark:border-slate-700 bg-white dark:bg-slate-950 rounded cursor-pointer"
+                      className={`h-4.5 w-4.5 text-red-600 focus:ring-red-500 border-slate-400 dark:border-slate-700 rounded bg-white dark:bg-slate-950 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                     />
                     <label htmlFor="urgente-toggle" className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wide cursor-pointer select-none">
                       ⚡ PRIORIDADE URGENTE
@@ -1118,18 +1307,22 @@ export function BoletimFormPage() {
                   <input
                     type="text"
                     placeholder="Ex: Congresso Nacional 2026"
+                    readOnly={isEditing}
+                    disabled={isEditing}
                     value={dadosEventoNome}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoNome(e.target.value)}
-                    className="w-full h-7 px-2 rounded border border-slate-300 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-950 focus:outline-none text-slate-900 dark:text-slate-100 font-medium"
+                    className={`w-full h-7 px-2 rounded border border-slate-300 dark:border-slate-700 focus:outline-none font-medium ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500" : "bg-slate-50/30 dark:bg-slate-955 text-slate-900 dark:text-slate-100"}`.replace("dark:bg-slate-955", "dark:bg-slate-950")}
                   />
                 </div>
                 <div className="space-y-1">
                   <span className="text-[9px] font-extrabold text-slate-600 dark:text-slate-400 uppercase">Data Evento</span>
                   <input
                     type="date"
+                    readOnly={isEditing}
+                    disabled={isEditing}
                     value={dadosEventoData}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoData(e.target.value)}
-                    className="w-full h-7 px-2 rounded border border-slate-300 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-955 focus:outline-none text-slate-900 dark:text-slate-100 font-medium"
+                    className={`w-full h-7 px-2 rounded border border-slate-300 dark:border-slate-700 focus:outline-none font-medium ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500" : "bg-slate-50/30 dark:bg-slate-955 text-slate-900 dark:text-slate-100"}`}
                   />
                 </div>
                 <div className="space-y-1">
@@ -1137,9 +1330,11 @@ export function BoletimFormPage() {
                   <input
                     type="text"
                     placeholder="Ex: Expocentro, SP"
+                    readOnly={isEditing}
+                    disabled={isEditing}
                     value={dadosEventoLocal}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoLocal(e.target.value)}
-                    className="w-full h-7 px-2 rounded border border-slate-300 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-950 focus:outline-none text-slate-900 dark:text-slate-100 font-medium"
+                    className={`w-full h-7 px-2 rounded border border-slate-300 dark:border-slate-700 focus:outline-none font-medium ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500" : "bg-slate-50/30 dark:bg-slate-955 text-slate-900 dark:text-slate-100"}`.replace("dark:bg-slate-955", "dark:bg-slate-950")}
                   />
                 </div>
               </div>
@@ -1200,9 +1395,10 @@ export function BoletimFormPage() {
                         <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-850 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
                           <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tight">Setor PCP:</span>
                           <select
+                            disabled={isEditing}
                             value={p.setor || "IMPRESSÃO"}
                             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateProductSector(p.id, e.target.value)}
-                            className="h-6 px-1.5 rounded border border-slate-350 dark:border-slate-700 bg-white dark:bg-slate-900 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 cursor-pointer"
+                            className={`h-6 px-1.5 rounded border border-slate-350 dark:border-slate-700 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed" : "bg-white dark:bg-slate-900 cursor-pointer"}`}
                           >
                             <option value="IMPRESSÃO">IMPRESSÃO</option>
                             <option value="TEXTIL">TEXTIL</option>
@@ -1219,14 +1415,16 @@ export function BoletimFormPage() {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-[9px] font-bold text-slate-455 uppercase tracking-tight">Especificação dos Modelos (Subitens)</span>
-                      <button
-                        type="button"
-                        onClick={() => addModelRow(p.id)}
-                        className="h-5.5 px-2 text-slate-700 hover:bg-slate-50 dark:text-slate-350 dark:hover:bg-slate-850 border border-slate-205 dark:border-slate-800 rounded-md font-bold flex items-center gap-0.5 transition"
-                      >
-                        <Plus className="h-3 w-3" />
-                        <span>Adicionar Lote</span>
-                      </button>
+                      {!isEditing && (
+                        <button
+                          type="button"
+                          onClick={() => addModelRow(p.id)}
+                          className="h-5.5 px-2 text-slate-700 hover:bg-slate-50 dark:text-slate-350 dark:hover:bg-slate-850 border border-slate-205 dark:border-slate-800 rounded-md font-bold flex items-center gap-0.5 transition"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>Adicionar Lote</span>
+                        </button>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -1247,14 +1445,16 @@ export function BoletimFormPage() {
                                   {p.setor || "IMPRESSÃO"}
                                 </span>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => removeModelRow(p.id, m.id)}
-                                className="text-slate-400 hover:text-red-500 transition"
-                                title="Remover Lote"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                              {!isEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeModelRow(p.id, m.id)}
+                                  className="text-slate-400 hover:text-red-500 transition"
+                                  title="Remover Lote"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
                             </div>
 
                             {/* Linha 1: Nome, Cor/Material e Qtd */}
@@ -1265,9 +1465,11 @@ export function BoletimFormPage() {
                                   type="text"
                                   placeholder="Ex: Lote VIP"
                                   required
+                                  readOnly={isEditing}
+                                  disabled={isEditing}
                                   value={m.nomeModelo}
                                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "nomeModelo", e.target.value)}
-                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                                  className={`w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 font-bold focus:outline-none text-[10px] placeholder-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500" : "bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100"}`}
                                 />
                                 {validation && (
                                   <div className={`text-[8px] font-bold px-1 py-0.5 rounded leading-tight mt-1 ${
@@ -1283,9 +1485,10 @@ export function BoletimFormPage() {
                               <div className="space-y-1">
                                 <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-455 uppercase block">Cor / Material</label>
                                 <select
+                                  disabled={isEditing}
                                   value={m.corMaterial || "Branco"}
                                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelField(p.id, m.id, "corMaterial", e.target.value)}
-                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-955 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100"
+                                  className={`w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100 ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed" : "bg-white dark:bg-slate-955"}`}
                                 >
                                   <option value="Branco">Branco</option>
                                   <option value="Azul">Azul</option>
@@ -1306,9 +1509,11 @@ export function BoletimFormPage() {
                                   type="number"
                                   min={1}
                                   required
+                                  readOnly={isEditing}
+                                  disabled={isEditing}
                                   value={m.quantidade}
                                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "quantidade", Number(e.target.value) || 0)}
-                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-right font-mono font-bold focus:outline-none text-[10px] text-slate-900 dark:text-slate-100"
+                                  className={`w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 text-right font-mono font-bold focus:outline-none text-[10px] ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500" : "bg-white dark:bg-slate-955 text-slate-900 dark:text-slate-100"}`.replace("dark:bg-slate-955", "dark:bg-slate-950")}
                                 />
                               </div>
                             </div>
@@ -1320,9 +1525,10 @@ export function BoletimFormPage() {
                                   <input
                                     type="checkbox"
                                     id={`verso-${m.id}`}
+                                    disabled={isEditing}
                                     checked={m.verso}
                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "verso", e.target.checked)}
-                                    className="h-4 w-4 rounded border-slate-450 dark:border-slate-700 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                    className={`h-4 w-4 rounded border-slate-450 dark:border-slate-700 text-purple-600 focus:ring-purple-500 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                                   />
                                   <label htmlFor={`verso-${m.id}`} className="text-[9px] font-extrabold text-slate-600 dark:text-slate-450 uppercase cursor-pointer select-none">
                                     Frente + Verso (F+V)
@@ -1335,6 +1541,7 @@ export function BoletimFormPage() {
                                   <input
                                     type="checkbox"
                                     id={`rfid-${m.id}`}
+                                    disabled={isEditing}
                                     checked={m.observacoesTecnicas?.includes("RFID: Sim")}
                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                                       const isRfid = e.target.checked;
@@ -1346,7 +1553,7 @@ export function BoletimFormPage() {
                                         isRfid ? (baseNotes ? `${baseNotes} RFID: Sim.` : "RFID: Sim.") : (baseNotes ? `${baseNotes} RFID: Não.` : "RFID: Não.")
                                       );
                                     }}
-                                    className="h-4 w-4 rounded border-slate-400 dark:border-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    className={`h-4 w-4 rounded border-slate-400 dark:border-slate-700 text-blue-600 focus:ring-blue-500 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                                   />
                                   <label htmlFor={`rfid-${m.id}`} className="text-[9px] font-extrabold text-slate-600 dark:text-slate-450 uppercase cursor-pointer select-none">
                                     RFID / NFC Integrado
@@ -1357,9 +1564,10 @@ export function BoletimFormPage() {
                               <div className="space-y-1">
                                 <label className="text-[8px] font-extrabold text-slate-500 dark:text-slate-450 uppercase block">Tipo de Numeração</label>
                                 <select
+                                  disabled={isEditing}
                                   value={m.configImpressao.tipoNumeracao}
                                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
-                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100"
+                                  className={`w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100 ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed" : "bg-white dark:bg-slate-955"}`.replace("dark:bg-slate-955", "dark:bg-slate-950")}
                                 >
                                   <option value="SEM_NUMERACAO">Sem Numeração</option>
                                   <option value="SEQUENCIAL">Sequencial</option>
@@ -1377,6 +1585,7 @@ export function BoletimFormPage() {
                                   <div className="relative flex-1">
                                     <button
                                       type="button"
+                                      disabled={isEditing}
                                       onClick={(e) => {
                                         if (openGabaritoDropdown === m.id) {
                                           setOpenGabaritoDropdown(null);
@@ -1391,7 +1600,7 @@ export function BoletimFormPage() {
                                           setGabaritoSearchQuery("");
                                         }
                                       }}
-                                      className="w-full h-8 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between gap-1 shadow-sm hover:border-slate-450 dark:hover:border-slate-650 transition"
+                                      className={`w-full h-8 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none text-[10px] font-bold text-slate-900 dark:text-slate-100 flex items-center justify-between gap-1 shadow-sm hover:border-slate-450 dark:hover:border-slate-650 transition ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed" : "bg-white dark:bg-slate-950"}`}
                                     >
                                       <span className="truncate">
                                         {getGabaritoName(m.gabaritoNumeracao)}
@@ -1496,9 +1705,11 @@ export function BoletimFormPage() {
                                         type="number"
                                         placeholder="Início"
                                         required
+                                        readOnly={isEditing}
+                                        disabled={isEditing}
                                         value={m.numeracaoInicial || ""}
                                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
-                                        className="w-1/2 h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-right focus:outline-none font-mono font-bold text-slate-900 dark:text-slate-100 text-[10px]"
+                                        className={`w-1/2 h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 text-right focus:outline-none font-mono font-bold text-[10px] ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500" : "bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100"}`}
                                       />
                                       <input
                                         type="number"
@@ -1527,8 +1738,9 @@ export function BoletimFormPage() {
                                     ) : (
                                       <button
                                         type="button"
+                                        disabled={isEditing}
                                         onClick={() => handleMockImportCSV(p.id, m.id, m.nomeModelo)}
-                                        className="w-full h-8 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-200 rounded-lg border border-slate-300 dark:border-slate-750 font-black text-[9px] transition"
+                                        className={`w-full h-8 rounded-lg border font-black text-[9px] transition ${isEditing ? "bg-slate-100 dark:bg-slate-900 text-slate-400 cursor-not-allowed border-slate-300 dark:border-slate-800" : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-200 border-slate-300 dark:border-slate-750"}`}
                                       >
                                         Importar CSV Variáveis
                                       </button>
@@ -1756,9 +1968,10 @@ export function BoletimFormPage() {
                               <div className="space-y-1">
                                 <label className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase">Modalidade de Envio</label>
                                 <select
+                                  disabled={isEditing}
                                   value={transporte}
                                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTransporte(e.target.value)}
-                                  className="w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none font-bold text-slate-900 dark:text-slate-100 text-[10px]"
+                                  className={`w-full h-8 px-2 rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none font-bold text-slate-900 dark:text-slate-100 text-[10px] ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed" : "bg-white dark:bg-slate-950"}`}
                                 >
                                   <option value="Retirada">Retirada em Mãos (Balcão)</option>
                                   <option value="Motoboy">Entrega Via Motoboy</option>
@@ -1774,9 +1987,11 @@ export function BoletimFormPage() {
                                   type="number"
                                   min={1}
                                   required
+                                  readOnly={isEditing}
+                                  disabled={isEditing}
                                   value={volumes}
                                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVolumes(Number(e.target.value) || 1)}
-                                  className="w-full h-8 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 focus:outline-none font-mono font-bold text-slate-900 dark:text-slate-100"
+                                  className={`w-full h-8 px-3 rounded-lg border border-slate-300 dark:border-slate-700 focus:outline-none font-mono font-bold ${isEditing ? "bg-slate-100 dark:bg-slate-900 cursor-not-allowed text-slate-500" : "bg-white dark:bg-slate-955 text-slate-900 dark:text-slate-100"}`.replace("dark:bg-slate-955", "dark:bg-slate-950")}
                                 />
                               </div>
 
@@ -1826,7 +2041,7 @@ export function BoletimFormPage() {
                                 className="h-9 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-extrabold flex items-center justify-center gap-1.5 shadow transition text-xs"
                               >
                                 <Save className="h-4 w-4" />
-                                <span>Salvar e Iniciar OS</span>
+                                <span>{isEditing ? "Salvar Alterações" : "Salvar e Iniciar OS"}</span>
                               </button>
                             </div>
                           </div>

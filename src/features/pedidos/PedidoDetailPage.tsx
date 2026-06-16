@@ -10,11 +10,15 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { usePedidosMockDb, type MockChatMessage } from "./hooks/usePedidosMockDb";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
-import type { PedidoProducaoListItem } from "./types";
+import type { PedidoProducaoListItem, PedidoStatus } from "./types";
 import ModelosManagerPanel from "./components/ModelosManagerPanel";
 import { ProducaoArtesPanel } from "@/features/producao";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { listarArtesDoModelo, anexarArteVersao1 } from "./services/pedidos-artes.service";
+import type { PedidoArte } from "@/features/producao/types";
+import { Loader2, Upload } from "lucide-react";
 
 interface PedidoDetailPageProps {
   idInt: number;
@@ -42,11 +46,16 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
     registrarDecisaoCliente
   } = usePedidosMockDb();
 
+  const { user } = useAuth();
   const [pedido, setPedido] = useState<PedidoProducaoListItem | null>(null);
   const [loadingReal, setLoadingReal] = useState(true);
   const [showRealPanel, setShowRealPanel] = useState(false);
+  const [isRealDbOrder, setIsRealDbOrder] = useState(false);
+  const [artesMap, setArtesMap] = useState<Record<string, PedidoArte[]>>({});
+  const [uploadingModelId, setUploadingModelId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"resumo" | "dados_comerciais" | "produtos" | "artes" | "producao" | "expedicao" | "timeline">("resumo");
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -56,6 +65,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       }
     }
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     let active = true;
@@ -68,10 +78,12 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
           if (dbPedido) {
             setPedido(dbPedido);
             setShowRealPanel(true);
+            setIsRealDbOrder(true);
           } else {
             const mockPedido = pedidos.find((p) => p.id_int === idInt);
             setPedido(mockPedido || null);
             setShowRealPanel(false);
+            setIsRealDbOrder(false);
           }
         }
       } catch (err) {
@@ -80,6 +92,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
           const mockPedido = pedidos.find((p) => p.id_int === idInt);
           setPedido(mockPedido || null);
           setShowRealPanel(false);
+          setIsRealDbOrder(false);
         }
       } finally {
         if (active) {
@@ -92,6 +105,31 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       active = false;
     };
   }, [idInt, isLoaded, pedidos]);
+
+  // Load real arts when tab is "artes" and it is a real DB order
+  useEffect(() => {
+    let active = true;
+    async function fetchArtes() {
+      if (activeTab !== "artes" || !isRealDbOrder || !pedido) return;
+      try {
+        const tempMap: Record<string, PedidoArte[]> = {};
+        const modelsToFetch = pedido.modelos || (pedido.produtos || []).flatMap((p) => p.modelos || []);
+        for (const m of modelsToFetch) {
+          const list = await listarArtesDoModelo(m.id);
+          tempMap[m.id] = list;
+        }
+        if (active) {
+          setArtesMap(tempMap);
+        }
+      } catch (err) {
+        console.error("[PedidoDetailPage] Erro ao carregar artes:", err);
+      }
+    }
+    void fetchArtes();
+    return () => {
+      active = false;
+    };
+  }, [activeTab, isRealDbOrder, pedido]);
 
   // Hotkey listener
   useEffect(() => {
@@ -159,6 +197,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
   ]);
 
   // Sincronizar volumesList com a quantidade de volumes
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (volumes < 1) return;
     setVolumesList(prev => {
@@ -177,6 +216,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       }
     });
   }, [volumes]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const atualizarPesoVolume = (volumeId: number, peso: string) => {
     setVolumesList(prev => prev.map(v => v.id === volumeId ? { ...v, peso } : v));
@@ -365,11 +405,13 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
   };
 
   // Load chat messages
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (isLoaded && pedido) {
       setChatMessages(getChatMessages(idInt));
     }
   }, [isLoaded, idInt, pedido, getChatMessages]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Listen to chat changes
   useEffect(() => {
@@ -560,7 +602,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
             </button>
             <select
               value={pedido.statusPedido}
-              onChange={(e) => updatePedidoStatus(idInt, e.target.value as any)}
+              onChange={(e) => updatePedidoStatus(idInt, e.target.value as PedidoStatus)}
               disabled={showRealPanel}
               className="h-9 px-3 rounded-lg border-2 border-slate-300 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -650,7 +692,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                   <div className="border-t border-slate-100 dark:border-slate-800 pt-3 mt-3">
                     <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Observações Gerais</span>
                     <p className="text-xs text-slate-600 dark:text-slate-400 italic">
-                      "{pedido.observacoesGerais}"
+                      &quot;{pedido.observacoesGerais}&quot;
                     </p>
                   </div>
                 )}
@@ -931,44 +973,246 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
         {/* TAB ARTES */}
         {activeTab === "artes" && (
           <div className="space-y-4">
-            <div className="flex flex-wrap justify-between items-center bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 gap-2">
-              <span className="text-xs font-bold text-slate-500 uppercase">Modo de Visualização da Produção</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowRealPanel(false)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
-                    !showRealPanel
-                      ? "bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 border-slate-900"
-                      : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
-                  }`}
-                >
-                  Simulador Local (Mock)
-                </button>
-                <button
-                  onClick={() => setShowRealPanel(true)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
-                    showRealPanel
-                      ? "bg-blue-600 border-blue-600 text-white"
-                      : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
-                  }`}
-                >
-                  Conexão Real Supabase (Fase 1)
-                </button>
-              </div>
-            </div>
+            {isRealDbOrder ? (
+              <div className="space-y-6 font-sans">
+                {/* Hidden File Input */}
+                <input
+                  type="file"
+                  id="real-arte-file-input"
+                  className="hidden"
+                  accept=".jpg,.jpeg,.png,.pdf"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
 
-            {showRealPanel ? (
-              <ProducaoArtesPanel idInt={idInt} idCliente={pedido?.idCliente} />
+                    const inputEl = e.target;
+                    const modeloId = inputEl.getAttribute("data-modelo-id");
+                    const nomeModelo = inputEl.getAttribute("data-nome-modelo");
+                    if (!modeloId || !nomeModelo) return;
+
+                    setUploadingModelId(modeloId);
+                    showToast({
+                      type: "info",
+                      title: "Enviando arquivo",
+                      description: `Fazendo upload de "${file.name}"...`
+                    });
+
+                    try {
+                      const res = await anexarArteVersao1({
+                        idInt,
+                        idModelo: modeloId,
+                        arquivo: file,
+                        enviadoPor: user?.name || user?.email || "Operador",
+                        enviadoPorUid: user?.id
+                      });
+
+                      if (res.success && res.data) {
+                        showToast({
+                          type: "success",
+                          title: "Arte Anexada",
+                          description: `Arquivo "${file.name}" anexado com sucesso como Versão 1.`
+                        });
+                        
+                        // Recarregar artes do modelo
+                        setArtesMap((prev) => ({
+                          ...prev,
+                          [modeloId]: [res.data!]
+                        }));
+                      } else {
+                        showToast({
+                          type: "error",
+                          title: "Falha ao Salvar Arte",
+                          description: res.error || "Ocorreu um erro ao salvar o registro da arte."
+                        });
+                      }
+                    } catch (err) {
+                      console.error("Erro no fluxo de upload:", err);
+                      showToast({
+                        type: "error",
+                        title: "Erro no Upload",
+                        description: err instanceof Error ? err.message : "Erro inesperado."
+                      });
+                    } finally {
+                      setUploadingModelId(null);
+                      inputEl.value = ""; // Reset
+                    }
+                  }}
+                />
+
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-blue-600" />
+                    <span>Upload e Histórico de Artes (Real)</span>
+                  </h3>
+                  <span className="text-xs text-slate-500 font-semibold bg-slate-100 dark:bg-slate-850 px-2.5 py-1 rounded-lg">
+                    Aguardando Aprovação
+                  </span>
+                </div>
+
+                {(!pedido || !pedido.produtos || pedido.produtos.length === 0) ? (
+                  <div className="rounded-3xl border border-dashed border-slate-350 bg-slate-50 dark:bg-slate-900/10 p-8 text-center">
+                    <Package className="mx-auto h-12 w-12 text-slate-400" />
+                    <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-slate-200">Ainda sem produtos cadastrados</h3>
+                    <p className="mt-2 text-sm text-slate-500">Esta proposta/pedido ainda não possui produtos de produção vinculados.</p>
+                  </div>
+                ) : (
+                  pedido.produtos.map((prod) => (
+                    <div key={prod.id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+                      {/* Cabeçalho do Produto */}
+                      <div className="flex flex-wrap justify-between items-center gap-3">
+                        <div className="space-y-1">
+                          <span className="bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 text-[9px] font-extrabold px-2 py-0.5 rounded uppercase">PRODUTO</span>
+                          <h4 className="text-lg font-black text-slate-900 dark:text-slate-100">{prod.nome}</h4>
+                        </div>
+                        <div className="text-xs font-semibold">
+                          <span className="text-slate-400 text-[10px] uppercase block">Total contratado</span>
+                          <strong className="text-blue-600 dark:text-blue-400">{prod.quantidade.toLocaleString("pt-BR")} un.</strong>
+                        </div>
+                      </div>
+
+                      {/* Modelos e suas Artes */}
+                      <div className="space-y-3">
+                        {(prod.modelos || []).map((m) => {
+                          const modelArtes = artesMap[m.id] || [];
+                          const hasArte = modelArtes.length > 0;
+                          const latestArte = hasArte ? modelArtes[modelArtes.length - 1] : null;
+
+                          return (
+                            <div key={m.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xs">
+                              <div className="space-y-1.5 min-w-[200px]">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold text-slate-900 dark:text-slate-100">{m.nomeModelo}</span>
+                                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400 font-bold">
+                                    {m.quantidade} un.
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-slate-450 font-mono">ID do Modelo: {m.id}</p>
+                                {m.observacoesTecnicas && (
+                                  <p className="text-xs text-slate-500 italic">&quot;{m.observacoesTecnicas}&quot;</p>
+                                )}
+                              </div>
+
+                              {/* Status e Ação de Arte */}
+                              <div className="flex items-center gap-4 flex-wrap">
+                                {latestArte ? (
+                                  <div className="flex items-center gap-4 border border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-950/40 rounded-xl p-2 px-3">
+                                    <FileText className="h-5 w-5 text-blue-600" />
+                                    <div className="text-xs">
+                                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[200px]" title={latestArte.nome_arquivo}>
+                                        {latestArte.nome_arquivo}
+                                      </p>
+                                      <div className="flex gap-2 text-[10px] text-slate-500 font-semibold mt-0.5">
+                                        <span>Versão {latestArte.versao}</span>
+                                        <span>•</span>
+                                        <span className="text-amber-600 dark:text-amber-400">Arte anexada — aguardando revisão</span>
+                                      </div>
+                                    </div>
+                                    {latestArte.url_arquivo && (
+                                      <a
+                                        href={latestArte.url_arquivo}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-450 transition"
+                                        title="Visualizar arquivo"
+                                      >
+                                        <ExternalLink className="h-4 w-4" />
+                                      </a>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-slate-450 flex items-center gap-1.5">
+                                    <AlertTriangle className="h-4 w-4 text-slate-400" />
+                                    <span>Nenhuma arte anexada</span>
+                                  </div>
+                                )}
+
+                                {!hasArte ? (
+                                  <button
+                                    type="button"
+                                    disabled={uploadingModelId === m.id}
+                                    onClick={() => {
+                                      const inputEl = document.getElementById("real-arte-file-input") as HTMLInputElement;
+                                      if (inputEl) {
+                                        inputEl.setAttribute("data-modelo-id", m.id);
+                                        inputEl.setAttribute("data-nome-modelo", m.nomeModelo);
+                                        inputEl.click();
+                                      }
+                                    }}
+                                    className="h-9 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5"
+                                  >
+                                    {uploadingModelId === m.id ? (
+                                      <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        <span>Enviando...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Upload className="h-3.5 w-3.5" />
+                                        <span>Anexar arte</span>
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="h-9 px-4 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 text-xs font-bold rounded-xl cursor-not-allowed"
+                                    title="Este modelo já possui arte anexada. Versionamento será liberado em etapa futura."
+                                  >
+                                    Bloqueado (v1 já anexada)
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             ) : (
-              <ModelosManagerPanel
-                idInt={idInt}
-                produtos={pedido.produtos}
-                onUploadArte={(modeloId, fileName) => uploadArteModelo(idInt, modeloId, fileName)}
-                onLiberarArte={(modeloId) => liberarArteModelo(idInt, modeloId)}
-                onEnviarAprovacaoCliente={(modeloId) => enviarParaAprovacaoCliente(idInt, modeloId)}
-                onAdicionarComentarioInterno={(modeloId, text) => salvarComentarioInternoModelo(idInt, modeloId, text)}
-                onRegistrarDecisaoCliente={(token, status, comentario, clienteNome) => registrarDecisaoCliente(token, status, comentario, clienteNome)}
-              />
+              <>
+                <div className="flex flex-wrap justify-between items-center bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 gap-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase">Modo de Visualização da Produção</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowRealPanel(false)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+                        !showRealPanel
+                          ? "bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 border-slate-900"
+                          : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
+                      }`}
+                    >
+                      Simulador Local (Mock)
+                    </button>
+                    <button
+                      onClick={() => setShowRealPanel(true)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+                        showRealPanel
+                          ? "bg-blue-600 border-blue-600 text-white"
+                          : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
+                      }`}
+                    >
+                      Conexão Real Supabase (Fase 1)
+                    </button>
+                  </div>
+                </div>
+
+                {showRealPanel ? (
+                  <ProducaoArtesPanel idInt={idInt} idCliente={pedido?.idCliente} />
+                ) : (
+                  <ModelosManagerPanel
+                    idInt={idInt}
+                    produtos={pedido.produtos}
+                    onUploadArte={(modeloId, fileName) => uploadArteModelo(idInt, modeloId, fileName)}
+                    onLiberarArte={(modeloId) => liberarArteModelo(idInt, modeloId)}
+                    onEnviarAprovacaoCliente={(modeloId) => enviarParaAprovacaoCliente(idInt, modeloId)}
+                    onAdicionarComentarioInterno={(modeloId, text) => salvarComentarioInternoModelo(idInt, modeloId, text)}
+                    onRegistrarDecisaoCliente={(token, status, comentario, clienteNome) => registrarDecisaoCliente(token, status, comentario, clienteNome)}
+                  />
+                )}
+              </>
             )}
           </div>
         )}
@@ -1007,7 +1251,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                     PRODUÇÃO PAUSADA NO CHÃO DE FÁBRICA
                   </h4>
                   <p className="text-xs">
-                    Motivo: <strong>"{pedido.blockReason}"</strong> {pedido.tempoParadoMinutos && `(há ${pedido.tempoParadoMinutos} minutos)`}
+                    Motivo: <strong>&quot;{pedido.blockReason}&quot;</strong> {pedido.tempoParadoMinutos && `(há ${pedido.tempoParadoMinutos} minutos)`}
                   </p>
                 </div>
                 <button
@@ -1244,7 +1488,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                               <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                               <div>
                                 <span className="font-extrabold text-[9px] text-amber-600 uppercase block tracking-wider mb-0.5">Observações Técnicas do Modelo</span>
-                                <p className="italic leading-relaxed">"{m.observacoesTecnicas}"</p>
+                                <p className="italic leading-relaxed">&quot;{m.observacoesTecnicas}&quot;</p>
                               </div>
                             </div>
                           )}
@@ -1629,7 +1873,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                               <select
                                 disabled={isVolDespachado}
                                 value={vol.status}
-                                onChange={(e) => atualizarStatusVolume(vol.id, e.target.value as any)}
+                                onChange={(e) => atualizarStatusVolume(vol.id, e.target.value as typeof volumesList[0]["status"])}
                                 className={`h-7 px-1.5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-bold focus:outline-none text-slate-800 dark:text-slate-200 cursor-pointer ${
                                   modoGalpao ? "text-xs h-8 px-2" : ""
                                 }`}
@@ -1811,7 +2055,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                 const f = timelineFilter.toLowerCase();
                 if (f === "design") return setor === "design" || setor === "arte";
                 return setor === f;
-              }).map((msg: any) => {
+              }).map((msg: MockChatMessage) => {
                 const isCritical = msg.mensagem.includes("⚠️") || msg.mensagem.includes("❌") || msg.mensagem.includes("bloqueado") || msg.mensagem.includes("DIVERGÊNCIA") || msg.mensagem.toLowerCase().includes("reprovada");
                 const isSuccess = msg.mensagem.includes("✅") || msg.mensagem.includes("concluída") || msg.mensagem.includes("liberada") || msg.mensagem.includes("sucesso");
                 
@@ -1855,7 +2099,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                       {/* Attachments */}
                       {msg.anexos && msg.anexos.length > 0 && (
                         <div className="flex flex-wrap gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-850 mt-1">
-                          {msg.anexos.map((anexo: any, idx: number) => (
+                          {msg.anexos.map((anexo: { name: string; url: string }, idx: number) => (
                             <a
                               key={idx}
                               href={anexo.url}

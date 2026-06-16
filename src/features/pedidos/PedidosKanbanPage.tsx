@@ -31,7 +31,7 @@ import {
   Calendar,
   Clock
 } from "lucide-react";
-import { PedidoMock, PedidoStatus } from "./types";
+import { PedidoMock, PedidoStatus, ModeloMock } from "./types";
 import { formatDate } from "@/lib/formatters/date";
 
 const COLUNAS_KANBAN: { label: string; statusList: PedidoStatus[] }[] = [
@@ -237,7 +237,7 @@ export function PedidosKanbanPage() {
     return t >= todayTime && t <= todayTime + 7 * 24 * 60 * 60 * 1000 && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO";
   }).length;
 
-  const calculateProducaoProgress = (pedido: any) => {
+  const calculateProducaoProgress = (pedido: PedidoProducaoListItem) => {
     if (pedido.statusPedido === "PRONTO_EXPEDICAO" || pedido.statusPedido === "EXPEDIDO") return 100;
     if (pedido.statusPedido === "REVISAO_FINAL") return 80;
     if (pedido.statusPedido === "EM_ACABAMENTO") return 60;
@@ -370,11 +370,11 @@ export function PedidosKanbanPage() {
                 {colPedidos.map((pedido) => {
                   const models = pedido.produtos ? pedido.produtos.flatMap(prod => prod.modelos) : pedido.modelos || [];
                   const totalArtes = models.length;
-                  const aprovadas = models.filter((m: any) => m.statusArte === "LIBERADA" || m.statusArte === "NAO_NECESSARIA").length;
+                  const aprovadas = models.filter((m: ModeloMock) => m.statusArte === "LIBERADA" || m.statusArte === "NAO_NECESSARIA").length;
                   const atrasado = isPedidoAtrasado(pedido);
                   const bloqueado = isPedidoBloqueado(pedido);
-                  const hasReproved = models.some((m: any) => m.statusArte === "REPROVADA_CLIENTE");
-                  const hasPendingArte = models.some((m: any) => m.statusArte === "PENDENTE");
+                  const hasReproved = models.some((m: ModeloMock) => m.statusArte === "REPROVADA_CLIENTE");
+                  const hasPendingArte = models.some((m: ModeloMock) => m.statusArte === "PENDENTE");
 
                   const arteProgress = totalArtes === 0 ? 0 : Math.round((aprovadas / totalArtes) * 100);
                   const prodProgress = calculateProducaoProgress(pedido);
@@ -705,7 +705,7 @@ export function PedidosKanbanPage() {
           <button
             key={btn.key}
             type="button"
-            onClick={() => setActiveFilter(btn.key as any)}
+            onClick={() => setActiveFilter(btn.key as typeof activeFilter)}
             className={`p-2 border rounded-xl flex flex-col justify-between text-left transition select-none ${
               activeFilter === btn.key 
                 ? "bg-[#0b2f4a] border-[#0b2f4a] text-white" 
@@ -752,7 +752,7 @@ export function PedidosKanbanPage() {
         <div>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
             className="w-full h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 focus:outline-none"
           >
             <option value="recente">Ordem: Recentes</option>

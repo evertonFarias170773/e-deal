@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
+import { PedidoMock, ModeloMock } from "./types";
 import { useAppToast } from "@/components/common/AppToast";
 import { AlertCircle, CheckCircle2, XCircle, ZoomIn, ZoomOut, FileText, Send, User } from "lucide-react";
 
@@ -20,8 +21,8 @@ export function ClienteAprovacaoPage({ token }: ClienteAprovacaoPageProps) {
   const [showRejectForm, setShowRejectForm] = useState(false);
 
   // Find the target order and model by token
-  let targetPedido: any = null;
-  let targetModelo: any = null;
+  let targetPedido: PedidoMock | null = null;
+  let targetModelo: ModeloMock | null = null;
 
   for (const p of pedidos) {
     const found = p.modelos.find((m) => m.tokenAprovacao === token);
@@ -305,7 +306,7 @@ export function ClienteAprovacaoPage({ token }: ClienteAprovacaoPageProps) {
           <div className="border-t border-slate-800 pt-4 space-y-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wide block">Histórico de Layouts</span>
             <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
-              {targetModelo.historicoArtes.map((hist: any, idx: number) => (
+              {targetModelo.historicoArtes.map((hist, idx: number) => (
                 <div key={idx} className="flex items-center justify-between text-[11px] text-slate-500 py-0.5">
                   <span className="flex items-center gap-1 truncate">
                     <FileText className="h-3 w-3 text-slate-600" />

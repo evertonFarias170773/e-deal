@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PedidoProducaoListItem, ModeloMock } from "./types";
+import { PedidoProducaoListItem, ModeloMock, ProducaoStatus } from "./types";
 import { listarPedidosOperacionais, listarModelosImpressao } from "./services/pedidos-producao.service";
 import { useAppToast } from "@/components/common/AppToast";
+import type { PedidoModelo } from "@/features/producao/types";
 import {
   Flame,
   AlertCircle,
@@ -22,7 +23,7 @@ export function PainelImpressaoPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
-  const [modelos, setModelos] = useState<any[]>([]);
+  const [modelos, setModelos] = useState<PedidoModelo[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -144,7 +145,7 @@ export function PainelImpressaoPage() {
           nomeModelo: m.nome_modelo,
           quantidade: m.quantidade,
           statusArte: m.status_arte,
-          statusProducao: m.status_producao,
+          statusProducao: m.status_producao as ProducaoStatus,
           obsImpressao: m.obs_impressao || undefined,
           setor: "Digital",
           configImpressao: {

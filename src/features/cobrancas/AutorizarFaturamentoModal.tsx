@@ -22,11 +22,13 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
   const [observacao, setObservacao] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (isOpen) {
       setObservacao("");
     }
   }, [isOpen]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!isOpen) return;
