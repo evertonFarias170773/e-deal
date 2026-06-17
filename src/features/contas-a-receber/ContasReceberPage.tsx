@@ -20,8 +20,6 @@ import { SummaryCard } from "@/components/common/SummaryCard";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
-  boletosDepositosMock,
-  contasReceberMock,
   getTipoRecebivelLabel
 } from "@/lib/mocks/contas-receber.mock";
 import type {
@@ -77,7 +75,7 @@ export function ContasReceberPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("CARTEIRA");
   const [recebiveis, setRecebiveis] = useState<BoletoDepositoMock[]>([]);
   const [boletosDepositos, setBoletosDepositos] = useState<BoletoDepositoMock[]>([]);
-  const [dataSource, setDataSource] = useState<"supabase" | "mock">("mock");
+  const [dataSource, setDataSource] = useState<"supabase" | "mock">("supabase");
   const [isLoadingSource, setIsLoadingSource] = useState(true);
   
   // Date states initialized to dynamic client dates
@@ -162,9 +160,9 @@ export function ContasReceberPage() {
         console.log("[ContasReceber] erro ao carregar dados read-only.", { error });
         if (!isMounted) return;
 
-        setRecebiveis(contasReceberMock as unknown as BoletoDepositoMock[]);
-        setBoletosDepositos(boletosDepositosMock);
-        setDataSource("mock");
+        setRecebiveis([]);
+        setBoletosDepositos([]);
+        setDataSource("supabase");
       } finally {
         if (isMounted) {
           setIsLoadingSource(false);
@@ -671,7 +669,7 @@ export function ContasReceberPage() {
       </section>
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-8">
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 xl:col-span-2">
             <Search className="h-4 w-4 text-[#0f9f9a] shrink-0" />
             <input
@@ -705,18 +703,6 @@ export function ContasReceberPage() {
             <option value="PAID">Pagos</option>
             <option value="CANCELADO">Cancelados</option>
             <option value="NAO_REGISTRADO">Boletos não registrados</option>
-          </select>
-
-          <select value={isAvulsoFilter} onChange={(event) => setIsAvulsoFilter(event.target.value as "TODOS" | "SIM" | "NAO")} className={filterClass}>
-            <option value="TODOS">Todos (Avulso/OS)</option>
-            <option value="SIM">Apenas Avulsos</option>
-            <option value="NAO">Apenas OS</option>
-          </select>
-
-          <select value={isFaturadoFilter} onChange={(event) => setIsFaturadoFilter(event.target.value as "TODOS" | "SIM" | "NAO")} className={filterClass}>
-            <option value="TODOS">Todos (Faturado/Não)</option>
-            <option value="SIM">Apenas Faturados</option>
-            <option value="NAO">Apenas Não Faturados</option>
           </select>
 
           <input
@@ -835,7 +821,7 @@ export function ContasReceberPage() {
 
       {isLoadingSource ? (
         <section className="rounded-3xl border border-dashed border-slate-350 bg-sky-50/50 p-4 text-sm leading-6 text-sky-850 animate-pulse">
-          Buscando registros em tempo real na tabela public.boletos no Supabase. Fallback mock automático em caso de falha.
+          Buscando registros em tempo real na tabela public.boletos no Supabase.
         </section>
       ) : (
         <section className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500 flex justify-between items-center">
@@ -1633,7 +1619,12 @@ function RecebivelCard({
       <div className="mt-4 grid gap-2 text-sm text-slate-600">
         <p>Tipo: {getTipoRecebivelLabel(item.tipo)}</p>
         <p>Total: <strong className="text-slate-900">{formatCurrency(item.valor_atualizado ?? item.valor)}</strong></p>
-        {item.dias_atraso !== undefined && item.dias_atraso > 0 && <p className="text-red-650">Atraso: <strong>{item.dias_atraso} dia(s)</strong></p>}
+        {(() => {
+          const effectiveDias = getEffectiveDiasAtraso(item, today);
+          return effectiveDias !== null && effectiveDias > 0 ? (
+            <p className="text-red-650">Atraso: <strong>{effectiveDias} dia(s)</strong></p>
+          ) : null;
+        })()}
         <p>Venc.: {formatLocalDate(item.vencimento)}</p>
         {(item.status === "PAID" || item.paid_at) && (
           <p>Pagto: {item.paid_at ? formatPaidAtDate(item.paid_at) : "-"}</p>
@@ -1730,7 +1721,12 @@ function RecebivelDetailModal({
           <DetailField label="Parcela" value={item.parcela ? `${item.parcela}/${item.total_parcelas ?? item.parcela}` : "-"} />
           {item.multa !== undefined && item.multa > 0 && <DetailField label="Multa aplicada" value={formatCurrency(item.multa)} />}
           {item.juros_dia !== undefined && item.juros_dia > 0 && <DetailField label="Juros por dia" value={formatCurrency(item.juros_dia)} />}
-          {item.dias_atraso !== undefined && item.dias_atraso > 0 && <DetailField label="Dias de atraso" value={`${item.dias_atraso} dia(s)`} />}
+          {(() => {
+            const effectiveDias = getEffectiveDiasAtraso(item, today);
+            return effectiveDias !== null && effectiveDias > 0 ? (
+              <DetailField label="Dias de atraso" value={`${effectiveDias} dia(s)`} />
+            ) : null;
+          })()}
           {item.is_avulso !== undefined && <DetailField label="Tipo de emissão" value={item.is_avulso ? "Faturamento Avulso" : "Ordem de Serviço (OS)"} />}
           {item.is_faturado !== undefined && <DetailField label="Faturamento faturado" value={item.is_faturado ? "Sim" : "Não"} />}
           {item.linha_digitavel && <DetailField label="Linha Digitável" value={item.linha_digitavel} />}
@@ -1907,6 +1903,17 @@ function isVisualVencido(item: BoletoDepositoMock, _today: string) {
   return item.status === "VENCIDO";
 }
 
+function getEffectiveDiasAtraso(item: BoletoDepositoMock, today: string): number | null {
+  if (!isVisualVencido(item, today)) {
+    return null;
+  }
+  if (item.dias_atraso !== undefined && item.dias_atraso !== null && item.dias_atraso > 0) {
+    return item.dias_atraso;
+  }
+  const diff = diffDays(today, item.vencimento);
+  return diff > 0 ? diff : null;
+}
+
 function isDateInRange(value: string, start: string, end: string) {
   if (start && value < start) return false;
   if (end && value > end) return false;
@@ -2012,6 +2019,14 @@ function filterVisibleRows(
 
     return matchesSearch && matchesEmpresa && matchesTipo && matchesStatus && matchesPeriodo && matchesAvulso && matchesFaturado;
   });
+
+  if (status === "VENCIDOS" || status === "VENCIDO") {
+    return [...filtered].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+  }
+
+  if (status === "A_VENCER") {
+    return [...filtered].sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+  }
 
   if (status !== "PAID") {
     return filtered;

@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { boletosDepositosMock, contasReceberMock, type BoletoDepositoMock } from "@/lib/mocks/contas-receber.mock";
+import { type BoletoDepositoMock } from "@/lib/mocks/contas-receber.mock";
 import { mapSupabaseBoletoRowToBoletoDepositoMock } from "../mappers";
 import type { SupabaseBoletoRow } from "../types.supabase";
 
@@ -53,30 +53,10 @@ export type ContasReceberReadResult = {
   boletosDepositos: BoletoDepositoMock[];
 };
 
-function cloneRecebiveisMock() {
-  return contasReceberMock
-    .filter((item) => item.status !== "A_RECEBER")
-    .map((item) => ({ ...item })) as BoletoDepositoMock[];
-}
-
-function cloneBoletosDepositosMock() {
-  return boletosDepositosMock
-    .filter((item) => item.status !== "A_RECEBER")
-    .map((item) => ({ ...item })) as BoletoDepositoMock[];
-}
-
-function buildMockResult(): ContasReceberReadResult {
-  return {
-    source: "mock",
-    recebiveis: cloneRecebiveisMock(),
-    boletosDepositos: cloneBoletosDepositosMock()
-  };
-}
-
 async function fetchPagamentosRows() {
   const client = getSupabaseClient();
   if (!client) {
-    console.log("[ContasReceber][Debug] envs ausentes - fallback mock ativado.", {
+    console.log("[ContasReceber][Debug] envs ausentes - Supabase indisponível.", {
       hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       hasSupabaseAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
     });
@@ -98,7 +78,7 @@ async function fetchPagamentosRows() {
   const { data, error } = await query.returns<SupabaseBoletoRow[]>();
 
   if (error || !data) {
-    console.log("[ContasReceber][Supabase] consulta falhou - fallback mock ativado.", {
+    console.log("[ContasReceber][Supabase] consulta falhou.", {
       error: error instanceof Error ? error.message : error,
       hasData: Boolean(data)
     });
@@ -106,14 +86,14 @@ async function fetchPagamentosRows() {
   }
 
   if (!Array.isArray(data)) {
-    console.log("[ContasReceber][Supabase] payload invalido - fallback mock ativado.", {
+    console.log("[ContasReceber][Supabase] payload invalido.", {
       payloadType: typeof data
     });
     return null;
   }
 
   if (data.length === 0) {
-    console.log("[ContasReceber][Supabase] retorno vazio - fallback mock ativado.");
+    console.log("[ContasReceber][Supabase] retorno vazio.");
     return null;
   }
 
@@ -139,16 +119,24 @@ function mapRowsToReadModel(rows: SupabaseBoletoRow[]) {
 export async function getContasReceberReadOnlyData(): Promise<ContasReceberReadResult> {
   const rows = await fetchPagamentosRows();
   if (!rows) {
-    return buildMockResult();
+    return {
+      source: "supabase",
+      recebiveis: [],
+      boletosDepositos: []
+    };
   }
 
   const mapped = mapRowsToReadModel(rows);
 
   if (mapped.recebiveis.length === 0 && mapped.boletosDepositos.length === 0) {
-    console.log("[ContasReceber] mapeamento vazio - fallback mock ativado.", {
+    console.log("[ContasReceber] mapeamento vazio.", {
       registrosOriginais: rows.length
     });
-    return buildMockResult();
+    return {
+      source: "supabase",
+      recebiveis: [],
+      boletosDepositos: []
+    };
   }
 
   console.log("[ContasReceber] dados reais aplicados.", {

@@ -1246,7 +1246,7 @@ export function BoletimFormPage() {
   const canStartProd = selectedProposta ? canStartProduction(selectedProposta) : false;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 text-xs text-slate-800 dark:text-slate-250 font-sans pb-12">
+    <form onSubmit={handleSubmit} className="space-y-7 text-xs text-slate-800 dark:text-slate-250 font-sans pb-12">
       {/* Title Header com PageHeader global */}
       <PageHeader
         title={isEditing ? "Edição de OS — Boletim de Entrada" : "Abertura de OS — Boletim de Entrada"}
@@ -1274,7 +1274,7 @@ export function BoletimFormPage() {
       />
 
       {isEditing && (
-        <div className="rounded-3xl border border-sky-100 bg-sky-50/50 p-5 text-sky-900 shadow-xs">
+        <div className="rounded-3xl border border-sky-100 bg-sky-50/50 p-6 text-sky-900 shadow-xs">
           <div className="flex gap-3">
             <AlertCircle className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
             <div>
@@ -1288,8 +1288,8 @@ export function BoletimFormPage() {
       )}
 
       {isEditing ? (
-        <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-2 shadow-sm">
-          <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
+        <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-3 shadow-sm">
+          <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
             1. Proposta/Orçamento Comercial de Origem
           </h3>
           <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -1297,10 +1297,10 @@ export function BoletimFormPage() {
           </div>
         </div>
       ) : (
-        <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-3 shadow-sm">
+        <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
+              <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
                 1. Seleção da Proposta/Orçamento Comercial de Origem
               </h3>
               <p className="text-xs text-slate-500 mt-0.5 font-medium">
@@ -1314,7 +1314,7 @@ export function BoletimFormPage() {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5 relative">
-              <label className="text-[10px] font-bold text-slate-555 uppercase">Buscar Proposta (Digite o Número ou Cliente)</label>
+              <label className="text-xs font-semibold text-slate-500 uppercase">Buscar Proposta (Digite o Número ou Cliente)</label>
               <input
                 type="text"
                 placeholder="Digite o número da proposta (ex: 16821)..."
@@ -1322,7 +1322,7 @@ export function BoletimFormPage() {
                 onChange={handlePropostaChange}
                 onKeyDown={handlePropostaKeyDown}
                 list="propostas-datalist"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
               />
               <datalist id="propostas-datalist">
                 {propostas.map((p) => (
@@ -1339,8 +1339,8 @@ export function BoletimFormPage() {
             </div>
 
             <div className="space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-555 uppercase block">Propostas Recentes</span>
-              <div className="flex flex-wrap gap-2 mt-1">
+              <span className="text-xs font-semibold text-slate-500 uppercase block">Propostas Recentes</span>
+              <div className="flex flex-wrap gap-2 mt-1.5">
                 {recentes.slice(0, 5).map((p) => (
                   <button
                     key={p.id_int}
@@ -1349,7 +1349,7 @@ export function BoletimFormPage() {
                        setPropostaBusca(String(p.id_int));
                        selectProposta(p.id_int);
                     }}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold transition flex items-center gap-1.5 ${
+                    className={`px-3.5 py-2 rounded-xl border text-xs font-mono font-semibold transition flex items-center gap-1.5 ${
                       selectedProposta?.id_int === p.id_int
                         ? "bg-[#0b2f4a] border-[#0b2f4a] text-white font-bold"
                         : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
@@ -1376,22 +1376,22 @@ export function BoletimFormPage() {
       ) : (
         <>
           {/* HEADER DE STATUS OPERACIONAL */}
-          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs shadow-sm">
+          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 grid grid-cols-2 md:grid-cols-4 gap-5 text-xs shadow-sm">
             <div>
-              <span className="text-[10px] font-bold text-slate-555 uppercase block">Proposta de Origem</span>
-              <strong className="text-sm font-mono text-[#0b2f4a] dark:text-slate-100">#{selectedProposta.id_int}</strong>
+              <span className="text-xs font-semibold text-slate-500 uppercase block">Proposta de Origem</span>
+              <strong className="text-base font-mono text-[#0b2f4a] dark:text-slate-100">#{selectedProposta.id_int}</strong>
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-555 uppercase block">Cliente</span>
-              <strong className="text-sm text-slate-800 dark:text-slate-200 truncate block">{clienteNome}</strong>
+              <span className="text-xs font-semibold text-slate-500 uppercase block">Cliente</span>
+              <strong className="text-base text-slate-800 dark:text-slate-200 truncate block">{clienteNome}</strong>
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-555 uppercase block">Status Comercial / Financeiro</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase block">Status Comercial / Financeiro</span>
               <div className="flex items-center gap-1.5 mt-1">
-                <span className="px-2 py-0.5 rounded-xl bg-blue-50 text-blue-800 font-bold uppercase text-[9px] border border-blue-200">
+                <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-blue-800 font-bold uppercase text-[10px] border border-blue-200">
                   {selectedProposta.status}
                 </span>
-                <span className={`px-2 py-0.5 rounded-xl font-bold uppercase text-[9px] border ${
+                <span className={`px-2.5 py-1 rounded-xl font-bold uppercase text-[10px] border ${
                   canStartProd 
                     ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                     : "bg-amber-50 text-amber-800 border-amber-250 animate-pulse"
@@ -1402,17 +1402,17 @@ export function BoletimFormPage() {
             </div>
 
             <div>
-              <span className="text-[10px] font-bold text-slate-555 uppercase block">Status Operacional OS</span>
-              <strong className="text-xs text-slate-800 flex items-center gap-1.5 mt-1">
+              <span className="text-xs font-semibold text-slate-500 uppercase block">Status Operacional OS</span>
+              <strong className="text-sm text-slate-800 flex items-center gap-1.5 mt-1.5">
                 <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping"></span>
-                <span className="font-extrabold text-[#0b2f4a]">ARTE EM ANDAMENTO</span>
+                <span className="font-bold text-[#0b2f4a]">ARTE EM ANDAMENTO</span>
               </strong>
             </div>
           </div>
  
           {/* ALERTA DE BLOQUEIO FINANCEIRO */}
           {!canStartProd && (
-            <div className="rounded-3xl border border-amber-200 bg-amber-50/50 text-amber-900 p-5 text-xs flex items-start gap-3 shadow-xs">
+            <div className="rounded-3xl border border-amber-200 bg-amber-50/50 text-amber-900 p-6 text-xs flex items-start gap-3.5 shadow-xs">
               <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
                 <strong className="font-semibold text-sm block mb-0.5">Produção bloqueada até confirmação financeira.</strong>
@@ -1428,56 +1428,56 @@ export function BoletimFormPage() {
           <div className="space-y-4">
               
               {/* BLOCO 1 — DADOS PRINCIPAIS */}
-              <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-4 shadow-sm">
-                <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5">
+              <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-6 shadow-sm">
+                <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-1.5">
                   BLOCO 1 — Identificação Comercial
                 </h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-555 uppercase">Cliente</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
                     <input
                       type="text"
                       readOnly
                       value={clienteNome}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 cursor-not-allowed"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-555 uppercase">Contato</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Contato</label>
                     <input
                       type="text"
                       readOnly
                       value={contatoNome}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 cursor-not-allowed"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-555 uppercase">Empresa Industrial</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Empresa Industrial</label>
                     <input
                       type="text"
                       readOnly
                       value={empresa}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 cursor-not-allowed"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-555 uppercase">Vendedor</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Vendedor</label>
                     <input
                       type="text"
                       readOnly
                       value={vendedor}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 cursor-not-allowed"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-555 uppercase">Data Limite de Entrega *</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Data Limite de Entrega *</label>
                     <input
                       type="date"
                       required
@@ -1485,30 +1485,30 @@ export function BoletimFormPage() {
                       disabled={isEditing}
                       value={dataPrevistaEntrega}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDataPrevistaEntrega(e.target.value)}
-                      className={`w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-mono font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-slate-50 text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                      className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-mono font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-slate-50 text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-555 uppercase">Pagamento</label>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Pagamento</label>
                     <input
                       type="text"
                       readOnly
                       value={formaPagamento}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 cursor-not-allowed"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
                     />
                   </div>
 
-                  <div className="flex items-center gap-2 pt-5">
+                  <div className="flex items-center gap-2.5 pt-6">
                     <input
                       type="checkbox"
                       id="urgente-toggle"
                       disabled={isEditing}
                       checked={urgente}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrgente(e.target.checked)}
-                      className={`h-4.5 w-4.5 text-red-600 focus:ring-red-500 border-slate-300 rounded bg-white ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                      className={`h-5 w-5 text-red-655 focus:ring-red-500 border-slate-300 rounded bg-white ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                     />
-                    <label htmlFor="urgente-toggle" className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wide cursor-pointer select-none">
+                    <label htmlFor="urgente-toggle" className="text-xs font-bold text-red-655 dark:text-red-400 uppercase tracking-wide cursor-pointer select-none">
                       ⚡ PRIORIDADE URGENTE
                     </label>
                   </div>
@@ -1516,11 +1516,11 @@ export function BoletimFormPage() {
               </div>
             
             {/* Event Details subgroup */}
-            <div className="pt-2 space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-555 uppercase block">Subgrupo: Informações do Evento (Opcional)</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50/50 p-5 rounded-2xl border border-slate-200">
+            <div className="pt-3 space-y-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase block">Subgrupo: Informações do Evento (Opcional)</label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-slate-50/50 p-6 rounded-3xl border border-slate-200">
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-slate-550 uppercase">Nome do Evento</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Nome do Evento</span>
                   <input
                     type="text"
                     placeholder="Ex: Congresso Nacional 2026"
@@ -1528,22 +1528,22 @@ export function BoletimFormPage() {
                     disabled={isEditing}
                     value={dadosEventoNome}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoNome(e.target.value)}
-                    className={`w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-550" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                    className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-550" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-slate-555 uppercase">Data Evento</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Data Evento</span>
                   <input
                     type="date"
                     readOnly={isEditing}
                     disabled={isEditing}
                     value={dadosEventoData}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoData(e.target.value)}
-                    className={`w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs font-semibold font-mono transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-550" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                    className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold font-mono transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-550" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold text-slate-555 uppercase">Local</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Local</span>
                   <input
                     type="text"
                     placeholder="Ex: Expocentro, SP"
@@ -1551,33 +1551,33 @@ export function BoletimFormPage() {
                     disabled={isEditing}
                     value={dadosEventoLocal}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoLocal(e.target.value)}
-                    className={`w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-555" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                    className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-555" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                   />
                 </div>
               </div>
             </div>
             
             {/* BLOCO 2 — BRIEFING COMERCIAL */}
-            <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-4 shadow-sm">
-              <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5">
+            <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
+              <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-1.5">
                 BLOCO 2 — Briefing Comercial (Vendas)
               </h3>
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-555 uppercase">Briefing Comercial & Instruções de Venda</label>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase">Briefing Comercial & Instruções de Venda</label>
                 <textarea
                   placeholder="Insira as instruções do cliente, recomendações, observações comerciais e restrições operacionais do pedido..."
                   rows={4}
                   value={briefingOperacional}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBriefingOperacional(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none resize-y transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-700 placeholder-slate-400 outline-none resize-y transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
                 />
               </div>
             </div>
 
           {/* BLOCO 3 & 4 — PRODUTOS E MODELOS */}
-          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-4 shadow-sm">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider flex items-center gap-1.5">
+          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-6 shadow-sm">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider flex items-center gap-1.5">
                 BLOCO 3 & 4 — Produtos & Lotes Técnicos (PCP)
               </h3>
               {/* Produtos são herdados da proposta de origem */}
@@ -1592,15 +1592,15 @@ export function BoletimFormPage() {
                 return (
                   <div
                     key={p.id}
-                    className="rounded-2xl border border-[#d7e5e8] bg-slate-50/50 p-5 space-y-4 shadow-sm relative"
+                    className="rounded-3xl border border-[#d7e5e8] bg-slate-50/50 p-6 space-y-5 shadow-sm relative"
                   >
                     {/* Product row details */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-150 pb-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3.5 border-b border-slate-150 pb-3">
                       <div className="flex flex-wrap items-center gap-4">
                         <div className="flex items-center gap-2">
-                          <Boxes className="h-4.5 w-4.5 text-[#0b2f4a]" />
+                          <Boxes className="h-5 w-5 text-[#0b2f4a]" />
                           <div className="flex items-center gap-1.5">
-                            <span className="font-bold uppercase text-[10px] text-slate-400">Produto {pIndex + 1}:</span>
+                            <span className="font-bold uppercase text-xs text-slate-400">Produto {pIndex + 1}:</span>
                             <span className="font-extrabold text-sm text-[#0b2f4a] uppercase">{p.nome}</span>
                             <span className="ml-2 bg-slate-100 text-slate-650 text-[10px] px-2 py-0.5 rounded font-mono font-bold">
                               Qtd Proposta: {maxQty.toLocaleString("pt-BR")} un
@@ -1609,13 +1609,13 @@ export function BoletimFormPage() {
                         </div>
 
                         {/* Setor PCP selection */}
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-slate-555 uppercase">Setor PCP:</span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xs font-semibold text-slate-500 uppercase">Setor PCP:</span>
                           <select
                             disabled={isEditing}
                             value={p.setor || "IMPRESSÃO"}
                             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateProductSector(p.id, e.target.value)}
-                            className={`rounded-xl border border-slate-200 text-xs px-3 py-1 font-semibold outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "bg-slate-100 text-slate-500 cursor-not-allowed" : "bg-white text-slate-700 cursor-pointer"}`}
+                            className={`rounded-xl border border-slate-200 text-xs px-3.5 py-1.5 font-bold outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "bg-slate-100 text-slate-500 cursor-not-allowed" : "bg-white text-slate-700 cursor-pointer"}`}
                           >
                             <option value="IMPRESSÃO">IMPRESSÃO</option>
                             <option value="TEXTIL">TEXTIL</option>
@@ -1629,14 +1629,14 @@ export function BoletimFormPage() {
                     </div>
 
                   {/* Models list nested */}
-                  <div className="space-y-2">
+                  <div className="space-y-3.5">
                     <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-bold text-slate-455 uppercase tracking-tight">Especificação dos Modelos (Subitens)</span>
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-tight">Especificação dos Modelos (Subitens)</span>
                       {!isEditing && (
                         <button
                           type="button"
                           onClick={() => addModelRow(p.id)}
-                          className="h-5.5 px-2 text-slate-700 hover:bg-slate-50 dark:text-slate-350 dark:hover:bg-slate-850 border border-slate-205 dark:border-slate-800 rounded-md font-bold flex items-center gap-0.5 transition"
+                          className="h-8 px-3.5 text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-xl font-bold flex items-center gap-1 transition"
                         >
                           <Plus className="h-3 w-3" />
                           <span>Adicionar Lote</span>
@@ -1644,18 +1644,18 @@ export function BoletimFormPage() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                       {p.modelos.map((m) => {
                         const validation = getRowValidationError(p, m);
                         return (
                           <div 
                             key={m.id} 
-                            className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 relative shadow-xs hover:border-slate-300 transition"
+                            className="rounded-3xl border border-slate-200 bg-white p-6 space-y-5 relative shadow-xs hover:border-slate-300 transition"
                           >
                             {/* Header do Card (Título do Lote + Botão Deletar) */}
-                            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
+                            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
                               <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-black uppercase text-[#0b2f4a] dark:text-slate-350 tracking-wider">
+                                <span className="text-xs font-bold uppercase text-[#0b2f4a] dark:text-slate-350 tracking-wider">
                                   Lote / Modelo
                                 </span>
                                 <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
@@ -1675,9 +1675,9 @@ export function BoletimFormPage() {
                             </div>
 
                             {/* Linha 1: Nome, Cor/Material e Qtd */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <div className="space-y-1">
-                                <label className="text-[8px] font-extrabold text-slate-500 uppercase block">Nome do Lote *</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase block">Nome do Lote *</label>
                                 <input
                                   type="text"
                                   placeholder="Ex: Lote VIP"
@@ -1699,8 +1699,8 @@ export function BoletimFormPage() {
                                 )}
                               </div>
 
-                              <div className="space-y-1">
-                                <label className="text-[8px] font-extrabold text-slate-500 uppercase block">Cor / Material</label>
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase block">Cor / Material</label>
                                 <select
                                   disabled={isEditing}
                                   value={m.corMaterial || "Branco"}
@@ -1720,8 +1720,8 @@ export function BoletimFormPage() {
                                 </select>
                               </div>
 
-                              <div className="space-y-1">
-                                <label className="text-[8px] font-extrabold text-slate-500 uppercase block">Quantidade *</label>
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase block">Quantidade *</label>
                                 <input
                                   type="number"
                                   min={1}
@@ -1736,25 +1736,25 @@ export function BoletimFormPage() {
                             </div>
 
                             {/* Linha 2: Checkboxes Frente/Verso, RFID e Numeração */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                              <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                                <div className="flex items-center gap-1.5">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                              <div className="flex items-center gap-3.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                <div className="flex items-center gap-2">
                                   <input
                                     type="checkbox"
                                     id={`verso-${m.id}`}
                                     disabled={isEditing}
                                     checked={m.verso}
                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "verso", e.target.checked)}
-                                    className={`h-4.5 w-4.5 rounded border-slate-305 text-purple-600 focus:ring-purple-500 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                                    className={`h-5 w-5 rounded border-slate-300 text-purple-600 focus:ring-purple-500 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                                   />
-                                  <label htmlFor={`verso-${m.id}`} className="text-[9px] font-extrabold text-slate-600 uppercase cursor-pointer select-none">
+                                  <label htmlFor={`verso-${m.id}`} className="text-xs font-semibold text-slate-655 uppercase cursor-pointer select-none">
                                     Frente + Verso (F+V)
                                   </label>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                                <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-3.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                                <div className="flex items-center gap-2">
                                   <input
                                     type="checkbox"
                                     id={`rfid-${m.id}`}
@@ -1770,21 +1770,21 @@ export function BoletimFormPage() {
                                         isRfid ? (baseNotes ? `${baseNotes} RFID: Sim.` : "RFID: Sim.") : (baseNotes ? `${baseNotes} RFID: Não.` : "RFID: Não.")
                                       );
                                     }}
-                                    className={`h-4.5 w-4.5 rounded border-slate-305 text-blue-600 focus:ring-blue-500 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                                    className={`h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                                   />
-                                  <label htmlFor={`rfid-${m.id}`} className="text-[9px] font-extrabold text-slate-600 uppercase cursor-pointer select-none">
+                                  <label htmlFor={`rfid-${m.id}`} className="text-xs font-semibold text-slate-650 uppercase cursor-pointer select-none">
                                     RFID / NFC Integrado
                                   </label>
                                 </div>
                               </div>
 
-                              <div className="space-y-1">
-                                <label className="text-[8px] font-extrabold text-slate-500 uppercase block">Tipo de Numeração</label>
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase block">Tipo de Numeração</label>
                                 <select
                                   disabled={isEditing}
                                   value={m.configImpressao.tipoNumeracao}
                                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
-                                  className={`w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                                  className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                                 >
                                   <option value="SEM_NUMERACAO">Sem Numeração</option>
                                   <option value="SEQUENCIAL">Sequencial</option>
@@ -1794,10 +1794,10 @@ export function BoletimFormPage() {
                             </div>
                             
                             {/* Linha 3: Gabarito e Faixas / CSV */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                               {/* Gabarito Combobox */}
-                              <div className="space-y-1 relative">
-                                <label className="text-[8px] font-extrabold text-slate-550 dark:text-slate-450 uppercase block">Gabarito Operacional</label>
+                              <div className="space-y-1.5 relative">
+                                <label className="text-xs font-semibold text-slate-500 uppercase block">Gabarito Operacional</label>
                                 <div className="flex items-center gap-1">
                                   <div className="relative flex-1">
                                     <button
@@ -1817,7 +1817,7 @@ export function BoletimFormPage() {
                                           setGabaritoSearchQuery("");
                                         }
                                       }}
-                                      className={`w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold outline-none flex items-center justify-between gap-1 shadow-sm hover:border-slate-300 transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                                      className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none flex items-center justify-between gap-1 shadow-sm hover:border-slate-300 transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                                     >
                                       <span className="truncate">
                                         {getGabaritoName(m.gabaritoNumeracao)}
@@ -1903,20 +1903,20 @@ export function BoletimFormPage() {
                                           });
                                         }
                                       }}
-                                      className="h-9.5 w-9.5 rounded-xl border border-slate-205 bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center shrink-0 transition"
+                                      className="h-10 w-10 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center justify-center shrink-0 transition"
                                       title="Ver gabarito visual"
                                     >
-                                      <Eye className="h-4 w-4" />
+                                      <Eye className="h-4.5 w-4.5" />
                                     </button>
                                   )}
                                 </div>
                               </div>
 
                               {/* Faixas de Numeração ou CSV */}
-                              <div className="space-y-1">
+                              <div className="space-y-1.5">
                                 {m.configImpressao.tipoNumeracao === "SEQUENCIAL" ? (
                                   <div>
-                                    <label className="text-[8px] font-extrabold text-slate-550 dark:text-slate-455 uppercase block">Faixa Numérica (Início / Fim)</label>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Faixa Numérica (Início / Fim)</label>
                                     <div className="flex gap-2 w-full">
                                       <input
                                         type="number"
@@ -1926,22 +1926,22 @@ export function BoletimFormPage() {
                                         disabled={isEditing}
                                         value={m.numeracaoInicial || ""}
                                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
-                                        className={`w-1/2 rounded-xl border border-slate-200 px-3 py-1.5 text-right font-mono text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                                        className={`w-1/2 rounded-xl border border-slate-200 px-3 py-2 text-right font-mono text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                                       />
                                       <input
                                         type="number"
                                         placeholder="Fim"
                                         readOnly
                                         value={m.numeracaoFinal || ""}
-                                        className="w-1/2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-right font-mono text-xs font-semibold text-slate-500 cursor-not-allowed outline-none"
+                                        className="w-1/2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-right font-mono text-xs font-semibold text-slate-500 cursor-not-allowed outline-none"
                                       />
                                     </div>
                                   </div>
                                 ) : m.configImpressao.tipoNumeracao === "CUSTOMIZADA" ? (
                                   <div>
-                                    <label className="text-[8px] font-extrabold text-slate-500 uppercase block text-left">Planilha de Dados (.CSV)</label>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase block text-left mb-1">Planilha de Dados (.CSV)</label>
                                     {m.csvDadosVariaveisUrl ? (
-                                      <div className="flex items-center justify-between border border-emerald-200 bg-emerald-50 px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-700 h-9.5">
+                                      <div className="flex items-center justify-between border border-emerald-200 bg-emerald-50 px-3 py-2 rounded-2xl text-xs font-semibold text-emerald-700 h-10">
                                         <span className="truncate max-w-[130px] font-mono">{m.csvDadosVariaveisUrl}</span>
                                         <button
                                           type="button"
@@ -1957,7 +1957,7 @@ export function BoletimFormPage() {
                                         type="button"
                                         disabled={isEditing}
                                         onClick={() => handleMockImportCSV(p.id, m.id, m.nomeModelo)}
-                                        className={`w-full h-9.5 rounded-xl border text-xs font-semibold transition ${isEditing ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" : "bg-slate-150 hover:bg-slate-205 text-slate-700 border-slate-300"}`}
+                                        className={`w-full h-10 rounded-2xl border text-xs font-semibold transition ${isEditing ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" : "bg-slate-150 hover:bg-slate-205 text-slate-700 border-slate-300"}`}
                                       >
                                         Importar CSV Variáveis
                                       </button>
@@ -1965,8 +1965,8 @@ export function BoletimFormPage() {
                                   </div>
                                 ) : (
                                   <div>
-                                    <label className="text-[8px] font-extrabold text-slate-500 uppercase block">Especificação de Dados</label>
-                                    <div className="h-9.5 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-center text-slate-450 font-semibold text-xs">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Especificação de Dados</label>
+                                    <div className="h-10 bg-slate-100 rounded-2xl border border-slate-200 flex items-center justify-center text-slate-450 font-semibold text-xs">
                                       Sem Numeração Variável
                                     </div>
                                   </div>
@@ -1999,15 +1999,15 @@ export function BoletimFormPage() {
           </div>
 
           {/* BLOCO 5 — BRIEFING E DESIGN */}
-          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-4 shadow-sm">
-            <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-2 flex items-center gap-1.5">
+          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
+            <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-1.5">
               BLOCO 5 — Briefing e Design
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {/* Briefing da Arte */}
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-555 uppercase">Briefing da arte / layout</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Briefing da arte / layout</label>
                 <textarea
                   placeholder="Orientações de arte (logotipos, fontes, paleta de cores, posicionamentos de numeração)."
                   rows={3}
@@ -2021,9 +2021,9 @@ export function BoletimFormPage() {
               </div>
 
               {/* Designer Responsável & Equipe */}
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-555 uppercase block">Designer responsável *</label>
+                  <label className="text-xs font-semibold text-slate-500 uppercase block">Designer responsável *</label>
                   <select
                     required
                     value={selectedDesigner}
@@ -2031,7 +2031,7 @@ export function BoletimFormPage() {
                       setSelectedDesigner(e.target.value);
                       setAtribuidoDesigner(false);
                     }}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
                   >
                     <option value="">Selecione o Designer...</option>
                     {designersList.map(d => (
@@ -2097,9 +2097,9 @@ export function BoletimFormPage() {
             </div>
 
             {/* Upload Area / Attachments */}
-            <div className="border-t border-slate-200/40 dark:border-slate-800/30 pt-3.5 space-y-2">
+            <div className="border-t border-slate-200/40 dark:border-slate-800/30 pt-4 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase block">
                   Arquivos de apoio para o designer
                 </span>
                 
@@ -2111,7 +2111,7 @@ export function BoletimFormPage() {
                       const inputEl = document.getElementById("support-file-input") as HTMLInputElement;
                       if (inputEl) inputEl.click();
                     }}
-                    className="h-6.5 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition border border-slate-205 dark:border-slate-800"
+                    className="h-8 px-3 bg-slate-100 hover:bg-slate-205 text-slate-700 rounded-xl text-[10px] font-bold flex items-center gap-1 transition border border-slate-200"
                   >
                     {uploadingSupportFile ? "Enviando..." : "📎 Anexar arquivos"}
                   </button>
@@ -2133,7 +2133,7 @@ export function BoletimFormPage() {
                       Carregando arquivos de apoio...
                     </div>
                   ) : supportFiles.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-2">
                       {supportFiles.map((file) => {
                         const fileExt = file.name.split(".").pop()?.toUpperCase() || "ARQUIVO";
                         const formatFileSize = (bytes: any) => {
@@ -2146,14 +2146,14 @@ export function BoletimFormPage() {
                         };
 
                         return (
-                          <div key={file.name} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] shadow-xs">
+                          <div key={file.name} className="flex items-center justify-between p-3 rounded-2xl bg-white border border-slate-200 text-xs shadow-sm hover:shadow transition">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <FileText className="h-4 w-4 text-blue-600 shrink-0" />
+                              <FileText className="h-4.5 w-4.5 text-blue-600 shrink-0" />
                               <div className="min-w-0">
-                                <p className="font-bold truncate text-slate-700 dark:text-slate-300 max-w-[130px]" title={file.name}>
+                                <p className="font-bold truncate text-slate-700 max-w-[130px]" title={file.name}>
                                   {file.name.substring(file.name.indexOf("_") + 1)}
                                 </p>
-                                <p className="text-[8px] text-slate-400">
+                                <p className="text-[9px] text-slate-500">
                                   {fileExt} {file.size ? `• ${formatFileSize(file.size)}` : ""}
                                 </p>
                               </div>
@@ -2163,15 +2163,15 @@ export function BoletimFormPage() {
                                 href={file.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-blue-600 hover:underline font-bold text-[9px] flex items-center gap-0.5"
+                                className="text-blue-600 hover:underline font-bold text-[10px] flex items-center gap-0.5"
                               >
                                 Download
-                                <ExternalLink className="h-3 w-3" />
+                                <ExternalLink className="h-3.5 w-3.5" />
                               </a>
                               <button
                                 type="button"
                                 onClick={() => handleRemoveSupportFile(file.name)}
-                                className="text-red-500 hover:text-red-700 font-bold text-[9px]"
+                                className="text-red-500 hover:text-red-700 font-bold text-[10px]"
                               >
                                 Remover
                               </button>
@@ -2195,9 +2195,9 @@ export function BoletimFormPage() {
           </div>
           
           {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS) */}
-          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
+          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
                 Configurações Técnicas e Acabamento (PCP)
               </h3>
               <span className="text-[9px] font-bold text-[#0b2f4a]">
@@ -2205,9 +2205,9 @@ export function BoletimFormPage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-555 uppercase block">
+                <label className="text-xs font-semibold text-slate-500 uppercase block">
                   Observações Técnicas de Impressão (Bloco 6)
                 </label>
                 <textarea
@@ -2220,7 +2220,7 @@ export function BoletimFormPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-555 uppercase block">
+                <label className="text-xs font-semibold text-slate-500 uppercase block">
                   Observações Técnicas de Acabamento (Bloco 7)
                 </label>
                 <textarea
@@ -2235,19 +2235,19 @@ export function BoletimFormPage() {
           </div>
 
           {/* BLOCO 8 — REVISÃO / LOGÍSTICA */}
-                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 space-y-4 shadow-sm">
-                            <h3 className="text-xs font-black uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-2">
+                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
+                            <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3">
                               BLOCO 8 — Revisão / Logística
                             </h3>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                               <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-555 uppercase">Modalidade de Envio</label>
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Modalidade de Envio</label>
                                 <select
                                   disabled={isEditing}
                                   value={transporte}
                                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTransporte(e.target.value)}
-                                  className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 cursor-pointer"}`}
+                                  className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 cursor-pointer"}`}
                                 >
                                   <option value="Retirada">Retirada em Mãos (Balcão)</option>
                                   <option value="Motoboy">Entrega Via Motoboy</option>
@@ -2258,7 +2258,7 @@ export function BoletimFormPage() {
                               </div>
 
                               <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-555 uppercase">Volumes Estimados</label>
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Volumes Estimados</label>
                                 <input
                                   type="number"
                                   min={1}
@@ -2267,41 +2267,41 @@ export function BoletimFormPage() {
                                   disabled={isEditing}
                                   value={volumes}
                                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVolumes(Number(e.target.value) || 1)}
-                                  className={`w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold font-mono transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-slate-50 text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                                  className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold font-mono transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-slate-50 text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
                                 />
                               </div>
 
                               <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-555 uppercase">Observações Críticas / Restrições (OS)</label>
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Observações Críticas / Restrições (OS)</label>
                                 <input
                                   type="text"
                                   placeholder="Restrição de entrega, horários ou avisos gerais."
                                   value={obsCriticas}
                                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setObsCriticas(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
                                 />
                               </div>
                             </div>
                           </div>
                           
                           {/* BLOCO DE RESUMO FINAL E SUBMISSÃO */}
-                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
                             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-semibold text-slate-700">
                               <div>
-                                <span className="text-slate-500 uppercase mr-1.5">Total de Itens:</span>
-                                <strong className="text-[#0b2f4a] font-mono text-sm">{totalQuantidade.toLocaleString("pt-BR")} un</strong>
+                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Total de Itens:</span>
+                                <strong className="text-[#0b2f4a] font-mono text-base">{totalQuantidade.toLocaleString("pt-BR")} un</strong>
                               </div>
                               <div>
-                                <span className="text-slate-500 uppercase mr-1.5">Peso Teórico Total:</span>
-                                <strong className="text-[#0b2f4a] font-mono text-sm">{calculateTotalWeight()} kg</strong>
+                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Peso Teórico Total:</span>
+                                <strong className="text-[#0b2f4a] font-mono text-base">{calculateTotalWeight()} kg</strong>
                               </div>
                               <div>
-                                <span className="text-slate-500 uppercase mr-1.5">Volumes:</span>
-                                <strong className="text-[#0b2f4a] font-mono text-sm">{volumes} caixas</strong>
+                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Volumes:</span>
+                                <strong className="text-[#0b2f4a] font-mono text-base">{volumes} caixas</strong>
                               </div>
                               <div>
-                                <span className="text-slate-500 uppercase mr-1.5">Urgência:</span>
-                                <span className={`px-2 py-0.5 rounded-xl font-bold text-[10px] border ${
+                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Urgência:</span>
+                                <span className={`px-2.5 py-1 rounded-xl font-bold text-xs border ${
                                   urgente 
                                     ? "bg-red-50 text-red-800 border-red-200 animate-pulse" 
                                     : "bg-slate-100 text-slate-700 border border-slate-200"
@@ -2314,7 +2314,7 @@ export function BoletimFormPage() {
                             <div className="flex items-center gap-3">
                               <button
                                 type="submit"
-                                className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 text-sm font-semibold shadow transition flex items-center justify-center gap-1.5"
+                                className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 text-sm font-bold tracking-wider shadow transition flex items-center justify-center gap-1.5"
                               >
                                 <Save className="h-4 w-4" />
                                 <span>{isEditing ? "Salvar Alterações" : "Salvar e Iniciar OS"}</span>
