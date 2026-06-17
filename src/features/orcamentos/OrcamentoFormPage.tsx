@@ -976,7 +976,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         clienteId: nextCliente.idCliente.toString(),
         contatoId: nextContacts[0]?.id ?? "",
         enderecoId: nextEndereco?.id ?? "",
-        compradorId: "",
+        compradorId: nextCliente.idCliente.toString(),
         vendedor: hasSeller ? defaultVendedor : "",
         empresa: fallbackEmpresa && fallbackEmpresa !== "Não informado" ? fallbackEmpresa : current.empresa,
         itens: recalculatedItems,
@@ -1013,7 +1013,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         clienteId: basicCliente.idCliente.toString(),
         contatoId: "",
         enderecoId: "",
-        compradorId: "",
+        compradorId: basicCliente.idCliente.toString(),
         vendedor: hasSeller ? defaultVendedor : "",
         empresa: basicCliente.empresaPadrao && basicCliente.empresaPadrao !== "Não informado" ? basicCliente.empresaPadrao : current.empresa,
         itens: recalculatedItems,
@@ -1998,22 +1998,41 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     <button type="button" onClick={() => setIsContactModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo contato</button>
                   </FormSection>
 
-                  <FormSection title="4. Dados de faturamento" description="Selecione o sócio ou vínculo comercial responsável pelo faturamento.">
+                  <FormSection title="4. Dados para nota fiscal" description="Selecione o sócio ou vínculo comercial responsável pelo faturamento.">
                     {!cliente ? (
-                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Selecione um cliente para visualizar os compradores autorizados.</p>
-                    ) : cliente.vinculosComerciais && cliente.vinculosComerciais.length > 0 ? (
-                      <SelectorGrid
-                        items={cliente.vinculosComerciais}
-                        selectedId={form.compradorId}
-                        onSelect={handleSelectComprador}
-                        render={(vinculo) => ({
-                          title: vinculo.nome,
-                          subtitle: vinculo.tipoRelacao,
-                          detail: vinculo.documento
-                        })}
-                      />
+                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Selecione um cliente para visualizar as opções.</p>
                     ) : (
-                      <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum comprador ou autorizado vinculado a este cliente.</p>
+                      <>
+                        <SelectorGrid
+                          items={[
+                            {
+                              id: cliente.id.toString(),
+                              nome: cliente.nome,
+                              tipoRelacao: "Cadastro principal",
+                              documento: cliente.documento
+                            },
+                            ...(cliente.vinculosComerciais || [])
+                          ]}
+                          selectedId={form.compradorId || cliente.id.toString()}
+                          onSelect={handleSelectComprador}
+                          render={(vinculo) => ({
+                            title: vinculo.nome,
+                            subtitle: vinculo.tipoRelacao,
+                            detail: vinculo.documento
+                          })}
+                        />
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            if (cliente?.id) {
+                              window.open(`/cadastros/${cliente.id}/editar`, "_blank");
+                            }
+                          }} 
+                          className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a] transition hover:bg-slate-50"
+                        >
+                          + Adicionar novo sócio
+                        </button>
+                      </>
                     )}
                   </FormSection>
 

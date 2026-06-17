@@ -64,6 +64,8 @@ export type SupabaseEnderecoRow = {
   Latitude?: SupabaseNullableValue;
   longitude?: SupabaseNullableValue;
   distancia?: SupabaseNullableValue;
+  recebedor?: SupabaseNullableValue;
+  cpf_recebedor?: SupabaseNullableValue;
 };
 
 export type SupabaseContatoRow = {

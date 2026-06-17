@@ -179,7 +179,9 @@ export function mapSupabaseEnderecoRowToCadastroEndereco(row: SupabaseEnderecoRo
     bairro: toText(row.bairro),
     cidade: toText(row.cidade),
     uf: toText(row.uf),
-    obs: toText(row.obs) || undefined
+    obs: toText(row.obs) || undefined,
+    recebedor: toText(row.recebedor) || undefined,
+    cpfRecebedor: toText(row.cpf_recebedor) || undefined
   };
 }
 

@@ -13,6 +13,8 @@ export type CadastroEndereco = {
   cidade: string;
   uf: string;
   obs?: string;
+  recebedor?: string;
+  cpfRecebedor?: string;
 };
 
 export type CadastroContato = {

@@ -247,17 +247,17 @@ function buildCadastrosSearchClause(search: string) {
 
   const digits = normalized.replace(/\D/g, "");
   const clauses = [
-    `nome.ilike.*${normalized}*`,
-    `fantasia.ilike.*${normalized}*`,
-    `apelido.ilike.*${normalized}*`,
-    `documento.ilike.*${normalized}*`,
-    `email.ilike.*${normalized}*`,
-    `email_contato.ilike.*${normalized}*`,
-    `whatsapp_1.ilike.*${normalized}*`,
-    `whatsapp_2.ilike.*${normalized}*`,
-    `telefone_fixo.ilike.*${normalized}*`,
-    `nome_vendedor.ilike.*${normalized}*`,
-    `cidade_uf.ilike.*${normalized}*`
+    `nome.ilike.%${normalized}%`,
+    `fantasia.ilike.%${normalized}%`,
+    `apelido.ilike.%${normalized}%`,
+    `documento.ilike.%${normalized}%`,
+    `email.ilike.%${normalized}%`,
+    `email_contato.ilike.%${normalized}%`,
+    `whatsapp_1.ilike.%${normalized}%`,
+    `whatsapp_2.ilike.%${normalized}%`,
+    `telefone_fixo.ilike.%${normalized}%`,
+    `nome_vendedor.ilike.%${normalized}%`,
+    `cidade_uf.ilike.%${normalized}%`
   ];
 
   if (digits) {
@@ -721,6 +721,8 @@ export type CadastroEnderecoInsertPayload = {
   uf: string | null;
   tipo_endereco: "PRINCIPAL";
   obs: string | null;
+  recebedor?: string | null;
+  cpf_recebedor?: string | null;
 };
 
 export type CadastroEnderecoCreateResult =
@@ -1391,7 +1393,9 @@ export async function createCadastroEndereco(
     cidade: toNullableText(payload.cidade),
     uf: toNullableText(payload.uf),
     tipo_endereco: "PRINCIPAL" as const,
-    obs: toNullableText(payload.obs)
+    obs: toNullableText(payload.obs),
+    recebedor: toNullableText(payload.recebedor),
+    cpf_recebedor: toNullableText(payload.cpf_recebedor)
   };
 
   const { data, error } = await client
@@ -1439,7 +1443,9 @@ export async function createCadastroEnderecos(
     cidade: toNullableText(item.cidade),
     uf: toNullableText(item.uf),
     tipo_endereco: toNullableText(item.tipo_endereco) || "PRINCIPAL",
-    obs: toNullableText(item.obs)
+    obs: toNullableText(item.obs),
+    recebedor: toNullableText(item.recebedor),
+    cpf_recebedor: toNullableText(item.cpf_recebedor)
   }));
 
   const { error } = await client.from("enderecos").insert(rows);
@@ -1542,7 +1548,9 @@ export async function updateCadastroEndereco(
       cidade: toNullableText(payload.cidade),
       uf: toNullableText(payload.uf),
       tipo_endereco: toNullableText(payload.tipo_endereco) || "PRINCIPAL",
-      obs: toNullableText(payload.obs)
+      obs: toNullableText(payload.obs),
+      recebedor: toNullableText(payload.recebedor),
+      cpf_recebedor: toNullableText(payload.cpf_recebedor)
     })
     .eq("id", id);
 
@@ -1655,10 +1663,10 @@ export async function searchCadastrosParaVinculo(query: string): Promise<SearchC
   const digits = term.replace(/\D/g, "");
   if (digits) {
     request = request.or(
-      `id_cliente.eq.${digits},nome.ilike.*${term}*,documento.ilike.*${digits}*`
+      `id_cliente.eq.${digits},nome.ilike.%${term}%,documento.ilike.%${digits}%`
     );
   } else {
-    request = request.or(`nome.ilike.*${term}*,documento.ilike.*${term}*`);
+    request = request.or(`nome.ilike.%${term}%,documento.ilike.%${term}%`);
   }
 
   const { data, error } = await request.returns<Array<Pick<SupabaseClienteRow, "id_cliente" | "nome" | "documento">>>();

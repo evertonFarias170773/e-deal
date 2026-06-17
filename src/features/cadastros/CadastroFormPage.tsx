@@ -30,7 +30,7 @@ import {
   type SearchCadastroVinculoItem,
   type VendedorOption
 } from "@/features/cadastros/services/cadastros.service";
-import { normalizeDocumentDigits, validateDocumentByTipo } from "@/features/cadastros/utils/documento";
+import { normalizeDocumentDigits, validateDocumentByTipo, isValidCpf } from "@/features/cadastros/utils/documento";
 import type {
   Cadastro,
   CadastroCategoria,
@@ -466,7 +466,8 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       !documentoDigits ? "documento" : null,
       !inferredTipoPessoa ? "documento" : null,
       !contactEmail && !contactWhatsApp ? "email" : null,
-      !contactEmail && !contactWhatsApp ? "whatsapp" : null
+      !contactEmail && !contactWhatsApp ? "whatsapp" : null,
+      !form.enderecos.some(e => e.tipo === 'principal' && e.cep) ? "enderecos" : null
     ].filter(Boolean) as string[];
 
     if (missingFields.length) {
@@ -474,7 +475,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       setMessage({
         tone: "danger",
         title: "Campos obrigatorios ausentes",
-        description: "Preencha ID do cliente, nome, documento e pelo menos um contato."
+        description: "Preencha ID, nome, documento, contato e o endereço principal (com CEP)."
       });
       showToast({
         type: "error",
@@ -551,6 +552,21 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
         return;
       }
       uniqueVinculos.add(vinculo.idClienteRelacionado);
+    }
+
+    // CPF Recebedor validation
+    for (let i = 0; i < form.enderecos.length; i++) {
+      const end = form.enderecos[i];
+      if (end.cpfRecebedor && end.cpfRecebedor.trim() !== "") {
+        if (!isValidCpf(end.cpfRecebedor)) {
+          showToast({
+            type: "error",
+            title: "CPF do recebedor inválido",
+            description: `O CPF do recebedor preenchido no endereço ${i + 1} está incorreto.`
+          });
+          return;
+        }
+      }
     }
 
     setIsSaving(true);
@@ -960,7 +976,9 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
           isDocumentoLocked={isDocumentoLocked}
           hasImportedApiData={hasImportedApiData}
           vendedorOptions={vendedorOptions}
+          isLoadingVendedores={isLoadingVendedores}
           onResetDocumento={handleResetDocumentoValidation}
+          onReconsultar={handleInitialValidation}
           onToast={showToast}
         />
       )}
@@ -1098,7 +1116,9 @@ function CompleteForm({
   isDocumentoLocked,
   hasImportedApiData,
   vendedorOptions,
+  isLoadingVendedores,
   onResetDocumento,
+  onReconsultar,
   onToast
 }: {
   form: CadastroFormState;
@@ -1113,7 +1133,9 @@ function CompleteForm({
   isDocumentoLocked: boolean;
   hasImportedApiData: boolean;
   vendedorOptions: VendedorOption[];
+  isLoadingVendedores: boolean;
   onResetDocumento: () => void;
+  onReconsultar?: () => void;
   onToast: (toast: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
 }) {
   const companies = mockCompanies.filter((company) => !company.isConsolidated);
@@ -1123,12 +1145,51 @@ function CompleteForm({
   const [vinculoBusca, setVinculoBusca] = useState<Record<string, string>>({});
   const [vinculoResultados, setVinculoResultados] = useState<Record<string, SearchCadastroVinculoItem[]>>({});
   const [vinculoLoadingId, setVinculoLoadingId] = useState<string | null>(null);
+  const [cepLoadingIndex, setCepLoadingIndex] = useState<number | null>(null);
 
   function updateEndereco(index: number, field: keyof CadastroEndereco, value: string) {
     const enderecos = form.enderecos.map((endereco, currentIndex) =>
       currentIndex === index ? { ...endereco, [field]: value } : endereco
     );
     onUpdate("enderecos", enderecos);
+  }
+
+  async function handleCepChange(index: number, rawCep: string) {
+    updateEndereco(index, "cep", rawCep);
+    const cleanCep = rawCep.replace(/\D/g, "");
+    if (cleanCep.length === 8) {
+      setCepLoadingIndex(index);
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+        if (response.ok) {
+          const data = await response.json();
+          if (!data.erro) {
+            const currentEnderecos = [...form.enderecos];
+            const current = currentEnderecos[index];
+            const updated = { ...current, cep: rawCep };
+            let hasChanges = false;
+            
+            if (!current.endereco && data.logradouro) { updated.endereco = data.logradouro; hasChanges = true; }
+            if (!current.bairro && data.bairro) { updated.bairro = data.bairro; hasChanges = true; }
+            if (!current.cidade && data.localidade) { updated.cidade = data.localidade; hasChanges = true; }
+            if (!current.uf && data.uf) { updated.uf = data.uf; hasChanges = true; }
+            
+            if (hasChanges) {
+              currentEnderecos[index] = updated;
+              onUpdate("enderecos", currentEnderecos);
+              onToast({ type: "success", title: "Endereço preenchido", description: `Dados recuperados via CEP (${data.localidade}/${data.uf}).` });
+            }
+          } else {
+            onToast({ type: "warning", title: "CEP não encontrado", description: "O CEP informado não foi localizado no ViaCEP." });
+          }
+        }
+      } catch (err) {
+        console.error("ViaCEP erro", err);
+        onToast({ type: "error", title: "Erro na consulta", description: "Falha ao consultar o CEP." });
+      } finally {
+        setCepLoadingIndex(null);
+      }
+    }
   }
 
   function updateContato(index: number, field: keyof CadastroContato, value: string) {
@@ -1251,16 +1312,27 @@ function CompleteForm({
             </select>
           </Field>
           <Field label="CPF/CNPJ">
-            <input
-              value={formattedDocument}
-              readOnly={isDocumentoLocked}
-              onChange={(event) => onUpdate("documento", normalizeDocumentDigits(event.target.value))}
-              className={
-                isDocumentoLocked
-                  ? `${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`
-                  : getInputClass(errorFields.includes("documento"))
-              }
-            />
+            <div className="flex gap-2">
+              <input
+                value={formattedDocument}
+                readOnly={isDocumentoLocked}
+                onChange={(event) => onUpdate("documento", normalizeDocumentDigits(event.target.value))}
+                className={
+                  isDocumentoLocked
+                    ? `${inputClass} cursor-not-allowed bg-slate-100 text-slate-500 w-full`
+                    : `${getInputClass(errorFields.includes("documento"))} w-full`
+                }
+              />
+              {mode === "edit" && onReconsultar && (
+                <button
+                  type="button"
+                  onClick={onReconsultar}
+                  className="shrink-0 rounded-xl bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                >
+                  Reconsultar
+                </button>
+              )}
+            </div>
           </Field>
           <Field label="Razao social / Nome">
             <input value={form.nome} onChange={(event) => onUpdate("nome", event.target.value)} className={getInputClass(errorFields.includes("nome"))} />
@@ -1275,7 +1347,11 @@ function CompleteForm({
             <input value={form.contato} onChange={(event) => onUpdate("contato", event.target.value)} className={inputClass} />
           </Field>
           <Field label="Tipo de contribuinte">
-            <input value={form.tipoContribuinte} onChange={(event) => onUpdate("tipoContribuinte", event.target.value)} className={inputClass} placeholder="Contribuinte / Isento" />
+            <select value={form.tipoContribuinte} onChange={(event) => onUpdate("tipoContribuinte", event.target.value)} className={inputClass}>
+              <option value="">Selecione...</option>
+              <option value="CONTRIBUINTE">Contribuinte</option>
+              <option value="ISENTO">Isento</option>
+            </select>
           </Field>
           <Field label="E-mail principal">
             <input value={form.email} onChange={(event) => onUpdate("email", event.target.value)} className={getInputClass(errorFields.includes("email"))} />
@@ -1369,26 +1445,37 @@ function CompleteForm({
             <div key={endereco.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
-                <button type="button" onClick={() => {
-                  if (!isTemporaryId(endereco.id)) {
-                    onToast({ type: "warning", title: "Remoção bloqueada", description: "Endereço já salvo não pode ser removido nesta fase." });
-                    return;
-                  }
-                  onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
-                  onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
-                }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                {endereco.tipo !== 'principal' && (
+                  <button type="button" onClick={() => {
+                    if (!isTemporaryId(endereco.id)) {
+                      onToast({ type: "warning", title: "Remoção bloqueada", description: "Endereço já salvo não pode ser removido nesta fase." });
+                      return;
+                    }
+                    onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
+                    onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
+                  }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <Field label="Tipo"><select value={endereco.tipo} onChange={(event) => updateEndereco(index, "tipo", event.target.value)} className={inputClass}><option value="principal">Principal</option><option value="entrega">Entrega</option><option value="cobranca">Cobranca</option><option value="fiscal">Fiscal</option></select></Field>
-                <Field label="CEP"><input value={endereco.cep} onChange={(event) => updateEndereco(index, "cep", event.target.value)} className={inputClass} /></Field>
+                <Field label="CEP">
+                  <div className="relative">
+                    <input value={endereco.cep} onChange={(event) => handleCepChange(index, event.target.value)} className={inputClass} />
+                    {cepLoadingIndex === index && (
+                      <div className="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+                    )}
+                  </div>
+                </Field>
                 <Field label="Logradouro"><input value={endereco.endereco} onChange={(event) => updateEndereco(index, "endereco", event.target.value)} className={inputClass} /></Field>
                 <Field label="Numero"><input value={endereco.numero} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={inputClass} /></Field>
                 <Field label="Complemento"><input value={endereco.complemento ?? ""} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={inputClass} /></Field>
                 <Field label="Bairro"><input value={endereco.bairro} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={inputClass} /></Field>
                 <Field label="Cidade"><input value={endereco.cidade} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={inputClass} /></Field>
                 <Field label="UF"><input value={endereco.uf} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={inputClass} maxLength={2} /></Field>
+                <Field label="Recebedor"><input value={endereco.recebedor ?? ""} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={inputClass} placeholder="Nome de quem vai receber" /></Field>
+                <Field label="CPF do Recebedor"><input value={endereco.cpfRecebedor ?? ""} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={inputClass} placeholder="Apenas números ou formatado" maxLength={14} /></Field>
                 <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={inputClass} /></Field></div>
               </div>
             </div>
@@ -1526,33 +1613,17 @@ function CompleteForm({
 
       <FormSection title="Crédito / Financeiro" description="Informacoes financeiras, comerciais e flags operacionais.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Data cadastro"><input type="date" value={form.dataCadastro} onChange={(event) => onUpdate("dataCadastro", event.target.value)} className={inputClass} /></Field>
+          <Field label="Data cadastro"><input type="date" value={form.dataCadastro} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
           <Field label="Data fundacao"><input type="date" value={form.dataFundacao} onChange={(event) => onUpdate("dataFundacao", event.target.value)} className={inputClass} /></Field>
           <Field label="Data verificacao"><input type="date" value={form.dataVerificacao} onChange={(event) => onUpdate("dataVerificacao", event.target.value)} className={inputClass} /></Field>
           <Field label="Limite de credito"><input value={form.limiteCredito} onChange={(event) => onUpdate("limiteCredito", event.target.value)} className={inputClass} /></Field>
           <Field label="Credito"><input value={form.credito} onChange={(event) => onUpdate("credito", event.target.value)} className={inputClass} /></Field>
           <Field label="Credito acumulado"><input value={form.creditoDisponivel} onChange={(event) => onUpdate("creditoDisponivel", event.target.value)} className={inputClass} /></Field>
           <Field label="Risco financeiro"><select value={form.riscoCredito} onChange={(event) => onUpdate("riscoCredito", event.target.value as "BAIXO" | "MEDIO" | "ALTO")} className={inputClass}><option value="BAIXO">Baixo</option><option value="MEDIO">Medio</option><option value="ALTO">Alto</option></select></Field>
-          <Field label="Ultima compra"><input type="date" value={form.ultimaCompra} onChange={(event) => onUpdate("ultimaCompra", event.target.value)} className={inputClass} /></Field>
-          <Field label="Total compras"><input value={form.totalCompras} onChange={(event) => onUpdate("totalCompras", event.target.value)} className={inputClass} /></Field>
+          <Field label="Ultima compra"><input type="date" value={form.ultimaCompra} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
+          <Field label="Total compras"><input value={form.totalCompras} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
           <Field label="Formas de pagamento"><select value={form.padraoPagamento} onChange={(event) => onUpdate("padraoPagamento", event.target.value)} className={inputClass}>{paymentOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
-          <Field label="Padrão de pagamento faturado (Somente Leitura)">
-            <div className="relative">
-              <input
-                type="text"
-                value={form.padraoPagamento}
-                readOnly
-                disabled
-                className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 outline-none cursor-not-allowed opacity-80"
-              />
-              <p className="mt-1.5 text-[11px] text-amber-700 font-semibold leading-relaxed">
-                ⚠️ <strong>Conflito Técnico:</strong> A coluna do banco <code>padrao_pagamento</code> já é usada para as formas de pagamento comerciais (acima). Este campo está desabilitado para escrita para evitar corromper a forma de pagamento ativa.
-              </p>
-            </div>
-          </Field>
           <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => onUpdate("percentualBonus", event.target.value)} className={inputClass} /></Field>
-          <Field label="Motivo erro"><input value={form.motivoErro} onChange={(event) => onUpdate("motivoErro", event.target.value)} className={inputClass} /></Field>
-          <Field label="CPF erro"><input value={form.cpfErro} onChange={(event) => onUpdate("cpfErro", event.target.value)} className={inputClass} /></Field>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Toggle label="Bonus" checked={form.bonusAtivo} onChange={(value) => onUpdate("bonusAtivo", value)} />
@@ -1721,7 +1792,7 @@ function createInitialState(cadastro?: Cadastro): CadastroFormState {
     empresaPadrao: cadastro?.empresaPadrao ?? "Ideal Grafica",
     cidadeUf: cadastro?.cidadeUf ?? "",
     dataFundacao: cadastro?.dataFundacao ?? "",
-    dataCadastro: cadastro?.dataCadastro ?? "",
+    dataCadastro: cadastro?.dataCadastro || new Date().toISOString().split("T")[0],
     dataVerificacao: cadastro?.dataVerificacao ?? "",
     ultimaCompra: cadastro?.ultimaCompra ?? "",
     totalCompras: cadastro?.totalCompras?.toString() ?? "0",
