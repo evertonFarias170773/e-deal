@@ -89,17 +89,28 @@ export async function POST(request: Request) {
   }
 
   const result = await fetchJsonWithTimeout<CpfApiResponse>(`https://api.cpfhub.io/cpf/${localValidation.digits}`, headers);
+  
   if (!result.ok) {
+    if (process.env.NODE_ENV === "development") {
+      console.error(`[CPF_API_ERROR] Falha na consulta do endpoint https://api.cpfhub.io/cpf/. Status HTTP: ${result.status}`);
+    }
     return NextResponse.json(
       { success: false, message: "Não foi possível consultar o CPF no serviço externo." },
-      { status: 502 }
+      { status: result.status === 429 ? 429 : result.status === 401 || result.status === 403 ? 403 : 502 }
     );
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.log(`[CPF_API_SUCCESS] Consulta realizada com sucesso no endpoint https://api.cpfhub.io/cpf/`);
   }
 
   const data = result.data.data ?? {};
   const nome = toText(data.nameUpper) || toText(data.name);
 
   if (!nome) {
+    if (process.env.NODE_ENV === "development") {
+      console.error(`[CPF_API_ERROR] Retorno da API sem nome para o documento informado.`);
+    }
     return NextResponse.json(
       { success: false, message: "Nome não encontrado para este CPF." },
       { status: 404 }

@@ -2393,11 +2393,113 @@ export async function getEligiblePropostas(): Promise<Proposta[]> {
     return [];
   }
 }
+export async function insertEnderecoProposta(
+  endereco: Omit<CadastroEndereco, "id"> & { id_cliente: number }
+): Promise<{ success: boolean; data?: CadastroEndereco; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
 
+  const { data, error } = await client
+    .from("enderecos")
+    .insert([
+      {
+        id_cliente: endereco.id_cliente,
+        cep: endereco.cep,
+        endereco: endereco.endereco,
+        numero: endereco.numero,
+        complemento: endereco.complemento || null,
+        bairro: endereco.bairro,
+        cidade: endereco.cidade,
+        uf: endereco.uf,
+        tipo_endereco: endereco.tipo || "Entrega",
+        recebedor: endereco.recebedor || null,
+        cpf_recebedor: endereco.cpfRecebedor || null,
+      },
+    ])
+    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor")
+    .single();
 
+  if (error) {
+    console.error("[OrcamentosService] Erro ao salvar endereco:", error);
+    return { success: false, errorMessage: error.message || "Erro ao salvar endereço no banco." };
+  }
 
+  if (!data) {
+    return { success: false, errorMessage: "Endereço não retornado após inserção." };
+  }
 
+  const mappedEndereco: CadastroEndereco = {
+    id: data.id,
+    cep: data.cep || "",
+    endereco: data.endereco || "",
+    numero: data.numero || "",
+    complemento: data.complemento || "",
+    bairro: data.bairro || "",
+    cidade: data.cidade || "",
+    uf: data.uf || "",
+    tipo: (data.tipo_endereco?.toLowerCase() as any) || "entrega",
+    recebedor: data.recebedor || "",
+    cpfRecebedor: data.cpf_recebedor || "",
+  };
 
+  return { success: true, data: mappedEndereco };
+}
 
+export async function updateEnderecoProposta(
+  id: string,
+  endereco: Omit<CadastroEndereco, "id">
+): Promise<{ success: boolean; data?: CadastroEndereco; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
+
+  const { data, error } = await client
+    .from("enderecos")
+    .update({
+      cep: endereco.cep,
+      endereco: endereco.endereco,
+      numero: endereco.numero,
+      complemento: endereco.complemento || null,
+      bairro: endereco.bairro,
+      cidade: endereco.cidade,
+      uf: endereco.uf,
+      tipo_endereco: endereco.tipo || "Entrega",
+      recebedor: endereco.recebedor || null,
+      cpf_recebedor: endereco.cpfRecebedor || null,
+    })
+    .eq("id", id)
+    .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor")
+    .single();
+
+  if (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[OrcamentosService] Erro ao atualizar endereco:", error);
+    }
+    return { success: false, errorMessage: error.message || "Erro ao atualizar endereço no banco." };
+  }
+
+  if (!data) {
+    return { success: false, errorMessage: "Endereço não retornado após atualização." };
+  }
+
+  const mappedEndereco: CadastroEndereco = {
+    id: data.id,
+    cep: data.cep || "",
+    endereco: data.endereco || "",
+    numero: data.numero || "",
+    complemento: data.complemento || "",
+    bairro: data.bairro || "",
+    cidade: data.cidade || "",
+    uf: data.uf || "",
+    recebedor: data.recebedor || "",
+    cpfRecebedor: data.cpf_recebedor || "",
+    tipo: (data.tipo_endereco?.toLowerCase() as any) || "entrega",
+  };
+
+  return { success: true, data: mappedEndereco };
+}
 
 

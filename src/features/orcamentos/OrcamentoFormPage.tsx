@@ -36,11 +36,12 @@ import {
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta, listVendedoresReais, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { normalizeDocumentDigits } from "@/features/cadastros/utils/documento";
 
 const removeAccents = (str: string): string => {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -264,6 +265,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [addressModalMode, setAddressModalMode] = useState<"create" | "edit">("create");
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [pendingEnderecoSelection, setPendingEnderecoSelection] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({ nome: "", cargo: "", whatsapp: "", email: "" });
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
@@ -273,11 +276,14 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     cep: "",
     endereco: "",
     numero: "",
-    complemento: "",
     bairro: "",
     cidade: "",
-    uf: ""
+    uf: "",
+    complemento: "",
+    recebedor: "",
+    cpfRecebedor: ""
   });
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
 
   const [isQuotingSedex, setIsQuotingSedex] = useState(false);
   const [isQuotingAzul, setIsQuotingAzul] = useState(false);
@@ -1106,18 +1112,67 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     showToast({ type: "success", title: "Contato atualizado com sucesso (Modo Local)" });
   }
 
-  function addAddress() {
+  async function addAddress() {
+    if (!form.clienteId) {
+      showToast({ type: "warning", title: "Cliente obrigatório", description: "Selecione o cliente da proposta antes de adicionar um novo endereço." });
+      return;
+    }
+
     if (!addressDraft.cep || !addressDraft.endereco || !addressDraft.numero || !addressDraft.cidade || !addressDraft.uf) {
       showToast({ type: "warning", title: "Endereço incompleto", description: "Preencha CEP, logradouro, número, cidade e UF." });
       return;
     }
 
-    const address: CadastroEndereco = { id: `end_prop_${Date.now()}`, ...addressDraft };
-    setProposalAddresses((current) => [...current, address]);
-    updateField("enderecoId", address.id);
-    setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "" });
-    setIsAddressModalOpen(false);
-    showToast({ type: "success", title: "Endereço adicionado à proposta." });
+    if (addressModalMode === "edit" && editingAddressId) {
+      setIsSavingAddress(true);
+      try {
+        const { success, data, errorMessage } = await updateEnderecoProposta(editingAddressId, {
+          ...addressDraft,
+        });
+
+        if (!success || !data) {
+          showToast({ type: "error", title: "Erro ao atualizar endereço", description: errorMessage || "Não foi possível atualizar o endereço no banco." });
+          return;
+        }
+
+        setProposalAddresses((current) =>
+          current.map((addr) => (addr.id === editingAddressId ? data : addr))
+        );
+        setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
+        setEditingAddressId(null);
+        setAddressModalMode("create");
+        setIsAddressModalOpen(false);
+        showToast({ type: "success", title: "Endereço salvo com sucesso." });
+      } catch (err) {
+        showToast({ type: "error", title: "Erro na requisição", description: "Não foi possível salvar o endereço." });
+      } finally {
+        setIsSavingAddress(false);
+      }
+      return;
+    }
+
+    setIsSavingAddress(true);
+    try {
+      const { success, data, errorMessage } = await insertEnderecoProposta({
+        ...addressDraft,
+        id_cliente: Number(form.clienteId)
+      });
+
+      if (!success || !data) {
+        showToast({ type: "error", title: "Erro ao salvar endereço", description: errorMessage || "Não foi possível salvar o endereço no banco." });
+        return;
+      }
+
+      setProposalAddresses((current) => [...current, data]);
+      updateField("enderecoId", data.id);
+      setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
+      setIsAddressModalOpen(false);
+      showToast({ type: "success", title: "Endereço adicionado à proposta e salvo no banco de dados." });
+    } catch (err) {
+      showToast({ type: "error", title: "Erro na requisição", description: "Ocorreu um problema ao tentar persistir o endereço." });
+    } finally {
+      setIsSavingAddress(false);
+    }
   }
 
   async function addProduct(productId: string) {
@@ -2087,12 +2142,89 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                         items={combinedAddresses}
                         selectedId={form.enderecoId}
                         onSelect={handleSelectEndereco}
+                        onEdit={(item, e) => {
+                          e.stopPropagation();
+                          setAddressModalMode("edit");
+                          setEditingAddressId(item.id);
+                          setAddressDraft({
+                            tipo: (item.tipo as any) || "entrega",
+                            cep: item.cep || "",
+                            endereco: item.endereco || "",
+                            numero: item.numero || "",
+                            complemento: item.complemento || "",
+                            bairro: item.bairro || "",
+                            cidade: item.cidade || "",
+                            uf: item.uf || "",
+                            recebedor: item.recebedor || "",
+                            cpfRecebedor: item.cpfRecebedor || ""
+                          });
+                          setIsAddressModalOpen(true);
+                        }}
+                        onCopy={async (item, e) => {
+                          e.stopPropagation();
+                          const texts = [];
+                          if (item.recebedor) texts.push(`Responsável: ${item.recebedor}`);
+                          else texts.push(`Responsável: não informado`);
+                          
+                          if (item.cpfRecebedor) {
+                            const maskCpf = (v: string) => {
+                              let c = v.replace(/\D/g, "");
+                              if (c.length > 11) c = c.slice(0, 11);
+                              return c.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+                            };
+                            texts.push(`CPF do responsável: ${maskCpf(item.cpfRecebedor)}`);
+                          }
+                          
+                          if (item.endereco && item.numero) texts.push(`Endereço: ${item.endereco}, ${item.numero}`);
+                          else if (item.endereco) texts.push(`Endereço: ${item.endereco}`);
+                          
+                          if (item.complemento) texts.push(`Complemento: ${item.complemento}`);
+                          if (item.bairro) texts.push(`Bairro: ${item.bairro}`);
+                          if (item.cidade && item.uf) texts.push(`Cidade/UF: ${item.cidade}/${item.uf}`);
+                          
+                          if (item.cep) {
+                            const maskCep = (v: string) => {
+                              const c = v.replace(/\D/g, "");
+                              return c.replace(/^(\d{5})(\d)/, "$1-$2").slice(0, 9);
+                            };
+                            texts.push(`CEP: ${maskCep(item.cep)}`);
+                          }
+                          
+                          if ((item as any).obs) texts.push(`Referência: ${(item as any).obs}`);
+                          if (item.tipo) texts.push(`Tipo: ${item.tipo}`);
+                          
+                          const textToCopy = texts.join("\n");
+                          
+                          try {
+                            if (navigator.clipboard && window.isSecureContext) {
+                              await navigator.clipboard.writeText(textToCopy);
+                            } else {
+                              const textArea = document.createElement("textarea");
+                              textArea.value = textToCopy;
+                              textArea.style.position = "absolute";
+                              textArea.style.left = "-999999px";
+                              document.body.prepend(textArea);
+                              textArea.select();
+                              document.execCommand("copy");
+                              textArea.remove();
+                            }
+                            showToast({ type: "success", title: "Copiado", description: "Endereço copiado para a área de transferência." });
+                          } catch (err) {
+                            showToast({ type: "error", title: "Erro", description: "Não foi possível copiar o endereço." });
+                          }
+                        }}
                         render={(endereco) => {
                           const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                          const recebedor = endereco.recebedor ? `Responsável: ${endereco.recebedor}` : "Responsável: não informado";
                           return {
                             title: `${endereco.endereco}, ${endereco.numero}`,
                             subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`,
-                            detail: isCompradorAddress ? "Endereço do Comprador" : endereco.tipo
+                            detail: (
+                              <div className="flex flex-col gap-0.5 mt-0.5">
+                                <span>{isCompradorAddress ? "Endereço do Comprador" : endereco.tipo}</span>
+                                <span className="font-medium text-slate-600">{recebedor}</span>
+                              </div>
+                            )
                           };
                         }}
                         extraClassNameForItem={(endereco) => {
@@ -2149,7 +2281,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     ) : (
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
                     )}
-                    <button type="button" onClick={() => setIsAddressModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo endereço</button>
+                    <button type="button" onClick={() => { setAddressModalMode("create"); setEditingAddressId(null); setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" }); setIsAddressModalOpen(true); }} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo endereço</button>
                   </FormSection>
                 </>
               )}
@@ -2533,7 +2665,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           onSave={saveEditedContact}
         />
       ) : null}
-      {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} /> : null}
+      {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} isSaving={isSavingAddress} /> : null}
       {pendingEnderecoSelection ? (
         <Modal
           title="Atenção"
@@ -2778,14 +2910,16 @@ function SelectorGrid<T extends { id: string }>({
   onSelect,
   render,
   onEdit,
+  onCopy,
   extraClassNameForItem,
   badgeForItem
 }: {
   items: T[];
   selectedId: string;
   onSelect: (id: string) => void;
-  render: (item: T) => { title: string; subtitle: string; detail: string };
+  render: (item: T) => { title: string; subtitle: string; detail: React.ReactNode };
   onEdit?: (item: T, event: React.MouseEvent) => void;
+  onCopy?: (item: T, event: React.MouseEvent) => void;
   extraClassNameForItem?: (item: T) => string;
   badgeForItem?: (item: T) => React.ReactNode;
 }) {
@@ -2812,21 +2946,38 @@ function SelectorGrid<T extends { id: string }>({
                 {badge}
               </div>
               <p className="text-sm opacity-80 truncate">{content.subtitle}</p>
-              <p className="mt-1 text-xs opacity-70 truncate">{content.detail}</p>
+              <div className="mt-1 text-xs opacity-70 truncate">{content.detail}</div>
             </div>
-            {onEdit && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(item, e);
-                }}
-                className="ml-2 p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition shrink-0"
-                title="Editar"
-              >
-                <Edit2 className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <div className="flex shrink-0 ml-2">
+              {onCopy && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCopy(item, e);
+                  }}
+                  className="p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
+                  title="Copiar endereço"
+                  aria-label="Copiar endereço"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(item, e);
+                  }}
+                  className="ml-1 p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
+                  title="Editar"
+                  aria-label="Editar endereço"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         );
       })}
@@ -2945,18 +3096,108 @@ function ContactModal({ draft, onChange, onClose, onSave }: { draft: ContactDraf
   );
 }
 
-function AddressModal({ draft, onChange, onClose, onSave }: { draft: AddressDraft; onChange: (draft: AddressDraft) => void; onClose: () => void; onSave: () => void }) {
+function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "create" }: { draft: AddressDraft; onChange: (draft: AddressDraft) => void; onClose: () => void; onSave: () => void; isSaving?: boolean; mode?: "create" | "edit" }) {
+  const { showToast } = useAppToast();
+  const [isCepLoading, setIsCepLoading] = useState(false);
+  const [isCpfLoading, setIsCpfLoading] = useState(false);
+
+  const cleanCep = (draft.cep || "").replace(/\D/g, "");
+  const cleanCpf = normalizeDocumentDigits(draft.cpfRecebedor || "");
+
+  useEffect(() => {
+    if (cleanCep.length === 8 && !isCepLoading) {
+      setIsCepLoading(true);
+      fetch(`https://viacep.com.br/ws/${cleanCep}/json/`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.erro) {
+            onChange({
+              ...draft,
+              endereco: data.logradouro || draft.endereco,
+              bairro: data.bairro || draft.bairro,
+              cidade: data.localidade || draft.cidade,
+              uf: data.uf || draft.uf
+            });
+          } else {
+            showToast({ type: "warning", title: "CEP não encontrado", description: "O CEP informado não retornou dados no ViaCEP." });
+          }
+        })
+        .catch(() => {
+          showToast({ type: "error", title: "Falha na busca", description: "Ocorreu um erro ao consultar o CEP." });
+        })
+        .finally(() => setIsCepLoading(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanCep]);
+
+  useEffect(() => {
+    if (cleanCpf && cleanCpf.length === 11 && !isCpfLoading) {
+      setIsCpfLoading(true);
+      fetch("/api/cadastros/consultar-cpf-simples", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documento: cleanCpf })
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.payload?.nome) {
+            onChange({ ...draft, recebedor: data.payload.nome });
+          } else {
+            onChange({ ...draft, recebedor: "" });
+            showToast({ type: "warning", title: "CPF Inválido ou Sem Nome", description: "Não foi possível consultar o CPF. Verifique o número informado ou tente novamente." });
+          }
+        })
+        .catch((err) => {
+          console.error("Erro na consulta de CPF:", err);
+          onChange({ ...draft, recebedor: "" });
+          showToast({ type: "error", title: "Falha na consulta", description: "Não foi possível consultar o CPF. Verifique o número informado ou tente novamente." });
+        })
+        .finally(() => setIsCpfLoading(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanCpf]);
+
+  const cepMask = (value: string) => {
+    const v = value.replace(/\D/g, "");
+    return v.replace(/^(\d{5})(\d)/, "$1-$2").slice(0, 9);
+  };
+
+  const cpfMask = (value: string) => {
+    let v = value.replace(/\D/g, "");
+    if (v.length > 11) v = v.slice(0, 11);
+    return v.replace(/(\d{3})(\d)/, "$1.$2")
+            .replace(/(\d{3})(\d)/, "$1.$2")
+            .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  };
+
   return (
-    <Modal title="Adicionar novo endereço" onClose={onClose} onSave={onSave}>
+    <Modal title={mode === "create" ? "Adicionar novo endereço" : "Editar endereço"} onClose={onClose} onSave={onSave} saveLabel={isSaving ? "Salvando..." : (mode === "create" ? "Adicionar" : "Atualizar")}>
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="CEP"><input value={draft.cep} onChange={(event) => onChange({ ...draft, cep: event.target.value })} className={inputClass} /></Field>
-        <Field label="Logradouro"><input value={draft.endereco} onChange={(event) => onChange({ ...draft, endereco: event.target.value })} className={inputClass} /></Field>
+        <Field label={isCepLoading ? "CEP (Buscando...)" : "CEP"}>
+          <input value={cepMask(draft.cep || "")} onChange={(event) => onChange({ ...draft, cep: event.target.value })} className={inputClass} placeholder="00000-000" disabled={isCepLoading} />
+        </Field>
+        <Field label="Tipo">
+          <select value={draft.tipo} onChange={(event) => onChange({ ...draft, tipo: event.target.value as CadastroEndereco["tipo"] })} className={inputClass}>
+            <option value="principal">Principal</option>
+            <option value="entrega">Entrega</option>
+            <option value="cobranca">Cobrança</option>
+            <option value="fiscal">Fiscal</option>
+          </select>
+        </Field>
+        <Field label="Logradouro"><input value={draft.endereco} onChange={(event) => onChange({ ...draft, endereco: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
         <Field label="Número"><input value={draft.numero} onChange={(event) => onChange({ ...draft, numero: event.target.value })} className={inputClass} /></Field>
         <Field label="Complemento"><input value={draft.complemento ?? ""} onChange={(event) => onChange({ ...draft, complemento: event.target.value })} className={inputClass} /></Field>
-        <Field label="Bairro"><input value={draft.bairro} onChange={(event) => onChange({ ...draft, bairro: event.target.value })} className={inputClass} /></Field>
-        <Field label="Cidade"><input value={draft.cidade} onChange={(event) => onChange({ ...draft, cidade: event.target.value })} className={inputClass} /></Field>
-        <Field label="UF"><input value={draft.uf} onChange={(event) => onChange({ ...draft, uf: event.target.value.toUpperCase() })} className={inputClass} maxLength={2} /></Field>
-        <Field label="Tipo"><select value={draft.tipo} onChange={(event) => onChange({ ...draft, tipo: event.target.value as CadastroEndereco["tipo"] })} className={inputClass}><option value="principal">Principal</option><option value="entrega">Entrega</option><option value="cobranca">Cobrança</option><option value="fiscal">Fiscal</option></select></Field>
+        <Field label="Bairro"><input value={draft.bairro} onChange={(event) => onChange({ ...draft, bairro: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
+        <Field label="Cidade"><input value={draft.cidade} onChange={(event) => onChange({ ...draft, cidade: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
+        <Field label="UF"><input value={draft.uf} onChange={(event) => onChange({ ...draft, uf: event.target.value.toUpperCase() })} className={inputClass} maxLength={2} disabled={isCepLoading} /></Field>
+        <div className="md:col-span-2 border-t border-slate-100 pt-3 mt-1 grid gap-3 md:grid-cols-2">
+          <Field label={isCpfLoading ? "CPF do Recebedor (Consultando...)" : "CPF do Recebedor"}>
+            <input value={cpfMask(draft.cpfRecebedor || "")} onChange={(event) => onChange({ ...draft, cpfRecebedor: event.target.value })} className={inputClass} placeholder="000.000.000-00" disabled={isCpfLoading} />
+          </Field>
+          <Field label="Nome do Recebedor (Preenchimento Automático)">
+            <input value={draft.recebedor || ""} readOnly className={`${inputClass} bg-slate-50 cursor-not-allowed`} placeholder="Preenchido via CPF" title="O nome do recebedor é preenchido automaticamente pela consulta de CPF." />
+          </Field>
+        </div>
       </div>
     </Modal>
   );
