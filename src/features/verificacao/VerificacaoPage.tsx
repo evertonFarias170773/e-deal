@@ -13,6 +13,9 @@ type VerificationData = {
   nome?: string;
   razaoSocial?: string;
   nomeFantasia?: string;
+  contato?: string;
+  telefone?: string;
+  email?: string;
   dataNascimento?: string;
   dataAbertura?: string;
   situacaoCadastral: string;
@@ -21,12 +24,17 @@ type VerificationData = {
   codigoControle?: string;
   observacoes?: string;
   naturezaJuridica?: string;
+  qualificacaoResponsavel?: string;
+  socioPrincipal?: string;
   atividadePrincipal?: string;
+  simplesNacional?: string;
+  mei?: string;
   endereco?: string;
   cep?: string;
   inscricaoEstadual?: string;
   capitalSocial?: number;
   regimeTributario?: string;
+  rawPayload?: any;
 };
 
 export function VerificacaoPage() {
@@ -264,31 +272,44 @@ export function VerificacaoPage() {
 
               {result.tipo === "CNPJ" ? (
                 <div className="grid gap-4 md:grid-cols-2">
-                  <ResultItem label="Nome Fantasia" value={result.nomeFantasia || "—"} />
-                  <ResultItem label="Data de Abertura" value={result.dataAbertura} />
-                  <ResultItem label="Inscrição Estadual" value={result.inscricaoEstadual || "—"} />
-                  <ResultItem label="Regime Tributário" value={result.regimeTributario} />
+                  <ResultItem label="CNPJ" value={result.documento} />
+                  <ResultItem label="Razão Social" value={result.razaoSocial} />
+                  <ResultItem label="Nome Fantasia" value={result.nomeFantasia} />
+                  <ResultItem label="Contato" value={result.contato} />
+                  <ResultItem label="Telefone" value={result.telefone} />
+                  <ResultItem label="Mail" value={result.email} />
+                  <div className="md:col-span-2">
+                    <ResultItem label="Endereço" value={result.endereco} />
+                  </div>
+                  <ResultItem label="Capital Social" value={result.capitalSocial !== undefined ? formatCurrency(result.capitalSocial) : undefined} />
                   <div className="md:col-span-2">
                     <ResultItem label="Natureza Jurídica" value={result.naturezaJuridica} />
                   </div>
                   <div className="md:col-span-2">
+                    <ResultItem label="Qualificação do Responsável" value={result.qualificacaoResponsavel} />
+                  </div>
+                  <ResultItem label="Situação Cadastral" value={result.situacaoCadastral} />
+                  <ResultItem label="Início da Atividade" value={result.dataAbertura} />
+                  <ResultItem label="Sócio Principal" value={result.socioPrincipal} />
+                  <div className="md:col-span-2">
                     <ResultItem label="Atividade Principal" value={result.atividadePrincipal} />
                   </div>
-                  <div className="md:col-span-2">
-                    <ResultItem label="Endereço Fiscal" value={result.endereco} />
-                  </div>
-                  <ResultItem label="CEP" value={result.cep} />
-                  <ResultItem label="Capital Social" value={formatCurrency(result.capitalSocial)} />
+                  <ResultItem label="Simples Nacional" value={result.simplesNacional} />
+                  <ResultItem label="MEI" value={result.mei} />
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
+                  <ResultItem label="CPF" value={result.documento} />
                   <ResultItem label="Nome Completo" value={result.nome} />
                   <ResultItem label="Data de Nascimento" value={result.dataNascimento} />
-                  <ResultItem label="Código de Controle RF" value={result.codigoControle} />
-                  <ResultItem label="Protocolo Consulta" value={result.protocolo} />
-                  <div className="md:col-span-2">
-                    <ResultItem label="Mensagem RF" value={result.observacoes} />
-                  </div>
+                  <ResultItem label="Situação Cadastral" value={result.situacaoCadastral} />
+                  {result.rawPayload && Object.entries(result.rawPayload).map(([key, val]) => {
+                    if (["cpf", "nameUpper", "name", "birthDate", "status"].includes(key)) return null;
+                    if (typeof val === "object") return null;
+                    return (
+                      <ResultItem key={key} label={key} value={String(val)} />
+                    );
+                  })}
                 </div>
               )}
 
@@ -307,11 +328,12 @@ export function VerificacaoPage() {
   );
 }
 
-function ResultItem({ label, value }: { label: string; value?: string }) {
+function ResultItem({ label, value }: { label: string; value?: string | null }) {
+  const displayValue = (value && value.trim() !== "" && value !== "null" && value !== "undefined") ? value : "Dados não disponíveis";
   return (
     <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100/50">
       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-bold text-slate-900 leading-relaxed">{value || "—"}</p>
+      <p className="mt-1 text-sm font-bold text-slate-900 leading-relaxed">{displayValue}</p>
     </div>
   );
 }

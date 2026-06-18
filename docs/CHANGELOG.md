@@ -3,6 +3,8 @@
 ## 2026-06-18
 
 ### Alterado
+- **Verificação CPF/CNPJ**: Atualização do endpoint de consulta `/api/verificacao/route.ts` para conectar em tempo real com as APIs `publica.cnpj.ws` e `api.cpfhub.io` (removendo mocks). Reestruturação do painel visual (`VerificacaoPage.tsx`) listando exatamente a grade mapeada de CNPJ e exibição flexível para dados extras de CPF. Ausências padronizadas explicitamente como "Dados não disponíveis".
+
 - **Página de Cadastros (Endereços e Vínculos)**:
   - **Endereços**: Adicionada validação rigorosa obrigatória para o campo `Número`. Transformado o campo `Recebedor` em apenas leitura, sendo preenchido automaticamente via integração com CPF usando o novo endpoint auxiliar `/api/cadastros/consultar-cpf-simples`.
   - **Dados da Nota Fiscal**: Seção renomeada de "Vínculos Comerciais". Busca de cadastro atrelado agora é estrita por documento, preenchendo automaticamente e bloqueando edição manual. Caso não encontre, oferece atalho rápido para criação de "+ Novo Cadastro" com documento já preenchido na URL.

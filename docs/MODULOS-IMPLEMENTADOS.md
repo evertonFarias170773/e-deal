@@ -549,11 +549,11 @@ Pendências para próximas fases:
 
 ## Verificação CPF/CNPJ (Novo Módulo)
 
-Status: Rota e página de consulta simulada integradas.
+Status: Rota e página de consulta integradas com APIs reais.
 
 Rotas:
 - `/verificacao`
-- `/api/verificacao` (Proxy API de backend)
+- `/api/verificacao` (Proxy API conectando `publica.cnpj.ws` e `api.cpfhub.io`)
 
 Componentes principais:
 - `VerificacaoPage` (`src/features/verificacao/VerificacaoPage.tsx`)
@@ -561,8 +561,9 @@ Componentes principais:
 
 Funcionalidades:
 - Item de menu "Verificação CPF/CNPJ" na Sidebar apontando para `/verificacao`;
-- Consultas simuladas de CPF e CNPJ integradas com proxy seguro no backend;
-- Exibição de relatórios cadastrais em interface de alta densidade e micro-animações.
+- Consultas reais de CPF e CNPJ sem impacto no banco de dados (puramente diagnóstico);
+- Exibição de relatórios cadastrais completos com 16 campos padronizados para CNPJ e exibição flexível para campos extras de CPF.
+- Tratamento de ausências com padrão "Dados não disponíveis".
 
 ## Cadastro de Clientes (Aprimoramento)
 

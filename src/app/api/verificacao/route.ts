@@ -1,5 +1,35 @@
 import { NextResponse } from "next/server";
 
+function toText(value: unknown) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+async function fetchJsonWithTimeout<T>(url: string, headers?: HeadersInit): Promise<{ ok: true; data: T } | { ok: false; status?: number }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: controller.signal,
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      return { ok: false, status: response.status };
+    }
+
+    const data = (await response.json()) as T;
+    return { ok: true, data };
+  } catch {
+    return { ok: false };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const { tipo, documento } = await request.json();
@@ -13,7 +43,6 @@ export async function POST(request: Request) {
 
     const cleanDoc = documento.replace(/\D/g, "");
 
-    // Mock response for CPF / CNPJ verification
     if (tipo === "CPF") {
       if (cleanDoc.length !== 11) {
         return NextResponse.json(
@@ -22,20 +51,44 @@ export async function POST(request: Request) {
         );
       }
 
-      // Simulated CPF response
+      const token = process.env.CPFHUB_API_TOKEN ?? process.env.CPFHUB_TOKEN ?? process.env.CPFHUB_API_KEY;
+      if (!token) {
+        return NextResponse.json(
+          { success: false, errorMessage: "Serviço de consulta de CPF não configurado no servidor." },
+          { status: 500 }
+        );
+      }
+
+      const headers: HeadersInit = { "x-api-key": token };
+      const result = await fetchJsonWithTimeout<any>(`https://api.cpfhub.io/cpf/${cleanDoc}`, headers);
+
+      if (!result.ok) {
+        return NextResponse.json(
+          { success: false, errorMessage: "Não foi possível consultar o CPF no serviço externo." },
+          { status: 502 }
+        );
+      }
+
+      const data = result.data?.data || {};
+      const nome = toText(data.nameUpper) || toText(data.name);
+
+      if (!nome) {
+        return NextResponse.json(
+          { success: false, errorMessage: "Nome não encontrado para este CPF." },
+          { status: 404 }
+        );
+      }
+
       return NextResponse.json({
         success: true,
-        source: "mock",
         data: {
-          documento: documento,
+          documento,
           tipo: "CPF",
-          nome: "EVERTON DE FARIAS",
-          dataNascimento: "17/07/1973",
-          situacaoCadastral: "REGULAR",
-          protocolo: `RF-${Math.floor(100000000 + Math.random() * 900000000)}-${Math.floor(Math.random() * 9)}`,
+          nome,
+          dataNascimento: toText(data.birthDate),
+          situacaoCadastral: toText(data.status) || "REGULAR", // CPF Hub usually returns status if available
           consultaData: new Date().toISOString(),
-          codigoControle: "9F2C.3B8A.1A7E.4D9C",
-          observacoes: "Cadastro regular junto à Receita Federal do Brasil."
+          rawPayload: data
         }
       });
     } else if (tipo === "CNPJ") {
@@ -46,25 +99,62 @@ export async function POST(request: Request) {
         );
       }
 
-      // Simulated CNPJ response
+      const result = await fetchJsonWithTimeout<any>(`https://publica.cnpj.ws/cnpj/${cleanDoc}`);
+      if (!result.ok) {
+        return NextResponse.json(
+          { success: false, errorMessage: "Não foi possível consultar o CNPJ no serviço externo." },
+          { status: 502 }
+        );
+      }
+
+      const data = result.data;
+      const estabelecimento = data.estabelecimento || {};
+      const cidade = toText(estabelecimento.cidade?.nome);
+      const uf = toText(estabelecimento.estado?.sigla).toUpperCase();
+      
+      const tipoLogradouro = toText(estabelecimento.tipo_logradouro);
+      const logradouro = toText(estabelecimento.logradouro);
+      const enderecoCompleto = [
+        tipoLogradouro ? `${tipoLogradouro} ${logradouro}` : logradouro,
+        toText(estabelecimento.numero),
+        toText(estabelecimento.complemento),
+        toText(estabelecimento.bairro),
+        cidade && uf ? `${cidade}/${uf}` : ""
+      ].filter(Boolean).join(", ");
+
+      const ddd1 = toText(estabelecimento.ddd1);
+      const tel1 = toText(estabelecimento.telefone1);
+      const telefone = ddd1 && tel1 ? `(${ddd1}) ${tel1}` : "";
+
+      const socioPrincipal = data.socios && data.socios.length > 0 ? toText(data.socios[0].nome) : "";
+      
+      const atividadePrincipal = data.estabelecimento?.atividade_principal 
+        ? `${data.estabelecimento.atividade_principal.id} - ${data.estabelecimento.atividade_principal.descricao}`
+        : "";
+
       return NextResponse.json({
         success: true,
-        source: "mock",
         data: {
-          documento: documento,
+          documento,
           tipo: "CNPJ",
-          razaoSocial: "IDEAL GRÁFICA EXPRESSA EIRELI",
-          nomeFantasia: "Ideal Gráfica",
-          situacaoCadastral: "ATIVA",
-          dataAbertura: "01/06/2010",
-          naturezaJuridica: "213-5 - Empresário (Individual)",
-          atividadePrincipal: "18.13-0-01 - Impressão de material para uso publicitário",
-          endereco: "Rua Farrapos, 450 - Floresta - Porto Alegre/RS",
-          cep: "90020-070",
-          inscricaoEstadual: "096/3492810",
+          razaoSocial: toText(data.razao_social),
+          nomeFantasia: toText(estabelecimento.nome_fantasia),
+          contato: toText(estabelecimento.email) || socioPrincipal,
+          telefone: telefone,
+          email: toText(estabelecimento.email),
+          endereco: enderecoCompleto,
+          cep: toText(estabelecimento.cep),
+          capitalSocial: data.capital_social ? Number(data.capital_social) : undefined,
+          naturezaJuridica: data.natureza_juridica ? `${data.natureza_juridica.id} - ${data.natureza_juridica.descricao}` : "",
+          qualificacaoResponsavel: data.qualificacao_do_responsavel ? `${data.qualificacao_do_responsavel.id} - ${data.qualificacao_do_responsavel.descricao}` : "",
+          situacaoCadastral: toText(estabelecimento.situacao_cadastral),
+          dataAbertura: toText(estabelecimento.data_inicio_atividade),
+          socioPrincipal: socioPrincipal,
+          atividadePrincipal: atividadePrincipal,
+          simplesNacional: data.simples ? (data.simples.simples === "Sim" ? "Optante" : "Não optante") : "",
+          mei: data.simples ? (data.simples.mei === "Sim" ? "Sim" : "Não") : "",
           consultaData: new Date().toISOString(),
-          capitalSocial: 150000,
-          regimeTributario: "Simples Nacional"
+          rawPayload: data
         }
       });
     }
