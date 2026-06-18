@@ -976,7 +976,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         clienteId: nextCliente.idCliente.toString(),
         contatoId: nextContacts[0]?.id ?? "",
         enderecoId: nextEndereco?.id ?? "",
-        compradorId: nextCliente.idCliente.toString(),
+        compradorId: nextCliente.id ? nextCliente.id.toString() : nextCliente.idCliente.toString(),
         vendedor: hasSeller ? defaultVendedor : "",
         empresa: fallbackEmpresa && fallbackEmpresa !== "Não informado" ? fallbackEmpresa : current.empresa,
         itens: recalculatedItems,
@@ -1013,7 +1013,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         clienteId: basicCliente.idCliente.toString(),
         contatoId: "",
         enderecoId: "",
-        compradorId: basicCliente.idCliente.toString(),
+        compradorId: basicCliente.id ? basicCliente.id.toString() : basicCliente.idCliente.toString(),
         vendedor: hasSeller ? defaultVendedor : "",
         empresa: basicCliente.empresaPadrao && basicCliente.empresaPadrao !== "Não informado" ? basicCliente.empresaPadrao : current.empresa,
         itens: recalculatedItems,
@@ -2713,7 +2713,7 @@ function SelectorGrid<T extends { id: string }>({
             onClick={() => onSelect(item.id)}
             className={`relative rounded-3xl border p-4 text-left transition flex justify-between items-start cursor-pointer ${
               isSelected
-                ? "border-teal-200 bg-teal-50 text-teal-800"
+                ? "border-[#0b2f4a] bg-[#0b2f4a] text-[#86e2d5]"
                 : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
             } ${extraClass}`}
           >
@@ -2939,7 +2939,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     clienteId: clienteNaoCadastrado ? "" : (cliente ? cliente.idCliente.toString() : ""),
     contatoId: clienteNaoCadastrado ? "" : (proposta?.contato.id ?? cliente?.contatos[0]?.id ?? ""),
     enderecoId: clienteNaoCadastrado ? "" : (endereco?.id ?? ""),
-    compradorId: clienteNaoCadastrado ? "" : (proposta?.compradorAutorizado?.id ?? ""),
+    compradorId: clienteNaoCadastrado ? "" : (proposta?.compradorAutorizado?.id ?? (cliente?.id ? cliente.id.toString() : "")),
     itens: proposta?.itens ?? [],
     fretes,
     freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),
