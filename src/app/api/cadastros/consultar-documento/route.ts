@@ -210,7 +210,7 @@ async function consultarCpf(documentoDigits: string): Promise<DocumentoConsultaP
   const headers: HeadersInit = {};
 
   if (token) {
-    headers.authorization = `Bearer ${token}`;
+    headers["x-api-key"] = token;
   }
 
   const result = await fetchJsonWithTimeout<CpfApiResponse>(`https://api.cpfhub.io/cpf/${documentoDigits}`, headers);

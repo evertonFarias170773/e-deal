@@ -79,7 +79,7 @@ export async function POST(request: Request) {
   const headers: HeadersInit = {};
 
   if (token) {
-    headers.authorization = `Bearer ${token}`;
+    headers["x-api-key"] = token;
   } else {
     // If there is no token configured, we should return an error explicitly, as requested: "Se API falhar ou token ausente, retornar erro controlado"
     return NextResponse.json(
