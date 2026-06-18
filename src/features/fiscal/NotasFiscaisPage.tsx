@@ -1722,13 +1722,16 @@ export function NotasFiscaisPage() {
             emptyDescription="Não há pedidos de produtos reais aprovados no banco de dados para faturamento."
             columns={[
               {
-                header: "Origem",
-                cell: (item) => (
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-slate-900">{item.tipo}</span>
-                    <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
-                  </div>
-                )
+                header: "Pedido",
+                cell: (item) => {
+                  const idInt = item.ref_origem.match(/\d+/)?.[0] || "-";
+                  return (
+                    <div className="flex flex-col">
+                      <span className="font-medium text-slate-950">#{idInt}</span>
+                      <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
+                    </div>
+                  );
+                }
               },
               {
                 header: "Cliente / Destinatário",
@@ -1780,7 +1783,7 @@ export function NotasFiscaisPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
-                        {item.tipo}
+                        Pedido #{item.ref_origem.match(/\d+/)?.[0] || "-"}
                       </span>
                       <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
                     </div>
@@ -1848,13 +1851,16 @@ export function NotasFiscaisPage() {
             emptyDescription="Não há Ordens de Serviços liberadas para faturamento."
             columns={[
               {
-                header: "Origem",
-                cell: (item) => (
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-slate-900">{item.tipo}</span>
-                    <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
-                  </div>
-                )
+                header: "Pedido",
+                cell: (item) => {
+                  const idInt = item.ref_origem.match(/\d+/)?.[0] || "-";
+                  return (
+                    <div className="flex flex-col">
+                      <span className="font-medium text-slate-950">#{idInt}</span>
+                      <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
+                    </div>
+                  );
+                }
               },
               {
                 header: "Cliente / Tomador",
@@ -1906,7 +1912,7 @@ export function NotasFiscaisPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
-                        {item.tipo}
+                        Pedido #{item.ref_origem.match(/\d+/)?.[0] || "-"}
                       </span>
                       <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
                     </div>
