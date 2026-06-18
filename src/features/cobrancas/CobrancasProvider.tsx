@@ -273,6 +273,15 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
        const isFaturadoType = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(values.tipoCobranca);
 
+       if (isFaturadoType) {
+         if (!values.forma_fatu) {
+           throw new Error("Condição de pagamento (forma_fatu) inválida ou não selecionada.");
+         }
+         if (values.p_qtd_parcelas == null || values.p_dias_pra_inicio == null || values.p_intervalo == null) {
+           throw new Error("Dados de parcelamento inválidos ou não selecionados.");
+         }
+       }
+
        // 1. Criar registro inicial em pagamentos_v2
        const payloadInicial = {
          id_int: proposta.id_int,
@@ -290,9 +299,16 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
          vencimento: values.vencimento || null,
          obs_v2: values.observacao || null,
          confirmado: false,
-         forma_fatu: isFaturadoType ? (values.modeloFatu || "BOLETO") : null,
+         forma_fatu: isFaturadoType ? (values.forma_fatu || null) : null,
+         p_valor_entrada: isFaturadoType ? (values.p_valor_entrada ?? null) : null,
+         p_qtd_parcelas: isFaturadoType ? (values.p_qtd_parcelas ?? null) : null,
+         p_dias_pra_inicio: isFaturadoType ? (values.p_dias_pra_inicio ?? null) : null,
+         p_intervalo: isFaturadoType ? (values.p_intervalo ?? null) : null,
          paid_at: null
        };
+
+      console.log("[DEBUG CobrancasProvider] isFaturadoType: ", isFaturadoType);
+      console.log("[DEBUG CobrancasProvider] payloadInicial: ", payloadInicial);
 
       const { data: createdRows, error: insertError } = await client
         .from("pagamentos_v2")

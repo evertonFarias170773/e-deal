@@ -7,7 +7,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { Field, PanelCard, inputClass, InfoBox } from "@/features/cobrancas/form-ui";
-import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisResult } from "@/features/cobrancas/types";
+import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
@@ -134,12 +134,34 @@ export function PropostaCobrancaPanel({
   const [isLoadingCredit, setIsLoadingCredit] = useState(false);
   const [nowTime, setNowTime] = useState<number>(0);
   const [showPendingAlert, setShowPendingAlert] = useState(false);
+  const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
+  const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>("");
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setNowTime(Date.now());
     }, 0);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const fetchModelos = async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+      const { data, error } = await client
+        .from("modelos_cobranca")
+        .select("*")
+        .order("modelo", { ascending: true })
+        .order("inicio", { ascending: true })
+        .order("qtd_parcela", { ascending: true })
+        .order("intervalo", { ascending: true });
+      if (!error && data) {
+        setModelosCobranca(data as ModeloCobranca[]);
+      }
+    };
+    void fetchModelos();
+  }, [modalOpen]);
 
   // Reset credit analysis state during render when criteria changes
   if ((!isFaturado || source !== "supabase" || !proposta.cliente.idCliente) && realCreditAnalysis !== null) {
@@ -433,8 +455,13 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if ((form.tipoCobranca === "BOLETO" || isFaturado) && !form.vencimento) {
+    if (form.tipoCobranca === "BOLETO" && !form.vencimento) {
       showToast({ type: "error", title: "Informe a data de vencimento para continuar." });
+      return;
+    }
+
+    if (isFaturado && !modeloSelecionadoId) {
+      showToast({ type: "error", title: "Selecione uma condição de pagamento." });
       return;
     }
 
@@ -448,8 +475,38 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    let payloadVencimento = form.vencimento;
+    let extraPayload: Partial<CriarCobrancaFormValues> = {};
+
+    if (isFaturado) {
+      const selectedModel = modelosCobranca.find(m => String(m.id) === String(modeloSelecionadoId));
+      
+      if (!selectedModel || !selectedModel.resultado || selectedModel.qtd_parcela == null || selectedModel.inicio == null || selectedModel.intervalo == null) {
+        showToast({ type: "error", title: "Selecione uma condição de pagamento válida." });
+        return;
+      }
+
+      const today = new Date();
+      today.setDate(today.getDate() + selectedModel.inicio);
+      
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      payloadVencimento = `${yyyy}-${mm}-${dd}`;
+
+      extraPayload = {
+        forma_fatu: selectedModel.resultado,
+        p_qtd_parcelas: selectedModel.qtd_parcela,
+        p_dias_pra_inicio: selectedModel.inicio,
+        p_intervalo: selectedModel.intervalo,
+        p_valor_entrada: selectedModel.entrada_porcento > 0 ? (roundedValor * (selectedModel.entrada_porcento / 100)) : 0
+      };
+    }
+
     const payload: CriarCobrancaFormValues = {
       ...form,
+      ...extraPayload,
+      vencimento: payloadVencimento,
       valor: roundedValor,
       descricao: `Cobrança ${getCobrancaTipoLabel(form.tipoCobranca)} da proposta #${proposta.id_int}`,
       parcelaSelecionada: undefined
@@ -460,6 +517,11 @@ export function PropostaCobrancaPanel({
       if (source !== "supabase") {
         await new Promise((resolve) => window.setTimeout(resolve, 850));
       }
+      
+      console.log("[DEBUG CRIAR COBRANÇA] isFaturado: ", isFaturado);
+      console.log("[DEBUG CRIAR COBRANÇA] modeloSelecionadoId: ", modeloSelecionadoId);
+      console.log("[DEBUG CRIAR COBRANÇA] payload completo: ", payload);
+
       const created = await createCobranca(payload, proposta);
 
       const isFaturadoPayload = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(payload.tipoCobranca);
@@ -591,7 +653,22 @@ export function PropostaCobrancaPanel({
                     </p>
                   )}
                 </Field>
-                {form.tipoCobranca === "BOLETO" || isFaturado ? (
+                {isFaturado ? (
+                  <Field label="Condição de pagamento *">
+                    <select
+                      value={modeloSelecionadoId}
+                      onChange={(event) => setModeloSelecionadoId(event.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">Selecione...</option>
+                      {modelosCobranca.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.resultado}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : form.tipoCobranca === "BOLETO" ? (
                   <Field label="Data de vencimento *">
                     <input type="date" value={form.vencimento} onChange={(event) => patchForm({ vencimento: event.target.value })} className={inputClass} />
                   </Field>
@@ -947,7 +1024,22 @@ export function PropostaCobrancaPanel({
                       </p>
                     )}
                   </Field>
-                  {form.tipoCobranca === "BOLETO" || isFaturado ? (
+                  {isFaturado ? (
+                    <Field label="Condição de pagamento *">
+                      <select
+                        value={modeloSelecionadoId}
+                        onChange={(event) => setModeloSelecionadoId(event.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">Selecione...</option>
+                        {modelosCobranca.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.resultado}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : form.tipoCobranca === "BOLETO" ? (
                     <Field label="Data de vencimento *">
                       <input type="date" value={form.vencimento} onChange={(event) => patchForm({ vencimento: event.target.value })} className={inputClass} />
                     </Field>

@@ -44,13 +44,13 @@ export function buildPropostaInformalText({
 
   let itemsText = "";
   if (isAvulso) {
-    itemsText = `✅ Orçamento Avulso: ${formatPlainCurrency(resumo.subtotalProdutos)}`;
+    itemsText = `✅ **Orçamento Avulso**: **${formatPlainCurrency(resumo.subtotalProdutos)}**`;
   } else {
     itemsText = itens
       .map((item) => {
-        return `✅ ${item.quantidade.toLocaleString("pt-BR")} ${item.nome}: ${formatPlainCurrency(item.subtotal)} (${item.prazo})`;
+        return `✅ **${item.quantidade.toLocaleString("pt-BR")}** ${item.nome}: **${formatPlainCurrency(item.subtotal)}** (${item.prazo})`;
       })
-      .join("\n");
+      .join("\n\n");
   }
 
   let freteMsg = "";
@@ -62,24 +62,24 @@ export function buildPropostaInformalText({
     const isDuplicate = servicoLower && (transportadoraLower.includes(servicoLower) || servicoLower.includes(transportadoraLower));
     const servicoText = (frete.servico && !isDuplicate) ? ` (${frete.servico})` : "";
     
-    freteMsg = `Frete via ${frete.transportadora}${servicoText}: ${formatPlainCurrency(frete.valor)} (prazo de ${frete.prazo})`;
+    freteMsg = `Frete via **${frete.transportadora}${servicoText}: ${formatPlainCurrency(frete.valor)}** (prazo de ${frete.prazo})`;
   } else if (isRetirada) {
-    freteMsg = `Frete: Retirada Local (Sem custo)`;
+    freteMsg = `Frete via **Retirada Local: Grátis**`;
   } else {
     freteMsg = "Como ainda não definimos o frete, me avisa se precisa que eu verifique o valor para o seu endereço?";
   }
 
   const lines = [
-    `Oi, ${contactName}! Como vai?`,
-    `Proposta ${id_int}`,
-    `Segue orçamento para os itens que você pediu.`,
-    `Consegui aplicar uma condição especial para você!`,
+    `Olá, **${contactName}**!`,
+    `Proposta **${id_int}**`,
+    `Segue orçamento para os itens solicitados.`,
+    `*Consegui aplicar uma condição especial para você!*`,
     ``,
-    `Ficou assim:`,
+    `Produtos Orçados:`,
     ``,
     itemsText || "✅ Nenhum produto adicionado",
     ``,
-    `O valor total do pedido ficou em ${formatPlainCurrency(resumo.valorTotal)} no ${formaPagamento}.`,
+    `O valor total do pedido ficou em **${formatPlainCurrency(resumo.valorTotal)}** no ${formaPagamento}.`,
     ``,
     freteMsg,
     ``,

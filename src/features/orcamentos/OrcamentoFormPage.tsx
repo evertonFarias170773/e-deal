@@ -264,6 +264,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [pendingEnderecoSelection, setPendingEnderecoSelection] = useState<string | null>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>({ nome: "", cargo: "", whatsapp: "", email: "" });
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [editContactDraft, setEditContactDraft] = useState<ContactDraft>({ nome: "", cargo: "", whatsapp: "", email: "" });
@@ -660,7 +661,20 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       try {
         const { cadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
         if (active && cadastro) {
-          setTimeout(() => setCompradorAddresses(cadastro.enderecos || []), 0);
+          const addrs = cadastro.enderecos || [];
+          setTimeout(() => {
+            setCompradorAddresses(addrs);
+            
+            const isSocio = vinculo.tipoRelacao.toLowerCase().includes("sócio") || vinculo.tipoRelacao.toLowerCase().includes("socio");
+            if (isSocio) {
+              const principalAddr = addrs.find(a => a.tipo_endereco === "Principal" || a.tipo === "principal") || addrs[0];
+              if (principalAddr) {
+                updateField("enderecoId", principalAddr.id);
+              } else {
+                showToast({ type: "warning", title: "Sócio sem endereço", description: "O sócio selecionado não possui endereços cadastrados." });
+              }
+            }
+          }, 0);
         }
       } catch (err) {
         console.error("Erro ao carregar endereços do comprador/autorizado:", err);
@@ -924,6 +938,37 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
     setForm((current) => ({ ...current, [field]: value }));
     setErrorFields((current) => current.filter((item) => item !== field));
+  }
+
+  function handleSelectEndereco(newEnderecoId: string) {
+    const isSocio = form.compradorId && form.compradorId !== form.clienteId;
+    if (!isSocio) {
+      updateField("enderecoId", newEnderecoId);
+      return;
+    }
+
+    const principalAddr = compradorAddresses.find(a => a.tipo_endereco === "Principal" || a.tipo === "principal") || compradorAddresses[0];
+    if (principalAddr && newEnderecoId !== principalAddr.id) {
+      setPendingEnderecoSelection(newEnderecoId);
+    } else {
+      updateField("enderecoId", newEnderecoId);
+    }
+  }
+
+  function confirmEnderecoSocio() {
+    if (!pendingEnderecoSelection) return;
+    const chosenAddr = combinedAddresses.find(a => a.id === pendingEnderecoSelection);
+    if (!chosenAddr?.cpf_recebedor) {
+      showToast({ type: "error", title: "Ação bloqueada", description: "Não posso selecionar este endereço. Precisa incluir CPF do RECEBEDOR." });
+      setPendingEnderecoSelection(null);
+      return;
+    }
+    updateField("enderecoId", pendingEnderecoSelection);
+    setPendingEnderecoSelection(null);
+  }
+
+  function cancelEnderecoSocio() {
+    setPendingEnderecoSelection(null);
   }
 
   function handleSelectComprador(id: string) {
@@ -2041,7 +2086,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                       <SelectorGrid
                         items={combinedAddresses}
                         selectedId={form.enderecoId}
-                        onSelect={(id) => updateField("enderecoId", id)}
+                        onSelect={handleSelectEndereco}
                         render={(endereco) => {
                           const isCompradorAddress = (endereco.tipo as string) === "comprador";
                           return {
@@ -2052,22 +2097,52 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                         }}
                         extraClassNameForItem={(endereco) => {
                           const isCompradorAddress = (endereco.tipo as string) === "comprador";
-                          if (!isCompradorAddress) return "";
                           const isSelected = form.enderecoId === endereco.id;
-                          return isSelected
-                            ? "border-blue-400 bg-blue-50 text-blue-900 shadow-sm"
-                            : "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
+                          if (isSelected) {
+                            if (isCompradorAddress) {
+                              return "!bg-[#284267] !border-[#284267] !text-[#a8c8f6]";
+                            }
+                            return ""; // uses default green configured in SelectorGrid
+                          }
+                          return "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
                         }}
                         badgeForItem={(endereco) => {
                           const isCompradorAddress = (endereco.tipo as string) === "comprador";
-                          if (!isCompradorAddress) return null;
-                          const vinculo = cliente?.vinculosComerciais?.find((v) => v.id === form.compradorId);
-                          const isPartner = vinculo?.tipoRelacao.toLowerCase().includes("sócio") || vinculo?.tipoRelacao.toLowerCase().includes("socio");
-                          const badgeText = isPartner ? "Endereço de sócio" : "Endereço de vínculo comercial";
+                          const isSelected = form.enderecoId === endereco.id;
+                          const isSocio = form.compradorId && form.compradorId !== form.clienteId;
+                          
+                          let badgeText = null;
+                          if (isCompradorAddress) {
+                            const vinculo = cliente?.vinculosComerciais?.find((v) => v.id === form.compradorId);
+                            const isPartner = vinculo?.tipoRelacao.toLowerCase().includes("sócio") || vinculo?.tipoRelacao.toLowerCase().includes("socio");
+                            badgeText = isPartner ? "Endereço de sócio" : "Endereço de vínculo comercial";
+                          }
+
+                          let requerNota = false;
+                          if (isSelected && isSocio) {
+                            const principalAddr = compradorAddresses.find(a => a.tipo_endereco === "Principal" || a.tipo === "principal") || compradorAddresses[0];
+                            if (principalAddr && endereco.id !== principalAddr.id) {
+                              const cidadeSelecionada = (endereco.cidade || "").trim().toLowerCase();
+                              const cidadePrincipal = (principalAddr.cidade || "").trim().toLowerCase();
+                              if (cidadeSelecionada !== cidadePrincipal) {
+                                requerNota = true;
+                              }
+                            }
+                          }
+
                           return (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 border border-blue-200">
-                              {badgeText}
-                            </span>
+                            <div className="flex gap-1 items-center">
+                              {badgeText && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800 border border-blue-200">
+                                  {badgeText}
+                                </span>
+                              )}
+                              {requerNota && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                                  REQUER NOTA DE TRANSPORTE
+                                </span>
+                              )}
+                            </div>
                           );
                         }}
                       />
@@ -2459,6 +2534,20 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         />
       ) : null}
       {isAddressModalOpen ? <AddressModal draft={addressDraft} onChange={setAddressDraft} onClose={() => setIsAddressModalOpen(false)} onSave={addAddress} /> : null}
+      {pendingEnderecoSelection ? (
+        <Modal
+          title="Atenção"
+          onClose={cancelEnderecoSocio}
+          onSave={confirmEnderecoSocio}
+          saveLabel="Confirmar"
+        >
+          <div className="p-2">
+            <p className="text-sm font-medium text-slate-800">
+              Endereço de ENTREGA não corresponde ao endereço constante na Nota Fiscal
+            </p>
+          </div>
+        </Modal>
+      ) : null}
       {isManualFreteModalOpen ? (
         <ManualFreteModal
           draft={manualFreteDraft}
@@ -2713,7 +2802,7 @@ function SelectorGrid<T extends { id: string }>({
             onClick={() => onSelect(item.id)}
             className={`relative rounded-3xl border p-4 text-left transition flex justify-between items-start cursor-pointer ${
               isSelected
-                ? "border-[#0b2f4a] bg-[#0b2f4a] text-[#86e2d5]"
+                ? "border-[#24665d] bg-[#24665d] text-[#86e2d5]"
                 : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
             } ${extraClass}`}
           >

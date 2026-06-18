@@ -142,6 +142,16 @@ export type CreditAnalysisResult = {
   mensagem: string;
 };
 
+export type ModeloCobranca = {
+  id: string;
+  entrada_porcento: number;
+  qtd_parcela: number;
+  inicio: number;
+  intervalo: number;
+  modelo: string;
+  resultado: string;
+};
+
 export type CriarCobrancaFormValues = {
   propostaIdInt: number | null;
   osIdeal: string;
@@ -157,6 +167,11 @@ export type CriarCobrancaFormValues = {
   capturaAutomatica: boolean;
   parcelaSelecionada?: CobrancaParcelaSimulada;
   modeloFatu?: "BOLETO" | "DEPÓSITO";
+  forma_fatu?: string | null;
+  p_valor_entrada?: number | null;
+  p_qtd_parcelas?: number | null;
+  p_dias_pra_inicio?: number | null;
+  p_intervalo?: number | null;
   id_empresa?: number;
   empresa?: string;
 };
