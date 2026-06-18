@@ -1682,3 +1682,30 @@ export async function searchCadastrosParaVinculo(query: string): Promise<SearchC
     }))
     .filter((item) => item.idCliente > 0);
 }
+
+export async function searchCadastroVinculoByDocumento(documento: string): Promise<SearchCadastroVinculoItem | null> {
+  const client = getSupabaseClient();
+  const digits = documento.replace(/\D/g, "");
+  
+  if (!client || !digits) {
+    return null;
+  }
+
+  const { data, error } = await client
+    .from("clientes")
+    .select("id_cliente,nome,documento")
+    .or(`documento.eq.${digits},documento.eq.${documento}`) // fallback just in case database has masked documents
+    .order("id_cliente", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    idCliente: Number(data.id_cliente) || 0,
+    nome: toText(data.nome),
+    documento: normalizeDocumento(data.documento)
+  };
+}

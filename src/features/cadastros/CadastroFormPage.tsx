@@ -17,11 +17,11 @@ import {
   createCadastro,
   listVendedores,
   searchCadastrosParaVinculo,
-  updateCadastro,
   updateCadastroContato,
   updateCadastroEndereco,
   updateCadastroVinculoComercial,
   validateCadastroInitialStep,
+  searchCadastroVinculoByDocumento,
   type CadastroContatoInsertPayload,
   type CadastroUpdatePayload,
   type CadastroEnderecoInsertPayload,
@@ -465,9 +465,11 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       !form.nome.trim() ? "nome" : null,
       !documentoDigits ? "documento" : null,
       !inferredTipoPessoa ? "documento" : null,
+      !inferredTipoPessoa ? "documento" : null,
       !contactEmail && !contactWhatsApp ? "email" : null,
       !contactEmail && !contactWhatsApp ? "whatsapp" : null,
-      !form.enderecos.some(e => e.tipo === 'principal' && e.cep) ? "enderecos" : null
+      !form.enderecos.some(e => e.tipo === 'principal' && e.cep) ? "enderecos" : null,
+      form.enderecos.some(e => !e.numero.trim()) ? "enderecos-numero" : null
     ].filter(Boolean) as string[];
 
     if (missingFields.length) {
@@ -475,7 +477,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       setMessage({
         tone: "danger",
         title: "Campos obrigatorios ausentes",
-        description: "Preencha ID, nome, documento, contato e o endereço principal (com CEP)."
+        description: missingFields.includes("enderecos-numero") ? "Todos os endereços devem ter o número preenchido." : "Preencha ID, nome, documento, contato e o endereço principal (com CEP)."
       });
       showToast({
         type: "error",
@@ -756,6 +758,22 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
         tone: "danger",
         title: "Dados principais inválidos",
         description: "Revise ID, documento e tipo de pessoa antes de salvar."
+      });
+      return;
+    }
+
+    if (form.enderecos.some(e => !e.numero.trim())) {
+      setIsSaving(false);
+      setErrorFields(["enderecos-numero"]);
+      setMessage({
+        tone: "danger",
+        title: "Endereço incompleto",
+        description: "Todos os endereços devem ter o campo Número preenchido."
+      });
+      showToast({
+        type: "error",
+        title: "Falha na validação",
+        description: "O número do endereço é obrigatório."
       });
       return;
     }
@@ -1146,6 +1164,7 @@ function CompleteForm({
   const [vinculoResultados, setVinculoResultados] = useState<Record<string, SearchCadastroVinculoItem[]>>({});
   const [vinculoLoadingId, setVinculoLoadingId] = useState<string | null>(null);
   const [cepLoadingIndex, setCepLoadingIndex] = useState<number | null>(null);
+  const [cpfRecebedorLoadingIndex, setCpfRecebedorLoadingIndex] = useState<number | null>(null);
 
   function updateEndereco(index: number, field: keyof CadastroEndereco, value: string) {
     const enderecos = form.enderecos.map((endereco, currentIndex) =>
@@ -1192,6 +1211,43 @@ function CompleteForm({
     }
   }
 
+  async function handleSearchCpfRecebedor(index: number) {
+    const rawCpf = form.enderecos[index].cpfRecebedor;
+    if (!rawCpf) {
+      onToast({ type: "warning", title: "Atenção", description: "Informe o CPF para buscar." });
+      return;
+    }
+
+    const cleanCpf = rawCpf.replace(/\D/g, "");
+    if (!isValidCpf(cleanCpf)) {
+      onToast({ type: "error", title: "CPF inválido", description: "O CPF informado é inválido." });
+      return;
+    }
+
+    setCpfRecebedorLoadingIndex(index);
+    try {
+      const response = await fetch("/api/cadastros/consultar-cpf-simples", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ documento: cleanCpf })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success && data.payload?.nome) {
+        updateEndereco(index, "recebedor", data.payload.nome);
+        onToast({ type: "success", title: "CPF encontrado", description: "Nome do recebedor preenchido com sucesso." });
+      } else {
+        updateEndereco(index, "recebedor", "");
+        onToast({ type: "error", title: "Erro na consulta", description: data.message || "Não foi possível encontrar este CPF." });
+      }
+    } catch (err) {
+      console.error("Erro buscar CPF recebedor", err);
+      onToast({ type: "error", title: "Erro na consulta", description: "Falha inesperada ao consultar o CPF." });
+    } finally {
+      setCpfRecebedorLoadingIndex(null);
+    }
+  }
+
   function updateContato(index: number, field: keyof CadastroContato, value: string) {
     const contatos = form.contatos.map((contato, currentIndex) =>
       currentIndex === index ? { ...contato, [field]: value } : contato
@@ -1219,9 +1275,9 @@ function CompleteForm({
     }
 
     setVinculoLoadingId(vinculoId);
-    const encontrados = await searchCadastrosParaVinculo(term);
+    const encontrado = await searchCadastroVinculoByDocumento(term);
     setVinculoLoadingId(null);
-    setVinculoResultados((current) => ({ ...current, [vinculoId]: encontrados }));
+    setVinculoResultados((current) => ({ ...current, [vinculoId]: encontrado ? [encontrado] : [] }));
   }
 
   function handleSelectVinculo(index: number, candidato: SearchCadastroVinculoItem) {
@@ -1469,13 +1525,20 @@ function CompleteForm({
                   </div>
                 </Field>
                 <Field label="Logradouro"><input value={endereco.endereco} onChange={(event) => updateEndereco(index, "endereco", event.target.value)} className={inputClass} /></Field>
-                <Field label="Numero"><input value={endereco.numero} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={inputClass} /></Field>
+                <Field label="Número *"><input value={endereco.numero} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={getInputClass(errorFields.includes("enderecos-numero") && !endereco.numero.trim())} /></Field>
                 <Field label="Complemento"><input value={endereco.complemento ?? ""} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={inputClass} /></Field>
                 <Field label="Bairro"><input value={endereco.bairro} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={inputClass} /></Field>
                 <Field label="Cidade"><input value={endereco.cidade} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={inputClass} /></Field>
                 <Field label="UF"><input value={endereco.uf} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={inputClass} maxLength={2} /></Field>
-                <Field label="Recebedor"><input value={endereco.recebedor ?? ""} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={inputClass} placeholder="Nome de quem vai receber" /></Field>
-                <Field label="CPF do Recebedor"><input value={endereco.cpfRecebedor ?? ""} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={inputClass} placeholder="Apenas números ou formatado" maxLength={14} /></Field>
+                <Field label="Recebedor"><input value={endereco.recebedor ?? ""} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} placeholder="Nome automático pelo CPF" /></Field>
+                <Field label="CPF do Recebedor">
+                  <div className="flex gap-2">
+                    <input value={endereco.cpfRecebedor ?? ""} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={inputClass} placeholder="Apenas números ou formatado" maxLength={14} />
+                    <button type="button" onClick={() => handleSearchCpfRecebedor(index)} disabled={cpfRecebedorLoadingIndex === index} className="rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                      {cpfRecebedorLoadingIndex === index ? "..." : "Buscar"}
+                    </button>
+                  </div>
+                </Field>
                 <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={inputClass} /></Field></div>
               </div>
             </div>
@@ -1517,11 +1580,11 @@ function CompleteForm({
       </FormSection>
 
       <FormSection
-        title="Vinculos comerciais"
+        title="Dados da Nota Fiscal"
         description="Cadastros autorizados ou relacionados comercialmente a este cliente."
         action={
           <AddButton
-            label="Adicionar vinculo"
+            label="Adicionar vínculo"
             onClick={() => {
               onUpdate("vinculosComerciais", [...form.vinculosComerciais, createBlankVinculo()]);
               onToast({ type: "info", title: "Vinculo comercial adicionado", description: "Vinculo incluido no formulario." });
@@ -1533,7 +1596,7 @@ function CompleteForm({
           {form.vinculosComerciais.map((vinculo, index) => (
             <div key={vinculo.id} className="space-y-3 rounded-3xl border border-slate-200 bg-slate-50 p-4">
               <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                <Field label="Buscar cadastro existente (ID, nome ou documento)">
+                <Field label="Buscar cadastro existente (informe o CPF ou CNPJ)">
                   <div className="flex gap-2">
                     <input
                       value={vinculoBusca[vinculo.id] ?? ""}
@@ -1583,6 +1646,13 @@ function CompleteForm({
                       </li>
                     ))}
                   </ul>
+                </div>
+              ) : vinculoBusca[vinculo.id] && vinculoResultados[vinculo.id] && vinculoResultados[vinculo.id].length === 0 ? (
+                <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-center">
+                  <p className="text-sm font-medium text-orange-800">Nenhum cadastro encontrado para o documento informado.</p>
+                  <Link href={`/cadastros/novo?documento=${vinculoBusca[vinculo.id].replace(/\D/g, "")}`} className="mt-3 inline-block rounded-xl bg-white px-4 py-2 text-sm font-semibold text-orange-900 shadow-sm transition hover:bg-orange-100">
+                    + Novo Cadastro
+                  </Link>
                 </div>
               ) : null}
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-18
+
+### Alterado
+- **Página de Cadastros (Endereços e Vínculos)**:
+  - **Endereços**: Adicionada validação rigorosa obrigatória para o campo `Número`. Transformado o campo `Recebedor` em apenas leitura, sendo preenchido automaticamente via integração com CPF usando o novo endpoint auxiliar `/api/cadastros/consultar-cpf-simples`.
+  - **Dados da Nota Fiscal**: Seção renomeada de "Vínculos Comerciais". Busca de cadastro atrelado agora é estrita por documento, preenchendo automaticamente e bloqueando edição manual. Caso não encontre, oferece atalho rápido para criação de "+ Novo Cadastro" com documento já preenchido na URL.
+
 ## 2026-06-16
 
 ### Adicionado

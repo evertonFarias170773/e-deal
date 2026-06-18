@@ -117,9 +117,9 @@ Funcionalidades:
 - consulta CNPJ mockada;
 - formulário completo;
 - edição com dados reais e salvamento real controlado por whitelist;
-- endereços;
+- endereços com número obrigatório e integração inteligente de recebedor por CPF (`/api/cadastros/consultar-cpf-simples`);
 - contatos;
-- vínculos comerciais;
+- dados da nota fiscal (vínculos comerciais) com busca estrita por documento e integração ágil para novo cadastro;
 - toast no salvamento.
 - retorno para lista no novo cadastro e para detalhe na edição;
 - ações mockadas com feedback visual;
