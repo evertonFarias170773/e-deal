@@ -1161,8 +1161,19 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       return { success: false, errorMessage: "Usuário não identificado. Faça login novamente antes de criar a proposta." };
     }
 
+    let id_faturado: number | null = null;
+    if (!formState.clienteNaoCadastrado && cadastro) {
+      const vinculo = (cadastro as Cadastro).vinculosComerciais?.find((v) => v.id === formState.compradorId);
+      if (vinculo) {
+        id_faturado = vinculo.idClienteRelacionado;
+      } else {
+        id_faturado = Number(formState.clienteId);
+      }
+    }
+
     const propostaData: SupabasePropostaRow = {
       id_cliente: formState.clienteNaoCadastrado ? null : Number(formState.clienteId),
+      id_faturado: id_faturado,
       cliente: clienteNome,
       empresa: formState.empresa,
       vendedor: formState.vendedor,
