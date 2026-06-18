@@ -667,7 +667,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             
             const isSocio = vinculo.tipoRelacao.toLowerCase().includes("sócio") || vinculo.tipoRelacao.toLowerCase().includes("socio");
             if (isSocio) {
-              const principalAddr = addrs.find(a => a.tipo_endereco === "Principal" || a.tipo === "principal") || addrs[0];
+              const principalAddr = addrs.find(a => (a as any).tipo_endereco === "Principal" || a.tipo === "principal") || addrs[0];
               if (principalAddr) {
                 updateField("enderecoId", principalAddr.id);
               } else {
@@ -947,7 +947,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       return;
     }
 
-    const principalAddr = compradorAddresses.find(a => a.tipo_endereco === "Principal" || a.tipo === "principal") || compradorAddresses[0];
+    const principalAddr = compradorAddresses.find(a => (a as any).tipo_endereco === "Principal" || a.tipo === "principal") || compradorAddresses[0];
     if (principalAddr && newEnderecoId !== principalAddr.id) {
       setPendingEnderecoSelection(newEnderecoId);
     } else {
@@ -958,7 +958,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   function confirmEnderecoSocio() {
     if (!pendingEnderecoSelection) return;
     const chosenAddr = combinedAddresses.find(a => a.id === pendingEnderecoSelection);
-    if (!chosenAddr?.cpf_recebedor) {
+    if (!chosenAddr?.cpfRecebedor) {
       showToast({ type: "error", title: "Ação bloqueada", description: "Não posso selecionar este endereço. Precisa incluir CPF do RECEBEDOR." });
       setPendingEnderecoSelection(null);
       return;
@@ -2120,7 +2120,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
                           let requerNota = false;
                           if (isSelected && isSocio) {
-                            const principalAddr = compradorAddresses.find(a => a.tipo_endereco === "Principal" || a.tipo === "principal") || compradorAddresses[0];
+                            const principalAddr = compradorAddresses.find(a => (a as any).tipo_endereco === "Principal" || a.tipo === "principal") || compradorAddresses[0];
                             if (principalAddr && endereco.id !== principalAddr.id) {
                               const cidadeSelecionada = (endereco.cidade || "").trim().toLowerCase();
                               const cidadePrincipal = (principalAddr.cidade || "").trim().toLowerCase();
