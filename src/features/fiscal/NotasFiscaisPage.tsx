@@ -1728,7 +1728,9 @@ export function NotasFiscaisPage() {
                   return (
                     <div className="flex flex-col">
                       <span className="font-medium text-slate-950">#{idInt}</span>
-                      <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
+                      <span className="text-xs text-slate-500 font-mono">
+                        {item.os_ideal ? `OS: ${item.os_ideal}` : "OS: —"}
+                      </span>
                     </div>
                   );
                 }
@@ -1785,7 +1787,9 @@ export function NotasFiscaisPage() {
                       <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
                         Pedido #{item.ref_origem.match(/\d+/)?.[0] || "-"}
                       </span>
-                      <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
+                      <span className="text-xs text-slate-500 font-mono">
+                        {item.os_ideal ? `OS: ${item.os_ideal}` : "OS: —"}
+                      </span>
                     </div>
                     <h3 className="mt-2 font-semibold text-slate-950">{item.cliente_nome}</h3>
                     <p className="text-xs text-slate-500">Cliente ID: {item.id_cliente}</p>
@@ -1857,7 +1861,9 @@ export function NotasFiscaisPage() {
                   return (
                     <div className="flex flex-col">
                       <span className="font-medium text-slate-950">#{idInt}</span>
-                      <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
+                      <span className="text-xs text-slate-500 font-mono">
+                        {item.os_ideal ? `OS: ${item.os_ideal}` : "OS: —"}
+                      </span>
                     </div>
                   );
                 }
@@ -1914,7 +1920,9 @@ export function NotasFiscaisPage() {
                       <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
                         Pedido #{item.ref_origem.match(/\d+/)?.[0] || "-"}
                       </span>
-                      <span className="text-xs text-slate-500 font-mono">{item.ref_origem}</span>
+                      <span className="text-xs text-slate-500 font-mono">
+                        {item.os_ideal ? `OS: ${item.os_ideal}` : "OS: —"}
+                      </span>
                     </div>
                     <h3 className="mt-2 font-semibold text-slate-950">{item.cliente_nome}</h3>
                     <p className="text-xs text-slate-500">Cliente ID: {item.id_cliente}</p>
@@ -2006,8 +2014,13 @@ export function NotasFiscaisPage() {
                 align: "center"
               },
               {
-                header: "Referência",
-                cell: (item) => <strong className="text-slate-950">{item.ref}</strong>
+                header: "Pedido",
+                cell: (item) => (
+                  <div className="flex flex-col">
+                    <span className="font-medium text-slate-950">#{item.id_int}</span>
+                    <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal || "—"}</span>
+                  </div>
+                )
               },
               {
                 header: "Status",
@@ -2077,7 +2090,7 @@ export function NotasFiscaisPage() {
                       <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
                         Nº {item.numero_nf ?? "****"}
                       </span>
-                      <span className="text-xs text-slate-500 font-medium">{item.ref}</span>
+                      <span className="text-xs text-slate-500 font-medium">Pedido #{item.id_int} • OS: {item.os_ideal || "—"}</span>
                     </div>
                     <h3 className="mt-2 font-semibold text-slate-950">{item.nome || item.fantasia || "Sem nome cadastrado"}</h3>
                     <p className="text-xs text-slate-500">Cliente ID: {item.id_cliente}</p>

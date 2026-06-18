@@ -64,6 +64,7 @@ export interface NfeMock {
   nome?: string | null;
   fantasia?: string | null;
   isMock: boolean;
+  os_ideal?: string;
 }
 
 export const nfeMocks: NfeMock[] = [

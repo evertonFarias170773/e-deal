@@ -22,6 +22,7 @@ export interface FaturavelOrigem {
   id_empresa: number;
   status: FaturavelStatus;
   valor_total: number;
+  os_ideal?: string;
   itens: FaturavelItem[];
   created_at: string;
 }
