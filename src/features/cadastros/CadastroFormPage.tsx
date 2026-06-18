@@ -17,6 +17,7 @@ import {
   createCadastro,
   listVendedores,
   searchCadastrosParaVinculo,
+  updateCadastro,
   updateCadastroContato,
   updateCadastroEndereco,
   updateCadastroVinculoComercial,
