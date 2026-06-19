@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
@@ -329,6 +329,15 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [dbVendedores, setDbVendedores] = useState<UsuarioVendedor[]>([]);
   const [loadingVendedores, setLoadingVendedores] = useState(true);
 
+  // ── Unsaved changes guard ─────────────────────────────────────────────────
+  const initialFormSnapshot = useRef<string>("");
+  const snapshotCaptured    = useRef(false);
+  const isDirtyRef          = useRef(false);
+  const handleNavigateRef   = useRef<(href: string) => void>(() => {});
+  const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+  const [pendingNavigation,  setPendingNavigation]  = useState<string | null>(null);
+  // ─────────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     let active = true;
     async function loadSellers() {
@@ -465,6 +474,25 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
     return list;
   }, [proposalAddresses, compradorAddresses, proposta?.enderecoEntrega, form.compradorId, form.clienteId, form.enderecoId]);
+
+  // isDirty: compares current form (excluding system-generated fretes) with saved snapshot
+  const isDirty = useMemo(() => {
+    if (!snapshotCaptured.current || !initialFormSnapshot.current) return false;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { fretes: _f, ...curr } = form;
+    return JSON.stringify(curr) !== initialFormSnapshot.current;
+  }, [form]);
+
+  // Keep ref in sync so event handlers always see the latest value
+  handleNavigateRef.current = (href: string) => {
+    if (isDirty) {
+      setPendingNavigation(href);
+      setIsUnsavedModalOpen(true);
+    } else {
+      router.push(href);
+    }
+  };
+  isDirtyRef.current = isDirty;
 
   const currentAddress = useMemo(() => {
     return combinedAddresses.find((a) => a.id === form.enderecoId);
@@ -732,6 +760,58 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     })();
     return () => { active = false; };
   }, [cliente?.idCliente]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Capture initial snapshot once (after mount effects settle)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!snapshotCaptured.current) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { fretes: _f, ...snap } = form;
+        initialFormSnapshot.current = JSON.stringify(snap);
+        snapshotCaptured.current = true;
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // beforeunload — warn on tab close / refresh when dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
+  // Intercept internal link clicks (sidebar, breadcrumbs, etc.) when dirty
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!isDirtyRef.current) return;
+      const anchor = (e.target as Element).closest('a[href]') as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto')) return;
+      e.preventDefault();
+      handleNavigateRef.current(href);
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, []);
+
+  // Intercept browser back button when dirty
+  useEffect(() => {
+    if (!isDirty) return;
+    window.history.pushState(null, '', window.location.href);
+    const handler = () => {
+      window.history.pushState(null, '', window.location.href);
+      setPendingNavigation('/orcamentos');
+      setIsUnsavedModalOpen(true);
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, [isDirty]);
 
   // Adjust selected address if no longer in combinedAddresses
   useEffect(() => {
@@ -1907,6 +1987,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     try {
       const res = await saveProposta(formToSave);
       if (res.success) {
+        // Reset snapshot so isDirty becomes false after save
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { fretes: _f, ...savedSnap } = formToSave;
+        initialFormSnapshot.current = JSON.stringify(savedSnap);
+
         showToast({
           type: "success",
           title: mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso.",
@@ -1948,9 +2033,13 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         context="Orçamentos / Propostas"
         action={
           <div className="flex flex-wrap gap-2">
-            <Link href={mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos"} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+            <button
+              type="button"
+              onClick={() => handleNavigateRef.current(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
               {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
-            </Link>
+            </button>
             <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
               {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}
             </button>
@@ -2738,7 +2827,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <button type="button" onClick={() => router.push(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
+              <button type="button" onClick={() => handleNavigateRef.current(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
               <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
             </div>
           </div>
@@ -2777,6 +2866,29 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           onSave={handleSaveManualFrete}
         />
       ) : null}
+      {isUnsavedModalOpen && (
+        <UnsavedChangesModal
+          isSaving={isSaving}
+          onContinueEditing={() => {
+            setIsUnsavedModalOpen(false);
+            setPendingNavigation(null);
+          }}
+          onExitWithoutSaving={() => {
+            const dest = pendingNavigation || "/orcamentos";
+            // Reset snapshot so guard doesn't re-trigger
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { fretes: _f, ...curr } = form;
+            initialFormSnapshot.current = JSON.stringify(curr);
+            setIsUnsavedModalOpen(false);
+            setPendingNavigation(null);
+            router.push(dest);
+          }}
+          onSaveAndExit={() => {
+            setIsUnsavedModalOpen(false);
+            void handleSave();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -3275,7 +3387,64 @@ function Modal({ title, children, onClose, onSave, saveLabel = "Adicionar" }: { 
   );
 }
 
+function UnsavedChangesModal({
+  onSaveAndExit,
+  onExitWithoutSaving,
+  onContinueEditing,
+  isSaving
+}: {
+  onSaveAndExit: () => void;
+  onExitWithoutSaving: () => void;
+  onContinueEditing: () => void;
+  isSaving: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="unsaved-modal-title"
+    >
+      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl">
+        <div className="p-6">
+          <h2 id="unsaved-modal-title" className="text-lg font-semibold text-slate-950">
+            Existem alterações não salvas
+          </h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Você fez alterações nesta proposta. Deseja salvar antes de sair?
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onContinueEditing}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Continuar editando
+          </button>
+          <button
+            type="button"
+            onClick={onExitWithoutSaving}
+            className="rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+          >
+            Sair sem salvar
+          </button>
+          <button
+            type="button"
+            onClick={onSaveAndExit}
+            disabled={isSaving}
+            className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#123f61] disabled:opacity-60"
+          >
+            {isSaving ? "Salvando..." : "Salvar e sair"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function createInitialState(proposta?: Proposta): PropostaFormState {
+
   const cliente = proposta?.cliente;
   const endereco = proposta?.enderecoEntrega;
   const isAvulso = proposta?.is_avulso ?? false;
