@@ -473,7 +473,7 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
   try {
     const { data: mainRows, error: mainError } = await client
       .from("clientes")
-      .select("id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,percentual_bunus")
+      .select("id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,percentual_bunus,id_modelo_cobranca")
       .eq("id_cliente", idCliente)
       .limit(1);
 
@@ -760,6 +760,7 @@ export type CadastroInsertPayload = {
   cpf_erro?: string | null;
   is_bonus?: boolean;
   percentual_bunus?: number | string | null;
+  id_modelo_cobranca?: string | null;
 };
 
 export type CadastroUpdatePayload = Omit<CadastroInsertPayload, "id_cliente">;
@@ -990,7 +991,8 @@ function normalizeClienteWritePayload(payload: CadastroInsertPayload | CadastroU
     cpf_erro: toNullableText(payload.cpf_erro),
     credito: toNullableDecimal(payload.credito),
     is_bonus: toBoolean(payload.is_bonus, false),
-    percentual_bunus: toNullableDecimal(payload.percentual_bunus)
+    percentual_bunus: toNullableDecimal(payload.percentual_bunus),
+    id_modelo_cobranca: payload.id_modelo_cobranca ?? null
   };
 }
 

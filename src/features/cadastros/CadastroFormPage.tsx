@@ -696,7 +696,8 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       cpf_invalido: form.cpfInvalido,
       cpf_erro: normalizeOptionalText(form.cpfErro),
       is_bonus: form.bonusAtivo,
-      percentual_bunus: normalizeOptionalText(form.percentualBonus)
+      percentual_bunus: normalizeOptionalText(form.percentualBonus),
+      id_modelo_cobranca: form.modeloCobrancaId || null
     };
 
     let result: Awaited<ReturnType<typeof createCadastro>>;
@@ -902,7 +903,8 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       cpf_invalido: form.cpfInvalido,
       cpf_erro: normalizeOptionalText(form.cpfErro),
       is_bonus: form.bonusAtivo,
-      percentual_bunus: normalizeOptionalText(form.percentualBonus)
+      percentual_bunus: normalizeOptionalText(form.percentualBonus),
+      id_modelo_cobranca: form.modeloCobrancaId || null
     };
 
     const result = await updateCadastro(idCliente, updatePayload);
@@ -1997,6 +1999,7 @@ function createInitialState(cadastro?: Cadastro): CadastroFormState {
     creditoDisponivel: cadastro?.creditoDisponivel?.toString() ?? "0",
     riscoCredito: cadastro?.riscoCredito ?? "BAIXO",
     padraoPagamento: cadastro?.padraoPagamento ?? "PIX",
+    modeloCobrancaId: cadastro?.modeloCobrancaId ?? undefined,
     bonusAtivo: cadastro?.bonusAtivo ?? false,
     percentualBonus: cadastro?.percentualBonus?.toString() ?? "0",
     nota: cadastro?.nota ?? false,

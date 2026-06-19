@@ -46,6 +46,7 @@ export type SupabaseClienteRow = {
   credito?: SupabaseNullableValue;
   is_bonus?: SupabaseNullableValue;
   percentual_bunus?: SupabaseNullableValue;
+  id_modelo_cobranca?: SupabaseNullableValue;
 };
 
 export type SupabaseEnderecoRow = {

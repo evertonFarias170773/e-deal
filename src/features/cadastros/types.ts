@@ -96,6 +96,8 @@ export type Cadastro = {
   nota?: boolean;
   sendMail?: boolean;
   sendWhats?: boolean;
+  /** UUID de public.modelos_cobranca. Só relevante quando padraoPagamento = 'FATURADO'. */
+  modeloCobrancaId?: string | null;
   enderecos: CadastroEndereco[];
   contatos: CadastroContato[];
   vinculosComerciais: CadastroVinculoComercial[];

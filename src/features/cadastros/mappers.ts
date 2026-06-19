@@ -160,6 +160,7 @@ export function mapSupabaseClienteRowToCadastro(row: SupabaseClienteRow): Cadast
     nota: toBoolean(row.nota, false),
     sendMail: toBoolean(row.recebe_email, false),
     sendWhats: toBoolean(row.recebe_whatsapp, false),
+    modeloCobrancaId: toText(row.id_modelo_cobranca) || undefined,
     enderecos: [],
     contatos: [],
     vinculosComerciais: []
