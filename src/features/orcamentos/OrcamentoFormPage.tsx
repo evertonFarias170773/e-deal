@@ -293,6 +293,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [isQuotingAzul, setIsQuotingAzul] = useState(false);
   const [isQuotingTransp, setIsQuotingTransp] = useState(false);
   const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
+  const [loadingCompradorAddresses, setLoadingCompradorAddresses] = useState(false);
   const [lastDestinationKey, setLastDestinationKey] = useState<string>(() => {
     if (!proposta) return "";
     const isNaoCadastrado = proposta.clienteNaoCadastrado ?? (proposta.cliente ? (proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0) : false);
@@ -725,6 +726,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }
 
     let active = true;
+    setLoadingCompradorAddresses(true);
     void (async () => {
       try {
         const { cadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
@@ -737,6 +739,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       } catch (err) {
         console.error("Erro ao carregar endereços do comprador/autorizado:", err);
         if (active) setTimeout(() => setCompradorAddresses([]), 0);
+      } finally {
+        if (active) setLoadingCompradorAddresses(false);
       }
     })();
     return () => {
@@ -815,6 +819,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
   // Adjust selected address if no longer in combinedAddresses
   useEffect(() => {
+    if (loadingCompradorAddresses) return;
+
     if (combinedAddresses.length > 0) {
       const exists = combinedAddresses.some((addr) => addr.id === form.enderecoId);
       if (!exists) {
@@ -828,7 +834,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       updateField("enderecoId", "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combinedAddresses, form.enderecoId]);
+  }, [combinedAddresses, form.enderecoId, loadingCompradorAddresses]);
 
   // Debounced auto-quote when address, weight, or volumes change
   useEffect(() => {
