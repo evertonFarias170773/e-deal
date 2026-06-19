@@ -103,6 +103,13 @@ export function PropostaCobrancaPanel({
   const liberacaoStatus = getLiberacaoPedidoStatus(cobrancasDaProposta);
   const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
 
+  /** Retorna data futura no formato YYYY-MM-DD (padrão: 30 dias à frente). */
+  function getDefaultVencimento(daysAhead = 30): string {
+    const d = new Date();
+    d.setDate(d.getDate() + daysAhead);
+    return d.toISOString().slice(0, 10);
+  }
+
   function buildInitialFormState(): CriarCobrancaFormValues {
     const cobrancaComOs = cobrancasDaProposta.find((item) => item.os_ideal && item.os_ideal.trim() !== "");
     const defaultOsIdeal = cobrancaComOs ? cobrancaComOs.os_ideal.trim() : "";
@@ -117,7 +124,7 @@ export function PropostaCobrancaPanel({
         : `Cobrança da proposta #${proposta.id_int}`,
       observacao: proposta.observacoes,
       condicaoPagamento: proposta.formaPagamento,
-      vencimento: "2026-05-30",
+      vencimento: getDefaultVencimento(30),
       osIdeal: defaultOsIdeal,
       modeloFatu: "BOLETO",
       id_empresa: initialEmp.id_empresa,
@@ -432,7 +439,7 @@ export function PropostaCobrancaPanel({
       tipoCobranca: tipo,
       parcelaSelecionada: undefined,
       condicaoPagamento: tipo === "CARD_PARCELADO" ? "Cartão de crédito" : (tipo === "E-FATURADO" ? "Faturado" : proposta.formaPagamento),
-      vencimento: tipo === "BOLETO" || tipo === "E-FATURADO" ? form.vencimento || "2026-05-30" : form.vencimento
+      vencimento: tipo === "BOLETO" || tipo === "E-FATURADO" ? form.vencimento || getDefaultVencimento(30) : form.vencimento
     });
   }
 
