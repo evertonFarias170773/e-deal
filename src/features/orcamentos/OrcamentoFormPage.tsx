@@ -451,6 +451,16 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           });
         }
       });
+      // Também exibir endereços do cliente principal quando sócio está selecionado
+      proposalAddresses.forEach((addr) => {
+        if (!seenIds.has(addr.id)) {
+          seenIds.add(addr.id);
+          list.push({
+            ...addr,
+            _isSocioAddr: false
+          });
+        }
+      });
     }
 
     return list;
@@ -705,6 +715,23 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       active = false;
     };
   }, [form.compradorId, cliente]);
+
+  // Fallback: recarregar endereços do cliente principal se proposalAddresses estiver vazio
+  useEffect(() => {
+    if (!cliente || form.clienteNaoCadastrado || proposalAddresses.length > 0) return;
+    let active = true;
+    void (async () => {
+      try {
+        const { cadastro } = await getCadastroCompleto(cliente.idCliente);
+        if (active && cadastro && (cadastro.enderecos || []).length > 0) {
+          setProposalAddresses(cadastro.enderecos);
+        }
+      } catch (err) {
+        console.error("[OrcamentoForm] Erro ao recarregar endereços do cliente principal:", err);
+      }
+    })();
+    return () => { active = false; };
+  }, [cliente?.idCliente]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Adjust selected address if no longer in combinedAddresses
   useEffect(() => {
@@ -1924,7 +1951,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             <Link href={mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos"} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
               {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
             </Link>
-            <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
+            <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
               {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}
             </button>
           </div>
@@ -2712,7 +2739,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button type="button" onClick={() => router.push(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
-              <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
+              <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
             </div>
           </div>
         </div>
@@ -3192,7 +3219,9 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanCep]);
 
-  const [lastConsultedCpf, setLastConsultedCpf] = useState<string>("");
+  const [lastConsultedCpf, setLastConsultedCpf] = useState<string>(() => {
+    return normalizeDocumentDigits(draft.cpfRecebedor || "");
+  });
 
   useEffect(() => {
     if (cleanCpf && cleanCpf.length === 11 && !isCpfLoading && cleanCpf !== lastConsultedCpf) {
