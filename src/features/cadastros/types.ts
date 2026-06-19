@@ -71,6 +71,7 @@ export type Cadastro = {
   padraoPagamento: string;
   ultimaCompra: string;
   totalCompras: number;
+  valorTotalComprado?: number;
   whatsapp: string;
   whatsapp2?: string;
   telefoneFixo?: string;
@@ -134,6 +135,8 @@ export type CadastroFormState = {
   creditoDisponivel: string;
   riscoCredito: "BAIXO" | "MEDIO" | "ALTO";
   padraoPagamento: string;
+  modeloCobrancaId?: number;
+  valorTotalComprado?: number;
   bonusAtivo: boolean;
   percentualBonus: string;
   nota: boolean;
