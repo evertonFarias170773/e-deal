@@ -635,19 +635,59 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       };
     }
 
-    let address = clientObj.enderecos.find((e) => e.cep === proposalRow.cep);
-    if (!address) {
-      address = clientObj.enderecos.find((e) => e.tipo === "entrega" || e.tipo === "principal") || clientObj.enderecos[0] || {
-        id: "end_default",
-        tipo: "principal",
-        cep: proposalRow.cep || "",
-        endereco: "Endereço principal",
-        numero: "",
-        bairro: "",
-        cidade: "",
-        uf: ""
-      };
+    // Resolve address: prioritise id_endereco_ent (exact ID match)
+    let address: CadastroEndereco | undefined;
+
+    if (proposalRow.id_endereco_ent) {
+      // 1. Try to find in client's already-loaded enderecos
+      address = clientObj.enderecos.find((e) => e.id === proposalRow.id_endereco_ent);
+
+      if (!address) {
+        // 2. Fetch directly from enderecos by id (handles comprador addresses or other cases)
+        const { data: endData } = await client
+          .from("enderecos")
+          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, recebedor, cpf_recebedor")
+          .eq("id", proposalRow.id_endereco_ent)
+          .maybeSingle();
+
+        if (endData) {
+          address = {
+            id: endData.id,
+            cep: endData.cep || "",
+            endereco: endData.endereco || "",
+            numero: endData.numero || "",
+            complemento: endData.complemento || "",
+            bairro: endData.bairro || "",
+            cidade: endData.cidade || "",
+            uf: endData.uf || "",
+            tipo: ((endData.tipo_endereco ?? "").toLowerCase() as CadastroEndereco["tipo"]) || "entrega",
+            recebedor: endData.recebedor || undefined,
+            cpfRecebedor: endData.cpf_recebedor || undefined,
+          };
+        }
+      }
     }
+
+    // 3. Fall back to CEP match
+    if (!address) {
+      address = clientObj.enderecos.find((e) => e.cep === proposalRow.cep);
+    }
+
+    // 4. Last resort: first address or empty placeholder
+    if (!address) {
+      address = clientObj.enderecos.find((e) => e.tipo === "entrega" || e.tipo === "principal") ||
+        clientObj.enderecos[0] || {
+          id: "end_default",
+          tipo: "principal" as CadastroEndereco["tipo"],
+          cep: proposalRow.cep || "",
+          endereco: "Endereço principal",
+          numero: "",
+          bairro: "",
+          cidade: "",
+          uf: ""
+        };
+    }
+
 
     // Fetch global variations to get their nice names
     const globalVars = await listVariacoesGlobais();
@@ -1174,6 +1214,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
     const propostaData: SupabasePropostaRow = {
       id_cliente: formState.clienteNaoCadastrado ? null : Number(formState.clienteId),
       id_faturado: id_faturado,
+      id_endereco_ent: formState.enderecoId || null,
       cliente: clienteNome,
       empresa: formState.empresa,
       vendedor: formState.vendedor,

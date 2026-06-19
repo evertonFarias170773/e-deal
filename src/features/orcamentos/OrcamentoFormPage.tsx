@@ -2459,7 +2459,41 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     ) : (
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
                     )}
-                    <button type="button" onClick={() => { setAddressModalMode("create"); setEditingAddressId(null); setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" }); setIsAddressModalOpen(true); }} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo endereço</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (mode === "edit" && form.enderecoId) {
+                          // Proposta edit mode: open the linked address for UPDATE
+                          const linkedAddr = combinedAddresses.find((a) => a.id === form.enderecoId);
+                          if (linkedAddr) {
+                            setAddressModalMode("edit");
+                            setEditingAddressId(linkedAddr.id);
+                            setAddressDraft({
+                              tipo: (linkedAddr.tipo as AddressDraft["tipo"]) || "entrega",
+                              cep: linkedAddr.cep || "",
+                              endereco: linkedAddr.endereco || "",
+                              numero: linkedAddr.numero || "",
+                              complemento: linkedAddr.complemento || "",
+                              bairro: linkedAddr.bairro || "",
+                              cidade: linkedAddr.cidade || "",
+                              uf: linkedAddr.uf || "",
+                              recebedor: linkedAddr.recebedor || "",
+                              cpfRecebedor: linkedAddr.cpfRecebedor || "",
+                            });
+                            setIsAddressModalOpen(true);
+                            return;
+                          }
+                        }
+                        // Default: open empty create form
+                        setAddressModalMode("create");
+                        setEditingAddressId(null);
+                        setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
+                        setIsAddressModalOpen(true);
+                      }}
+                      className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]"
+                    >
+                      {mode === "edit" && form.enderecoId ? "Salvar endereço" : "+ Adicionar novo endereço"}
+                    </button>
                   </FormSection>
                 </>
               )}
