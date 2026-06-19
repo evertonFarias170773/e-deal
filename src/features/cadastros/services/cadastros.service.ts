@@ -492,7 +492,7 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
     const [enderecosResult, contatosResult, sociosResult, propostasResult] = await Promise.all([
       client
         .from("enderecos")
-        .select("id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf,obs")
+        .select("id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf,obs,recebedor,cpf_recebedor")
         .eq("id_cliente", idCliente)
         .limit(100),
       client
@@ -773,7 +773,7 @@ export type CadastroEnderecoInsertPayload = {
   bairro: string | null;
   cidade: string | null;
   uf: string | null;
-  tipo_endereco: "PRINCIPAL";
+  tipo_endereco: string;
   obs: string | null;
   recebedor?: string | null;
   cpf_recebedor?: string | null;
@@ -1564,7 +1564,7 @@ export async function createCadastroEndereco(
     bairro: toNullableText(payload.bairro),
     cidade: toNullableText(payload.cidade),
     uf: toNullableText(payload.uf),
-    tipo_endereco: toNullableText(payload.tipo_endereco) || "PRINCIPAL",
+    tipo_endereco: toNullableText(payload.tipo_endereco) || "ENTREGA",
     obs: toNullableText(payload.obs),
     recebedor: toNullableText(payload.recebedor),
     cpf_recebedor: toNullableText(payload.cpf_recebedor)
@@ -1614,7 +1614,7 @@ export async function createCadastroEnderecos(
     bairro: toNullableText(item.bairro),
     cidade: toNullableText(item.cidade),
     uf: toNullableText(item.uf),
-    tipo_endereco: toNullableText(item.tipo_endereco) || "PRINCIPAL",
+    tipo_endereco: toNullableText(item.tipo_endereco) || "ENTREGA",
     obs: toNullableText(item.obs),
     recebedor: toNullableText(item.recebedor),
     cpf_recebedor: toNullableText(item.cpf_recebedor)
@@ -1735,7 +1735,7 @@ export async function updateCadastroEndereco(
       bairro: toNullableText(payload.bairro),
       cidade: toNullableText(payload.cidade),
       uf: toNullableText(payload.uf),
-      tipo_endereco: toNullableText(payload.tipo_endereco) || "PRINCIPAL",
+      tipo_endereco: toNullableText(payload.tipo_endereco) || "ENTREGA",
       obs: toNullableText(payload.obs),
       recebedor: toNullableText(payload.recebedor),
       cpf_recebedor: toNullableText(payload.cpf_recebedor)
@@ -1746,6 +1746,50 @@ export async function updateCadastroEndereco(
     return {
       success: false,
       errorMessage: error.message || "Nao foi possivel atualizar o endereco.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+  return { success: true };
+}
+
+export async function checkEnderecoReferenciadoEmProposta(
+  enderecoId: string
+): Promise<{ referenciado: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { referenciado: true, errorMessage: "Cliente Supabase indisponivel para verificar referencias." };
+  }
+
+  const { data, error } = await client
+    .from("propostas")
+    .select("id")
+    .eq("id_endereco_ent", enderecoId)
+    .limit(1);
+
+  if (error) {
+    return { referenciado: true, errorMessage: error.message || "Erro ao verificar referencia em propostas." };
+  }
+
+  return { referenciado: (data?.length ?? 0) > 0 };
+}
+
+export async function deleteCadastroEndereco(
+  id: string
+): Promise<CadastroRelatedCreateResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponivel para excluir endereco." };
+  }
+
+  const { error } = await client
+    .from("enderecos")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel excluir o endereco.",
       status: error.code ? Number(error.code) : undefined
     };
   }

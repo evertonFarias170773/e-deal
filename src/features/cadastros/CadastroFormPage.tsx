@@ -20,6 +20,8 @@ import {
   updateCadastro,
   updateCadastroContato,
   updateCadastroEndereco,
+  checkEnderecoReferenciadoEmProposta,
+  deleteCadastroEndereco,
   updateCadastroVinculoComercial,
   validateCadastroInitialStep,
   searchCadastroVinculoByDocumento,
@@ -749,8 +751,10 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       bairro: normalizeOptionalText(item.bairro),
       cidade: normalizeOptionalText(item.cidade),
       uf: normalizeOptionalText(item.uf),
-      tipo_endereco: "PRINCIPAL",
-      obs: normalizeOptionalText(item.obs)
+      tipo_endereco: item.tipo.toUpperCase(),
+      obs: normalizeOptionalText(item.obs),
+      recebedor: normalizeOptionalText(item.recebedor),
+      cpf_recebedor: normalizeOptionalText(item.cpfRecebedor)
     }));
     if (enderecosPayload.length > 0) {
       const enderecoResult = await createCadastroEnderecos(enderecosPayload);
@@ -927,8 +931,10 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
         bairro: normalizeOptionalText(endereco.bairro),
         cidade: normalizeOptionalText(endereco.cidade),
         uf: normalizeOptionalText(endereco.uf),
-        tipo_endereco: "PRINCIPAL" as const,
-        obs: normalizeOptionalText(endereco.obs)
+        tipo_endereco: endereco.tipo.toUpperCase(),
+        obs: normalizeOptionalText(endereco.obs),
+        recebedor: normalizeOptionalText(endereco.recebedor),
+        cpf_recebedor: normalizeOptionalText(endereco.cpfRecebedor)
       };
 
       const enderecoResult = isTemporaryId(endereco.id)
@@ -1569,13 +1575,24 @@ function CompleteForm({
               <div className="mb-4 flex items-center justify-between gap-3">
                 <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
                 {endereco.tipo !== 'principal' && (
-                  <button type="button" onClick={() => {
-                    if (!isTemporaryId(endereco.id)) {
-                      onToast({ type: "warning", title: "Remoção bloqueada", description: "Endereço já salvo não pode ser removido nesta fase." });
+                  <button type="button" onClick={async () => {
+                    if (isTemporaryId(endereco.id)) {
+                      onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
+                      onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
+                      return;
+                    }
+                    const refCheck = await checkEnderecoReferenciadoEmProposta(endereco.id);
+                    if (refCheck.referenciado) {
+                      onToast({ type: "error", title: "Exclusão bloqueada", description: refCheck.errorMessage || "Este endereço está vinculado a uma proposta e não pode ser excluído." });
+                      return;
+                    }
+                    const deleteResult = await deleteCadastroEndereco(endereco.id);
+                    if (!deleteResult.success) {
+                      onToast({ type: "error", title: "Erro ao excluir", description: deleteResult.errorMessage || "Não foi possível excluir o endereço." });
                       return;
                     }
                     onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
-                    onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
+                    onToast({ type: "success", title: "Endereço excluído", description: "Endereço removido com sucesso do banco de dados." });
                   }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -1996,7 +2013,7 @@ function createInitialState(cadastro?: Cadastro): CadastroFormState {
 function createBlankEndereco(): CadastroEndereco {
   return {
     id: `end_${Date.now()}`,
-    tipo: "principal",
+    tipo: "entrega",
     cep: "",
     endereco: "",
     numero: "",
