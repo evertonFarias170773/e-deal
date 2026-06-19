@@ -693,8 +693,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     }
 
     const statusNormalized = cobranca.status?.trim().toUpperCase();
-    if (statusNormalized === "PAID") {
-      return { success: false, errorMessage: "Não é permitido excluir cobrança paga." };
+    if (statusNormalized === "PAID" || statusNormalized === "A_VENCER") {
+      return { success: false, errorMessage: "Não é permitido excluir cobrança paga ou com faturamento aprovado (A_VENCER)." };
     }
 
     if (source === "supabase") {
@@ -718,8 +718,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      if (String(dbRow.status || "").trim().toUpperCase() === "PAID") {
-        return { success: false, errorMessage: "Não é permitido excluir cobrança paga." };
+      const dbStatusNorm = String(dbRow.status || "").trim().toUpperCase();
+      if (dbStatusNorm === "PAID" || dbStatusNorm === "A_VENCER") {
+        return { success: false, errorMessage: "Não é permitido excluir cobrança paga ou aprovada (A_VENCER)." };
       }
 
       const { error } = await client

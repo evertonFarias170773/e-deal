@@ -1339,6 +1339,27 @@ export function PropostaCobrancaPanel({
 
 function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
   const { showToast } = useAppToast();
+  const { deleteCobranca } = useCobrancas();
+  const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
+  const [isDeletando, setIsDeletando] = useState(false);
+
+  const handleConfirmarExclusao = async () => {
+    if (!cobrancaParaExcluir) return;
+    setIsDeletando(true);
+    try {
+      const result = await deleteCobranca(cobrancaParaExcluir.id);
+      if (result.success) {
+        showToast({ type: "success", title: "Cobrança excluída com sucesso." });
+        setCobrancaParaExcluir(null);
+      } else {
+        showToast({ type: "error", title: "Erro ao excluir", description: result.errorMessage });
+      }
+    } catch (err) {
+      showToast({ type: "error", title: "Erro inesperado ao excluir cobrança." });
+    } finally {
+      setIsDeletando(false);
+    }
+  };
 
   const handleAbrirCheckout = async (url: string) => {
     if (!url) return;
@@ -1429,6 +1450,19 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
 
               {/* Col 6: Ações */}
               <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || isDeletando}
+                  onClick={() => setCobrancaParaExcluir(cobranca)}
+                  title={
+                    cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
+                    : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
+                    : "Excluir cobrança"
+                  }
+                  className="inline-flex items-center justify-center rounded-xl bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed border border-red-200"
+                >
+                  Excluir
+                </button>
                 {isBoleto ? (
                   <>
                     {boletoUrl ? (
@@ -1594,6 +1628,19 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || isDeletando}
+                    onClick={() => setCobrancaParaExcluir(cobranca)}
+                    title={
+                      cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
+                      : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
+                      : "Excluir cobrança"
+                    }
+                    className="inline-flex items-center justify-center rounded-xl bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed border border-red-200"
+                  >
+                    Excluir
+                  </button>
                   {isBoleto ? (
                     <>
                       {boletoUrl ? (
@@ -1696,6 +1743,41 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
           </div>
         );
       })}
+
+      {cobrancaParaExcluir ? (
+        <div className="fixed inset-0 z-[80] bg-slate-950/60 p-4 flex items-center justify-center animate-fade-in" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-slate-950">Excluir cobrança</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Deseja excluir esta cobrança? Esta ação remove a cobrança e não altera o status para CANCELADO.
+              </p>
+              <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                <p><strong>ID:</strong> {cobrancaParaExcluir.id_pagamento}</p>
+                <p><strong>Tipo:</strong> {getCobrancaTipoLabel(cobrancaParaExcluir.tipo_cobranca)}</p>
+                <p><strong>Valor:</strong> {formatCurrency(getValorCobranca(cobrancaParaExcluir))}</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end mt-4">
+              <button
+                type="button"
+                onClick={() => setCobrancaParaExcluir(null)}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarExclusao}
+                disabled={isDeletando}
+                className="rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isDeletando ? "Excluindo..." : "Confirmar exclusão"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
