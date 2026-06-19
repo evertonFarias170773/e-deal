@@ -174,4 +174,9 @@ export type CriarCobrancaFormValues = {
   p_intervalo?: number | null;
   id_empresa?: number;
   empresa?: string;
+  /** Dados do pagador efetivo resolvido via propostas.id_faturado.
+   *  Quando ausentes, createCobranca usa fallback em proposta.cliente (propostas antigas). */
+  pagadorIdCliente?: number | null;
+  pagadorNome?: string;
+  pagadorDocumento?: string;
 };

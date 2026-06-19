@@ -136,6 +136,14 @@ export function PropostaCobrancaPanel({
   const [showPendingAlert, setShowPendingAlert] = useState(false);
   const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
   const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>("");
+  /** Pagador efetivo: resolvido via proposta.id_faturado; fallback = cliente principal */
+  const [pagador, setPagador] = useState<{
+    idCliente: number;
+    nome: string;
+    documento: string;
+    padraoPagamento?: string;
+    idModeloCobranca?: string;
+  } | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -162,6 +170,76 @@ export function PropostaCobrancaPanel({
     };
     void fetchModelos();
   }, [modalOpen]);
+
+  // Carrega dados do pagador efetivo (id_faturado) ao abrir o modal
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    const idFaturado = proposta.id_faturado;
+    const idClientePrincipal = Number(proposta.cliente.idCliente);
+
+    // Sem id_faturado ou igual ao cliente principal → usa cliente da proposta (fallback seguro)
+    if (!idFaturado || idFaturado === idClientePrincipal) {
+      setPagador({
+        idCliente: idClientePrincipal,
+        nome: proposta.cliente.nome,
+        documento: proposta.cliente.documento,
+        padraoPagamento: proposta.cliente.padraoPagamento,
+        idModeloCobranca: proposta.cliente.modeloCobrancaId ?? undefined
+      });
+      return;
+    }
+
+    // id_faturado preenchido e diferente do cliente principal → busca no banco
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setPagador({ idCliente: idClientePrincipal, nome: proposta.cliente.nome, documento: proposta.cliente.documento });
+      return;
+    }
+
+    void (async () => {
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("id_cliente, nome, documento, padrao_pagamento, id_modelo_cobranca")
+        .eq("id_cliente", idFaturado)
+        .maybeSingle();
+
+      if (!error && data) {
+        setPagador({
+          idCliente: Number(data.id_cliente),
+          nome: String(data.nome || proposta.cliente.nome),
+          documento: String(data.documento || proposta.cliente.documento),
+          padraoPagamento: data.padrao_pagamento ? String(data.padrao_pagamento) : undefined,
+          idModeloCobranca: data.id_modelo_cobranca ? String(data.id_modelo_cobranca) : undefined
+        });
+      } else {
+        // Fallback seguro para propostas antigas ou erro de leitura
+        setPagador({ idCliente: idClientePrincipal, nome: proposta.cliente.nome, documento: proposta.cliente.documento });
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, proposta.id_faturado, proposta.cliente.idCliente]);
+
+  // Pré-seleciona tipoCobranca baseado no padrao_pagamento do pagador
+  useEffect(() => {
+    if (!pagador?.padraoPagamento) return;
+    const pp = pagador.padraoPagamento.toUpperCase().trim();
+    let tipo: CobrancaTipo | null = null;
+    if (pp === "PIX") tipo = "PIX";
+    else if (pp === "BOLETO") tipo = "BOLETO";
+    else if (pp === "CARTAO" || pp === "CARTÃO") tipo = "CARD_PARCELADO";
+    else if (pp === "FATURADO") tipo = "E-FATURADO";
+    if (tipo) setForm((current) => ({ ...current, tipoCobranca: tipo as CobrancaTipo }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagador?.padraoPagamento]);
+
+  // Pré-seleciona Modelo de Cobrança baseado em clientes.id_modelo_cobranca do pagador
+  // (resultado vem de modelos_cobranca.resultado; o id é a chave de match)
+  useEffect(() => {
+    if (!pagador?.idModeloCobranca || modelosCobranca.length === 0) return;
+    const exists = modelosCobranca.some(m => String(m.id) === String(pagador.idModeloCobranca));
+    if (exists) setModeloSelecionadoId(pagador.idModeloCobranca);
+  }, [pagador?.idModeloCobranca, modelosCobranca]);
 
   // Reset credit analysis state during render when criteria changes
   if ((!isFaturado || source !== "supabase" || !proposta.cliente.idCliente) && realCreditAnalysis !== null) {
@@ -509,7 +587,11 @@ export function PropostaCobrancaPanel({
       vencimento: payloadVencimento,
       valor: roundedValor,
       descricao: `Cobrança ${getCobrancaTipoLabel(form.tipoCobranca)} da proposta #${proposta.id_int}`,
-      parcelaSelecionada: undefined
+      parcelaSelecionada: undefined,
+      // Pagador efetivo: id_faturado validado; fallback automático via ?? no createCobranca
+      pagadorIdCliente: pagador?.idCliente,
+      pagadorNome: pagador?.nome,
+      pagadorDocumento: pagador?.documento
     };
 
     setIsSaving(true);

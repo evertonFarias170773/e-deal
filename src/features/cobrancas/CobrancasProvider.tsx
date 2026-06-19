@@ -283,11 +283,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
        }
 
        // 1. Criar registro inicial em pagamentos_v2
+       // Usa dados do pagador efetivo (id_faturado) quando disponíveis; fallback para cliente principal (propostas antigas)
        const payloadInicial = {
          id_int: proposta.id_int,
-         id_cliente: proposta.cliente.idCliente,
-         cliente: proposta.cliente.nome,
-         documento: proposta.cliente.documento,
+         id_cliente: values.pagadorIdCliente ?? proposta.cliente.idCliente,
+         cliente: values.pagadorNome ?? proposta.cliente.nome,
+         documento: values.pagadorDocumento ?? proposta.cliente.documento,
          valor: roundMoney(values.valor),
          status: isFaturadoType ? "A_VENCER" : "A_RECEBER",
          tipo_cobranca: values.tipoCobranca,
