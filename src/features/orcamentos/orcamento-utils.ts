@@ -21,6 +21,23 @@ export function getCobrancaLabel(status: Proposta["cobrancaStatus"]) {
   return labels[status];
 }
 
+export function sortEnderecosPorPrioridade(enderecos: CadastroEndereco[]): CadastroEndereco[] {
+  return [...enderecos].sort((a, b) => {
+    const getPriority = (addr: CadastroEndereco) => {
+      const t = ((addr as any).tipo_endereco ?? addr.tipo ?? "").trim().toLowerCase();
+      if (t === "principal") return 1;
+      if (t === "entrega") return 2;
+      return 3;
+    };
+    const pA = getPriority(a);
+    const pB = getPriority(b);
+    if (pA !== pB) return pA - pB;
+    const dateA = new Date((a as any).data_criacao || 0).getTime();
+    const dateB = new Date((b as any).data_criacao || 0).getTime();
+    return dateB - dateA;
+  });
+}
+
 export function buildPropostaInformalText({
   id_int,
   clienteNome,

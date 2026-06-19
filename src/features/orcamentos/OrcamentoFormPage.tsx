@@ -31,12 +31,13 @@ import {
   createFretesMock,
   createItemFromProduto,
   getClienteBonusPercent,
-  getClienteVendedorPadrao
+  getClienteVendedorPadrao,
+  sortEnderecosPorPrioridade
 } from "@/features/orcamentos/orcamento-utils";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
@@ -250,7 +251,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
-  const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => proposta?.cliente.enderecos ?? []);
+  const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => {
+    if (proposta?.cliente?.enderecos && proposta.cliente.enderecos.length > 0) return proposta.cliente.enderecos;
+    return [];
+  });
   const [cliente, setCliente] = useState<Cadastro | null>(() => proposta?.cliente ?? null);
   const shouldShowRest = mode !== "new" || cliente !== null || form.clienteNaoCadastrado;
 
@@ -410,27 +414,47 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
   const combinedAddresses = useMemo(() => {
     const seenIds = new Set<string>();
-    const list: CadastroEndereco[] = [];
+    const list: (CadastroEndereco & { _isSocioAddr?: boolean })[] = [];
+    const isSocioSelected = Boolean(
+      form.compradorId && 
+      form.compradorId !== form.clienteId && 
+      form.compradorId !== `cli_${form.clienteId}`
+    );
 
-    proposalAddresses.forEach((addr) => {
-      if (!seenIds.has(addr.id)) {
-        seenIds.add(addr.id);
-        list.push(addr);
-      }
-    });
+    // Inject the saved proposal address ONLY if it is currently selected, to prevent premature overwrites while loading
+    if (proposta?.enderecoEntrega && proposta.enderecoEntrega.id === form.enderecoId && !seenIds.has(proposta.enderecoEntrega.id)) {
+      seenIds.add(proposta.enderecoEntrega.id);
+      list.push({
+        ...proposta.enderecoEntrega,
+        _isSocioAddr: isSocioSelected
+      });
+    }
 
-    compradorAddresses.forEach((addr) => {
-      if (!seenIds.has(addr.id)) {
-        seenIds.add(addr.id);
-        list.push({
-          ...addr,
-          tipo: "comprador" as unknown as CadastroEndereco["tipo"]
-        });
-      }
-    });
+    if (!isSocioSelected) {
+      proposalAddresses.forEach((addr) => {
+        if (!seenIds.has(addr.id)) {
+          seenIds.add(addr.id);
+          list.push({
+            ...addr,
+            _isSocioAddr: false
+          });
+        }
+      });
+    } else {
+      const sortedComprador = sortEnderecosPorPrioridade(compradorAddresses);
+      sortedComprador.forEach((addr) => {
+        if (!seenIds.has(addr.id)) {
+          seenIds.add(addr.id);
+          list.push({
+            ...addr,
+            _isSocioAddr: true
+          });
+        }
+      });
+    }
 
     return list;
-  }, [proposalAddresses, compradorAddresses]);
+  }, [proposalAddresses, compradorAddresses, proposta?.enderecoEntrega, form.compradorId, form.clienteId, form.enderecoId]);
 
   const currentAddress = useMemo(() => {
     return combinedAddresses.find((a) => a.id === form.enderecoId);
@@ -670,16 +694,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           const addrs = cadastro.enderecos || [];
           setTimeout(() => {
             setCompradorAddresses(addrs);
-            
-            const isSocio = vinculo.tipoRelacao.toLowerCase().includes("sócio") || vinculo.tipoRelacao.toLowerCase().includes("socio");
-            if (isSocio) {
-              const principalAddr = addrs.find(a => (a as any).tipo_endereco === "Principal" || a.tipo === "principal") || addrs[0];
-              if (principalAddr) {
-                updateField("enderecoId", principalAddr.id);
-              } else {
-                showToast({ type: "warning", title: "Sócio sem endereço", description: "O sócio selecionado não possui endereços cadastrados." });
-              }
-            }
           }, 0);
         }
       } catch (err) {
@@ -697,7 +711,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     if (combinedAddresses.length > 0) {
       const exists = combinedAddresses.some((addr) => addr.id === form.enderecoId);
       if (!exists) {
-        const defaultAddr = combinedAddresses.find((e) => e.tipo === "entrega" || e.tipo === "principal") || combinedAddresses[0];
+        const defaultAddr = 
+          combinedAddresses.find((e) => (e.tipo || "").trim().toLowerCase() === "principal") || 
+          combinedAddresses.find((e) => (e.tipo || "").trim().toLowerCase() === "entrega") || 
+          combinedAddresses[0];
         updateField("enderecoId", defaultAddr ? defaultAddr.id : "");
       }
     } else {
@@ -977,9 +994,52 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     setPendingEnderecoSelection(null);
   }
 
-  function handleSelectComprador(id: string) {
+  async function handleSelectComprador(id: string) {
     const nextId = form.compradorId === id ? "" : id;
     updateField("compradorId", nextId);
+
+    if (form.id_int === "NOVO" || !cliente) return;
+    
+    const idIntNum = Number(form.id_int);
+    let targetClienteIdRelacionado = cliente.idCliente;
+    let newEnderecoId: string | null = null;
+    
+    if (nextId && nextId !== cliente.id.toString()) {
+       const vinculo = cliente.vinculosComerciais?.find((v) => v.id === nextId);
+       if (vinculo) {
+         targetClienteIdRelacionado = vinculo.idClienteRelacionado;
+         
+         try {
+           const { cadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
+           if (cadastro) {
+              setCompradorAddresses(cadastro.enderecos || []);
+              const addrs = sortEnderecosPorPrioridade(cadastro.enderecos || []);
+              const principalAddr = addrs[0];
+              
+              if (principalAddr) {
+                 newEnderecoId = principalAddr.id;
+                 updateField("enderecoId", newEnderecoId);
+              } else {
+                 showToast({ type: "warning", title: "Pagador sem endereço", description: "Pagador alterado, mas ele não possui endereço cadastrado." });
+              }
+           }
+         } catch(e) {
+           console.error("Erro fetch enderecos do pagador:", e);
+         }
+       }
+    } else {
+       const addrs = sortEnderecosPorPrioridade(cliente.enderecos || []);
+       const principalAddr = addrs[0];
+       if (principalAddr) {
+          newEnderecoId = principalAddr.id;
+          updateField("enderecoId", newEnderecoId);
+       }
+    }
+    
+    const { success, errorMessage } = await updatePropostaFiscalDados(idIntNum, targetClienteIdRelacionado, newEnderecoId ?? null);
+    if (!success) {
+      showToast({ type: "error", title: "Falha ao salvar pagador", description: errorMessage || "Não foi possível atualizar os dados fiscais na proposta." });
+    }
   }
 
   function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent) {
@@ -2214,21 +2274,23 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                           }
                         }}
                         render={(endereco) => {
-                          const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                          const isSocioAddr = (endereco as any)._isSocioAddr === true;
                           const recebedor = endereco.recebedor ? `Responsável: ${endereco.recebedor}` : "Responsável: não informado";
+                          const tipoExibido = endereco.tipo ? endereco.tipo : "Tipo não informado";
+                          const donoText = isSocioAddr ? "Endereço do pagador selecionado" : "Endereço do comprador";
                           return {
                             title: `${endereco.endereco}, ${endereco.numero}`,
                             subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`,
                             detail: (
                               <div className="flex flex-col gap-0.5 mt-0.5">
-                                <span>{isCompradorAddress ? "Endereço do Comprador" : endereco.tipo}</span>
+                                <span>{tipoExibido} ({donoText})</span>
                                 <span className="font-medium text-slate-600">{recebedor}</span>
                               </div>
                             )
                           };
                         }}
                         extraClassNameForItem={(endereco) => {
-                          const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                          const isCompradorAddress = (endereco as any)._isSocioAddr === true;
                           const isSelected = form.enderecoId === endereco.id;
                           if (isSelected) {
                             if (isCompradorAddress) {
@@ -2239,7 +2301,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                           return "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
                         }}
                         badgeForItem={(endereco) => {
-                          const isCompradorAddress = (endereco.tipo as string) === "comprador";
+                          const isCompradorAddress = (endereco as any)._isSocioAddr === true;
                           const isSelected = form.enderecoId === endereco.id;
                           const isSocio = form.compradorId && form.compradorId !== form.clienteId;
                           
@@ -2252,7 +2314,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
                           let requerNota = false;
                           if (isSelected && isSocio) {
-                            const principalAddr = compradorAddresses.find(a => (a as any).tipo_endereco === "Principal" || a.tipo === "principal") || compradorAddresses[0];
+                            const principalAddr = compradorAddresses.find(a => (a.tipo || "").trim().toLowerCase() === "principal") || compradorAddresses[0];
                             if (principalAddr && endereco.id !== principalAddr.id) {
                               const cidadeSelecionada = (endereco.cidade || "").trim().toLowerCase();
                               const cidadePrincipal = (principalAddr.cidade || "").trim().toLowerCase();
@@ -3130,18 +3192,32 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanCep]);
 
+  const [lastConsultedCpf, setLastConsultedCpf] = useState<string>("");
+
   useEffect(() => {
-    if (cleanCpf && cleanCpf.length === 11 && !isCpfLoading) {
+    if (cleanCpf && cleanCpf.length === 11 && !isCpfLoading && cleanCpf !== lastConsultedCpf) {
+      // Se o usuário editar o CPF depois de preencher o nome, limpamos o recebedor antigo
+      if (draft.recebedor) {
+        onChange({ ...draft, recebedor: "" });
+      }
+      
       setIsCpfLoading(true);
       fetch("/api/cadastros/consultar-cpf-simples", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documento: cleanCpf })
       })
-        .then((res) => res.json())
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.message || "Erro desconhecido na consulta.");
+          }
+          return data;
+        })
         .then((data) => {
           if (data.success && data.payload?.nome) {
             onChange({ ...draft, recebedor: data.payload.nome });
+            setLastConsultedCpf(cleanCpf);
           } else {
             onChange({ ...draft, recebedor: "" });
             showToast({ type: "warning", title: "CPF Inválido ou Sem Nome", description: "Não foi possível consultar o CPF. Verifique o número informado ou tente novamente." });
@@ -3150,9 +3226,13 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
         .catch((err) => {
           console.error("Erro na consulta de CPF:", err);
           onChange({ ...draft, recebedor: "" });
-          showToast({ type: "error", title: "Falha na consulta", description: "Não foi possível consultar o CPF. Verifique o número informado ou tente novamente." });
+          showToast({ type: "error", title: "Falha na consulta", description: err.message || "Não foi possível consultar o CPF. Verifique o número informado ou tente novamente." });
         })
         .finally(() => setIsCpfLoading(false));
+    } else if (cleanCpf && cleanCpf.length < 11 && draft.recebedor) {
+       // Se o usuário apagar um dígito do CPF já validado, limpamos o recebedor antigo e reseta a trava
+       onChange({ ...draft, recebedor: "" });
+       setLastConsultedCpf("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanCpf]);

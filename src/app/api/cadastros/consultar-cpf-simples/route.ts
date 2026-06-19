@@ -47,6 +47,7 @@ async function fetchJsonWithTimeout<T>(url: string, headers?: HeadersInit): Prom
 }
 
 export async function POST(request: Request) {
+  const startTime = Date.now();
   let body: ConsultaCpfRequestBody;
 
   try {
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
     );
   }
 
+  // Somente números
   const documento = normalizeDocumentDigits(toText(body.documento));
 
   if (!documento) {
@@ -75,44 +77,74 @@ export async function POST(request: Request) {
     );
   }
 
+  const maskedCpf = documento.slice(0, 3) + "******" + documento.slice(-2);
+  const endpoint = `https://api.cpfhub.io/cpf/${localValidation.digits}`;
+
   const token = process.env.CPFHUB_API_TOKEN ?? process.env.CPFHUB_TOKEN ?? process.env.CPFHUB_API_KEY;
   const headers: HeadersInit = {};
 
   if (token) {
     headers["x-api-key"] = token;
   } else {
-    // If there is no token configured, we should return an error explicitly, as requested: "Se API falhar ou token ausente, retornar erro controlado"
     return NextResponse.json(
       { success: false, message: "Serviço de consulta de CPF não configurado no servidor." },
       { status: 500 }
     );
   }
 
-  const result = await fetchJsonWithTimeout<CpfApiResponse>(`https://api.cpfhub.io/cpf/${localValidation.digits}`, headers);
+  const result = await fetchJsonWithTimeout<any>(endpoint, headers);
+  const duration = Date.now() - startTime;
   
   if (!result.ok) {
     if (process.env.NODE_ENV === "development") {
-      console.error(`[CPF_API_ERROR] Falha na consulta do endpoint https://api.cpfhub.io/cpf/. Status HTTP: ${result.status}`);
+      console.error(`[CPF_API_ERROR] Falha na consulta de CPF ${maskedCpf}. Endpoint: https://api.cpfhub.io/cpf/{cpf}. Status HTTP: ${result.status}. Tempo: ${duration}ms`);
     }
+
+    if (result.status === 401 || result.status === 403) {
+      return NextResponse.json({ success: false, message: "Falha de autenticação na API de CPF." }, { status: 403 });
+    }
+    if (result.status === 429) {
+      return NextResponse.json({ success: false, message: "Limite de consultas de CPF atingido. Tente novamente mais tarde." }, { status: 429 });
+    }
+    if (result.status === 404) {
+      return NextResponse.json({ success: false, message: "CPF não encontrado na base de dados." }, { status: 404 });
+    }
+    
     return NextResponse.json(
-      { success: false, message: "Não foi possível consultar o CPF no serviço externo." },
-      { status: result.status === 429 ? 429 : result.status === 401 || result.status === 403 ? 403 : 502 }
+      { success: false, message: "A API de CPF está indisponível no momento." },
+      { status: 502 }
     );
   }
 
+  // Tenta encontrar o nome em diversos formatos possíveis
+  const d = result.data || {};
+  
+  // body de resposta sanitizado para logs
   if (process.env.NODE_ENV === "development") {
-    console.log(`[CPF_API_SUCCESS] Consulta realizada com sucesso no endpoint https://api.cpfhub.io/cpf/`);
+    const sanitizedBody = JSON.stringify(d, (key, value) => {
+      if (typeof value === "string" && value.length > 5 && (key.toLowerCase().includes("cpf") || key.toLowerCase().includes("doc"))) {
+        return "***";
+      }
+      return value;
+    });
+    console.log(`[CPF_API_SUCCESS] Consulta CPF ${maskedCpf}. Tempo: ${duration}ms. Retorno: ${sanitizedBody}`);
   }
 
-  const data = result.data.data ?? {};
-  const nome = toText(data.nameUpper) || toText(data.name);
+  const nome = 
+    toText(d.data?.nameUpper) || 
+    toText(d.data?.name) || 
+    toText(d.data?.nome) || 
+    toText(d.nome) || 
+    toText(d.result?.nome) || 
+    toText(d.pessoa?.nome) || 
+    toText(d.dados?.nome);
 
   if (!nome) {
     if (process.env.NODE_ENV === "development") {
-      console.error(`[CPF_API_ERROR] Retorno da API sem nome para o documento informado.`);
+      console.error(`[CPF_API_ERROR] Retorno da API sem nome legível para CPF ${maskedCpf}.`);
     }
     return NextResponse.json(
-      { success: false, message: "Nome não encontrado para este CPF." },
+      { success: false, message: "A API retornou sucesso, mas sem campo de nome legível." },
       { status: 404 }
     );
   }

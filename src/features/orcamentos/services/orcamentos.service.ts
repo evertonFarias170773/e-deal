@@ -2502,4 +2502,36 @@ export async function updateEnderecoProposta(
   return { success: true, data: mappedEndereco };
 }
 
+export async function updatePropostaFiscalDados(
+  idInt: number,
+  idFaturado: number,
+  idEnderecoEnt: string | null
+): Promise<{ success: boolean; data?: any; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
+
+  const updatePayload: any = { id_faturado: idFaturado };
+  if (idEnderecoEnt !== null && idEnderecoEnt !== undefined) {
+    updatePayload.id_endereco_ent = idEnderecoEnt;
+  }
+
+  const { data, error } = await client
+    .from("propostas")
+    .update(updatePayload)
+    .eq("id_int", idInt)
+    .select("id_int, id_cliente, id_faturado, id_endereco_ent")
+    .single();
+
+  if (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.error("[OrcamentosService] Erro ao atualizar dados fiscais da proposta:", error);
+    }
+    return { success: false, errorMessage: error.message || "Erro ao atualizar dados fiscais no banco." };
+  }
+
+  return { success: true, data };
+}
+
 
