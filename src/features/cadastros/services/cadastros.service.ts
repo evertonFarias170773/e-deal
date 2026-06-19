@@ -326,6 +326,13 @@ function applyMockCadastrosQuery(query: Required<Pick<CadastrosListQuery, "pageI
   };
 }
 
+export async function getModelosCobranca(): Promise<{ id: number; resultado: string }[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  const { data } = await client.from("modelos_cobranca").select("id, resultado").order("resultado", { ascending: true });
+  return data || [];
+}
+
 export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promise<CadastrosReadResult> {
   const pageIndex = Math.max(query.pageIndex ?? 0, 0);
   const pageSize = Math.min(Math.max(query.pageSize ?? 500, 1), 500);
@@ -482,7 +489,7 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
 
     const cadastro = mapSupabaseClienteRowToCadastro(mainRow);
 
-    const [enderecosResult, contatosResult, sociosResult] = await Promise.all([
+    const [enderecosResult, contatosResult, sociosResult, propostasResult] = await Promise.all([
       client
         .from("enderecos")
         .select("id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf,obs")
@@ -497,7 +504,12 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
         .from("clientes_socios")
         .select("id,id_cliente_principal,id_cliente_socio,tipo_relacao")
         .eq("id_cliente_principal", idCliente)
-        .limit(100)
+        .limit(100),
+      client
+        .from("vw_proposta_completa")
+        .select("valor_total_calculado")
+        .eq("id_cliente", idCliente)
+        .eq("status_interno", "APROVADO")
     ]);
 
     const relatedIds = Array.from(
@@ -525,16 +537,24 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
       });
     }
 
+    const propsData = propostasResult?.data || [];
+    const totalCompras = propsData.length;
+    const valorTotalComprado = propsData.reduce((acc, curr) => acc + Number(curr.valor_total_calculado || 0), 0);
+
     return {
       source: "supabase",
-      cadastro: mergeSupabaseRelacionamentos(cadastro, {
-        enderecos: enderecosResult.data ?? [],
-        contatos: contatosResult.data ?? [],
-        socios: (sociosResult.data ?? []).map((row) => ({
-          row,
-          relatedCadastro: relatedLookup.get(normalizeIdCliente(row.id_cliente_socio) ?? -1) ?? null
-        }))
-      })
+      cadastro: {
+        ...mergeSupabaseRelacionamentos(cadastro, {
+          enderecos: enderecosResult.data ?? [],
+          contatos: contatosResult.data ?? [],
+          socios: (sociosResult.data ?? []).map((row) => ({
+            row,
+            relatedCadastro: relatedLookup.get(normalizeIdCliente(row.id_cliente_socio) ?? -1) ?? null
+          }))
+        }),
+        totalCompras,
+        valorTotalComprado
+      }
     };
   } catch (err) {
     console.error(`[CadastrosService] Exceção ao buscar detalhes do cliente #${idCliente}:`, err);
@@ -1396,6 +1416,124 @@ export async function updateCadastro(
       categoria: data.categoria as CadastroCategoria
     }
   };
+}
+
+export async function updateCadastroReceita(
+  idCliente: number,
+  payload: {
+    fantasia: string;
+    email_contato: string;
+    email: string;
+    telefone_fixo: string;
+    whatsapp_1: string;
+    whatsapp_2: string;
+  },
+  enderecoPreparado?: any
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponivel." };
+  }
+
+  const { error: errorCli } = await client
+    .from("clientes")
+    .update({
+      fantasia: payload.fantasia || null,
+      email_contato: payload.email_contato || null,
+      email: payload.email || null,
+      telefone_fixo: payload.telefone_fixo || null,
+      whatsapp_1: payload.whatsapp_1 || null,
+      whatsapp_2: payload.whatsapp_2 || null
+    })
+    .eq("id_cliente", idCliente);
+
+  if (errorCli) {
+    return { success: false, errorMessage: errorCli.message || "Erro ao atualizar cliente." };
+  }
+
+  if (enderecoPreparado) {
+    // Buscar endereço PRINCIPAL existente para esse id_cliente
+    const { data: endList } = await client
+      .from("enderecos")
+      .select("id")
+      .eq("id_cliente", idCliente)
+      .ilike("tipo_endereco", "PRINCIPAL")
+      .limit(1);
+
+    if (endList && endList.length > 0) {
+      await client
+        .from("enderecos")
+        .update({
+          cep: enderecoPreparado.cep || null,
+          endereco: enderecoPreparado.endereco || null,
+          numero: enderecoPreparado.numero || null,
+          complemento: enderecoPreparado.complemento || null,
+          bairro: enderecoPreparado.bairro || null,
+          cidade: enderecoPreparado.cidade || null,
+          uf: enderecoPreparado.uf || null,
+          obs: enderecoPreparado.obs || null
+        })
+        .eq("id", endList[0].id);
+    }
+  }
+
+  return { success: true };
+}
+
+export async function checkVinculoRemovability(
+  idFaturadoSocio: number
+): Promise<{ blocked: boolean; reason?: string; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { blocked: true, errorMessage: "Cliente Supabase indisponível." };
+  }
+
+  // PASSO 1: Verificar propostas APROVADAS
+  const { data: propostas, error: propError } = await client
+    .from("propostas")
+    .select("id, id_int")
+    .eq("id_faturado", idFaturadoSocio)
+    .eq("status_interno", "APROVADO");
+
+  if (propError) {
+    return { blocked: true, errorMessage: propError.message };
+  }
+
+  if (propostas && propostas.length > 0) {
+    return { blocked: true, reason: "Este vínculo participa de propostas aprovadas." };
+  }
+
+  // PASSO 2: Verificar pagamentos PAID ligados às propostas desse sócio
+  // Já que join pode falhar, usamos fluxo em 2 passos.
+  const { data: todasPropostas, error: propAllError } = await client
+    .from("propostas")
+    .select("id_int")
+    .eq("id_faturado", idFaturadoSocio);
+
+  if (propAllError) {
+    return { blocked: true, errorMessage: propAllError.message };
+  }
+
+  const idsInt = todasPropostas?.map((p) => p.id_int).filter(Boolean) || [];
+  
+  if (idsInt.length > 0) {
+    const { data: pagamentos, error: pagError } = await client
+      .from("pagamentos_v2")
+      .select("id")
+      .in("id_int", idsInt)
+      .eq("status", "PAID")
+      .limit(1);
+
+    if (pagError) {
+      return { blocked: true, errorMessage: pagError.message };
+    }
+
+    if (pagamentos && pagamentos.length > 0) {
+      return { blocked: true, reason: "Este vínculo possui histórico financeiro." };
+    }
+  }
+
+  return { blocked: false };
 }
 
 export async function createCadastroEndereco(

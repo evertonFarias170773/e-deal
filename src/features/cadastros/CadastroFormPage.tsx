@@ -23,6 +23,9 @@ import {
   updateCadastroVinculoComercial,
   validateCadastroInitialStep,
   searchCadastroVinculoByDocumento,
+  updateCadastroReceita,
+  checkVinculoRemovability,
+  getModelosCobranca,
   type CadastroContatoInsertPayload,
   type CadastroUpdatePayload,
   type CadastroEnderecoInsertPayload,
@@ -89,7 +92,6 @@ const categoriaLabel: Record<CadastroCategoria, string> = {
 };
 
 const categoriaOptions: CadastroCategoria[] = ["CLIENTE", "FORNECEDOR", "TRANSPORTADORA", "ORGAO_PUBLICO"];
-const paymentOptions = ["Pix à vista 3 dias", "Boleto 14 dias", "Faturado 28 dias", "Cartão", "Empenho / faturado"];
 
 export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const router = useRouter();
@@ -102,6 +104,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [vendedorOptions, setVendedorOptions] = useState<VendedorOption[]>([]);
+  const [modelosCobranca, setModelosCobranca] = useState<{ id: number; resultado: string }[]>([]);
   const [isLoadingVendedores, setIsLoadingVendedores] = useState(mode === "new");
   const [validatedDocumentoDigits, setValidatedDocumentoDigits] = useState<string | null>(
     mode === "edit" ? normalizeDocumentDigits(cadastro?.documento ?? "") : null
@@ -125,11 +128,15 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
     let isMounted = true;
     async function loadVendedores() {
       setIsLoadingVendedores(true);
-      const vendedores = await listVendedores();
+      const [vendedores, modelos] = await Promise.all([
+        listVendedores(),
+        getModelosCobranca()
+      ]);
       if (!isMounted) {
         return;
       }
       setVendedorOptions(vendedores);
+      setModelosCobranca(modelos);
       setIsLoadingVendedores(false);
     }
 
@@ -155,6 +162,74 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       delete next[field];
       return next;
     });
+  }
+
+  async function handleReconsultarCnpj() {
+    if (form.tipoCliente !== "CNPJ" || !form.documento || !form.idCliente) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/cadastros/consultar-documento", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tipoPessoa: "JURIDICA",
+          documento: form.documento,
+          idCliente: Number(form.idCliente)
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success || !data.payload) {
+        showToast({
+          type: "warning",
+          title: "Consulta indisponível",
+          description: data?.message || "Não foi possível consultar os dados da Receita."
+        });
+        setIsSaving(false);
+        return;
+      }
+
+      const payload = data.payload;
+      const updateData = {
+        fantasia: payload.fantasia,
+        email_contato: payload.emailContato,
+        email: payload.emailContato,
+        telefone_fixo: payload.telefoneFixo,
+        whatsapp_1: payload.telefoneFixo, 
+        whatsapp_2: ""
+      };
+
+      const result = await updateCadastroReceita(Number(form.idCliente), updateData, payload.enderecoPreparado);
+
+      if (result.success) {
+        updateField("fantasia", payload.fantasia);
+        updateField("emailFinanceiro", payload.emailContato);
+        updateField("telefoneFixo", payload.telefoneFixo);
+        updateField("whatsapp", payload.telefoneFixo);
+        updateField("email", payload.emailContato);
+
+        showToast({
+          type: "success",
+          title: "Consulta finalizada",
+          description: "Cadastro atualizado pela Receita."
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: "Erro ao atualizar",
+          description: result.errorMessage || "Falha ao gravar os novos dados no banco."
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      showToast({
+        type: "error",
+        title: "Erro de consulta",
+        description: "Falha de rede ou instabilidade na Receita Federal."
+      });
+    }
+    setIsSaving(false);
   }
 
   function handleResetDocumentoValidation() {
@@ -291,16 +366,17 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
         documentoDigits: documentoValidation.digits
       });
     } catch (error) {
+      console.error(error);
       setIsInitialChecking(false);
       setMessage({
         tone: "danger",
-        title: "Nao foi possivel validar duplicidades",
-        description: error instanceof Error ? error.message : "Falha ao consultar o Supabase."
+        title: "Nao foi possivel consultar CNPJ",
+        description: "Falha de rede ou instabilidade na Receita Federal."
       });
       showToast({
         type: "error",
-        title: "Falha na validacao",
-        description: "Falha ao consultar o Supabase."
+        title: "Erro de consulta",
+        description: "Tente preencher os dados manualmente."
       });
       return;
     }
@@ -996,8 +1072,9 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
           hasImportedApiData={hasImportedApiData}
           vendedorOptions={vendedorOptions}
           isLoadingVendedores={isLoadingVendedores}
+          modelosCobranca={modelosCobranca}
           onResetDocumento={handleResetDocumentoValidation}
-          onReconsultar={handleInitialValidation}
+          onReconsultar={form.tipoCliente === "CNPJ" ? handleReconsultarCnpj : undefined}
           onToast={showToast}
         />
       )}
@@ -1136,6 +1213,7 @@ function CompleteForm({
   hasImportedApiData,
   vendedorOptions,
   isLoadingVendedores,
+  modelosCobranca,
   onResetDocumento,
   onReconsultar,
   onToast
@@ -1153,6 +1231,7 @@ function CompleteForm({
   hasImportedApiData: boolean;
   vendedorOptions: VendedorOption[];
   isLoadingVendedores: boolean;
+  modelosCobranca: { id: number; resultado: string }[];
   onResetDocumento: () => void;
   onReconsultar?: () => void;
   onToast: (toast: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
@@ -1165,7 +1244,6 @@ function CompleteForm({
   const [vinculoResultados, setVinculoResultados] = useState<Record<string, SearchCadastroVinculoItem[]>>({});
   const [vinculoLoadingId, setVinculoLoadingId] = useState<string | null>(null);
   const [cepLoadingIndex, setCepLoadingIndex] = useState<number | null>(null);
-  const [cpfRecebedorLoadingIndex, setCpfRecebedorLoadingIndex] = useState<number | null>(null);
 
   function updateEndereco(index: number, field: keyof CadastroEndereco, value: string) {
     const enderecos = form.enderecos.map((endereco, currentIndex) =>
@@ -1212,43 +1290,6 @@ function CompleteForm({
     }
   }
 
-  async function handleSearchCpfRecebedor(index: number) {
-    const rawCpf = form.enderecos[index].cpfRecebedor;
-    if (!rawCpf) {
-      onToast({ type: "warning", title: "Atenção", description: "Informe o CPF para buscar." });
-      return;
-    }
-
-    const cleanCpf = rawCpf.replace(/\D/g, "");
-    if (!isValidCpf(cleanCpf)) {
-      onToast({ type: "error", title: "CPF inválido", description: "O CPF informado é inválido." });
-      return;
-    }
-
-    setCpfRecebedorLoadingIndex(index);
-    try {
-      const response = await fetch("/api/cadastros/consultar-cpf-simples", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ documento: cleanCpf })
-      });
-
-      const data = await response.json();
-      if (response.ok && data.success && data.payload?.nome) {
-        updateEndereco(index, "recebedor", data.payload.nome);
-        onToast({ type: "success", title: "CPF encontrado", description: "Nome do recebedor preenchido com sucesso." });
-      } else {
-        updateEndereco(index, "recebedor", "");
-        onToast({ type: "error", title: "Erro na consulta", description: data.message || "Não foi possível encontrar este CPF." });
-      }
-    } catch (err) {
-      console.error("Erro buscar CPF recebedor", err);
-      onToast({ type: "error", title: "Erro na consulta", description: "Falha inesperada ao consultar o CPF." });
-    } finally {
-      setCpfRecebedorLoadingIndex(null);
-    }
-  }
-
   function updateContato(index: number, field: keyof CadastroContato, value: string) {
     const contatos = form.contatos.map((contato, currentIndex) =>
       currentIndex === index ? { ...contato, [field]: value } : contato
@@ -1266,6 +1307,26 @@ function CompleteForm({
         : vinculo
     );
     onUpdate("vinculosComerciais", vinculos);
+  }
+
+  async function handleRemoverVinculo(index: number) {
+    const vinculo = form.vinculosComerciais[index];
+    if (!isTemporaryId(vinculo.id)) {
+      if (vinculo.idClienteRelacionado) {
+        const { blocked, reason, errorMessage } = await checkVinculoRemovability(vinculo.idClienteRelacionado);
+        if (blocked) {
+          onToast({ type: "warning", title: "Remoção bloqueada", description: errorMessage || reason });
+          return;
+        }
+      }
+      onToast({ 
+        type: "info", 
+        title: "Remoção indisponível", 
+        description: "Remoção de vínculo indisponível nesta versão. Será necessário liberar campo de inativação em fase futura." 
+      });
+      return;
+    }
+    onUpdate("vinculosComerciais", form.vinculosComerciais.filter((_, itemIndex) => itemIndex !== index));
   }
 
   async function handleSearchVinculo(vinculoId: string) {
@@ -1316,7 +1377,13 @@ function CompleteForm({
         : item
     );
     onUpdate("vinculosComerciais", vinculos);
-    setVinculoResultados((current) => ({ ...current, [form.vinculosComerciais[index].id]: [] }));
+    const vinculoId = form.vinculosComerciais[index].id;
+    setVinculoBusca((current) => ({ ...current, [vinculoId]: "" }));
+    setVinculoResultados((current) => {
+      const next = { ...current };
+      delete next[vinculoId];
+      return next;
+    });
   }
 
   return (
@@ -1515,7 +1582,14 @@ function CompleteForm({
                 )}
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <Field label="Tipo"><select value={endereco.tipo} onChange={(event) => updateEndereco(index, "tipo", event.target.value)} className={inputClass}><option value="principal">Principal</option><option value="entrega">Entrega</option><option value="cobranca">Cobranca</option><option value="fiscal">Fiscal</option></select></Field>
+                <Field label="Tipo">
+                  <select value={endereco.tipo} onChange={(event) => updateEndereco(index, "tipo", event.target.value as any)} className={inputClass}>
+                    {endereco.tipo === "principal" && <option value="principal">Principal</option>}
+                    <option value="entrega">Entrega</option>
+                    <option value="cobranca">Cobrança</option>
+                    <option value="fiscal">Fiscal</option>
+                  </select>
+                </Field>
                 <Field label="CEP">
                   <div className="relative">
                     <input value={endereco.cep} onChange={(event) => handleCepChange(index, event.target.value)} className={inputClass} />
@@ -1530,14 +1604,11 @@ function CompleteForm({
                 <Field label="Bairro"><input value={endereco.bairro} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={inputClass} /></Field>
                 <Field label="Cidade"><input value={endereco.cidade} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={inputClass} /></Field>
                 <Field label="UF"><input value={endereco.uf} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={inputClass} maxLength={2} /></Field>
-                <Field label="Recebedor"><input value={endereco.recebedor ?? ""} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} placeholder="Nome automático pelo CPF" /></Field>
+                <Field label="Recebedor">
+                  <input value={endereco.recebedor ?? ""} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={inputClass} placeholder="Nome do recebedor" />
+                </Field>
                 <Field label="CPF do Recebedor">
-                  <div className="flex gap-2">
-                    <input value={endereco.cpfRecebedor ?? ""} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={inputClass} placeholder="Apenas números ou formatado" maxLength={14} />
-                    <button type="button" onClick={() => handleSearchCpfRecebedor(index)} disabled={cpfRecebedorLoadingIndex === index} className="rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                      {cpfRecebedorLoadingIndex === index ? "..." : "Buscar"}
-                    </button>
-                  </div>
+                  <input value={endereco.cpfRecebedor ?? ""} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={inputClass} placeholder="Apenas números ou formatado" maxLength={14} />
                 </Field>
                 <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={inputClass} /></Field></div>
               </div>
@@ -1614,20 +1685,24 @@ function CompleteForm({
                     </button>
                   </div>
                 </Field>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isTemporaryId(vinculo.id)) {
-                      onToast({ type: "warning", title: "Remoção bloqueada", description: "Vínculo já salvo não pode ser removido nesta fase." });
-                      return;
-                    }
-                    onUpdate("vinculosComerciais", form.vinculosComerciais.filter((_, itemIndex) => itemIndex !== index));
-                    onToast({ type: "warning", title: "Vinculo comercial removido", description: "Remocao aplicada no formulário." });
-                  }}
-                  className="self-end rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600"
-                >
-                  Remover vínculo
-                </button>
+                {!isTemporaryId(vinculo.id) ? (
+                  <button
+                    type="button"
+                    disabled
+                    title="Remoção indisponível nesta versão. Vínculos são preservados por segurança fiscal e comercial."
+                    className="self-end rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-500 cursor-not-allowed"
+                  >
+                    Vínculo protegido
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoverVinculo(index)}
+                    className="self-end rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600"
+                  >
+                    Remover vínculo
+                  </button>
+                )}
               </div>
 
               {vinculoResultados[vinculo.id]?.length ? (
@@ -1691,8 +1766,37 @@ function CompleteForm({
           <Field label="Credito acumulado"><input value={form.creditoDisponivel} onChange={(event) => onUpdate("creditoDisponivel", event.target.value)} className={inputClass} /></Field>
           <Field label="Risco financeiro"><select value={form.riscoCredito} onChange={(event) => onUpdate("riscoCredito", event.target.value as "BAIXO" | "MEDIO" | "ALTO")} className={inputClass}><option value="BAIXO">Baixo</option><option value="MEDIO">Medio</option><option value="ALTO">Alto</option></select></Field>
           <Field label="Ultima compra"><input type="date" value={form.ultimaCompra} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
-          <Field label="Total compras"><input value={form.totalCompras} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
-          <Field label="Formas de pagamento"><select value={form.padraoPagamento} onChange={(event) => onUpdate("padraoPagamento", event.target.value)} className={inputClass}>{paymentOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></Field>
+          <Field label="Total compras (qtd)"><input value={form.totalCompras} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
+          <Field label="Valor total comprado">
+            <input value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(form.valorTotalComprado || 0)} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} />
+          </Field>
+          <Field label="Formas de pagamento">
+            <select 
+              value={form.padraoPagamento} 
+              onChange={(event) => onUpdate("padraoPagamento", event.target.value)} 
+              className={inputClass}
+            >
+              <option value="">Selecione...</option>
+              <option value="PIX">PIX</option>
+              <option value="BOLETO">BOLETO</option>
+              <option value="CARTAO">CARTAO</option>
+              <option value="FATURADO">FATURADO</option>
+            </select>
+          </Field>
+          {form.padraoPagamento === "FATURADO" && (
+            <Field label="Modelo de Cobrança">
+              <select 
+                value={form.modeloCobrancaId || ""} 
+                onChange={(event) => onUpdate("modeloCobrancaId", event.target.value ? Number(event.target.value) : undefined)} 
+                className={inputClass}
+              >
+                <option value="">Selecione o modelo...</option>
+                {modelosCobranca.map(m => (
+                  <option key={m.id} value={m.id}>{m.resultado}</option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => onUpdate("percentualBonus", event.target.value)} className={inputClass} /></Field>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
@@ -1866,11 +1970,12 @@ function createInitialState(cadastro?: Cadastro): CadastroFormState {
     dataVerificacao: cadastro?.dataVerificacao ?? "",
     ultimaCompra: cadastro?.ultimaCompra ?? "",
     totalCompras: cadastro?.totalCompras?.toString() ?? "0",
+    valorTotalComprado: cadastro?.valorTotalComprado ?? 0,
     credito: cadastro?.creditoDisponivel?.toString() ?? "0",
     limiteCredito: cadastro?.limiteCredito?.toString() ?? "0",
     creditoDisponivel: cadastro?.creditoDisponivel?.toString() ?? "0",
     riscoCredito: cadastro?.riscoCredito ?? "BAIXO",
-    padraoPagamento: cadastro?.padraoPagamento ?? "Pix à vista 3 dias",
+    padraoPagamento: cadastro?.padraoPagamento ?? "PIX",
     bonusAtivo: cadastro?.bonusAtivo ?? false,
     percentualBonus: cadastro?.percentualBonus?.toString() ?? "0",
     nota: cadastro?.nota ?? false,
