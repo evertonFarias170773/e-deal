@@ -92,6 +92,8 @@ export type Proposta = {
   observacoes: string;
   is_avulso?: boolean;
   clienteNaoCadastrado?: boolean;
+  /** ID do cliente faturado (referencia public.clientes.id_cliente). Usado para restaurar compradorId ao reabrir proposta. */
+  id_faturado?: number | null;
 };
 
 export type PropostaFormState = {

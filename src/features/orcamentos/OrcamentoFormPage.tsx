@@ -3532,7 +3532,19 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     clienteId: clienteNaoCadastrado ? "" : (cliente ? cliente.idCliente.toString() : ""),
     contatoId: clienteNaoCadastrado ? "" : (proposta?.contato.id ?? cliente?.contatos[0]?.id ?? ""),
     enderecoId: clienteNaoCadastrado ? "" : (endereco?.id ?? ""),
-    compradorId: clienteNaoCadastrado ? "" : (proposta?.compradorAutorizado?.id ?? (cliente?.id ? cliente.id.toString() : "")),
+    compradorId: (() => {
+      if (clienteNaoCadastrado) return "";
+      // Default: the client itself is the faturado (use cliente.id UUID)
+      const clienteSelfId = cliente?.id ? cliente.id.toString() : "";
+      if (!proposta?.id_faturado) return clienteSelfId;
+      // If id_faturado matches the client's own idCliente → client is faturado
+      if (proposta.id_faturado === Number(cliente?.idCliente)) return clienteSelfId;
+      // Otherwise find the vinculo where idClienteRelacionado === id_faturado
+      const vinculo = cliente?.vinculosComerciais?.find(
+        (v) => v.idClienteRelacionado === proposta.id_faturado
+      );
+      return vinculo?.id ?? clienteSelfId;
+    })(),
     itens: proposta?.itens ?? [],
     fretes,
     freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),

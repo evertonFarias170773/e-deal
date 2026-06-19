@@ -948,7 +948,8 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       cobrancaStatus: "NAO_GERADA",
       observacoes: proposalRow.obs_proposta || "",
       is_avulso: proposalRow.is_avulso === true,
-      clienteNaoCadastrado: isClienteNaoCadastrado
+      clienteNaoCadastrado: isClienteNaoCadastrado,
+      id_faturado: proposalRow.id_faturado ?? null,
     };
 
     return proposta;
