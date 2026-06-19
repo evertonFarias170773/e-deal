@@ -135,7 +135,7 @@ export type CadastroFormState = {
   creditoDisponivel: string;
   riscoCredito: "BAIXO" | "MEDIO" | "ALTO";
   padraoPagamento: string;
-  modeloCobrancaId?: number;
+  modeloCobrancaId?: string;
   valorTotalComprado?: number;
   bonusAtivo: boolean;
   percentualBonus: string;

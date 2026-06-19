@@ -326,7 +326,7 @@ function applyMockCadastrosQuery(query: Required<Pick<CadastrosListQuery, "pageI
   };
 }
 
-export async function getModelosCobranca(): Promise<{ id: number; resultado: string }[]> {
+export async function getModelosCobranca(): Promise<{ id: string; resultado: string }[]> {
   const client = getSupabaseClient();
   if (!client) return [];
   const { data } = await client.from("modelos_cobranca").select("id, resultado").order("resultado", { ascending: true });

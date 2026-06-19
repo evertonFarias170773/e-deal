@@ -107,7 +107,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [vendedorOptions, setVendedorOptions] = useState<VendedorOption[]>([]);
-  const [modelosCobranca, setModelosCobranca] = useState<{ id: number; resultado: string }[]>([]);
+  const [modelosCobranca, setModelosCobranca] = useState<{ id: string; resultado: string }[]>([]);
   const [isLoadingVendedores, setIsLoadingVendedores] = useState(mode === "new");
   const [validatedDocumentoDigits, setValidatedDocumentoDigits] = useState<string | null>(
     mode === "edit" ? normalizeDocumentDigits(cadastro?.documento ?? "") : null
@@ -1238,7 +1238,7 @@ function CompleteForm({
   hasImportedApiData: boolean;
   vendedorOptions: VendedorOption[];
   isLoadingVendedores: boolean;
-  modelosCobranca: { id: number; resultado: string }[];
+  modelosCobranca: { id: string; resultado: string }[];
   onResetDocumento: () => void;
   onReconsultar?: () => void;
   onToast: (toast: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
@@ -1788,7 +1788,13 @@ function CompleteForm({
           <Field label="Formas de pagamento">
             <select 
               value={form.padraoPagamento} 
-              onChange={(event) => onUpdate("padraoPagamento", event.target.value)} 
+              onChange={(event) => {
+                const val = event.target.value;
+                onUpdate("padraoPagamento", val);
+                if (val !== "FATURADO") {
+                  onUpdate("modeloCobrancaId", undefined);
+                }
+              }} 
               className={inputClass}
             >
               <option value="">Selecione...</option>
@@ -1802,7 +1808,7 @@ function CompleteForm({
             <Field label="Modelo de Cobrança">
               <select 
                 value={form.modeloCobrancaId || ""} 
-                onChange={(event) => onUpdate("modeloCobrancaId", event.target.value ? Number(event.target.value) : undefined)} 
+                onChange={(event) => onUpdate("modeloCobrancaId", event.target.value || undefined)} 
                 className={inputClass}
               >
                 <option value="">Selecione o modelo...</option>
