@@ -48,11 +48,13 @@ export type CadastrosReadResult = {
   pageSize: number;
   loadedCount: number;
   warnings: string[];
+  errorMessage?: string;
 };
 
 export type CadastroDetailReadResult = {
   source: CadastrosReadSource;
   cadastro: Cadastro | null;
+  errorMessage?: string;
 };
 
 export type ListPropostasDoCadastroQuery = {
@@ -71,6 +73,7 @@ export type ListPropostasDoCadastroResult = {
   pageIndex: number;
   pageSize: number;
   warnings: string[];
+  errorMessage?: string;
 };
 
 function cloneMockCadastros() {
@@ -331,11 +334,18 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
   const client = getSupabaseClient();
 
   if (!client) {
-    console.log("[Cadastros][List] client Supabase ausente - fallback mock ativado.", {
+    console.log("[Cadastros][List] client Supabase ausente.");
+    return {
+      source: "supabase",
+      cadastros: [],
+      totalCount: 0,
+      hasNextPage: false,
       pageIndex,
-      pageSize
-    });
-    return applyMockCadastrosQuery({ ...query, pageIndex, pageSize });
+      pageSize,
+      loadedCount: 0,
+      errorMessage: "Supabase client indisponível.",
+      warnings: ["Supabase client ausente. Fallback mock foi removido."]
+    };
   }
 
   const searchClause = buildCadastrosSearchClause(query.search ?? "");
@@ -367,10 +377,20 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
     const { data, error, count } = await request.returns<SupabaseClienteRow[]>();
 
     if (error) {
-      console.log("[Cadastros][List] erro ao consultar Supabase - fallback mock ativado.", {
+      console.log("[Cadastros][List] erro ao consultar Supabase.", {
         message: error instanceof Error ? error.message : String(error)
       });
-      return applyMockCadastrosQuery({ ...query, pageIndex, pageSize });
+      return {
+        source: "supabase",
+        cadastros: [],
+        totalCount: 0,
+        hasNextPage: false,
+        pageIndex,
+        pageSize,
+        loadedCount: 0,
+        errorMessage: error instanceof Error ? error.message : "Erro na consulta do Supabase.",
+        warnings: ["Erro Supabase. Fallback mock removido."]
+      };
     }
 
     const cadastros = sortCadastrosByIdClienteDesc((data ?? []).map(mapSupabaseClienteRowToCadastro));
@@ -408,8 +428,18 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       warnings: [`Leitura real aplicada em public.clientes com ${cadastros.length} registros na página atual.`]
     };
   } catch (error) {
-    console.log("[Cadastros][List] excecao ao consultar Supabase - fallback mock ativado.", { error });
-    return applyMockCadastrosQuery({ ...query, pageIndex, pageSize });
+    console.log("[Cadastros][List] excecao ao consultar Supabase.", { error });
+    return {
+      source: "supabase",
+      cadastros: [],
+      totalCount: 0,
+      hasNextPage: false,
+      pageIndex,
+      pageSize,
+      loadedCount: 0,
+      errorMessage: error instanceof Error ? error.message : "Exceção na consulta de cadastros.",
+      warnings: ["Erro inesperado. Fallback mock removido."]
+    };
   }
 }
 
@@ -418,16 +448,18 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
 
   if (!idCliente) {
     return {
-      source: "mock",
-      cadastro: null
+      source: "supabase",
+      cadastro: null,
+      errorMessage: "ID de cliente inválido."
     };
   }
 
   const client = getSupabaseClient();
   if (!client) {
     return {
-      source: "mock",
-      cadastro: fallbackDetailFromMock(idCliente)
+      source: "supabase",
+      cadastro: null,
+      errorMessage: "Supabase client indisponível."
     };
   }
 
@@ -440,10 +472,11 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
 
     const mainRow = mainRows?.[0];
     if (mainError || !mainRow) {
-      console.warn(`[CadastrosService] Cliente #${idCliente} não encontrado no banco ou erro. Usando mock.`, mainError);
+      console.warn(`[CadastrosService] Cliente #${idCliente} não encontrado no banco ou erro.`, mainError);
       return {
-        source: "mock",
-        cadastro: fallbackDetailFromMock(idCliente)
+        source: "supabase",
+        cadastro: null,
+        errorMessage: mainError?.message || "Cliente não encontrado no banco."
       };
     }
 
@@ -506,8 +539,9 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
   } catch (err) {
     console.error(`[CadastrosService] Exceção ao buscar detalhes do cliente #${idCliente}:`, err);
     return {
-      source: "mock",
-      cadastro: fallbackDetailFromMock(idCliente)
+      source: "supabase",
+      cadastro: null,
+      errorMessage: err instanceof Error ? err.message : "Exceção ao buscar detalhes do cliente."
     };
   }
 }
@@ -544,7 +578,7 @@ export async function listPropostasDoCadastro(
 
   if (!client || !Number.isInteger(query.idCliente) || query.idCliente <= 0) {
     return {
-      source: "mock",
+      source: "supabase",
       propostas: [],
       totalCount: 0,
       hasNextPage: false,
@@ -584,7 +618,7 @@ export async function listPropostasDoCadastro(
     const { data, error, count } = await request.returns<SupabasePropostaRow[]>();
     if (error) {
       return {
-        source: "mock",
+        source: "supabase",
         propostas: [],
         totalCount: 0,
         hasNextPage: false,
@@ -608,7 +642,7 @@ export async function listPropostasDoCadastro(
     };
   } catch (error) {
     return {
-      source: "mock",
+      source: "supabase",
       propostas: [],
       totalCount: 0,
       hasNextPage: false,
@@ -1392,7 +1426,7 @@ export async function createCadastroEndereco(
     bairro: toNullableText(payload.bairro),
     cidade: toNullableText(payload.cidade),
     uf: toNullableText(payload.uf),
-    tipo_endereco: "PRINCIPAL" as const,
+    tipo_endereco: toNullableText(payload.tipo_endereco) || "PRINCIPAL",
     obs: toNullableText(payload.obs),
     recebedor: toNullableText(payload.recebedor),
     cpf_recebedor: toNullableText(payload.cpf_recebedor)
@@ -1510,11 +1544,27 @@ export async function createCadastroVinculosComerciais(
     };
   }
 
-  const rows = payload.map((item) => ({
-    id_cliente_principal: Number(item.id_cliente_principal),
-    id_cliente_socio: Number(item.id_cliente_socio),
-    tipo_relacao: toNullableText(item.tipo_relacao) || "vinculo_comercial"
-  }));
+  const idPrincipalList = Array.from(new Set(payload.map((p) => Number(p.id_cliente_principal))));
+  const { data: existingRows } = await client
+    .from("clientes_socios")
+    .select("id_cliente_principal, id_cliente_socio")
+    .in("id_cliente_principal", idPrincipalList);
+
+  const existingMap = new Set(
+    (existingRows || []).map((r) => `${r.id_cliente_principal}-${r.id_cliente_socio}`)
+  );
+
+  const rows = payload
+    .map((item) => ({
+      id_cliente_principal: Number(item.id_cliente_principal),
+      id_cliente_socio: Number(item.id_cliente_socio),
+      tipo_relacao: toNullableText(item.tipo_relacao) || "vinculo_comercial"
+    }))
+    .filter((row) => !existingMap.has(`${row.id_cliente_principal}-${row.id_cliente_socio}`));
+
+  if (rows.length === 0) {
+    return { success: true };
+  }
 
   const { error } = await client.from("clientes_socios").insert(rows);
   if (error) {

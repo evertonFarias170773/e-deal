@@ -1336,8 +1336,7 @@ function CompleteForm({
               <div>
                 <p className="font-semibold">Documento alterado</p>
                 <p className="mt-1 text-sm">
-                  Alterar CPF/CNPJ pode afetar fiscal, financeiro, propostas e notas. Nesta etapa a
-                  alteracao e apenas visual/mockada.
+                  Alterar CPF/CNPJ pode afetar fiscal, financeiro, propostas e notas.
                 </p>
               </div>
             </div>

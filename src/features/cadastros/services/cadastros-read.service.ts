@@ -50,6 +50,7 @@ export type CadastrosReadResult = {
   pageSize: number;
   loadedCount: number;
   warnings: string[];
+  errorMessage?: string;
 };
 
 export type CadastrosDashboardClienteResumo = {
