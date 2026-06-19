@@ -3188,10 +3188,7 @@ function ContactModal({ draft, onChange, onClose, onSave }: { draft: ContactDraf
 function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "create" }: { draft: AddressDraft; onChange: (draft: AddressDraft) => void; onClose: () => void; onSave: () => void; isSaving?: boolean; mode?: "create" | "edit" }) {
   const { showToast } = useAppToast();
   const [isCepLoading, setIsCepLoading] = useState(false);
-  const [isCpfLoading, setIsCpfLoading] = useState(false);
-
   const cleanCep = (draft.cep || "").replace(/\D/g, "");
-  const cleanCpf = normalizeDocumentDigits(draft.cpfRecebedor || "");
 
   useEffect(() => {
     if (cleanCep.length === 8 && !isCepLoading) {
@@ -3219,52 +3216,6 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanCep]);
 
-  const [lastConsultedCpf, setLastConsultedCpf] = useState<string>(() => {
-    return normalizeDocumentDigits(draft.cpfRecebedor || "");
-  });
-
-  useEffect(() => {
-    if (cleanCpf && cleanCpf.length === 11 && !isCpfLoading && cleanCpf !== lastConsultedCpf) {
-      // Se o usuário editar o CPF depois de preencher o nome, limpamos o recebedor antigo
-      if (draft.recebedor) {
-        onChange({ ...draft, recebedor: "" });
-      }
-      
-      setIsCpfLoading(true);
-      fetch("/api/cadastros/consultar-cpf-simples", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documento: cleanCpf })
-      })
-        .then(async (res) => {
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.message || "Erro desconhecido na consulta.");
-          }
-          return data;
-        })
-        .then((data) => {
-          if (data.success && data.payload?.nome) {
-            onChange({ ...draft, recebedor: data.payload.nome });
-            setLastConsultedCpf(cleanCpf);
-          } else {
-            onChange({ ...draft, recebedor: "" });
-            showToast({ type: "warning", title: "CPF Inválido ou Sem Nome", description: "Não foi possível consultar o CPF. Verifique o número informado ou tente novamente." });
-          }
-        })
-        .catch((err) => {
-          console.error("Erro na consulta de CPF:", err);
-          onChange({ ...draft, recebedor: "" });
-          showToast({ type: "error", title: "Falha na consulta", description: err.message || "Não foi possível consultar o CPF. Verifique o número informado ou tente novamente." });
-        })
-        .finally(() => setIsCpfLoading(false));
-    } else if (cleanCpf && cleanCpf.length < 11 && draft.recebedor) {
-       // Se o usuário apagar um dígito do CPF já validado, limpamos o recebedor antigo e reseta a trava
-       onChange({ ...draft, recebedor: "" });
-       setLastConsultedCpf("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cleanCpf]);
 
   const cepMask = (value: string) => {
     const v = value.replace(/\D/g, "");
@@ -3280,7 +3231,7 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
   };
 
   return (
-    <Modal title={mode === "create" ? "Adicionar novo endereço" : "Editar endereço"} onClose={onClose} onSave={onSave} saveLabel={isSaving ? "Salvando..." : (mode === "create" ? "Adicionar" : "Atualizar")}>
+    <Modal title={mode === "create" ? "Adicionar novo endereço" : "Editar endereço"} onClose={onClose} onSave={onSave} saveLabel={isSaving ? "Salvando..." : (mode === "edit" ? "Salvar" : "Adicionar")}>
       <div className="grid gap-3 md:grid-cols-2">
         <Field label={isCepLoading ? "CEP (Buscando...)" : "CEP"}>
           <input value={cepMask(draft.cep || "")} onChange={(event) => onChange({ ...draft, cep: event.target.value })} className={inputClass} placeholder="00000-000" disabled={isCepLoading} />
@@ -3300,11 +3251,11 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
         <Field label="Cidade"><input value={draft.cidade} onChange={(event) => onChange({ ...draft, cidade: event.target.value })} className={inputClass} disabled={isCepLoading} /></Field>
         <Field label="UF"><input value={draft.uf} onChange={(event) => onChange({ ...draft, uf: event.target.value.toUpperCase() })} className={inputClass} maxLength={2} disabled={isCepLoading} /></Field>
         <div className="md:col-span-2 border-t border-slate-100 pt-3 mt-1 grid gap-3 md:grid-cols-2">
-          <Field label={isCpfLoading ? "CPF do Recebedor (Consultando...)" : "CPF do Recebedor"}>
-            <input value={cpfMask(draft.cpfRecebedor || "")} onChange={(event) => onChange({ ...draft, cpfRecebedor: event.target.value })} className={inputClass} placeholder="000.000.000-00" disabled={isCpfLoading} />
+          <Field label={isCepLoading ? "CPF do Recebedor (Consultando...)" : "CPF do Recebedor"}>
+            <input value={cpfMask(draft.cpfRecebedor || "")} onChange={(event) => onChange({ ...draft, cpfRecebedor: event.target.value })} className={inputClass} placeholder="000.000.000-00" />
           </Field>
-          <Field label="Nome do Recebedor (Preenchimento Automático)">
-            <input value={draft.recebedor || ""} readOnly className={`${inputClass} bg-slate-50 cursor-not-allowed`} placeholder="Preenchido via CPF" title="O nome do recebedor é preenchido automaticamente pela consulta de CPF." />
+          <Field label="Nome do Recebedor">
+            <input value={draft.recebedor || ""} onChange={(event) => onChange({ ...draft, recebedor: event.target.value })} className={inputClass} placeholder="Nome completo" />
           </Field>
         </div>
       </div>
