@@ -506,10 +506,10 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
         .eq("id_cliente_principal", idCliente)
         .limit(100),
       client
-        .from("vw_proposta_completa")
-        .select("valor_total_calculado")
+        .from("pagamentos_v2")
+        .select("valor")
         .eq("id_cliente", idCliente)
-        .eq("status_interno", "APROVADO")
+        .eq("status", "PAID")
     ]);
 
     const relatedIds = Array.from(
@@ -537,9 +537,9 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
       });
     }
 
-    const propsData = propostasResult?.data || [];
-    const totalCompras = propsData.length;
-    const valorTotalComprado = propsData.reduce((acc, curr) => acc + Number(curr.valor_total_calculado || 0), 0);
+    const pagamentosData = propostasResult?.data || [];
+    const totalCompras = pagamentosData.length;
+    const valorTotalComprado = pagamentosData.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
 
     return {
       source: "supabase",
@@ -1534,6 +1534,29 @@ export async function checkVinculoRemovability(
   }
 
   return { blocked: false };
+}
+
+export async function deleteVinculoComercial(
+  id: string
+): Promise<CadastroRelatedCreateResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponivel para excluir vinculo." };
+  }
+
+  const { error } = await client
+    .from("clientes_socios")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    return {
+      success: false,
+      errorMessage: error.message || "Nao foi possivel excluir o vinculo.",
+      status: error.code ? Number(error.code) : undefined
+    };
+  }
+  return { success: true };
 }
 
 export async function createCadastroEndereco(

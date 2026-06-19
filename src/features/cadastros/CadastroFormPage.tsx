@@ -27,6 +27,7 @@ import {
   searchCadastroVinculoByDocumento,
   updateCadastroReceita,
   checkVinculoRemovability,
+  deleteVinculoComercial,
   getModelosCobranca,
   type CadastroContatoInsertPayload,
   type CadastroUpdatePayload,
@@ -1317,22 +1318,30 @@ function CompleteForm({
 
   async function handleRemoverVinculo(index: number) {
     const vinculo = form.vinculosComerciais[index];
-    if (!isTemporaryId(vinculo.id)) {
-      if (vinculo.idClienteRelacionado) {
-        const { blocked, reason, errorMessage } = await checkVinculoRemovability(vinculo.idClienteRelacionado);
-        if (blocked) {
-          onToast({ type: "warning", title: "Remoção bloqueada", description: errorMessage || reason });
-          return;
+    if (isTemporaryId(vinculo.id)) {
+      onUpdate("vinculosComerciais", form.vinculosComerciais.filter((_, itemIndex) => itemIndex !== index));
+      onToast({ type: "warning", title: "Vínculo removido", description: "Vínculo removido do formulário." });
+      return;
+    }
+    if (vinculo.idClienteRelacionado) {
+      const { blocked, reason, errorMessage } = await checkVinculoRemovability(vinculo.idClienteRelacionado);
+      if (blocked) {
+        const message = reason || errorMessage || "Este vínculo não pode ser removido.";
+        if (reason === "Este vínculo possui histórico financeiro.") {
+          onToast({ type: "error", title: "Remoção bloqueada", description: "Este vínculo possui histórico financeiro. A desativação exige campo próprio em fase futura." });
+        } else {
+          onToast({ type: "error", title: "Remoção bloqueada", description: message });
         }
+        return;
       }
-      onToast({ 
-        type: "info", 
-        title: "Remoção indisponível", 
-        description: "Remoção de vínculo indisponível nesta versão. Será necessário liberar campo de inativação em fase futura." 
-      });
+    }
+    const deleteResult = await deleteVinculoComercial(vinculo.id);
+    if (!deleteResult.success) {
+      onToast({ type: "error", title: "Erro ao excluir", description: deleteResult.errorMessage || "Não foi possível excluir o vínculo." });
       return;
     }
     onUpdate("vinculosComerciais", form.vinculosComerciais.filter((_, itemIndex) => itemIndex !== index));
+    onToast({ type: "success", title: "Vínculo excluído", description: "Vínculo removido com sucesso do banco de dados." });
   }
 
   async function handleSearchVinculo(vinculoId: string) {
@@ -1702,24 +1711,13 @@ function CompleteForm({
                     </button>
                   </div>
                 </Field>
-                {!isTemporaryId(vinculo.id) ? (
-                  <button
-                    type="button"
-                    disabled
-                    title="Remoção indisponível nesta versão. Vínculos são preservados por segurança fiscal e comercial."
-                    className="self-end rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-500 cursor-not-allowed"
-                  >
-                    Vínculo protegido
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoverVinculo(index)}
-                    className="self-end rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600"
-                  >
-                    Remover vínculo
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemoverVinculo(index)}
+                  className="self-end rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600"
+                >
+                  Remover vínculo
+                </button>
               </div>
 
               {vinculoResultados[vinculo.id]?.length ? (
@@ -1739,7 +1737,7 @@ function CompleteForm({
                     ))}
                   </ul>
                 </div>
-              ) : vinculoBusca[vinculo.id] && vinculoResultados[vinculo.id] && vinculoResultados[vinculo.id].length === 0 ? (
+              ) : vinculoBusca[vinculo.id] && !vinculo.idClienteRelacionado && vinculoResultados[vinculo.id] && vinculoResultados[vinculo.id].length === 0 ? (
                 <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-center">
                   <p className="text-sm font-medium text-orange-800">Nenhum cadastro encontrado para o documento informado.</p>
                   <Link href={`/cadastros/novo?documento=${vinculoBusca[vinculo.id].replace(/\D/g, "")}`} className="mt-3 inline-block rounded-xl bg-white px-4 py-2 text-sm font-semibold text-orange-900 shadow-sm transition hover:bg-orange-100">
