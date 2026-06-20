@@ -15,11 +15,12 @@ export interface PedidoModeloRow {
   tipo_numeracao: string | null;
   numeracao_inicio: number | null;
   numeracao_fim: number | null;
-  frente_verso: boolean | null;
-  rfid_nfc: boolean | null;
-  gabarito_operacional: string | null;
-  especificacao_dados: string | null;
-  obs_impressao: string | null;
+  frente_verso?: boolean | null;
+  rfid_nfc?: boolean | null;
+  gabarito_operacional?: string | null;
+  especificacao_dados?: string | null;
+  obs_impressao?: string | null;
+  verso_tipo: string | null;
   status_arte: string;
   status_producao: string;
   ordem: number;
@@ -48,11 +49,7 @@ export interface ModeloInput {
   tipo_numeracao: string | null;
   numeracao_inicio: number | null;
   numeracao_fim: number | null;
-  frente_verso: boolean;
-  rfid_nfc: boolean;
-  gabarito_operacional: string | null;
-  especificacao_dados: string | null;
-  obs_impressao: string | null;
+  verso_tipo: string | null;
 }
 
 type ServiceResult<T = unknown> = {
@@ -72,6 +69,9 @@ function getClient() {
 function validarInput(input: ModeloInput): string | null {
   if (!input.nome_modelo?.trim()) {
     return "O nome do modelo é obrigatório.";
+  }
+  if (!input.padrao?.trim()) {
+    return "A cor do papel (padrão) é obrigatória.";
   }
   if (!input.quantidade || input.quantidade <= 0) {
     return "A quantidade deve ser maior que zero.";
@@ -149,11 +149,7 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
       tipo_numeracao: m.tipo_numeracao as string | null,
       numeracao_inicio: m.numeracao_inicio !== null ? Number(m.numeracao_inicio) : null,
       numeracao_fim: m.numeracao_fim !== null ? Number(m.numeracao_fim) : null,
-      frente_verso: Boolean(m.frente_verso),
-      rfid_nfc: Boolean(m.rfid_nfc),
-      gabarito_operacional: m.gabarito_operacional as string | null,
-      especificacao_dados: m.especificacao_dados as string | null,
-      obs_impressao: m.obs_impressao as string | null,
+      verso_tipo: m.verso_tipo as string | null,
       status_arte: String(m.status_arte || "PENDENTE"),
       status_producao: String(m.status_producao || "PENDENTE"),
       ordem: Number(m.ordem || 0),
@@ -282,11 +278,7 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       tipo_numeracao: input.tipo_numeracao || "SEM_NUMERACAO",
       numeracao_inicio: input.numeracao_inicio,
       numeracao_fim: input.numeracao_fim,
-      frente_verso: input.frente_verso,
-      rfid_nfc: input.rfid_nfc,
-      gabarito_operacional: input.gabarito_operacional?.trim() || null,
-      especificacao_dados: input.especificacao_dados?.trim() || null,
-      obs_impressao: input.obs_impressao?.trim() || null,
+      verso_tipo: input.verso_tipo?.trim() || null,
       status_arte: "PENDENTE",
       status_producao: "PENDENTE",
       ordem: nextOrdem,
@@ -299,13 +291,13 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       .single();
 
     if (error) {
-      console.error("[PedidosModelosService] criarModelo:", error);
+      console.error("[PedidosModelosService] criarModelo:", JSON.stringify(error, null, 2), "Payload tentado:", payload);
       return { success: false, errorMessage: error.message || "Falha ao criar modelo." };
     }
 
     return { success: true, data: data as PedidoModeloRow };
-  } catch (err) {
-    console.error("[PedidosModelosService] criarModelo:", err);
+  } catch (err: any) {
+    console.error("[PedidosModelosService] criarModelo Catch:", err?.message || err);
     return { success: false, errorMessage: "Falha interna ao criar modelo." };
   }
 }
@@ -335,11 +327,7 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
       tipo_numeracao: input.tipo_numeracao || "SEM_NUMERACAO",
       numeracao_inicio: input.numeracao_inicio,
       numeracao_fim: input.numeracao_fim,
-      frente_verso: input.frente_verso,
-      rfid_nfc: input.rfid_nfc,
-      gabarito_operacional: input.gabarito_operacional?.trim() || null,
-      especificacao_dados: input.especificacao_dados?.trim() || null,
-      obs_impressao: input.obs_impressao?.trim() || null,
+      verso_tipo: input.verso_tipo?.trim() || null,
     };
 
     const { data, error } = await client
