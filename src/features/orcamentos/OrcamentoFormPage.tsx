@@ -43,6 +43,7 @@ import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDeta
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { normalizeDocumentDigits } from "@/features/cadastros/utils/documento";
 
 const removeAccents = (str: string): string => {
@@ -153,26 +154,6 @@ function getShipmentKey(
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
   const { getCobrancasByProposta } = useCobrancas();
   const targetIdInt = idInt ?? proposta?.id_int;
-  const hasCobrancas = targetIdInt ? getCobrancasByProposta(targetIdInt).length > 0 : false;
-
-  if (mode === "edit" && hasCobrancas) {
-    return (
-      <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-center max-w-lg mx-auto mt-12 space-y-4 shadow-sm">
-        <h2 className="text-lg font-bold text-amber-800">Edição Bloqueada</h2>
-        <p className="text-sm text-amber-700 leading-relaxed font-semibold">
-          Esta proposta possui cobrança gerada. Para alterar, exclua primeiro a cobrança pendente.
-        </p>
-        <div className="pt-2">
-          <Link
-            href={targetIdInt ? `/orcamentos/${targetIdInt}` : "/orcamentos"}
-            className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-          >
-            Voltar para detalhes
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   if (mode === "edit" && !proposta && idInt) {
     return <OrcamentoFormLoader idInt={idInt} />;
@@ -249,7 +230,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   // Catalog state from Supabase
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loadingProdutos, setLoadingProdutos] = useState(true);
-  type EditTabType = "geral" | "produtos" | "pedido" | "artes" | "financeiro" | "historico";
+  type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "historico";
   const [activeFormTab, setActiveFormTab] = useState<EditTabType>("geral");
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
@@ -2060,7 +2041,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           {[
             { id: "geral", label: "Geral" },
             { id: "produtos", label: "Produtos" },
-            { id: "financeiro", label: "Financeiro" },
+            { id: "fretes", label: "Fretes" },
+            { id: "pagamentos", label: "Pagamentos" },
             { id: "artes", label: "Artes" },
             { id: "pedido", label: "Pedido" },
             { id: "historico", label: "Histórico" }
@@ -2680,7 +2662,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
               </>
             )}
           </FormSection>
+        </div>
+      )}
 
+      {activeFormTab === "fretes" && (
+        <div className="space-y-6">
           <FormSection 
             title="7. Fretes e Entrega" 
             description={form.isAvulso ? "Configure o frete manual para a proposta avulsa." : "Integração em tempo real com cotações de SEDEX e cadastro de frete manual."}
@@ -2883,12 +2869,15 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                 </div>
               )}
 
-              {activeFormTab === "financeiro" && (
+              {activeFormTab === "pagamentos" && (
                 <div className="space-y-6">
-                  <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-                    <p className="text-sm font-semibold text-slate-600">Condições comerciais futuras</p>
-                    <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
-                  </div>
+                  {form.id_int === "NOVO" || !proposta ? (
+                    <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
+                      <p className="text-sm font-semibold text-amber-700">Salve a proposta antes de gerar cobranças.</p>
+                    </div>
+                  ) : (
+                    <PropostaCobrancaPanel proposta={proposta} />
+                  )}
                 </div>
               )}
             </>
