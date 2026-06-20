@@ -20,6 +20,7 @@ interface ModeloDraft {
   padrao: string;
   quantidade: string;
   tipo_numeracao: string;
+  numerador: string;
   numeracao_inicio: string;
   numeracao_fim: string;
   verso_tipo: string;
@@ -30,6 +31,7 @@ const EMPTY_DRAFT: ModeloDraft = {
   padrao: "",
   quantidade: "",
   tipo_numeracao: "SEM_NUMERACAO",
+  numerador: "",
   numeracao_inicio: "",
   numeracao_fim: "",
   verso_tipo: "SÓ FRENTE",
@@ -42,6 +44,7 @@ function draftFromModelo(m: PedidoModeloRow): ModeloDraft {
     padrao: m.padrao || "",
     quantidade: m.quantidade.toString(),
     tipo_numeracao: m.tipo_numeracao || "SEM_NUMERACAO",
+    numerador: "", // Não persistido na base ainda conforme regra atual
     numeracao_inicio: m.numeracao_inicio !== null ? m.numeracao_inicio.toString() : "",
     numeracao_fim: m.numeracao_fim !== null ? m.numeracao_fim.toString() : "",
     verso_tipo: m.verso_tipo || "SÓ FRENTE",
@@ -85,6 +88,8 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingModelo, setDeletingModelo] = useState<PedidoModeloRow | null>(null);
+
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -143,6 +148,14 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
     const draft = draftFromModelo(modelo);
     // eslint-disable-next-line react-hooks/purity
     draft.id = `new_${Date.now()}`; // Força a ser um novo temporário
+
+    const currentItem = itens.find(i => i.id === itemId);
+    if (currentItem) {
+      if (Number(draft.quantidade) > currentItem.saldo_a_distribuir) {
+        draft.quantidade = Math.max(0, currentItem.saldo_a_distribuir).toString();
+      }
+    }
+
     setEditingDrafts((prev) => ({
       ...prev,
       [itemId]: [...(prev[itemId] || []), draft],
@@ -281,19 +294,19 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="col-span-1 sm:col-span-2">
+        <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+          <div className="flex-[2] min-w-[150px]">
             <label className={labelClass}>Modelo *</label>
             <input
               type="text"
               className={inputClass}
-              placeholder="Ex: Talão 10x15"
+              placeholder="Ex: Talão"
               value={draft.nome_modelo}
               onChange={(e) => updateDraft(itemId, draft.id!, { nome_modelo: e.target.value })}
             />
           </div>
 
-          <div>
+          <div className="flex-[1.5] min-w-[120px]">
             <label className={labelClass}>Cor papel *</label>
             <select
               className={inputClass}
@@ -307,9 +320,9 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
             </select>
           </div>
 
-          <div>
+          <div className="w-full lg:w-24">
             <label className={labelClass}>
-              Quantidade * <span className="text-teal-600 lowercase font-normal ml-1">(Máx: {maxQtd})</span>
+              Qtd <span className="text-teal-600 lowercase font-normal ml-1">({maxQtd})</span>
             </label>
             <input
               type="number"
@@ -325,8 +338,8 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
             />
           </div>
 
-          <div>
-            <label className={labelClass}>Tipo Numeração</label>
+          <div className="flex-[1.5] min-w-[120px]">
+            <label className={labelClass}>Tipo Num</label>
             <select
               className={inputClass}
               value={draft.tipo_numeracao}
@@ -339,38 +352,26 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
                 });
               }}
             >
-              {numeracoesOpcoes.map((n) => (
-                <option key={n.id} value={n.name}>{n.name}</option>
-              ))}
-              <option value="SEM_NUMERACAO">Sem Numeração</option>
+              <option value="SEM_NUMERACAO">Sem Num</option>
               <option value="SEQUENCIAL">Sequencial</option>
             </select>
           </div>
 
-          {draft.tipo_numeracao === "SEQUENCIAL" && (
-            <>
-              <div>
-                <label className={labelClass}>Nº Inicial *</label>
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={draft.numeracao_inicio}
-                  onChange={(e) => updateDraft(itemId, draft.id!, { numeracao_inicio: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Nº Final *</label>
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={draft.numeracao_fim}
-                  onChange={(e) => updateDraft(itemId, draft.id!, { numeracao_fim: e.target.value })}
-                />
-              </div>
-            </>
-          )}
+          <div className="flex-[1.5] min-w-[120px]">
+            <label className={labelClass}>Numerador</label>
+            <select
+              className={inputClass}
+              value={draft.numerador}
+              onChange={(e) => updateDraft(itemId, draft.id!, { numerador: e.target.value })}
+            >
+              <option value="">Selecione...</option>
+              {numeracoesOpcoes.map((n) => (
+                <option key={n.id} value={n.name}>{n.name}</option>
+              ))}
+            </select>
+          </div>
 
-          <div>
+          <div className="flex-[1.5] min-w-[120px]">
             <label className={labelClass}>Verso</label>
             <select
               className={inputClass}
@@ -384,6 +385,29 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
             </select>
           </div>
         </div>
+
+        {draft.tipo_numeracao === "SEQUENCIAL" && (
+          <div className="mt-3 flex gap-3 p-3 bg-white rounded-xl border border-teal-100">
+            <div>
+              <label className={labelClass}>Nº Inicial *</label>
+              <input
+                type="number"
+                className={inputClass}
+                value={draft.numeracao_inicio}
+                onChange={(e) => updateDraft(itemId, draft.id!, { numeracao_inicio: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Nº Final *</label>
+              <input
+                type="number"
+                className={inputClass}
+                value={draft.numeracao_fim}
+                onChange={(e) => updateDraft(itemId, draft.id!, { numeracao_fim: e.target.value })}
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -462,9 +486,9 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 cursor-not-allowed"
-                            title="Visualizar Arte (Em breve)"
-                            disabled
+                            onClick={() => setPreviewModalOpen(true)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                            title="Visualizar Arte"
                           >
                             <ImageIcon className="h-4 w-4" />
                           </button>
@@ -534,6 +558,26 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
                 Sim, excluir
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {previewModalOpen && (
+        <div className="fixed inset-0 z-[99] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm scale-100 rounded-3xl bg-white p-6 shadow-2xl text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+              <ImageIcon className="h-6 w-6" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Pré-visualização</h3>
+            <p className="mb-6 text-sm text-slate-600">
+              Pré-visualização da arte ainda não configurada.
+            </p>
+            <button
+              onClick={() => setPreviewModalOpen(false)}
+              className="w-full rounded-2xl bg-[#0b2f4a] px-4 py-3 font-semibold text-white transition hover:bg-[#123f61]"
+            >
+              Entendi
+            </button>
           </div>
         </div>
       )}
