@@ -2056,8 +2056,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         }
       />
 
-      {mode === "edit" && form.id_int !== "NOVO" && (
-        <div className="sticky top-4 z-[45] mb-6 flex w-full justify-start gap-3 overflow-x-auto rounded-3xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur hide-scrollbar">
+      <div className="sticky top-4 z-[45] mb-6 flex w-full justify-start gap-3 overflow-x-auto rounded-3xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur hide-scrollbar">
           {[
             { id: "geral", label: "Geral" },
             { id: "produtos", label: "Produtos" },
@@ -2080,24 +2079,41 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             </button>
           ))}
         </div>
-      )}
 
       <section className={shouldShowRest ? "grid gap-6 xl:grid-cols-[1fr_380px]" : "max-w-3xl mx-auto"}>
         <div className="space-y-6">
           {activeFormTab === "pedido" && shouldShowRest && (
-            <PedidoModelosTab idInt={Number(form.id_int)} />
+            form.id_int === "NOVO" ? (
+              <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
+                <p className="text-sm font-semibold text-amber-700">Salve a proposta e adicione produtos antes de gerenciar modelos.</p>
+              </div>
+            ) : (
+              <PedidoModelosTab idInt={Number(form.id_int)} />
+            )
           )}
           {activeFormTab === "artes" && shouldShowRest && (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-              <p className="text-sm font-semibold text-slate-600">Artes</p>
-              <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
-            </div>
+            form.id_int === "NOVO" ? (
+              <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
+                <p className="text-sm font-semibold text-amber-700">Salve a proposta antes de gerenciar artes.</p>
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+                <p className="text-sm font-semibold text-slate-600">Artes</p>
+                <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
+              </div>
+            )
           )}
           {activeFormTab === "historico" && shouldShowRest && (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-              <p className="text-sm font-semibold text-slate-600">Histórico operacional</p>
-              <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
-            </div>
+            form.id_int === "NOVO" ? (
+              <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
+                <p className="text-sm font-semibold text-amber-700">Salve a proposta para visualizar o histórico.</p>
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+                <p className="text-sm font-semibold text-slate-600">Histórico operacional</p>
+                <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
+              </div>
+            )
           )}
 
           {activeFormTab === "geral" && (
