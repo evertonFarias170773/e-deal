@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
+import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -248,6 +249,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   // Catalog state from Supabase
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loadingProdutos, setLoadingProdutos] = useState(true);
+  const [activeFormTab, setActiveFormTab] = useState<"proposta" | "modelos">("proposta");
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
@@ -2053,9 +2055,40 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         }
       />
 
+      {mode === "edit" && form.id_int !== "NOVO" && (
+        <div className="flex rounded-2xl bg-slate-100 p-1 border border-slate-200 w-fit max-w-md mx-auto mb-6">
+          <button
+            type="button"
+            onClick={() => setActiveFormTab("proposta")}
+            className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              activeFormTab === "proposta"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Proposta / Orçamento
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFormTab("modelos")}
+            className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              activeFormTab === "modelos"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Pedido / Modelos
+          </button>
+        </div>
+      )}
+
       <section className={shouldShowRest ? "grid gap-6 xl:grid-cols-[1fr_380px]" : "max-w-3xl mx-auto"}>
         <div className="space-y-6">
-          <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados)."}>
+          {activeFormTab === "modelos" && (
+            <PedidoModelosTab idInt={Number(form.id_int)} />
+          )}
+          <div className={activeFormTab === "proposta" ? "space-y-6" : "hidden"}>
+            <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados)."}>
             {/* Toggle Cliente Cadastrado vs. Sem Cadastro */}
             {mode === "new" ? (
               <div className="mb-4 flex gap-6 border-b border-slate-100 pb-3">
@@ -2809,6 +2842,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           </FormSection>
           </>
           )}
+          </div>
         </div>
 
         {shouldShowRest && (
