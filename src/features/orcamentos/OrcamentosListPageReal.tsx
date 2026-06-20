@@ -559,15 +559,13 @@ export function OrcamentosListPageReal() {
     const chatLabel = chatResumo && chatResumo.nao_lidas_count > 0
       ? `Ver chat interno (${chatResumo.nao_lidas_count} não lidas)`
       : "Ver chat interno";
-    const hasCobrancas = getCobrancasByProposta(item.id_int).length > 0;
 
     return [
       { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
       { label: chatLabel, onClick: () => handleOpenChat(item) },
       {
         label: "Editar proposta",
-        onClick: () => router.push(`/orcamentos/${item.id_int}/editar`),
-        disabled: hasCobrancas
+        onClick: () => router.push(`/orcamentos/${item.id_int}/editar`)
       },
       { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
       {

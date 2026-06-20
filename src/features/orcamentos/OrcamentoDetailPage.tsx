@@ -303,8 +303,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
               items={[
                 {
                   label: "Editar proposta",
-                  onClick: () => router.push(`/orcamentos/${proposta.id_int}/editar`),
-                  disabled: cobrancasDaProposta.length > 0
+                  onClick: () => router.push(`/orcamentos/${proposta.id_int}/editar`)
                 },
                 {
                   label: chatResumo && chatResumo.total_mensagens > 0

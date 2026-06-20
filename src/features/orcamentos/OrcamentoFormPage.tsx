@@ -2015,6 +2015,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
   );
 
+  const { getCobrancasByProposta } = useCobrancas();
+  const hasCobrancas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int).length > 0 : false;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -2036,6 +2039,18 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           </div>
         }
       />
+
+      {hasCobrancas && (
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-800">Atenção: Cobranças Geradas</p>
+            <p className="text-sm text-amber-700 mt-1">
+              Esta proposta possui cobranças geradas. Revise os pagamentos antes de reenviar ou alterar valores finais.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="sticky top-4 z-[45] mb-6 flex w-full justify-start gap-3 overflow-x-auto rounded-3xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur hide-scrollbar">
           {[
