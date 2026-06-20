@@ -2057,7 +2057,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       />
 
       {mode === "edit" && form.id_int !== "NOVO" && (
-        <div className="flex rounded-2xl bg-slate-100 p-1 border border-slate-200 overflow-x-auto justify-start mb-6 w-full gap-2 lg:gap-4 hide-scrollbar">
+        <div className="sticky top-4 z-[45] mb-6 flex w-full justify-start gap-3 overflow-x-auto rounded-3xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur hide-scrollbar">
           {[
             { id: "geral", label: "Geral" },
             { id: "produtos", label: "Produtos" },
@@ -2072,8 +2072,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
               onClick={() => setActiveFormTab(tab.id as EditTabType)}
               className={`flex-none rounded-xl px-4 py-2 text-sm font-semibold transition whitespace-nowrap ${
                 activeFormTab === tab.id
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                  ? "bg-slate-100 text-slate-900"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
               }`}
             >
               {tab.label}
