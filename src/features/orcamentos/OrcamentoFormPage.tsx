@@ -2057,13 +2057,13 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       />
 
       {mode === "edit" && form.id_int !== "NOVO" && (
-        <div className="flex rounded-2xl bg-slate-100 p-1 border border-slate-200 overflow-x-auto mx-auto mb-6 max-w-full lg:max-w-max hide-scrollbar">
+        <div className="flex rounded-2xl bg-slate-100 p-1 border border-slate-200 overflow-x-auto justify-start mb-6 w-full gap-2 lg:gap-4 hide-scrollbar">
           {[
             { id: "geral", label: "Geral" },
             { id: "produtos", label: "Produtos" },
-            { id: "pedido", label: "Pedido" },
-            { id: "artes", label: "Artes" },
             { id: "financeiro", label: "Financeiro" },
+            { id: "artes", label: "Artes" },
+            { id: "pedido", label: "Pedido" },
             { id: "historico", label: "Histórico" }
           ].map((tab) => (
             <button
@@ -2330,11 +2330,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     <button type="button" onClick={() => setIsContactModalOpen(true)} className="mt-4 rounded-2xl border border-[#d7e5e8] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f4a]">+ Adicionar novo contato</button>
                   </FormSection>
                 )}
-                </div>
-              )}
 
-              {activeFormTab === "financeiro" && (
-                <div className="space-y-6">
                   {!form.clienteNaoCadastrado && (
                     <FormSection title="4. Dados para nota fiscal" description="Selecione o sócio ou vínculo comercial responsável pelo faturamento.">
                     {!cliente ? (
@@ -2374,11 +2370,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     )}
                   </FormSection>
                   )}
-                </div>
-              )}
 
-              {activeFormTab === "produtos" && (
-                <div className="space-y-6">
                   {!form.clienteNaoCadastrado && (
                     <FormSection title="5. Endereço de entrega" description="Endereço usado para frete, PDF e expedição futura.">
                     {combinedAddresses.length > 0 ? (
@@ -2564,9 +2556,13 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     </button>
                   </FormSection>
                   )}
+                </div>
+              )}
 
-          <FormSection
-            title="6. Produtos"
+              {activeFormTab === "produtos" && (
+                <div className="space-y-6">
+                  <FormSection
+                    title="6. Produtos"
             description={form.isAvulso ? "Configure o valor total dos produtos no modo avulso." : "Escolha do catálogo e configure quantidades, descontos e variações."}
           >
             {/* Toggle Proposta Avulsa */}
@@ -2873,25 +2869,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
               {activeFormTab === "financeiro" && (
                 <div className="space-y-6">
-                  <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
-            <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
-            <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
-              <Copy className="h-4 w-4" />
-              Copiar resumo para WhatsApp
-            </button>
-          </FormSection>
                   <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
                     <p className="text-sm font-semibold text-slate-600">Condições comerciais futuras</p>
                     <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
                   </div>
-                </div>
-              )}
-
-              {activeFormTab === "geral" && (
-                <div className="space-y-6">
-                  <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
-                    <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
-                  </FormSection>
                 </div>
               )}
             </>
@@ -2932,6 +2913,18 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                   </p>
                 )}
               </div>
+            </FormSection>
+
+            <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
+              <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
+              <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
+                <Copy className="h-4 w-4" />
+                Copiar resumo para WhatsApp
+              </button>
+            </FormSection>
+
+            <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
+              <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
             </FormSection>
           </div>
         )}

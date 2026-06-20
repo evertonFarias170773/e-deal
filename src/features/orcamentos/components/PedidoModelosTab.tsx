@@ -144,6 +144,20 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
 
   async function handleSaveModelo() {
     const input = draftToInput(draft, idInt, modalItemId);
+
+    const currentItem = itens.find((i) => i.id === modalItemId);
+    if (currentItem) {
+      const distributedOthers = currentItem.modelos
+        .filter((m) => m.id !== editingModeloId)
+        .reduce((sum, m) => sum + m.quantidade, 0);
+      
+      const newTotal = distributedOthers + input.quantidade;
+      if (newTotal > currentItem.qtd) {
+        showToast({ type: "error", title: "Quantidade excedida", description: `A soma dos modelos (${newTotal}) não pode ultrapassar a quantidade do item (${currentItem.qtd}). Saldo disponível: ${currentItem.qtd - distributedOthers}` });
+        return;
+      }
+    }
+
     setSaving(true);
 
     if (modalMode === "create") {
@@ -262,6 +276,9 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1">
                   Qtd: {item.qtd.toLocaleString("pt-BR")}
+                </span>
+                <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-full px-3 py-1">
+                  Distribuído: {item.qtd_modelos_do_item.toLocaleString("pt-BR")}
                 </span>
                 {renderSaldoBadge(item.saldo_a_distribuir)}
               </div>
