@@ -107,8 +107,8 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
     if (!supabase) return;
 
     const [resCores, resNum] = await Promise.all([
-      supabase.from("producao_cores").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("producao_numeracoes").select("id, name").eq("is_active", true).order("name"),
+      supabase.from("producao_cores").select("id, name").order("id_modelo_cor_num", { ascending: true }),
+      supabase.from("producao_numeracoes").select("id, name").order("name", { ascending: true }),
     ]);
 
     if (resCores.data) setCoresOpcoes(resCores.data);
