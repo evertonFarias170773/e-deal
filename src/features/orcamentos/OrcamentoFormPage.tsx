@@ -2087,8 +2087,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           {activeFormTab === "modelos" && (
             <PedidoModelosTab idInt={Number(form.id_int)} />
           )}
-          <div className={activeFormTab === "proposta" ? "space-y-6" : "hidden"}>
-            <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados)."}>
+          {activeFormTab === "proposta" && (
+            <div className="space-y-6">
+              <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados)."}>
             {/* Toggle Cliente Cadastrado vs. Sem Cadastro */}
             {mode === "new" ? (
               <div className="mb-4 flex gap-6 border-b border-slate-100 pb-3">
@@ -2840,9 +2841,22 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
               </>
             )}
           </FormSection>
+
+          <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
+            <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
+            <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
+              <Copy className="h-4 w-4" />
+              Copiar resumo para WhatsApp
+            </button>
+          </FormSection>
+
+          <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
+            <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
+          </FormSection>
           </>
           )}
-          </div>
+            </div>
+          )}
         </div>
 
         {shouldShowRest && (
@@ -2879,18 +2893,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                   </p>
                 )}
               </div>
-            </FormSection>
-
-            <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
-              <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
-              <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
-                <Copy className="h-4 w-4" />
-                Copiar resumo para WhatsApp
-              </button>
-            </FormSection>
-
-            <FormSection title="10. Observações e Condições" description="Notas internas ou termos da proposta comercial.">
-              <textarea value={form.observacoes} onChange={(event) => updateField("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} placeholder="Ex: Prazo de entrega estendido por conta de logística do frete..." />
             </FormSection>
           </div>
         )}
