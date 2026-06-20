@@ -44,53 +44,10 @@ export async function POST(request: Request) {
     const cleanDoc = documento.replace(/\D/g, "");
 
     if (tipo === "CPF") {
-      if (cleanDoc.length !== 11) {
-        return NextResponse.json(
-          { success: false, errorMessage: "CPF deve conter 11 dígitos." },
-          { status: 400 }
-        );
-      }
-
-      const token = process.env.CPFHUB_API_TOKEN ?? process.env.CPFHUB_TOKEN ?? process.env.CPFHUB_API_KEY;
-      if (!token) {
-        return NextResponse.json(
-          { success: false, errorMessage: "Serviço de consulta de CPF não configurado no servidor." },
-          { status: 500 }
-        );
-      }
-
-      const headers: HeadersInit = { "x-api-key": token };
-      const result = await fetchJsonWithTimeout<any>(`https://api.cpfhub.io/cpf/${cleanDoc}`, headers);
-
-      if (!result.ok) {
-        return NextResponse.json(
-          { success: false, errorMessage: "Não foi possível consultar o CPF no serviço externo." },
-          { status: 502 }
-        );
-      }
-
-      const data = result.data?.data || {};
-      const nome = toText(data.nameUpper) || toText(data.name);
-
-      if (!nome) {
-        return NextResponse.json(
-          { success: false, errorMessage: "Nome não encontrado para este CPF." },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          documento,
-          tipo: "CPF",
-          nome,
-          dataNascimento: toText(data.birthDate),
-          situacaoCadastral: toText(data.status) || "REGULAR", // CPF Hub usually returns status if available
-          consultaData: new Date().toISOString(),
-          rawPayload: data
-        }
-      });
+      return NextResponse.json(
+        { success: false, errorMessage: "Use a rota exclusiva /api/verificacao/cpf para consultas de CPF." },
+        { status: 400 }
+      );
     } else if (tipo === "CNPJ") {
       if (cleanDoc.length !== 14) {
         return NextResponse.json(

@@ -34,7 +34,7 @@ type VerificationData = {
   inscricaoEstadual?: string;
   capitalSocial?: number;
   regimeTributario?: string;
-  rawPayload?: any;
+  rawPayload?: Record<string, unknown>;
 };
 
 export function VerificacaoPage() {
@@ -96,10 +96,13 @@ export function VerificacaoPage() {
     setResult(null);
 
     try {
-      const response = await fetch("/api/verificacao", {
+      const endpoint = tipo === "CPF" ? "/api/verificacao/cpf" : "/api/verificacao";
+      const bodyPayload = tipo === "CPF" ? { cpf: cleanDoc } : { tipo, documento };
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo, documento })
+        body: JSON.stringify(bodyPayload)
       });
 
       const data = await response.json();
