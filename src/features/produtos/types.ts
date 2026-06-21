@@ -78,8 +78,8 @@ export type Produto = {
   pis_situacao_tributaria: string;
   cofins_situacao_tributaria: string;
   informacoes_fiscais: string;
-  id_formato?: number | null;
-  id_modelo_cor?: number | null;
+  id_formato?: string | null;
+  id_modelo_cor?: string | null;
   quantidade_minima_venda?: number | null;
   tipo_blocagem?: string | null;
   id_gabarito?: number | null;

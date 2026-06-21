@@ -3,68 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, Image as ImageIcon, AlertOctagon, ChevronDown } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
-import type { PedidoModeloRow, ItemComModelos, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
+import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
-  listarItensComModelos,
-  criarModelo,
-  atualizarModelo,
   atualizarModeloParcial,
   excluirModelo,
 } from "@/features/orcamentos/services/pedidos-modelos.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface ModeloDraft {
-  id?: number | string; // string para novos modelos não salvos
-  nome_modelo: string;
-  padrao: string;
-  quantidade: string;
-  tipo_numeracao: string;
-  numerador: string;
-  numeracao_inicio: string;
-  numeracao_fim: string;
-  verso_tipo: string;
-}
-
-const EMPTY_DRAFT: ModeloDraft = {
-  nome_modelo: "",
-  padrao: "",
-  quantidade: "",
-  tipo_numeracao: "SEM_NUMERACAO",
-  numerador: "",
-  numeracao_inicio: "",
-  numeracao_fim: "",
-  verso_tipo: "SÓ FRENTE",
-};
-
-function draftFromModelo(m: PedidoModeloRow): ModeloDraft {
-  return {
-    id: m.id,
-    nome_modelo: m.nome_modelo,
-    padrao: m.padrao || "",
-    quantidade: m.quantidade.toString(),
-    tipo_numeracao: m.tipo_numeracao || "SEM_NUMERACAO",
-    numerador: "", // Não persistido na base ainda conforme regra atual
-    numeracao_inicio: m.numeracao_inicio !== null ? m.numeracao_inicio.toString() : "",
-    numeracao_fim: m.numeracao_fim !== null ? m.numeracao_fim.toString() : "",
-    verso_tipo: m.verso_tipo || "SÓ FRENTE",
-  };
-}
-
-function draftToInput(draft: ModeloDraft, idInt: number, idProdutoProposta: number): ModeloInput {
-  return {
-    id_int: idInt,
-    id_produto_proposta_origem: idProdutoProposta,
-    nome_modelo: draft.nome_modelo.trim(),
-    padrao: draft.padrao.trim() || null,
-    quantidade: Number(draft.quantidade) || 0,
-    tipo_numeracao: draft.tipo_numeracao || null,
-    numeracao_inicio: draft.numeracao_inicio ? Number(draft.numeracao_inicio) : null,
-    numeracao_fim: draft.numeracao_fim ? Number(draft.numeracao_fim) : null,
-    verso_tipo: draft.verso_tipo,
-  };
-}
+import type { PropostaItem, PedidoModeloState } from "@/features/orcamentos/types";
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -74,112 +19,86 @@ const labelClass = "text-[11px] font-bold uppercase tracking-wider text-slate-50
 // ─── Component ───────────────────────────────────────────────────────────────
 
 function ModeloInlineCard({
-  itemId,
-  draft: initialDraft,
+  modelo,
   maxQtd,
   itemIdModeloCorNum,
   itemIdFormato,
   coresOpcoes,
   numeracoesOpcoes,
   formatosOpcoes,
-  saving,
-  onCancel,
-  onSaveNew,
-  onPartialSave,
+  onRemove,
+  onClose,
   onUpdateParent,
 }: {
-  itemId: number;
-  draft: ModeloDraft;
+  modelo: PedidoModeloState;
   maxQtd: number;
   itemIdModeloCorNum?: string | null;
   itemIdFormato?: string | null;
   coresOpcoes: any[];
   numeracoesOpcoes: any[];
   formatosOpcoes: any[];
-  saving: boolean;
-  onCancel: () => void;
-  onSaveNew: (draft: ModeloDraft) => void;
-  onPartialSave: (draftId: number, partial: Partial<ModeloDraft>, setStatus: (s: any) => void) => void;
-  onUpdateParent: (partial: Partial<ModeloDraft>) => void;
+  onRemove: () => void;
+  onClose: () => void;
+  onUpdateParent: (partial: Partial<PedidoModeloState>) => void;
 }) {
-  const isNew = typeof initialDraft.id === "string";
-  const [localDraft, setLocalDraft] = useState<ModeloDraft>(initialDraft);
+  const isNew = !modelo.isPersisted;
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Numeracao_fim calculation
   useEffect(() => {
-    if (localDraft.tipo_numeracao === "SEQUENCIAL" && localDraft.quantidade && localDraft.numeracao_inicio) {
-      const start = Number(localDraft.numeracao_inicio);
-      const qty = Number(localDraft.quantidade);
+    if (modelo.tipo_numeracao !== "SEM_NUMERACAO" && modelo.quantidade && modelo.numeracao_inicio !== null) {
+      const start = Number(modelo.numeracao_inicio);
+      const qty = Number(modelo.quantidade);
       if (!isNaN(start) && !isNaN(qty) && qty > 0) {
-        const expectedFim = String(start + qty - 1);
-        if (localDraft.numeracao_fim !== expectedFim) {
-          setLocalDraft((prev) => ({ ...prev, numeracao_fim: expectedFim }));
+        const expectedFim = start + qty - 1;
+        if (modelo.numeracao_fim !== expectedFim) {
+          onUpdateParent({ numeracao_fim: expectedFim });
         }
       }
     }
-  }, [localDraft.quantidade, localDraft.numeracao_inicio, localDraft.tipo_numeracao, localDraft.numeracao_fim]);
+  }, [modelo.quantidade, modelo.numeracao_inicio, modelo.tipo_numeracao, modelo.numeracao_fim, onUpdateParent]);
 
-  const handleChange = (partial: Partial<ModeloDraft>) => {
-    setLocalDraft((prev) => ({ ...prev, ...partial }));
-    if (isNew) {
-      onUpdateParent(partial);
-    }
+  const handleChange = (partial: Partial<PedidoModeloState>) => {
+    onUpdateParent(partial);
   };
-
-  // Debounce para auto-save parcial
-  useEffect(() => {
-    if (isNew) return;
-    
-    const changedKeys = (Object.keys(localDraft) as (keyof ModeloDraft)[]).filter(k => localDraft[k] !== initialDraft[k]);
-    if (changedKeys.length === 0) {
-      if (saveStatus === "saved") {
-         const t = setTimeout(() => setSaveStatus("idle"), 2000);
-         return () => clearTimeout(t);
-      }
-      return;
-    }
-
-    setSaveStatus("saving");
-    const timer = setTimeout(() => {
-      const partialData: Partial<ModeloDraft> = {};
-      changedKeys.forEach(k => {
-         // @ts-ignore
-         partialData[k] = localDraft[k];
-      });
-      onPartialSave(initialDraft.id as number, partialData, setSaveStatus);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [localDraft, initialDraft, isNew, onPartialSave, saveStatus]);
 
   const handleBlur = () => {
     if (isNew) return;
-    const changedKeys = (Object.keys(localDraft) as (keyof ModeloDraft)[]).filter(k => localDraft[k] !== initialDraft[k]);
-    if (changedKeys.length > 0) {
-      setSaveStatus("saving");
-      const partialData: Partial<ModeloDraft> = {};
-      changedKeys.forEach(k => {
-         // @ts-ignore
-         partialData[k] = localDraft[k];
-      });
-      onPartialSave(initialDraft.id as number, partialData, setSaveStatus);
+    // On blur we can trigger a partial save if needed.
+    // In our simplified logic, if isPersisted, we can do partial save debounced or onBlur
+    // Here we'll rely on the parent debounce or just do it inline here:
+    const draftId = modelo.id;
+    if (draftId && draftId > 0) {
+       setSaveStatus("saving");
+       atualizarModeloParcial(draftId, {
+         nome_modelo: modelo.nome_modelo,
+         padrao: modelo.padrao || null,
+         quantidade: modelo.quantidade,
+         tipo_numeracao: modelo.tipo_numeracao || null,
+         numeracao_inicio: modelo.numeracao_inicio || null,
+         numeracao_fim: modelo.numeracao_fim || null,
+         verso_tipo: modelo.verso_tipo || null,
+       }).then(res => {
+         if(res.success) {
+           setSaveStatus("saved");
+           setTimeout(() => setSaveStatus("idle"), 2000);
+         } else {
+           setSaveStatus("error");
+         }
+       });
     }
   };
 
-  const hasConfig = Boolean(itemIdModeloCorNum || itemIdFormato);
+  const hasConfig = Boolean(itemIdFormato);
 
   const filteredCores = hasConfig ? coresOpcoes.filter((c) => {
-    if (itemIdModeloCorNum && String(c.id_modelo_cor_num) === String(itemIdModeloCorNum)) return true;
-    if (itemIdFormato && String(c.formato_id) === String(itemIdFormato)) return true;
-    return false;
+    return String(c.formato_id) === String(itemIdFormato);
   }) : [];
 
   const filteredNum = hasConfig ? numeracoesOpcoes.filter((n) => {
-    if (itemIdModeloCorNum && String(n.id_modelo_cor_num) === String(itemIdModeloCorNum)) return true;
-    if (itemIdFormato && String(n.formato_id) === String(itemIdFormato)) return true;
-    if (itemIdFormato && n.formato_ids && Array.isArray(n.formato_ids) && n.formato_ids.includes(String(itemIdFormato))) return true;
-    return false;
+    const isMainFormat = String(n.formato_id) === String(itemIdFormato);
+    const isInFormatIds = Array.isArray(n.formato_ids) && n.formato_ids.some((fid: string) => String(fid) === String(itemIdFormato));
+    return isMainFormat || isInFormatIds;
   }) : [];
 
   return (
@@ -187,7 +106,7 @@ function ModeloInlineCard({
       <div className="mb-4 flex items-center justify-between border-b border-teal-100 pb-3">
         <div className="flex items-center gap-3">
           <h4 className="text-sm font-bold text-teal-800">
-            {isNew ? "Novo modelo" : `Modelo #${initialDraft.id}`}
+            {isNew ? "Novo modelo" : `Modelo #${modelo.id}`}
           </h4>
           {!isNew && (
             <div className="flex items-center gap-1.5 text-[11px] font-bold">
@@ -200,20 +119,17 @@ function ModeloInlineCard({
         </div>
         <div className="flex gap-2">
           <button
-            onClick={onCancel}
+            onClick={onClose}
             className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
           >
-            {isNew ? "Cancelar" : "Fechar"}
+            Fechar
           </button>
-          {isNew && (
-            <button
-              onClick={() => onSaveNew(localDraft)}
-              disabled={saving}
-              className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-teal-700 disabled:opacity-60"
-            >
-              {saving ? "Salvando..." : "Salvar"}
-            </button>
-          )}
+          <button
+            onClick={onRemove}
+            className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100"
+          >
+            {isNew ? "Cancelar" : "Remover"}
+          </button>
         </div>
       </div>
 
@@ -224,7 +140,7 @@ function ModeloInlineCard({
             type="text"
             className={inputClass}
             placeholder="Ex: Talão"
-            value={localDraft.nome_modelo}
+            value={modelo.nome_modelo}
             onChange={(e) => handleChange({ nome_modelo: e.target.value })}
           />
         </div>
@@ -233,12 +149,12 @@ function ModeloInlineCard({
           <label className={labelClass}>Cor papel *</label>
             <select
               className={inputClass}
-              value={localDraft.padrao}
+              value={modelo.padrao || ""}
               onChange={(e) => handleChange({ padrao: e.target.value })}
               disabled={!hasConfig}
             >
               {!hasConfig ? (
-                <option value="">Nenhuma configuração cadastrada para este produto.</option>
+                <option value="">Produto sem Formato de Produção cadastrado.</option>
               ) : (
               <>
                 <option value="">Selecione...</option>
@@ -250,37 +166,36 @@ function ModeloInlineCard({
             </select>
         </div>
 
-        <div className="w-full lg:w-24">
-          <label className={labelClass}>
-            Qtd <span className="text-teal-600 lowercase font-normal ml-1">({maxQtd})</span>
-          </label>
+        <div className="flex-[1] min-w-[80px]">
+          <label className={labelClass}>Qtd *</label>
           <input
             type="number"
             className={inputClass}
-            min={1}
-            max={maxQtd}
-            value={localDraft.quantidade}
+            value={modelo.quantidade || ""}
             onChange={(e) => {
-              let val = Number(e.target.value);
-              if (val > maxQtd) val = maxQtd;
-              handleChange({ quantidade: val ? String(val) : "" });
+              const val = Number(e.target.value);
+              if (!isNaN(val)) {
+                handleChange({ quantidade: Math.min(val, maxQtd) });
+              }
             }}
           />
         </div>
+      </div>
 
+      <div className="mt-3 flex flex-col lg:flex-row lg:items-end gap-3">
         <div className="flex-[1.5] min-w-[120px]">
           <label className={labelClass}>Numerador</label>
-            <select
-              className={inputClass}
-              value={localDraft.numerador}
-              onChange={(e) => handleChange({ numerador: e.target.value })}
-              disabled={!hasConfig}
-            >
-              {!hasConfig ? (
-                <option value="">Nenhuma configuração cadastrada para este produto.</option>
-              ) : (
+          <select
+            className={inputClass}
+            value={modelo.tipo_numeracao || ""}
+            onChange={(e) => handleChange({ tipo_numeracao: e.target.value })}
+            disabled={!hasConfig}
+          >
+            {!hasConfig ? (
+              <option value="">Produto sem Formato de Produção cadastrado.</option>
+            ) : (
               <>
-                <option value="">Selecione...</option>
+                <option value="SEM_NUMERACAO">Sem Numeração</option>
                 {filteredNum.map((n) => (
                   <option key={n.id} value={n.name}>{n.name}</option>
                 ))}
@@ -289,11 +204,35 @@ function ModeloInlineCard({
           </select>
         </div>
 
+        <div className="flex-[1] min-w-[80px]">
+          <label className={labelClass}>Nº Inicial</label>
+          <input
+            type="number"
+            className={inputClass}
+            placeholder="Ex: 1"
+            value={modelo.numeracao_inicio || ""}
+            onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
+            disabled={!modelo.tipo_numeracao || modelo.tipo_numeracao === "SEM_NUMERACAO"}
+          />
+        </div>
+
+        <div className="flex-[1] min-w-[80px]">
+          <label className={labelClass}>Nº Final</label>
+          <input
+            type="number"
+            className={`${inputClass} bg-slate-50`}
+            placeholder="Automático"
+            value={modelo.numeracao_fim || ""}
+            readOnly
+            disabled={!modelo.tipo_numeracao || modelo.tipo_numeracao === "SEM_NUMERACAO"}
+          />
+        </div>
+
         <div className="flex-[1.5] min-w-[120px]">
           <label className={labelClass}>Verso</label>
           <select
             className={inputClass}
-            value={localDraft.verso_tipo}
+            value={modelo.verso_tipo || ""}
             onChange={(e) => handleChange({ verso_tipo: e.target.value })}
           >
             <option value="SÓ FRENTE">SÓ FRENTE</option>
@@ -303,51 +242,28 @@ function ModeloInlineCard({
           </select>
         </div>
       </div>
-
-      {localDraft.tipo_numeracao === "SEQUENCIAL" && (
-        <div className="mt-3 flex gap-3 p-3 bg-white rounded-xl border border-teal-100">
-          <div>
-            <label className={labelClass}>Nº Inicial *</label>
-            <input
-              type="number"
-              className={inputClass}
-              value={localDraft.numeracao_inicio}
-              onChange={(e) => handleChange({ numeracao_inicio: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Nº Final * (Auto)</label>
-            <input
-              type="number"
-              className={`${inputClass} bg-slate-50`}
-              value={localDraft.numeracao_fim}
-              readOnly
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-export function PedidoModelosTab({ idInt }: { idInt: number }) {
+export function PedidoModelosTab({
+  itens,
+  modelos,
+  onModelosChange,
+}: {
+  itens: PropostaItem[];
+  modelos: PedidoModeloState[];
+  onModelosChange: (m: PedidoModeloState[]) => void;
+}) {
   const { showToast } = useAppToast();
-  const [itens, setItens] = useState<ItemComModelos[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // States para opções dinâmicas
-  const [formatosOpcoes, setFormatosOpcoes] = useState<{ id: string; name: string }[]>([]);
-  const [coresOpcoes, setCoresOpcoes] = useState<{ id: number; name: string; formato_id: string }[]>([]);
-  const [numeracoesOpcoes, setNumeracoesOpcoes] = useState<{ id: number; name: string; formato_id: string; formato_ids: string[] | null }[]>([]);
-
-  // State de edição inline: map de idProduto -> drafts em edição
-  // Para permitir múltiplos drafts num mesmo produto, usamos um array.
-  const [editingDrafts, setEditingDrafts] = useState<Record<number, ModeloDraft[]>>({});
-  const [savingCards, setSavingCards] = useState<Record<string, boolean>>({});
-
+  const [loading, setLoading] = useState(false);
+  const [coresOpcoes, setCoresOpcoes] = useState<any[]>([]);
+  const [numeracoesOpcoes, setNumeracoesOpcoes] = useState<any[]>([]);
+  const [formatosOpcoes, setFormatosOpcoes] = useState<any[]>([]);
+  const [deletingModelo, setDeletingModelo] = useState<PedidoModeloState | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deletingModelo, setDeletingModelo] = useState<PedidoModeloRow | null>(null);
-  const [collapsedItems, setCollapsedItems] = useState<Record<number, boolean>>({});
+  const [collapsedItems, setCollapsedItems] = useState<Record<string, boolean>>({});
+  const [openModelos, setOpenModelos] = useState<Record<string, boolean>>({});
 
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -375,27 +291,12 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
     setPreviewLoading(false);
   }
 
-  const fetchData = useCallback(async () => {
-    if (!idInt || idInt === 0) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const result = await listarItensComModelos(idInt);
-    if (result.success && result.data) {
-      setItens(result.data);
-    } else {
-      showToast({ type: "error", title: "Erro", description: result.errorMessage || "Falha ao carregar itens." });
-    }
-    setLoading(false);
-  }, [idInt, showToast]);
-
   const fetchOpcoes = useCallback(async () => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
     const [resFormatos, resCores, resNum] = await Promise.all([
-      supabase.from("producao_formatos").select("id, name"),
+      supabase.from("producao_formatos").select("id, name, id_formato_num"),
       supabase.from("producao_cores").select("id, name, formato_id, id_modelo_cor_num").order("id_modelo_cor_num", { ascending: true }),
       supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids, id_modelo_cor_num").order("name", { ascending: true }),
     ]);
@@ -406,172 +307,67 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchOpcoes();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchData();
-  }, [fetchData, fetchOpcoes]);
+  }, [fetchOpcoes]);
 
   // ─── Inline Actions ────────────────────────────────────────────────────────
 
-  function startCreate(itemId: number) {
-    const currentItem = itens.find(i => i.id === itemId);
-    const saldo = currentItem ? currentItem.saldo_a_distribuir : 0;
-    if (saldo <= 0) {
+  function startCreate(item: PropostaItem, maxQtd: number) {
+    if (maxQtd <= 0) {
       showToast({ type: "error", title: "Ação bloqueada", description: "Não há saldo disponível para adicionar novo modelo." });
       return;
     }
 
-    // eslint-disable-next-line react-hooks/purity
-    const newDraft: ModeloDraft = { ...EMPTY_DRAFT, id: `new_${Date.now()}`, quantidade: String(saldo) };
-    setEditingDrafts((prev) => ({
-      ...prev,
-      [itemId]: [...(prev[itemId] || []), newDraft],
-    }));
+    const newId = `new_${Date.now()}`;
+    const newModel: PedidoModeloState = {
+      tempId: newId,
+      isPersisted: false,
+      id_produto_proposta_origem: item.id_produto_proposta_origem || null,
+      id_item: item.id,
+      nome_modelo: "",
+      descricao: null,
+      padrao: null,
+      quantidade: maxQtd,
+      tipo_numeracao: "SEM_NUMERACAO",
+      numeracao_inicio: null,
+      numeracao_fim: null,
+      verso_tipo: "SÓ FRENTE",
+    };
+
+    onModelosChange([...modelos, newModel]);
+    setCollapsedItems((prev) => ({ ...prev, [item.id]: false }));
+    setOpenModelos((prev) => ({ ...prev, [newId]: true }));
   }
 
-  function startEdit(itemId: number, modelo: PedidoModeloRow) {
-    setEditingDrafts((prev) => {
-      const current = prev[itemId] || [];
-      if (current.some((d) => d.id === modelo.id)) return prev; // já em edição
-      return {
-        ...prev,
-        [itemId]: [...current, draftFromModelo(modelo)],
-      };
-    });
+  function startCopy(modelo: PedidoModeloState) {
+    const newId = `new_${Date.now()}`;
+    const newModel: PedidoModeloState = {
+      ...modelo,
+      id: undefined,
+      tempId: newId,
+      isPersisted: false,
+    };
+    onModelosChange([...modelos, newModel]);
+    setOpenModelos((prev) => ({ ...prev, [newId]: true }));
   }
-
-  function startCopy(itemId: number, modelo: PedidoModeloRow) {
-    const draft = draftFromModelo(modelo);
-    // eslint-disable-next-line react-hooks/purity
-    draft.id = `new_${Date.now()}`; // Força a ser um novo temporário
-
-    const currentItem = itens.find(i => i.id === itemId);
-    if (currentItem) {
-      if (Number(draft.quantidade) > currentItem.saldo_a_distribuir) {
-        draft.quantidade = Math.max(0, currentItem.saldo_a_distribuir).toString();
-      }
-    }
-
-    setEditingDrafts((prev) => ({
-      ...prev,
-      [itemId]: [...(prev[itemId] || []), draft],
-    }));
-  }
-
-  function cancelEdit(itemId: number, draftId: number | string) {
-    setEditingDrafts((prev) => {
-      const current = prev[itemId] || [];
-      const updated = current.filter((d) => d.id !== draftId);
-      return {
-        ...prev,
-        [itemId]: updated,
-      };
-    });
-  }
-
-  function updateDraft(itemId: number, draftId: number | string, partial: Partial<ModeloDraft>) {
-    setEditingDrafts((prev) => {
-      const current = prev[itemId] || [];
-      const updated = current.map((d) => (d.id === draftId ? { ...d, ...partial } : d));
-      return {
-        ...prev,
-        [itemId]: updated,
-      };
-    });
-  }
-
-  async function handleSaveNew(itemId: number, draft: ModeloDraft) {
-    if (!idInt || idInt === 0) {
-      showToast({ type: "warning", title: "Proposta não salva", description: "Salve a proposta para persistir os modelos no banco." });
-      return;
-    }
-
-    const input = draftToInput(draft, idInt, itemId);
-
-    const currentItem = itens.find((i) => i.id === itemId);
-    if (currentItem) {
-      const distributedOthers = currentItem.modelos
-        .filter((m) => m.id !== draft.id)
-        .reduce((sum, m) => sum + m.quantidade, 0);
-
-      const newTotal = distributedOthers + input.quantidade;
-      if (newTotal > currentItem.qtd) {
-        showToast({
-          type: "error",
-          title: "Quantidade excedida",
-          description: `A soma (${newTotal}) ultrapassa a quantidade do item (${currentItem.qtd}). Saldo disponível: ${currentItem.qtd - distributedOthers}`,
-        });
-        return;
-      }
-    }
-
-    const draftKey = String(draft.id);
-    setSavingCards((prev) => ({ ...prev, [draftKey]: true }));
-
-    const result = await criarModelo(input);
-    if (result.success) {
-      showToast({ type: "success", title: "Modelo criado", description: `Modelo salvo com sucesso.` });
-      
-      // Mantém aberto trocando o ID temporário pelo real
-      setEditingDrafts((prev) => {
-        const current = prev[itemId] || [];
-        return {
-          ...prev,
-          [itemId]: current.map((d) => (d.id === draft.id && result.data ? { ...d, id: result.data.id } : d)),
-        };
-      });
-      
-      await fetchData();
-    } else {
-      showToast({ type: "error", title: "Erro ao criar", description: result.errorMessage || "Ocorreu um erro." });
-    }
-    setSavingCards((prev) => ({ ...prev, [draftKey]: false }));
-  }
-
-  const handlePartialSave = useCallback(
-    async (itemId: number, draftId: number, partial: Partial<ModeloDraft>, setStatus: (s: any) => void) => {
-      if (!idInt || idInt === 0) return;
-
-      const inputPartial: Partial<ModeloInput> = { id_produto_proposta_origem: itemId };
-      if (partial.nome_modelo !== undefined) inputPartial.nome_modelo = partial.nome_modelo;
-      if (partial.padrao !== undefined) inputPartial.padrao = partial.padrao;
-      if (partial.quantidade !== undefined) inputPartial.quantidade = Number(partial.quantidade) || 0;
-      if (partial.tipo_numeracao !== undefined) inputPartial.tipo_numeracao = partial.tipo_numeracao;
-      if (partial.numeracao_inicio !== undefined) inputPartial.numeracao_inicio = Number(partial.numeracao_inicio) || null;
-      if (partial.numeracao_fim !== undefined) inputPartial.numeracao_fim = Number(partial.numeracao_fim) || null;
-      if (partial.verso_tipo !== undefined) inputPartial.verso_tipo = partial.verso_tipo;
-
-      const result = await atualizarModeloParcial(draftId, inputPartial);
-      if (result.success && result.data) {
-        setStatus("saved");
-        // Update local editing drafts without forcing a fetch
-        setEditingDrafts((prev) => {
-          const current = prev[itemId] || [];
-          return {
-            ...prev,
-            [itemId]: current.map((d) => (d.id === draftId ? { ...d, ...partial } : d)),
-          };
-        });
-      } else {
-        setStatus("error");
-        showToast({ type: "error", title: "Erro ao salvar", description: result.errorMessage || "Falha ao salvar o modelo." });
-      }
-    },
-    [idInt, showToast]
-  );
 
   async function handleDeleteConfirm() {
     if (!deletingModelo) return;
-    const result = await excluirModelo(deletingModelo.id);
-    if (result.success) {
-      showToast({ type: "success", title: "Excluído", description: "Modelo removido com sucesso." });
-      setDeleteConfirmOpen(false);
-      setDeletingModelo(null);
-      void fetchData();
+    
+    if (deletingModelo.isPersisted && deletingModelo.id) {
+      const result = await excluirModelo(deletingModelo.id);
+      if (result.success) {
+        showToast({ type: "success", title: "Excluído", description: "Modelo removido com sucesso." });
+        onModelosChange(modelos.filter((m) => m.id !== deletingModelo.id));
+      } else {
+        showToast({ type: "error", title: "Erro", description: result.errorMessage || "Falha ao excluir." });
+      }
     } else {
-      showToast({ type: "error", title: "Erro", description: result.errorMessage || "Falha ao excluir." });
+      onModelosChange(modelos.filter((m) => m.tempId !== deletingModelo.tempId));
     }
+    
+    setDeleteConfirmOpen(false);
+    setDeletingModelo(null);
   }
 
   // ─── Renders ─────────────────────────────────────────────────────────────────
@@ -584,7 +380,7 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
     );
   }
 
-  if (itens.length === 0) {
+  if (!itens || itens.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <Package className="mb-4 h-16 w-16 text-slate-300" />
@@ -598,12 +394,6 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
 
   return (
     <div className="space-y-6">
-      {(!idInt || idInt === 0) && (
-        <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm font-semibold shadow-sm">
-          Aviso: Salve a proposta (abaixo) antes de gerar cobranças ou persistir modelos no banco.
-        </div>
-      )}
-      
       <div className="flex flex-col gap-1">
         <h2 className="text-xl font-bold text-[#0b2f4a]">Boletim Técnico & Lotes</h2>
         <p className="text-sm text-slate-500">
@@ -613,8 +403,15 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
 
       <div className="space-y-6">
         {itens.map((item) => {
-          const drafts = editingDrafts[item.id] || [];
-          const isFull = item.saldo_a_distribuir <= 0;
+          const modelosDoItem = modelos.filter(
+            (m) =>
+              (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
+              (m.id_item && item.id && m.id_item === item.id)
+          );
+          
+          const qtyUsed = modelosDoItem.reduce((acc, m) => acc + (m.quantidade || 0), 0);
+          const saldo = (item.quantidade || 0) - qtyUsed;
+          const isFull = saldo <= 0;
 
           return (
             <div key={item.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -627,19 +424,19 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
                     <ChevronDown className={`h-5 w-5 transition-transform ${collapsedItems[item.id] ? "-rotate-90" : ""}`} />
                   </button>
                   <div>
-                    <h3 className="font-bold text-slate-800">{item.nome_produto}</h3>
+                    <h3 className="font-bold text-slate-800">{item.nome}</h3>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500">
-                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-slate-700">Qtd: {item.qtd}</span>
-                      <span className={item.saldo_a_distribuir > 0 ? "text-amber-600" : "text-teal-600"}>
-                        {item.saldo_a_distribuir > 0 ? `Restam: ${item.saldo_a_distribuir}` : "Saldo distribuído 100%"}
+                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-slate-700">Qtd: {item.quantidade}</span>
+                      <span className={saldo > 0 ? "text-amber-600" : "text-teal-600"}>
+                        {saldo > 0 ? `Restam: ${saldo}` : "Saldo distribuído 100%"}
                       </span>
-                      {item.modelo_descri && <span className="max-w-[200px] truncate">Ref: {item.modelo_descri}</span>}
+                      {item.descricaoModelo && <span className="max-w-[200px] truncate">Ref: {item.descricaoModelo}</span>}
                     </div>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => startCreate(item.id)}
+                  onClick={() => startCreate(item, saldo)}
                   disabled={isFull}
                   className="flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
                 >
@@ -650,7 +447,7 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
 
               {!collapsedItems[item.id] && (
                 <div className="p-5 space-y-4 bg-slate-50/30">
-                {item.modelos.length === 0 && drafts.length === 0 && (
+                {modelosDoItem.length === 0 && (
                   <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 py-8 text-center bg-white">
                     <CheckCircle className="mb-2 h-8 w-8 text-slate-300" />
                     <p className="text-sm font-bold text-slate-600">Nenhum modelo configurado</p>
@@ -658,49 +455,82 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
                   </div>
                 )}
 
-                {item.modelos.map((m) => {
-                  const isEditing = drafts.some((d) => d.id === m.id);
-                  if (isEditing) return null; // Será renderizado no mapa de drafts abaixo
+                {modelosDoItem.map((m) => {
+                  const numFormatId = item.produto?.id_formato;
+                  const formatoObj = formatosOpcoes.find(f => String(f.id_formato_num) === String(numFormatId) || String(f.id) === String(numFormatId));
+                  const realFormatoUUID = formatoObj ? formatoObj.id : null;
+                  
+                  const modId = m.tempId || String(m.id);
+                  const isOpen = openModelos[modId];
+
+                  if (isOpen) {
+                    return (
+                      <ModeloInlineCard
+                        key={modId}
+                        modelo={m}
+                        maxQtd={saldo + (m.quantidade || 0)}
+                        itemIdModeloCorNum={item.produto?.id_modelo_cor?.toString()}
+                        itemIdFormato={realFormatoUUID}
+                        coresOpcoes={coresOpcoes}
+                        numeracoesOpcoes={numeracoesOpcoes}
+                        formatosOpcoes={formatosOpcoes}
+                        onRemove={() => {
+                           setDeletingModelo(m);
+                           setDeleteConfirmOpen(true);
+                        }}
+                        onClose={() => setOpenModelos((prev) => ({ ...prev, [modId]: false }))}
+                        onUpdateParent={(partial) => {
+                           const updated = modelos.map(mod => {
+                             if (m.tempId && mod.tempId === m.tempId) return { ...mod, ...partial };
+                             if (m.id && mod.id === m.id) return { ...mod, ...partial };
+                             return mod;
+                           });
+                           onModelosChange(updated);
+                        }}
+                      />
+                    );
+                  }
 
                   return (
-                    <div key={m.id} className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h4 className="font-bold text-slate-800">
-                            {m.nome_modelo} <span className="ml-2 text-xs font-normal text-slate-400">#{m.id}</span>
-                          </h4>
-                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
-                            <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-400">Qtd:</span> {m.quantidade}</div>
-                            {m.padrao && <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-400">Cor:</span> {m.padrao}</div>}
-                            {m.tipo_numeracao && <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-400">Num:</span> {m.tipo_numeracao}</div>}
-                            {m.verso_tipo && <div className="flex items-center gap-1.5"><span className="font-semibold text-slate-400">Verso:</span> {m.verso_tipo}</div>}
-                          </div>
+                    <div key={modId} className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300">
+                      <div className="mb-3 pr-24">
+                        <h4 className="text-sm font-bold text-[#0b2f4a]">{m.nome_modelo || "Modelo sem nome"}</h4>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
+                          <span className="rounded bg-slate-100 px-2 py-1">Qtd: {m.quantidade}</span>
+                          {m.padrao && <span className="rounded bg-slate-100 px-2 py-1">Cor: {m.padrao}</span>}
+                          {m.tipo_numeracao && m.tipo_numeracao !== "SEM_NUMERACAO" && (
+                            <span className="rounded bg-slate-100 px-2 py-1">Numeração: {m.tipo_numeracao} ({m.numeracao_inicio || 0} a {m.numeracao_fim || 0})</span>
+                          )}
                         </div>
-
+                      </div>
+                      
+                      <div className="absolute right-4 top-4 flex gap-2">
                         <div className="flex items-center gap-2">
+                          {m.padrao && (
+                            <button
+                              type="button"
+                              onClick={() => openPreview(m.padrao || "")}
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                              title="Visualizar Arte"
+                            >
+                              <ImageIcon className="h-4 w-4" />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => openPreview(m.padrao || "")}
-                            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                            title="Visualizar Arte"
-                          >
-                            <ImageIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startCopy(item.id, m)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                            title="Copiar Modelo"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startEdit(item.id, m)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-blue-100 hover:text-blue-600"
+                            onClick={() => setOpenModelos((prev) => ({ ...prev, [modId]: true }))}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-blue-500 transition hover:bg-blue-50 hover:text-blue-600"
                             title="Editar Modelo"
                           >
                             <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startCopy(m)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                            title="Duplicar Modelo"
+                          >
+                            <Copy className="h-4 w-4" />
                           </button>
                           <button
                             type="button"
@@ -708,39 +538,14 @@ export function PedidoModelosTab({ idInt }: { idInt: number }) {
                               setDeletingModelo(m);
                               setDeleteConfirmOpen(true);
                             }}
-                            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-100 hover:text-red-600"
-                            title="Excluir Modelo"
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-red-400 transition hover:bg-red-50 hover:text-red-600"
+                            title="Remover Modelo"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-
-                {drafts.map((d) => {
-                  const maxAllowed = typeof d.id === "string" 
-                    ? item.saldo_a_distribuir 
-                    : item.saldo_a_distribuir + Number(item.modelos.find((m) => m.id === d.id)?.quantidade || 0);
-
-                  return (
-                    <ModeloInlineCard
-                      key={d.id}
-                      itemId={item.id}
-                      draft={d}
-                      maxQtd={maxAllowed}
-                      itemIdModeloCorNum={item.id_modelo_cor_num}
-                      itemIdFormato={item.id_formato}
-                      coresOpcoes={coresOpcoes}
-                      numeracoesOpcoes={numeracoesOpcoes}
-                      formatosOpcoes={formatosOpcoes}
-                      saving={savingCards[d.id as string] || false}
-                      onCancel={() => cancelEdit(item.id, d.id!)}
-                      onSaveNew={(localDraft) => handleSaveNew(item.id, localDraft)}
-                      onPartialSave={(draftId, partial, setStatus) => handlePartialSave(item.id, draftId, partial, setStatus)}
-                      onUpdateParent={(partial) => updateDraft(item.id, d.id!, partial)}
-                    />
                   );
                 })}
               </div>

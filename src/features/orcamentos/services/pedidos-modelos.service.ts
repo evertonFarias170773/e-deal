@@ -443,7 +443,11 @@ export async function excluirModelo(id: number): Promise<ServiceResult> {
 
     if (error) {
       console.error("[PedidosModelosService] excluirModelo:", error);
-      return { success: false, errorMessage: error.message || "Falha ao excluir modelo." };
+      let msg = error.message || "Falha ao excluir modelo.";
+      if (error.code === '42501' || msg.toLowerCase().includes('policy') || msg.toLowerCase().includes('rls')) {
+        msg = "Exclusão bloqueada pela política de segurança.";
+      }
+      return { success: false, errorMessage: msg };
     }
 
     return { success: true };

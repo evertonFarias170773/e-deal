@@ -1416,6 +1416,41 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
             throw new Error(`Erro ao gravar variações do item #${dbItemId}: ${insertVarsError.message}`);
           }
         }
+
+        // C. Gravar modelos novos atrelados a este produto
+        if (formState.pedidosModelos) {
+          const modelosNovos = formState.pedidosModelos.filter(m => 
+            !m.isPersisted && 
+            (m.id_produto_proposta_origem === parsedItemId || m.id_item === item.id)
+          );
+
+          if (modelosNovos.length > 0) {
+            const modelosToInsert = modelosNovos.map((m, index) => ({
+              id_int: id_int!,
+              id_produto_proposta_origem: dbItemId,
+              nome_modelo: m.nome_modelo,
+              descricao: m.descricao || null,
+              padrao: m.padrao || null,
+              quantidade: m.quantidade,
+              tipo_numeracao: m.tipo_numeracao || null,
+              numeracao_inicio: m.numeracao_inicio || null,
+              numeracao_fim: m.numeracao_fim || null,
+              verso_tipo: m.verso_tipo || null,
+              status_arte: m.status_arte || "PENDENTE",
+              status_producao: m.status_producao || "PENDENTE",
+              ordem: m.ordem || (index + 1)
+            }));
+
+            const { error: insertModelosError } = await client
+              .from("pedidos_modelos")
+              .insert(modelosToInsert);
+            
+            if (insertModelosError) {
+              console.error(`[OrcamentosService] Erro ao gravar modelos novos do item #${dbItemId}:`, insertModelosError);
+              throw new Error(`Erro ao gravar modelos do item #${dbItemId}: ${insertModelosError.message}`);
+            }
+          }
+        }
       }
 
       // 5. DELETE removed items

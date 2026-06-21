@@ -12,6 +12,25 @@ export type PropostaVariacaoEscolhida = {
   tipo: TipoVariacao;
 };
 
+export type PedidoModeloState = {
+  id?: number;
+  tempId?: string;
+  isPersisted: boolean;
+  id_produto_proposta_origem?: number | null;
+  id_item?: string | null;
+  nome_modelo: string;
+  descricao: string | null;
+  padrao: string | null;
+  quantidade: number;
+  tipo_numeracao: string | null;
+  numeracao_inicio: number | null;
+  numeracao_fim: number | null;
+  verso_tipo: string | null;
+  status_arte?: string;
+  status_producao?: string;
+  ordem?: number;
+};
+
 export type TipoDescontoProposta = "PERCENTUAL" | "VALOR";
 
 export type PropostaItem = {
@@ -106,6 +125,7 @@ export type PropostaFormState = {
   enderecoId: string;
   compradorId: string;
   itens: PropostaItem[];
+  pedidosModelos: PedidoModeloState[];
   fretes: PropostaFrete[];
   freteEscolhidoId: string;
   descontoGeralTipo: TipoDescontoProposta;

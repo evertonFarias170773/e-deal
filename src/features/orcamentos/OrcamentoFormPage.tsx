@@ -12,6 +12,7 @@ import { ProductSearchSelector } from "@/features/orcamentos/components/ProductS
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cadastro, CadastroContato, CadastroEndereco } from "@/features/cadastros/types";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import type {
@@ -19,7 +20,8 @@ import type {
   PropostaFormState,
   PropostaItem,
   TipoDescontoProposta,
-  PropostaFrete
+  PropostaFrete,
+  PedidoModeloState
 } from "@/features/orcamentos/types";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -241,6 +243,43 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   }, [searchParams]);
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
+
+  useEffect(() => {
+    if (proposta?.id_int && form.id_int !== "NOVO") {
+      const loadModelos = async () => {
+        const client = getSupabaseClient();
+        if (!client) return;
+        const { data } = await client
+          .from("pedidos_modelos")
+          .select("*")
+          .eq("id_int", proposta.id_int)
+          .order("ordem", { ascending: true })
+          .order("created_at", { ascending: true });
+        
+        if (data) {
+          const modelos: PedidoModeloState[] = data.map((m: any) => ({
+            id: Number(m.id),
+            isPersisted: true,
+            id_produto_proposta_origem: m.id_produto_proposta_origem !== null ? Number(m.id_produto_proposta_origem) : null,
+            id_item: m.id_item as string | null,
+            nome_modelo: String(m.nome_modelo || ""),
+            descricao: m.descricao as string | null,
+            padrao: m.padrao as string | null,
+            quantidade: Number(m.quantidade || 0),
+            tipo_numeracao: m.tipo_numeracao as string | null,
+            numeracao_inicio: m.numeracao_inicio !== null ? Number(m.numeracao_inicio) : null,
+            numeracao_fim: m.numeracao_fim !== null ? Number(m.numeracao_fim) : null,
+            verso_tipo: m.verso_tipo as string | null,
+            status_arte: String(m.status_arte || "PENDENTE"),
+            status_producao: String(m.status_producao || "PENDENTE"),
+            ordem: Number(m.ordem || 0),
+          }));
+          setForm((prev) => ({ ...prev, pedidosModelos: modelos }));
+        }
+      };
+      loadModelos();
+    }
+  }, [proposta?.id_int]);
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
   const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => {
     if (proposta?.cliente?.enderecos && proposta.cliente.enderecos.length > 0) return proposta.cliente.enderecos;
@@ -1946,6 +1985,27 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       return true;
     }
 
+    // Validação de quantidades dos modelos vs produtos (Ressalva 4)
+    for (const item of form.itens) {
+      const modelosDoItem = form.pedidosModelos.filter(
+        (m) => 
+          (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) || 
+          (m.id_item && item.id && m.id_item === item.id)
+      );
+      
+      if (modelosDoItem.length > 0) {
+        const somaModelos = modelosDoItem.reduce((acc, curr) => acc + curr.quantidade, 0);
+        if (somaModelos !== item.quantidade) {
+          showToast({
+            type: "error",
+            title: "Quantidades divergentes",
+            description: `As quantidades dos modelos (${somaModelos}) não correspondem à quantidade do produto "${item.nome}" (${item.quantidade}). Revise os itens antes de salvar.`
+          });
+          return false;
+        }
+      }
+    }
+
     // Normal proposal freight validation
     if (!isNonEmpty(form.freteEscolhidoId)) {
       showToast({
@@ -2092,7 +2152,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                 <p className="text-sm font-semibold text-amber-700">Salve a proposta e adicione produtos antes de gerenciar modelos.</p>
               </div>
             ) : (
-              <PedidoModelosTab idInt={Number(form.id_int)} />
+              <PedidoModelosTab 
+                itens={form.itens}
+                modelos={form.pedidosModelos}
+                onModelosChange={(newModelos) => updateField("pedidosModelos", newModelos)}
+              />
             )
           )}
           {activeFormTab === "artes" && shouldShowRest && (
@@ -2664,6 +2728,16 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                 <div className="space-y-4">
                   {form.itens.map((item) => {
                     const isOpen = openItemIds[item.id] ?? false;
+                    
+                    const modelosDoItem = form.pedidosModelos.filter(
+                      (m) => 
+                        (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) || 
+                        (m.id_item && item.id && m.id_item === item.id)
+                    );
+                    const somaModelos = modelosDoItem.length > 0 
+                      ? modelosDoItem.reduce((acc, curr) => acc + curr.quantidade, 0) 
+                      : undefined;
+
                     if (isOpen) {
                       return (
                         <ProductItemEditor
@@ -2675,6 +2749,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                           onVariationChange={(idVariacao, tipoId) => updateItemVariation(item.id, idVariacao, tipoId)}
                           onRemove={() => updateField("itens", form.itens.filter((current) => current.id !== item.id))}
                           onSave={() => handleSaveItem(item.id)}
+                          minQuantity={somaModelos}
                         />
                       );
                     } else {
@@ -3116,7 +3191,8 @@ function ProductItemEditor({
   onUpdate,
   onVariationChange,
   onRemove,
-  onSave
+  onSave,
+  minQuantity
 }: {
   item: PropostaItem;
   bonusPercent: number;
@@ -3125,7 +3201,9 @@ function ProductItemEditor({
   onVariationChange: (idVariacao: number, tipoId: string) => void;
   onRemove: () => void;
   onSave: () => void;
+  minQuantity?: number;
 }) {
+  const { showToast } = useAppToast();
   return (
     <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-inner space-y-4">
       {/* Title bar / Header */}
@@ -3154,6 +3232,13 @@ function ProductItemEditor({
               type="number"
               value={item.quantidade || ""}
               onChange={(event) => onUpdate((current) => ({ ...current, quantidade: Math.max(0, Number(event.target.value)) }))}
+              onBlur={(e) => {
+                const val = Math.max(0, Number(e.target.value));
+                if (minQuantity !== undefined && val < minQuantity) {
+                  showToast({ type: "error", title: "Quantidade inválida", description: `A quantidade não pode ser menor que a soma dos modelos (${minQuantity}).` });
+                  onUpdate((current) => ({ ...current, quantidade: minQuantity }));
+                }
+              }}
               className={inputClass}
               placeholder="Qtd"
             />
@@ -3670,6 +3755,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
       return vinculo?.id ?? clienteSelfId;
     })(),
     itens: proposta?.itens ?? [],
+    pedidosModelos: [],
     fretes,
     freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),
     descontoGeralTipo: proposta?.descontoGeralTipo ?? "VALOR",
