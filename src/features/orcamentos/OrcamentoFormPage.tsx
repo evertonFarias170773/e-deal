@@ -233,7 +233,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   // Catalog state from Supabase
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loadingProdutos, setLoadingProdutos] = useState(true);
-  type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "historico";
+  type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "boletim" | "historico";
   const [activeFormTab, setActiveFormTab] = useState<EditTabType>("geral");
 
   useEffect(() => {
@@ -2078,6 +2078,50 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     }
   }
 
+  async function handleSaveForCobranca(): Promise<boolean> {
+    if (form.id_int !== "NOVO" && form.id_int && Number(form.id_int) > 0 && !isDirty) {
+      // Já está salvo e sem alterações locais
+      return true;
+    }
+
+    const vendedorParaSalvar = cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor;
+
+    if (!validateBeforeSave(vendedorParaSalvar)) {
+      return false;
+    }
+
+    const formToSave = vendedorParaSalvar !== form.vendedor
+      ? { ...form, vendedor: vendedorParaSalvar }
+      : form;
+
+    try {
+      const res = await saveProposta(formToSave);
+      if (res.success) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { fretes: _f, ...savedSnap } = formToSave;
+        initialFormSnapshot.current = JSON.stringify(savedSnap);
+
+        const finalIdInt = res.id_int || formToSave.id_int;
+        if (form.id_int === "NOVO") {
+          setForm((prev) => ({ ...prev, id_int: String(finalIdInt) }));
+        }
+        showToast({ type: "success", title: "Orçamento salvo antes de gerar cobrança." });
+        return true;
+      } else {
+        showToast({
+          type: "error",
+          title: "Falha ao salvar orçamento",
+          description: res.errorMessage || "Erro interno ao persistir orçamento no banco."
+        });
+        return false;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Ocorreu uma exceção ao tentar salvar.";
+      showToast({ type: "error", title: "Erro ao salvar", description: msg });
+      return false;
+    }
+  }
+
   const hasPreservedFreight = form.fretes.some(
     (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
   );
@@ -2124,9 +2168,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             { id: "geral", label: "Geral" },
             { id: "produtos", label: "Produtos" },
             { id: "fretes", label: "Fretes" },
-            { id: "pagamentos", label: "Pagamentos" },
-            { id: "artes", label: "Artes" },
             { id: "pedido", label: "Pedido" },
+            { id: "artes", label: "Artes" },
+            { id: "boletim", label: "Boletim" },
+            { id: "pagamentos", label: "Pagamentos" },
             { id: "historico", label: "Histórico" }
           ].map((tab) => (
             <button
@@ -2170,6 +2215,12 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                 <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
               </div>
             )
+          )}
+          {activeFormTab === "boletim" && shouldShowRest && (
+            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+              <p className="text-sm font-semibold text-slate-600">Boletim</p>
+              <p className="mt-1 text-sm text-slate-500">Aguarde orientações.</p>
+            </div>
           )}
           {activeFormTab === "historico" && shouldShowRest && (
             form.id_int === "NOVO" ? (
@@ -2987,10 +3038,20 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                 <div className="space-y-6">
                   {form.id_int === "NOVO" || !proposta ? (
                     <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
-                      <p className="text-sm font-semibold text-amber-700">Salve a proposta antes de gerar cobranças.</p>
+                      <p className="text-sm font-semibold text-amber-700">Para gerar ou gerenciar cobranças, precisamos sincronizar os dados da proposta.</p>
+                      <button
+                        type="button"
+                        onClick={handleSaveForCobranca}
+                        className="mt-4 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700"
+                      >
+                        Salvar proposta agora
+                      </button>
                     </div>
                   ) : (
-                    <PropostaCobrancaPanel proposta={proposta} />
+                    <PropostaCobrancaPanel 
+                      proposta={proposta} 
+                      onSavePropostaRequest={handleSaveForCobranca}
+                    />
                   )}
                 </div>
               )}

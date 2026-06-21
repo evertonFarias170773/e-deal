@@ -23,6 +23,7 @@ function ModeloInlineCard({
   maxQtd,
   itemIdModeloCorNum,
   itemIdFormato,
+  produtoIdFormato,
   coresOpcoes,
   numeracoesOpcoes,
   formatosOpcoes,
@@ -34,6 +35,7 @@ function ModeloInlineCard({
   maxQtd: number;
   itemIdModeloCorNum?: string | null;
   itemIdFormato?: string | null;
+  produtoIdFormato?: string | null;
   coresOpcoes: any[];
   numeracoesOpcoes: any[];
   formatosOpcoes: any[];
@@ -43,6 +45,13 @@ function ModeloInlineCard({
 }) {
   const isNew = !modelo.isPersisted;
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // Default numeracao_inicio to 1 if new and not set
+  useEffect(() => {
+    if (isNew && modelo.numeracao_inicio == null) {
+      onUpdateParent({ numeracao_inicio: 1 });
+    }
+  }, [isNew, modelo.numeracao_inicio, onUpdateParent]);
 
   // Numeracao_fim calculation
   useEffect(() => {
@@ -95,10 +104,8 @@ function ModeloInlineCard({
     return String(c.formato_id) === String(itemIdFormato);
   }) : [];
 
-  const filteredNum = hasConfig ? numeracoesOpcoes.filter((n) => {
-    const isMainFormat = String(n.formato_id) === String(itemIdFormato);
-    const isInFormatIds = Array.isArray(n.formato_ids) && n.formato_ids.some((fid: string) => String(fid) === String(itemIdFormato));
-    return isMainFormat || isInFormatIds;
+  const filteredNum = (produtoIdFormato && formatosOpcoes) ? formatosOpcoes.filter((f) => {
+    return String(f.id_formato_num) === String(produtoIdFormato);
   }) : [];
 
   return (
@@ -133,8 +140,8 @@ function ModeloInlineCard({
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row lg:items-end gap-3">
-        <div className="flex-[2] min-w-[150px]">
+      <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
+        <div className="flex-[2] min-w-[120px]">
           <label className={labelClass}>Modelo *</label>
           <input
             type="text"
@@ -145,7 +152,7 @@ function ModeloInlineCard({
           />
         </div>
 
-        <div className="flex-[1.5] min-w-[120px]">
+        <div className="flex-[1.5] min-w-[110px]">
           <label className={labelClass}>Cor papel *</label>
             <select
               className={inputClass}
@@ -154,7 +161,7 @@ function ModeloInlineCard({
               disabled={!hasConfig}
             >
               {!hasConfig ? (
-                <option value="">Produto sem Formato de Produção cadastrado.</option>
+                <option value="">Sem formato</option>
               ) : (
               <>
                 <option value="">Selecione...</option>
@@ -166,7 +173,7 @@ function ModeloInlineCard({
             </select>
         </div>
 
-        <div className="flex-[1] min-w-[80px]">
+        <div className="flex-[1] min-w-[70px]">
           <label className={labelClass}>Qtd *</label>
           <input
             type="number"
@@ -180,9 +187,7 @@ function ModeloInlineCard({
             }}
           />
         </div>
-      </div>
 
-      <div className="mt-3 flex flex-col lg:flex-row lg:items-end gap-3">
         <div className="flex-[1.5] min-w-[120px]">
           <label className={labelClass}>Numerador</label>
           <select
@@ -192,7 +197,7 @@ function ModeloInlineCard({
             disabled={!hasConfig}
           >
             {!hasConfig ? (
-              <option value="">Produto sem Formato de Produção cadastrado.</option>
+              <option value="">Sem formato</option>
             ) : (
               <>
                 <option value="SEM_NUMERACAO">Sem Numeração</option>
@@ -210,7 +215,7 @@ function ModeloInlineCard({
             type="number"
             className={inputClass}
             placeholder="Ex: 1"
-            value={modelo.numeracao_inicio || ""}
+            value={modelo.numeracao_inicio ?? ""}
             onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
             disabled={!modelo.tipo_numeracao || modelo.tipo_numeracao === "SEM_NUMERACAO"}
           />
@@ -222,13 +227,13 @@ function ModeloInlineCard({
             type="number"
             className={`${inputClass} bg-slate-50`}
             placeholder="Automático"
-            value={modelo.numeracao_fim || ""}
+            value={modelo.numeracao_fim ?? ""}
             readOnly
             disabled={!modelo.tipo_numeracao || modelo.tipo_numeracao === "SEM_NUMERACAO"}
           />
         </div>
 
-        <div className="flex-[1.5] min-w-[120px]">
+        <div className="flex-[1.5] min-w-[110px]">
           <label className={labelClass}>Verso</label>
           <select
             className={inputClass}
@@ -471,6 +476,7 @@ export function PedidoModelosTab({
                         maxQtd={saldo + (m.quantidade || 0)}
                         itemIdModeloCorNum={item.produto?.id_modelo_cor?.toString()}
                         itemIdFormato={realFormatoUUID}
+                        produtoIdFormato={item.produto?.id_formato?.toString()}
                         coresOpcoes={coresOpcoes}
                         numeracoesOpcoes={numeracoesOpcoes}
                         formatosOpcoes={formatosOpcoes}
@@ -494,12 +500,12 @@ export function PedidoModelosTab({
                   return (
                     <div key={modId} className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300">
                       <div className="mb-3 pr-24">
-                        <h4 className="text-sm font-bold text-[#0b2f4a]">{m.nome_modelo || "Modelo sem nome"}</h4>
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold text-slate-500">
-                          <span className="rounded bg-slate-100 px-2 py-1">Qtd: {m.quantidade}</span>
-                          {m.padrao && <span className="rounded bg-slate-100 px-2 py-1">Cor: {m.padrao}</span>}
+                        <h4 className="text-base font-bold text-[#0b2f4a]">{m.nome_modelo || "Modelo sem nome"}</h4>
+                        <div className="mt-2 flex flex-wrap gap-2 text-sm font-medium text-slate-600">
+                          <span className="rounded bg-slate-100 px-2.5 py-1">Qtd: {m.quantidade}</span>
+                          {m.padrao && <span className="rounded bg-slate-100 px-2.5 py-1">Cor: {m.padrao}</span>}
                           {m.tipo_numeracao && m.tipo_numeracao !== "SEM_NUMERACAO" && (
-                            <span className="rounded bg-slate-100 px-2 py-1">Numeração: {m.tipo_numeracao} ({m.numeracao_inicio || 0} a {m.numeracao_fim || 0})</span>
+                            <span className="rounded bg-slate-100 px-2.5 py-1">Numeração: {m.tipo_numeracao} ({m.numeracao_inicio || 0} a {m.numeracao_fim || 0})</span>
                           )}
                         </div>
                       </div>

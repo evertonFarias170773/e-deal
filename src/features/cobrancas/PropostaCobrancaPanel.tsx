@@ -9,6 +9,7 @@ import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { Field, PanelCard, inputClass, InfoBox } from "@/features/cobrancas/form-ui";
 import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
+import { CobrancaDetail } from "@/features/cobrancas/CobrancaDetail";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getLiberacaoPedidoLabel,
@@ -36,6 +37,7 @@ type PropostaCobrancaPanelProps = {
   onCloseModal?: () => void;
   defaultModalOpen?: boolean;
   onlyModal?: boolean;
+  onSavePropostaRequest?: () => Promise<boolean>;
 };
 
 function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number; empresa: string } {
@@ -83,11 +85,13 @@ export function PropostaCobrancaPanel({
   onOpenModal,
   onCloseModal,
   defaultModalOpen = false,
-  onlyModal = false
+  onlyModal = false,
+  onSavePropostaRequest
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
   const { createCobranca, getCobrancasByProposta, source, cobrancas } = useCobrancas();
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
+  const [selectedCobrancaId, setSelectedCobrancaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
@@ -964,6 +968,15 @@ export function PropostaCobrancaPanel({
   );
   }
 
+  if (selectedCobrancaId) {
+    return (
+      <CobrancaDetail 
+        cobrancaId={selectedCobrancaId} 
+        onClose={() => setSelectedCobrancaId(null)} 
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PanelCard
@@ -978,10 +991,23 @@ export function PropostaCobrancaPanel({
             {saldoRestante > 0 && (
               <button
                 type="button"
-                onClick={openModal}
-                className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+                onClick={async () => {
+                  if (onSavePropostaRequest) {
+                    setIsSaving(true);
+                    const saved = await onSavePropostaRequest();
+                    setIsSaving(false);
+                    if (!saved) return;
+                  }
+                  if (isControlled && onOpenModal) onOpenModal();
+                  else setInternalModalOpen(true);
+                }}
+                disabled={isSaving}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Gerar cobrança
+                {isSaving ? (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                ) : null}
+                {isSaving ? "Salvando..." : "Gerar cobrança"}
               </button>
             )}
           </div>
@@ -1013,10 +1039,23 @@ export function PropostaCobrancaPanel({
                   {saldoRestante > 0 && (
                     <button
                       type="button"
-                      onClick={openModal}
-                      className="inline-flex items-center justify-center rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+                      onClick={async () => {
+                        if (onSavePropostaRequest) {
+                          setIsSaving(true);
+                          const saved = await onSavePropostaRequest();
+                          setIsSaving(false);
+                          if (!saved) return;
+                        }
+                        if (isControlled && onOpenModal) onOpenModal();
+                        else setInternalModalOpen(true);
+                      }}
+                      disabled={isSaving}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      Gerar cobrança
+                      {isSaving ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                      ) : null}
+                      {isSaving ? "Salvando..." : "Gerar cobrança"}
                     </button>
                   )}
                 </div>
@@ -1024,7 +1063,10 @@ export function PropostaCobrancaPanel({
             </div>
 
             <div className="mt-5">
-              <CobrancasDaPropostaList cobrancas={cobrancasDaProposta} />
+              <CobrancasDaPropostaList 
+                cobrancas={cobrancasDaProposta} 
+                onSelectCobranca={setSelectedCobrancaId}
+              />
             </div>
           </>
         )}
@@ -1337,7 +1379,7 @@ export function PropostaCobrancaPanel({
   );
 }
 
-function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
+function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: Cobranca[], onSelectCobranca: (id: string) => void }) {
   const { showToast } = useAppToast();
   const { deleteCobranca } = useCobrancas();
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
@@ -1571,12 +1613,13 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                   )
                 )}
 
-                <Link
-                  href={`/cobrancas/${cobranca.id}`}
+                <button
+                  type="button"
+                  onClick={() => onSelectCobranca(cobranca.id)}
                   className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#123f61]"
                 >
                   Ver cobrança
-                </Link>
+                </button>
 
 
               </div>
@@ -1729,12 +1772,13 @@ function CobrancasDaPropostaList({ cobrancas }: { cobrancas: Cobranca[] }) {
                       </button>
                     )
                   )}
-                  <Link
-                    href={`/cobrancas/${cobranca.id}`}
+                  <button
+                    type="button"
+                    onClick={() => onSelectCobranca(cobranca.id)}
                     className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#123f61]"
                   >
                     Ver
-                  </Link>
+                  </button>
 
 
                 </div>

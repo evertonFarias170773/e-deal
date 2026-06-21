@@ -22,6 +22,7 @@ import type { Cobranca } from "@/features/cobrancas/types";
 
 type CobrancaDetailProps = {
   cobrancaId: string;
+  onClose?: () => void;
 };
 
 function getValorCobranca(cobranca: Cobranca) {
@@ -53,7 +54,7 @@ function renderShortUrl(url: string | undefined, token: string | undefined) {
   }
 }
 
-export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
+export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { getCobrancaById, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
@@ -106,10 +107,21 @@ export function CobrancaDetail({ cobrancaId }: CobrancaDetailProps) {
   return (
     <div data-cobranca-detail-source={source} className="space-y-4 max-w-5xl mx-auto">
       <div>
-        <Link href="/cobrancas" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Voltar para cobranças
-        </Link>
+        {onClose ? (
+          <button 
+            type="button"
+            onClick={onClose} 
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Voltar para pagamentos
+          </button>
+        ) : (
+          <Link href="/cobrancas" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Voltar para cobranças
+          </Link>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
