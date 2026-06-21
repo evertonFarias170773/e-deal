@@ -222,7 +222,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
   }
 
   try {
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete";
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete";
 
     console.log("[Orcamentos][Query]", {
       table: "propostas",

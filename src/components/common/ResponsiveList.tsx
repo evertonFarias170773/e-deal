@@ -16,6 +16,7 @@ type ResponsiveListProps<T> = {
   isLoading?: boolean;
   emptyTitle?: string;
   emptyDescription?: string;
+  onRowClick?: (item: T) => void;
 };
 
 const alignClass = {
@@ -31,7 +32,8 @@ export function ResponsiveList<T>({
   getKey,
   isLoading,
   emptyTitle,
-  emptyDescription
+  emptyDescription,
+  onRowClick
 }: ResponsiveListProps<T>) {
   if (isLoading) {
     return (
@@ -78,8 +80,14 @@ export function ResponsiveList<T>({
             {items.map((item) => (
               <tr
                 key={getKey(item)}
-                className="transition"
+                className={`transition ${onRowClick ? "cursor-pointer" : ""}`}
                 style={{ borderBottom: "1px solid var(--border)" }}
+                onClick={(e) => {
+                  // Se o clique for em um botao, a ou dropdown, ignoramos para nao acionar a linha (opcional)
+                  const target = e.target as HTMLElement;
+                  if (target.closest('button') || target.closest('a') || target.closest('.prevent-row-click')) return;
+                  if (onRowClick) onRowClick(item);
+                }}
                 onMouseEnter={(e) => {
                   (e.currentTarget as HTMLTableRowElement).style.background = "var(--card-hover)";
                 }}

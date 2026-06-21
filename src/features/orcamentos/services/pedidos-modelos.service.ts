@@ -35,6 +35,9 @@ export interface ItemComModelos {
   nome_produto: string;
   modelo_descri: string;
   qtd: number;
+  formato: string | null;
+  id_modelo_cor_num?: string | null;
+  id_formato?: string | null;
   modelos: PedidoModeloRow[];
   qtd_modelos_do_item: number;
   saldo_a_distribuir: number;
@@ -117,6 +120,27 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
       return { success: true, data: [] };
     }
 
+    // 1.5. Buscar produtos para obter as chaves de relacionamento de produção
+    const idsProdutos = Array.from(new Set(itens.map((item: any) => Number(item.id_produto)).filter(id => !isNaN(id) && id > 0)));
+    const produtosCache: Record<number, { formato: string | null; id_modelo_cor_num: string | null; id_formato: string | null }> = {};
+    
+    if (idsProdutos.length > 0) {
+      const { data: produtosData } = await client
+        .from("produtos")
+        .select("id_produto, formato, id_modelo_cor_num, id_formato")
+        .in("id_produto", idsProdutos);
+        
+      if (produtosData) {
+        produtosData.forEach((p: any) => {
+          produtosCache[Number(p.id_produto)] = { 
+            formato: p.formato || null,
+            id_modelo_cor_num: p.id_modelo_cor_num || null,
+            id_formato: p.id_formato || null
+          };
+        });
+      }
+    }
+
     // 2. Buscar modelos da proposta
     const { data: modelosRows, error: modelosError } = await client
       .from("pedidos_modelos")
@@ -171,6 +195,9 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
         nome_produto: String(item.nome_produto || "Produto sem nome"),
         modelo_descri: String(item.modelo_descri || ""),
         qtd: qtdItem,
+        formato: produtosCache[Number(item.id_produto)]?.formato || null,
+        id_modelo_cor_num: produtosCache[Number(item.id_produto)]?.id_modelo_cor_num || null,
+        id_formato: produtosCache[Number(item.id_produto)]?.id_formato || null,
         modelos: itemModelos,
         qtd_modelos_do_item: qtdModelos,
         saldo_a_distribuir: qtdItem - qtdModelos,
@@ -321,6 +348,8 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
     const client = getClient();
 
     const payload = {
+      id_int: input.id_int,
+      id_produto_proposta_origem: input.id_produto_proposta_origem,
       nome_modelo: input.nome_modelo.trim(),
       padrao: input.padrao?.trim() || null,
       quantidade: input.quantidade,
@@ -346,6 +375,57 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
   } catch (err) {
     console.error("[PedidosModelosService] atualizarModelo:", err);
     return { success: false, errorMessage: "Falha interna ao atualizar modelo." };
+  }
+}
+
+/**
+ * Atualiza parcialmente um modelo existente (auto-save leve).
+ */
+export async function atualizarModeloParcial(id: number, partialInput: Partial<ModeloInput>): Promise<ServiceResult<PedidoModeloRow>> {
+  try {
+    if (Object.keys(partialInput).length === 0) {
+       return { success: true };
+    }
+
+    // Se houver alteração de quantidade, validar saldo
+    if (partialInput.quantidade !== undefined && partialInput.id_produto_proposta_origem !== undefined) {
+      const saldoResult = await validarSaldoModelo(partialInput.id_produto_proposta_origem, partialInput.quantidade, id);
+      if (!saldoResult.valido) {
+        return { success: false, errorMessage: saldoResult.errorMessage };
+      }
+    }
+
+    const client = getClient();
+    const payload: Record<string, any> = {};
+
+    if (partialInput.nome_modelo !== undefined) payload.nome_modelo = partialInput.nome_modelo.trim();
+    if (partialInput.padrao !== undefined) payload.padrao = partialInput.padrao?.trim() || null;
+    if (partialInput.quantidade !== undefined) payload.quantidade = partialInput.quantidade;
+    if (partialInput.tipo_numeracao !== undefined) payload.tipo_numeracao = partialInput.tipo_numeracao || "SEM_NUMERACAO";
+    if (partialInput.numeracao_inicio !== undefined) payload.numeracao_inicio = partialInput.numeracao_inicio;
+    if (partialInput.numeracao_fim !== undefined) payload.numeracao_fim = partialInput.numeracao_fim;
+    if (partialInput.verso_tipo !== undefined) payload.verso_tipo = partialInput.verso_tipo?.trim() || null;
+
+    if (Object.keys(payload).length === 0) {
+      return { success: true };
+    }
+
+    const { data, error } = await client
+      .from("pedidos_modelos")
+      .update(payload)
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("[PedidosModelosService] atualizarModeloParcial:", error);
+      return { success: false, errorMessage: error.message || "Falha ao atualizar modelo (parcial)." };
+    }
+
+    return { success: true, data: data as PedidoModeloRow };
+  } catch (err) {
+    console.error("[PedidosModelosService] atualizarModeloParcial:", err);
+    return { success: false, errorMessage: "Falha interna ao atualizar modelo parcialmente." };
   }
 }
 

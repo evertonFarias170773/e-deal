@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
@@ -198,6 +198,7 @@ function OrcamentoFormLoader({ idInt }: { idInt: number }) {
 
 function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta?: Proposta }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { showToast } = useAppToast();
   const { user } = useAuth();
 
@@ -232,6 +233,12 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [loadingProdutos, setLoadingProdutos] = useState(true);
   type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "historico";
   const [activeFormTab, setActiveFormTab] = useState<EditTabType>("geral");
+
+  useEffect(() => {
+    if (searchParams?.get("tab") === "pedido") {
+      setActiveFormTab("pedido");
+    }
+  }, [searchParams]);
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
@@ -2335,6 +2342,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                           subtitle: `${contato.cargo || "Sem cargo"} - ${contato.whatsapp}`,
                           detail: contato.email || "Sem e-mail"
                         })}
+                        extraClassNameForItem={(contato) => {
+                          return form.contatoId === contato.id ? "!bg-[#3d9790] !border-[#3d9790] !text-white" : "";
+                        }}
                         onEdit={(contato) => openEditContact(contato)}
                       />
                     ) : (
@@ -2367,6 +2377,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                             subtitle: vinculo.tipoRelacao,
                             detail: vinculo.documento
                           })}
+                          extraClassNameForItem={(vinculo) => {
+                            return (form.compradorId || cliente.id.toString()) === vinculo.id ? "!bg-[#4b78b7] !border-[#4b78b7] !text-white" : "";
+                          }}
                         />
                         <button 
                           type="button" 
@@ -2464,16 +2477,27 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                         }}
                         render={(endereco) => {
                           const isSocioAddr = (endereco as any)._isSocioAddr === true;
-                          const recebedor = endereco.recebedor ? `Responsável: ${endereco.recebedor}` : "Responsável: não informado";
+                          const recebedor = endereco.recebedor ? endereco.recebedor : "";
+                          const cpfStr = endereco.cpfRecebedor ? ` - CPF: ${endereco.cpfRecebedor}` : "";
+                          
+                          let primeiraLinha = "";
+                          if (recebedor) {
+                            primeiraLinha = `${recebedor}${cpfStr}`;
+                          } else {
+                            primeiraLinha = `${endereco.endereco}, ${endereco.numero}`;
+                          }
+
+                          const segundaLinha = recebedor ? `${endereco.endereco}, ${endereco.numero}` : `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`;
+                          
                           const tipoExibido = endereco.tipo ? endereco.tipo : "Tipo não informado";
                           const donoText = isSocioAddr ? "Endereço do pagador selecionado" : "Endereço do comprador";
                           return {
-                            title: `${endereco.endereco}, ${endereco.numero}`,
-                            subtitle: `${endereco.cidade}/${endereco.uf} - CEP ${endereco.cep}`,
+                            title: primeiraLinha,
+                            subtitle: segundaLinha,
                             detail: (
                               <div className="flex flex-col gap-0.5 mt-0.5">
                                 <span>{tipoExibido} ({donoText})</span>
-                                <span className="font-medium text-slate-600">{recebedor}</span>
+                                {recebedor && <span>{endereco.cidade}/{endereco.uf} - CEP {endereco.cep}</span>}
                               </div>
                             )
                           };
@@ -2483,9 +2507,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                           const isSelected = form.enderecoId === endereco.id;
                           if (isSelected) {
                             if (isCompradorAddress) {
-                              return "!bg-[#284267] !border-[#284267] !text-[#a8c8f6]";
+                              return "!bg-[#4b78b7] !border-[#4b78b7] !text-white";
                             }
-                            return ""; // uses default green configured in SelectorGrid
+                            return "!bg-[#3d9790] !border-[#3d9790] !text-white";
                           }
                           return "border-blue-100 bg-blue-50/40 text-slate-700 hover:bg-blue-50/70";
                         }}
@@ -2937,7 +2961,13 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
             <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
               <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
-              <button type="button" onClick={copyInformal} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white">
+              <button 
+                type="button" 
+                onClick={copyInformal} 
+                disabled={!form.freteEscolhidoId}
+                className={`mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition ${!form.freteEscolhidoId ? "bg-slate-300 cursor-not-allowed" : "bg-[#0b2f4a] hover:bg-[#082236]"}`}
+                title={!form.freteEscolhidoId ? "Escolha um frete primeiro" : ""}
+              >
                 <Copy className="h-4 w-4" />
                 Copiar resumo para WhatsApp
               </button>

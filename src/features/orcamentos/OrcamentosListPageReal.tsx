@@ -220,6 +220,7 @@ export function OrcamentosListPageReal() {
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
   const [vendedor, setVendedor] = useState("TODOS");
+  const [filterAvulso, setFilterAvulso] = useState<"TODOS" | "PEDIDOS" | "ORCAMENTOS">("TODOS");
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
   const { openChat } = useGlobalChat();
@@ -296,11 +297,25 @@ export function OrcamentosListPageReal() {
         modelo === "TODOS_MODELOS" ||
         (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
       const matchesVendedor = vendedor === "TODOS" || item.vendedor === vendedor;
-      const matchesPeriodo = getPeriodKeyFromProposal(item) === periodo;
+      const matchesPeriodo =
+        periodo === "all" ||
+        (() => {
+          const target = new Date(item.createdAt);
+          const [y, m] = periodo.split("-").map(Number);
+          return target.getFullYear() === y && target.getMonth() + 1 === m;
+        })();
 
-      return matchesSearch && matchesStatus && matchesModelo && matchesVendedor && matchesPeriodo;
+      let matchesAvulso = true;
+      if (filterAvulso === "PEDIDOS") matchesAvulso = !item.isAvulsoRaw;
+      if (filterAvulso === "ORCAMENTOS") matchesAvulso = !!item.isAvulsoRaw;
+
+      return matchesSearch && matchesStatus && matchesModelo && matchesVendedor && matchesPeriodo && matchesAvulso;
+    }).sort((a, b) => {
+      const dateA = new Date(a.updatedAt || a.createdAt).getTime();
+      const dateB = new Date(b.updatedAt || b.createdAt).getTime();
+      return dateB - dateA;
     });
-  }, [modelo, periodo, propostas, search, status, vendedor]);
+  }, [modelo, periodo, propostas, search, status, vendedor, filterAvulso]);
 
   // Identify visible/rendered proposal IDs (up to 100) to batch query summaries
   const visibleIdInts = useMemo(() => {
@@ -344,6 +359,28 @@ export function OrcamentosListPageReal() {
       total: sumPropostaTotal(emAbertoItens)
     }),
     [emAbertoItens]
+  );
+  const pedidosItens = useMemo(
+    () => propostas.filter((item) => !item.isAvulsoRaw),
+    [propostas]
+  );
+  const orcamentosItens = useMemo(
+    () => propostas.filter((item) => item.isAvulsoRaw),
+    [propostas]
+  );
+  const pedidosResumo = useMemo(
+    () => ({
+      quantidade: pedidosItens.length,
+      total: sumPropostaTotal(pedidosItens)
+    }),
+    [pedidosItens]
+  );
+  const orcamentosResumo = useMemo(
+    () => ({
+      quantidade: orcamentosItens.length,
+      total: sumPropostaTotal(orcamentosItens)
+    }),
+    [orcamentosItens]
   );
   const aprovadasResumo = useMemo(
     () => ({
@@ -602,7 +639,35 @@ export function OrcamentosListPageReal() {
           ))}
         </section>
       ) : (
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+          <div onClick={() => setFilterAvulso(prev => prev === "PEDIDOS" ? "TODOS" : "PEDIDOS")} className={`cursor-pointer transition rounded-3xl ${filterAvulso === "PEDIDOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+            <SummaryCard
+              title="Pedidos"
+              value={pedidosResumo.quantidade.toString()}
+              description={
+                <span>
+                  Soma em {periodoSelecionadoLabel}:{" "}
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(pedidosResumo.total)}</strong>
+                </span>
+              }
+              tone={filterAvulso === "PEDIDOS" ? "success" : "info"}
+              icon={FileText}
+            />
+          </div>
+          <div onClick={() => setFilterAvulso(prev => prev === "ORCAMENTOS" ? "TODOS" : "ORCAMENTOS")} className={`cursor-pointer transition rounded-3xl ${filterAvulso === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+            <SummaryCard
+              title="Orçamentos"
+              value={orcamentosResumo.quantidade.toString()}
+              description={
+                <span>
+                  Soma em {periodoSelecionadoLabel}:{" "}
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(orcamentosResumo.total)}</strong>
+                </span>
+              }
+              tone={filterAvulso === "ORCAMENTOS" ? "success" : "info"}
+              icon={FileText}
+            />
+          </div>
           <SummaryCard
             title="Em aberto"
             value={emAbertoResumo.quantidade.toString()}
@@ -708,6 +773,7 @@ export function OrcamentosListPageReal() {
         items={filteredPropostas}
         getKey={(proposta) => proposta.id}
         isLoading={isLoading}
+        onRowClick={(proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=pedido`)}
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         columns={[
@@ -734,7 +800,7 @@ export function OrcamentosListPageReal() {
             }
           },
           { header: "Tipo cobrança", cell: (proposta) => proposta.tipoCobrancaLabel, align: "center" },
-          { header: "Data / Hora", cell: (proposta) => <span>{proposta.createdAt ? formatDateTime(proposta.createdAt) : "-"}</span>, align: "center" },
+          { header: "Data / Hora", cell: (proposta) => <span>{(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</span>, align: "center" },
           { header: "Atendente", cell: (proposta) => proposta.vendedor },
           { header: "Status", cell: (proposta) => <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />, align: "center" },
           { header: "Valor total", cell: (proposta) => formatCurrency(proposta.total), align: "right" },
@@ -816,7 +882,7 @@ export function OrcamentosListPageReal() {
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
               <p>Tipo cobrança: {proposta.tipoCobrancaLabel}</p>
-              <p>Data / Hora: {proposta.createdAt ? formatDateTime(proposta.createdAt) : "-"}</p>
+              <p>Data / Hora: {(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</p>
               <p>Modelo: {proposta.modelo}</p>
               <p className="font-semibold text-slate-900">Valor total: {formatCurrency(proposta.total)}</p>
             </div>

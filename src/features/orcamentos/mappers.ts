@@ -13,6 +13,7 @@ export type OrcamentoListItem = {
   empresaLabel: string;
   vendedor: string;
   createdAt: string;
+  updatedAt: string;
   dataKey: string;
   periodoKey: string;
   status: string;
@@ -250,6 +251,7 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
   const empresaText = pickText(row, ["empresa", "nome_empresa"]);
   const vendedor = pickText(row, ["atendente", "vendedor", "responsavel"]);
   const data = parseMaybeDate(row.created_at ?? row.data ?? row.data_criacao ?? row.data_proposta);
+  const dataAtualizacao = parseMaybeDate(row.updated_at ?? row.data_atualizacao);
   const statusInterno = pickText(row, ["status_interno"]);
   const statusRaw = statusInterno || pickText(row, ["status"]);
   const valorTotalDb = pickNumber(row, ["valor_total"]);
@@ -282,6 +284,7 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     empresaLabel: getEmpresaLabel(empresaId, empresaText),
     vendedor: vendedor || "Nao informado",
     createdAt: data || "",
+    updatedAt: dataAtualizacao || data || "",
     dataKey,
     periodoKey,
     status: normalizeStatus(statusRaw),
