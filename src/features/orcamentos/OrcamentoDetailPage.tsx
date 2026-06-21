@@ -162,7 +162,9 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     itens: proposta.itens,
     frete: freteEscolhido,
     resumo: proposta.resumo,
-    formaPagamento: proposta.formaPagamento
+    formaPagamento: proposta.formaPagamento,
+    cidade: proposta.enderecoEntrega?.cidade,
+    uf: proposta.enderecoEntrega?.uf
   });
 
   async function copyInformal() {

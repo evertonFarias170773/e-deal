@@ -568,11 +568,13 @@ export function OrcamentosListPageReal() {
         const frete = data.fretes.find((freteItem) => freteItem.id === data.freteEscolhidoId);
         const text = buildPropostaInformalText({
           id_int: data.id_int,
-          clienteNome: data.cliente.nome,
+          clienteNome: data.cliente?.nome || "Cliente não cadastrado",
           itens: data.itens,
           frete,
           resumo: data.resumo,
-          formaPagamento: data.formaPagamento
+          formaPagamento: data.formaPagamento,
+          cidade: data.enderecoEntrega?.cidade,
+          uf: data.enderecoEntrega?.uf
         });
 
         await navigator.clipboard?.writeText(text);

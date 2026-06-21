@@ -235,6 +235,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [loadingProdutos, setLoadingProdutos] = useState(true);
   type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "boletim" | "historico";
   const [activeFormTab, setActiveFormTab] = useState<EditTabType>("geral");
+  const [saveSuccessModal, setSaveSuccessModal] = useState<{ isOpen: boolean; finalIdInt: number | string }>({ isOpen: false, finalIdInt: "" });
 
   useEffect(() => {
     if (searchParams?.get("tab") === "pedido") {
@@ -587,7 +588,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     resumo,
     formaPagamento: form.formaPagamento,
     isAvulso: form.isAvulso,
-    contatoNome
+    contatoNome,
+    cidade: form.clienteNaoCadastrado ? form.cidadeLivre : currentAddress?.cidade,
+    uf: form.clienteNaoCadastrado ? form.ufLivre : currentAddress?.uf
   });
 
   // Fetch products catalog
@@ -2052,13 +2055,15 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         showToast({
           type: "success",
           title: mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso.",
-          description: mode === "edit" ? "Redirecionando para o detalhe..." : "Redirecionando para a lista de orçamentos..."
+          description: "Aguardando sua escolha..."
         });
 
         const finalIdInt = res.id_int || formToSave.id_int;
-        window.setTimeout(() => {
-          router.push(`/orcamentos/${finalIdInt}`);
-        }, 1200);
+        if (formToSave.id_int === "NOVO") {
+          window.history.replaceState(null, "", `/orcamentos/${finalIdInt}/editar`);
+          setForm(prev => ({ ...prev, id_int: String(finalIdInt) }));
+        }
+        setSaveSuccessModal({ isOpen: true, finalIdInt });
       } else {
         showToast({
           type: "error",
@@ -2177,7 +2182,10 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveFormTab(tab.id as EditTabType)}
+              onClick={() => {
+                setActiveFormTab(tab.id as EditTabType);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
               className={`flex-none rounded-xl px-4 py-2 text-sm font-semibold transition whitespace-nowrap ${
                 activeFormTab === tab.id
                   ? "bg-slate-100 text-slate-900"
@@ -2192,17 +2200,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
       <section className={shouldShowRest ? "grid gap-6 xl:grid-cols-[1fr_380px]" : "max-w-3xl mx-auto"}>
         <div className="space-y-6">
           {activeFormTab === "pedido" && shouldShowRest && (
-            form.id_int === "NOVO" ? (
-              <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
-                <p className="text-sm font-semibold text-amber-700">Salve a proposta e adicione produtos antes de gerenciar modelos.</p>
-              </div>
-            ) : (
-              <PedidoModelosTab 
-                itens={form.itens}
-                modelos={form.pedidosModelos}
-                onModelosChange={(newModelos) => updateField("pedidosModelos", newModelos)}
-              />
-            )
+            <PedidoModelosTab 
+              itens={form.itens}
+              modelos={form.pedidosModelos}
+              onModelosChange={(newModelos) => updateField("pedidosModelos", newModelos)}
+            />
           )}
           {activeFormTab === "artes" && shouldShowRest && (
             form.id_int === "NOVO" ? (
@@ -3183,6 +3185,53 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           }}
         />
       )}
+      
+      {/* MODAL DE SUCESSO DE SALVAMENTO */}
+      {saveSuccessModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-[#0b2f4a]">Proposta Salva!</h2>
+              <button
+                type="button"
+                onClick={() => setSaveSuccessModal({ isOpen: false, finalIdInt: "" })}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <p className="mb-6 text-sm text-slate-600">
+              A proposta foi salva com sucesso. O que você deseja fazer agora?
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => setSaveSuccessModal({ isOpen: false, finalIdInt: "" })}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-[#0b2f4a] hover:border-slate-300"
+              >
+                1. Salvar e ficar
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/orcamentos")}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-[#0b2f4a] hover:border-slate-300"
+              >
+                2. Salvar e voltar pra lista
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push(`/orcamentos/${saveSuccessModal.finalIdInt}`)}
+                className="w-full rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                3. Salvar e ver detalhes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -46,7 +46,9 @@ export function buildPropostaInformalText({
   resumo,
   formaPagamento,
   isAvulso = false,
-  contatoNome
+  contatoNome,
+  cidade,
+  uf
 }: {
   id_int: number | string;
   clienteNome: string;
@@ -56,6 +58,8 @@ export function buildPropostaInformalText({
   formaPagamento: string;
   isAvulso?: boolean;
   contatoNome?: string;
+  cidade?: string;
+  uf?: string;
 }) {
   const contactName = contatoNome || clienteNome || "cliente";
 
@@ -87,21 +91,25 @@ export function buildPropostaInformalText({
   }
 
   const lines = [
-    `Olá, *${contactName}*!`,
-    `Proposta *${id_int}*`,
-    `Segue orçamento para os itens solicitados.`,
-    `*Consegui aplicar uma condição especial para você!*`,
+    `Olá, 😀`,
+    `Orçamento para:`,
+    `*${contactName}*`,
+    `📄 Proposta *${id_int}*`,
+    ``,
+    `*Segue orçamento para os itens solicitados.*`,
+    `Consegui aplicar uma condição especial para você!`,
     ``,
     `Produtos Orçados:`,
     ``,
     itemsText || "✅ Nenhum produto adicionado",
     ``,
-    `O valor total do pedido ficou em *${formatPlainCurrency(resumo.valorTotal)}* no ${formaPagamento}.`,
-    ``,
     freteMsg,
+    (cidade && uf && freteEscolhido) ? `Cidade: *${cidade} - ${uf}*` : "",
+    ``,
+    `O valor total do pedido ficou em *${formatPlainCurrency(resumo.valorTotal)}*`,
     ``,
     `Se estiver tudo certo, me confirma por aqui que já dou andamento ao processo!`
-  ];
+  ].filter(line => line !== "");
 
   return lines.join("\n");
 }

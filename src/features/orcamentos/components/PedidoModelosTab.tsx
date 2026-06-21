@@ -43,6 +43,7 @@ function ModeloInlineCard({
   onClose: () => void;
   onUpdateParent: (partial: Partial<PedidoModeloState>) => void;
 }) {
+  const { showToast } = useAppToast();
   const isNew = !modelo.isPersisted;
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
@@ -78,6 +79,11 @@ function ModeloInlineCard({
     // Here we'll rely on the parent debounce or just do it inline here:
     const draftId = modelo.id;
     if (draftId && draftId > 0) {
+       if (!modelo.quantidade || modelo.quantidade <= 0) {
+         setSaveStatus("error");
+         showToast({ type: "warning", title: "Quantidade inválida", description: "O modelo deve ter quantidade maior que zero." });
+         return;
+       }
        setSaveStatus("saving");
        atualizarModeloParcial(draftId, {
          nome_modelo: modelo.nome_modelo,
@@ -332,7 +338,7 @@ export function PedidoModelosTab({
       nome_modelo: "",
       descricao: null,
       padrao: null,
-      quantidade: maxQtd,
+      quantidade: 0,
       tipo_numeracao: "SEM_NUMERACAO",
       numeracao_inicio: null,
       numeracao_fim: null,
