@@ -10,10 +10,19 @@ interface Designer {
   email: string;
 }
 
-export function ArtesDesignersListCard() {
+interface ArtesDesignersListCardProps {
+  selectedDesignerId: string | null;
+  setSelectedDesignerId: (id: string | null) => void;
+  setSelectedDesignerNome: (nome: string | null) => void;
+}
+
+export function ArtesDesignersListCard({ 
+  selectedDesignerId, 
+  setSelectedDesignerId,
+  setSelectedDesignerNome 
+}: ArtesDesignersListCardProps) {
   const [designers, setDesigners] = useState<Designer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDesignerId, setSelectedDesignerId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchDesigners() {
@@ -77,7 +86,10 @@ export function ArtesDesignersListCard() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setSelectedDesignerId(designer.user_id)}
+                      onClick={() => {
+                        setSelectedDesignerId(designer.user_id);
+                        setSelectedDesignerNome(designer.nome_usuario);
+                      }}
                       className={`mt-3 sm:mt-0 rounded-lg px-4 py-2 text-xs font-semibold transition ${
                         isSelected
                           ? "bg-teal-600 text-white hover:bg-teal-700"

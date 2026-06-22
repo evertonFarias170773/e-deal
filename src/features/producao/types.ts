@@ -49,15 +49,22 @@ export type PedidosModelo = PedidoModelo;
 export interface PedidoArte {
   id: string; // uuid
   id_int: number;
-  id_modelo: string; // uuid FK
-  versao: number;
-  nome_arquivo: string;
-  storage_bucket: string;
-  storage_path: string;
+  id_modelo: string | null; // uuid FK (null para registro de briefing)
+  versao: number | null;
+  nome_arquivo: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
   url_arquivo: string | null;
   tipo_arquivo: string | null;
   mime_type: string | null;
   tamanho_bytes: number | null;
+  // Campos de briefing da Aba Artes
+  nome_evento?: string | null;
+  data_evento?: string | null;
+  local_evento?: string | null;
+  observacoes?: any | null; // jsonb
+  designer_uid?: string | null;
+  designer_nome?: string | null;
   status: StatusArteProducao;
   comentarios_revisao: string | null;
   enviado_por: string | null;

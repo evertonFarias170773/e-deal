@@ -1,20 +1,34 @@
 "use client";
 
-import { useState } from "react";
 import { FormSection } from "@/features/orcamentos/OrcamentoFormPage";
 import type { PropostaItem } from "@/features/orcamentos/types";
 import { RichTextEditor } from "@/components/common/RichTextEditor";
 
 interface ArtesDadosEventoCardProps {
   itens: PropostaItem[];
+  nomeEvento: string;
+  setNomeEvento: (v: string) => void;
+  dataEvento: string;
+  setDataEvento: (v: string) => void;
+  horaEvento: string;
+  setHoraEvento: (v: string) => void;
+  localEvento: string;
+  setLocalEvento: (v: string) => void;
+  observacoesItens: Record<string, string>;
+  setObservacoesItens: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  onSave: () => void;
+  isSaving?: boolean;
 }
 
-export function ArtesDadosEventoCard({ itens }: ArtesDadosEventoCardProps) {
-  const [nomeEvento, setNomeEvento] = useState("");
-  const [dataEvento, setDataEvento] = useState("");
-  const [horaEvento, setHoraEvento] = useState("");
-  const [localEvento, setLocalEvento] = useState("");
-  const [observacoesItens, setObservacoesItens] = useState<Record<string, string>>({});
+export function ArtesDadosEventoCard({ 
+  itens,
+  nomeEvento, setNomeEvento,
+  dataEvento, setDataEvento,
+  horaEvento, setHoraEvento,
+  localEvento, setLocalEvento,
+  observacoesItens, setObservacoesItens,
+  onSave, isSaving
+}: ArtesDadosEventoCardProps) {
 
   const handleItemObsChange = (itemId: string, value: string) => {
     setObservacoesItens((prev) => ({ ...prev, [itemId]: value }));
@@ -30,6 +44,16 @@ export function ArtesDadosEventoCard({ itens }: ArtesDadosEventoCardProps) {
       description="Preencha as informações principais do evento. Estes dados não são salvos permanentemente nesta versão."
     >
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex justify-end mb-6">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={isSaving}
+            className="rounded-xl bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50"
+          >
+            {isSaving ? "Salvando..." : "Salvar dados da arte"}
+          </button>
+        </div>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           <div className="flex flex-col">
             <label className={labelClass}>Nome do Evento</label>
@@ -78,8 +102,8 @@ export function ArtesDadosEventoCard({ itens }: ArtesDadosEventoCardProps) {
             <div className="flex flex-col gap-6">
               {itens.map((item) => (
                 <div key={item.id} className="flex flex-col">
-                  <label className={labelClass}>Ref: {item.nome}</label>
                   <RichTextEditor
+                    label={item.nome}
                     placeholder={`Observações da arte para ${item.nome}...`}
                     value={observacoesItens[item.id] || ""}
                     onChange={(val) => handleItemObsChange(item.id, val)}

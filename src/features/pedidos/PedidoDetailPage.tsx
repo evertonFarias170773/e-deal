@@ -1197,7 +1197,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                                   <div className="flex items-center gap-4 border border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-950/40 rounded-xl p-2 px-3">
                                     <FileText className="h-5 w-5 text-blue-600" />
                                     <div className="text-xs">
-                                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[200px]" title={latestArte.nome_arquivo}>
+                                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[200px]" title={latestArte.nome_arquivo ?? undefined}>
                                         {latestArte.nome_arquivo}
                                       </p>
                                       <div className="flex gap-2 text-[10px] text-slate-550 font-semibold mt-0.5">

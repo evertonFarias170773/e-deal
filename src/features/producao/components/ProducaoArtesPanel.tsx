@@ -416,7 +416,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
                               idArte: arteAtual.id,
                               idModelo: modelo.id,
                               nomeModelo: modelo.nome_modelo,
-                              versao: arteAtual.versao,
+                              versao: arteAtual.versao ?? 1,
                               currentStatus: arteAtual.status
                             });
                             setNewStatus(arteAtual.status);
@@ -492,7 +492,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="font-semibold text-slate-700 shrink-0">v{art.versao}</span>
-                            <span className="text-slate-500 truncate" title={art.nome_arquivo}>{art.nome_arquivo}</span>
+                            <span className="text-slate-500 truncate" title={art.nome_arquivo ?? undefined}>{art.nome_arquivo}</span>
                             <span className="text-slate-400 font-medium shrink-0">• {new Date(art.created_at).toLocaleDateString()}</span>
                             <span className="font-semibold shrink-0">({art.status})</span>
                           </div>

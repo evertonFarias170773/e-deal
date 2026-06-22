@@ -78,21 +78,7 @@ export async function anexarArteVersao1(input: AnexarArteInput): Promise<AnexarA
     return { success: false, error: "O tamanho do arquivo excede o limite permitido de 10MB." };
   }
 
-  // 3. Consultar se já existe qualquer arte vinculada a este modelo (Versionamento bloqueado)
-  const { data: artesExistentes, error: queryError } = await client
-    .from("pedidos_artes")
-    .select("id")
-    .eq("id_modelo", idModelo)
-    .limit(1);
-
-  if (queryError) {
-    console.error("[PedidosArtesService] Erro ao verificar existência de arte anterior:", queryError);
-    return { success: false, error: `Erro ao verificar artes existentes: ${queryError.message}` };
-  }
-
-  if (artesExistentes && artesExistentes.length > 0) {
-    return { success: false, error: "Este modelo já possui arte anexada. Versionamento será liberado em etapa futura." };
-  }
+  // 3. (Removido: validação que bloqueava múltiplos arquivos por modelo)
 
   // 4. Sanitizar o nome do arquivo
   const parts = arquivo.name.split(".");
@@ -132,28 +118,49 @@ export async function anexarArteVersao1(input: AnexarArteInput): Promise<AnexarA
     .getPublicUrl(uploadPath);
   const publicUrl = publicUrlResult.data?.publicUrl || null;
 
+  const { data: userData } = await client.auth.getUser();
+  console.log('[PedidosArtesService] USER', userData);
+
+  // Calcular próxima versão baseada na constraint UNIQUE (id_modelo, versao)
+  const { data: maxVersaoData, error: maxVersaoError } = await client
+    .from("pedidos_artes")
+    .select("versao")
+    .eq("id_modelo", idModelo)
+    .order("versao", { ascending: false })
+    .limit(1);
+
+  let proximaVersao = 1;
+  if (!maxVersaoError && maxVersaoData && maxVersaoData.length > 0 && maxVersaoData[0].versao != null) {
+    proximaVersao = maxVersaoData[0].versao + 1;
+  }
+
+  const payload = {
+    id_int: idInt,
+    id_modelo: idModelo,
+    versao: proximaVersao,
+    nome_arquivo: arquivo.name,
+    storage_bucket: "chat-ideal",
+    storage_path: uploadPath,
+    url_arquivo: publicUrl,
+    tipo_arquivo: extension?.toUpperCase() || null,
+    mime_type: arquivo.type,
+    tamanho_bytes: arquivo.size,
+    status: "PENDENTE",
+    enviado_por: enviadoPor || null,
+    enviado_por_uid: isValidUuid(enviadoPorUid) ? enviadoPorUid : null
+  };
+
+  console.log('[PedidosArtesService] PAYLOAD ARTE', JSON.stringify(payload, null, 2));
+
   // 7. Inserir registro na tabela public.pedidos_artes
   const { data: insertData, error: insertError } = await client
     .from("pedidos_artes")
-    .insert({
-      id_int: idInt,
-      id_modelo: idModelo,
-      versao: 1,
-      nome_arquivo: arquivo.name,
-      storage_bucket: "chat-ideal",
-      storage_path: uploadPath,
-      url_arquivo: publicUrl,
-      tipo_arquivo: extension?.toUpperCase() || null,
-      mime_type: arquivo.type,
-      tamanho_bytes: arquivo.size,
-      status: "PENDENTE",
-      enviado_por: enviadoPor || null,
-      enviado_por_uid: isValidUuid(enviadoPorUid) ? enviadoPorUid : null
-    })
+    .insert(payload)
     .select()
     .single();
 
   if (insertError) {
+    console.error('[PedidosArtesService] ERRO ARTE', JSON.stringify(insertError, null, 2));
     console.error("[PedidosArtesService] Erro ao inserir registro da arte:", {
       code: insertError.code,
       message: insertError.message,
@@ -166,5 +173,170 @@ export async function anexarArteVersao1(input: AnexarArteInput): Promise<AnexarA
     };
   }
 
+  console.log('[PedidosArtesService] RESULTADO ARTE', insertData);
+
   return { success: true, data: insertData as PedidoArte };
+}
+
+/**
+ * Carrega o registro principal de briefing de artes da proposta.
+ */
+export async function carregarBriefingArtes(idInt: number): Promise<PedidoArte | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  const { data, error } = await client
+    .from("pedidos_artes")
+    .select("*")
+    .eq("id_int", idInt)
+    .is("id_modelo", null)
+    .is("nome_arquivo", null)
+    .limit(1)
+    .single();
+
+  if (error && error.code !== "PGRST116") { // PGRST116 é "No rows found"
+    console.error(`[PedidosArtesService] Erro ao carregar briefing (id_int: ${idInt}):`, error);
+    return null;
+  }
+
+  return (data as PedidoArte) || null;
+}
+
+/**
+ * Salva (UPSERT) o registro principal de briefing de artes da proposta.
+ */
+export async function salvarBriefingArtes(idInt: number, payload: Partial<PedidoArte>): Promise<PedidoArte | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  // Garantir chaves do registro principal
+  const savePayload = {
+    ...payload,
+    id_int: idInt,
+    id_modelo: null,
+    nome_arquivo: null,
+    versao: 1
+  };
+
+  // 1. Verificar se já existe
+  const { data: existente, error: selectError } = await client
+    .from("pedidos_artes")
+    .select("id")
+    .eq("id_int", idInt)
+    .is("id_modelo", null)
+    .is("nome_arquivo", null)
+    .limit(1)
+    .single();
+
+  if (selectError && selectError.code !== "PGRST116") {
+    console.error(`[PedidosArtesService] Erro ao verificar briefing existente (id_int: ${idInt}):`, selectError);
+    return null;
+  }
+
+  const { data: userData } = await client.auth.getUser();
+  console.log('[PedidosArtesService] USER', userData);
+
+  // 2. Insert ou Update
+  if (existente?.id) {
+    console.log('[PedidosArtesService] PAYLOAD BRIEFING', JSON.stringify(savePayload, null, 2));
+    const { data: updateData, error: updateError } = await client
+      .from("pedidos_artes")
+      .update(savePayload)
+      .eq("id", existente.id)
+      .select();
+
+    if (updateError) {
+      console.error('[PedidosArtesService] ERRO BRIEFING', JSON.stringify(updateError, null, 2));
+      console.error(`[PedidosArtesService] Erro no UPDATE do briefing (id: ${existente.id}):`, updateError);
+      return null;
+    }
+    console.log('[PedidosArtesService] RESULTADO BRIEFING', updateData);
+    return updateData ? updateData[0] : null;
+  } else {
+    // Para INSERT, devemos garantir um status inicial
+    if (!savePayload.status) {
+      (savePayload as any).status = "PENDENTE";
+    }
+
+    console.log('[PedidosArtesService] PAYLOAD BRIEFING', JSON.stringify(savePayload, null, 2));
+    const { data: insertData, error: insertError } = await client
+      .from("pedidos_artes")
+      .insert(savePayload)
+      .select();
+
+    if (insertError) {
+      console.error('[PedidosArtesService] ERRO BRIEFING', JSON.stringify(insertError, null, 2));
+      console.error(`[PedidosArtesService] Erro no INSERT do briefing (id_int: ${idInt}):`, insertError);
+      return null;
+    }
+    console.log('[PedidosArtesService] RESULTADO BRIEFING', insertData);
+    return insertData ? insertData[0] : null;
+  }
+}
+
+/**
+ * Busca em public.pedidos_artes os arquivos anexados a uma proposta
+ */
+export async function listarArquivosDaProposta(idInt: number): Promise<PedidoArte[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from("pedidos_artes")
+    .select("*")
+    .eq("id_int", idInt)
+    .not("nome_arquivo", "is", null)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(`[PedidosArtesService] Erro ao listar arquivos da proposta ${idInt}:`, error);
+    return [];
+  }
+
+  return (data || []) as PedidoArte[];
+}
+
+/**
+ * Remove o arquivo do Storage e deleta o registro da tabela public.pedidos_artes
+ */
+export async function excluirArte(id: number): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Cliente Supabase não configurado." };
+
+  // 1. Buscar registro para pegar infos de storage
+  const { data: arte, error: selectError } = await client
+    .from("pedidos_artes")
+    .select("storage_bucket, storage_path")
+    .eq("id", id)
+    .single();
+
+  if (selectError) {
+    console.error(`[PedidosArtesService] Erro ao buscar arte ${id} para exclusão:`, selectError);
+    return { success: false, error: "Erro ao buscar arte no banco para exclusão." };
+  }
+
+  // 2. Tentar remover do Storage se houver path
+  if (arte?.storage_bucket && arte?.storage_path) {
+    const { error: storageError } = await client.storage
+      .from(arte.storage_bucket)
+      .remove([arte.storage_path]);
+
+    if (storageError) {
+      console.error(`[PedidosArtesService] Erro ao remover do Storage (path: ${arte.storage_path}):`, storageError);
+      return { success: false, error: `Erro ao remover do Storage: ${storageError.message}` };
+    }
+  }
+
+  // 3. Remover do banco de dados
+  const { error: deleteError } = await client
+    .from("pedidos_artes")
+    .delete()
+    .eq("id", id);
+
+  if (deleteError) {
+    console.error(`[PedidosArtesService] Erro ao deletar arte ${id} do banco:`, deleteError);
+    return { success: false, error: `Erro ao deletar registro do banco: ${deleteError.message}` };
+  }
+
+  return { success: true };
 }

@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FormSection } from "@/features/orcamentos/OrcamentoFormPage";
 import type { Proposta, PropostaFormState } from "@/features/orcamentos/types";
 import { useAppToast } from "@/components/common/AppToast";
-import { anexarArteVersao1 } from "@/features/pedidos/services/pedidos-artes.service";
+import { anexarArteVersao1, listarArquivosDaProposta, excluirArte } from "@/features/pedidos/services/pedidos-artes.service";
+import type { PedidoArte } from "@/features/producao/types";
+import { FileText, Download, Trash2, Image as ImageIcon } from "lucide-react";
 
 interface PedidoModeloState {
   id?: string;
@@ -28,8 +30,25 @@ export function ArtesUploadArquivosCard({
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedModeloId, setSelectedModeloId] = useState<string>("");
   const [arquivos, setArquivos] = useState<File[]>([]);
+  const [arquivosSalvos, setArquivosSalvos] = useState<PedidoArte[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoadingList, setIsLoadingList] = useState(true);
   const [observacoesLote, setObservacoesLote] = useState("");
+
+  const carregarLista = async () => {
+    if (!idInt || idInt === "NOVO") {
+      setIsLoadingList(false);
+      return;
+    }
+    setIsLoadingList(true);
+    const lista = await listarArquivosDaProposta(Number(idInt));
+    setArquivosSalvos(lista);
+    setIsLoadingList(false);
+  };
+
+  useEffect(() => {
+    carregarLista();
+  }, [idInt]);
 
   const handleOpenModal = () => {
     if (propostaStatus === "NOVO" || !idInt) {
@@ -43,9 +62,42 @@ export function ArtesUploadArquivosCard({
     setModalOpen(true);
   };
 
+  const handleExcluirArquivo = async (id: number) => {
+    if (!window.confirm("Deseja realmente excluir este arquivo de referência?")) {
+      return;
+    }
+
+    try {
+      const result = await excluirArte(id);
+      if (result.success) {
+        showToast({ type: "success", title: "Arquivo excluído com sucesso." });
+        carregarLista();
+      } else {
+        showToast({ type: "error", title: "Falha ao excluir arquivo", description: result.error });
+      }
+    } catch (err: any) {
+      showToast({ type: "error", title: `Erro inesperado: ${err.message}` });
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setArquivos(Array.from(e.target.files));
+      const selected = Array.from(e.target.files);
+      const allowed = ["image/jpeg", "image/png", "application/pdf"];
+      
+      const invalidFiles = selected.filter(f => !allowed.includes(f.type));
+      if (invalidFiles.length > 0) {
+        showToast({ 
+          type: "error", 
+          title: "Formato inválido", 
+          description: "Formato de arquivo não suportado. Apenas JPEG, PNG e PDF são permitidos." 
+        });
+        e.target.value = "";
+        setArquivos([]);
+        return;
+      }
+
+      setArquivos(selected);
     }
   };
 
@@ -87,6 +139,7 @@ export function ArtesUploadArquivosCard({
       setArquivos([]);
       setSelectedModeloId("");
       setObservacoesLote("");
+      carregarLista();
     }
   };
 
@@ -96,14 +149,68 @@ export function ArtesUploadArquivosCard({
         title="Arquivos de referência"
         description="Anexe referências visuais, logos, planilhas de formandos ou arquivos que ajudem os designers a montar as artes."
       >
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col items-center justify-center py-10">
-          <button
-            type="button"
-            onClick={handleOpenModal}
-            className="rounded-xl bg-teal-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
-          >
-            Adicionar arquivos de referência
-          </button>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col items-center justify-center py-6">
+            <button
+              type="button"
+              onClick={handleOpenModal}
+              className="rounded-xl bg-teal-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+            >
+              Adicionar arquivos de referência
+            </button>
+          </div>
+
+          {!isLoadingList && arquivosSalvos.length > 0 && (
+            <div className="mt-6 border-t border-slate-100 pt-6">
+              <h4 className="text-sm font-bold text-slate-800 mb-4">Arquivos Anexados</h4>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {arquivosSalvos.map((arq) => (
+                  <div key={arq.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm border border-slate-100 text-teal-600">
+                      {arq.mime_type?.includes("pdf") ? <FileText size={20} /> : <ImageIcon size={20} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-700" title={arq.nome_arquivo ?? undefined}>
+                        {arq.nome_arquivo}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5 truncate">
+                        {(() => {
+                          const modeloIdStr = arq.id_modelo ? String(arq.id_modelo) : null;
+                          const modelFound = modelos.find(m => String(m.id) === modeloIdStr);
+                          return modelFound ? `Modelo: ${modelFound.nome_modelo}` : "Modelo não identificado";
+                        })()}
+                      </p>
+                      <p className="text-xs text-slate-400 truncate">
+                        {arq.tamanho_bytes ? (arq.tamanho_bytes / 1024 / 1024).toFixed(2) + " MB" : ""} 
+                        {arq.created_at && ` • ${new Date(arq.created_at).toLocaleDateString()}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {arq.url_arquivo && (
+                        <a
+                          href={arq.url_arquivo}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-teal-600 hover:shadow-sm transition"
+                          title="Abrir arquivo"
+                        >
+                          <Download size={18} />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleExcluirArquivo(Number(arq.id))}
+                        className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-red-500 hover:shadow-sm transition"
+                        title="Excluir arquivo"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </FormSection>
 
@@ -139,6 +246,7 @@ export function ArtesUploadArquivosCard({
                 <input
                   type="file"
                   multiple
+                  accept=".jpg,.jpeg,.png,.pdf"
                   onChange={handleFileChange}
                   className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
                 />
