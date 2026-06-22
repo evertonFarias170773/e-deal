@@ -105,7 +105,7 @@ export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
   }
 
   return (
-    <div data-cobranca-detail-source={source} className="space-y-4 max-w-5xl mx-auto">
+    <div className="space-y-6 w-full">
       <div>
         {onClose ? (
           <button 
@@ -333,48 +333,44 @@ export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Ações Administrativas</h2>
             <div className="space-y-2 text-xs">
               
-              {source === "supabase" ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  await refreshCobrancas();
+                  showToast({ type: "info", title: "Status atualizado." });
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-700 hover:bg-slate-50 transition font-semibold text-center"
+              >
+                Atualizar Status
+              </button>
+
+              {cobrancaAtual.token_publico && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    await refreshCobrancas();
-                    showToast({ type: "info", title: "Dados atualizados." });
-                  }}
-                  className="w-full rounded-xl bg-[#0b2f4a] py-2 px-3 text-white font-semibold hover:bg-[#123f61] transition text-center"
+                  onClick={() => router.push(`/pagamento/${cobrancaAtual.token_publico}`)}
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-700 hover:bg-slate-50 transition font-semibold text-center"
                 >
-                  Atualizar do Supabase
+                  Visualizar Checkout
                 </button>
-              ) : (
-                cobrancaAtual.token_publico && (
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/pagamento/${cobrancaAtual.token_publico}`)}
-                    className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-700 hover:bg-slate-50 transition font-semibold text-center"
-                  >
-                    Visualizar Página de Checkout
-                  </button>
-                )
               )}
 
-              {source !== "supabase" && (
-                propostaLiberada ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 px-3 text-slate-400 cursor-not-allowed font-semibold text-center"
-                  >
-                    Pedido já liberado
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleLiberarPedido}
-                    disabled={!podeLiberarParaPedido}
-                    className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 font-semibold text-center"
-                  >
-                    Liberar para pedido
-                  </button>
-                )
+              {propostaLiberada ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 px-3 text-slate-400 cursor-not-allowed font-semibold text-center"
+                >
+                  Pedido já liberado
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleLiberarPedido}
+                  disabled={!podeLiberarParaPedido}
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 font-semibold text-center"
+                >
+                  Liberar para pedido
+                </button>
               )}
 
               {cobrancaAtual.status !== "CANCELADO" && (

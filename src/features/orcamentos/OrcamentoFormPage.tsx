@@ -8,6 +8,7 @@ import { Copy, Search, Trash2, X, Edit2, AlertTriangle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
+import { ArtesTab } from "@/features/orcamentos/components/ArtesTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -2207,16 +2208,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (
-            form.id_int === "NOVO" ? (
-              <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
-                <p className="text-sm font-semibold text-amber-700">Salve a proposta antes de gerenciar artes.</p>
-              </div>
-            ) : (
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-                <p className="text-sm font-semibold text-slate-600">Artes</p>
-                <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
-              </div>
-            )
+            <ArtesTab form={form} />
           )}
           {activeFormTab === "boletim" && shouldShowRest && (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -3571,7 +3563,7 @@ function ResumoValores({ resumo, bonusPercent }: { resumo: ReturnType<typeof cal
   );
 }
 
-function FormSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+export function FormSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return <section className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm"><div className="mb-5"><h2 className="text-lg font-semibold text-slate-950">{title}</h2><p className="mt-1 text-sm text-slate-500">{description}</p></div>{children}</section>;
 }
 

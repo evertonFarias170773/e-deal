@@ -71,7 +71,7 @@ export function buildPropostaInformalText({
       .map((item) => {
         return `✅ *${item.quantidade.toLocaleString("pt-BR")}* ${item.nome}: *${formatPlainCurrency(item.subtotal)}* (${item.prazo})`;
       })
-      .join("\n\n");
+      .join("\n");
   }
 
   let freteMsg = "";
@@ -83,7 +83,7 @@ export function buildPropostaInformalText({
     const isDuplicate = servicoLower && (transportadoraLower.includes(servicoLower) || servicoLower.includes(transportadoraLower));
     const servicoText = (frete.servico && !isDuplicate) ? ` (${frete.servico})` : "";
     
-    freteMsg = `Frete via *${frete.transportadora}${servicoText}: ${formatPlainCurrency(frete.valor)}* (prazo de ${frete.prazo})`;
+    freteMsg = `Frete via *${frete.transportadora}${servicoText}: ${formatPlainCurrency(frete.valor)}*`;
   } else if (isRetirada) {
     freteMsg = `Frete via *Retirada Local: Grátis*`;
   } else {
@@ -92,26 +92,28 @@ export function buildPropostaInformalText({
 
   const lines = [
     `Olá, 😀`,
+    ``,
     `Orçamento para:`,
     `*${contactName}*`,
+    ``,
     `📄 Proposta *${id_int}*`,
     ``,
     `*Segue orçamento para os itens solicitados.*`,
     `Consegui aplicar uma condição especial para você!`,
     ``,
-    `Produtos Orçados:`,
+    `*Produtos Orçados:*`,
     ``,
     itemsText || "✅ Nenhum produto adicionado",
     ``,
     freteMsg,
-    (cidade && uf && freteEscolhido) ? `Cidade: *${cidade} - ${uf}*` : "",
+    (cidade && uf && freteEscolhido) ? `Cidade: *${cidade} - ${uf}*` : null,
     ``,
     `O valor total do pedido ficou em *${formatPlainCurrency(resumo.valorTotal)}*`,
     ``,
     `Se estiver tudo certo, me confirma por aqui que já dou andamento ao processo!`
-  ].filter(line => line !== "");
+  ];
 
-  return lines.join("\n");
+  return lines.filter(line => line !== null && line !== undefined).join("\n");
 }
 
 function formatPlainCurrency(value: number) {
