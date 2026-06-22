@@ -189,7 +189,6 @@ export async function carregarBriefingArtes(idInt: number): Promise<PedidoArte |
     .from("pedidos_artes")
     .select("*")
     .eq("id_int", idInt)
-    .is("id_modelo", null)
     .is("nome_arquivo", null)
     .limit(1)
     .single();
@@ -209,21 +208,31 @@ export async function salvarBriefingArtes(idInt: number, payload: Partial<Pedido
   const client = getSupabaseClient();
   if (!client) return null;
 
-  // Garantir chaves do registro principal
+  // Garantir chaves do registro principal, enviando estritamente o necessário
   const savePayload = {
-    ...payload,
     id_int: idInt,
-    id_modelo: null,
-    nome_arquivo: null,
-    versao: 1
+    nome_evento: payload.nome_evento,
+    data_evento: payload.data_evento,
+    local_evento: payload.local_evento,
+    observacoes: payload.observacoes,
+    designer_uid: payload.designer_uid,
+    designer_nome: payload.designer_nome,
+    status: payload.status,
+    data_envio: (payload as any).data_envio
   };
+
+  // Remover undefined para não sobrescrever com null indesejado
+  Object.keys(savePayload).forEach(key => {
+    if ((savePayload as any)[key] === undefined) {
+      delete (savePayload as any)[key];
+    }
+  });
 
   // 1. Verificar se já existe
   const { data: existente, error: selectError } = await client
     .from("pedidos_artes")
     .select("id")
     .eq("id_int", idInt)
-    .is("id_modelo", null)
     .is("nome_arquivo", null)
     .limit(1)
     .single();
