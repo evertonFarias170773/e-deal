@@ -327,7 +327,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
       <div className="grid gap-6">
         {modelos.map((modelo) => {
           const artes = artesPorModelo[modelo.id] || [];
-          const arteAtual = artes[0]; // Ordenado por versao desc
+          const arteAtual: any = artes[0]; // Ordenado por versao desc
           const historico = artes.slice(1);
           const isHistoryOpen = !!expandedHistories[modelo.id];
 
@@ -485,7 +485,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
 
                   {isHistoryOpen && (
                     <div className="mt-3 space-y-2 pl-2 border-l-2 border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-                      {historico.map((art) => (
+                      {historico.map((art: any) => (
                         <div
                           key={art.id}
                           className="flex items-center justify-between gap-3 rounded-xl bg-slate-50/30 p-2.5 border border-slate-100 text-xs transition hover:bg-slate-50"

@@ -87,16 +87,21 @@ export function ArtesDesignersListCard({
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedDesignerId(designer.user_id);
-                        setSelectedDesignerNome(designer.nome_usuario);
+                        if (isSelected) {
+                          setSelectedDesignerId(null);
+                          setSelectedDesignerNome(null);
+                        } else {
+                          setSelectedDesignerId(designer.user_id);
+                          setSelectedDesignerNome(designer.nome_usuario);
+                        }
                       }}
                       className={`mt-3 sm:mt-0 rounded-lg px-4 py-2 text-xs font-semibold transition ${
                         isSelected
-                          ? "bg-teal-600 text-white hover:bg-teal-700"
+                          ? "bg-rose-100 text-rose-700 hover:bg-rose-200 border border-rose-200"
                           : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300"
                       }`}
                     >
-                      {isSelected ? "Selecionado" : "Selecionar Designer"}
+                      {isSelected ? "Desmarcar" : "Selecionar Designer"}
                     </button>
                   </div>
                 </div>

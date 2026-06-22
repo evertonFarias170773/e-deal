@@ -1,112 +1,111 @@
 "use client";
 
+import { Calendar, MapPin, Clock, FileText, AlignLeft } from "lucide-react";
 import { FormSection } from "@/features/orcamentos/OrcamentoFormPage";
 import type { PropostaItem } from "@/features/orcamentos/types";
-import { RichTextEditor } from "@/components/common/RichTextEditor";
 
 interface ArtesDadosEventoCardProps {
   itens: PropostaItem[];
   nomeEvento: string;
-  setNomeEvento: (v: string) => void;
+  setNomeEvento: (val: string) => void;
   dataEvento: string;
-  setDataEvento: (v: string) => void;
-  horaEvento: string;
-  setHoraEvento: (v: string) => void;
+  setDataEvento: (val: string) => void;
   localEvento: string;
-  setLocalEvento: (v: string) => void;
+  setLocalEvento: (val: string) => void;
   observacoesItens: Record<string, string>;
-  setObservacoesItens: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  onSave: () => void;
-  isSaving?: boolean;
+  setObservacoesItens: (val: Record<string, string>) => void;
 }
 
-export function ArtesDadosEventoCard({ 
+export function ArtesDadosEventoCard({
   itens,
-  nomeEvento, setNomeEvento,
-  dataEvento, setDataEvento,
-  horaEvento, setHoraEvento,
-  localEvento, setLocalEvento,
-  observacoesItens, setObservacoesItens,
-  onSave, isSaving
+  nomeEvento,
+  setNomeEvento,
+  dataEvento,
+  setDataEvento,
+  localEvento,
+  setLocalEvento,
+  observacoesItens,
+  setObservacoesItens,
 }: ArtesDadosEventoCardProps) {
-
-  const handleItemObsChange = (itemId: string, value: string) => {
-    setObservacoesItens((prev) => ({ ...prev, [itemId]: value }));
-  };
-
-  const inputClass =
-    "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-500/10";
-  const labelClass = "mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500";
-
   return (
     <FormSection
-      title="Dados do evento"
-      description="Preencha as informações principais do evento. Estes dados não são salvos permanentemente nesta versão."
+      title="Briefing Base do Evento"
+      description="Dados preenchidos pelo comercial para guiar a criação da arte."
     >
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex justify-end mb-6">
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={isSaving}
-            className="rounded-xl bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-50"
-          >
-            {isSaving ? "Salvando..." : "Salvar dados da arte"}
-          </button>
-        </div>
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <div className="flex flex-col">
-            <label className={labelClass}>Nome do Evento</label>
+        <div className="grid gap-6 sm:grid-cols-2">
+          {/* Nome do Evento */}
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-slate-700">
+              <FileText className="h-4 w-4 text-slate-400" />
+              Nome do Evento / Tema
+            </label>
             <input
               type="text"
-              placeholder="Ex: Formatura Direito 2026"
-              className={inputClass}
               value={nomeEvento}
               onChange={(e) => setNomeEvento(e.target.value)}
+              placeholder="Ex: Formatura Direito USP 2024"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-900 transition focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-teal-500/10"
             />
           </div>
-          <div className="flex flex-col">
-            <label className={labelClass}>Data e Hora</label>
-            <div className="flex gap-2">
-              <input
-                type="date"
-                className={inputClass}
-                value={dataEvento}
-                onChange={(e) => setDataEvento(e.target.value)}
-              />
-              <input
-                type="time"
-                className={inputClass}
-                value={horaEvento}
-                onChange={(e) => setHoraEvento(e.target.value)}
-              />
-            </div>
+
+          {/* Data do Evento */}
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-slate-700">
+              <Calendar className="h-4 w-4 text-slate-400" />
+              Data do Evento
+            </label>
+            <input
+              type="date"
+              value={dataEvento}
+              onChange={(e) => setDataEvento(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-900 transition focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-teal-500/10"
+            />
           </div>
-          <div className="flex flex-col">
-            <label className={labelClass}>Local do Evento</label>
+
+          {/* Local */}
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-slate-700">
+              <MapPin className="h-4 w-4 text-slate-400" />
+              Local da Festa/Evento
+            </label>
             <input
               type="text"
-              placeholder="Ex: Centro de Eventos"
-              className={inputClass}
               value={localEvento}
               onChange={(e) => setLocalEvento(e.target.value)}
+              placeholder="Ex: Expo Center Norte"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-900 transition focus:border-teal-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-teal-500/10"
             />
           </div>
         </div>
 
+        {/* Observações Específicas dos Itens */}
         {itens.length > 0 && (
-          <div className="mt-8 space-y-4">
-            <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2">
-              Observações por produto
-            </h4>
-            <div className="flex flex-col gap-6">
+          <div className="mt-8 border-t border-slate-100 pt-8">
+            <label className="mb-4 flex items-center gap-1.5 text-sm font-bold text-slate-800">
+              <AlignLeft className="h-4 w-4 text-teal-600" />
+              Observações Específicas por Produto
+            </label>
+            <div className="space-y-4">
               {itens.map((item) => (
-                <div key={item.id} className="flex flex-col">
-                  <RichTextEditor
-                    label={item.nome}
-                    placeholder={`Observações da arte para ${item.nome}...`}
+                <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                      {item.quantidade} un.
+                    </span>
+                    <span className="text-sm font-bold text-slate-700">{item.nome}</span>
+                  </div>
+                  <textarea
+                    rows={2}
                     value={observacoesItens[item.id] || ""}
-                    onChange={(val) => handleItemObsChange(item.id, val)}
+                    onChange={(e) =>
+                      setObservacoesItens({
+                        ...observacoesItens,
+                        [item.id]: e.target.value,
+                      })
+                    }
+                    placeholder="Detalhes para a arte deste produto (ex: cor principal azul, logo na tampa...)"
+                    className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 transition focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                   />
                 </div>
               ))}
