@@ -51,6 +51,10 @@ export function ArtesUploadArquivosCard({
   }, [idInt]);
 
   const handleOpenModal = () => {
+    console.log('[ARTES] id_int atual:', idInt);
+    console.log('[ARTES] Buscando modelos da proposta... (Dados recebidos via prop form.pedidosModelos da raiz)');
+    console.log('[ARTES] Modelos retornados:', modelos);
+
     if (propostaStatus === "NOVO" || !idInt) {
       showToast({ type: "warning", title: "Salve a proposta antes de anexar arquivos de referência." });
       return;
