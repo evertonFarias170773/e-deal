@@ -114,26 +114,6 @@ export function ArtesTab({ form }: ArtesTabProps) {
     }
   };
 
-  // Efeito 2: Auto-save debounced (1500ms)
-  useEffect(() => {
-    if (isInitialLoad || form.id_int === "NOVO") return;
-
-    const timerId = setTimeout(() => {
-      handleSaveBriefing();
-    }, 1500);
-
-    return () => clearTimeout(timerId);
-  }, [
-    nomeEvento,
-    dataEvento,
-    horaEvento,
-    localEvento,
-    observacoesItens,
-    selectedDesignerId,
-    selectedDesignerNome,
-    isInitialLoad,
-    form.id_int,
-  ]);
 
   return (
     <div className="space-y-6">
