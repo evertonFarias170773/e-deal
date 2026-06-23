@@ -239,8 +239,9 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [saveSuccessModal, setSaveSuccessModal] = useState<{ isOpen: boolean; finalIdInt: number | string }>({ isOpen: false, finalIdInt: "" });
 
   useEffect(() => {
-    if (searchParams?.get("tab") === "pedido") {
-      setActiveFormTab("pedido");
+    const tabParam = searchParams?.get("tab");
+    if (tabParam) {
+      setActiveFormTab(tabParam as EditTabType);
     }
   }, [searchParams]);
 
@@ -262,9 +263,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             id: Number(m.id),
             isPersisted: true,
             id_produto_proposta_origem: m.id_produto_proposta_origem !== null ? Number(m.id_produto_proposta_origem) : null,
-            id_item: m.id_item as string | null,
             nome_modelo: String(m.nome_modelo || ""),
-            descricao: m.descricao as string | null,
             padrao: m.padrao as string | null,
             quantidade: Number(m.quantidade || 0),
             tipo_numeracao: m.tipo_numeracao as string | null,
@@ -300,6 +299,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const [isSearchingClients, setIsSearchingClients] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showArtesBlockModal, setShowArtesBlockModal] = useState<{ nome: string; faltam: string[] }[] | null>(null);
   const [cepLivreLoading, setCepLivreLoading] = useState(false);
   const [errorFields, setErrorFields] = useState<string[]>([]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -1996,8 +1996,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     for (const item of form.itens) {
       const modelosDoItem = form.pedidosModelos.filter(
         (m) => 
-          (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) || 
-          (m.id_item && item.id && m.id_item === item.id)
+          (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
+          (m.item_temp_id && m.item_temp_id === item.id)
       );
       
       if (modelosDoItem.length > 0) {
@@ -2112,9 +2112,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
         const finalIdInt = res.id_int || formToSave.id_int;
         if (form.id_int === "NOVO") {
-          setForm((prev) => ({ ...prev, id_int: String(finalIdInt) }));
+          showToast({ type: "success", title: "Orçamento salvo antes de gerar cobrança." });
+          router.replace(`/orcamentos/${finalIdInt}/editar?tab=pagamentos`);
+          return true;
         }
-        showToast({ type: "success", title: "Orçamento salvo antes de gerar cobrança." });
+        showToast({ type: "success", title: "Orçamento atualizado antes de gerar cobrança." });
         return true;
       } else {
         showToast({
@@ -2186,6 +2188,31 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
               key={tab.id}
               type="button"
               onClick={() => {
+                if (tab.id === "artes") {
+                  const errorList: { nome: string; faltam: string[] }[] = [];
+                  const isMissing = (val: any) => val === null || val === undefined || val === "";
+                  for (const m of form.pedidosModelos) {
+                    const faltam: string[] = [];
+                    if (!m.nome_modelo) faltam.push("Modelo");
+                    if (!m.quantidade || m.quantidade <= 0) faltam.push("Qtd");
+                    if (isMissing(m.padrao)) faltam.push("Cor Papel");
+                    if (isMissing(m.gabarito_operacional)) faltam.push("Numerador");
+                    if (isMissing(m.numeracao_inicio)) faltam.push("Nº Inicial");
+                    if (isMissing(m.numeracao_fim)) faltam.push("Nº Final");
+                    if (!isMissing(m.numeracao_inicio) && !isMissing(m.numeracao_fim) && Number(m.numeracao_fim) < Number(m.numeracao_inicio)) faltam.push("Nº Final < Inicial");
+                    if (isMissing(m.verso_tipo)) faltam.push("Verso");
+
+                    if (faltam.length > 0) {
+                      errorList.push({ nome: m.nome_modelo || "Sem nome", faltam });
+                    }
+                  }
+
+                  if (errorList.length > 0) {
+                    setShowArtesBlockModal(errorList);
+                    return;
+                  }
+                }
+
                 setActiveFormTab(tab.id as EditTabType);
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
@@ -2780,8 +2807,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     
                     const modelosDoItem = form.pedidosModelos.filter(
                       (m) => 
-                        (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) || 
-                        (m.id_item && item.id && m.id_item === item.id)
+                        (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
+                        (m.item_temp_id && m.item_temp_id === item.id)
                     );
                     const somaModelos = modelosDoItem.length > 0 
                       ? modelosDoItem.reduce((acc, curr) => acc + curr.quantidade, 0) 
@@ -3158,8 +3185,15 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
           onSave={handleSaveManualFrete}
         />
       ) : null}
-      {isUnsavedModalOpen && (
-        <UnsavedChangesModal
+        {showArtesBlockModal && (
+          <ArtesBlockModal
+            erros={showArtesBlockModal}
+            onClose={() => setShowArtesBlockModal(null)}
+          />
+        )}
+
+        {isUnsavedModalOpen && (
+          <UnsavedChangesModal
           isSaving={isSaving}
           onContinueEditing={() => {
             setIsUnsavedModalOpen(false);
@@ -3731,6 +3765,42 @@ function Modal({ title, children, onClose, onSave, saveLabel = "Adicionar" }: { 
         <div className="flex items-center justify-between border-b border-slate-100 p-5"><h2 className="text-lg font-semibold text-slate-950">{title}</h2><button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
         <div className="p-5">{children}</div>
         <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button type="button" onClick={onSave} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white">{saveLabel}</button></div>
+      </div>
+    </div>
+  );
+}
+
+function ArtesBlockModal({
+  erros,
+  onClose
+}: {
+  erros: { nome: string; faltam: string[] }[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[70] bg-slate-950/50 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 p-5">
+          <h2 className="text-lg font-semibold text-slate-950">Modelos incompletos</h2>
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 p-2 text-slate-700 hover:bg-slate-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-slate-700 mb-4">Antes de acessar Artes, complete os modelos do Pedido.</p>
+          <ul className="space-y-2">
+            {erros.map((err, i) => (
+              <li key={i} className="text-sm">
+                <span className="font-semibold text-slate-900">• {err.nome}:</span> <span className="text-slate-600">{err.faltam.join(", ")}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex justify-end border-t border-slate-100 p-5">
+          <button type="button" onClick={onClose} className="rounded-2xl bg-[#0b2f4a] px-6 py-3 text-sm font-semibold text-white hover:bg-[#0b2f4a]/90">
+            Entendi
+          </button>
+        </div>
       </div>
     </div>
   );

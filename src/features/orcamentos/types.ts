@@ -15,11 +15,10 @@ export type PropostaVariacaoEscolhida = {
 export type PedidoModeloState = {
   id?: number;
   tempId?: string;
+  item_temp_id?: string;
   isPersisted: boolean;
   id_produto_proposta_origem?: number | null;
-  id_item?: string | null;
   nome_modelo: string;
-  descricao: string | null;
   padrao: string | null;
   quantidade: number;
   tipo_numeracao: string | null;
@@ -37,12 +36,15 @@ export type TipoDescontoProposta = "PERCENTUAL" | "VALOR";
 export type PropostaItem = {
   id: string;
   id_produto_proposta_origem?: number;
+  id_int?: number;
   id_produto: number;
   produto: Produto;
   nome: string;
+  nome_produto?: string;
   formato: string;
   descricaoModelo: string;
   quantidade: number;
+  qtd?: number;
   valorUnitario: number;
   valorFixo: number;
   descontoTipo: TipoDescontoProposta;

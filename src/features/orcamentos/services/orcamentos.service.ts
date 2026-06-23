@@ -775,12 +775,15 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       mappedItens.push({
         id: `item_${item.id}`,
         id_produto_proposta_origem: Number(item.id),
-        id_produto: item.id_produto,
+        id_int: Number(item.id_int),
+        id_produto: Number(item.id_produto),
         produto: finalProduct,
         nome: item.nome_produto || finalProduct.nomeReal,
+        nome_produto: item.nome_produto || finalProduct.nomeReal,
         formato: finalProduct.formato || "",
         descricaoModelo: item.modelo_descri || "",
         quantidade: item.qtd || 0,
+        qtd: item.qtd || 0,
         valorUnitario: item.valor_unt || 0,
         valorFixo: item.fixo || 0,
         descontoTipo: "VALOR",
@@ -1421,7 +1424,10 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
         if (formState.pedidosModelos) {
           const modelosNovos = formState.pedidosModelos.filter(m => 
             !m.isPersisted && 
-            (m.id_produto_proposta_origem === parsedItemId || m.id_item === item.id)
+            (
+              (m.id_produto_proposta_origem && m.id_produto_proposta_origem === parsedItemId) ||
+              (m.item_temp_id && m.item_temp_id === item.id)
+            )
           );
 
           if (modelosNovos.length > 0) {
@@ -1429,7 +1435,6 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
               id_int: id_int!,
               id_produto_proposta_origem: dbItemId,
               nome_modelo: m.nome_modelo,
-              descricao: m.descricao || null,
               padrao: m.padrao || null,
               quantidade: m.quantidade,
               tipo_numeracao: m.tipo_numeracao || null,

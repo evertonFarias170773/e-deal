@@ -82,7 +82,10 @@ function ModeloInlineCard({
 
     if (isNew) {
       if (!modelo.nome_modelo) return; // Não salva modelo vazio
-      if (!idInt || !modelo.id_produto_proposta_origem) return;
+      if (!idInt || !modelo.id_produto_proposta_origem) {
+        showToast({ type: "warning", title: "Atenção", description: "Salve o orçamento principal antes de configurar modelos persistentes." });
+        return;
+      }
 
       setSaveStatus("saving");
       criarModelo({
@@ -139,8 +142,13 @@ function ModeloInlineCard({
     return String(c.formato_id) === String(itemIdFormato);
   }) : [];
 
-  const filteredNum = (produtoIdFormato && formatosOpcoes) ? formatosOpcoes.filter((f) => {
-    return String(f.id_formato_num) === String(produtoIdFormato);
+  const corSelecionada = modelo.padrao ? coresOpcoes.find((c) => c.name === modelo.padrao) : null;
+  const formatoReferencia = corSelecionada?.formato_id ? String(corSelecionada.formato_id) : String(itemIdFormato);
+
+  const filteredNum = (formatoReferencia && numeracoesOpcoes) ? numeracoesOpcoes.filter((n) => {
+    if (String(n.formato_id) === formatoReferencia) return true;
+    if (Array.isArray(n.formato_ids) && n.formato_ids.some((id: any) => String(id) === formatoReferencia)) return true;
+    return false;
   }) : [];
 
   return (
@@ -187,6 +195,21 @@ function ModeloInlineCard({
           />
         </div>
 
+        <div className="flex-[1] min-w-[70px]">
+          <label className={labelClass}>Qtd *</label>
+          <input
+            type="number"
+            className={inputClass}
+            value={modelo.quantidade || ""}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              if (!isNaN(val)) {
+                handleChange({ quantidade: Math.min(val, maxQtd) });
+              }
+            }}
+          />
+        </div>
+
         <div className="flex-[1.5] min-w-[110px]">
           <label className={labelClass}>Cor papel *</label>
             <select
@@ -206,21 +229,6 @@ function ModeloInlineCard({
               </>
               )}
             </select>
-        </div>
-
-        <div className="flex-[1] min-w-[70px]">
-          <label className={labelClass}>Qtd *</label>
-          <input
-            type="number"
-            className={inputClass}
-            value={modelo.quantidade || ""}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              if (!isNaN(val)) {
-                handleChange({ quantidade: Math.min(val, maxQtd) });
-              }
-            }}
-          />
         </div>
 
         <div className="flex-[1.5] min-w-[120px]">
@@ -343,7 +351,7 @@ export function PedidoModelosTab({
     const [resFormatos, resCores, resNum] = await Promise.all([
       supabase.from("producao_formatos").select("id, name, id_formato_num"),
       supabase.from("producao_cores").select("id, name, formato_id, id_modelo_cor_num").order("id_modelo_cor_num", { ascending: true }),
-      supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids, id_modelo_cor_num").order("name", { ascending: true }),
+      supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids").order("name", { ascending: true }),
     ]);
 
     if (resFormatos.data) setFormatosOpcoes(resFormatos.data);
@@ -366,11 +374,10 @@ export function PedidoModelosTab({
     const newId = `new_${Date.now()}`;
     const newModel: PedidoModeloState = {
       tempId: newId,
+      item_temp_id: item.id_produto_proposta_origem ? undefined : item.id,
       isPersisted: false,
       id_produto_proposta_origem: item.id_produto_proposta_origem || null,
-      id_item: item.id,
       nome_modelo: "",
-      descricao: null,
       padrao: null,
       quantidade: 0,
       tipo_numeracao: "SEM_NUMERACAO",
@@ -449,11 +456,15 @@ export function PedidoModelosTab({
 
       <div className="space-y-6">
         {itens.map((item) => {
-          const modelosDoItem = modelos.filter(
-            (m) =>
-              (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
-              (m.id_item && item.id && m.id_item === item.id)
-          );
+          const modelosDoItem = modelos.filter((m) => {
+            if (m.id_produto_proposta_origem && item.id_produto_proposta_origem) {
+              return m.id_produto_proposta_origem === item.id_produto_proposta_origem;
+            }
+            if (m.item_temp_id && item.id) {
+              return m.item_temp_id === item.id;
+            }
+            return false;
+          });
           
           const qtyUsed = modelosDoItem.reduce((acc, m) => acc + (m.quantidade || 0), 0);
           const saldo = (item.quantidade || 0) - qtyUsed;
@@ -545,6 +556,11 @@ export function PedidoModelosTab({
                       <div className="mb-3 pr-24">
                         <h4 className="text-base font-bold text-[#0b2f4a]">{m.nome_modelo || "Modelo sem nome"}</h4>
                         <div className="mt-2 flex flex-wrap gap-2 text-sm font-medium text-slate-600">
+                          {m.id && m.id > 0 ? (
+                            <span className="rounded bg-slate-100 px-2.5 py-1">N°: {m.id}</span>
+                          ) : (
+                            <span className="rounded bg-slate-100 px-2.5 py-1">N°: novo</span>
+                          )}
                           <span className="rounded bg-slate-100 px-2.5 py-1">Qtd: {m.quantidade}</span>
                           {m.padrao && <span className="rounded bg-slate-100 px-2.5 py-1">Cor: {m.padrao}</span>}
                           {m.tipo_numeracao && m.tipo_numeracao !== "SEM_NUMERACAO" && (

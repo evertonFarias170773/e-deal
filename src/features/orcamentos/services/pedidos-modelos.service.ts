@@ -5,11 +5,8 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 export interface PedidoModeloRow {
   id: number;
   id_int: number;
-  id_pedido: string | null;
-  id_item: string | null;
   id_produto_proposta_origem: number | null;
   nome_modelo: string;
-  descricao: string | null;
   padrao: string | null;
   quantidade: number;
   tipo_numeracao: string | null;
@@ -19,7 +16,6 @@ export interface PedidoModeloRow {
   rfid_nfc?: boolean | null;
   gabarito_operacional?: string | null;
   especificacao_dados?: string | null;
-  obs_impressao?: string | null;
   verso_tipo: string | null;
   status_arte: string;
   status_producao: string;
@@ -146,11 +142,11 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
     const { data: modelosRows, error: modelosError } = await client
       .from("pedidos_modelos")
       .select(`
-        id, id_int, id_pedido, id_item, id_produto_proposta_origem,
-        nome_modelo, descricao, padrao, quantidade,
+        id, id_int, id_produto_proposta_origem,
+        nome_modelo, padrao, quantidade,
         tipo_numeracao, numeracao_inicio, numeracao_fim,
         frente_verso, rfid_nfc, gabarito_operacional, especificacao_dados,
-        obs_impressao, status_arte, status_producao, ordem,
+        status_arte, status_producao, ordem,
         created_at, updated_at
       `)
       .eq("id_int", idInt)
@@ -164,11 +160,8 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
     const modelos: PedidoModeloRow[] = (modelosRows || []).map((m: Record<string, unknown>) => ({
       id: Number(m.id),
       id_int: Number(m.id_int),
-      id_pedido: m.id_pedido as string | null,
-      id_item: m.id_item as string | null,
       id_produto_proposta_origem: m.id_produto_proposta_origem !== null ? Number(m.id_produto_proposta_origem) : null,
       nome_modelo: String(m.nome_modelo || ""),
-      descricao: m.descricao as string | null,
       padrao: m.padrao as string | null,
       quantidade: Number(m.quantidade || 0),
       tipo_numeracao: m.tipo_numeracao as string | null,
@@ -311,6 +304,8 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       status_arte: "AGUARDANDO",
       status_producao: "AGUARDANDO",
       ordem: nextOrdem,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
     const { data, error } = await client

@@ -247,10 +247,9 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
     return cores.filter(
       (c) =>
         !c.formato_id ||
-        c.formato_id === selectedFormatObj.id ||
-        c.id_modelo_cor_num.toString() === form.id_modelo_cor
+        c.formato_id === selectedFormatObj.id
     );
-  }, [cores, formatos, form.id_formato, form.id_modelo_cor]);
+  }, [cores, formatos, form.id_formato]);
 
   function updateField<K extends keyof ProdutoFormState>(field: K, value: ProdutoFormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -690,7 +689,26 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           <Field label="Formato (Produção)">
             <select
               value={form.id_formato}
-              onChange={(event) => updateField("id_formato", event.target.value)}
+              onChange={(event) => {
+                const newFormato = event.target.value;
+                const newFormatObj = formatos.find((f) => f.id_formato_num.toString() === newFormato);
+                
+                setForm((prev) => {
+                  const nextForm = { ...prev, id_formato: newFormato };
+                  if (prev.id_modelo_cor) {
+                    const isStillValid = cores.some(
+                      (c) =>
+                        c.id_modelo_cor_num.toString() === prev.id_modelo_cor &&
+                        (!c.formato_id || (newFormatObj && c.formato_id === newFormatObj.id))
+                    );
+                    if (!isStillValid) {
+                      nextForm.id_modelo_cor = "";
+                    }
+                  }
+                  return nextForm;
+                });
+                setErrorFields((curr) => curr.filter((item) => item !== "id_formato"));
+              }}
               className={getInputClass(errorFields.includes("id_formato"))}
               disabled={isLoadingCatalogos}
             >
