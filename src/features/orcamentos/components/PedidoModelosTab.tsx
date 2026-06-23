@@ -5,6 +5,7 @@ import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, Image as ImageIcon, Al
 import { useAppToast } from "@/components/common/AppToast";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
+  criarModelo,
   atualizarModeloParcial,
   excluirModelo,
 } from "@/features/orcamentos/services/pedidos-modelos.service";
@@ -27,9 +28,11 @@ function ModeloInlineCard({
   coresOpcoes,
   numeracoesOpcoes,
   formatosOpcoes,
+  idInt,
   onRemove,
   onClose,
   onUpdateParent,
+  onReloadModelos,
 }: {
   modelo: PedidoModeloState;
   maxQtd: number;
@@ -39,9 +42,11 @@ function ModeloInlineCard({
   coresOpcoes: any[];
   numeracoesOpcoes: any[];
   formatosOpcoes: any[];
+  idInt?: number;
   onRemove: () => void;
   onClose: () => void;
   onUpdateParent: (partial: Partial<PedidoModeloState>) => void;
+  onReloadModelos?: () => void;
 }) {
   const { showToast } = useAppToast();
   const isNew = !modelo.isPersisted;
@@ -73,34 +78,58 @@ function ModeloInlineCard({
   };
 
   const handleBlur = () => {
-    if (isNew) return;
-    // On blur we can trigger a partial save if needed.
-    // In our simplified logic, if isPersisted, we can do partial save debounced or onBlur
-    // Here we'll rely on the parent debounce or just do it inline here:
-    const draftId = modelo.id;
-    if (draftId && draftId > 0) {
-       if (!modelo.quantidade || modelo.quantidade <= 0) {
-         setSaveStatus("error");
-         showToast({ type: "warning", title: "Quantidade inválida", description: "O modelo deve ter quantidade maior que zero." });
-         return;
-       }
-       setSaveStatus("saving");
-       atualizarModeloParcial(draftId, {
+    if (!modelo.quantidade || modelo.quantidade <= 0) return; // Somente avisa/valida no auto-save se ele digitou
+
+    if (isNew) {
+      if (!modelo.nome_modelo) return; // Não salva modelo vazio
+      if (!idInt || !modelo.id_produto_proposta_origem) return;
+
+      setSaveStatus("saving");
+      criarModelo({
+         id_int: idInt,
+         id_produto_proposta_origem: modelo.id_produto_proposta_origem,
          nome_modelo: modelo.nome_modelo,
          padrao: modelo.padrao || null,
          quantidade: modelo.quantidade,
-         tipo_numeracao: modelo.tipo_numeracao || null,
+         tipo_numeracao: "SEQUENCIAL",
          numeracao_inicio: modelo.numeracao_inicio || null,
          numeracao_fim: modelo.numeracao_fim || null,
          verso_tipo: modelo.verso_tipo || null,
-       }).then(res => {
-         if(res.success) {
+         gabarito_operacional: modelo.gabarito_operacional || null,
+      }).then(res => {
+         if (res.success && res.data) {
            setSaveStatus("saved");
+           onUpdateParent({ id: res.data.id, isPersisted: true });
            setTimeout(() => setSaveStatus("idle"), 2000);
+           if (onReloadModelos) onReloadModelos();
          } else {
            setSaveStatus("error");
+           showToast({ type: "error", title: "Erro", description: res.errorMessage || "Falha ao criar modelo" });
          }
-       });
+      });
+    } else {
+      const draftId = modelo.id;
+      if (draftId && draftId > 0) {
+         setSaveStatus("saving");
+         atualizarModeloParcial(draftId, {
+           nome_modelo: modelo.nome_modelo,
+           padrao: modelo.padrao || null,
+           quantidade: modelo.quantidade,
+           tipo_numeracao: "SEQUENCIAL",
+           numeracao_inicio: modelo.numeracao_inicio || null,
+           numeracao_fim: modelo.numeracao_fim || null,
+           verso_tipo: modelo.verso_tipo || null,
+           gabarito_operacional: modelo.gabarito_operacional || null,
+         }).then(res => {
+           if(res.success) {
+             setSaveStatus("saved");
+             setTimeout(() => setSaveStatus("idle"), 2000);
+             if (onReloadModelos) onReloadModelos();
+           } else {
+             setSaveStatus("error");
+           }
+         });
+      }
     }
   };
 
@@ -198,15 +227,18 @@ function ModeloInlineCard({
           <label className={labelClass}>Numerador</label>
           <select
             className={inputClass}
-            value={modelo.tipo_numeracao || ""}
-            onChange={(e) => handleChange({ tipo_numeracao: e.target.value })}
+            value={modelo.gabarito_operacional || ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              handleChange({ gabarito_operacional: val || null, tipo_numeracao: "SEQUENCIAL" });
+            }}
             disabled={!hasConfig}
           >
             {!hasConfig ? (
               <option value="">Sem formato</option>
             ) : (
               <>
-                <option value="SEM_NUMERACAO">Sem Numeração</option>
+                <option value="">Selecione...</option>
                 {filteredNum.map((n) => (
                   <option key={n.id} value={n.name}>{n.name}</option>
                 ))}
@@ -223,7 +255,6 @@ function ModeloInlineCard({
             placeholder="Ex: 1"
             value={modelo.numeracao_inicio ?? ""}
             onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
-            disabled={!modelo.tipo_numeracao || modelo.tipo_numeracao === "SEM_NUMERACAO"}
           />
         </div>
 
@@ -235,7 +266,6 @@ function ModeloInlineCard({
             placeholder="Automático"
             value={modelo.numeracao_fim ?? ""}
             readOnly
-            disabled={!modelo.tipo_numeracao || modelo.tipo_numeracao === "SEM_NUMERACAO"}
           />
         </div>
 
@@ -258,13 +288,17 @@ function ModeloInlineCard({
 }
 
 export function PedidoModelosTab({
+  idInt,
   itens,
   modelos,
   onModelosChange,
+  onReloadModelos,
 }: {
+  idInt?: number;
   itens: PropostaItem[];
   modelos: PedidoModeloState[];
   onModelosChange: (m: PedidoModeloState[]) => void;
+  onReloadModelos?: () => void;
 }) {
   const { showToast } = useAppToast();
   const [loading, setLoading] = useState(false);
@@ -370,6 +404,7 @@ export function PedidoModelosTab({
       if (result.success) {
         showToast({ type: "success", title: "Excluído", description: "Modelo removido com sucesso." });
         onModelosChange(modelos.filter((m) => m.id !== deletingModelo.id));
+        if (onReloadModelos) onReloadModelos();
       } else {
         showToast({ type: "error", title: "Erro", description: result.errorMessage || "Falha ao excluir." });
       }
@@ -499,6 +534,8 @@ export function PedidoModelosTab({
                            });
                            onModelosChange(updated);
                         }}
+                        idInt={idInt}
+                        onReloadModelos={onReloadModelos}
                       />
                     );
                   }

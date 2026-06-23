@@ -2,6 +2,7 @@
 
 import { Calendar, MapPin, Clock, FileText, AlignLeft } from "lucide-react";
 import { FormSection } from "@/features/orcamentos/OrcamentoFormPage";
+import { RichTextEditor } from "@/components/common/RichTextEditor";
 import type { PropostaItem } from "@/features/orcamentos/types";
 
 interface ArtesDadosEventoCardProps {
@@ -81,31 +82,24 @@ export function ArtesDadosEventoCard({
 
         {/* Observações Específicas dos Itens */}
         {itens.length > 0 && (
-          <div className="mt-8 border-t border-slate-100 pt-8">
-            <label className="mb-4 flex items-center gap-1.5 text-sm font-bold text-slate-800">
+          <div className="mt-8 space-y-4">
+            <h4 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
               <AlignLeft className="h-4 w-4 text-teal-600" />
-              Observações Específicas por Produto
-            </label>
-            <div className="space-y-4">
+              Observações por produto
+            </h4>
+            <div className="flex flex-col gap-6">
               {itens.map((item) => (
-                <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                      {item.quantidade} un.
-                    </span>
-                    <span className="text-sm font-bold text-slate-700">{item.nome}</span>
-                  </div>
-                  <textarea
-                    rows={2}
+                <div key={item.id} className="flex flex-col">
+                  <RichTextEditor
+                    label={`${item.quantidade} un. - ${item.nome}`}
+                    placeholder={`Detalhes para a arte deste produto (ex: cor principal azul, logo na tampa...)`}
                     value={observacoesItens[item.id] || ""}
-                    onChange={(e) =>
+                    onChange={(val) =>
                       setObservacoesItens({
                         ...observacoesItens,
-                        [item.id]: e.target.value,
+                        [item.id]: val,
                       })
                     }
-                    placeholder="Detalhes para a arte deste produto (ex: cor principal azul, logo na tampa...)"
-                    className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder-slate-400 transition focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                   />
                 </div>
               ))}

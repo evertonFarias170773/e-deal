@@ -53,6 +53,7 @@ export interface ModeloInput {
   numeracao_inicio: number | null;
   numeracao_fim: number | null;
   verso_tipo: string | null;
+  gabarito_operacional?: string | null;
 }
 
 type ServiceResult<T = unknown> = {
@@ -306,8 +307,9 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       numeracao_inicio: input.numeracao_inicio,
       numeracao_fim: input.numeracao_fim,
       verso_tipo: input.verso_tipo?.trim() || null,
-      status_arte: "PENDENTE",
-      status_producao: "PENDENTE",
+      gabarito_operacional: input.gabarito_operacional?.trim() || null,
+      status_arte: "AGUARDANDO",
+      status_producao: "AGUARDANDO",
       ordem: nextOrdem,
     };
 
@@ -357,6 +359,7 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
       numeracao_inicio: input.numeracao_inicio,
       numeracao_fim: input.numeracao_fim,
       verso_tipo: input.verso_tipo?.trim() || null,
+      gabarito_operacional: input.gabarito_operacional?.trim() || null,
     };
 
     const { data, error } = await client
@@ -405,6 +408,7 @@ export async function atualizarModeloParcial(id: number, partialInput: Partial<M
     if (partialInput.numeracao_inicio !== undefined) payload.numeracao_inicio = partialInput.numeracao_inicio;
     if (partialInput.numeracao_fim !== undefined) payload.numeracao_fim = partialInput.numeracao_fim;
     if (partialInput.verso_tipo !== undefined) payload.verso_tipo = partialInput.verso_tipo?.trim() || null;
+    if (partialInput.gabarito_operacional !== undefined) payload.gabarito_operacional = partialInput.gabarito_operacional?.trim() || null;
 
     if (Object.keys(payload).length === 0) {
       return { success: true };

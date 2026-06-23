@@ -54,9 +54,18 @@ export function ArtesDesignersListCard({
               const isSelected = selectedDesignerId === designer.user_id;
               return (
                 <div 
-                  key={designer.user_id} 
-                  className={`flex flex-col sm:flex-row sm:items-center justify-between rounded-xl border p-4 transition-colors ${
-                    isSelected ? "border-teal-500 bg-teal-50 shadow-sm" : "border-slate-100 bg-slate-50 hover:border-slate-200"
+                  key={designer.user_id}
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedDesignerId(null);
+                      setSelectedDesignerNome(null);
+                    } else {
+                      setSelectedDesignerId(designer.user_id);
+                      setSelectedDesignerNome(designer.nome_usuario);
+                    }
+                  }}
+                  className={`cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between rounded-xl border p-4 transition-all ${
+                    isSelected ? "border-teal-500 bg-teal-50 shadow-sm ring-1 ring-teal-500" : "border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-slate-100"
                   }`}
                 >
                   <div className="flex items-center gap-4">
@@ -84,25 +93,6 @@ export function ArtesDesignersListCard({
                       <span className="font-medium">Modelos:</span>
                       <span className="font-bold text-slate-800">0</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedDesignerId(null);
-                          setSelectedDesignerNome(null);
-                        } else {
-                          setSelectedDesignerId(designer.user_id);
-                          setSelectedDesignerNome(designer.nome_usuario);
-                        }
-                      }}
-                      className={`mt-3 sm:mt-0 rounded-lg px-4 py-2 text-xs font-semibold transition ${
-                        isSelected
-                          ? "bg-rose-100 text-rose-700 hover:bg-rose-200 border border-rose-200"
-                          : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300"
-                      }`}
-                    >
-                      {isSelected ? "Desmarcar" : "Selecionar Designer"}
-                    </button>
                   </div>
                 </div>
               );

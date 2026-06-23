@@ -26,6 +26,7 @@ export type PedidoModeloState = {
   numeracao_inicio: number | null;
   numeracao_fim: number | null;
   verso_tipo: string | null;
+  gabarito_operacional?: string | null;
   status_arte?: string;
   status_producao?: string;
   ordem?: number;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
@@ -246,12 +246,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
 
-  useEffect(() => {
+  const loadModelos = useCallback(async () => {
     if (proposta?.id_int && form.id_int !== "NOVO") {
-      const loadModelos = async () => {
-        const client = getSupabaseClient();
-        if (!client) return;
-        const { data } = await client
+      const client = getSupabaseClient();
+      if (!client) return;
+      const { data } = await client
           .from("pedidos_modelos")
           .select("*")
           .eq("id_int", proposta.id_int)
@@ -275,13 +274,17 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
             status_arte: String(m.status_arte || "PENDENTE"),
             status_producao: String(m.status_producao || "PENDENTE"),
             ordem: Number(m.ordem || 0),
+            gabarito_operacional: m.gabarito_operacional as string | null,
           }));
           setForm((prev) => ({ ...prev, pedidosModelos: modelos }));
         }
-      };
-      loadModelos();
     }
-  }, [proposta?.id_int]);
+  }, [proposta?.id_int, form.id_int]);
+
+  useEffect(() => {
+    loadModelos();
+  }, [loadModelos]);
+
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
   const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => {
     if (proposta?.cliente?.enderecos && proposta.cliente.enderecos.length > 0) return proposta.cliente.enderecos;
@@ -2131,7 +2134,6 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
   const hasPreservedFreight = form.fretes.some(
     (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
   );
-
   const { getCobrancasByProposta } = useCobrancas();
   const hasCobrancas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int).length > 0 : false;
 
@@ -2202,9 +2204,11 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
         <div className="space-y-6">
           {activeFormTab === "pedido" && shouldShowRest && (
             <PedidoModelosTab 
+              idInt={Number(form.id_int)}
               itens={form.itens}
               modelos={form.pedidosModelos}
               onModelosChange={(newModelos) => updateField("pedidosModelos", newModelos)}
+              onReloadModelos={loadModelos}
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (
