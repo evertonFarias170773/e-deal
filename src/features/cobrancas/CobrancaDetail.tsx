@@ -239,7 +239,7 @@ export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
               <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Links e Códigos de Pagamento</h2>
               
               <div className="space-y-3 text-xs">
-                {cobrancaAtual.url_cobranca && !isFaturado && (
+                {cobrancaAtual.url_cobranca && !isFaturado && cobrancaAtual.tipo_cobranca !== "BOLETO" && (
                   <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
                     <div className="truncate">
                       <span className="text-slate-500 block text-[10px]">Link de Pagamento</span>
@@ -315,7 +315,7 @@ export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
                       rel="noopener noreferrer"
                       className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 hover:bg-slate-50 transition font-semibold"
                     >
-                      Visualizar PDF
+                      Baixar PDF
                     </a>
                   </div>
                 )}

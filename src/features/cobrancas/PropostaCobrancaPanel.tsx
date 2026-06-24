@@ -624,6 +624,11 @@ export function PropostaCobrancaPanel({
           title: "Faturamento em análise",
           description: "Solicitação enviada para avaliação do financeiro."
         });
+      } else if (payload.tipoCobranca === "BOLETO") {
+        showToast({
+          type: "success",
+          title: "Boleto gerado com sucesso."
+        });
       } else {
         showToast({
           type: "success",

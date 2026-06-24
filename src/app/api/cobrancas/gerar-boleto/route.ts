@@ -12,36 +12,33 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+type EnderecoBoleto = {
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  cep: string;
+};
+
 type GerarBoletoRequest = {
-  cobrancaId: string;
-  idEmpresa: number;
-  external_reference_id: number;
-  valor_total: number;
-  name: string;
-  id_pagamento: string;
+  boleto_id: string;
+  ext_reference: string;
+  id_empresa: number;
+  id_cliente: number;
+  id_int: number;
+  n_nf: string;
+  parcela: number;
+  total_parcelas: number;
+  valor: number;
+  vencimento: string;
+  nome_cliente: string;
   documento: string;
   email: string;
-  logradouro: string;
-  complemento?: string;
-  cidade: string;
-  UF: string;
-  zip_code: string;
-  qtd_parcelas: number;
-  intervalo: number;
-  inicia_em: number;
-  multa: number;
-  juros: number;
-  descricao: string;
-  id_cliente: number;
-  nf: string;
-  status: string;
-  "e-faturado": boolean;
-  contato: string;
-  whats: string;
-  enviar_whats: boolean;
-  avulso: boolean;
-  is_prorrogado: boolean;
-  empresa: string;
+  endereco: EnderecoBoleto;
+  multa_percentual: number;
+  juros_dia_percentual: number;
 };
 
 export async function POST(request: Request) {
@@ -57,107 +54,67 @@ export async function POST(request: Request) {
   }
 
   const {
-    cobrancaId,
-    idEmpresa,
-    external_reference_id,
-    valor_total,
-    name,
-    id_pagamento,
+    boleto_id,
+    ext_reference,
+    id_empresa,
+    id_cliente,
+    id_int,
+    n_nf,
+    parcela,
+    total_parcelas,
+    valor,
+    vencimento,
+    nome_cliente,
     documento,
     email,
-    logradouro,
-    complemento,
-    cidade,
-    UF,
-    zip_code,
-    qtd_parcelas,
-    intervalo,
-    inicia_em,
-    multa,
-    juros,
-    descricao,
-    id_cliente,
-    nf,
-    status,
-    "e-faturado": eFaturado,
-    contato,
-    whats,
-    enviar_whats,
-    avulso,
-    is_prorrogado,
-    empresa
+    endereco,
+    multa_percentual,
+    juros_dia_percentual
   } = body;
 
   // Validacoes basicas
-  if (!cobrancaId || !idEmpresa || !valor_total || !documento || !name || !email) {
+  if (!boleto_id || !id_empresa || !valor || !documento || !nome_cliente || !email) {
     return NextResponse.json(
-      { success: false, message: "Campos obrigatorios (cobrancaId, idEmpresa, valor_total, documento, name, email) ausentes no body." },
+      { success: false, message: "Campos obrigatorios ausentes no body." },
       { status: 400 }
     );
   }
 
-  // Determinar URL do webhook C6
-  let webhookUrl = "";
-  if (idEmpresa === 1) {
-    webhookUrl = "https://10074.hostoo.net.br/webhook/boleto-c6-ideal-vibe";
-  } else if (idEmpresa === 3) {
-    webhookUrl = "https://10074.hostoo.net.br/webhook/boleto-c6-e3-vibe";
-  } else {
-    console.error("[API][GerarBoleto] Boleto nao suportado para id_empresa:", idEmpresa);
-    return NextResponse.json(
-      { success: false, message: `Boleto ainda não disponível para esta empresa ID ${idEmpresa}.` },
-      { status: 400 }
-    );
-  }
-
-  const extRefInt = Number(external_reference_id);
-  if (isNaN(extRefInt) || !Number.isInteger(extRefInt)) {
-    console.error("[API][GerarBoleto] external_reference_id invalido:", external_reference_id);
-    return NextResponse.json(
-      { success: false, message: "external_reference_id inválido. Deve ser o id_int da proposta em formato inteiro." },
-      { status: 400 }
-    );
-  }
+  const webhookUrl = "https://10074.hostoo.net.br/webhook/boletos-vibe";
 
   const documentoDigits = keepDigitsOnly(documento);
-  const zipDigits = keepDigitsOnly(zip_code);
-  const whatsDigits = keepDigitsOnly(whats);
-
-  // Formata o body para o webhook C6
+  
   const webhookBody = {
-    external_reference_id: extRefInt,
-    valor_total: roundMoney(valor_total),
-    name,
-    id_pagamento,
+    boleto_id,
+    ext_reference,
+    id_empresa,
+    id_cliente,
+    id_int,
+    n_nf: n_nf || "",
+    parcela,
+    total_parcelas,
+    valor: roundMoney(valor),
+    vencimento,
+    nome_cliente,
     documento: documentoDigits,
     email,
-    logradouro,
-    complemento: complemento || "",
-    cidade,
-    UF,
-    zip_code: zipDigits,
-    qtd_parcelas: Number(qtd_parcelas) || 1,
-    intervalo: Number(intervalo) || 0,
-    inicia_em: Number(inicia_em) || 3,
-    multa: Number(multa) || 0,
-    juros: Number(juros) || 0,
-    descricao,
-    id_cliente,
-    nf: nf || "",
-    status,
-    "e-faturado": Boolean(eFaturado),
-    contato: contato || "",
-    whats: whatsDigits,
-    enviar_whats: Boolean(enviar_whats),
-    avulso: Boolean(avulso),
-    is_prorrogado: Boolean(is_prorrogado),
-    empresa
+    endereco: {
+      logradouro: endereco.logradouro || "",
+      numero: endereco.numero || "S/N",
+      complemento: endereco.complemento || "",
+      bairro: endereco.bairro || "Centro",
+      cidade: endereco.cidade || "",
+      uf: endereco.uf || "",
+      cep: keepDigitsOnly(endereco.cep) || ""
+    },
+    multa_percentual,
+    juros_dia_percentual
   };
 
-  console.info(`[API][GerarBoleto] Chamando webhook Boleto C6 da Empresa ${idEmpresa}...`, {
-    cobrancaId,
-    id_pagamento,
-    valor_total,
+  console.info(`[API][GerarBoleto] Chamando webhook Boleto C6...`, {
+    boleto_id,
+    ext_reference,
+    valor,
     webhookUrl
   });
 
@@ -182,15 +139,13 @@ export async function POST(request: Request) {
     const responseData = await webhookResponse.json();
     const webhookResult = Array.isArray(responseData) ? responseData[0] : responseData;
 
-    if (!webhookResult || webhookResult.success !== true || !webhookResult.url) {
-      console.error("[API][GerarBoleto] Resposta do webhook invalida ou sem sucesso:", responseData);
+    if (!webhookResult || !webhookResult.digitable_line) {
+      console.error("[API][GerarBoleto] Resposta do webhook invalida:", responseData);
       return NextResponse.json(
-        { success: false, message: "Resposta do Banco Inter nao contem indicacao de sucesso ou URL do PDF do boleto." },
+        { success: false, message: "Resposta do n8n nao contem linha digitavel." },
         { status: 502 }
       );
     }
-
-    const pdfUrl = webhookResult.url;
 
     // Inicializa o Supabase Client
     const supabase = getSupabaseClient();
@@ -202,23 +157,20 @@ export async function POST(request: Request) {
       );
     }
 
-    console.info("[API][GerarBoleto] Gravando URL do boleto no Supabase...", {
-      cobrancaId,
-      pdfUrl
+    console.info("[API][GerarBoleto] Gravando dados do boleto no Supabase...", {
+      boleto_id
     });
 
-    const linhaDigitavel = webhookResult.linha_digitavel || webhookResult.linhaDigitavel || webhookResult.barcode || webhookResult.linhaDigitavelFormatada || null;
-
-    // Atualiza o registro no Supabase com pdfUrl (na coluna pix_copia_cola e url_pdf), boleto_enviadoo e linha_digitavel se houver
+    // Atualiza o registro no Supabase com os dados de retorno do n8n
     const { data: updatedData, error: updateError } = await supabase
       .from("pagamentos_v2")
       .update({
-        pix_copia_cola: pdfUrl,
-        url_pdf: pdfUrl,
-        boleto_enviadoo: true,
-        ...(linhaDigitavel ? { linha_digitavel: linhaDigitavel } : {})
+        linha_digitavel: webhookResult.digitable_line,
+        id_pagamento: webhookResult.id || null,
+        vencimento: webhookResult.due_date || vencimento,
+        boleto_enviadoo: true
       })
-      .eq("id", cobrancaId)
+      .eq("id", boleto_id)
       .select();
 
     if (updateError) {
@@ -233,10 +185,9 @@ export async function POST(request: Request) {
       success: true,
       data: updatedData && updatedData[0] ? updatedData[0] : null,
       integration: {
-        url_pdf: pdfUrl,
-        linha_digitavel: linhaDigitavel,
-        nosso_numero: webhookResult.nosso_numero || webhookResult.nossoNumero || null,
-        id_boleto_c6: webhookResult.id_boleto_c6 || webhookResult.idBoletoC6 || webhookResult.boleto_id || null
+        linha_digitavel: webhookResult.digitable_line,
+        id_boleto_c6: webhookResult.id || null,
+        due_date: webhookResult.due_date || null
       }
     });
   } catch (error: unknown) {

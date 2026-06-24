@@ -345,36 +345,42 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
       if (values.tipoCobranca === "BOLETO") {
         // 4. Chamar o webhook BOLETO pela camada server-side
+        const cobrancasDaProposta = cobrancas.filter((item) => item.id_int === proposta.id_int && item.tipo_cobranca === "BOLETO");
+        const boletoSeq = cobrancasDaProposta.length + 1;
+        const extReference = `AV${boletoSeq}${proposta.id_int}`;
+        
+        let due_date = values.vencimento;
+        if (!due_date) {
+          const date = new Date();
+          date.setDate(date.getDate() + 3);
+          due_date = date.toISOString().split("T")[0];
+        }
+
         const webhookPayload = {
-          cobrancaId: cobrancaId,
-          idEmpresa: idEmpresa,
-          external_reference_id: proposta.id_int,
-          valor_total: roundMoney(values.valor),
-          name: proposta.cliente.nome,
-          id_pagamento: (createdRow as { id_pagamento?: string }).id_pagamento || String(proposta.id_int),
+          boleto_id: cobrancaId,
+          ext_reference: extReference,
+          id_empresa: idEmpresa,
+          id_cliente: proposta.cliente.idCliente,
+          id_int: proposta.id_int,
+          n_nf: "",
+          parcela: 1,
+          total_parcelas: 1,
+          valor: roundMoney(values.valor),
+          vencimento: due_date,
+          nome_cliente: proposta.cliente.nome,
           documento: proposta.cliente.documento,
           email: proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "",
-          logradouro: proposta.enderecoEntrega?.endereco || "",
-          complemento: proposta.enderecoEntrega?.complemento || "",
-          cidade: proposta.enderecoEntrega?.cidade || "",
-          UF: proposta.enderecoEntrega?.uf || "",
-          zip_code: proposta.enderecoEntrega?.cep || "",
-          qtd_parcelas: 1,
-          intervalo: 0,
-          inicia_em: 3,
-          multa: 0,
-          juros: 0,
-          descricao: values.descricao || `Boleto da proposta #${proposta.id_int}`,
-          id_cliente: proposta.cliente.idCliente,
-          nf: "",
-          status: "A_RECEBER",
-          "e-faturado": false,
-          contato: proposta.contato?.nome || "",
-          whats: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
-          enviar_whats: false,
-          avulso: false,
-          is_prorrogado: false,
-          empresa: nomeEmpresa
+          endereco: {
+            logradouro: proposta.enderecoEntrega?.endereco || "",
+            numero: proposta.enderecoEntrega?.numero || "S/N",
+            complemento: proposta.enderecoEntrega?.complemento || "",
+            bairro: proposta.enderecoEntrega?.bairro || "Centro",
+            cidade: proposta.enderecoEntrega?.cidade || "",
+            uf: proposta.enderecoEntrega?.uf || "",
+            cep: proposta.enderecoEntrega?.cep || ""
+          },
+          multa_percentual: 0,
+          juros_dia_percentual: 0
         };
 
         response = await fetch("/api/cobrancas/gerar-boleto", {
