@@ -23,6 +23,7 @@ type CobrancasContextValue = {
   confirmPagamento: (id: string) => void;
   cancelCobranca: (id: string, motivo: string) => Promise<{ success: boolean; errorMessage?: string }>;
   deleteCobranca: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
+  cancelarExterno: (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string) => Promise<{ success: boolean; errorMessage?: string }>;
   
   liberarParaPedido: (idInt: number) => boolean;
   refreshCobrancas: () => Promise<CobrancasReadResult>;
@@ -563,6 +564,42 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return next;
   }, [source, loadData, cobrancas]);
 
+
+  const checkAndRevertPropostaStatus = useCallback(async (idInt: number) => {
+    if (source !== "supabase") return;
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    try {
+      const { count, error } = await client
+        .from("pagamentos_v2")
+        .select("*", { count: "exact", head: true })
+        .eq("id_int", idInt)
+        .neq("status", "CANCELADO");
+
+      if (error) {
+        console.error("[CobrancasProvider] Erro ao contar cobrancas:", error);
+        return;
+      }
+
+      if (count === 0) {
+        const { error: updateError } = await client
+          .from("propostas")
+          .update({ status_interno: "NOVO" })
+          .eq("id_int", idInt)
+          .neq("status_interno", "APROVADO");
+
+        if (updateError) {
+          console.error("[CobrancasProvider] Erro ao reverter status da proposta:", updateError);
+        } else {
+          console.log(`[CobrancasProvider] Proposta ${idInt} revertida para NOVO com sucesso.`);
+        }
+      }
+    } catch (err) {
+      console.error("[CobrancasProvider] Falha em checkAndRevertPropostaStatus:", err);
+    }
+  }, [source]);
+
   const confirmPagamento = useCallback((id: string) => {
     // Buscar cobrança para registrar na timeline antes de retornar caso Supabase
     const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
@@ -641,14 +678,24 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: "Cliente Supabase não inicializado." };
       }
 
-      const { error: updateError } = await client
-        .from("pagamentos_v2")
-        .update({ status: "CANCELADO" })
-        .eq("id", id);
+      const tipoNormalized = cob.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
+      const isExternoCancelable = (tipoNormalized === "BOLETO" || tipoNormalized === "CARD-PARCELADO") && !!cob.cod_solicitacao_inter;
 
-      if (updateError) {
-        console.error("[cancelCobranca] Erro ao cancelar cobrança no Supabase:", updateError);
-        return { success: false, errorMessage: updateError.message || "Erro ao cancelar cobrança no banco." };
+      if (isExternoCancelable) {
+        const extResult = await cancelarExterno(cob, "CANCEL", motivo);
+        if (!extResult.success) {
+          return extResult;
+        }
+      } else {
+        const { error: updateError } = await client
+          .from("pagamentos_v2")
+          .update({ status: "CANCELADO", motivo_cancela: motivo })
+          .eq("id", id);
+
+        if (updateError) {
+          console.error("[cancelCobranca] Erro ao cancelar cobrança no Supabase:", updateError);
+          return { success: false, errorMessage: updateError.message || "Erro ao cancelar cobrança no banco." };
+        }
       }
 
       const msg = `Cobrança cancelada. Motivo: ${motivo}`;
@@ -664,6 +711,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       await refreshCobrancas();
+      if (cob.id_int) await checkAndRevertPropostaStatus(cob.id_int);
       return { success: true };
     }
 
@@ -696,6 +744,34 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setCobrancasStats(updateCob);
     return { success: true };
   }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
+
+  const cancelarExterno = useCallback(async (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string): Promise<{ success: boolean; errorMessage?: string }> => {
+    try {
+      const response = await fetch("/api/cobrancas/cancelar-externo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: cobranca.id,
+          tipo_cobranca: cobranca.tipo_cobranca,
+          acao_local: acaoLocal,
+          cod_c6: cobranca.cod_solicitacao_inter,
+          id_empresa: cobranca.id_empresa,
+          motivo: motivo
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return { success: false, errorMessage: data.message || "Erro desconhecido ao cancelar externamente." };
+      }
+
+      await refreshCobrancas();
+      if (cobranca.id_int) await checkAndRevertPropostaStatus(cobranca.id_int);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, errorMessage: error.message || "Falha na comunicação com a API." };
+    }
+  }, [refreshCobrancas]);
 
   const deleteCobranca = useCallback(async (id: string): Promise<{ success: boolean; errorMessage?: string }> => {
     const cobranca = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
@@ -745,6 +821,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       await refreshCobrancas();
+      if (cobranca.id_int) await checkAndRevertPropostaStatus(cobranca.id_int);
       return { success: true };
     } else {
       const updateCob = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== id);
@@ -1139,6 +1216,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       confirmPagamento,
       cancelCobranca,
       deleteCobranca,
+      cancelarExterno,
       liberarParaPedido,
       refreshCobrancas,
       getCobrancaById: (id: string) => cobrancas.find((item) => item.id === id) ?? cobrancasStats.find((item) => item.id === id),
@@ -1159,6 +1237,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       source,
       cancelCobranca,
       deleteCobranca,
+      cancelarExterno,
       confirmPagamento,
       createCobranca,
       liberarParaPedido,

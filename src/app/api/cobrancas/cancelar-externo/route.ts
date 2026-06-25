@@ -55,35 +55,39 @@ export async function POST(request: Request) {
 
     // 3. Roteamento por tipo de cobrança
     if (tipoNormalized === "BOLETO") {
-      if (!cod_c6 || !id_empresa) {
+      const codC6Final = cod_c6 || pagamento.cod_solicitacao_inter;
+      
+      if (!codC6Final) {
         return NextResponse.json(
-          { success: false, message: "Para boletos, cod_c6 e id_empresa são obrigatórios no payload." },
+          { success: false, message: "Para boletos, código bancário não foi fornecido nem encontrado no banco." },
           { status: 400 }
         );
       }
 
-      if (pagamento.cod_solicitacao_inter !== cod_c6) {
+      if (cod_c6 && pagamento.cod_solicitacao_inter && pagamento.cod_solicitacao_inter !== cod_c6) {
         return NextResponse.json(
           { success: false, message: "Código bancário divergente do registro local." },
           { status: 403 }
         );
       }
 
-      if (Number(pagamento.id_empresa) !== Number(id_empresa)) {
+      if (id_empresa && pagamento.id_empresa && Number(pagamento.id_empresa) !== Number(id_empresa)) {
         return NextResponse.json(
           { success: false, message: "Empresa emissora divergente." },
           { status: 403 }
         );
       }
+      
+      const idEmpresaFinal = id_empresa || pagamento.id_empresa;
 
       // Chamada n8n
       const webhookUrl = "https://10074.hostoo.net.br/webhook/del-boleto-av-vibe";
-      console.log("[cancelar-externo][BOLETO] chamando n8n", { cod_c6, id_empresa });
+      console.log("[cancelar-externo][BOLETO] chamando n8n", { cod_C6: codC6Final, id_empresa: idEmpresaFinal });
       
       const webhookResponse = await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cod_C6: cod_c6, id_empresa })
+        body: JSON.stringify({ cod_C6: codC6Final, id_empresa: idEmpresaFinal })
       });
 
       const responseStatus = webhookResponse.status;
@@ -100,26 +104,59 @@ export async function POST(request: Request) {
         );
       }
 
-      let n8nSuccess = false;
-      try {
-        const parsed = JSON.parse(responseBody);
-        const data = Array.isArray(parsed) ? parsed[0] : parsed;
-        if (data && data.success === true) {
-          n8nSuccess = true;
-        }
-      } catch {
-        // Falha no parse
-      }
+      // Se webhookResponse.ok é true (HTTP 2xx), aceita como sucesso (n8n retorna [{}] no sucesso).
+      // A falha seria tratada no if (!webhookResponse.ok) acima.
 
-      if (!n8nSuccess) {
-        console.error("[API][CancelarExterno] n8n não retornou success: true. Body:", responseBody);
+    } else if (tipoNormalized === "CARD-PARCELADO") {
+      const codC6Final = cod_c6 || pagamento.cod_solicitacao_inter;
+      
+      if (!codC6Final) {
         return NextResponse.json(
-          { success: false, message: "A API bancária não confirmou o cancelamento com sucesso." },
+          { success: false, message: "Para cartão, código bancário não foi fornecido nem encontrado no banco." },
           { status: 400 }
         );
       }
 
-    } else if (tipoNormalized === "PIX" || tipoNormalized === "CREDIT-CARD" || tipoNormalized === "CARD-PARCELADO") {
+      if (cod_c6 && pagamento.cod_solicitacao_inter && pagamento.cod_solicitacao_inter !== cod_c6) {
+        return NextResponse.json(
+          { success: false, message: "Código bancário divergente do registro local." },
+          { status: 403 }
+        );
+      }
+
+      if (id_empresa && pagamento.id_empresa && Number(pagamento.id_empresa) !== Number(id_empresa)) {
+        return NextResponse.json(
+          { success: false, message: "Empresa emissora divergente." },
+          { status: 403 }
+        );
+      }
+      
+      const idEmpresaFinal = id_empresa || pagamento.id_empresa;
+
+      const webhookUrl = "https://10074.hostoo.net.br/webhook/cancela-cartao-c6-vibe";
+      console.log("[cancelar-externo][CARD-PARCELADO] chamando n8n", { cod_C6: codC6Final, id_empresa: idEmpresaFinal });
+      
+      const webhookResponse = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cod_C6: codC6Final, id_empresa: String(idEmpresaFinal) })
+      });
+
+      const responseStatus = webhookResponse.status;
+      const responseBody = await webhookResponse.text();
+
+      console.log("[cancelar-externo][CARD-PARCELADO] status n8n", responseStatus);
+      console.log("[cancelar-externo][CARD-PARCELADO] body n8n", responseBody);
+
+      if (!webhookResponse.ok) {
+        console.error("[API][CancelarExterno] Erro HTTP no n8n:", responseStatus, responseBody);
+        return NextResponse.json(
+          { success: false, message: "A API externa recusou o cancelamento do Cartão." },
+          { status: responseStatus }
+        );
+      }
+
+    } else if (tipoNormalized === "PIX" || tipoNormalized === "CREDIT-CARD") {
       return NextResponse.json(
         { success: false, message: "Cancelamento externo ainda não implementado para este tipo de cobrança." },
         { status: 501 }
@@ -135,15 +172,13 @@ export async function POST(request: Request) {
     if (acao_local === "DELETE") {
       // Deleta do public.boletos
       if (tipoNormalized === "BOLETO") {
-        let orQuery = `id_boleto_c6.eq.${cod_c6}`;
+        const codC6Final = cod_c6 || pagamento.cod_solicitacao_inter;
+        let queryBoletos = supabase.from("boletos").delete().eq("id_boleto_c6", codC6Final);
         if (pagamento.id_int) {
-          orQuery += `,id_int.eq.${pagamento.id_int}`;
+          queryBoletos = queryBoletos.eq("id_int", pagamento.id_int);
         }
         
-        const { error: errorBoletos } = await supabase
-          .from("boletos")
-          .delete()
-          .or(orQuery);
+        const { error: errorBoletos } = await queryBoletos;
 
         if (errorBoletos) {
           console.error("[API][CancelarExterno] Falha ao deletar de public.boletos:", errorBoletos);
@@ -156,11 +191,7 @@ export async function POST(request: Request) {
 
       // Deleta do pagamentos_v2
       const query = supabase.from("pagamentos_v2").delete();
-      if (tipoNormalized === "BOLETO") {
-        query.eq("cod_solicitacao_inter", cod_c6);
-      } else {
-        query.eq("id", id);
-      }
+      query.eq("id", id);
 
       const { error: errorPagamentos } = await query;
       
@@ -170,6 +201,32 @@ export async function POST(request: Request) {
           { success: false, message: "Sucesso no parceiro, mas erro ao apagar pagamento local." },
           { status: 500 }
         );
+      }
+
+
+      // Nova verificação de status
+      if (pagamento?.id_int) {
+        const { count, error: countError } = await supabase
+          .from("pagamentos_v2")
+          .select("*", { count: "exact", head: true })
+          .eq("id_int", pagamento.id_int)
+          .neq("status", "CANCELADO");
+
+        if (!countError && count === 0) {
+          const { error: updatePropError } = await supabase
+            .from("propostas")
+            .update({ status_interno: "NOVO" })
+            .eq("id_int", pagamento.id_int)
+            .neq("status_interno", "APROVADO");
+          
+          if (updatePropError) {
+            console.error("[API][CancelarExterno] Falha ao voltar status_interno para NOVO:", updatePropError);
+          } else {
+            console.log(`[API][CancelarExterno] Proposta ${pagamento.id_int} revertida para NOVO com sucesso.`);
+          }
+        } else if (countError) {
+          console.error("[API][CancelarExterno] Falha ao contar pagamentos ativos:", countError);
+        }
       }
 
       return NextResponse.json({ success: true, message: "Cobrança cancelada externamente e registros excluídos localmente." });
@@ -189,6 +246,32 @@ export async function POST(request: Request) {
           { success: false, message: "Sucesso no parceiro, mas erro ao atualizar status local para CANCELADO." },
           { status: 500 }
         );
+      }
+
+
+      // Nova verificação de status
+      if (pagamento?.id_int) {
+        const { count, error: countError } = await supabase
+          .from("pagamentos_v2")
+          .select("*", { count: "exact", head: true })
+          .eq("id_int", pagamento.id_int)
+          .neq("status", "CANCELADO");
+
+        if (!countError && count === 0) {
+          const { error: updatePropError } = await supabase
+            .from("propostas")
+            .update({ status_interno: "NOVO" })
+            .eq("id_int", pagamento.id_int)
+            .neq("status_interno", "APROVADO");
+          
+          if (updatePropError) {
+            console.error("[API][CancelarExterno] Falha ao voltar status_interno para NOVO:", updatePropError);
+          } else {
+            console.log(`[API][CancelarExterno] Proposta ${pagamento.id_int} revertida para NOVO com sucesso.`);
+          }
+        } else if (countError) {
+          console.error("[API][CancelarExterno] Falha ao contar pagamentos ativos:", countError);
+        }
       }
 
       return NextResponse.json({ success: true, message: "Cobrança cancelada externamente e status atualizado localmente." });

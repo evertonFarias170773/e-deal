@@ -1386,7 +1386,7 @@ export function PropostaCobrancaPanel({
 
 function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: Cobranca[], onSelectCobranca: (id: string) => void }) {
   const { showToast } = useAppToast();
-  const { deleteCobranca } = useCobrancas();
+  const { deleteCobranca, cancelarExterno } = useCobrancas();
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
   const [isDeletando, setIsDeletando] = useState(false);
 
@@ -1396,23 +1396,29 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
     try {
       const tipoNormalized = cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
       const isBoleto = tipoNormalized === "BOLETO";
-      const isBoletoCancelable = isBoleto && !!cobrancaParaExcluir.cod_solicitacao_inter;
+      const isCardParcelado = tipoNormalized === "CARD-PARCELADO";
+      const isExternoCancelable = (isBoleto || isCardParcelado) && !!cobrancaParaExcluir.cod_solicitacao_inter;
 
-      const result = await deleteCobranca(cobrancaParaExcluir.id);
+      let result;
+      if (isExternoCancelable && cancelarExterno) {
+        result = await cancelarExterno(cobrancaParaExcluir, "DELETE");
+      } else {
+        result = await deleteCobranca(cobrancaParaExcluir.id);
+      }
 
       if (result.success) {
         showToast({ 
           type: "success", 
-          title: isBoletoCancelable 
-            ? "Boleto cancelado com sucesso. Você já pode gerar um novo boleto." 
+          title: isExternoCancelable 
+            ? "Cobrança cancelada com sucesso na integração." 
             : "Cobrança excluída com sucesso." 
         });
         setCobrancaParaExcluir(null);
       } else {
         showToast({ 
           type: "error", 
-          title: isBoletoCancelable ? "Não foi possível cancelar o boleto." : "Erro ao excluir", 
-          description: isBoletoCancelable ? (result.errorMessage || "Tente novamente ou chame o financeiro.") : result.errorMessage 
+          title: isExternoCancelable ? "Não foi possível cancelar externamente." : "Erro ao excluir", 
+          description: isExternoCancelable ? (result.errorMessage || "Tente novamente ou chame o financeiro.") : result.errorMessage 
         });
       }
     } catch (err) {
