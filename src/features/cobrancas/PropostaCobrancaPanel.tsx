@@ -1398,12 +1398,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
       const isBoleto = tipoNormalized === "BOLETO";
       const isBoletoCancelable = isBoleto && !!cobrancaParaExcluir.cod_solicitacao_inter;
 
-      let result;
-      if (isBoletoCancelable) {
-        result = await cancelarBoletoAVista(cobrancaParaExcluir);
-      } else {
-        result = await deleteCobranca(cobrancaParaExcluir.id);
-      }
+      const result = await deleteCobranca(cobrancaParaExcluir.id);
 
       if (result.success) {
         showToast({ 

@@ -220,7 +220,7 @@ export function OrcamentosListPageReal() {
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
   const [vendedor, setVendedor] = useState("TODOS");
-  const [filterAvulso, setFilterAvulso] = useState<"TODOS" | "PEDIDOS" | "ORCAMENTOS">("TODOS");
+  const [filterAvulso, setFilterAvulso] = useState<"TODOS" | "PEDIDOS" | "ORCAMENTOS">("ORCAMENTOS");
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
   const { openChat } = useGlobalChat();
@@ -600,7 +600,7 @@ export function OrcamentosListPageReal() {
       : "Ver chat interno";
 
     return [
-      { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}`) },
+      { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}?tab=pagamentos`) },
       { label: chatLabel, onClick: () => handleOpenChat(item) },
       {
         label: "Editar proposta",
@@ -775,7 +775,7 @@ export function OrcamentosListPageReal() {
         items={filteredPropostas}
         getKey={(proposta) => proposta.id}
         isLoading={isLoading}
-        onRowClick={(proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=pedido`)}
+        onRowClick={(proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=pagamentos`)}
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         columns={[
@@ -893,7 +893,7 @@ export function OrcamentosListPageReal() {
                 <button
                   type="button"
                   onClick={() => {
-                    router.push(`/orcamentos/${proposta.id_int}`);
+                    router.push(`/orcamentos/${proposta.id_int}?tab=pagamentos`);
                   }}
                   className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
                 >

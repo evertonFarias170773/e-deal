@@ -2749,28 +2749,43 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                 id="isAvulso"
                 checked={form.isAvulso || false}
                 onChange={(e) => {
-                  const checked = e.target.checked;
-                  updateField("isAvulso", checked);
-                  if (checked) {
-                    if (!form.valorProdutosManual) updateField("valorProdutosManual", "0");
-                    if (!form.valorFreteManual) updateField("valorFreteManual", "0");
-                    updateField("freteEscolhidoId", "frete_manual_unico");
-                    updateField("fretes", [{
-                      id: "frete_manual_unico",
-                      id_int: Number(form.id_int) || 0,
-                      transportadora: form.observacoesFreteManual || "Frete Manual",
-                      servico: "",
-                      valor: Number(String(form.valorFreteManual || "0").replace(",", ".")) || 0,
-                      prazo: "A combinar",
-                      observacao: "Cadastro manual",
-                      escolhido: true,
-                      pesoUsado: 0
-                    }]);
-                  } else {
-                    updateField("freteEscolhidoId", "");
-                    updateField("fretes", []);
-                  }
-                }}
+                    const checked = e.target.checked;
+                    updateField("isAvulso", checked);
+                    if (checked) {
+                      const originalResumo = calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
+                      updateField("valorProdutosManual", String(originalResumo.valorTotal));
+                      updateField("valorFreteManual", "0");
+                      updateField("observacoesFreteManual", "Frete Incluso");
+                      updateField("freteEscolhidoId", "frete_manual_unico");
+                      updateField("fretes", [{
+                        id: "frete_manual_unico",
+                        id_int: Number(form.id_int) || 0,
+                        transportadora: "Frete Incluso",
+                        servico: "",
+                        valor: 0,
+                        prazo: "A combinar",
+                        observacao: "Cadastro manual representativo",
+                        escolhido: true,
+                        pesoUsado: 0
+                      }]);
+                    } else {
+                      updateField("valorProdutosManual", "");
+                      updateField("valorFreteManual", "");
+                      updateField("observacoesFreteManual", "");
+                      
+                      const fretesOriginais = proposta?.fretes ?? [];
+                      const isAvulsoOriginal = proposta?.is_avulso ?? false;
+                      
+                      if (fretesOriginais.length > 0 && !isAvulsoOriginal) {
+                        updateField("fretes", fretesOriginais);
+                        const freteAntigoEscolhido = proposta?.freteEscolhidoId ?? (fretesOriginais.find((f: any) => f.escolhido)?.id ?? "");
+                        updateField("freteEscolhidoId", freteAntigoEscolhido);
+                      } else {
+                        updateField("fretes", []);
+                        updateField("freteEscolhidoId", "");
+                      }
+                    }
+                  }}
                 className="h-4 w-4 rounded border-slate-300 text-[#0f9f9a] focus:ring-[#0f9f9a]"
               />
               <label htmlFor="isAvulso" className="text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
