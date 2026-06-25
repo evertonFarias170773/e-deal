@@ -594,7 +594,8 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
     isAvulso: form.isAvulso,
     contatoNome,
     cidade: form.clienteNaoCadastrado ? form.cidadeLivre : currentAddress?.cidade,
-    uf: form.clienteNaoCadastrado ? form.ufLivre : currentAddress?.uf
+    uf: form.clienteNaoCadastrado ? form.ufLivre : currentAddress?.uf,
+    bonusPercent: bonusPercent
   });
 
   // Fetch products catalog
@@ -3298,17 +3299,15 @@ function ProductItemSummary({
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-200">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-400">#{item.id_produto}</span>
-            <h4 className="text-base font-bold text-slate-900">{item.nome}</h4>
+          <div className="flex flex-wrap items-baseline gap-x-2 text-lg text-[#0b2f4a]">
+            <span>#{item.id_produto}</span>
+            <h4 className="font-extrabold">{item.nome}</h4>
+            <span>- Qtd:</span>
+            <span className="font-extrabold">{item.quantidade.toLocaleString("pt-BR")}</span>
           </div>
-          {item.descricaoModelo && (
-            <p className="text-sm text-slate-500 line-clamp-1 italic">{item.descricaoModelo}</p>
-          )}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span>Qtd: <strong className="text-slate-700">{item.quantidade.toLocaleString("pt-BR")}</strong></span>
-            <span>Peso: <strong className="text-slate-700">{formatWeightFromGrams(item.pesoTotal)}</strong></span>
-            <span>Variações: <strong className="text-slate-700">{selectedVariationsText}</strong></span>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-1 text-sm font-medium text-slate-600">
+            <span>Peso: <strong className="text-slate-900">{formatWeightFromGrams(item.pesoTotal)}</strong></span>
+            <span>Variações: <strong className="text-slate-900">{selectedVariationsText}</strong></span>
           </div>
         </div>
         <div className="flex items-center justify-between gap-6 border-t border-slate-100 pt-3 sm:border-t-0 sm:pt-0 sm:justify-end">
@@ -3372,15 +3371,7 @@ function ProductItemEditor({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(240px,_360px)_1fr] items-start">
-        <Field label="Descrição/modelo do item">
-          <textarea
-            value={item.descricaoModelo}
-            onChange={(event) => onUpdate((current) => ({ ...current, descricaoModelo: event.target.value }))}
-            className={`${inputClass} min-h-[44px] py-2.5 resize-y`}
-            placeholder="Descreva detalhes adicionais sobre o produto se necessário..."
-          />
-        </Field>
+      <div className="grid gap-4 lg:grid-cols-1 items-start">
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 items-start">
           <Field label="Quantidade">
             <input

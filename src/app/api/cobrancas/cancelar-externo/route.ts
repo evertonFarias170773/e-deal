@@ -110,52 +110,48 @@ export async function POST(request: Request) {
     } else if (tipoNormalized === "CARD-PARCELADO") {
       const codC6Final = cod_c6 || pagamento.cod_solicitacao_inter;
       
-      if (!codC6Final) {
-        return NextResponse.json(
-          { success: false, message: "Para cartão, código bancário não foi fornecido nem encontrado no banco." },
-          { status: 400 }
-        );
+      if (codC6Final) {
+        if (cod_c6 && pagamento.cod_solicitacao_inter && pagamento.cod_solicitacao_inter !== cod_c6) {
+          return NextResponse.json(
+            { success: false, message: "Código bancário divergente do registro local." },
+            { status: 403 }
+          );
+        }
+
+        if (id_empresa && pagamento.id_empresa && Number(pagamento.id_empresa) !== Number(id_empresa)) {
+          return NextResponse.json(
+            { success: false, message: "Empresa emissora divergente." },
+            { status: 403 }
+          );
+        }
+        
+        const idEmpresaFinal = id_empresa || pagamento.id_empresa;
+
+        const webhookUrl = "https://10074.hostoo.net.br/webhook/cancela-cartao-c6-vibe";
+        console.log("[cancelar-externo][CARD-PARCELADO] chamando n8n", { cod_C6: codC6Final, id_empresa: idEmpresaFinal });
+        
+        const webhookResponse = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cod_C6: codC6Final, id_empresa: String(idEmpresaFinal) })
+        });
+
+        const responseStatus = webhookResponse.status;
+        const responseBody = await webhookResponse.text();
+
+        console.log("[cancelar-externo][CARD-PARCELADO] status n8n", responseStatus);
+        console.log("[cancelar-externo][CARD-PARCELADO] body n8n", responseBody);
+
+        if (!webhookResponse.ok) {
+          console.error("[API][CancelarExterno] Erro HTTP no n8n:", responseStatus, responseBody);
+          return NextResponse.json(
+            { success: false, message: "A API externa recusou o cancelamento do Cartão." },
+            { status: responseStatus }
+          );
+        }
+      } else {
+        console.log("[cancelar-externo][CARD-PARCELADO] Sem cod_solicitacao_inter. Ignorando webhook externo e prosseguindo para exclusao local (fluxo PIX).");
       }
-
-      if (cod_c6 && pagamento.cod_solicitacao_inter && pagamento.cod_solicitacao_inter !== cod_c6) {
-        return NextResponse.json(
-          { success: false, message: "Código bancário divergente do registro local." },
-          { status: 403 }
-        );
-      }
-
-      if (id_empresa && pagamento.id_empresa && Number(pagamento.id_empresa) !== Number(id_empresa)) {
-        return NextResponse.json(
-          { success: false, message: "Empresa emissora divergente." },
-          { status: 403 }
-        );
-      }
-      
-      const idEmpresaFinal = id_empresa || pagamento.id_empresa;
-
-      const webhookUrl = "https://10074.hostoo.net.br/webhook/cancela-cartao-c6-vibe";
-      console.log("[cancelar-externo][CARD-PARCELADO] chamando n8n", { cod_C6: codC6Final, id_empresa: idEmpresaFinal });
-      
-      const webhookResponse = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cod_C6: codC6Final, id_empresa: String(idEmpresaFinal) })
-      });
-
-      const responseStatus = webhookResponse.status;
-      const responseBody = await webhookResponse.text();
-
-      console.log("[cancelar-externo][CARD-PARCELADO] status n8n", responseStatus);
-      console.log("[cancelar-externo][CARD-PARCELADO] body n8n", responseBody);
-
-      if (!webhookResponse.ok) {
-        console.error("[API][CancelarExterno] Erro HTTP no n8n:", responseStatus, responseBody);
-        return NextResponse.json(
-          { success: false, message: "A API externa recusou o cancelamento do Cartão." },
-          { status: responseStatus }
-        );
-      }
-
     } else if (tipoNormalized === "PIX" || tipoNormalized === "CREDIT-CARD") {
       return NextResponse.json(
         { success: false, message: "Cancelamento externo ainda não implementado para este tipo de cobrança." },

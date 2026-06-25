@@ -679,7 +679,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       const tipoNormalized = cob.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
-      const isExternoCancelable = (tipoNormalized === "BOLETO" || tipoNormalized === "CARD-PARCELADO") && !!cob.cod_solicitacao_inter;
+      const isExternoCancelable = (tipoNormalized === "BOLETO" && !!cob.cod_solicitacao_inter) || tipoNormalized === "CARD-PARCELADO";
 
       if (isExternoCancelable) {
         const extResult = await cancelarExterno(cob, "CANCEL", motivo);

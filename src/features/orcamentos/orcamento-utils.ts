@@ -48,7 +48,8 @@ export function buildPropostaInformalText({
   isAvulso = false,
   contatoNome,
   cidade,
-  uf
+  uf,
+  bonusPercent = 0
 }: {
   id_int: number | string;
   clienteNome: string;
@@ -60,6 +61,7 @@ export function buildPropostaInformalText({
   contatoNome?: string;
   cidade?: string;
   uf?: string;
+  bonusPercent?: number;
 }) {
   const contactName = contatoNome || clienteNome || "cliente";
 
@@ -99,12 +101,16 @@ export function buildPropostaInformalText({
     `📄 Proposta *${id_int}*`,
     ``,
     `*Segue orçamento para os itens solicitados.*`,
-    `Consegui aplicar uma condição especial para você!`,
+    (bonusPercent > 0) ? `Consegui aplicar uma condição especial para você!` : null,
     ``,
     `*Produtos Orçados:*`,
     ``,
     itemsText || "✅ Nenhum produto adicionado",
     ``,
+    (bonusPercent > 0) ? `Subtotal bruto ${formatPlainCurrency(resumo.subtotalBrutoProdutos)}` : null,
+    (bonusPercent > 0) ? `` : null,
+    (bonusPercent > 0) ? `Tabela especial do cliente aplicada (-${bonusPercent}%)  -${formatPlainCurrency(resumo.acrescimoBonus)}` : null,
+    (bonusPercent > 0) ? `` : null,
     freteMsg,
     (cidade && uf && freteEscolhido) ? `Cidade: *${cidade} - ${uf}*` : null,
     ``,

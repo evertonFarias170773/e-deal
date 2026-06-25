@@ -164,7 +164,8 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
     resumo: proposta.resumo,
     formaPagamento: proposta.formaPagamento,
     cidade: proposta.enderecoEntrega?.cidade,
-    uf: proposta.enderecoEntrega?.uf
+    uf: proposta.enderecoEntrega?.uf,
+    bonusPercent: proposta.cliente ? getClienteBonusPercent(proposta.cliente) : 0
   });
 
   async function copyInformal() {

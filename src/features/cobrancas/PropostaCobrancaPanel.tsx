@@ -38,6 +38,7 @@ type PropostaCobrancaPanelProps = {
   defaultModalOpen?: boolean;
   onlyModal?: boolean;
   onSavePropostaRequest?: () => Promise<boolean>;
+  onRefreshProposta?: () => void;
 };
 
 function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number; empresa: string } {
@@ -86,7 +87,8 @@ export function PropostaCobrancaPanel({
   onCloseModal,
   defaultModalOpen = false,
   onlyModal = false,
-  onSavePropostaRequest
+  onSavePropostaRequest,
+  onRefreshProposta
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
   const { createCobranca, getCobrancasByProposta, source, cobrancas } = useCobrancas();
@@ -1071,6 +1073,7 @@ export function PropostaCobrancaPanel({
               <CobrancasDaPropostaList 
                 cobrancas={cobrancasDaProposta} 
                 onSelectCobranca={setSelectedCobrancaId}
+                onRefreshProposta={onRefreshProposta}
               />
             </div>
           </>
@@ -1384,7 +1387,7 @@ export function PropostaCobrancaPanel({
   );
 }
 
-function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: Cobranca[], onSelectCobranca: (id: string) => void }) {
+function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshProposta }: { cobrancas: Cobranca[], onSelectCobranca: (id: string) => void, onRefreshProposta?: () => void }) {
   const { showToast } = useAppToast();
   const { deleteCobranca, cancelarExterno } = useCobrancas();
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
@@ -1397,7 +1400,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
       const tipoNormalized = cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
       const isBoleto = tipoNormalized === "BOLETO";
       const isCardParcelado = tipoNormalized === "CARD-PARCELADO";
-      const isExternoCancelable = (isBoleto || isCardParcelado) && !!cobrancaParaExcluir.cod_solicitacao_inter;
+      const isExternoCancelable = (isBoleto && !!cobrancaParaExcluir.cod_solicitacao_inter) || isCardParcelado;
 
       let result;
       if (isExternoCancelable && cancelarExterno) {
@@ -1414,6 +1417,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
             : "Cobrança excluída com sucesso." 
         });
         setCobrancaParaExcluir(null);
+        onRefreshProposta?.();
       } else {
         showToast({ 
           type: "error", 
@@ -1516,20 +1520,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
               </div>
 
               {/* Col 6: Ações */}
-              <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || isDeletando}
-                  onClick={() => setCobrancaParaExcluir(cobranca)}
-                  title={
-                    cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
-                    : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
-                    : "Excluir cobrança"
-                  }
-                  className="inline-flex items-center justify-center rounded-xl bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed border border-red-200"
-                >
-                  Excluir
-                </button>
+              <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-2 w-full sm:w-auto">
                 {isBoleto ? (
                   <>
                     {boletoUrl ? (
@@ -1537,48 +1528,22 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
                         href={boletoUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm"
+                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-teal-600 text-white hover:bg-teal-700 shadow-sm transition"
                       >
                         Abrir boleto
                       </a>
                     ) : (
                       <button
                         disabled
-                        className="inline-flex items-center justify-center rounded-xl bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-slate-200 text-slate-400 cursor-not-allowed transition"
                         title="Boleto ainda não disponível"
                       >
                         Indisponível
                       </button>
                     )}
-                    {boletoUrl && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(boletoUrl);
-                            showToast({ type: "success", title: "Link do boleto copiado!" });
-                          } catch {
-                            showToast({ type: "error", title: "Erro ao copiar link." });
-                          }
-                        }}
-                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                        title="Copiar link do boleto"
-                      >
-                        Copiar link
-                      </button>
-                    )}
                   </>
                 ) : isPix ? (
                   <>
-                    {cobranca.url_cobranca && (
-                      <button
-                        type="button"
-                        onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
-                        className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
-                      >
-                        Abrir checkout
-                      </button>
-                    )}
                     {cobranca.pix_copia_cola && (
                       <button
                         type="button"
@@ -1590,7 +1555,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
                             showToast({ type: "error", title: "Erro ao copiar PIX." });
                           }
                         }}
-                        className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition"
                         title="Copiar código PIX"
                       >
                         Pix Copia e cola
@@ -1604,22 +1569,22 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
                         href={cobranca.cartao_checkout_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center rounded-xl bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-700 shadow-sm"
+                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-teal-600 text-white hover:bg-teal-700 shadow-sm transition"
                       >
-                        Abrir checkout cartão
+                        Abrir checkout
                       </a>
                     ) : cobranca.url_cobranca ? (
                       <button
                         type="button"
                         onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
-                        className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 transition"
                       >
-                        Escolher parcelas
+                        Abrir checkout
                       </button>
                     ) : (
                       <button
                         disabled
-                        className="inline-flex items-center justify-center rounded-xl bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                        className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-slate-200 text-slate-400 cursor-not-allowed transition"
                         title="Página do cartão ainda não disponível"
                       >
                         Indisponível
@@ -1631,7 +1596,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
                     <button
                       type="button"
                       onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
-                      className="inline-flex items-center justify-center rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 transition hover:bg-teal-100"
+                      className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap border border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100 transition"
                     >
                       Abrir checkout
                     </button>
@@ -1641,11 +1606,24 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
                 <button
                   type="button"
                   onClick={() => onSelectCobranca(cobranca.id)}
-                  className="inline-flex items-center justify-center rounded-xl bg-[#0b2f4a] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#123f61]"
+                  className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-[#0b2f4a] text-white hover:bg-[#123f61] transition"
                 >
                   Ver cobrança
                 </button>
 
+                <button
+                  type="button"
+                  disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || isDeletando}
+                  onClick={() => setCobrancaParaExcluir(cobranca)}
+                  title={
+                    cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
+                    : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
+                    : "Excluir cobrança"
+                  }
+                  className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Excluir
+                </button>
 
               </div>
             </div>

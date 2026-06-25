@@ -344,7 +344,7 @@ export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
                 Atualizar Status
               </button>
 
-              {cobrancaAtual.token_publico && (
+              {cobrancaAtual.token_publico && tipoNormalized !== "BOLETO" && tipoNormalized !== "PIX" && tipoNormalized !== "CARD-PARCELADO" && (
                 <button
                   type="button"
                   onClick={() => router.push(`/pagamento/${cobrancaAtual.token_publico}`)}

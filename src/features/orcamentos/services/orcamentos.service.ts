@@ -14,7 +14,7 @@ import {
 import { getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.service";
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
-import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
+import { buildPropostaInformalText, getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
 import type { Produto } from "@/features/produtos/types";
@@ -1191,7 +1191,8 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       resumo,
       formaPagamento: formState.formaPagamento || "A combinar",
       isAvulso: formState.isAvulso,
-      contatoNome: contatoNome
+      contatoNome: contatoNome,
+      bonusPercent: cadastro ? getClienteBonusPercent(cadastro as any) : 0
     });
 
     if (!isNonEmpty(informalText)) {
