@@ -1390,19 +1390,38 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
   const [isDeletando, setIsDeletando] = useState(false);
 
-  const handleConfirmarExclusao = async () => {
+    const handleConfirmarExclusao = async () => {
     if (!cobrancaParaExcluir) return;
     setIsDeletando(true);
     try {
-      const result = await deleteCobranca(cobrancaParaExcluir.id);
+      const tipoNormalized = cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
+      const isBoleto = tipoNormalized === "BOLETO";
+      const isBoletoCancelable = isBoleto && !!cobrancaParaExcluir.cod_solicitacao_inter;
+
+      let result;
+      if (isBoletoCancelable) {
+        result = await cancelarBoletoAVista(cobrancaParaExcluir);
+      } else {
+        result = await deleteCobranca(cobrancaParaExcluir.id);
+      }
+
       if (result.success) {
-        showToast({ type: "success", title: "Cobrança excluída com sucesso." });
+        showToast({ 
+          type: "success", 
+          title: isBoletoCancelable 
+            ? "Boleto cancelado com sucesso. Você já pode gerar um novo boleto." 
+            : "Cobrança excluída com sucesso." 
+        });
         setCobrancaParaExcluir(null);
       } else {
-        showToast({ type: "error", title: "Erro ao excluir", description: result.errorMessage });
+        showToast({ 
+          type: "error", 
+          title: isBoletoCancelable ? "Não foi possível cancelar o boleto." : "Erro ao excluir", 
+          description: isBoletoCancelable ? (result.errorMessage || "Tente novamente ou chame o financeiro.") : result.errorMessage 
+        });
       }
     } catch (err) {
-      showToast({ type: "error", title: "Erro inesperado ao excluir cobrança." });
+      showToast({ type: "error", title: "Erro inesperado na operação." });
     } finally {
       setIsDeletando(false);
     }
@@ -1797,10 +1816,12 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca }: { cobrancas: C
         <div className="fixed inset-0 z-[80] bg-slate-950/60 p-4 flex items-center justify-center animate-fade-in" role="dialog" aria-modal="true">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5">
             <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-slate-950">Excluir cobrança</h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Deseja excluir esta cobrança? Esta ação remove a cobrança e não altera o status para CANCELADO.
-              </p>
+              <h3 className="text-lg font-semibold text-slate-950">
+                  {cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-") === "BOLETO" && cobrancaParaExcluir.cod_solicitacao_inter ? "Cancelar Boleto Bancário" : "Excluir cobrança"}
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  {cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-") === "BOLETO" && cobrancaParaExcluir.cod_solicitacao_inter ? "Deseja cancelar este boleto? Esta ação comunicará o banco e removerá o boleto do sistema." : "Deseja excluir esta cobrança? Esta ação remove a cobrança e não altera o status para CANCELADO."}
+                </p>
               <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
                 <p><strong>ID:</strong> {cobrancaParaExcluir.id_pagamento}</p>
                 <p><strong>Tipo:</strong> {getCobrancaTipoLabel(cobrancaParaExcluir.tipo_cobranca)}</p>

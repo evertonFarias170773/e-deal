@@ -1,51 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
-function keepDigitsOnly(value: string | undefined | null): string {
-  if (!value) {
-    return "";
-  }
-  return value.replace(/\D/g, "");
-}
-
-function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
-type EnderecoBoleto = {
-  logradouro: string;
-  numero: string;
-  complemento: string;
-  bairro: string;
-  cidade: string;
-  uf: string;
-  cep: string;
-};
-
-type GerarBoletoRequest = {
-  boleto_id: string;
-  ext_reference: string;
-  id_empresa: number;
-  id_cliente: number;
-  id_int: number;
-  n_nf: string;
-  parcela: number;
-  total_parcelas: number;
-  valor: number;
-  vencimento: string;
-  nome_cliente: string;
-  documento: string;
-  email: string;
-  endereco: EnderecoBoleto;
-  multa_percentual: number;
-  juros_dia_percentual: number;
-};
-
 export async function POST(request: Request) {
-  let body: GerarBoletoRequest;
+  let webhookBody: Record<string, unknown>;
 
   try {
-    body = (await request.json()) as GerarBoletoRequest;
+    webhookBody = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json(
       { success: false, message: "Corpo da requisicao invalido." },
@@ -53,68 +13,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const {
-    boleto_id,
-    ext_reference,
-    id_empresa,
-    id_cliente,
-    id_int,
-    n_nf,
-    parcela,
-    total_parcelas,
-    valor,
-    vencimento,
-    nome_cliente,
-    documento,
-    email,
-    endereco,
-    multa_percentual,
-    juros_dia_percentual
-  } = body;
-
-  // Validacoes basicas
-  if (!boleto_id || !id_empresa || !valor || !documento || !nome_cliente || !email) {
-    return NextResponse.json(
-      { success: false, message: "Campos obrigatorios ausentes no body." },
-      { status: 400 }
-    );
-  }
-
-  const webhookUrl = "https://10074.hostoo.net.br/webhook/boletos-vibe";
-
-  const documentoDigits = keepDigitsOnly(documento);
-  
-  const webhookBody = {
-    boleto_id,
-    ext_reference,
-    id_empresa,
-    id_cliente,
-    id_int,
-    n_nf: n_nf || "",
-    parcela,
-    total_parcelas,
-    valor: roundMoney(valor),
-    vencimento,
-    nome_cliente,
-    documento: documentoDigits,
-    email,
-    endereco: {
-      logradouro: endereco.logradouro || "",
-      numero: endereco.numero || "S/N",
-      complemento: endereco.complemento || "",
-      bairro: endereco.bairro || "Centro",
-      cidade: endereco.cidade || "",
-      uf: endereco.uf || "",
-      cep: keepDigitsOnly(endereco.cep) || ""
-    },
-    multa_percentual,
-    juros_dia_percentual
-  };
+  const webhookUrl = "https://10074.hostoo.net.br/webhook/boleto-avista-vibe";
 
   console.info(`[API][GerarBoleto] Chamando webhook Boleto C6...`, {
-    boleto_id,
-    ext_reference,
-    valor,
+    external_reference_id: webhookBody.external_reference_id,
+    id_pagamento: webhookBody.id_pagamento,
+    valor_total: webhookBody.valor_total,
     webhookUrl
   });
 
@@ -136,16 +40,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const responseData = await webhookResponse.json();
-    const webhookResult = Array.isArray(responseData) ? responseData[0] : responseData;
-
-    if (!webhookResult || !webhookResult.digitable_line) {
-      console.error("[API][GerarBoleto] Resposta do webhook invalida:", responseData);
-      return NextResponse.json(
-        { success: false, message: "Resposta do n8n nao contem linha digitavel." },
-        { status: 502 }
-      );
+    const responseData = await webhookResponse.text();
+    let parsedData: Record<string, unknown> | Array<Record<string, unknown>> = {};
+    try {
+      parsedData = JSON.parse(responseData);
+    } catch {
+      // Ignora se nao for json
     }
+
+    const webhookResult = Array.isArray(parsedData) ? parsedData[0] : parsedData;
 
     // Inicializa o Supabase Client
     const supabase = getSupabaseClient();
@@ -157,20 +60,25 @@ export async function POST(request: Request) {
       );
     }
 
-    console.info("[API][GerarBoleto] Gravando dados do boleto no Supabase...", {
-      boleto_id
-    });
+    // Se o webhook retornou uma linha digitavel, atualizamos a tabela,
+    // caso contrario, apenas atualizamos boleto_enviadoo = true
+    const updatePayload: Record<string, unknown> = {
+      boleto_enviadoo: true
+    };
 
-    // Atualiza o registro no Supabase com os dados de retorno do n8n
+    if (webhookResult && typeof webhookResult.digitable_line === "string") {
+      updatePayload.linha_digitavel = webhookResult.digitable_line;
+    }
+    
+    // Nao sobreescrevemos o id_pagamento se nao retornar id, pois no novo padrao o front ja gerou "id_int-token".
+
+    // Para encontrar qual atualizar, o novo payload usa webhookBody.id_pagamento
+    // Opcionalmente podemos buscar por id_int ou assumir sucesso global
+    // Como nao passamos boleto_id (o UUID do pagamentos_v2), precisamos atualizar via id_pagamento
     const { data: updatedData, error: updateError } = await supabase
       .from("pagamentos_v2")
-      .update({
-        linha_digitavel: webhookResult.digitable_line,
-        id_pagamento: webhookResult.id || null,
-        vencimento: webhookResult.due_date || vencimento,
-        boleto_enviadoo: true
-      })
-      .eq("id", boleto_id)
+      .update(updatePayload)
+      .eq("id_pagamento", webhookBody.id_pagamento)
       .select();
 
     if (updateError) {
@@ -184,11 +92,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       data: updatedData && updatedData[0] ? updatedData[0] : null,
-      integration: {
-        linha_digitavel: webhookResult.digitable_line,
-        id_boleto_c6: webhookResult.id || null,
-        due_date: webhookResult.due_date || null
-      }
+      integration: webhookResult || {}
     });
   } catch (error: unknown) {
     console.error("[API][GerarBoleto] Excecao na API route:", error);

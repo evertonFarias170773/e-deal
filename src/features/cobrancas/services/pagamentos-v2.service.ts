@@ -217,6 +217,53 @@ async function fetchClientesInfo(clientIds: number[]) {
   return mapping;
 }
 
+async function fetchBoletosPDFs(idsPagamento: string[]) {
+  const config = getSupabaseConfig();
+  const uniqueIds = Array.from(new Set(idsPagamento)).filter(Boolean);
+  if (!config || uniqueIds.length === 0) {
+    return {};
+  }
+
+  const mapping: Record<string, string> = {};
+  const limit = 200;
+
+  for (let i = 0; i < uniqueIds.length; i += limit) {
+    const chunk = uniqueIds.slice(i, i + limit);
+    const url = new URL(`${config.url}/rest/v1/boletos`);
+    url.searchParams.set("select", "id_pagamento,pdf_storage,url_pdf");
+    url.searchParams.set("id_pagamento", `in.(${chunk.join(",")})`);
+
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {
+          apikey: config.anonKey,
+          authorization: `Bearer ${config.anonKey}`,
+          accept: "application/json",
+          "accept-profile": "public"
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
+        if (Array.isArray(data)) {
+          data.forEach((row: Record<string, unknown>) => {
+            if (row.id_pagamento && typeof row.id_pagamento === "string" && (row.pdf_storage || row.url_pdf)) {
+              const fileUrl = typeof row.pdf_storage === "string" ? row.pdf_storage : (typeof row.url_pdf === "string" ? row.url_pdf : "");
+              if (fileUrl) {
+                mapping[row.id_pagamento] = fileUrl;
+              }
+            }
+          });
+        }
+      }
+    } catch {
+      // Ignora erro
+    }
+  }
+
+  return mapping;
+}
+
 export async function getCobrancasReadOnlyData(): Promise<CobrancasReadResult> {
   const rows = await fetchPagamentosV2Rows();
 
@@ -239,6 +286,17 @@ export async function getCobrancasReadOnlyData(): Promise<CobrancasReadResult> {
     c.cliente_limite_credito = cInfo ? cInfo.limite_credito : 0;
     c.cliente_credito = cInfo ? cInfo.credito : 0;
   });
+
+  const boletosRows = mappedCobrancas.filter((c) => c.tipo_cobranca === "BOLETO" && c.id_pagamento);
+  if (boletosRows.length > 0) {
+    const idsPagamento = boletosRows.map((c) => c.id_pagamento);
+    const boletosMap = await fetchBoletosPDFs(idsPagamento);
+    mappedCobrancas.forEach((c) => {
+      if (c.tipo_cobranca === "BOLETO" && c.id_pagamento && boletosMap[c.id_pagamento]) {
+        c.url_pdf = boletosMap[c.id_pagamento] || c.url_pdf;
+      }
+    });
+  }
 
   const cobrancasStats = sortByConferenceRecency(mappedCobrancas);
   const cobrancas = cobrancasStats.slice(0, 500);

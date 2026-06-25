@@ -1,0 +1,1673 @@
+﻿{
+    "updatedAt":  "2026-06-11T16:52:03.119Z",
+    "createdAt":  "2026-05-30T21:24:29.279Z",
+    "id":  "YGgmGWYZd37ME7Vq",
+    "name":  "CARTAO C6 - IDEAL - E3 VIBE",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "operation":  "getAll",
+                                         "tableId":  "pagamentos_v2",
+                                         "matchType":  "allFilters",
+                                         "filters":  {
+                                                         "conditions":  [
+                                                                            {
+                                                                                "keyName":  "token_publico",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $json.body.token_publico }}"
+                                                                            },
+                                                                            {
+                                                                                "keyName":  "tipo_cobranca",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "CARD_PARCELADO"
+                                                                            },
+                                                                            {
+                                                                                "keyName":  "status",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "A_RECEBER"
+                                                                            }
+                                                                        ]
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.supabase",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -9808,
+                                       656
+                                   ],
+                      "id":  "40700ca3-68fc-46f9-adb4-d7c2f1fc214b",
+                      "name":  "Get many rows",
+                      "credentials":  {
+                                          "supabaseApi":  {
+                                                              "id":  "yrDV1LiXwC3cq29e",
+                                                              "name":  "Supabase e-deal"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       -8592,
+                                       656
+                                   ],
+                      "id":  "711e5ec7-a6fa-4bfe-9f9d-663a0f4a50e4",
+                      "name":  "Respond to Webhook"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "update",
+                                         "tableId":  "pagamentos_v2",
+                                         "matchType":  "allFilters",
+                                         "filters":  {
+                                                         "conditions":  [
+                                                                            {
+                                                                                "keyName":  "id_int",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $(\u0027Get many rows\u0027).item.json.id_int }}"
+                                                                            },
+                                                                            {
+                                                                                "keyName":  "token_publico",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $(\u0027Webhook-IDEAL\u0027).item.json.body.token_publico }}"
+                                                                            }
+                                                                        ]
+                                                     },
+                                         "fieldsUi":  {
+                                                          "fieldValues":  [
+                                                                              {
+                                                                                  "fieldId":  "cod_solicitacao_inter",
+                                                                                  "fieldValue":  "={{ $json.id }}"
+                                                                              },
+                                                                              {
+                                                                                  "fieldId":  "cartao_checkout_url",
+                                                                                  "fieldValue":  "={{ $json.url }}"
+                                                                              },
+                                                                              {
+                                                                                  "fieldId":  "cartao_status",
+                                                                                  "fieldValue":  "CHECKOUT_CRIADO"
+                                                                              }
+                                                                          ]
+                                                      }
+                                     },
+                      "type":  "n8n-nodes-base.supabase",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -8384,
+                                       656
+                                   ],
+                      "id":  "58f7b94a-bb8c-441f-90bb-17f665bd7665",
+                      "name":  "Update a row",
+                      "credentials":  {
+                                          "supabaseApi":  {
+                                                              "id":  "yrDV1LiXwC3cq29e",
+                                                              "name":  "Supabase e-deal"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "card-ideal-vibe",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       -10016,
+                                       656
+                                   ],
+                      "id":  "44754728-45b2-447d-902e-1d4037ed428b",
+                      "name":  "Webhook-IDEAL",
+                      "webhookId":  "d35c71aa-3da2-4373-85af-73f71d672309"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "getAll",
+                                         "tableId":  "pagamentos_v2",
+                                         "matchType":  "allFilters",
+                                         "filters":  {
+                                                         "conditions":  [
+                                                                            {
+                                                                                "keyName":  "token_publico",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $json.body.token_publico }}"
+                                                                            },
+                                                                            {
+                                                                                "keyName":  "tipo_cobranca",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "CARD_PARCELADO"
+                                                                            },
+                                                                            {
+                                                                                "keyName":  "status",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "A_RECEBER"
+                                                                            }
+                                                                        ]
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.supabase",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -9808,
+                                       880
+                                   ],
+                      "id":  "aa4efe74-7252-4eb6-a912-91518586288e",
+                      "name":  "Get many rows1",
+                      "credentials":  {
+                                          "supabaseApi":  {
+                                                              "id":  "yrDV1LiXwC3cq29e",
+                                                              "name":  "Supabase e-deal"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       -8592,
+                                       880
+                                   ],
+                      "id":  "de51caa5-63ae-44b2-92c6-181650be9b47",
+                      "name":  "Respond to Webhook1"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "update",
+                                         "tableId":  "pagamentos_v2",
+                                         "matchType":  "allFilters",
+                                         "filters":  {
+                                                         "conditions":  [
+                                                                            {
+                                                                                "keyName":  "id_int",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $(\u0027Get many rows1\u0027).item.json.id_int }}"
+                                                                            },
+                                                                            {
+                                                                                "keyName":  "token_publico",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $(\u0027Webhook-E3\u0027).item.json.body.token_publico }}"
+                                                                            }
+                                                                        ]
+                                                     },
+                                         "fieldsUi":  {
+                                                          "fieldValues":  [
+                                                                              {
+                                                                                  "fieldId":  "cod_solicitacao_inter",
+                                                                                  "fieldValue":  "={{ $json.id }}"
+                                                                              },
+                                                                              {
+                                                                                  "fieldId":  "cartao_checkout_url",
+                                                                                  "fieldValue":  "={{ $json.url }}"
+                                                                              },
+                                                                              {
+                                                                                  "fieldId":  "cartao_status",
+                                                                                  "fieldValue":  "CHECKOUT_CRIADO"
+                                                                              }
+                                                                          ]
+                                                      }
+                                     },
+                      "type":  "n8n-nodes-base.supabase",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -8384,
+                                       880
+                                   ],
+                      "id":  "4e435164-9313-4629-aeb1-3e3e6cad93fe",
+                      "name":  "Update a row1",
+                      "credentials":  {
+                                          "supabaseApi":  {
+                                                              "id":  "yrDV1LiXwC3cq29e",
+                                                              "name":  "Supabase e-deal"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "card-e3-vibe",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       -10016,
+                                       880
+                                   ],
+                      "id":  "bfc3f9d8-2b62-43cc-90dd-e7cb553b3f0e",
+                      "name":  "Webhook-E3",
+                      "webhookId":  "a8c659f6-50a6-4289-9f7c-8b5db2cc3c40"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://baas-api.c6bank.info/v1/auth/",
+                                         "provideSslCertificates":  true,
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/x-www-form-urlencoded"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "={{ $json.basicAuth }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "form-urlencoded",
+                                         "bodyParameters":  {
+                                                                "parameters":  [
+                                                                                   {
+                                                                                       "name":  "grant_type",
+                                                                                       "value":  "client_credentials"
+                                                                                   }
+                                                                               ]
+                                                            },
+                                         "options":  {
+                                                         "allowUnauthorizedCerts":  true
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -9200,
+                                       656
+                                   ],
+                      "id":  "965dd87b-0b66-4251-bdc7-56018cd6b782",
+                      "name":  "Token-Ideal",
+                      "credentials":  {
+                                          "httpSslAuth":  {
+                                                              "id":  "UKMWHQcSE8NxxZnY",
+                                                              "name":  "SSL IDEAL CARTAO C6"
+                                                          }
+                                      },
+                      "onError":  "continueRegularOutput"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://baas-api.c6bank.info/v1/auth/",
+                                         "provideSslCertificates":  true,
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/x-www-form-urlencoded"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "={{ $json.basicAuth }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "form-urlencoded",
+                                         "bodyParameters":  {
+                                                                "parameters":  [
+                                                                                   {
+                                                                                       "name":  "grant_type",
+                                                                                       "value":  "client_credentials"
+                                                                                   }
+                                                                               ]
+                                                            },
+                                         "options":  {
+                                                         "allowUnauthorizedCerts":  true
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -9200,
+                                       880
+                                   ],
+                      "id":  "ad7314f6-e614-46fb-a08f-f2e6dd679e51",
+                      "name":  "Token-E3",
+                      "credentials":  {
+                                          "httpSslAuth":  {
+                                                              "id":  "BjYfNk7VXU9lidP5",
+                                                              "name":  "SSL CARTAO C6 E3"
+                                                          }
+                                      },
+                      "onError":  "continueRegularOutput"
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForEachItem",
+                                         "jsCode":  "// Dados do pagamento/proposta\nconst p = $(\u0027Get many rows\u0027).first().json || {};\n\n// Dados do cadastro do cliente\nconst cadCli = $(\u0027Get many cad cli\u0027).first().json || {};\n\n// Token C6 vindo do node anterior Token-E3\nconst tokenC6 = $json.access_token || $json.token || $json.accessToken || null;\n\nfunction toNumberBR(value) {\n  if (value === null || value === undefined || value === \"\") return null;\n\n  if (typeof value === \"number\") return value;\n\n  const text = String(value)\n    .trim()\n    .replace(\"R$\", \"\")\n    .replace(/\\s/g, \"\");\n\n  // Converte \"2.297,44\" para 2297.44\n  if (text.includes(\",\")) {\n    return Number(text.replace(/\\./g, \"\").replace(\",\", \".\"));\n  }\n\n  const n = Number(text);\n  return Number.isFinite(n) ? n : null;\n}\n\n// Remove acentos, caracteres estranhos e limita texto\nfunction limparTextoC6(value, limite = 40) {\n  return String(value || \"\")\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")   // remove acentos\n    .replace(/[^a-zA-Z0-9\\s]/g, \" \")  // remove pontuação/caracteres especiais\n    .replace(/\\s+/g, \" \")             // remove espaços duplicados\n    .trim()\n    .substring(0, limite)\n    .trim();\n}\n\n// Limpa texto simples, tratando \"null\" como vazio\nfunction limparTextoBasico(value) {\n  if (value === null || value === undefined) return \"\";\n\n  const text = String(value).trim();\n\n  if (\n    text === \"\" ||\n    text.toLowerCase() === \"null\" ||\n    text.toLowerCase() === \"undefined\" ||\n    text === \"-\"\n  ) {\n    return \"\";\n  }\n\n  return text;\n}\n\n// Valida e normaliza e-mail\nfunction limparEmail(value) {\n  const email = limparTextoBasico(value).toLowerCase();\n\n  if (!email) return \"\";\n\n  const regexEmail = /^[a-z0-9.!#$\u0026\u0027*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;\n\n  return regexEmail.test(email) ? email : \"\";\n}\n\n// Normaliza nome do pagador para o C6\nfunction normalizarNomePagador(value) {\n  let nome = String(value || \"\").trim();\n\n  // Se vier algo como \"19.186.093 JACKSON SAMUEL XAVIER DOS SANTOS\",\n  // remove números/documentos do começo e mantém apenas o nome.\n  nome = nome.replace(/^[\\d.\\-/\\s]+/, \"\").trim();\n\n  // Limite oficial do erro C6: payer.name máximo 40 caracteres\n  nome = limparTextoC6(nome, 40);\n\n  return nome || \"Cliente\";\n}\n\nconst valorOriginal = toNumberBR(p.valor);\n\nconst valorFinal =\n  toNumberBR(p.cartao_valor_final) ||\n  toNumberBR(p.valor_final) ||\n  toNumberBR(p.valor);\n\nconst parcelas =\n  toNumberBR(p.cartao_parcelas) ||\n  toNumberBR(p.parcelas) ||\n  1;\n\nif (!valorFinal || !parcelas) {\n  throw new Error(\n    \"Dados do parcelamento não encontrados. Debug: \" +\n    JSON.stringify({\n      node_pagamento: \"Get many rows\",\n      node_cliente: \"Get many cad cli\",\n      id: p.id,\n      id_int: p.id_int,\n      valor: p.valor,\n      cartao_valor_final: p.cartao_valor_final,\n      valor_final: p.valor_final,\n      cartao_parcelas: p.cartao_parcelas,\n      parcelas: p.parcelas,\n      campos_pagamento: Object.keys(p),\n      campos_cliente: Object.keys(cadCli)\n    })\n  );\n}\n\nconst documento = String(\n  p.documento ||\n  cadCli.documento ||\n  cadCli.cnpj ||\n  cadCli.cpf ||\n  \"\"\n).replace(/\\D/g, \"\");\n\nconst telefone = String(\n  p.whats_contato ||\n  cadCli.whats ||\n  cadCli.telefone ||\n  cadCli.celular ||\n  \"51999999999\"\n).replace(/\\D/g, \"\");\n\n// Busca de e-mail em várias possíveis colunas do cadastro.\n// Importante: inclui e_mail, que era o campo válido no teu cadastro.\nconst opcoesEmail = [\n  { campo: \"email_contato\", valor: cadCli.email_contato },\n  { campo: \"email_financeiro\", valor: cadCli.email_financeiro },\n  { campo: \"email\", valor: cadCli.email },\n  { campo: \"e_mail\", valor: cadCli.e_mail },\n  { campo: \"email_cliente\", valor: cadCli.email_cliente },\n  { campo: \"email_cobranca\", valor: cadCli.email_cobranca },\n  { campo: \"email_nfe\", valor: cadCli.email_nfe },\n];\n\nconst emailEncontrado = opcoesEmail\n  .map(item =\u003e ({\n    campo: item.campo,\n    email: limparEmail(item.valor),\n    valor_original: item.valor\n  }))\n  .find(item =\u003e item.email);\n\nconst emailFinal = emailEncontrado?.email || \"contato@ingressoideal.com.br\";\nconst emailOrigem = emailEncontrado?.campo || \"fallback\";\n\nconst externalReference = String(p.id_int || Date.now())\n  .replace(/\\D/g, \"\")\n  .slice(0, 10);\n\n// Nome bruto vindo das possíveis origens\nconst nomeBruto =\n  p.cliente ||\n  cadCli.nome ||\n  cadCli.cliente ||\n  cadCli.razao_social ||\n  \"Cliente\";\n\n// Nome final seguro para o C6\nconst nomePagadorC6 = normalizarNomePagador(nomeBruto);\n\nreturn {\n  amount: Number(valorFinal.toFixed(2)),\n  description: limparTextoC6(p.descricao || \"Cobrança via cartão\", 100),\n  external_reference_id: externalReference,\n\n  payer: {\n    name: nomePagadorC6,\n    tax_id: documento,\n    email: emailFinal,\n    phone_number: telefone\n  },\n\n  payment: {\n    card: {\n      authenticate: \"NOT_REQUIRED\",\n      capture: true,\n      fixed_installments: true,\n      installments: parcelas,\n      interest_type: \"BY_SELLER\",\n      recurrent: false,\n      save_card: true,\n      type: \"CREDIT\"\n    }\n  },\n\n  redirect_url: \"https://ai-ideal.com.br\",\n\n  controle_interno: {\n    id: p.id,\n    id_int: p.id_int,\n    id_empresa: p.id_empresa,\n    token_publico: p.token_publico,\n    valor_original: valorOriginal,\n    cartao_valor_final: valorFinal,\n    cartao_parcelas: parcelas,\n\n    nome_bruto: nomeBruto,\n    nome_enviado_c6: nomePagadorC6,\n\n    email_usado: emailFinal,\n    email_origem: emailOrigem,\n\n    emails_cliente_debug: {\n      email_contato: cadCli.email_contato,\n      email_financeiro: cadCli.email_financeiro,\n      email: cadCli.email,\n      e_mail: cadCli.e_mail,\n      email_cliente: cadCli.email_cliente,\n      email_cobranca: cadCli.email_cobranca,\n      email_nfe: cadCli.email_nfe\n    },\n\n    campos_cliente: Object.keys(cadCli)\n  },\n\n  c6_access_token: tokenC6\n};"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -8992,
+                                       656
+                                   ],
+                      "id":  "efa2a41a-0e68-4714-84bd-13284df1752f",
+                      "name":  "Normaliza Ideal C6"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "=https://baas-api.c6bank.info/v1/checkouts/",
+                                         "provideSslCertificates":  true,
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "=Bearer {{ $(\u0027Token-Ideal\u0027).item.json.access_token }}"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "partner-software-version",
+                                                                                         "value":  "1.0.0"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "partner-software-name",
+                                                                                         "value":  "Super PDV"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"amount\": {{ Number($json.amount).toFixed(2) }},\n  \"description\": \"{{ $json.description }}\",\n  \"external_reference_id\": \"{{ $json.external_reference_id }}\",\n  \"payer\": {\n    \"name\": \"{{ $json.payer.name }}\",\n    \"tax_id\": \"{{ $json.payer.tax_id }}\",\n    \"email\": \"{{ $json.payer.email }}\",\n    \"phone_number\": \"\"\n  },\n  \"payment\": {\n    \"card\": {\n      \"authenticate\": \"{{ $json.payment.card.authenticate }}\",\n      \"capture\": {{ $json.payment.card.capture }},\n      \"fixed_installments\": {{ $json.payment.card.fixed_installments }},\n      \"installments\": {{ Number($json.payment.card.installments) }},\n      \"interest_type\": \"{{ $json.payment.card.interest_type }}\",\n      \"recurrent\": {{ $json.payment.card.recurrent }},\n      \"save_card\": {{ $json.payment.card.save_card }},\n      \"type\": \"{{ $json.payment.card.type }}\"\n    }\n  },\n  \"redirect_url\": \"{{ $json.redirect_url }}\"\n}",
+                                         "options":  {
+                                                         "allowUnauthorizedCerts":  true
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -8784,
+                                       656
+                                   ],
+                      "id":  "561a72cb-81f4-4b39-a18f-3b42f2f6f458",
+                      "name":  "POST CARD C6 IDEAL",
+                      "retryOnFail":  false,
+                      "maxTries":  2,
+                      "executeOnce":  false,
+                      "credentials":  {
+                                          "httpSslAuth":  {
+                                                              "id":  "UKMWHQcSE8NxxZnY",
+                                                              "name":  "SSL IDEAL CARTAO C6"
+                                                          }
+                                      },
+                      "onError":  "continueRegularOutput"
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "=https://baas-api.c6bank.info/v1/checkouts/",
+                                         "provideSslCertificates":  true,
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "=Bearer {{ $(\u0027Token-E3\u0027).item.json.access_token }}"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "partner-software-version",
+                                                                                         "value":  "1.0.0"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "partner-software-name",
+                                                                                         "value":  "Super PDV"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"amount\": {{ Number($json.amount).toFixed(2) }},\n  \"description\": \"{{ $json.description }}\",\n  \"external_reference_id\": \"{{ $json.external_reference_id }}\",\n  \"payer\": {\n    \"name\": \"{{ $json.payer.name }}\",\n    \"tax_id\": \"{{ $json.payer.tax_id }}\",\n    \"email\": \"{{ $json.payer.email }}\",\n    \"phone_number\": \"\"\n  },\n  \"payment\": {\n    \"card\": {\n      \"authenticate\": \"{{ $json.payment.card.authenticate }}\",\n      \"capture\": {{ $json.payment.card.capture }},\n      \"fixed_installments\": {{ $json.payment.card.fixed_installments }},\n      \"installments\": {{ Number($json.payment.card.installments) }},\n      \"interest_type\": \"{{ $json.payment.card.interest_type }}\",\n      \"recurrent\": {{ $json.payment.card.recurrent }},\n      \"save_card\": {{ $json.payment.card.save_card }},\n      \"type\": \"{{ $json.payment.card.type }}\"\n    }\n  },\n  \"redirect_url\": \"{{ $json.redirect_url }}\"\n}",
+                                         "options":  {
+                                                         "allowUnauthorizedCerts":  true
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -8768,
+                                       880
+                                   ],
+                      "id":  "75e254ec-95ff-467a-b093-a5bd48ebb6cb",
+                      "name":  "POST CARD C6 E3",
+                      "retryOnFail":  false,
+                      "maxTries":  2,
+                      "executeOnce":  false,
+                      "credentials":  {
+                                          "httpSslAuth":  {
+                                                              "id":  "BjYfNk7VXU9lidP5",
+                                                              "name":  "SSL CARTAO C6 E3"
+                                                          }
+                                      },
+                      "onError":  "continueRegularOutput"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// ⚠️ NÃO LOGAR, NÃO PRINTAR EM OUTROS NODES\n\nconst clientId = \u002703b3ceb9-8b1e-4e01-ac81-c47253ddfa1d\u0027;\nconst clientSecret = \u0027N6fn3EYtyV5OwKAOGcgqhYGXJabn4XkG\u0027;\n\n\n// Junta no formato exigido pelo HTTP Basic\nconst raw = `${clientId}:${clientSecret}`;\n\n// Converte para Base64\nconst base64 = Buffer.from(raw).toString(\u0027base64\u0027);\n\nreturn [\n  {\n    json: {\n      basicAuth: `Basic ${base64}`\n    }\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -9392,
+                                       656
+                                   ],
+                      "id":  "6c942dd9-8e32-4a1f-8f98-eaff1c8f159e",
+                      "name":  "Base64 IDEAL"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// ⚠️ NÃO LOGAR, NÃO PRINTAR EM OUTROS NODES\n\nconst clientId = \u002763b5a60e-6726-4bfb-ace1-bdff3875e97c\u0027;\nconst clientSecret = \u0027OAx5H9TdvbbKQOa7P2XIwClZuOfKok2G\u0027;\n\n\n// Junta no formato exigido pelo HTTP Basic\nconst raw = `${clientId}:${clientSecret}`;\n\n// Converte para Base64\nconst base64 = Buffer.from(raw).toString(\u0027base64\u0027);\n\nreturn [\n  {\n    json: {\n      basicAuth: `Basic ${base64}`\n    }\n  }\n];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -9392,
+                                       880
+                                   ],
+                      "id":  "7cc1d55c-4383-40b8-89f4-adeecc8502df",
+                      "name":  "Base64 E3"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "getAll",
+                                         "tableId":  "clientes",
+                                         "limit":  1,
+                                         "filters":  {
+                                                         "conditions":  [
+                                                                            {
+                                                                                "keyName":  "id_cliente",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $json.id_cliente }}"
+                                                                            }
+                                                                        ]
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.supabase",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -9600,
+                                       656
+                                   ],
+                      "id":  "cbf633e6-225d-4186-97da-5d65f3a5aff1",
+                      "name":  "Get many cad cli",
+                      "credentials":  {
+                                          "supabaseApi":  {
+                                                              "id":  "yrDV1LiXwC3cq29e",
+                                                              "name":  "Supabase e-deal"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "getAll",
+                                         "tableId":  "clientes",
+                                         "limit":  1,
+                                         "filters":  {
+                                                         "conditions":  [
+                                                                            {
+                                                                                "keyName":  "id_cliente",
+                                                                                "condition":  "eq",
+                                                                                "keyValue":  "={{ $json.id_cliente }}"
+                                                                            }
+                                                                        ]
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.supabase",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -9600,
+                                       880
+                                   ],
+                      "id":  "f99e40ec-00cb-41ea-a427-ef6f70c87745",
+                      "name":  "Get many cad cli1",
+                      "credentials":  {
+                                          "supabaseApi":  {
+                                                              "id":  "yrDV1LiXwC3cq29e",
+                                                              "name":  "Supabase e-deal"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForEachItem",
+                                         "jsCode":  "// Dados do pagamento/proposta\nconst p = $(\u0027Get many rows1\u0027).first().json || {};\n\n// Dados do cadastro do cliente\nconst cadCli = $(\u0027Get many cad cli1\u0027).first().json || {};\n\n// Token C6 vindo do node anterior Token-E3\nconst tokenC6 = $json.access_token || $json.token || $json.accessToken || null;\n\nfunction toNumberBR(value) {\n  if (value === null || value === undefined || value === \"\") return null;\n\n  if (typeof value === \"number\") return value;\n\n  const text = String(value)\n    .trim()\n    .replace(\"R$\", \"\")\n    .replace(/\\s/g, \"\");\n\n  // Converte \"2.297,44\" para 2297.44\n  if (text.includes(\",\")) {\n    return Number(text.replace(/\\./g, \"\").replace(\",\", \".\"));\n  }\n\n  const n = Number(text);\n  return Number.isFinite(n) ? n : null;\n}\n\n// Remove acentos, caracteres estranhos e limita texto\nfunction limparTextoC6(value, limite = 40) {\n  return String(value || \"\")\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")   // remove acentos\n    .replace(/[^a-zA-Z0-9\\s]/g, \" \")  // remove pontuação/caracteres especiais\n    .replace(/\\s+/g, \" \")             // remove espaços duplicados\n    .trim()\n    .substring(0, limite)\n    .trim();\n}\n\n// Limpa texto simples, tratando \"null\" como vazio\nfunction limparTextoBasico(value) {\n  if (value === null || value === undefined) return \"\";\n\n  const text = String(value).trim();\n\n  if (\n    text === \"\" ||\n    text.toLowerCase() === \"null\" ||\n    text.toLowerCase() === \"undefined\" ||\n    text === \"-\"\n  ) {\n    return \"\";\n  }\n\n  return text;\n}\n\n// Valida e normaliza e-mail\nfunction limparEmail(value) {\n  const email = limparTextoBasico(value).toLowerCase();\n\n  if (!email) return \"\";\n\n  const regexEmail = /^[a-z0-9.!#$\u0026\u0027*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;\n\n  return regexEmail.test(email) ? email : \"\";\n}\n\n// Normaliza nome do pagador para o C6\nfunction normalizarNomePagador(value) {\n  let nome = String(value || \"\").trim();\n\n  // Se vier algo como \"19.186.093 JACKSON SAMUEL XAVIER DOS SANTOS\",\n  // remove números/documentos do começo e mantém apenas o nome.\n  nome = nome.replace(/^[\\d.\\-/\\s]+/, \"\").trim();\n\n  // Limite oficial do erro C6: payer.name máximo 40 caracteres\n  nome = limparTextoC6(nome, 40);\n\n  return nome || \"Cliente\";\n}\n\nconst valorOriginal = toNumberBR(p.valor);\n\nconst valorFinal =\n  toNumberBR(p.cartao_valor_final) ||\n  toNumberBR(p.valor_final) ||\n  toNumberBR(p.valor);\n\nconst parcelas =\n  toNumberBR(p.cartao_parcelas) ||\n  toNumberBR(p.parcelas) ||\n  1;\n\nif (!valorFinal || !parcelas) {\n  throw new Error(\n    \"Dados do parcelamento não encontrados. Debug: \" +\n    JSON.stringify({\n      node_pagamento: \"Get many rows1\",\n      node_cliente: \"Get many cad cli1\",\n      id: p.id,\n      id_int: p.id_int,\n      valor: p.valor,\n      cartao_valor_final: p.cartao_valor_final,\n      valor_final: p.valor_final,\n      cartao_parcelas: p.cartao_parcelas,\n      parcelas: p.parcelas,\n      campos_pagamento: Object.keys(p),\n      campos_cliente: Object.keys(cadCli)\n    })\n  );\n}\n\nconst documento = String(\n  p.documento ||\n  cadCli.documento ||\n  cadCli.cnpj ||\n  cadCli.cpf ||\n  \"\"\n).replace(/\\D/g, \"\");\n\nconst telefone = String(\n  p.whats_contato ||\n  cadCli.whats ||\n  cadCli.telefone ||\n  cadCli.celular ||\n  \"51999999999\"\n).replace(/\\D/g, \"\");\n\n// Busca de e-mail em várias possíveis colunas do cadastro.\n// Importante: inclui e_mail, que era o campo válido no teu cadastro.\nconst opcoesEmail = [\n  { campo: \"email_contato\", valor: cadCli.email_contato },\n  { campo: \"email_financeiro\", valor: cadCli.email_financeiro },\n  { campo: \"email\", valor: cadCli.email },\n  { campo: \"e_mail\", valor: cadCli.e_mail },\n  { campo: \"email_cliente\", valor: cadCli.email_cliente },\n  { campo: \"email_cobranca\", valor: cadCli.email_cobranca },\n  { campo: \"email_nfe\", valor: cadCli.email_nfe },\n];\n\nconst emailEncontrado = opcoesEmail\n  .map(item =\u003e ({\n    campo: item.campo,\n    email: limparEmail(item.valor),\n    valor_original: item.valor\n  }))\n  .find(item =\u003e item.email);\n\nconst emailFinal = emailEncontrado?.email || \"contato@ingressoideal.com.br\";\nconst emailOrigem = emailEncontrado?.campo || \"fallback\";\n\nconst externalReference = String(p.id_int || Date.now())\n  .replace(/\\D/g, \"\")\n  .slice(0, 10);\n\n// Nome bruto vindo das possíveis origens\nconst nomeBruto =\n  p.cliente ||\n  cadCli.nome ||\n  cadCli.cliente ||\n  cadCli.razao_social ||\n  \"Cliente\";\n\n// Nome final seguro para o C6\nconst nomePagadorC6 = normalizarNomePagador(nomeBruto);\n\nreturn {\n  amount: Number(valorFinal.toFixed(2)),\n  description: limparTextoC6(p.descricao || \"Cobrança via cartão\", 100),\n  external_reference_id: externalReference,\n\n  payer: {\n    name: nomePagadorC6,\n    tax_id: documento,\n    email: emailFinal,\n    phone_number: telefone\n  },\n\n  payment: {\n    card: {\n      authenticate: \"NOT_REQUIRED\",\n      capture: true,\n      fixed_installments: true,\n      installments: parcelas,\n      interest_type: \"BY_SELLER\",\n      recurrent: false,\n      save_card: true,\n      type: \"CREDIT\"\n    }\n  },\n\n  redirect_url: \"https://ai-ideal.com.br\",\n\n  controle_interno: {\n    id: p.id,\n    id_int: p.id_int,\n    id_empresa: p.id_empresa,\n    token_publico: p.token_publico,\n    valor_original: valorOriginal,\n    cartao_valor_final: valorFinal,\n    cartao_parcelas: parcelas,\n\n    nome_bruto: nomeBruto,\n    nome_enviado_c6: nomePagadorC6,\n\n    email_usado: emailFinal,\n    email_origem: emailOrigem,\n\n    emails_cliente_debug: {\n      email_contato: cadCli.email_contato,\n      email_financeiro: cadCli.email_financeiro,\n      email: cadCli.email,\n      e_mail: cadCli.e_mail,\n      email_cliente: cadCli.email_cliente,\n      email_cobranca: cadCli.email_cobranca,\n      email_nfe: cadCli.email_nfe\n    },\n\n    campos_cliente: Object.keys(cadCli)\n  },\n\n  c6_access_token: tokenC6\n};"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -8992,
+                                       880
+                                   ],
+                      "id":  "ee2a6870-87df-4e46-8f55-bed982fe7cda",
+                      "name":  "Normaliza Ideal C"
+                  }
+              ],
+    "connections":  {
+                        "Get many rows":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Get many cad cli",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Respond to Webhook":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Update a row",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Webhook-IDEAL":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Get many rows",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Get many rows1":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Get many cad cli1",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "Respond to Webhook1":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Update a row1",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Webhook-E3":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Get many rows1",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Token-Ideal":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Normaliza Ideal C6",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Token-E3":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Normaliza Ideal C",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Normaliza Ideal C6":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "POST CARD C6 IDEAL",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "POST CARD C6 IDEAL":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Respond to Webhook",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "POST CARD C6 E3":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Respond to Webhook1",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Base64 IDEAL":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Token-Ideal",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Base64 E3":  {
+                                          "main":  [
+                                                       [
+                                                           {
+                                                               "node":  "Token-E3",
+                                                               "type":  "main",
+                                                               "index":  0
+                                                           }
+                                                       ]
+                                                   ]
+                                      },
+                        "Get many cad cli":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Base64 IDEAL",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Normaliza Ideal C":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "POST CARD C6 E3",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Get many cad cli1":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Base64 E3",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "timeSavedMode":  "fixed",
+                     "callerPolicy":  "workflowsFromSameOwner",
+                     "availableInMCP":  false
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+                    "Webhook-IDEAL":  [
+                                          {
+                                              "json":  {
+                                                           "headers":  {
+                                                                           "connection":  "upgrade",
+                                                                           "host":  "10074.hostoo.net.br",
+                                                                           "x-real-ip":  "10.16.0.3",
+                                                                           "x-forwarded-for":  "10.16.0.3",
+                                                                           "x-forwarded-proto":  "https",
+                                                                           "content-length":  "28",
+                                                                           "sec-ch-ua-platform":  "\"Windows\"",
+                                                                           "user-agent":  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+                                                                           "sec-ch-ua":  "\"Google Chrome\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"",
+                                                                           "dnt":  "1",
+                                                                           "content-type":  "application/json",
+                                                                           "sec-ch-ua-mobile":  "?0",
+                                                                           "accept":  "*/*",
+                                                                           "origin":  "https://pay.ai-ideal.com.br",
+                                                                           "sec-fetch-site":  "cross-site",
+                                                                           "sec-fetch-mode":  "cors",
+                                                                           "sec-fetch-dest":  "empty",
+                                                                           "referer":  "https://pay.ai-ideal.com.br/",
+                                                                           "accept-encoding":  "gzip, deflate, br, zstd",
+                                                                           "accept-language":  "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                                                                           "x-trusteer-rapport":  "ver=3.5.2504.127;ak=D93009A36569A41C6481C05646A75208FAAF0FB0C52E98E35FC784B08CA1F651; av=a3; i=0",
+                                                                           "x-trusteer-rapport-extra":  "v=1; dcin=Jun 14, 2023 14:15:17; is=0; vm=0; un=0"
+                                                                       },
+                                                           "params":  {
+
+                                                                      },
+                                                           "query":  {
+
+                                                                     },
+                                                           "body":  {
+                                                                        "token_publico":  "5043d608"
+                                                                    },
+                                                           "webhookUrl":  "https://10074.hostoo.net.br/webhook/card-parcelado-c6",
+                                                           "executionMode":  "production"
+                                                       }
+                                          }
+                                      ],
+                    "Webhook-E3":  [
+                                       {
+                                           "json":  {
+                                                        "headers":  {
+                                                                        "connection":  "upgrade",
+                                                                        "host":  "10074.hostoo.net.br",
+                                                                        "x-real-ip":  "10.16.0.3",
+                                                                        "x-forwarded-for":  "10.16.0.3",
+                                                                        "x-forwarded-proto":  "https",
+                                                                        "content-length":  "28",
+                                                                        "sec-ch-ua-platform":  "\"Windows\"",
+                                                                        "user-agent":  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+                                                                        "sec-ch-ua":  "\"Google Chrome\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"",
+                                                                        "dnt":  "1",
+                                                                        "content-type":  "application/json",
+                                                                        "sec-ch-ua-mobile":  "?0",
+                                                                        "accept":  "*/*",
+                                                                        "origin":  "https://pay.ai-ideal.com.br",
+                                                                        "sec-fetch-site":  "cross-site",
+                                                                        "sec-fetch-mode":  "cors",
+                                                                        "sec-fetch-dest":  "empty",
+                                                                        "referer":  "https://pay.ai-ideal.com.br/",
+                                                                        "accept-encoding":  "gzip, deflate, br, zstd",
+                                                                        "accept-language":  "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                                                                        "x-trusteer-rapport":  "ver=3.5.2504.127;ak=D93009A36569A41C6481C05646A75208FAAF0FB0C52E98E35FC784B08CA1F651; av=a3; i=0",
+                                                                        "x-trusteer-rapport-extra":  "v=1; dcin=Jun 14, 2023 14:15:17; is=0; vm=0; un=0"
+                                                                    },
+                                                        "params":  {
+
+                                                                   },
+                                                        "query":  {
+
+                                                                  },
+                                                        "body":  {
+                                                                     "token_publico":  "5043d608"
+                                                                 },
+                                                        "webhookUrl":  "https://10074.hostoo.net.br/webhook/card-parcelado-c6",
+                                                        "executionMode":  "production"
+                                                    }
+                                       }
+                                   ]
+                },
+    "versionId":  "414cc002-8234-40a5-88fc-16a43bd1f846",
+    "activeVersionId":  "414cc002-8234-40a5-88fc-16a43bd1f846",
+    "versionCounter":  77,
+    "triggerCount":  2,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-05-30T21:24:29.279Z",
+                       "createdAt":  "2026-05-30T21:24:29.279Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "YGgmGWYZd37ME7Vq",
+                       "projectId":  "wWY8YdfhM6M4i99k",
+                       "project":  {
+                                       "updatedAt":  "2026-02-18T15:38:19.965Z",
+                                       "createdAt":  "2025-08-25T14:20:12.937Z",
+                                       "id":  "wWY8YdfhM6M4i99k",
+                                       "name":  "Everton Farias \u003cdseg.dev@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "projectRelations":  [
+                                                                {
+                                                                    "updatedAt":  "2025-08-25T14:20:12.937Z",
+                                                                    "createdAt":  "2025-08-25T14:20:12.937Z",
+                                                                    "userId":  "a3872f8d-5da3-493f-ba75-d40b35145709",
+                                                                    "projectId":  "wWY8YdfhM6M4i99k",
+                                                                    "user":  {
+                                                                                 "updatedAt":  "2026-06-24T03:00:01.177Z",
+                                                                                 "createdAt":  "2025-08-25T14:20:09.743Z",
+                                                                                 "id":  "a3872f8d-5da3-493f-ba75-d40b35145709",
+                                                                                 "email":  "dseg.dev@gmail.com",
+                                                                                 "firstName":  "Everton",
+                                                                                 "lastName":  "Farias",
+                                                                                 "personalizationAnswers":  {
+                                                                                                                "version":  "v4",
+                                                                                                                "personalization_survey_submitted_at":  "2025-08-25T17:47:35.414Z",
+                                                                                                                "personalization_survey_n8n_version":  "1.108.1",
+                                                                                                                "companyIndustryExtended":  [
+                                                                                                                                                "finance-insurance-industry",
+                                                                                                                                                "media-industry",
+                                                                                                                                                "security-industry",
+                                                                                                                                                "manufacturing-industry"
+                                                                                                                                            ],
+                                                                                                                "companySize":  "\u003c20",
+                                                                                                                "companyType":  "other",
+                                                                                                                "role":  "business-owner",
+                                                                                                                "reportedSource":  "youtube"
+                                                                                                            },
+                                                                                 "settings":  {
+                                                                                                  "userActivated":  true,
+                                                                                                  "firstSuccessfulWorkflowId":  "BFaHAHXtmSZresiW",
+                                                                                                  "userActivatedAt":  1756587564979,
+                                                                                                  "easyAIWorkflowOnboarded":  true,
+                                                                                                  "npsSurvey":  {
+                                                                                                                    "responded":  true,
+                                                                                                                    "lastShownAt":  1773085980630
+                                                                                                                },
+                                                                                                  "dismissedCallouts":  {
+                                                                                                                            "aiAgentStarterCallout":  true
+                                                                                                                        }
+                                                                                              },
+                                                                                 "disabled":  false,
+                                                                                 "mfaEnabled":  false,
+                                                                                 "lastActiveAt":  "2026-06-24",
+                                                                                 "isPending":  false
+                                                                             }
+                                                                }
+                                                            ]
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-06-11T16:52:03.122Z",
+                          "createdAt":  "2026-06-11T16:52:03.122Z",
+                          "versionId":  "414cc002-8234-40a5-88fc-16a43bd1f846",
+                          "workflowId":  "YGgmGWYZd37ME7Vq",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "getAll",
+                                                               "tableId":  "pagamentos_v2",
+                                                               "matchType":  "allFilters",
+                                                               "filters":  {
+                                                                               "conditions":  [
+                                                                                                  {
+                                                                                                      "keyName":  "token_publico",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $json.body.token_publico }}"
+                                                                                                  },
+                                                                                                  {
+                                                                                                      "keyName":  "tipo_cobranca",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "CARD_PARCELADO"
+                                                                                                  },
+                                                                                                  {
+                                                                                                      "keyName":  "status",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "A_RECEBER"
+                                                                                                  }
+                                                                                              ]
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.supabase",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -9808,
+                                                             656
+                                                         ],
+                                            "id":  "40700ca3-68fc-46f9-adb4-d7c2f1fc214b",
+                                            "name":  "Get many rows",
+                                            "credentials":  {
+                                                                "supabaseApi":  {
+                                                                                    "id":  "yrDV1LiXwC3cq29e",
+                                                                                    "name":  "Supabase e-deal"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.5,
+                                            "position":  [
+                                                             -8592,
+                                                             656
+                                                         ],
+                                            "id":  "711e5ec7-a6fa-4bfe-9f9d-663a0f4a50e4",
+                                            "name":  "Respond to Webhook"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "update",
+                                                               "tableId":  "pagamentos_v2",
+                                                               "matchType":  "allFilters",
+                                                               "filters":  {
+                                                                               "conditions":  [
+                                                                                                  {
+                                                                                                      "keyName":  "id_int",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $(\u0027Get many rows\u0027).item.json.id_int }}"
+                                                                                                  },
+                                                                                                  {
+                                                                                                      "keyName":  "token_publico",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $(\u0027Webhook-IDEAL\u0027).item.json.body.token_publico }}"
+                                                                                                  }
+                                                                                              ]
+                                                                           },
+                                                               "fieldsUi":  {
+                                                                                "fieldValues":  [
+                                                                                                    {
+                                                                                                        "fieldId":  "cod_solicitacao_inter",
+                                                                                                        "fieldValue":  "={{ $json.id }}"
+                                                                                                    },
+                                                                                                    {
+                                                                                                        "fieldId":  "cartao_checkout_url",
+                                                                                                        "fieldValue":  "={{ $json.url }}"
+                                                                                                    },
+                                                                                                    {
+                                                                                                        "fieldId":  "cartao_status",
+                                                                                                        "fieldValue":  "CHECKOUT_CRIADO"
+                                                                                                    }
+                                                                                                ]
+                                                                            }
+                                                           },
+                                            "type":  "n8n-nodes-base.supabase",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -8384,
+                                                             656
+                                                         ],
+                                            "id":  "58f7b94a-bb8c-441f-90bb-17f665bd7665",
+                                            "name":  "Update a row",
+                                            "credentials":  {
+                                                                "supabaseApi":  {
+                                                                                    "id":  "yrDV1LiXwC3cq29e",
+                                                                                    "name":  "Supabase e-deal"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "card-ideal-vibe",
+                                                               "responseMode":  "responseNode",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2.1,
+                                            "position":  [
+                                                             -10016,
+                                                             656
+                                                         ],
+                                            "id":  "44754728-45b2-447d-902e-1d4037ed428b",
+                                            "name":  "Webhook-IDEAL",
+                                            "webhookId":  "d35c71aa-3da2-4373-85af-73f71d672309"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "getAll",
+                                                               "tableId":  "pagamentos_v2",
+                                                               "matchType":  "allFilters",
+                                                               "filters":  {
+                                                                               "conditions":  [
+                                                                                                  {
+                                                                                                      "keyName":  "token_publico",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $json.body.token_publico }}"
+                                                                                                  },
+                                                                                                  {
+                                                                                                      "keyName":  "tipo_cobranca",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "CARD_PARCELADO"
+                                                                                                  },
+                                                                                                  {
+                                                                                                      "keyName":  "status",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "A_RECEBER"
+                                                                                                  }
+                                                                                              ]
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.supabase",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -9808,
+                                                             880
+                                                         ],
+                                            "id":  "aa4efe74-7252-4eb6-a912-91518586288e",
+                                            "name":  "Get many rows1",
+                                            "credentials":  {
+                                                                "supabaseApi":  {
+                                                                                    "id":  "yrDV1LiXwC3cq29e",
+                                                                                    "name":  "Supabase e-deal"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.5,
+                                            "position":  [
+                                                             -8592,
+                                                             880
+                                                         ],
+                                            "id":  "de51caa5-63ae-44b2-92c6-181650be9b47",
+                                            "name":  "Respond to Webhook1"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "update",
+                                                               "tableId":  "pagamentos_v2",
+                                                               "matchType":  "allFilters",
+                                                               "filters":  {
+                                                                               "conditions":  [
+                                                                                                  {
+                                                                                                      "keyName":  "id_int",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $(\u0027Get many rows1\u0027).item.json.id_int }}"
+                                                                                                  },
+                                                                                                  {
+                                                                                                      "keyName":  "token_publico",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $(\u0027Webhook-E3\u0027).item.json.body.token_publico }}"
+                                                                                                  }
+                                                                                              ]
+                                                                           },
+                                                               "fieldsUi":  {
+                                                                                "fieldValues":  [
+                                                                                                    {
+                                                                                                        "fieldId":  "cod_solicitacao_inter",
+                                                                                                        "fieldValue":  "={{ $json.id }}"
+                                                                                                    },
+                                                                                                    {
+                                                                                                        "fieldId":  "cartao_checkout_url",
+                                                                                                        "fieldValue":  "={{ $json.url }}"
+                                                                                                    },
+                                                                                                    {
+                                                                                                        "fieldId":  "cartao_status",
+                                                                                                        "fieldValue":  "CHECKOUT_CRIADO"
+                                                                                                    }
+                                                                                                ]
+                                                                            }
+                                                           },
+                                            "type":  "n8n-nodes-base.supabase",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -8384,
+                                                             880
+                                                         ],
+                                            "id":  "4e435164-9313-4629-aeb1-3e3e6cad93fe",
+                                            "name":  "Update a row1",
+                                            "credentials":  {
+                                                                "supabaseApi":  {
+                                                                                    "id":  "yrDV1LiXwC3cq29e",
+                                                                                    "name":  "Supabase e-deal"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "card-e3-vibe",
+                                                               "responseMode":  "responseNode",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2.1,
+                                            "position":  [
+                                                             -10016,
+                                                             880
+                                                         ],
+                                            "id":  "bfc3f9d8-2b62-43cc-90dd-e7cb553b3f0e",
+                                            "name":  "Webhook-E3",
+                                            "webhookId":  "a8c659f6-50a6-4289-9f7c-8b5db2cc3c40"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "https://baas-api.c6bank.info/v1/auth/",
+                                                               "provideSslCertificates":  true,
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "Content-Type",
+                                                                                                               "value":  "application/x-www-form-urlencoded"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "Authorization",
+                                                                                                               "value":  "={{ $json.basicAuth }}"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "sendBody":  true,
+                                                               "contentType":  "form-urlencoded",
+                                                               "bodyParameters":  {
+                                                                                      "parameters":  [
+                                                                                                         {
+                                                                                                             "name":  "grant_type",
+                                                                                                             "value":  "client_credentials"
+                                                                                                         }
+                                                                                                     ]
+                                                                                  },
+                                                               "options":  {
+                                                                               "allowUnauthorizedCerts":  true
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.2,
+                                            "position":  [
+                                                             -9200,
+                                                             656
+                                                         ],
+                                            "id":  "965dd87b-0b66-4251-bdc7-56018cd6b782",
+                                            "name":  "Token-Ideal",
+                                            "credentials":  {
+                                                                "httpSslAuth":  {
+                                                                                    "id":  "UKMWHQcSE8NxxZnY",
+                                                                                    "name":  "SSL IDEAL CARTAO C6"
+                                                                                }
+                                                            },
+                                            "onError":  "continueRegularOutput"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "https://baas-api.c6bank.info/v1/auth/",
+                                                               "provideSslCertificates":  true,
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "Content-Type",
+                                                                                                               "value":  "application/x-www-form-urlencoded"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "Authorization",
+                                                                                                               "value":  "={{ $json.basicAuth }}"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "sendBody":  true,
+                                                               "contentType":  "form-urlencoded",
+                                                               "bodyParameters":  {
+                                                                                      "parameters":  [
+                                                                                                         {
+                                                                                                             "name":  "grant_type",
+                                                                                                             "value":  "client_credentials"
+                                                                                                         }
+                                                                                                     ]
+                                                                                  },
+                                                               "options":  {
+                                                                               "allowUnauthorizedCerts":  true
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.2,
+                                            "position":  [
+                                                             -9200,
+                                                             880
+                                                         ],
+                                            "id":  "ad7314f6-e614-46fb-a08f-f2e6dd679e51",
+                                            "name":  "Token-E3",
+                                            "credentials":  {
+                                                                "httpSslAuth":  {
+                                                                                    "id":  "BjYfNk7VXU9lidP5",
+                                                                                    "name":  "SSL CARTAO C6 E3"
+                                                                                }
+                                                            },
+                                            "onError":  "continueRegularOutput"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "mode":  "runOnceForEachItem",
+                                                               "jsCode":  "// Dados do pagamento/proposta\nconst p = $(\u0027Get many rows\u0027).first().json || {};\n\n// Dados do cadastro do cliente\nconst cadCli = $(\u0027Get many cad cli\u0027).first().json || {};\n\n// Token C6 vindo do node anterior Token-E3\nconst tokenC6 = $json.access_token || $json.token || $json.accessToken || null;\n\nfunction toNumberBR(value) {\n  if (value === null || value === undefined || value === \"\") return null;\n\n  if (typeof value === \"number\") return value;\n\n  const text = String(value)\n    .trim()\n    .replace(\"R$\", \"\")\n    .replace(/\\s/g, \"\");\n\n  // Converte \"2.297,44\" para 2297.44\n  if (text.includes(\",\")) {\n    return Number(text.replace(/\\./g, \"\").replace(\",\", \".\"));\n  }\n\n  const n = Number(text);\n  return Number.isFinite(n) ? n : null;\n}\n\n// Remove acentos, caracteres estranhos e limita texto\nfunction limparTextoC6(value, limite = 40) {\n  return String(value || \"\")\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")   // remove acentos\n    .replace(/[^a-zA-Z0-9\\s]/g, \" \")  // remove pontuação/caracteres especiais\n    .replace(/\\s+/g, \" \")             // remove espaços duplicados\n    .trim()\n    .substring(0, limite)\n    .trim();\n}\n\n// Limpa texto simples, tratando \"null\" como vazio\nfunction limparTextoBasico(value) {\n  if (value === null || value === undefined) return \"\";\n\n  const text = String(value).trim();\n\n  if (\n    text === \"\" ||\n    text.toLowerCase() === \"null\" ||\n    text.toLowerCase() === \"undefined\" ||\n    text === \"-\"\n  ) {\n    return \"\";\n  }\n\n  return text;\n}\n\n// Valida e normaliza e-mail\nfunction limparEmail(value) {\n  const email = limparTextoBasico(value).toLowerCase();\n\n  if (!email) return \"\";\n\n  const regexEmail = /^[a-z0-9.!#$\u0026\u0027*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;\n\n  return regexEmail.test(email) ? email : \"\";\n}\n\n// Normaliza nome do pagador para o C6\nfunction normalizarNomePagador(value) {\n  let nome = String(value || \"\").trim();\n\n  // Se vier algo como \"19.186.093 JACKSON SAMUEL XAVIER DOS SANTOS\",\n  // remove números/documentos do começo e mantém apenas o nome.\n  nome = nome.replace(/^[\\d.\\-/\\s]+/, \"\").trim();\n\n  // Limite oficial do erro C6: payer.name máximo 40 caracteres\n  nome = limparTextoC6(nome, 40);\n\n  return nome || \"Cliente\";\n}\n\nconst valorOriginal = toNumberBR(p.valor);\n\nconst valorFinal =\n  toNumberBR(p.cartao_valor_final) ||\n  toNumberBR(p.valor_final) ||\n  toNumberBR(p.valor);\n\nconst parcelas =\n  toNumberBR(p.cartao_parcelas) ||\n  toNumberBR(p.parcelas) ||\n  1;\n\nif (!valorFinal || !parcelas) {\n  throw new Error(\n    \"Dados do parcelamento não encontrados. Debug: \" +\n    JSON.stringify({\n      node_pagamento: \"Get many rows\",\n      node_cliente: \"Get many cad cli\",\n      id: p.id,\n      id_int: p.id_int,\n      valor: p.valor,\n      cartao_valor_final: p.cartao_valor_final,\n      valor_final: p.valor_final,\n      cartao_parcelas: p.cartao_parcelas,\n      parcelas: p.parcelas,\n      campos_pagamento: Object.keys(p),\n      campos_cliente: Object.keys(cadCli)\n    })\n  );\n}\n\nconst documento = String(\n  p.documento ||\n  cadCli.documento ||\n  cadCli.cnpj ||\n  cadCli.cpf ||\n  \"\"\n).replace(/\\D/g, \"\");\n\nconst telefone = String(\n  p.whats_contato ||\n  cadCli.whats ||\n  cadCli.telefone ||\n  cadCli.celular ||\n  \"51999999999\"\n).replace(/\\D/g, \"\");\n\n// Busca de e-mail em várias possíveis colunas do cadastro.\n// Importante: inclui e_mail, que era o campo válido no teu cadastro.\nconst opcoesEmail = [\n  { campo: \"email_contato\", valor: cadCli.email_contato },\n  { campo: \"email_financeiro\", valor: cadCli.email_financeiro },\n  { campo: \"email\", valor: cadCli.email },\n  { campo: \"e_mail\", valor: cadCli.e_mail },\n  { campo: \"email_cliente\", valor: cadCli.email_cliente },\n  { campo: \"email_cobranca\", valor: cadCli.email_cobranca },\n  { campo: \"email_nfe\", valor: cadCli.email_nfe },\n];\n\nconst emailEncontrado = opcoesEmail\n  .map(item =\u003e ({\n    campo: item.campo,\n    email: limparEmail(item.valor),\n    valor_original: item.valor\n  }))\n  .find(item =\u003e item.email);\n\nconst emailFinal = emailEncontrado?.email || \"contato@ingressoideal.com.br\";\nconst emailOrigem = emailEncontrado?.campo || \"fallback\";\n\nconst externalReference = String(p.id_int || Date.now())\n  .replace(/\\D/g, \"\")\n  .slice(0, 10);\n\n// Nome bruto vindo das possíveis origens\nconst nomeBruto =\n  p.cliente ||\n  cadCli.nome ||\n  cadCli.cliente ||\n  cadCli.razao_social ||\n  \"Cliente\";\n\n// Nome final seguro para o C6\nconst nomePagadorC6 = normalizarNomePagador(nomeBruto);\n\nreturn {\n  amount: Number(valorFinal.toFixed(2)),\n  description: limparTextoC6(p.descricao || \"Cobrança via cartão\", 100),\n  external_reference_id: externalReference,\n\n  payer: {\n    name: nomePagadorC6,\n    tax_id: documento,\n    email: emailFinal,\n    phone_number: telefone\n  },\n\n  payment: {\n    card: {\n      authenticate: \"NOT_REQUIRED\",\n      capture: true,\n      fixed_installments: true,\n      installments: parcelas,\n      interest_type: \"BY_SELLER\",\n      recurrent: false,\n      save_card: true,\n      type: \"CREDIT\"\n    }\n  },\n\n  redirect_url: \"https://ai-ideal.com.br\",\n\n  controle_interno: {\n    id: p.id,\n    id_int: p.id_int,\n    id_empresa: p.id_empresa,\n    token_publico: p.token_publico,\n    valor_original: valorOriginal,\n    cartao_valor_final: valorFinal,\n    cartao_parcelas: parcelas,\n\n    nome_bruto: nomeBruto,\n    nome_enviado_c6: nomePagadorC6,\n\n    email_usado: emailFinal,\n    email_origem: emailOrigem,\n\n    emails_cliente_debug: {\n      email_contato: cadCli.email_contato,\n      email_financeiro: cadCli.email_financeiro,\n      email: cadCli.email,\n      e_mail: cadCli.e_mail,\n      email_cliente: cadCli.email_cliente,\n      email_cobranca: cadCli.email_cobranca,\n      email_nfe: cadCli.email_nfe\n    },\n\n    campos_cliente: Object.keys(cadCli)\n  },\n\n  c6_access_token: tokenC6\n};"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -8992,
+                                                             656
+                                                         ],
+                                            "id":  "efa2a41a-0e68-4714-84bd-13284df1752f",
+                                            "name":  "Normaliza Ideal C6"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "=https://baas-api.c6bank.info/v1/checkouts/",
+                                                               "provideSslCertificates":  true,
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "Authorization",
+                                                                                                               "value":  "=Bearer {{ $(\u0027Token-Ideal\u0027).item.json.access_token }}"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "Content-Type",
+                                                                                                               "value":  "application/json"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "partner-software-version",
+                                                                                                               "value":  "1.0.0"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "partner-software-name",
+                                                                                                               "value":  "Super PDV"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "sendBody":  true,
+                                                               "specifyBody":  "json",
+                                                               "jsonBody":  "={\n  \"amount\": {{ Number($json.amount).toFixed(2) }},\n  \"description\": \"{{ $json.description }}\",\n  \"external_reference_id\": \"{{ $json.external_reference_id }}\",\n  \"payer\": {\n    \"name\": \"{{ $json.payer.name }}\",\n    \"tax_id\": \"{{ $json.payer.tax_id }}\",\n    \"email\": \"{{ $json.payer.email }}\",\n    \"phone_number\": \"\"\n  },\n  \"payment\": {\n    \"card\": {\n      \"authenticate\": \"{{ $json.payment.card.authenticate }}\",\n      \"capture\": {{ $json.payment.card.capture }},\n      \"fixed_installments\": {{ $json.payment.card.fixed_installments }},\n      \"installments\": {{ Number($json.payment.card.installments) }},\n      \"interest_type\": \"{{ $json.payment.card.interest_type }}\",\n      \"recurrent\": {{ $json.payment.card.recurrent }},\n      \"save_card\": {{ $json.payment.card.save_card }},\n      \"type\": \"{{ $json.payment.card.type }}\"\n    }\n  },\n  \"redirect_url\": \"{{ $json.redirect_url }}\"\n}",
+                                                               "options":  {
+                                                                               "allowUnauthorizedCerts":  true
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.2,
+                                            "position":  [
+                                                             -8784,
+                                                             656
+                                                         ],
+                                            "id":  "561a72cb-81f4-4b39-a18f-3b42f2f6f458",
+                                            "name":  "POST CARD C6 IDEAL",
+                                            "retryOnFail":  false,
+                                            "maxTries":  2,
+                                            "executeOnce":  false,
+                                            "credentials":  {
+                                                                "httpSslAuth":  {
+                                                                                    "id":  "UKMWHQcSE8NxxZnY",
+                                                                                    "name":  "SSL IDEAL CARTAO C6"
+                                                                                }
+                                                            },
+                                            "onError":  "continueRegularOutput"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "=https://baas-api.c6bank.info/v1/checkouts/",
+                                                               "provideSslCertificates":  true,
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "Authorization",
+                                                                                                               "value":  "=Bearer {{ $(\u0027Token-E3\u0027).item.json.access_token }}"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "Content-Type",
+                                                                                                               "value":  "application/json"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "partner-software-version",
+                                                                                                               "value":  "1.0.0"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "partner-software-name",
+                                                                                                               "value":  "Super PDV"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "sendBody":  true,
+                                                               "specifyBody":  "json",
+                                                               "jsonBody":  "={\n  \"amount\": {{ Number($json.amount).toFixed(2) }},\n  \"description\": \"{{ $json.description }}\",\n  \"external_reference_id\": \"{{ $json.external_reference_id }}\",\n  \"payer\": {\n    \"name\": \"{{ $json.payer.name }}\",\n    \"tax_id\": \"{{ $json.payer.tax_id }}\",\n    \"email\": \"{{ $json.payer.email }}\",\n    \"phone_number\": \"\"\n  },\n  \"payment\": {\n    \"card\": {\n      \"authenticate\": \"{{ $json.payment.card.authenticate }}\",\n      \"capture\": {{ $json.payment.card.capture }},\n      \"fixed_installments\": {{ $json.payment.card.fixed_installments }},\n      \"installments\": {{ Number($json.payment.card.installments) }},\n      \"interest_type\": \"{{ $json.payment.card.interest_type }}\",\n      \"recurrent\": {{ $json.payment.card.recurrent }},\n      \"save_card\": {{ $json.payment.card.save_card }},\n      \"type\": \"{{ $json.payment.card.type }}\"\n    }\n  },\n  \"redirect_url\": \"{{ $json.redirect_url }}\"\n}",
+                                                               "options":  {
+                                                                               "allowUnauthorizedCerts":  true
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.2,
+                                            "position":  [
+                                                             -8768,
+                                                             880
+                                                         ],
+                                            "id":  "75e254ec-95ff-467a-b093-a5bd48ebb6cb",
+                                            "name":  "POST CARD C6 E3",
+                                            "retryOnFail":  false,
+                                            "maxTries":  2,
+                                            "executeOnce":  false,
+                                            "credentials":  {
+                                                                "httpSslAuth":  {
+                                                                                    "id":  "BjYfNk7VXU9lidP5",
+                                                                                    "name":  "SSL CARTAO C6 E3"
+                                                                                }
+                                                            },
+                                            "onError":  "continueRegularOutput"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "// ⚠️ NÃO LOGAR, NÃO PRINTAR EM OUTROS NODES\n\nconst clientId = \u002703b3ceb9-8b1e-4e01-ac81-c47253ddfa1d\u0027;\nconst clientSecret = \u0027N6fn3EYtyV5OwKAOGcgqhYGXJabn4XkG\u0027;\n\n\n// Junta no formato exigido pelo HTTP Basic\nconst raw = `${clientId}:${clientSecret}`;\n\n// Converte para Base64\nconst base64 = Buffer.from(raw).toString(\u0027base64\u0027);\n\nreturn [\n  {\n    json: {\n      basicAuth: `Basic ${base64}`\n    }\n  }\n];\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -9392,
+                                                             656
+                                                         ],
+                                            "id":  "6c942dd9-8e32-4a1f-8f98-eaff1c8f159e",
+                                            "name":  "Base64 IDEAL"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "// ⚠️ NÃO LOGAR, NÃO PRINTAR EM OUTROS NODES\n\nconst clientId = \u002763b5a60e-6726-4bfb-ace1-bdff3875e97c\u0027;\nconst clientSecret = \u0027OAx5H9TdvbbKQOa7P2XIwClZuOfKok2G\u0027;\n\n\n// Junta no formato exigido pelo HTTP Basic\nconst raw = `${clientId}:${clientSecret}`;\n\n// Converte para Base64\nconst base64 = Buffer.from(raw).toString(\u0027base64\u0027);\n\nreturn [\n  {\n    json: {\n      basicAuth: `Basic ${base64}`\n    }\n  }\n];\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -9392,
+                                                             880
+                                                         ],
+                                            "id":  "7cc1d55c-4383-40b8-89f4-adeecc8502df",
+                                            "name":  "Base64 E3"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "getAll",
+                                                               "tableId":  "clientes",
+                                                               "limit":  1,
+                                                               "filters":  {
+                                                                               "conditions":  [
+                                                                                                  {
+                                                                                                      "keyName":  "id_cliente",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $json.id_cliente }}"
+                                                                                                  }
+                                                                                              ]
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.supabase",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -9600,
+                                                             656
+                                                         ],
+                                            "id":  "cbf633e6-225d-4186-97da-5d65f3a5aff1",
+                                            "name":  "Get many cad cli",
+                                            "credentials":  {
+                                                                "supabaseApi":  {
+                                                                                    "id":  "yrDV1LiXwC3cq29e",
+                                                                                    "name":  "Supabase e-deal"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "getAll",
+                                                               "tableId":  "clientes",
+                                                               "limit":  1,
+                                                               "filters":  {
+                                                                               "conditions":  [
+                                                                                                  {
+                                                                                                      "keyName":  "id_cliente",
+                                                                                                      "condition":  "eq",
+                                                                                                      "keyValue":  "={{ $json.id_cliente }}"
+                                                                                                  }
+                                                                                              ]
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.supabase",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -9600,
+                                                             880
+                                                         ],
+                                            "id":  "f99e40ec-00cb-41ea-a427-ef6f70c87745",
+                                            "name":  "Get many cad cli1",
+                                            "credentials":  {
+                                                                "supabaseApi":  {
+                                                                                    "id":  "yrDV1LiXwC3cq29e",
+                                                                                    "name":  "Supabase e-deal"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "mode":  "runOnceForEachItem",
+                                                               "jsCode":  "// Dados do pagamento/proposta\nconst p = $(\u0027Get many rows1\u0027).first().json || {};\n\n// Dados do cadastro do cliente\nconst cadCli = $(\u0027Get many cad cli1\u0027).first().json || {};\n\n// Token C6 vindo do node anterior Token-E3\nconst tokenC6 = $json.access_token || $json.token || $json.accessToken || null;\n\nfunction toNumberBR(value) {\n  if (value === null || value === undefined || value === \"\") return null;\n\n  if (typeof value === \"number\") return value;\n\n  const text = String(value)\n    .trim()\n    .replace(\"R$\", \"\")\n    .replace(/\\s/g, \"\");\n\n  // Converte \"2.297,44\" para 2297.44\n  if (text.includes(\",\")) {\n    return Number(text.replace(/\\./g, \"\").replace(\",\", \".\"));\n  }\n\n  const n = Number(text);\n  return Number.isFinite(n) ? n : null;\n}\n\n// Remove acentos, caracteres estranhos e limita texto\nfunction limparTextoC6(value, limite = 40) {\n  return String(value || \"\")\n    .normalize(\"NFD\")\n    .replace(/[\\u0300-\\u036f]/g, \"\")   // remove acentos\n    .replace(/[^a-zA-Z0-9\\s]/g, \" \")  // remove pontuação/caracteres especiais\n    .replace(/\\s+/g, \" \")             // remove espaços duplicados\n    .trim()\n    .substring(0, limite)\n    .trim();\n}\n\n// Limpa texto simples, tratando \"null\" como vazio\nfunction limparTextoBasico(value) {\n  if (value === null || value === undefined) return \"\";\n\n  const text = String(value).trim();\n\n  if (\n    text === \"\" ||\n    text.toLowerCase() === \"null\" ||\n    text.toLowerCase() === \"undefined\" ||\n    text === \"-\"\n  ) {\n    return \"\";\n  }\n\n  return text;\n}\n\n// Valida e normaliza e-mail\nfunction limparEmail(value) {\n  const email = limparTextoBasico(value).toLowerCase();\n\n  if (!email) return \"\";\n\n  const regexEmail = /^[a-z0-9.!#$\u0026\u0027*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;\n\n  return regexEmail.test(email) ? email : \"\";\n}\n\n// Normaliza nome do pagador para o C6\nfunction normalizarNomePagador(value) {\n  let nome = String(value || \"\").trim();\n\n  // Se vier algo como \"19.186.093 JACKSON SAMUEL XAVIER DOS SANTOS\",\n  // remove números/documentos do começo e mantém apenas o nome.\n  nome = nome.replace(/^[\\d.\\-/\\s]+/, \"\").trim();\n\n  // Limite oficial do erro C6: payer.name máximo 40 caracteres\n  nome = limparTextoC6(nome, 40);\n\n  return nome || \"Cliente\";\n}\n\nconst valorOriginal = toNumberBR(p.valor);\n\nconst valorFinal =\n  toNumberBR(p.cartao_valor_final) ||\n  toNumberBR(p.valor_final) ||\n  toNumberBR(p.valor);\n\nconst parcelas =\n  toNumberBR(p.cartao_parcelas) ||\n  toNumberBR(p.parcelas) ||\n  1;\n\nif (!valorFinal || !parcelas) {\n  throw new Error(\n    \"Dados do parcelamento não encontrados. Debug: \" +\n    JSON.stringify({\n      node_pagamento: \"Get many rows1\",\n      node_cliente: \"Get many cad cli1\",\n      id: p.id,\n      id_int: p.id_int,\n      valor: p.valor,\n      cartao_valor_final: p.cartao_valor_final,\n      valor_final: p.valor_final,\n      cartao_parcelas: p.cartao_parcelas,\n      parcelas: p.parcelas,\n      campos_pagamento: Object.keys(p),\n      campos_cliente: Object.keys(cadCli)\n    })\n  );\n}\n\nconst documento = String(\n  p.documento ||\n  cadCli.documento ||\n  cadCli.cnpj ||\n  cadCli.cpf ||\n  \"\"\n).replace(/\\D/g, \"\");\n\nconst telefone = String(\n  p.whats_contato ||\n  cadCli.whats ||\n  cadCli.telefone ||\n  cadCli.celular ||\n  \"51999999999\"\n).replace(/\\D/g, \"\");\n\n// Busca de e-mail em várias possíveis colunas do cadastro.\n// Importante: inclui e_mail, que era o campo válido no teu cadastro.\nconst opcoesEmail = [\n  { campo: \"email_contato\", valor: cadCli.email_contato },\n  { campo: \"email_financeiro\", valor: cadCli.email_financeiro },\n  { campo: \"email\", valor: cadCli.email },\n  { campo: \"e_mail\", valor: cadCli.e_mail },\n  { campo: \"email_cliente\", valor: cadCli.email_cliente },\n  { campo: \"email_cobranca\", valor: cadCli.email_cobranca },\n  { campo: \"email_nfe\", valor: cadCli.email_nfe },\n];\n\nconst emailEncontrado = opcoesEmail\n  .map(item =\u003e ({\n    campo: item.campo,\n    email: limparEmail(item.valor),\n    valor_original: item.valor\n  }))\n  .find(item =\u003e item.email);\n\nconst emailFinal = emailEncontrado?.email || \"contato@ingressoideal.com.br\";\nconst emailOrigem = emailEncontrado?.campo || \"fallback\";\n\nconst externalReference = String(p.id_int || Date.now())\n  .replace(/\\D/g, \"\")\n  .slice(0, 10);\n\n// Nome bruto vindo das possíveis origens\nconst nomeBruto =\n  p.cliente ||\n  cadCli.nome ||\n  cadCli.cliente ||\n  cadCli.razao_social ||\n  \"Cliente\";\n\n// Nome final seguro para o C6\nconst nomePagadorC6 = normalizarNomePagador(nomeBruto);\n\nreturn {\n  amount: Number(valorFinal.toFixed(2)),\n  description: limparTextoC6(p.descricao || \"Cobrança via cartão\", 100),\n  external_reference_id: externalReference,\n\n  payer: {\n    name: nomePagadorC6,\n    tax_id: documento,\n    email: emailFinal,\n    phone_number: telefone\n  },\n\n  payment: {\n    card: {\n      authenticate: \"NOT_REQUIRED\",\n      capture: true,\n      fixed_installments: true,\n      installments: parcelas,\n      interest_type: \"BY_SELLER\",\n      recurrent: false,\n      save_card: true,\n      type: \"CREDIT\"\n    }\n  },\n\n  redirect_url: \"https://ai-ideal.com.br\",\n\n  controle_interno: {\n    id: p.id,\n    id_int: p.id_int,\n    id_empresa: p.id_empresa,\n    token_publico: p.token_publico,\n    valor_original: valorOriginal,\n    cartao_valor_final: valorFinal,\n    cartao_parcelas: parcelas,\n\n    nome_bruto: nomeBruto,\n    nome_enviado_c6: nomePagadorC6,\n\n    email_usado: emailFinal,\n    email_origem: emailOrigem,\n\n    emails_cliente_debug: {\n      email_contato: cadCli.email_contato,\n      email_financeiro: cadCli.email_financeiro,\n      email: cadCli.email,\n      e_mail: cadCli.e_mail,\n      email_cliente: cadCli.email_cliente,\n      email_cobranca: cadCli.email_cobranca,\n      email_nfe: cadCli.email_nfe\n    },\n\n    campos_cliente: Object.keys(cadCli)\n  },\n\n  c6_access_token: tokenC6\n};"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -8992,
+                                                             880
+                                                         ],
+                                            "id":  "ee2a6870-87df-4e46-8f55-bed982fe7cda",
+                                            "name":  "Normaliza Ideal C"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Get many rows":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Get many cad cli",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                },
+                                              "Respond to Webhook":  {
+                                                                         "main":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "Update a row",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                     },
+                                              "Webhook-IDEAL":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Get many rows",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                },
+                                              "Get many rows1":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "Get many cad cli1",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                                              "Respond to Webhook1":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Update a row1",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                                              "Webhook-E3":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Get many rows1",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                                              "Token-Ideal":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "Normaliza Ideal C6",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              },
+                                              "Token-E3":  {
+                                                               "main":  [
+                                                                            [
+                                                                                {
+                                                                                    "node":  "Normaliza Ideal C",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ]
+                                                                        ]
+                                                           },
+                                              "Normaliza Ideal C6":  {
+                                                                         "main":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "POST CARD C6 IDEAL",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                     },
+                                              "POST CARD C6 IDEAL":  {
+                                                                         "main":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "Respond to Webhook",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                     },
+                                              "POST CARD C6 E3":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Respond to Webhook1",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                                              "Base64 IDEAL":  {
+                                                                   "main":  [
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "Token-Ideal",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ]
+                                                                            ]
+                                                               },
+                                              "Base64 E3":  {
+                                                                "main":  [
+                                                                             [
+                                                                                 {
+                                                                                     "node":  "Token-E3",
+                                                                                     "type":  "main",
+                                                                                     "index":  0
+                                                                                 }
+                                                                             ]
+                                                                         ]
+                                                            },
+                                              "Get many cad cli":  {
+                                                                       "main":  [
+                                                                                    [
+                                                                                        {
+                                                                                            "node":  "Base64 IDEAL",
+                                                                                            "type":  "main",
+                                                                                            "index":  0
+                                                                                        }
+                                                                                    ]
+                                                                                ]
+                                                                   },
+                                              "Normaliza Ideal C":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "POST CARD C6 E3",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    },
+                                              "Get many cad cli1":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "Base64 E3",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    }
+                                          },
+                          "authors":  "Everton Farias",
+                          "name":  null,
+                          "description":  null
+                      }
+}

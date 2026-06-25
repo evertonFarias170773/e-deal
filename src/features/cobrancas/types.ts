@@ -72,6 +72,7 @@ export type PropostaCobrancaSnapshot = {
 export type Cobranca = {
   id: string;
   id_pagamento: string;
+  cod_solicitacao_inter?: string;
   os_ideal: string;
   id_int: number;
   id_cliente: number;

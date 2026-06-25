@@ -23,6 +23,7 @@ type CobrancasContextValue = {
   confirmPagamento: (id: string) => void;
   cancelCobranca: (id: string, motivo: string) => Promise<{ success: boolean; errorMessage?: string }>;
   deleteCobranca: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
+  
   liberarParaPedido: (idInt: number) => boolean;
   refreshCobrancas: () => Promise<CobrancasReadResult>;
   getCobrancaById: (id: string) => Cobranca | undefined;
@@ -315,7 +316,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         .from("pagamentos_v2")
         .insert([payloadInicial])
         .select()
-        .returns<Array<{ id: string }>>();
+        .returns<Array<{ id: string; id_pagamento?: string }>>();
 
       if (insertError || !createdRows || !createdRows.length) {
         throw new Error(insertError?.message || "Erro ao criar cobranca inicial no Supabase.");
@@ -357,30 +358,34 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         }
 
         const webhookPayload = {
-          boleto_id: cobrancaId,
-          ext_reference: extReference,
-          id_empresa: idEmpresa,
-          id_cliente: proposta.cliente.idCliente,
-          id_int: proposta.id_int,
-          n_nf: "",
-          parcela: 1,
-          total_parcelas: 1,
-          valor: roundMoney(values.valor),
-          vencimento: due_date,
-          nome_cliente: proposta.cliente.nome,
+          external_reference_id: String(proposta.id_int),
+          valor_total: roundMoney(values.valor),
+          name: proposta.cliente.nome,
+          id_pagamento: createdRow.id_pagamento || String(proposta.id_int),
           documento: proposta.cliente.documento,
           email: proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "",
-          endereco: {
-            logradouro: proposta.enderecoEntrega?.endereco || "",
-            numero: proposta.enderecoEntrega?.numero || "S/N",
-            complemento: proposta.enderecoEntrega?.complemento || "",
-            bairro: proposta.enderecoEntrega?.bairro || "Centro",
-            cidade: proposta.enderecoEntrega?.cidade || "",
-            uf: proposta.enderecoEntrega?.uf || "",
-            cep: proposta.enderecoEntrega?.cep || ""
-          },
-          multa_percentual: 0,
-          juros_dia_percentual: 0
+          logradouro: proposta.enderecoEntrega?.endereco || "",
+          numero: proposta.enderecoEntrega?.numero || "S/N",
+          complemento: proposta.enderecoEntrega?.complemento || "",
+          cidade: proposta.enderecoEntrega?.cidade || "",
+          UF: proposta.enderecoEntrega?.uf || "",
+          zip_code: proposta.enderecoEntrega?.cep || "",
+          qtd_parcelas: 1,
+          intervalo: 0,
+          inicia_em: 0,
+          multa: 0,
+          juros: 0,
+          descricao: "O Pedido entrará em produção após a confirmação do pagamento.",
+          id_cliente: proposta.cliente.idCliente,
+          nf: "",
+          status: "A_RECEBER",
+          "e-faturado": false,
+          contato: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+          whats: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+          enviar_whats: false,
+          avulso: false,
+          empresa: String(idEmpresa),
+          is_prorrogado: false
         };
 
         response = await fetch("/api/cobrancas/gerar-boleto", {
@@ -748,6 +753,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       return { success: true };
     }
   }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
+
 
   const liberarParaPedido = useCallback((idInt: number) => {
     if (source === "supabase") {

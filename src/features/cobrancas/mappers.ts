@@ -284,6 +284,7 @@ export function mapSupabasePagamentoV2RowToCobranca(row: SupabasePagamentoV2Row)
     confirmado_por: toText(row.confirmado_por) || toText(row.aprovado_por) || undefined,
     data_confirmacao: dataConfirmacao,
     id_empresa: toNumber(row.id_empresa, 0),
+    cod_solicitacao_inter: toText(row.cod_solicitacao_inter) || undefined,
     token_publico: tokenPublico || undefined,
     url_cobranca: resolveUrlPublica(row, tokenPublico) || undefined,
     pix_copia_cola: toText(row.pix_copia_cola) || undefined,
