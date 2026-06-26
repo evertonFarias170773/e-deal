@@ -166,7 +166,7 @@ export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPagePr
 }
 
 function OrcamentoFormLoader({ idInt }: { idInt: number }) {
-  const { proposta, loading, error } = useOrcamentoDetail(idInt);
+  const { proposta, loading, error, reload } = useOrcamentoDetail(idInt);
 
   if (loading) {
     return (
@@ -196,10 +196,10 @@ function OrcamentoFormLoader({ idInt }: { idInt: number }) {
     );
   }
 
-  return <OrcamentoFormInner mode="edit" proposta={proposta} />;
+  return <OrcamentoFormInner mode="edit" proposta={proposta} onReload={reload} />;
 }
 
-function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta?: Proposta }) {
+function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"; proposta?: Proposta; onReload?: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useAppToast();
@@ -3092,6 +3092,7 @@ function OrcamentoFormInner({ mode, proposta }: { mode: "new" | "edit"; proposta
                     <PropostaCobrancaPanel 
                       proposta={proposta} 
                       onSavePropostaRequest={handleSaveForCobranca}
+                      onRefreshProposta={onReload}
                     />
                   )}
                 </div>

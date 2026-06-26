@@ -10,6 +10,7 @@ import { Field, PanelCard, inputClass, InfoBox } from "@/features/cobrancas/form
 import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { CobrancaDetail } from "@/features/cobrancas/CobrancaDetail";
+import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getLiberacaoPedidoLabel,
@@ -671,7 +672,7 @@ export function PropostaCobrancaPanel({
     { id: "E-FATURADO", label: "Faturado", icon: Landmark }
   ];
 
-  const hasCobrancas = cobrancasDaProposta.length > 0;
+  const hasCobrancas = cobrancasAtivas.length > 0;
 
   if (onlyModal) {
     return (
@@ -993,6 +994,7 @@ export function PropostaCobrancaPanel({
       <CobrancaDetail 
         cobrancaId={selectedCobrancaId} 
         onClose={() => setSelectedCobrancaId(null)} 
+        onRefreshProposta={onRefreshProposta}
       />
     );
   }
@@ -1084,7 +1086,7 @@ export function PropostaCobrancaPanel({
 
             <div className="mt-5">
               <CobrancasDaPropostaList 
-                cobrancas={cobrancasDaProposta} 
+                cobrancas={cobrancasAtivas} 
                 onSelectCobranca={setSelectedCobrancaId}
                 onRefreshProposta={onRefreshProposta}
               />
@@ -1404,48 +1406,7 @@ export function PropostaCobrancaPanel({
 
 function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshProposta }: { cobrancas: Cobranca[], onSelectCobranca: (id: string) => void, onRefreshProposta?: () => void }) {
   const { showToast } = useAppToast();
-  const { deleteCobranca, cancelarExterno } = useCobrancas();
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
-  const [isDeletando, setIsDeletando] = useState(false);
-
-    const handleConfirmarExclusao = async () => {
-    if (!cobrancaParaExcluir) return;
-    setIsDeletando(true);
-    try {
-      const tipoNormalized = cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
-      const isBoleto = tipoNormalized === "BOLETO";
-      const isCardParcelado = tipoNormalized === "CARD-PARCELADO";
-      const isExternoCancelable = (isBoleto && !!cobrancaParaExcluir.cod_solicitacao_inter) || isCardParcelado;
-
-      let result;
-      if (isExternoCancelable && cancelarExterno) {
-        result = await cancelarExterno(cobrancaParaExcluir, "DELETE");
-      } else {
-        result = await deleteCobranca(cobrancaParaExcluir.id);
-      }
-
-      if (result.success) {
-        showToast({ 
-          type: "success", 
-          title: isExternoCancelable 
-            ? "Cobrança cancelada com sucesso na integração." 
-            : "Cobrança excluída com sucesso." 
-        });
-        setCobrancaParaExcluir(null);
-        onRefreshProposta?.();
-      } else {
-        showToast({ 
-          type: "error", 
-          title: isExternoCancelable ? "Não foi possível cancelar externamente." : "Erro ao excluir", 
-          description: isExternoCancelable ? (result.errorMessage || "Tente novamente ou chame o financeiro.") : result.errorMessage 
-        });
-      }
-    } catch (err) {
-      showToast({ type: "error", title: "Erro inesperado na operação." });
-    } finally {
-      setIsDeletando(false);
-    }
-  };
 
   const handleAbrirCheckout = async (url: string) => {
     if (!url) return;
@@ -1628,7 +1589,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
 
                 <button
                   type="button"
-                  disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || isDeletando}
+                  disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER"}
                   onClick={() => setCobrancaParaExcluir(cobranca)}
                   title={
                     cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
@@ -1691,7 +1652,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
                   <button
                     type="button"
-                    disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || isDeletando}
+                    disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER"}
                     onClick={() => setCobrancaParaExcluir(cobranca)}
                     title={
                       cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
@@ -1807,40 +1768,15 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
       })}
 
       {cobrancaParaExcluir ? (
-        <div className="fixed inset-0 z-[80] bg-slate-950/60 p-4 flex items-center justify-center animate-fade-in" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5">
-            <div className="space-y-2">
-              <h3 className="text-lg font-semibold text-slate-950">
-                  {cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-") === "BOLETO" && cobrancaParaExcluir.cod_solicitacao_inter ? "Cancelar Boleto Bancário" : "Excluir cobrança"}
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  {cobrancaParaExcluir.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-") === "BOLETO" && cobrancaParaExcluir.cod_solicitacao_inter ? "Deseja cancelar este boleto? Esta ação comunicará o banco e removerá o boleto do sistema." : "Deseja excluir esta cobrança? Esta ação remove a cobrança e não altera o status para CANCELADO."}
-                </p>
-              <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
-                <p><strong>ID:</strong> {cobrancaParaExcluir.id_pagamento}</p>
-                <p><strong>Tipo:</strong> {getCobrancaTipoLabel(cobrancaParaExcluir.tipo_cobranca)}</p>
-                <p><strong>Valor:</strong> {formatCurrency(getValorCobranca(cobrancaParaExcluir))}</p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end mt-4">
-              <button
-                type="button"
-                onClick={() => setCobrancaParaExcluir(null)}
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmarExclusao}
-                disabled={isDeletando}
-                className="rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isDeletando ? "Excluindo..." : "Confirmar exclusão"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CancelCobrancaModal
+          isOpen={true}
+          onClose={() => setCobrancaParaExcluir(null)}
+          cobrancaId={cobrancaParaExcluir.id}
+          onSuccess={() => {
+            setCobrancaParaExcluir(null);
+            onRefreshProposta?.();
+          }}
+        />
       ) : null}
     </div>
   );

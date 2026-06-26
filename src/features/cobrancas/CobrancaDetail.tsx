@@ -20,9 +20,10 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import type { Cobranca } from "@/features/cobrancas/types";
 
-type CobrancaDetailProps = {
+export interface CobrancaDetailProps {
   cobrancaId: string;
   onClose?: () => void;
+  onRefreshProposta?: () => void;
 };
 
 function getValorCobranca(cobranca: Cobranca) {
@@ -54,7 +55,7 @@ function renderShortUrl(url: string | undefined, token: string | undefined) {
   }
 }
 
-export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
+export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: CobrancaDetailProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { getCobrancaById, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
@@ -393,6 +394,10 @@ export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
         isOpen={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}
         cobrancaId={cobrancaAtual.id}
+        onSuccess={() => {
+          onClose?.();
+          onRefreshProposta?.();
+        }}
       />
     </div>
   );

@@ -152,7 +152,41 @@ export async function POST(request: Request) {
       } else {
         console.log("[cancelar-externo][CARD-PARCELADO] Sem cod_solicitacao_inter. Ignorando webhook externo e prosseguindo para exclusao local (fluxo PIX).");
       }
-    } else if (tipoNormalized === "PIX" || tipoNormalized === "CREDIT-CARD") {
+    } else if (tipoNormalized === "PIX") {
+      const codValidadorFinal = cod_c6 || pagamento.cod_solicitacao_inter;
+      
+      if (!codValidadorFinal) {
+        return NextResponse.json(
+          { success: false, message: "Para PIX, código de validação não foi encontrado." },
+          { status: 400 }
+        );
+      }
+
+      const idEmpresaFinal = id_empresa || pagamento.id_empresa;
+
+      const webhookUrl = "https://10074.hostoo.net.br/webhook/del-pix-vibe";
+      console.log("[cancelar-externo][PIX] chamando n8n", { cod_validador: codValidadorFinal, id_empresa: idEmpresaFinal });
+      
+      const webhookResponse = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cod_validador: codValidadorFinal, id_empresa: String(idEmpresaFinal) })
+      });
+
+      const responseStatus = webhookResponse.status;
+      const responseBody = await webhookResponse.text();
+
+      console.log("[cancelar-externo][PIX] status n8n", responseStatus);
+      console.log("[cancelar-externo][PIX] body n8n", responseBody);
+
+      if (!webhookResponse.ok) {
+        console.error("[API][CancelarExterno] Erro HTTP no n8n:", responseStatus, responseBody);
+        return NextResponse.json(
+          { success: false, message: "A API externa recusou o cancelamento do PIX." },
+          { status: responseStatus }
+        );
+      }
+    } else if (tipoNormalized === "CREDIT-CARD") {
       return NextResponse.json(
         { success: false, message: "Cancelamento externo ainda não implementado para este tipo de cobrança." },
         { status: 501 }
@@ -211,7 +245,7 @@ export async function POST(request: Request) {
         if (!countError && count === 0) {
           const { error: updatePropError } = await supabase
             .from("propostas")
-            .update({ status_interno: "NOVO" })
+            .update({ status_interno: "NOVO", tipo_cobranca: null })
             .eq("id_int", pagamento.id_int)
             .neq("status_interno", "APROVADO");
           
@@ -256,7 +290,7 @@ export async function POST(request: Request) {
         if (!countError && count === 0) {
           const { error: updatePropError } = await supabase
             .from("propostas")
-            .update({ status_interno: "NOVO" })
+            .update({ status_interno: "NOVO", tipo_cobranca: null })
             .eq("id_int", pagamento.id_int)
             .neq("status_interno", "APROVADO");
           

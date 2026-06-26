@@ -699,10 +699,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       const tipoNormalized = cob.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
-      const isExternoCancelable = (tipoNormalized === "BOLETO" && !!cob.cod_solicitacao_inter) || tipoNormalized === "CARD-PARCELADO";
+      const isExternoCancelable = ((tipoNormalized === "BOLETO" || tipoNormalized === "PIX") && !!cob.cod_solicitacao_inter) || tipoNormalized === "CARD-PARCELADO";
 
       if (isExternoCancelable) {
-        const extResult = await cancelarExterno(cob, "CANCEL", motivo);
+        const acao = tipoNormalized === "PIX" ? "DELETE" : "CANCEL";
+        const extResult = await cancelarExterno(cob, acao, motivo);
         if (!extResult.success) {
           return extResult;
         }
