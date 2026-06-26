@@ -377,7 +377,9 @@ export function CobrancaDetail({ cobrancaId, onClose }: CobrancaDetailProps) {
                 <button
                   type="button"
                   onClick={() => setIsCancelModalOpen(true)}
-                  className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center"
+                  disabled={cobrancaAtual.status === "PAID" || cobrancaAtual.status === "A_VENCER"}
+                  title={(cobrancaAtual.status === "PAID" || cobrancaAtual.status === "A_VENCER") ? "Cobranças pagas ou a vencer não podem ser canceladas/excluídas." : undefined}
+                  className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-50"
                 >
                   Cancelar cobrança
                 </button>

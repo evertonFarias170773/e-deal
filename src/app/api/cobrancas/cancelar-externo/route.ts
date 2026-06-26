@@ -44,9 +44,9 @@ export async function POST(request: Request) {
 
     // 2. Bloqueios universais de regra de negócio
     const statusNormalized = String(pagamento.status || "").trim().toUpperCase();
-    if (statusNormalized === "PAID" || pagamento.confirmado === true) {
+    if (statusNormalized === "PAID" || statusNormalized === "A_VENCER" || pagamento.confirmado === true) {
       return NextResponse.json(
-        { success: false, message: "Não é permitido cancelar/excluir cobrança paga ou confirmada." },
+        { success: false, message: "Não é permitido cancelar/excluir cobrança paga ou a vencer." },
         { status: 403 }
       );
     }

@@ -95,6 +95,7 @@ export function PropostaCobrancaPanel({
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [selectedCobrancaId, setSelectedCobrancaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUserEditingValor, setIsUserEditingValor] = useState(false);
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
   const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
@@ -110,10 +111,13 @@ export function PropostaCobrancaPanel({
   const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
 
   /** Retorna data futura no formato YYYY-MM-DD (padrão: 30 dias à frente). */
-  function getDefaultVencimento(daysAhead = 30): string {
+  function getDefaultVencimento(daysAhead = 3): string {
     const d = new Date();
     d.setDate(d.getDate() + daysAhead);
-    return d.toISOString().slice(0, 10);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   function buildInitialFormState(): CriarCobrancaFormValues {
@@ -139,6 +143,12 @@ export function PropostaCobrancaPanel({
   }
 
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
+
+  useEffect(() => {
+    if (!isUserEditingValor) {
+      setForm((current) => ({ ...current, valor: roundMoney(saldoRestante) }));
+    }
+  }, [saldoRestante, isUserEditingValor]);
 
   const isFaturado = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca);
   const idEmpresaReal = form.id_empresa ?? (source === "supabase" ? getEmpresaIdByNome(proposta.empresa) : 1);
@@ -396,6 +406,7 @@ export function PropostaCobrancaPanel({
     }
 
     // Reset do formulário apenas ao abrir o modal para evitar sobrescrever edição em andamento.
+    setIsUserEditingValor(false);
     setForm(buildInitialFormState());
 
     if (!isControlled) {
@@ -546,11 +557,6 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (form.tipoCobranca === "BOLETO" && !form.vencimento) {
-      showToast({ type: "error", title: "Informe a data de vencimento para continuar." });
-      return;
-    }
-
     if (isFaturado && !modeloSelecionadoId) {
       showToast({ type: "error", title: "Selecione uma condição de pagamento." });
       return;
@@ -566,7 +572,7 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    let payloadVencimento = form.vencimento;
+    let payloadVencimento = getDefaultVencimento(3);
     let extraPayload: Partial<CriarCobrancaFormValues> = {};
 
     if (isFaturado) {
@@ -733,9 +739,12 @@ export function PropostaCobrancaPanel({
                 <Field label="OS Ideal *">
                   <input
                     value={form.osIdeal}
-                    onChange={(event) => patchForm({ osIdeal: event.target.value })}
+                    onChange={(event) => {
+                      const onlyNumbers = event.target.value.replace(/\D/g, "");
+                      patchForm({ osIdeal: onlyNumbers });
+                    }}
                     className={inputClass}
-                    placeholder="Ex.: OS-IDEAL-2101"
+                    placeholder="Ex.: 2101"
                   />
                 </Field>
                 <Field label="Valor da cobrança *">
@@ -744,7 +753,10 @@ export function PropostaCobrancaPanel({
                     min={0}
                     step="0.01"
                     value={form.valor}
-                    onChange={(event) => patchForm({ valor: Number(event.target.value) || 0 })}
+                    onChange={(event) => {
+                      setIsUserEditingValor(true);
+                      patchForm({ valor: Number(event.target.value) || 0 });
+                    }}
                     className={inputClass}
                   />
                   {saldoRestante < totalPropostaRounded && (
@@ -767,10 +779,6 @@ export function PropostaCobrancaPanel({
                         </option>
                       ))}
                     </select>
-                  </Field>
-                ) : form.tipoCobranca === "BOLETO" ? (
-                  <Field label="Data de vencimento *">
-                    <input type="date" value={form.vencimento} onChange={(event) => patchForm({ vencimento: event.target.value })} className={inputClass} />
                   </Field>
                 ) : null}
                 <div className="md:col-span-2">
@@ -815,7 +823,12 @@ export function PropostaCobrancaPanel({
                       key={opcao.id}
                       type="button"
                       disabled={isActuallyDisabled}
-                      onClick={() => handleTipoChange(opcao.id)}
+                      onClick={() => {
+                        handleTipoChange(opcao.id);
+                        if (!isUserEditingValor) {
+                          patchForm({ valor: saldoRestante });
+                        }
+                      }}
                       className={`rounded-2xl border px-3 py-2 text-left transition ${
                         selected
                           ? "border-[#0f9f9a] bg-[#dff8f6]"
@@ -1005,8 +1018,8 @@ export function PropostaCobrancaPanel({
                     setIsSaving(false);
                     if (!saved) return;
                   }
-                  if (isControlled && onOpenModal) onOpenModal();
-                  else setInternalModalOpen(true);
+                  openModal();
+                  patchForm({ valor: saldoRestante });
                 }}
                 disabled={isSaving}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
@@ -1053,8 +1066,8 @@ export function PropostaCobrancaPanel({
                           setIsSaving(false);
                           if (!saved) return;
                         }
-                        if (isControlled && onOpenModal) onOpenModal();
-                        else setInternalModalOpen(true);
+                        openModal();
+                        patchForm({ valor: saldoRestante });
                       }}
                       disabled={isSaving}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
@@ -1143,9 +1156,12 @@ export function PropostaCobrancaPanel({
                   <Field label="OS Ideal *">
                     <input
                       value={form.osIdeal}
-                      onChange={(event) => patchForm({ osIdeal: event.target.value })}
+                      onChange={(event) => {
+                        const onlyNumbers = event.target.value.replace(/\D/g, "");
+                        patchForm({ osIdeal: onlyNumbers });
+                      }}
                       className={inputClass}
-                      placeholder="Ex.: OS-IDEAL-2101"
+                      placeholder="Ex.: 2101"
                     />
                   </Field>
                   <Field label="Valor da cobrança *">
@@ -1154,7 +1170,10 @@ export function PropostaCobrancaPanel({
                       min={0}
                       step="0.01"
                       value={form.valor}
-                      onChange={(event) => patchForm({ valor: Number(event.target.value) || 0 })}
+                      onChange={(event) => {
+                        setIsUserEditingValor(true);
+                        patchForm({ valor: Number(event.target.value) || 0 });
+                      }}
                       className={inputClass}
                     />
                     {saldoRestante < totalPropostaRounded && (
@@ -1177,10 +1196,6 @@ export function PropostaCobrancaPanel({
                           </option>
                         ))}
                       </select>
-                    </Field>
-                  ) : form.tipoCobranca === "BOLETO" ? (
-                    <Field label="Data de vencimento *">
-                      <input type="date" value={form.vencimento} onChange={(event) => patchForm({ vencimento: event.target.value })} className={inputClass} />
                     </Field>
                   ) : null}
                   <div className="md:col-span-2">

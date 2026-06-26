@@ -678,6 +678,26 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: "Cliente Supabase não inicializado." };
       }
 
+      // Revalidar status atual no Supabase para impedir cancelamento indevido
+      const { data: dbRow, error: fetchError } = await client
+        .from("pagamentos_v2")
+        .select("status")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (fetchError || !dbRow) {
+        console.error("[cancelCobranca] Erro ao buscar status atual da cobrança:", fetchError);
+        return {
+          success: false,
+          errorMessage: fetchError?.message || "Não foi possível verificar o status atual da cobrança no banco."
+        };
+      }
+
+      const dbStatusNorm = String(dbRow.status || "").trim().toUpperCase();
+      if (dbStatusNorm === "PAID" || dbStatusNorm === "A_VENCER") {
+        return { success: false, errorMessage: "Não é permitido cancelar cobrança paga ou com faturamento aprovado (A_VENCER)." };
+      }
+
       const tipoNormalized = cob.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
       const isExternoCancelable = (tipoNormalized === "BOLETO" && !!cob.cod_solicitacao_inter) || tipoNormalized === "CARD-PARCELADO";
 

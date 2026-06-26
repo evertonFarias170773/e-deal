@@ -220,7 +220,8 @@ export function OrcamentosListPageReal() {
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
   const [vendedor, setVendedor] = useState("TODOS");
-  const [filterAvulso, setFilterAvulso] = useState<"TODOS" | "PEDIDOS" | "ORCAMENTOS">("ORCAMENTOS");
+  const [filterTipoCobranca, setFilterTipoCobranca] = useState("TODOS");
+  const [filterAvulso, setFilterAvulso] = useState<"TODOS" | "PEDIDOS" | "ORCAMENTOS">("TODOS");
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
   const { openChat } = useGlobalChat();
@@ -309,13 +310,25 @@ export function OrcamentosListPageReal() {
       if (filterAvulso === "PEDIDOS") matchesAvulso = !item.isAvulsoRaw;
       if (filterAvulso === "ORCAMENTOS") matchesAvulso = !!item.isAvulsoRaw;
 
-      return matchesSearch && matchesStatus && matchesModelo && matchesVendedor && matchesPeriodo && matchesAvulso;
+      let matchesTipoCobranca = true;
+      if (filterTipoCobranca !== "TODOS") {
+        const hasCartao = filterTipoCobranca === "CARTAO";
+        matchesTipoCobranca = item.tiposCobranca.some(t => {
+          const upper = t.trim().toUpperCase();
+          if (hasCartao) {
+            return upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO");
+          }
+          return upper === filterTipoCobranca;
+        });
+      }
+
+      return matchesSearch && matchesStatus && matchesModelo && matchesVendedor && matchesPeriodo && matchesAvulso && matchesTipoCobranca;
     }).sort((a, b) => {
       const dateA = new Date(a.updatedAt || a.createdAt).getTime();
       const dateB = new Date(b.updatedAt || b.createdAt).getTime();
       return dateB - dateA;
     });
-  }, [modelo, periodo, propostas, search, status, vendedor, filterAvulso]);
+  }, [modelo, periodo, propostas, search, status, vendedor, filterAvulso, filterTipoCobranca]);
 
   // Identify visible/rendered proposal IDs (up to 100) to batch query summaries
   const visibleIdInts = useMemo(() => {
@@ -600,11 +613,20 @@ export function OrcamentosListPageReal() {
       : "Ver chat interno";
 
     return [
-      { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${item.id_int}?tab=pagamentos`) },
+      {
+        label: "Ver proposta",
+        onClick: () => {
+          const tab = item.isAvulsoRaw === true ? "pagamentos" : "produtos";
+          router.push(`/orcamentos/${item.id_int}?tab=${tab}`);
+        }
+      },
       { label: chatLabel, onClick: () => handleOpenChat(item) },
       {
         label: "Editar proposta",
-        onClick: () => router.push(`/orcamentos/${item.id_int}/editar`)
+        onClick: () => {
+          const tab = item.isAvulsoRaw === true ? "pagamentos" : "produtos";
+          router.push(`/orcamentos/${item.id_int}/editar?tab=${tab}`);
+        }
       },
       { label: "Duplicar proposta", onClick: () => void handleDuplicarPropostaForListItem(item) },
       {
@@ -747,6 +769,14 @@ export function OrcamentosListPageReal() {
             ))}
           </select>
 
+          <select value={filterTipoCobranca} onChange={(event) => setFilterTipoCobranca(event.target.value)} className={filterClass}>
+            <option value="TODOS">Todas cobranças</option>
+            <option value="PIX">PIX</option>
+            <option value="BOLETO">BOLETO</option>
+            <option value="E-FATURADO">E-FATURADO</option>
+            <option value="CARTAO">CARTÃO</option>
+          </select>
+
           <select value={periodo} onChange={(event) => setPeriodo(event.target.value)} className={filterClass}>
             {periodOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -762,6 +792,8 @@ export function OrcamentosListPageReal() {
               setStatus("TODOS");
               setModelo("TODOS_MODELOS");
               setVendedor("TODOS");
+              setFilterTipoCobranca("TODOS");
+              setFilterAvulso("TODOS");
               setPeriodo(periodOptions[0]?.value ?? getPeriodValue(new Date()));
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
@@ -775,7 +807,10 @@ export function OrcamentosListPageReal() {
         items={filteredPropostas}
         getKey={(proposta) => proposta.id}
         isLoading={isLoading}
-        onRowClick={(proposta) => router.push(`/orcamentos/${proposta.id_int}/editar?tab=pagamentos`)}
+        onRowClick={(proposta) => {
+          const tab = proposta.isAvulsoRaw === true ? "pagamentos" : "produtos";
+          router.push(`/orcamentos/${proposta.id_int}/editar?tab=${tab}`);
+        }}
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
         columns={[
@@ -893,7 +928,8 @@ export function OrcamentosListPageReal() {
                 <button
                   type="button"
                   onClick={() => {
-                    router.push(`/orcamentos/${proposta.id_int}?tab=pagamentos`);
+                    const tab = proposta.isAvulsoRaw === true ? "pagamentos" : "produtos";
+                    router.push(`/orcamentos/${proposta.id_int}?tab=${tab}`);
                   }}
                   className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
                 >
