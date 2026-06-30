@@ -236,6 +236,11 @@ export function ContasReceberPage() {
     [boletosDepositos, filterState, status, today]
   );
 
+  const filteredRecebiveisSemData = useMemo(
+    () => filterVisibleRows(recebiveis, { ...filterState, dataInicial: "", dataFinal: "" }, status, today),
+    [recebiveis, filterState, status, today]
+  );
+
   const activeItemsForCards = useMemo(() => {
     if (activeTab === "BOLETOS" || activeTab === "DEPOSITOS") {
       return filteredBoletos.filter(item => item.tipo === (activeTab === "BOLETOS" ? "BOLETO" : "DEPOSITO"));
@@ -807,7 +812,7 @@ export function ContasReceberPage() {
       ) : null}
 
             {activeTab === "CARTOES" ? <CartoesFaturadoTab items={recebiveis} today={today} /> : null}
-      {activeTab === "PREVISAO" ? <PrevisaoCaixaTab items={filteredRecebiveis} boletos={filteredBoletos} today={today} dataInicial={dataInicial} dataFinal={dataFinal} /> : null}
+      {activeTab === "PREVISAO" ? <PrevisaoCaixaTab items={filteredRecebiveis} itemsSemData={filteredRecebiveisSemData} boletos={filteredBoletos} today={today} dataInicial={dataInicial} dataFinal={dataFinal} /> : null}
 
       <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
         Contas a Receber é a carteira financeira de acompanhamento. A criação de cobranças e baixas reais permanecem gerenciadas no módulo operacional.
@@ -1345,14 +1350,63 @@ function CartoesFaturadoTab({ items, today }: { items: BoletoDepositoMock[]; tod
   );
 }
 
-function PrevisaoCaixaTab({ items, boletos, today, dataInicial, dataFinal }: { items: BoletoDepositoMock[]; boletos: BoletoDepositoMock[]; today: string; dataInicial: string; dataFinal: string }) {
+function getFirstDayOfMonth(baseDate: string, addMonths: number) {
+  const date = new Date(`${baseDate}T00:00:00-03:00`);
+  date.setMonth(date.getMonth() + addMonths);
+  date.setDate(1);
+  return date.toISOString().slice(0, 10);
+}
+
+function getLastDayOfMonth(baseDate: string, addMonths: number) {
+  const date = new Date(`${baseDate}T00:00:00-03:00`);
+  date.setMonth(date.getMonth() + addMonths + 1);
+  date.setDate(0);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatSubtitle(start: string, end: string) {
+  const s = start.split("-");
+  const e = end.split("-");
+  return `de ${s[2]}/${s[1]} até ${e[2]}/${e[1]} ${e[0]}`;
+}
+
+function calculatePrevisaoFixed(items: BoletoDepositoMock[], today: string) {
+  const w1End = addDays(today, 6);
+  const qEnd = addDays(today, 13);
+  
+  const m30Start = getFirstDayOfMonth(today, 1);
+  const m30End = getLastDayOfMonth(today, 1);
+  
+  const m90Start = m30Start;
+  const m90End = getLastDayOfMonth(today, 3);
+  
+  const ranges = [
+    { label: "Semana atual", start: today, end: w1End, subtitle: formatSubtitle(today, w1End) },
+    { label: "Quinzena", start: today, end: qEnd, subtitle: formatSubtitle(today, qEnd) },
+    { label: "Próximos 30 dias", start: m30Start, end: m30End, subtitle: formatSubtitle(m30Start, m30End) },
+    { label: "Próximos 90 dias", start: m90Start, end: m90End, subtitle: formatSubtitle(m90Start, m90End) },
+  ];
+  
+  return ranges.map(range => {
+    const total = items
+      .filter(item => item.vencimento >= range.start && item.vencimento <= range.end)
+      .reduce((sum, item) => sum + (item.valor_atualizado ?? item.valor), 0);
+      
+    return { ...range, total };
+  });
+}
+
+function PrevisaoCaixaTab({ items, itemsSemData, boletos, today, dataInicial, dataFinal }: { items: BoletoDepositoMock[]; itemsSemData?: BoletoDepositoMock[]; boletos: BoletoDepositoMock[]; today: string; dataInicial: string; dataFinal: string }) {
   const previsaoItems = items.filter((item) => isAllowedTipo(item.tipo) && item.status === "A_VENCER");
-  let rawWeekly = groupByWeek(previsaoItems, today);
+  const previsaoItemsSemData = (itemsSemData || items).filter((item) => isAllowedTipo(item.tipo) && item.status === "A_VENCER");
+  
+  let rawWeekly = calculatePrevisaoFixed(previsaoItemsSemData, today);
   let accumulated = 0;
   const weekly = rawWeekly.map(row => {
     accumulated += row.total;
     return { ...row, total: accumulated };
   });
+  
   const byEmpresa = groupByEmpresa(previsaoItems);
   const recebido = items.filter((item) => isAllowedTipo(item.tipo) && item.status === "PAID").reduce((total, item) => total + item.valor, 0);
   const aReceber = previsaoItems.reduce((total, item) => total + (item.valor_atualizado ?? item.valor), 0);
@@ -1365,14 +1419,16 @@ function PrevisaoCaixaTab({ items, boletos, today, dataInicial, dataFinal }: { i
           <span className="rounded-2xl bg-sky-50 p-3 text-sky-700"><TrendingUp className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Previsão por semana</h2>
-            <p className="text-sm text-slate-500">Acumulado do período ({dataInicial && dataFinal ? `${dataInicial.split('-')[2]}/${dataInicial.split('-')[1]} a ${dataFinal.split('-')[2]}/${dataFinal.split('-')[1]}` : "selecionado"})</p>
           </div>
         </div>
         <div className="space-y-3">
           {weekly.map((row) => (
             <div key={row.label} className="rounded-2xl bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-semibold text-slate-700">{row.label}</span>
+                <div className="flex flex-col">
+                  <span className="font-semibold text-slate-700">{row.label}</span>
+                  <span className="text-xs text-slate-500">{row.subtitle}</span>
+                </div>
                 <strong className="text-slate-950">{formatCurrency(row.total)}</strong>
               </div>
               <div className="mt-3 h-2 rounded-full bg-slate-200">
