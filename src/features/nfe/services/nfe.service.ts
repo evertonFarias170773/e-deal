@@ -4,6 +4,7 @@ import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import type { SupabaseNfeRow, NfeReadModel, SupabaseNfeItemRow, SupabaseNfePagamentoRow } from "../types";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
+import { PROPOSTA_STATUS_GROUP_NFE_ELIGIBLE } from "@/features/orcamentos/constants";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
 
 export const NFE_SELECT_COLUMNS = [
@@ -543,6 +544,7 @@ interface SupabasePropostaSimple {
   status_interno: string;
   empresa: string;
   created_at: string;
+  libera_nf?: boolean | null;
 }
 
 export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
@@ -555,8 +557,8 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
   try {
     const { data, error } = await client
       .from("propostas")
-      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at")
-      .eq("status_interno", "APROVADO")
+      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf")
+      .eq("libera_nf", true)
       .order("id_int", { ascending: false });
 
     if (error) {
@@ -968,7 +970,7 @@ function isValidEmail(email: string): boolean {
   return EMAIL_REGEX.test(email);
 }
 
-export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow) {
+export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEmail?: string) {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client not initialized");
 
@@ -986,14 +988,18 @@ export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow) {
     }
   }
 
-  // Fallback de E-mail do ERP
+  // Fallback de E-mail do ERP se override não foi passado
   if (!email || !isValidEmail(email)) {
-    if (boleto.id_empresa === 1) {
-      email = "financeiro@ingressoideal.com.br";
-    } else if (boleto.id_empresa === 3) {
-      email = "financeiro@e3brindes.com.br";
+    if (overrideEmail && isValidEmail(overrideEmail)) {
+      email = overrideEmail;
     } else {
-      email = "financeiro@pay-ideal.com.br";
+      if (boleto.id_empresa === 1) {
+        email = "financeiro@ingressoideal.com.br";
+      } else if (boleto.id_empresa === 3) {
+        email = "financeiro@e3brindes.com.br";
+      } else {
+        email = "financeiro@pay-ideal.com.br";
+      }
     }
   }
 

@@ -12,7 +12,6 @@ import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import { AutorizarFaturamentoModal } from "./AutorizarFaturamentoModal";
 import { ConfirmarLiberacaoModal } from "./ConfirmarLiberacaoModal";
-import { PrepararBoletosModal } from "./PrepararBoletosModal";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { Cobranca } from "@/features/cobrancas/types";
@@ -27,56 +26,6 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
   return Number.isFinite(idEmpresa) && idEmpresa !== 0;
 }
 
-/**
- * Determina se a cobrança é elegível para aparecer na fila "Emitir Boletos".
- *
- * DEFINIÇÕES DE TERMINOLOGIA:
- * 1) "Boleto Preparado" = O faturamento já foi processado e existem registros correspondentes criados na tabela `public.boletos` (pelo id_int).
- * 2) "Boleto Registrado" = O boleto preparado já foi associado ao banco emissor (C6 Bank) e possui dados de registro (id_boleto_c6, linha_digitavel, etc.).
- *
- * INDICADOR AUXILIAR (pagamentos_v2.boleto_enviadoo):
- * - O campo `boleto_enviadoo` da tabela `pagamentos_v2` funciona como um indicador auxiliar/legado de controle.
- * - Por segurança e flexibilidade, a fila "Emitir Boletos" NÃO deve depender exclusivamente do valor desse campo.
- * - A regra de desqualificação prioritária é a existência de qualquer boleto ativo (não cancelado) em `public.boletos` para o id_int correspondente.
- */
-function isEmitirBoletos(
-  cobranca: Cobranca,
-  existingBoletoIdInts?: Set<number>,
-  hasBoletoHistoryIdInts?: Set<number>
-) {
-  const tipo = (cobranca.tipo_cobranca || "").toUpperCase();
-  const status = (cobranca.status || "").toUpperCase();
-  
-  const isEFaturado = tipo === "E-FATURADO";
-  const isCorrectStatus = status === "A_RECEBER" || status === "A_VENCER";
-  const isConfirmedIfAvencer = status !== "A_VENCER" || cobranca.confirmado === true;
-  
-  // A proposta já tem boletos preparados no banco?
-  const jaTemBoletoPreparado = !!(existingBoletoIdInts && cobranca.id_int && existingBoletoIdInts.has(Number(cobranca.id_int)));
-  
-  // A proposta possui histórico de boletos no banco?
-  const temHistoricoBoletos = !!(hasBoletoHistoryIdInts && cobranca.id_int && hasBoletoHistoryIdInts.has(Number(cobranca.id_int)));
-  
-  // REGRA DE LEGADO:
-  // Se boleto_enviadoo = true mas não houver histórico de boletos no banco de dados,
-  // é uma cobrança legada inconsistente. Ela NÃO deve aparecer na fila.
-  // Se boleto_enviadoo = true e houver histórico de boletos, ela só pode aparecer/reemitir se todos os boletos estiverem cancelados.
-  // Se boleto_enviadoo = false, ela é elegível normalmente.
-  const isBoletoEnviadoValido = !cobranca.boleto_enviadoo || (!jaTemBoletoPreparado && temHistoricoBoletos);
-  
-  // Não pode aparecer na fila se já houver boletos preparados ativos
-  const isBoletoNaoPreparado = !jaTemBoletoPreparado;
-  
-  return (
-    isEFaturado &&
-    isCorrectStatus &&
-    isConfirmedIfAvencer &&
-    isBoletoNaoPreparado &&
-    isBoletoEnviadoValido &&
-    isEmpresaValida(cobranca)
-  );
-}
-
 export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -87,7 +36,6 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isAutorizarModalOpen, setIsAutorizarModalOpen] = useState(false);
   const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
-  const [isPrepararBoletosOpen, setIsPrepararBoletosOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [justLaunchedExtRef, setJustLaunchedExtRef] = useState("");
 
@@ -177,61 +125,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     }
   }
 
-  if (isEmitirBoletos(cobranca, existingBoletoIdInts, hasBoletoHistoryIdInts)) {
-    return (
-      <>
-        <ActionsMenu
-          label={label}
-          items={[
-            { label: "Ver cobrança", onClick: () => router.push(`/cobrancas/${cobranca.id}`) },
-            { label: "Abrir proposta", onClick: () => router.push(`/orcamentos/${cobranca.id_int}`) },
-            { label: "Ver cliente", onClick: () => router.push(`/cadastros/${cobranca.id_cliente}`) },
-            {
-              label: "Abrir chat da proposta",
-              onClick: () => openChat(cobranca.id_int, { clienteNome: cobranca.cliente, idCliente: cobranca.id_cliente })
-            },
-            {
-              label: "Preparar boletos",
-              onClick: () => setIsPrepararBoletosOpen(true)
-            },
-            {
-              label: "Cancelar cobrança",
-              destructive: true,
-              disabled: cobranca.status === "CANCELADO",
-              onClick: () => setIsCancelModalOpen(true)
-            }
-          ]}
-        />
-        <CancelCobrancaModal
-          isOpen={isCancelModalOpen}
-          onClose={() => setIsCancelModalOpen(false)}
-          cobrancaId={cobranca.id}
-        />
-        <PrepararBoletosModal
-          isOpen={isPrepararBoletosOpen}
-          onClose={() => setIsPrepararBoletosOpen(false)}
-          cobranca={cobranca}
-          onSuccess={(extRef) => {
-            setIsPrepararBoletosOpen(false);
-            setJustLaunchedExtRef(extRef);
-            setIsReviewModalOpen(true);
-            void refreshCobrancas();
-          }}
-        />
-        <RevisarGeracaoBancariaModal
-          isOpen={isReviewModalOpen}
-          onClose={() => setIsReviewModalOpen(false)}
-          extReference={justLaunchedExtRef}
-          nomeCliente={cobranca.cliente}
-          valorTotalNf={cobranca.valor}
-          idInt={cobranca.id_int || undefined}
-          onSaveSuccess={() => {
-            void refreshCobrancas();
-          }}
-        />
-      </>
-    );
-  }
+  
 
   const items = [
     { label: "Ver cobrança", onClick: () => router.push(`/cobrancas/${cobranca.id}`) },
@@ -288,10 +182,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     Boolean(cobranca.confirmado) &&
     !(existingBoletoIdInts && cobranca.id_int && existingBoletoIdInts.has(Number(cobranca.id_int)))
       ? [
-          {
-            label: "Preparar boletos",
-            onClick: () => setIsPrepararBoletosOpen(true)
-          }
+          
         ]
       : []),
 
@@ -347,17 +238,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         onClose={() => setIsLiberarModalOpen(false)}
         cobranca={cobranca}
       />
-      <PrepararBoletosModal
-        isOpen={isPrepararBoletosOpen}
-        onClose={() => setIsPrepararBoletosOpen(false)}
-        cobranca={cobranca}
-        onSuccess={(extRef) => {
-          setIsPrepararBoletosOpen(false);
-          setJustLaunchedExtRef(extRef);
-          setIsReviewModalOpen(true);
-          void refreshCobrancas();
-        }}
-      />
+      
       <RevisarGeracaoBancariaModal
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}

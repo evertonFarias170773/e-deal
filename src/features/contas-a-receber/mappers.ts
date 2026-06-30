@@ -1,8 +1,8 @@
-import type { BoletoDepositoMock, BoletoDepositoStatus, BoletoDepositoTipo } from "@/lib/mocks/contas-receber.mock";
+import type { RecebimentoOperacional, RecebimentoOperacionalStatus, RecebimentoOperacionalTipo } from "@/lib/mocks/contas-receber.mock";
 import type { SupabaseBoletoRow } from "./types.supabase";
 
 
-const STATUS_VALIDOS = new Set<BoletoDepositoStatus>(["A_VENCER", "A_RECEBER", "PAID", "CANCELADO", "VENCIDO"]);
+const STATUS_VALIDOS = new Set<RecebimentoOperacionalStatus>(["A_VENCER", "A_RECEBER", "PAID", "CANCELADO", "VENCIDO"]);
 
 function toText(value: unknown) {
   if (value === null || value === undefined) {
@@ -45,10 +45,12 @@ function toIsoDateTime(value: unknown) {
   return text || "";
 }
 
-function normalizeStatus(value: unknown): BoletoDepositoStatus {
+function normalizeStatus(value: unknown): RecebimentoOperacionalStatus {
+  let mappedStatus: RecebimentoOperacionalStatus = "A_VENCER";
   const text = toText(value).toUpperCase();
-  if (STATUS_VALIDOS.has(text as BoletoDepositoStatus)) {
-    return text as BoletoDepositoStatus;
+
+  if (STATUS_VALIDOS.has(text as RecebimentoOperacionalStatus)) {
+    return text as RecebimentoOperacionalStatus;
   }
 
   if (text === "PAGO") return "PAID";
@@ -56,10 +58,10 @@ function normalizeStatus(value: unknown): BoletoDepositoStatus {
   if (text.includes("RECEBER")) return "A_RECEBER";
   if (text.includes("VENCIDO")) return "VENCIDO";
 
-  return "A_VENCER";
+  return mappedStatus;
 }
 
-function resolveTipo(row: SupabaseBoletoRow): BoletoDepositoTipo {
+function resolveTipo(row: SupabaseBoletoRow): RecebimentoOperacionalTipo {
   if (toBoolean(row.deposito_conta, false)) {
     return "DEPOSITO";
   }
@@ -141,7 +143,7 @@ function resolveNumberOrUndefined(value: unknown) {
   return Number.isFinite(number) ? number : undefined;
 }
 
-export function mapSupabaseBoletoRowToBoletoDepositoMock(row: SupabaseBoletoRow): BoletoDepositoMock {
+export function mapSupabaseBoletoRowToRecebimentoOperacional(row: SupabaseBoletoRow): RecebimentoOperacional {
   const tipo = resolveTipo(row);
 
   return {

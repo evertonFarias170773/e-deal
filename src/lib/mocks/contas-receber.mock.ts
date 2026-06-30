@@ -2,8 +2,13 @@ import type { StatusTone } from "@/lib/types";
 
 export type RecebivelStatus = "A_RECEBER" | "A_VENCER" | "PAID" | "CANCELADO";
 export type RecebivelTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" | "E-FATURADO";
-export type BoletoDepositoTipo = "BOLETO" | "DEPOSITO" | "CARTAO" | "E-FATURADO" | "OUTRO_RECEBIVEL";
-export type BoletoDepositoStatus = "A_VENCER" | "A_RECEBER" | "PAID" | "CANCELADO" | "VENCIDO";
+export type RecebimentoOperacionalTipo = "BOLETO" | "DEPOSITO" | "CARTAO" | "E-FATURADO" | "OUTRO_RECEBIVEL";
+export type RecebimentoOperacionalStatus = "A_VENCER" | "A_RECEBER" | "PAID" | "CANCELADO" | "VENCIDO";
+
+/** @deprecated Use RecebimentoOperacionalTipo instead */
+export type BoletoDepositoTipo = RecebimentoOperacionalTipo;
+/** @deprecated Use RecebimentoOperacionalStatus instead */
+export type BoletoDepositoStatus = RecebimentoOperacionalStatus;
 
 export type RecebivelMock = {
   id: string;
@@ -48,10 +53,13 @@ export type RecebivelMock = {
   observacao: string;
 };
 
-export type BoletoDepositoMock = Omit<RecebivelMock, "tipo" | "status"> & {
-  tipo: BoletoDepositoTipo;
-  status: BoletoDepositoStatus;
+export type RecebimentoOperacional = Omit<RecebivelMock, "tipo" | "status"> & {
+  tipo: RecebimentoOperacionalTipo;
+  status: RecebimentoOperacionalStatus;
 };
+
+/** @deprecated Use RecebimentoOperacional instead */
+export type BoletoDepositoMock = RecebimentoOperacional;
 
 export const contasReceberMock: RecebivelMock[] = [
   {
@@ -308,7 +316,7 @@ export const contasReceberMock: RecebivelMock[] = [
   }
 ];
 
-export const boletosDepositosMock: BoletoDepositoMock[] = [
+export const boletosDepositosMock: RecebimentoOperacional[] = [
   ...contasReceberMock
     .filter((item) => item.tipo === "BOLETO")
     .map((item) => ({
@@ -356,14 +364,14 @@ export const boletosDepositosMock: BoletoDepositoMock[] = [
   }
 ];
 
-export function getRecebivelStatusTone(status: RecebivelStatus | BoletoDepositoStatus): StatusTone {
+export function getRecebivelStatusTone(status: RecebivelStatus | RecebimentoOperacionalStatus): StatusTone {
   if (status === "PAID") return "success";
   if (status === "A_VENCER") return "warning";
   if (status === "A_RECEBER") return "info";
   return "neutral";
 }
 
-export function getTipoRecebivelLabel(tipo: RecebivelTipo | BoletoDepositoTipo) {
+export function getTipoRecebivelLabel(tipo: RecebivelTipo | RecebimentoOperacionalTipo) {
   const labels: Record<string, string> = {
     PIX: "PIX",
     BOLETO: "Boleto",

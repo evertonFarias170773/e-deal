@@ -27,14 +27,14 @@ import {
   obterPropostaLiberadaParaBoletim,
   criarPedidoParaBoletim,
   salvarModelosBoletim,
-  listarDesigners,
-  listarGabaritos,
   type PropostaLiberadaBoletim,
-  type DesignerUsuario,
-  type GabaritoProducao,
   atualizarOrientacoesBoletim,
   parsePedidosObs,
-  serializePedidosObs
+  serializePedidosObs,
+  obterGabaritosOperacionais,
+  obterFreteEscolhido,
+  atualizarModelosBoletim,
+  avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -126,15 +126,9 @@ export function BoletimFormPage() {
   const [obsCriticas, setObsCriticas] = useState("");
 
   // Block 5 & 6 & 7: Technical Briefing, Design & Logistics & Finishes
-  const [instrucoesDesign, setInstrucoesDesign] = useState("");
-  const [transporte, setTransporte] = useState("Retirada");
-  const [volumes, setVolumes] = useState(1);
 
-  // New design assignment, attachments & structured finishing states
-  const [selectedDesigner, setSelectedDesigner] = useState("");
+  // New attachments & structured finishing states
   const [attachments, setAttachments] = useState<{ url: string; name: string; type: string }[]>([]);
-  const [atribuidoDesigner, setAtribuidoDesigner] = useState(false);
-  const [dataHoraAtribuicao, setDataHoraAtribuicao] = useState("");
   const [isMounted, setIsMounted] = useState(false);
   const [openGabaritoDropdown, setOpenGabaritoDropdown] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -146,8 +140,18 @@ export function BoletimFormPage() {
   const [supportFiles, setSupportFiles] = useState<{ name: string; url: string; size?: number; created_at?: string }[]>([]);
   const [loadingSupportFiles, setLoadingSupportFiles] = useState(false);
   const [uploadingSupportFile, setUploadingSupportFile] = useState(false);
-  const [designersList, setDesignersList] = useState<DesignerUsuario[]>([]);
-  const [gabaritosList, setGabaritosList] = useState<GabaritoProducao[]>([]);
+  const [gabaritosOptions, setGabaritosOptions] = useState<string[]>([]);
+  const [cotacaoFrete, setCotacaoFrete] = useState<any | null>(null);
+  
+  // Logistics Fields
+  const [logisticaServico, setLogisticaServico] = useState("");
+  const [logisticaTransportador, setLogisticaTransportador] = useState("");
+  const [logisticaPesoReal, setLogisticaPesoReal] = useState("");
+  const [logisticaQtdVolumes, setLogisticaQtdVolumes] = useState("");
+  const [logisticaTipoVolume, setLogisticaTipoVolume] = useState("");
+  const [logisticaResponsavel, setLogisticaResponsavel] = useState("");
+  const [logisticaObsFrete, setLogisticaObsFrete] = useState("");
+  const [statusOperacional, setStatusOperacional] = useState<string>("PENDENTE");
 
   useEffect(() => {
     setIsMounted(true);
@@ -156,21 +160,8 @@ export function BoletimFormPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [designersData, gabaritosData] = await Promise.all([
-          listarDesigners(),
-          listarGabaritos()
-        ]);
-        setDesignersList(designersData);
-        
-        if (gabaritosData && gabaritosData.length > 0) {
-          setGabaritosList(gabaritosData);
-        } else {
-          setGabaritosList(MOCK_GABARITOS.map(g => ({
-            id: g.id,
-            id_gabarito: null,
-            name: g.nome
-          })));
-        }
+        const ops = await obterGabaritosOperacionais();
+        setGabaritosOptions(ops);
       } catch (err) {
         console.error("Erro ao carregar designers e gabaritos:", err);
       }
@@ -201,23 +192,31 @@ export function BoletimFormPage() {
           setEmpresa(pedido.empresa || "Ideal Grafica");
           setVendedor(pedido.vendedor || "Everton Farias");
           setFormaPagamento(pedido.formaPagamento || "Pix a vista");
+          setStatusOperacional(pedido.status_producao || "PENDENTE");
 
           const deadlineDate = pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "";
           setDataPrevistaEntrega(deadlineDate);
 
           const parsed = parsePedidosObs(pedido.obs);
           setObsCriticas(parsed.obsCriticas || "");
-          setInstrucoesDesign(parsed.orientacoesDesign || "");
           setObsImpressao(parsed.obsImpressao || "");
           setObsAcabamento(parsed.obsAcabamento || "");
-
-          if (parsed.designer && parsed.designer.user_id) {
-            setSelectedDesigner(parsed.designer.user_id);
-            setAtribuidoDesigner(true);
-          }
+          
+          setLogisticaServico(parsed.logistica?.servico_transporte || "");
+          setLogisticaTransportador(parsed.logistica?.transportador || "");
+          setLogisticaPesoReal(parsed.logistica?.peso_real || "");
+          setLogisticaQtdVolumes(parsed.logistica?.qtd_volumes || "");
+          setLogisticaTipoVolume(parsed.logistica?.tipo_volume || "");
+          setLogisticaResponsavel(parsed.logistica?.responsavel_logistica || "");
+          setLogisticaObsFrete(parsed.logistica?.observacoes_frete || "");
 
           if (idIntParam) {
-            fetchSupportFiles(Number(idIntParam));
+            const frete = await obterFreteEscolhido(Number(idIntParam));
+            if (frete) {
+              setCotacaoFrete(frete);
+              if (!parsed.logistica?.servico_transporte) setLogisticaServico(frete.servico || "");
+              if (!parsed.logistica?.peso_real && frete.peso) setLogisticaPesoReal((Number(frete.peso) / 1000).toFixed(2));
+            }
           }
 
           const mapped = pedido.produtos.map((p) => ({
@@ -238,11 +237,13 @@ export function BoletimFormPage() {
               verso: m.verso,
               bloco: m.bloco || "Bloco A",
               observacoesTecnicas: m.observacoesTecnicas,
+              gabaritoNumeracao: m.gabaritoNumeracao,
               configImpressao: {
                 tipoNumeracao: m.configImpressao?.tipoNumeracao || "SEM_NUMERACAO",
                 qrCode: m.configImpressao?.qrCode || false,
                 codBarras: m.configImpressao?.codBarras || false,
-                codBarrasTipo: m.configImpressao?.codBarrasTipo || ""
+                codBarrasTipo: m.configImpressao?.codBarrasTipo || "",
+                rfid: m.configImpressao?.rfid || false
               },
               numeracaoInicial: m.numeracaoInicial,
               numeracaoFinal: m.numeracaoFinal,
@@ -277,7 +278,44 @@ export function BoletimFormPage() {
     }
 
     loadPedidoExistente();
-  }, [isEditing, idIntParam, designersList, hasLoadedExisting]);
+  }, [isEditing, idIntParam, hasLoadedExisting]);
+
+  // Auto-load proposal for "abertura" mode if idIntParam is provided
+  useEffect(() => {
+    if (modoParam === "abertura" && idIntParam && !selectedProposta && !loadingDetails && !hasLoadedExisting) {
+      setHasLoadedExisting(true);
+      selectProposta(Number(idIntParam));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoParam, idIntParam, hasLoadedExisting]);
+
+  useEffect(() => {
+    if (!idIntParam) return;
+    
+    async function loadEvento() {
+      const client = getSupabaseClient();
+      if (!client) return;
+      
+      try {
+        const { data, error } = await client
+          .from("pedidos_artes")
+          .select("nome_evento, data_evento")
+          .eq("id_int", Number(idIntParam))
+          .maybeSingle();
+          
+        if (!error && data) {
+          setDadosEventoNome(data.nome_evento || "Evento não informado");
+          setDadosEventoData(data.data_evento || "");
+        } else {
+          setDadosEventoNome("Evento não informado");
+        }
+      } catch (err) {
+        setDadosEventoNome("Evento não informado");
+      }
+    }
+    
+    loadEvento();
+  }, [idIntParam]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -291,9 +329,7 @@ export function BoletimFormPage() {
     };
   }, [openGabaritoDropdown]);
 
-  const filteredGabaritos = gabaritosList.filter(g =>
-    g.name.toLowerCase().includes(gabaritoSearchQuery.toLowerCase())
-  );
+
 
   // Technical configurations per sector
   interface SectorTechnicalConfig {
@@ -329,30 +365,10 @@ export function BoletimFormPage() {
   });
 
 
-
-  // Helper to compute active count per designer
-  const getDesignerActiveCount = (designerId: string) => {
-    if (!pedidos) return 0;
-    const designerName = designersList.find(d => d.user_id === designerId)?.nome_usuario || designerId;
-    let count = 0;
-    pedidos.forEach((p) => {
-      if (p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO") {
-        p.produtos?.forEach((prod) => {
-          prod.modelos?.forEach((m) => {
-            if ((m.designerResponsavel === designerId || m.designerResponsavel === designerName) && m.statusArte !== "LIBERADA" && m.statusArte !== "IMPRESSA" && m.statusArte !== "NAO_NECESSARIA") {
-              count++;
-            }
-          });
-        });
-      }
-    });
-    return count;
-  };
-
   const getGabaritoName = (val?: string) => {
     if (!val) return "Selecione ou pesquise...";
-    const found = gabaritosList.find(g => String(g.id_gabarito || g.id) === val || g.name === val);
-    if (found) return found.name;
+    const found = gabaritosOptions.find(g => g === val);
+    if (found) return found;
     return val;
   };
 
@@ -387,10 +403,12 @@ export function BoletimFormPage() {
   interface FormProduto {
     id: string;
     id_produto_proposta_origem?: number;
+    codigo_produto?: string;
     nome: string;
     quantidade: number;
     quantidadeOriginal?: number;
-    setor: string;
+    setor?: string;
+    observacoes_item?: string;
     modelos: ModeloMock[];
   }
 
@@ -492,9 +510,14 @@ export function BoletimFormPage() {
 
       const details = await getPropostaDetailById(idInt);
       if (details) {
+        const frete = await obterFreteEscolhido(idInt);
+        if (frete) {
+          setCotacaoFrete(frete);
+          setLogisticaServico(frete.servico || "");
+          setLogisticaPesoReal(frete.peso ? (Number(frete.peso) / 1000).toFixed(2) : "");
+        }
+
         setSelectedProposta(details);
-        setAtribuidoDesigner(false);
-        setDataHoraAtribuicao("");
         setClienteNome(details.cliente?.nome || "");
         setContatoNome(details.contato?.nome || details.cliente?.contatos?.[0]?.nome || "Contato Principal");
         setEmpresa(details.empresa || "Ideal Grafica");
@@ -532,10 +555,12 @@ export function BoletimFormPage() {
           return {
             id: generateUniqueId(`prod_${item.id_produto || index}`),
             id_produto_proposta_origem: dbId,
+            codigo_produto: item.id_produto ? String(item.id_produto) : "",
             nome: item.nome,
             quantidade: item.quantidade,
             quantidadeOriginal: item.quantidade, // Store fixed original total
             setor: sector,
+            observacoes_item: (item as any).descricaoOriginal || "",
             modelos: [
               {
                 id: generateUniqueId(`mod_${item.id_produto || index}_0`),
@@ -547,7 +572,7 @@ export function BoletimFormPage() {
                 corMaterial: "Branco",
                 verso: item.variacoesEscolhidas?.some(v => v.tipo.variacao.toLowerCase().includes("verso") || v.tipo.variacao.toLowerCase().includes("frente e verso")) || false,
                 bloco: "Bloco A",
-                observacoesTecnicas: item.descricaoModelo || "",
+                observacoesTecnicas: (item as any).descricaoModelo || "",
                 configImpressao: {
                   tipoNumeracao: "SEM_NUMERACAO",
                   qrCode: item.variacoesEscolhidas?.some(v => v.tipo.variacao.toLowerCase().includes("qr")) || false,
@@ -663,7 +688,7 @@ export function BoletimFormPage() {
   };
 
   const addModelRow = (prodId: string) => {
-    setAtribuidoDesigner(false);
+
     const modId = generateUniqueId("mod");
     setProdutos((prev) =>
       prev.map((p) => {
@@ -721,7 +746,7 @@ export function BoletimFormPage() {
   };
 
   const removeModelRow = (prodId: string, modelId: string) => {
-    setAtribuidoDesigner(false);
+
     setProdutos((prev) =>
       prev.map((p) => {
         if (p.id === prodId) {
@@ -798,252 +823,7 @@ export function BoletimFormPage() {
       })
     );
   };
-  
-  const fetchSupportFiles = async (idInt: number) => {
-    setLoadingSupportFiles(true);
-    try {
-      const client = getSupabaseClient();
-      if (!client) return;
 
-      const prefix = `pedidos-anexos/${idInt}/design/`;
-      const { data, error } = await client.storage.from("chat-ideal").list(prefix);
-      if (error) {
-        console.error("Error listing support files:", error);
-        return;
-      }
-
-      if (data) {
-        const files = data
-          .filter((f: any) => f.name !== ".emptyFolderPlaceholder")
-          .map((f: any) => {
-            const path = `pedidos-anexos/${idInt}/design/${f.name}`;
-            const { data: urlData } = client.storage.from("chat-ideal").getPublicUrl(path);
-            return {
-              name: f.name,
-              url: urlData?.publicUrl || "",
-              size: f.metadata?.size || (f as any).size,
-              created_at: f.created_at ?? undefined
-            };
-          });
-        setSupportFiles(files);
-      }
-    } catch (err) {
-      console.error("Error in fetchSupportFiles:", err);
-    } finally {
-      setLoadingSupportFiles(false);
-    }
-  };
-
-  const handleUploadSupportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const maxSizeBytes = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSizeBytes) {
-      showToast({
-        type: "error",
-        title: "Arquivo muito grande",
-        description: "O tamanho do arquivo não deve exceder 10MB."
-      });
-      return;
-    }
-
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "application/pdf",
-      "image/svg+xml",
-      "application/zip",
-      "application/x-zip-compressed"
-    ];
-
-    const extension = file.name.split(".").pop();
-    const allowedExtensions = ["jpg", "jpeg", "png", "pdf", "ai", "cdr", "svg", "zip"];
-    const fileExt = extension?.toLowerCase() || "";
-
-    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
-      showToast({
-        type: "error",
-        title: "Tipo de arquivo não suportado",
-        description: "Apenas JPG, PNG, PDF, SVG, AI, CDR e ZIP são permitidos."
-      });
-      return;
-    }
-
-    setUploadingSupportFile(true);
-    try {
-      const client = getSupabaseClient();
-      if (!client) {
-        showToast({
-          type: "error",
-          title: "Erro de Conexão",
-          description: "Supabase client is not available."
-        });
-        return;
-      }
-
-      // Name sanitization
-      const parts = file.name.split(".");
-      parts.pop();
-      const baseName = parts.join(".") || "anexo";
-      const normalizedBaseName = baseName
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9-_]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .toLowerCase();
-      const normalizedExtension = fileExt.replace(/[^a-zA-Z0-9]/g, "");
-      const sanitizedName = normalizedExtension 
-        ? `${normalizedBaseName}.\u0024{normalizedExtension}`
-        : normalizedBaseName;
-
-      // Note: use simple template string escape
-      const sanitizedNameFinal = normalizedExtension 
-        ? `${normalizedBaseName}.${normalizedExtension}`
-        : normalizedBaseName;
-
-      const timestamp = Date.now();
-      const idInt = Number(idIntParam);
-      const uploadPath = `pedidos-anexos/${idInt}/design/${timestamp}_${sanitizedNameFinal}`;
-
-      const { data: uploadData, error: uploadError } = await client.storage
-        .from("chat-ideal")
-        .upload(uploadPath, file, {
-          cacheControl: "3600",
-          contentType: file.type || "application/octet-stream",
-          upsert: false
-        });
-
-      if (uploadError || !uploadData) {
-        showToast({
-          type: "error",
-          title: "Erro no Upload",
-          description: uploadError?.message || "Não foi possível enviar o arquivo para o storage."
-        });
-        return;
-      }
-
-      showToast({
-        type: "success",
-        title: "Arquivo Anexado",
-        description: `Arquivo ${file.name} anexado com sucesso.`
-      });
-
-      e.target.value = "";
-      await fetchSupportFiles(idInt);
-    } catch (err: any) {
-      console.error("Error uploading support file:", err);
-      showToast({
-        type: "error",
-        title: "Erro Inesperado",
-        description: err.message || "Erro desconhecido ao enviar arquivo."
-      });
-    } finally {
-      setUploadingSupportFile(false);
-    }
-  };
-
-  const handleRemoveSupportFile = async (fileName: string) => {
-    if (!window.confirm("Deseja realmente remover este arquivo de apoio?")) return;
-    try {
-      const client = getSupabaseClient();
-      if (!client) return;
-
-      const path = `pedidos-anexos/${idIntParam}/design/${fileName}`;
-      const { error } = await client.storage.from("chat-ideal").remove([path]);
-      if (error) {
-        showToast({
-          type: "error",
-          title: "Erro ao remover arquivo",
-          description: error.message || "Não foi possível remover o arquivo do storage."
-        });
-        return;
-      }
-
-      showToast({
-        type: "success",
-        title: "Arquivo Removido",
-        description: "O arquivo foi removido com sucesso."
-      });
-
-      if (idIntParam) {
-        fetchSupportFiles(Number(idIntParam));
-      }
-    } catch (err: any) {
-      console.error("Error removing support file:", err);
-      showToast({
-        type: "error",
-        title: "Erro inesperado",
-        description: err.message || "Erro ao tentar remover arquivo."
-      });
-    }
-  };
-
-  const handleSalvarBriefingEDesigner = async () => {
-    if (!selectedDesigner) {
-      showToast({
-        type: "error",
-        title: "Designer não selecionado",
-        description: "Selecione um designer antes de salvar."
-      });
-      return;
-    }
-
-    setLoadingDetails(true);
-    try {
-      const designerObj = designersList.find(d => d.user_id === selectedDesigner);
-      const designerInput = designerObj ? {
-        user_id: designerObj.user_id,
-        nome: designerObj.nome_usuario || designerObj.user_id,
-        email: designerObj.email || ""
-      } : null;
-
-      const serializedObs = serializePedidosObs({
-        designer: designerInput,
-        orientacoesDesign: instrucoesDesign,
-        obsCriticas: obsCriticas
-      }, existingObs);
-
-      const result = await atualizarOrientacoesBoletim(Number(idIntParam), serializedObs);
-
-      if (!result.success) {
-        showToast({
-          type: "error",
-          title: "Erro ao salvar",
-          description: result.error || "Não foi possível salvar o briefing e o designer."
-        });
-        return;
-      }
-
-      setExistingObs(serializedObs);
-      setAtribuidoDesigner(true);
-
-      const now = new Date();
-      const formattedDate = now.toLocaleString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-      setDataHoraAtribuicao(formattedDate);
-
-      showToast({
-        type: "success",
-        title: "Briefing Atribuído",
-        description: `Briefing atribuído para ${designerObj?.nome_usuario || selectedDesigner}`
-      });
-    } catch (error: any) {
-      console.error("Erro ao salvar briefing e designer:", error);
-      showToast({
-        type: "error",
-        title: "Erro inesperado",
-        description: error.message || "Erro desconhecido ao salvar briefing."
-      });
-    } finally {
-      setLoadingDetails(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1063,27 +843,23 @@ export function BoletimFormPage() {
       return;
     }
 
-    if (!selectedDesigner) {
-      showToast({ type: "error", title: "Designer Não Selecionado", description: "Por favor, atribua um designer responsável no Bloco 5." });
-      return;
-    }
-
     if (isEditing) {
       setLoadingDetails(true);
       try {
-        const designerObj = designersList.find(d => d.user_id === selectedDesigner);
-        const designerInput = designerObj ? {
-          user_id: designerObj.user_id,
-          nome: designerObj.nome_usuario || designerObj.user_id,
-          email: designerObj.email || ""
-        } : null;
-
         const serializedObs = serializePedidosObs({
           obsCriticas,
-          designer: designerInput,
-          orientacoesDesign: instrucoesDesign,
+          orientacoesDesign: briefingOperacional,
           obsImpressao,
-          obsAcabamento
+          obsAcabamento,
+          logistica: {
+            servico_transporte: logisticaServico,
+            transportador: logisticaTransportador,
+            peso_real: logisticaPesoReal,
+            qtd_volumes: logisticaQtdVolumes,
+            tipo_volume: logisticaTipoVolume,
+            responsavel_logistica: logisticaResponsavel,
+            observacoes_frete: logisticaObsFrete
+          }
         }, existingObs);
 
         const result = await atualizarOrientacoesBoletim(Number(idIntParam), serializedObs);
@@ -1098,13 +874,37 @@ export function BoletimFormPage() {
           return;
         }
 
+        // 2. Update Modelos (Lotes Técnicos)
+        const modelosUpdates = produtos.flatMap(p => p.modelos.map(m => ({
+          id: Number(m.id),
+          tipo_numeracao: m.configImpressao.tipoNumeracao || null,
+          gabarito_operacional: m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" ? m.gabaritoNumeracao : null,
+          numeracao_inicio: m.numeracaoInicial !== undefined && m.numeracaoInicial !== null ? Number(m.numeracaoInicial) : null
+        }))).filter(m => !isNaN(m.id) && m.id > 0);
+
+        if (modelosUpdates.length > 0) {
+          const modelsResult = await atualizarModelosBoletim(modelosUpdates);
+          if (!modelsResult.success) {
+             showToast({
+              type: "error",
+              title: "Erro ao Atualizar Lotes",
+              description: modelsResult.error || "Não foi possível atualizar as informações dos lotes operacionais."
+            });
+            setLoadingDetails(false);
+            return;
+          }
+        }
+
+        // Update macro status if currently REVISAO PRODUCAO
+        await avancarStatusParaEmProducao(Number(idIntParam));
+
         showToast({
           type: "success",
           title: "Boletim Finalizado",
           description: "Orientações e especificações técnicas de design atualizadas com sucesso"
         });
 
-        router.push(`/pedidos/${idIntParam}`);
+        router.push("/pedidos");
       } catch (error) {
         console.error("Erro ao processar atualização do boletim:", error);
         showToast({
@@ -1177,7 +977,21 @@ export function BoletimFormPage() {
         return;
       }
 
-      const formattedObs = `[Observações críticas]\n${obsCriticas.trim() || "-"}\n\n[Impressão]\n${obsImpressao.trim() || "-"}\n\n[Acabamento]\n${obsAcabamento.trim() || "-"}`;
+      const formattedObs = serializePedidosObs({
+        obsCriticas,
+        orientacoesDesign: briefingOperacional,
+        obsImpressao,
+        obsAcabamento,
+        logistica: {
+          servico_transporte: logisticaServico,
+          transportador: logisticaTransportador,
+          peso_real: logisticaPesoReal,
+          qtd_volumes: logisticaQtdVolumes,
+          tipo_volume: logisticaTipoVolume,
+          responsavel_logistica: logisticaResponsavel,
+          observacoes_frete: logisticaObsFrete
+        }
+      }, existingObs);
 
       // 2. Criar pedido no Supabase
       const result = await criarPedidoParaBoletim({
@@ -1204,8 +1018,9 @@ export function BoletimFormPage() {
           descricao: m.observacoesTecnicas || null,
           quantidade: Number(m.quantidade),
           tipo_numeracao: m.configImpressao.tipoNumeracao || null,
-          numeracao_inicio: m.numeracaoInicial !== undefined ? Number(m.numeracaoInicial) : null,
-          numeracao_fim: m.numeracaoFinal !== undefined ? Number(m.numeracaoFinal) : null,
+          gabarito_operacional: m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" ? m.gabaritoNumeracao : null,
+          numeracao_inicio: m.numeracaoInicial !== undefined && m.numeracaoInicial !== null ? Number(m.numeracaoInicial) : null,
+          numeracao_fim: m.numeracaoFinal !== undefined && m.numeracaoFinal !== null ? Number(m.numeracaoFinal) : null,
           obs_impressao: m.comentarioInterno || null
         }))
       );
@@ -1222,11 +1037,14 @@ export function BoletimFormPage() {
         return;
       }
 
+      // Update macro status if currently REVISAO PRODUCAO
+      await avancarStatusParaEmProducao(idInt);
+
       // 4. Sucesso!
       showToast({
         type: "success",
         title: "Boletim Salvo",
-        description: "Boletim salvo e pedido aberto com sucesso"
+        description: "Novo boletim de entrada gerado com sucesso."
       });
 
       router.push("/pedidos");
@@ -1255,7 +1073,7 @@ export function BoletimFormPage() {
         action={
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href={isEditing ? `/pedidos/${idIntParam}` : "/pedidos"}
+              href="/pedidos"
               className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm"
             >
               Voltar
@@ -1294,6 +1112,15 @@ export function BoletimFormPage() {
           </h3>
           <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
             Você está editando as orientações técnicas do pedido operacional correspondente à proposta <span className="font-mono text-blue-600 dark:text-blue-400 font-black">#{idIntParam}</span>. A proposta de origem e o faturamento estão vinculados de forma definitiva.
+          </div>
+        </div>
+      ) : idIntParam ? (
+        <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-3 shadow-sm">
+          <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
+            1. Proposta/Orçamento Comercial de Origem
+          </h3>
+          <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            Você está abrindo uma OS para a proposta <span className="font-mono text-blue-600 dark:text-blue-400 font-black">#{idIntParam}</span>. A proposta de origem e o faturamento estão vinculados de forma definitiva.
           </div>
         </div>
       ) : (
@@ -1367,16 +1194,28 @@ export function BoletimFormPage() {
 
       {!selectedProposta ? (
         <div className="bg-slate-50/30 border border-dashed border-[#d7e5e8] p-12 text-center rounded-3xl space-y-3">
-          <FileText className="h-10 w-10 text-slate-355 mx-auto" />
-          <h4 className="font-extrabold text-sm text-[#0b2f4a] uppercase">Aguardando Seleção de Origem</h4>
-          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-            Selecione uma proposta comercial ativa usando o campo de busca ou clique em uma das propostas recentes para carregar os dados de manufatura e abrir a Ficha Técnica.
-          </p>
+          {loadingDetails || idIntParam ? (
+            <>
+              <div className="h-10 w-10 mx-auto rounded-full border-4 border-slate-200 border-t-[#0b2f4a] animate-spin"></div>
+              <h4 className="font-extrabold text-sm text-[#0b2f4a] uppercase mt-4">Carregando dados da proposta...</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                Por favor, aguarde enquanto recuperamos os dados comerciais e itens para a produção.
+              </p>
+            </>
+          ) : (
+            <>
+              <FileText className="h-10 w-10 text-slate-355 mx-auto" />
+              <h4 className="font-extrabold text-sm text-[#0b2f4a] uppercase">Aguardando Seleção de Origem</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                Selecione uma proposta comercial ativa usando o campo de busca ou clique em uma das propostas recentes para carregar os dados de manufatura e abrir a Ficha Técnica.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <>
           {/* HEADER DE STATUS OPERACIONAL */}
-          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 grid grid-cols-2 md:grid-cols-4 gap-5 text-xs shadow-sm">
+          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 grid grid-cols-2 md:grid-cols-3 gap-5 text-xs shadow-sm">
             <div>
               <span className="text-xs font-semibold text-slate-500 uppercase block">Proposta de Origem</span>
               <strong className="text-base font-mono text-[#0b2f4a] dark:text-slate-100">#{selectedProposta.id_int}</strong>
@@ -1386,41 +1225,14 @@ export function BoletimFormPage() {
               <strong className="text-base text-slate-800 dark:text-slate-200 truncate block">{clienteNome}</strong>
             </div>
             <div>
-              <span className="text-xs font-semibold text-slate-500 uppercase block">Status Comercial / Financeiro</span>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-blue-800 font-bold uppercase text-[10px] border border-blue-200">
-                  {selectedProposta.status}
-                </span>
-                <span className={`px-2.5 py-1 rounded-xl font-bold uppercase text-[10px] border ${
-                  canStartProd 
-                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                    : "bg-amber-50 text-amber-800 border-amber-250 animate-pulse"
-                }`}>
-                  {canStartProd ? "Pago (Liberado)" : "Pagamento Pendente"}
-                </span>
-              </div>
-            </div>
-
-            <div>
               <span className="text-xs font-semibold text-slate-500 uppercase block">Status Operacional OS</span>
               <strong className="text-sm text-slate-800 flex items-center gap-1.5 mt-1.5">
-                <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping"></span>
-                <span className="font-bold text-[#0b2f4a]">ARTE EM ANDAMENTO</span>
+                <span className={`h-2 w-2 rounded-full ${statusOperacional === 'BLOQUEADO' ? 'bg-amber-500 animate-pulse' : 'bg-blue-500 animate-ping'}`}></span>
+                <span className="font-bold text-[#0b2f4a]">{statusOperacional}</span>
               </strong>
             </div>
           </div>
  
-          {/* ALERTA DE BLOQUEIO FINANCEIRO */}
-          {!canStartProd && (
-            <div className="rounded-3xl border border-amber-200 bg-amber-50/50 text-amber-900 p-6 text-xs flex items-start gap-3.5 shadow-xs">
-              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <strong className="font-semibold text-sm block mb-0.5">Produção bloqueada até confirmação financeira.</strong>
-                <p className="text-xs text-amber-850 mt-1 leading-relaxed">O setor de Arte poderá trabalhar no layout das artes e na aprovação digital, mas o início físico (Impressão, Acabamento e Expedição) ficará suspenso no chão de fábrica.</p>
-              </div>
-            </div>
-          )}
-
           {loadingDetails && (
             <div className="text-center py-4 text-xs font-bold text-slate-600 dark:text-slate-400 animate-pulse">Carregando detalhes operacionais da proposta...</div>
           )}
@@ -1433,129 +1245,97 @@ export function BoletimFormPage() {
                   BLOCO 1 — Identificação Comercial
                 </h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={clienteNome}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
-                    />
+                    <div className="relative w-full h-12 rounded-2xl border border-slate-200 bg-slate-100 overflow-hidden cursor-not-allowed">
+                      <div className="absolute inset-0 flex items-center px-4">
+                        <span className="text-base font-bold text-slate-800 truncate">{clienteNome || "-"}</span>
+                      </div>
+                      <input type="text" readOnly value={clienteNome} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-500 uppercase">Contato</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={contatoNome}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 uppercase">Empresa Industrial</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={empresa}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
-                    />
+                    <div className="relative w-full h-12 rounded-2xl border border-slate-200 bg-slate-100 overflow-hidden cursor-not-allowed">
+                      <div className="absolute inset-0 flex items-center px-4">
+                        <span className="text-base font-bold text-slate-800 truncate">{contatoNome || "-"}</span>
+                      </div>
+                      <input type="text" readOnly value={contatoNome} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
+                    </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-500 uppercase">Vendedor</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={vendedor}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
-                    />
+                    <div className="relative w-full h-12 rounded-2xl border border-slate-200 bg-slate-100 overflow-hidden cursor-not-allowed">
+                      <div className="absolute inset-0 flex items-center px-4">
+                        <span className="text-base font-bold text-slate-800 truncate">{vendedor || "-"}</span>
+                      </div>
+                      <input type="text" readOnly value={vendedor} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
+                    </div>
+                  </div>
+
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Título do Evento</label>
+                    <div className="relative w-full h-12 rounded-2xl border border-slate-200 bg-slate-100 overflow-hidden cursor-not-allowed">
+                      <div className="absolute inset-0 flex items-center px-4">
+                        <span className="text-base font-bold text-slate-800 truncate">{dadosEventoNome || "-"}</span>
+                      </div>
+                      <input type="text" readOnly value={dadosEventoNome} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 uppercase">Data Limite de Entrega *</label>
-                    <input
-                      type="date"
-                      required
-                      readOnly={isEditing}
-                      disabled={isEditing}
-                      value={dataPrevistaEntrega}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDataPrevistaEntrega(e.target.value)}
-                      className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-mono font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-slate-50 text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                    />
+                    <label className="text-xs font-semibold text-slate-500 uppercase">Data do Evento</label>
+                    <div className="relative w-full h-12 rounded-2xl border border-slate-200 bg-slate-100 overflow-hidden cursor-not-allowed">
+                      <div className="absolute inset-0 flex items-center px-4">
+                        <span className="text-base font-bold text-slate-800 truncate">{dadosEventoData ? new Date(dadosEventoData).toLocaleDateString("pt-BR") : "Não informada"}</span>
+                      </div>
+                      <input type="text" readOnly value={dadosEventoData ? new Date(dadosEventoData).toLocaleDateString("pt-BR") : "Não informada"} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4 p-5 rounded-3xl bg-blue-50/80 border-2 border-blue-100">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-blue-900 uppercase tracking-wider">Data Limite de Entrega *</label>
+                    <div className={`relative flex items-center w-full rounded-2xl border-2 h-11 transition focus-within:ring-4 ${isEditing ? "border-blue-200 bg-slate-100/80 cursor-not-allowed" : "border-blue-300 bg-white focus-within:border-blue-600 focus-within:ring-blue-100"}`}>
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                        <span className={`text-xl font-bold font-mono ${isEditing ? "text-slate-800" : "text-blue-950"}`}>
+                          {dataPrevistaEntrega ? dataPrevistaEntrega.split('-').reverse().join('/') : "DD/MM/AAAA"}
+                        </span>
+                      </div>
+                      <input
+                        type="date"
+                        required
+                        readOnly={isEditing}
+                        disabled={isEditing}
+                        value={dataPrevistaEntrega}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDataPrevistaEntrega(e.target.value)}
+                        className={`w-full h-full bg-transparent border-none outline-none pl-4 pr-3 text-transparent [&::-webkit-datetime-edit]:text-transparent [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 ${isEditing ? "cursor-not-allowed" : "cursor-pointer"}`}
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-500 uppercase">Pagamento</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={formaPagamento}
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 cursor-not-allowed"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2.5 pt-6">
+                  <div className="flex items-center gap-3 pt-8">
                     <input
                       type="checkbox"
                       id="urgente-toggle"
                       disabled={isEditing}
                       checked={urgente}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrgente(e.target.checked)}
-                      className={`h-5 w-5 text-red-655 focus:ring-red-500 border-slate-300 rounded bg-white ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                      className={`h-7 w-7 text-red-600 focus:ring-red-500 border-red-300 rounded bg-white ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                     />
-                    <label htmlFor="urgente-toggle" className="text-xs font-bold text-red-655 dark:text-red-400 uppercase tracking-wide cursor-pointer select-none">
+                    <label htmlFor="urgente-toggle" className="text-base font-black text-red-600 uppercase tracking-widest cursor-pointer select-none">
                       ⚡ PRIORIDADE URGENTE
                     </label>
                   </div>
                 </div>
               </div>
-            
-            {/* Event Details subgroup */}
-            <div className="pt-3 space-y-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase block">Subgrupo: Informações do Evento (Opcional)</label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-slate-50/50 p-6 rounded-3xl border border-slate-200">
-                <div className="space-y-1.5">
-                  <span className="text-xs font-semibold text-slate-500 uppercase">Nome do Evento</span>
-                  <input
-                    type="text"
-                    placeholder="Ex: Congresso Nacional 2026"
-                    readOnly={isEditing}
-                    disabled={isEditing}
-                    value={dadosEventoNome}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoNome(e.target.value)}
-                    className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-550" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <span className="text-xs font-semibold text-slate-500 uppercase">Data Evento</span>
-                  <input
-                    type="date"
-                    readOnly={isEditing}
-                    disabled={isEditing}
-                    value={dadosEventoData}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoData(e.target.value)}
-                    className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold font-mono transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-550" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <span className="text-xs font-semibold text-slate-500 uppercase">Local</span>
-                  <input
-                    type="text"
-                    placeholder="Ex: Expocentro, SP"
-                    readOnly={isEditing}
-                    disabled={isEditing}
-                    value={dadosEventoLocal}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDadosEventoLocal(e.target.value)}
-                    className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-555" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                  />
-                </div>
-              </div>
-            </div>
             
             {/* BLOCO 2 — BRIEFING COMERCIAL */}
             <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
@@ -1598,30 +1378,45 @@ export function BoletimFormPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3.5 border-b border-slate-150 pb-3">
                       <div className="flex flex-wrap items-center gap-4">
                         <div className="flex items-center gap-2">
-                          <Boxes className="h-5 w-5 text-[#0b2f4a]" />
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold uppercase text-xs text-slate-400">Produto {pIndex + 1}:</span>
-                            <span className="font-extrabold text-sm text-[#0b2f4a] uppercase">{p.nome}</span>
-                            <span className="ml-2 bg-slate-100 text-slate-650 text-[10px] px-2 py-0.5 rounded font-mono font-bold">
-                              Qtd Proposta: {maxQty.toLocaleString("pt-BR")} un
-                            </span>
+                          <Boxes className="h-5 w-5 text-[#0b2f4a] shrink-0" />
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold uppercase text-xs text-slate-500">Produto {pIndex + 1}:</span>
+                              <span className="font-black text-base text-[#0b2f4a] uppercase">{p.nome}</span>
+                              <span className="ml-2 bg-blue-100 text-blue-900 text-sm px-3 py-1 rounded-full font-mono font-bold shadow-sm border border-blue-200">
+                                Qtd Proposta: {maxQty.toLocaleString("pt-BR")} un
+                              </span>
+                            </div>
+                            {(p.codigo_produto || p.observacoes_item) && (
+                              <div className="text-sm text-slate-700 mt-1">
+                                {p.codigo_produto && <span className="mr-3 font-mono font-bold bg-slate-200 px-2 py-0.5 rounded text-slate-800">Cód: {p.codigo_produto}</span>}
+                                {p.observacoes_item && <span className="italic font-medium">Obs: {p.observacoes_item}</span>}
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         {/* Setor PCP selection */}
                         <div className="flex items-center gap-2.5">
                           <span className="text-xs font-semibold text-slate-500 uppercase">Setor PCP:</span>
-                          <select
-                            disabled={isEditing}
-                            value={p.setor || "IMPRESSÃO"}
-                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateProductSector(p.id, e.target.value)}
-                            className={`rounded-xl border border-slate-200 text-xs px-3.5 py-1.5 font-bold outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "bg-slate-100 text-slate-500 cursor-not-allowed" : "bg-white text-slate-700 cursor-pointer"}`}
-                          >
-                            <option value="IMPRESSÃO">IMPRESSÃO</option>
-                            <option value="TEXTIL">TEXTIL</option>
-                            <option value="PVP">PVP</option>
-                            <option value="FLEXO">FLEXO</option>
-                          </select>
+                          <div className="relative w-full">
+                            {isEditing && (
+                              <div className="absolute inset-0 flex items-center px-3.5 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
+                                <span className="text-sm font-bold text-slate-800 truncate">{p.setor || "IMPRESSÃO"}</span>
+                              </div>
+                            )}
+                            <select
+                              disabled={isEditing}
+                              value={p.setor || "IMPRESSÃO"}
+                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateProductSector(p.id, e.target.value)}
+                              className={`w-full rounded-xl border border-slate-200 text-xs px-3.5 py-1.5 font-bold outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "opacity-0 cursor-not-allowed" : "bg-white text-slate-700 cursor-pointer"}`}
+                            >
+                              <option value="IMPRESSÃO">IMPRESSÃO</option>
+                              <option value="TEXTIL">TEXTIL</option>
+                              <option value="PVP">PVP</option>
+                              <option value="FLEXO">FLEXO</option>
+                            </select>
+                          </div>
                         </div>
                       </div>
 
@@ -1678,16 +1473,21 @@ export function BoletimFormPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Nome do Lote *</label>
-                                <input
-                                  type="text"
-                                  placeholder="Ex: Lote VIP"
-                                  required
-                                  readOnly={isEditing}
-                                  disabled={isEditing}
-                                  value={m.nomeModelo}
-                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "nomeModelo", e.target.value)}
-                                  className={`w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                                />
+                                <div className="relative w-full">
+                                  <div className="absolute inset-0 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
+                                    <span className="text-sm font-bold text-slate-800 truncate">{m.nomeModelo || "-"}</span>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    placeholder="Ex: Lote VIP"
+                                    required
+                                    readOnly={true}
+                                    disabled={true}
+                                    value={m.nomeModelo}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "nomeModelo", e.target.value)}
+                                    className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold outline-none transition opacity-0 cursor-not-allowed"
+                                  />
+                                </div>
                                 {validation && (
                                   <div className={`text-[8px] font-bold px-1 py-0.5 rounded leading-tight mt-1 ${
                                     validation.type === 'error' 
@@ -1701,12 +1501,18 @@ export function BoletimFormPage() {
 
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Cor / Material</label>
-                                <select
-                                  disabled={isEditing}
-                                  value={m.corMaterial || "Branco"}
-                                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelField(p.id, m.id, "corMaterial", e.target.value)}
-                                  className={`w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                                >
+                                <div className="relative w-full">
+                                  {isEditing && (
+                                    <div className="absolute inset-0 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
+                                      <span className="text-sm font-bold text-slate-800 truncate">{m.corMaterial || "Branco"}</span>
+                                    </div>
+                                  )}
+                                  <select
+                                    disabled={isEditing}
+                                    value={m.corMaterial || "Branco"}
+                                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelField(p.id, m.id, "corMaterial", e.target.value)}
+                                    className={`w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold outline-none transition ${isEditing ? "opacity-0 cursor-not-allowed" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                                  >
                                   <option value="Branco">Branco</option>
                                   <option value="Azul">Azul</option>
                                   <option value="Vermelho">Vermelho</option>
@@ -1718,20 +1524,26 @@ export function BoletimFormPage() {
                                   <option value="Transparente">Transparente</option>
                                   <option value="Personalizado">Personalizado</option>
                                 </select>
+                                </div>
                               </div>
 
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Quantidade *</label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  required
-                                  readOnly={isEditing}
-                                  disabled={isEditing}
-                                  value={m.quantidade}
-                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "quantidade", Number(e.target.value) || 0)}
-                                  className={`w-full rounded-xl border border-slate-200 px-3 py-1.5 text-right font-mono text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                                />
+                                <div className="relative w-full">
+                                  <div className="absolute inset-0 flex items-center justify-end px-3 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
+                                    <span className="text-sm font-bold font-mono text-slate-800 truncate">{m.quantidade}</span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    required
+                                    readOnly={true}
+                                    disabled={true}
+                                    value={m.quantidade}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "quantidade", Number(e.target.value) || 0)}
+                                    className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-right font-mono text-xs font-semibold outline-none transition opacity-0 cursor-not-allowed"
+                                  />
+                                </div>
                               </div>
                             </div>
 
@@ -1759,18 +1571,9 @@ export function BoletimFormPage() {
                                     type="checkbox"
                                     id={`rfid-${m.id}`}
                                     disabled={isEditing}
-                                    checked={m.observacoesTecnicas?.includes("RFID: Sim")}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                      const isRfid = e.target.checked;
-                                      const baseNotes = m.observacoesTecnicas?.replace("RFID: Sim.", "").replace("RFID: Não.", "").trim() || "";
-                                      updateModelField(
-                                        p.id, 
-                                        m.id, 
-                                        "observacoesTecnicas", 
-                                        isRfid ? (baseNotes ? `${baseNotes} RFID: Sim.` : "RFID: Sim.") : (baseNotes ? `${baseNotes} RFID: Não.` : "RFID: Não.")
-                                      );
-                                    }}
-                                    className={`h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${isEditing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                                    checked={m.configImpressao.rfid || false}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelConfigField(p.id, m.id, "rfid", e.target.checked)}
+                                    className={`h-4.5 w-4.5 rounded-lg border-slate-300 text-[#0f9f9a] focus:ring-[#0f9f9a] transition ${isEditing ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
                                   />
                                   <label htmlFor={`rfid-${m.id}`} className="text-xs font-semibold text-slate-650 uppercase cursor-pointer select-none">
                                     RFID / NFC Integrado
@@ -1780,16 +1583,17 @@ export function BoletimFormPage() {
 
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Tipo de Numeração</label>
-                                <select
-                                  disabled={isEditing}
-                                  value={m.configImpressao.tipoNumeracao}
-                                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
-                                  className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                                >
-                                  <option value="SEM_NUMERACAO">Sem Numeração</option>
-                                  <option value="SEQUENCIAL">Sequencial</option>
-                                  <option value="CUSTOMIZADA">Customizada (CSV)</option>
-                                </select>
+                                <div className="relative w-full">
+                                  <select
+                                    value={m.configImpressao.tipoNumeracao}
+                                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
+                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none transition bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                  >
+                                    <option value="SEM_NUMERACAO">Sem Numeração</option>
+                                    <option value="SEQUENCIAL">Sequencial</option>
+                                    <option value="CUSTOMIZADA">Customizada (CSV)</option>
+                                  </select>
+                                </div>
                               </div>
                             </div>
                             
@@ -1802,7 +1606,6 @@ export function BoletimFormPage() {
                                   <div className="relative flex-1">
                                     <button
                                       type="button"
-                                      disabled={isEditing}
                                       onClick={(e) => {
                                         if (openGabaritoDropdown === m.id) {
                                           setOpenGabaritoDropdown(null);
@@ -1817,10 +1620,10 @@ export function BoletimFormPage() {
                                           setGabaritoSearchQuery("");
                                         }
                                       }}
-                                      className={`w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none flex items-center justify-between gap-1 shadow-sm hover:border-slate-300 transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none flex items-center justify-between gap-1 shadow-sm hover:border-slate-300 transition bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
                                     >
                                       <span className="truncate">
-                                        {getGabaritoName(m.gabaritoNumeracao)}
+                                        {m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" ? m.gabaritoNumeracao : "Sem gabarito"}
                                       </span>
                                       <ChevronDown className="h-3.5 w-3.5 text-slate-550 dark:text-slate-400 shrink-0" />
                                     </button>
@@ -1854,26 +1657,25 @@ export function BoletimFormPage() {
                                           
                                           {/* Lista de Opções */}
                                           <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                                            {filteredGabaritos.length === 0 ? (
+                                            {gabaritosOptions.filter(g => g.toLowerCase().includes(gabaritoSearchQuery.toLowerCase())).length === 0 ? (
                                               <div className="p-2 text-slate-400 italic text-center">Nenhum encontrado</div>
                                             ) : (
-                                              filteredGabaritos.map((g) => {
-                                                const val = String(g.id_gabarito !== null && g.id_gabarito !== undefined ? g.id_gabarito : g.id);
+                                              gabaritosOptions.filter(g => g.toLowerCase().includes(gabaritoSearchQuery.toLowerCase())).map((g, idx) => {
                                                 return (
                                                   <button
-                                                    key={g.id}
+                                                    key={idx}
                                                     type="button"
                                                     onClick={() => {
-                                                      updateModelField(p.id, m.id, "gabaritoNumeracao", val);
+                                                      updateModelField(p.id, m.id, "gabaritoNumeracao", g);
                                                       setOpenGabaritoDropdown(null);
                                                     }}
                                                     className={`w-full text-left p-2 hover:bg-slate-100 dark:hover:bg-slate-900 block transition-colors ${
-                                                      m.gabaritoNumeracao === val 
+                                                      m.gabaritoNumeracao === g 
                                                         ? "bg-blue-50/50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400" 
                                                         : "text-slate-800 dark:text-slate-200"
                                                     }`}
                                                   >
-                                                    <div>{g.name}</div>
+                                                    <div>{g}</div>
                                                   </button>
                                                 );
                                               })
@@ -1890,14 +1692,14 @@ export function BoletimFormPage() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const foundInDb = gabaritosList.find(g => String(g.id_gabarito || g.id) === m.gabaritoNumeracao || g.name === m.gabaritoNumeracao);
-                                        const mockFound = MOCK_GABARITOS.find(g => g.nome === m.gabaritoNumeracao || g.id === m.gabaritoNumeracao || (foundInDb && g.nome === foundInDb.name));
+                                        const foundInDb = gabaritosOptions.find(g => g === m.gabaritoNumeracao);
+                                        const mockFound = MOCK_GABARITOS.find(g => g.nome === m.gabaritoNumeracao || g.id === m.gabaritoNumeracao);
                                         if (mockFound) {
                                           setSelectedGabaritoPreview(mockFound);
                                         } else if (foundInDb) {
                                           setSelectedGabaritoPreview({
-                                            id: foundInDb.id,
-                                            nome: foundInDb.name,
+                                            id: foundInDb,
+                                            nome: foundInDb,
                                             descricao: "Gabarito carregado dinamicamente do banco de dados.",
                                             previewImageUrl: ""
                                           });
@@ -1918,23 +1720,28 @@ export function BoletimFormPage() {
                                   <div>
                                     <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Faixa Numérica (Início / Fim)</label>
                                     <div className="flex gap-2 w-full">
-                                      <input
-                                        type="number"
-                                        placeholder="Início"
-                                        required
-                                        readOnly={isEditing}
-                                        disabled={isEditing}
-                                        value={m.numeracaoInicial || ""}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
-                                        className={`w-1/2 rounded-xl border border-slate-200 px-3 py-2 text-right font-mono text-xs font-semibold outline-none transition ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
-                                      />
-                                      <input
-                                        type="number"
-                                        placeholder="Fim"
-                                        readOnly
-                                        value={m.numeracaoFinal || ""}
-                                        className="w-1/2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-right font-mono text-xs font-semibold text-slate-500 cursor-not-allowed outline-none"
-                                      />
+                                      <div className="relative w-1/2">
+                                        <input
+                                          type="number"
+                                          placeholder="Início"
+                                          required
+                                          value={m.numeracaoInicial || ""}
+                                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
+                                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-right font-mono text-xs font-semibold outline-none transition bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                        />
+                                      </div>
+                                      <div className="relative w-1/2">
+                                        <div className="absolute inset-0 flex items-center justify-end px-3 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
+                                          <span className="text-sm font-bold font-mono text-slate-800 truncate">{m.numeracaoFinal || ""}</span>
+                                        </div>
+                                        <input
+                                          type="number"
+                                          placeholder="Fim"
+                                          readOnly
+                                          value={m.numeracaoFinal || ""}
+                                          className="w-full h-full opacity-0 cursor-not-allowed"
+                                        />
+                                      </div>
                                     </div>
                                   </div>
                                 ) : m.configImpressao.tipoNumeracao === "CUSTOMIZADA" ? (
@@ -1965,9 +1772,9 @@ export function BoletimFormPage() {
                                   </div>
                                 ) : (
                                   <div>
-                                    <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Especificação de Dados</label>
+                                    <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Faixa Numérica (Início / Fim)</label>
                                     <div className="h-10 bg-slate-100 rounded-2xl border border-slate-200 flex items-center justify-center text-slate-450 font-semibold text-xs">
-                                      Sem Numeração Variável
+                                      Sem faixa numérica
                                     </div>
                                   </div>
                                 )}
@@ -1998,202 +1805,6 @@ export function BoletimFormPage() {
             </div>
           </div>
 
-          {/* BLOCO 5 — BRIEFING E DESIGN */}
-          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
-            <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-1.5">
-              BLOCO 5 — Briefing e Design
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {/* Briefing da Arte */}
-              <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Briefing da arte / layout</label>
-                <textarea
-                  placeholder="Orientações de arte (logotipos, fontes, paleta de cores, posicionamentos de numeração)."
-                  rows={3}
-                  value={instrucoesDesign}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
-                    setInstrucoesDesign(e.target.value);
-                    setAtribuidoDesigner(false);
-                  }}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none resize-y transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                />
-              </div>
-
-              {/* Designer Responsável & Equipe */}
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-500 uppercase block">Designer responsável *</label>
-                  <select
-                    required
-                    value={selectedDesigner}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                      setSelectedDesigner(e.target.value);
-                      setAtribuidoDesigner(false);
-                    }}
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                  >
-                    <option value="">Selecione o Designer...</option>
-                    {designersList.map(d => (
-                      <option key={d.user_id} value={d.user_id}>
-                        {d.nome_usuario} ({d.email}) - {getDesignerActiveCount(d.user_id)} ativas
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Painel Compacto de Carga dos Designers */}
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 shadow-sm">
-                  <span className="text-[8px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-wider block">Painel de Carga (Equipe)</span>
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[8px]">
-                    {designersList.map(d => {
-                      const activeCount = getDesignerActiveCount(d.user_id);
-                      return (
-                        <div key={d.user_id} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850/40 last:border-b-0 pb-0.5">
-                          <span className="text-slate-550 dark:text-slate-400 truncate max-w-[95px]" title={`${d.nome_usuario} (${d.email})`}>
-                            {d.nome_usuario.split(" ")[0]}
-                          </span>
-                          <span className={`font-mono font-bold px-1 rounded-sm ${
-                            activeCount >= 5 
-                              ? "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400" 
-                              : activeCount >= 3 
-                              ? "bg-amber-50 text-amber-700 dark:bg-amber-955/20 dark:text-amber-455" 
-                              : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-455"
-                          }`}>
-                            {activeCount}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Ação Operacional de Atribuição no Bloco 5 */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSalvarBriefingEDesigner}
-                  disabled={!selectedDesigner || loadingDetails}
-                  className={`rounded-2xl px-5 py-2.5 text-xs font-semibold uppercase tracking-wider transition flex items-center gap-1.5 shadow-sm ${
-                    (!selectedDesigner || loadingDetails)
-                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                      : "bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.01] active:scale-[0.99]"
-                  }`}
-                >
-                  {loadingDetails ? "Salvando..." : "Salvar briefing e designer"}
-                </button>
-              </div>
-
-              {atribuidoDesigner && selectedDesigner && (
-                <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold shadow-xs">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span>Briefing atribuído para {designersList.find(d => d.user_id === selectedDesigner)?.nome_usuario || selectedDesigner}</span>
-                  <span className="opacity-75 font-mono text-[9px]">({dataHoraAtribuicao})</span>
-                </div>
-              )}
-            </div>
-
-            {/* Upload Area / Attachments */}
-            <div className="border-t border-slate-200/40 dark:border-slate-800/30 pt-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase block">
-                  Arquivos de apoio para o designer
-                </span>
-                
-                {isEditing && (
-                  <button
-                    type="button"
-                    disabled={uploadingSupportFile}
-                    onClick={() => {
-                      const inputEl = document.getElementById("support-file-input") as HTMLInputElement;
-                      if (inputEl) inputEl.click();
-                    }}
-                    className="h-8 px-3 bg-slate-100 hover:bg-slate-205 text-slate-700 rounded-xl text-[10px] font-bold flex items-center gap-1 transition border border-slate-200"
-                  >
-                    {uploadingSupportFile ? "Enviando..." : "📎 Anexar arquivos"}
-                  </button>
-                )}
-              </div>
-
-              {isEditing ? (
-                <>
-                  <input
-                    type="file"
-                    id="support-file-input"
-                    className="hidden"
-                    accept=".jpg,.jpeg,.png,.pdf,.ai,.cdr,.svg,.zip"
-                    onChange={handleUploadSupportFile}
-                  />
-
-                  {loadingSupportFiles ? (
-                    <div className="text-[9px] text-slate-500 animate-pulse italic">
-                      Carregando arquivos de apoio...
-                    </div>
-                  ) : supportFiles.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-2">
-                      {supportFiles.map((file) => {
-                        const fileExt = file.name.split(".").pop()?.toUpperCase() || "ARQUIVO";
-                        const formatFileSize = (bytes: any) => {
-                          if (bytes === undefined || bytes === null) return "";
-                          if (bytes === 0) return "0 Bytes";
-                          const k = 1024;
-                          const sizes = ["Bytes", "KB", "MB", "GB"];
-                          const i = Math.floor(Math.log(bytes) / Math.log(k));
-                          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-                        };
-
-                        return (
-                          <div key={file.name} className="flex items-center justify-between p-3 rounded-2xl bg-white border border-slate-200 text-xs shadow-sm hover:shadow transition">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <FileText className="h-4.5 w-4.5 text-blue-600 shrink-0" />
-                              <div className="min-w-0">
-                                <p className="font-bold truncate text-slate-700 max-w-[130px]" title={file.name}>
-                                  {file.name.substring(file.name.indexOf("_") + 1)}
-                                </p>
-                                <p className="text-[9px] text-slate-500">
-                                  {fileExt} {file.size ? `• ${formatFileSize(file.size)}` : ""}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0 ml-2">
-                              <a
-                                href={file.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:underline font-bold text-[10px] flex items-center gap-0.5"
-                              >
-                                Download
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveSupportFile(file.name)}
-                                className="text-red-500 hover:text-red-700 font-bold text-[10px]"
-                              >
-                                Remover
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-[9px] text-slate-450 italic mt-0.5">
-                      Nenhum arquivo de apoio anexado para esta OS.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-[9px] text-slate-450 italic mt-0.5">
-                  Para pedidos novos, os arquivos de apoio poderão ser carregados no Storage após a abertura da OS (modo edição).
-                </p>
-              )}
-            </div>
-          </div>
-          
           {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS) */}
           <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -2240,76 +1851,128 @@ export function BoletimFormPage() {
                               BLOCO 8 — Revisão / Logística
                             </h3>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+                              {/* Linha 1 */}
                               <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Modalidade de Envio</label>
-                                <select
-                                  disabled={isEditing}
-                                  value={transporte}
-                                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTransporte(e.target.value)}
-                                  className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-white text-slate-700 cursor-pointer"}`}
-                                >
-                                  <option value="Retirada">Retirada em Mãos (Balcão)</option>
-                                  <option value="Motoboy">Entrega Via Motoboy</option>
-                                  <option value="Sedex">Correios: SEDEX</option>
-                                  <option value="Pac">Correios: PAC</option>
-                                  <option value="Transportadora">Transportadora Conveniada</option>
-                                </select>
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Volumes Estimados</label>
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Serviço / Transporte</label>
                                 <input
-                                  type="number"
-                                  min={1}
-                                  required
-                                  readOnly={isEditing}
-                                  disabled={isEditing}
-                                  value={volumes}
-                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVolumes(Number(e.target.value) || 1)}
-                                  className={`w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold font-mono transition outline-none ${isEditing ? "bg-slate-100 cursor-not-allowed text-slate-500" : "bg-slate-50 text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"}`}
+                                  type="text"
+                                  placeholder="Ex: Sedex, Azul..."
+                                  value={logisticaServico}
+                                  onChange={(e) => setLogisticaServico(e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
                                 />
                               </div>
 
                               <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Observações Críticas / Restrições (OS)</label>
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Transportador</label>
                                 <input
                                   type="text"
-                                  placeholder="Restrição de entrega, horários ou avisos gerais."
-                                  value={obsCriticas}
-                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setObsCriticas(e.target.value)}
+                                  placeholder="Nome da transportadora"
+                                  value={logisticaTransportador}
+                                  onChange={(e) => setLogisticaTransportador(e.target.value)}
                                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Prazo (Dias)</label>
+                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
+                                  {cotacaoFrete?.prazo ? `${cotacaoFrete.prazo} dias` : "Não confirmado"}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">CEP Destino</label>
+                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
+                                  {cotacaoFrete?.cep || "Não confirmado"}
+                                </div>
+                              </div>
+
+                              {/* Linha 2 */}
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Estimado</label>
+                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
+                                  {cotacaoFrete?.peso ? `${(Number(cotacaoFrete.peso) / 1000).toFixed(2)} kg` : "Não confirmado"}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Real (kg)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Ex: 12.5"
+                                  value={logisticaPesoReal}
+                                  onChange={(e) => setLogisticaPesoReal(e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Qtd de Volumes</label>
+                                <input
+                                  type="number"
+                                  placeholder="Ex: 2"
+                                  value={logisticaQtdVolumes}
+                                  onChange={(e) => setLogisticaQtdVolumes(e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de volume</label>
+                                <select
+                                  value={logisticaTipoVolume}
+                                  onChange={(e) => setLogisticaTipoVolume(e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                >
+                                  <option value="">Selecione...</option>
+                                  <option value="Pacote">Pacote</option>
+                                  <option value="Caixa">Caixa</option>
+                                  <option value="Envelope">Envelope</option>
+                                  <option value="Outro">Outro</option>
+                                </select>
+                              </div>
+
+                              {/* Linha 3 */}
+                              <div className="space-y-1.5 md:col-span-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Responsável</label>
+                                <input
+                                  type="text"
+                                  placeholder="Nome do responsável pelo pacote"
+                                  value={logisticaResponsavel}
+                                  onChange={(e) => setLogisticaResponsavel(e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5 md:col-span-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Observações do frete</label>
+                                <textarea
+                                  placeholder="Observações logísticas, restrições, horários..."
+                                  rows={1}
+                                  value={logisticaObsFrete}
+                                  onChange={(e) => setLogisticaObsFrete(e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] resize-y"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5 md:col-span-4 border-t border-slate-100 pt-5 mt-2">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Observações Gerais (OS)</label>
+                                <textarea
+                                  placeholder="Observações gerais operacionais, avisos importantes e restrições..."
+                                  rows={3}
+                                  value={obsCriticas}
+                                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setObsCriticas(e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] resize-y"
                                 />
                               </div>
                             </div>
                           </div>
                           
                           {/* BLOCO DE RESUMO FINAL E SUBMISSÃO */}
-                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-semibold text-slate-700">
-                              <div>
-                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Total de Itens:</span>
-                                <strong className="text-[#0b2f4a] font-mono text-base">{totalQuantidade.toLocaleString("pt-BR")} un</strong>
-                              </div>
-                              <div>
-                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Peso Teórico Total:</span>
-                                <strong className="text-[#0b2f4a] font-mono text-base">{calculateTotalWeight()} kg</strong>
-                              </div>
-                              <div>
-                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Volumes:</span>
-                                <strong className="text-[#0b2f4a] font-mono text-base">{volumes} caixas</strong>
-                              </div>
-                              <div>
-                                <span className="text-slate-500 font-semibold uppercase mr-1.5">Urgência:</span>
-                                <span className={`px-2.5 py-1 rounded-xl font-bold text-xs border ${
-                                  urgente 
-                                    ? "bg-red-50 text-red-800 border-red-200 animate-pulse" 
-                                    : "bg-slate-100 text-slate-700 border border-slate-200"
-                                }`}>
-                                  {urgente ? "URGENTE" : "PADRÃO"}
-                                </span>
-                              </div>
-                            </div>
+                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 flex flex-col sm:flex-row sm:items-center justify-end gap-4 shadow-sm mb-12">
 
                             <div className="flex items-center gap-3">
                               <button

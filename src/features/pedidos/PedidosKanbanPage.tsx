@@ -7,7 +7,7 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { EmptyState } from "@/components/common/EmptyState";
 import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
-import type { PedidoProducaoListItem } from "./types";
+import type { PropostaOperacionalListItem } from "./types";
 import {
   Flame,
   AlertCircle,
@@ -46,7 +46,7 @@ const COLUNAS_KANBAN: { label: string; statusList: PedidoStatus[] }[] = [
   { label: "Finalizado", statusList: ["EXPEDIDO", "CANCELADO"] }
 ];
 
-const getPrazoStatus = (pedido: PedidoMock) => {
+const getPrazoStatus = (pedido: PropostaOperacionalListItem) => {
   if (pedido.statusPedido === "EXPEDIDO" || pedido.statusPedido === "CANCELADO") {
     return { label: "CONCLUÍDO", color: "text-slate-400 bg-slate-100 dark:bg-slate-800 dark:text-slate-500", isLate: false };
   }
@@ -85,7 +85,7 @@ export function PedidosKanbanPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { openChat } = useGlobalChat();
-  const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
+  const [pedidos, setPedidos] = useState<PropostaOperacionalListItem[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -210,14 +210,14 @@ export function PedidosKanbanPage() {
     }
   };
 
-  const isPedidoAtrasado = (pedido: PedidoMock) => {
+  const isPedidoAtrasado = (pedido: PropostaOperacionalListItem) => {
     if (pedido.statusPedido === "EXPEDIDO" || pedido.statusPedido === "CANCELADO") return false;
     const deliveryDate = new Date(pedido.dataPrevistaEntrega);
     const today = new Date("2026-06-02");
     return deliveryDate < today;
   };
 
-  const isPedidoBloqueado = (pedido: PedidoMock) => {
+  const isPedidoBloqueado = (pedido: PropostaOperacionalListItem) => {
     return pedido.financialBlock || Boolean(pedido.blockReason);
   };
 
@@ -225,9 +225,9 @@ export function PedidosKanbanPage() {
   const totalCount = pedidos.length;
   const atrasadosCount = pedidos.filter(p => isPedidoAtrasado(p)).length;
   const urgentesCount = pedidos.filter(p => p.urgente).length;
-  const arteCount = pedidos.filter(p => ["ARTE_EM_ANDAMENTO", "AGUARDANDO_APROVACAO_CLIENTE"].includes(p.statusPedido)).length;
-  const producaoCount = pedidos.filter(p => ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido)).length;
-  const expedicaoCount = pedidos.filter(p => ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido)).length;
+  const arteCount = pedidos.filter(p => ["ARTE_EM_ANDAMENTO", "AGUARDANDO_APROVACAO_CLIENTE"].includes(p.statusPedido || "")).length;
+  const producaoCount = pedidos.filter(p => ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido || "")).length;
+  const expedicaoCount = pedidos.filter(p => ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido || "")).length;
   const aguardandoClienteCount = pedidos.filter(p => p.statusPedido === "AGUARDANDO_APROVACAO_CLIENTE").length;
   const bloqueadosCount = pedidos.filter(p => isPedidoBloqueado(p)).length;
   const hojeCount = pedidos.filter(p => p.dataPrevistaEntrega === "2026-06-02" && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO").length;
@@ -237,7 +237,7 @@ export function PedidosKanbanPage() {
     return t >= todayTime && t <= todayTime + 7 * 24 * 60 * 60 * 1000 && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO";
   }).length;
 
-  const calculateProducaoProgress = (pedido: PedidoProducaoListItem) => {
+  const calculateProducaoProgress = (pedido: PropostaOperacionalListItem) => {
     if (pedido.statusPedido === "PRONTO_EXPEDICAO" || pedido.statusPedido === "EXPEDIDO") return 100;
     if (pedido.statusPedido === "REVISAO_FINAL") return 80;
     if (pedido.statusPedido === "EM_ACABAMENTO") return 60;
@@ -248,7 +248,7 @@ export function PedidosKanbanPage() {
   // Filter logic for columns
   const getFilteredPedidosForStatus = (statusList: PedidoStatus[]) => {
     const filtered = pedidos.filter((p) => {
-      const matchesStatus = statusList.includes(p.statusPedido);
+      const matchesStatus = statusList.includes((p.statusPedido || "") as PedidoStatus);
       const matchesSearch =
         search === "" ||
         p.clienteNome.toLowerCase().includes(search.toLowerCase()) ||
@@ -266,11 +266,11 @@ export function PedidosKanbanPage() {
       } else if (activeFilter === "urgente") {
         matchesQuickFilter = p.urgente;
       } else if (activeFilter === "arte") {
-        matchesQuickFilter = ["ARTE_EM_ANDAMENTO", "AGUARDANDO_APROVACAO_CLIENTE"].includes(p.statusPedido);
+        matchesQuickFilter = ["ARTE_EM_ANDAMENTO", "AGUARDANDO_APROVACAO_CLIENTE"].includes(p.statusPedido || "");
       } else if (activeFilter === "producao") {
-        matchesQuickFilter = ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido);
+        matchesQuickFilter = ["EM_IMPRESSAO", "EM_ACABAMENTO", "REVISAO_FINAL"].includes(p.statusPedido || "");
       } else if (activeFilter === "expedicao") {
-        matchesQuickFilter = ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido);
+        matchesQuickFilter = ["PRONTO_EXPEDICAO", "EXPEDIDO"].includes(p.statusPedido || "");
       } else if (activeFilter === "aguardando_cliente") {
         matchesQuickFilter = p.statusPedido === "AGUARDANDO_APROVACAO_CLIENTE";
       } else if (activeFilter === "bloqueado") {
@@ -599,20 +599,19 @@ export function PedidosKanbanPage() {
                               <MessageSquare className="h-3.5 w-3.5" />
                             </button>
 
-                            {/* Ficha Geral */}
                             <Link
-                              href={`/pedidos/${pedido.id_int}`}
+                              href={`/pedidos/boletim?id_int=${pedido.id_int}&modo=edicao`}
                               className="h-6 w-6 rounded border border-slate-200/60 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition shrink-0"
-                              title="Abrir Ficha Geral"
+                              title="Abrir Boletim de OS"
                             >
                               <Eye className="h-3.5 w-3.5" />
                             </Link>
 
-                            {/* Ir para Produção */}
+                            {/* Ir para Boletim de Produção */}
                             <Link
-                              href={`/pedidos/${pedido.id_int}?tab=producao`}
+                              href={`/pedidos/boletim?id_int=${pedido.id_int}&modo=edicao`}
                               className="h-6 px-1.5 bg-[#0b2f4a] hover:bg-[#123f61] text-white rounded text-[9px] font-bold flex items-center justify-center gap-0.5 transition shrink-0"
-                              title="Ir para Ficha de Produção"
+                              title="Ir para Boletim de Produção"
                             >
                               <Wrench className="h-3 w-3" />
                               <span className="hidden xs:inline">Fábrica</span>

@@ -4,12 +4,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Copy, Search, Trash2, X, Edit2, AlertTriangle } from "lucide-react";
+import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
 import { ArtesTab } from "@/features/orcamentos/components/ArtesTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
+import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -43,6 +44,7 @@ import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
+import { composeStatusEmArte } from "@/features/orcamentos/mappers";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
@@ -234,6 +236,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // Catalog state from Supabase
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loadingProdutos, setLoadingProdutos] = useState(true);
+  const [deleteProductConfirmOpen, setDeleteProductConfirmOpen] = useState(false);
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [isDeletingProduct, setIsDeletingProduct] = useState(false);
   type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "boletim" | "historico";
   const [activeFormTab, setActiveFormTab] = useState<EditTabType>("geral");
   const [saveSuccessModal, setSaveSuccessModal] = useState<{ isOpen: boolean; finalIdInt: number | string }>({ isOpen: false, finalIdInt: "" });
@@ -283,6 +288,63 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   useEffect(() => {
     loadModelos();
   }, [loadModelos]);
+
+  // Sincronização automática do status via Engine Oficial
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkAndSyncStatus() {
+      if (!proposta?.id_int || form.id_int === "NOVO") return;
+
+      // Executa a engine com o status_interno atual do form
+      const diagnostic = await validarStatusProposta(proposta.id_int, !!form.isAvulso, form.status);
+      
+      // Update emArte state even if status didn't change
+      if (mounted && diagnostic) {
+        setForm(prev => ({ ...prev, emArte: diagnostic.emArte }));
+      }
+
+      if (mounted && diagnostic && diagnostic.mudariaStatus) {
+        try {
+          const client = getSupabaseClient();
+          if (!client) return;
+          const { data: { session } } = await client.auth.getSession();
+          
+          const response = await fetch('/api/orcamentos/sync-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token || ''}`
+            },
+            body: JSON.stringify({ idInt: Number(proposta.id_int) })
+          });
+
+          const result = await response.json();
+          
+          if (result.success && mounted) {
+            setForm(prev => ({ ...prev, status: diagnostic.statusRecomendado as any, emArte: diagnostic.emArte }));
+            showToast({ 
+              type: "success", 
+              title: "Status Atualizado", 
+              description: `O status foi atualizado automaticamente pela Engine para ${diagnostic.statusRecomendado}.` 
+            });
+          } else if (!result.success) {
+            console.warn("Auto-sync de status falhou:", result.errorMessage);
+          }
+        } catch (err) {
+          console.error("Erro ao sincronizar status automaticamente:", err);
+        }
+      }
+    }
+
+    checkAndSyncStatus();
+
+    return () => {
+      mounted = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposta?.id_int]); // Executa apenas no carregamento da proposta
+
 
   const [proposalContacts, setProposalContacts] = useState<CadastroContato[]>(() => proposta?.cliente.contatos ?? []);
   const [proposalAddresses, setProposalAddresses] = useState<CadastroEndereco[]>(() => {
@@ -1211,7 +1273,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     try {
       const res = await getCadastroCompleto(basicCliente.idCliente);
       const nextCliente = res.cadastro || basicCliente;
-      const nextEndereco = nextCliente.enderecos?.[0];
+      const enderLista = nextCliente.enderecos || [];
+      const nextEndereco = enderLista.find(e => e.tipo === "entrega") 
+        || enderLista.find(e => e.tipo === "principal") 
+        || enderLista[0];
       const nextContacts = nextCliente.contatos || [];
       const nextBonus = getClienteBonusPercent(nextCliente);
       const recalculatedItems = form.itens.map((item) => recalculateItem(item, nextBonus));
@@ -1425,6 +1490,136 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
+
+  const handleRemoveProductClick = (itemId: string) => {
+    const item = form.itens.find((i) => i.id === itemId);
+    if (!item) return;
+
+    // 🔒 Verificar cobrança ativa ANTES de permitir remoção visual
+    const targetIdInt = form.id_int && form.id_int !== "NOVO" ? Number(form.id_int) : null;
+    if (targetIdInt) {
+      const cobrancasDaProposta = getCobrancasByProposta(targetIdInt);
+      const cobrancaAtiva = cobrancasDaProposta.some(
+        (c) => c.status !== "CANCELADO"
+      );
+      if (cobrancaAtiva) {
+        showToast({
+          type: "error",
+          title: "Remoção bloqueada",
+          description: "Não é possível remover produtos pois existe uma cobrança ativa. Cancele ou exclua a cobrança pendente antes."
+        });
+        return; // Produto NÃO some da tela
+      }
+    }
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[DEV] handleRemoveProductClick:", {
+        itemId,
+        nome: item.nome,
+        id_produto_proposta_origem: item.id_produto_proposta_origem ?? null,
+      });
+    }
+
+    setDeletingProductId(itemId);
+    setDeleteProductConfirmOpen(true);
+  };
+
+  const confirmRemoveProduct = async () => {
+    if (!deletingProductId) return;
+    const item = form.itens.find((i) => i.id === deletingProductId);
+    if (!item) {
+      setDeleteProductConfirmOpen(false);
+      setDeletingProductId(null);
+      return;
+    }
+
+    const dbId = item.id_produto_proposta_origem ?? null;
+    const isRealDbItem = dbId !== null && dbId > 0;
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[DEV] confirmRemoveProduct — DELETE IMEDIATO:", {
+        item_id_local: deletingProductId,
+        id_produto_proposta_origem: dbId,
+        isRealDbItem,
+      });
+    }
+
+    // Se item existe no banco: DELETE imediatamente (cascade remove pedidos_modelos)
+    if (isRealDbItem) {
+      setIsDeletingProduct(true);
+      try {
+        const client = getSupabaseClient();
+        if (!client) throw new Error("Cliente Supabase indisponível.");
+
+        const { data: deletedRows, error: deleteError } = await client
+          .from("produtos_proposta")
+          .delete()
+          .eq("id", dbId)
+          .select("id");
+
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV] Retorno do DELETE imediato:", { deletedRows, deleteError });
+        }
+
+        if (deleteError) {
+          showToast({
+            type: "error",
+            title: "Erro ao excluir produto",
+            description: "Não foi possível remover o produto do banco de dados. Tente novamente."
+          });
+          return; // Produto NÃO some da tela
+        }
+
+        if (!deletedRows || deletedRows.length === 0) {
+          showToast({
+            type: "error",
+            title: "Erro ao excluir produto",
+            description: "O produto não foi encontrado no banco ou a exclusão foi bloqueada. Recarregue a página."
+          });
+          return; // Produto NÃO some da tela
+        }
+
+        // DELETE confirmado — agora remove do estado local
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV] DELETE confirmado. Removendo produto do estado local.");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Erro desconhecido ao excluir produto.";
+        showToast({ type: "error", title: "Erro ao excluir produto", description: msg });
+        return;
+      } finally {
+        setIsDeletingProduct(false);
+      }
+    }
+
+    // Remove produto e modelos vinculados do estado visual
+    const newItens = form.itens.filter((current) => current.id !== deletingProductId);
+    let newModelos = form.pedidosModelos;
+    newModelos = form.pedidosModelos.filter(
+      (m) =>
+        !((m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
+          (m.item_temp_id && m.item_temp_id === item.id))
+    );
+
+    setForm(prev => ({
+      ...prev,
+      itens: newItens,
+      pedidosModelos: newModelos,
+      // Garante que o ID não fique pendente na lista de exclusão (já foi deletado)
+      deletedProdutoPropostaIds: prev.deletedProdutoPropostaIds.filter(id => id !== dbId),
+    }));
+
+    showToast({
+      type: "success",
+      title: "Produto excluído",
+      description: isRealDbItem
+        ? "Produto e seus modelos foram removidos permanentemente."
+        : "Produto removido do orçamento."
+    });
+
+    setDeleteProductConfirmOpen(false);
+    setDeletingProductId(null);
+  };
 
   function updateItem(itemId: string, updater: (item: PropostaItem) => PropostaItem) {
     updateField(
@@ -2048,25 +2243,35 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       ? { ...form, vendedor: vendedorParaSalvar }
       : form;
 
+    if (process.env.NODE_ENV === "development") {
+      console.log("[DEV] handleSave — deletedProdutoPropostaIds enviados:", formToSave.deletedProdutoPropostaIds);
+    }
+
     setIsSaving(true);
     try {
       const res = await saveProposta(formToSave);
       if (res.success) {
-        // Reset snapshot so isDirty becomes false after save
+        // Limpa lista de deleções após salvar com sucesso
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { fretes: _f, ...savedSnap } = formToSave;
+        const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [] };
         initialFormSnapshot.current = JSON.stringify(savedSnap);
 
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV] handleSave — sucesso. deletedProdutoPropostaIds limpo.");
+        }
+
         showToast({
-          type: "success",
-          title: mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso.",
-          description: "Aguardando sua escolha..."
+          type: res.errorMessage ? "info" : "success",
+          title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
+          description: res.errorMessage || "Aguardando sua escolha..."
         });
 
         const finalIdInt = res.id_int || formToSave.id_int;
         if (formToSave.id_int === "NOVO") {
           window.history.replaceState(null, "", `/orcamentos/${finalIdInt}/editar`);
-          setForm(prev => ({ ...prev, id_int: String(finalIdInt) }));
+          setForm(prev => ({ ...prev, id_int: String(finalIdInt), deletedProdutoPropostaIds: [] }));
+        } else {
+          setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
         }
         setSaveSuccessModal({ isOpen: true, finalIdInt });
       } else {
@@ -2138,7 +2343,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
   );
   const { getCobrancasByProposta } = useCobrancas();
-  const hasCobrancas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int).length > 0 : false;
+  const cobrancasVinculadas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int) : [];
+  const hasCobrancas = cobrancasVinculadas.length > 0;
+  const hasActiveCobranca = cobrancasVinculadas.some(c => c.status !== "CANCELADO");
 
   return (
     <div className="space-y-6">
@@ -2190,9 +2397,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               type="button"
               onClick={() => {
                 if (tab.id === "artes") {
-                  const errorList: { nome: string; faltam: string[] }[] = [];
+                  const errosPorModelo: Record<string, Set<string>> = {};
                   const isMissing = (val: any) => val === null || val === undefined || val === "";
                   for (const m of form.pedidosModelos) {
+                    // Ignora modelos órfãos (cujo item foi removido)
+                    const hasItem = form.itens.some(
+                      (item) =>
+                        (m.id_produto_proposta_origem && item.id_produto_proposta_origem === m.id_produto_proposta_origem) ||
+                        (m.item_temp_id && m.item_temp_id === item.id)
+                    );
+                    if (!hasItem) continue;
+
                     const faltam: string[] = [];
                     if (!m.nome_modelo) faltam.push("Modelo");
                     if (!m.quantidade || m.quantidade <= 0) faltam.push("Qtd");
@@ -2204,9 +2419,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     if (isMissing(m.verso_tipo)) faltam.push("Verso");
 
                     if (faltam.length > 0) {
-                      errorList.push({ nome: m.nome_modelo || "Sem nome", faltam });
+                      const nome = m.nome_modelo || "Sem nome";
+                      if (!errosPorModelo[nome]) {
+                        errosPorModelo[nome] = new Set();
+                      }
+                      faltam.forEach((f) => errosPorModelo[nome].add(f));
                     }
                   }
+
+                  const errorList = Object.entries(errosPorModelo).map(([nome, faltamSet]) => ({
+                    nome,
+                    faltam: Array.from(faltamSet),
+                  }));
 
                   if (errorList.length > 0) {
                     setShowArtesBlockModal(errorList);
@@ -2465,7 +2689,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   </Field>
                   <Field label="Status">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                      <StatusBadge status={form.status} tone={form.status === "NOVO" ? "info" : form.status === "APROVADO" ? "success" : form.status === "AGUARDANDO" ? "warning" : "neutral"} />
+                      <StatusBadge status={composeStatusEmArte(form.status, form.emArte)} tone={form.status === "NOVO" ? "info" : form.status === "APROVADO" ? "success" : form.status === "AGUARDANDO" ? "warning" : "neutral"} />
                     </div>
                   </Field>
                 </div>
@@ -2738,7 +2962,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               )}
 
               {activeFormTab === "produtos" && (
-                <div className="space-y-6">
+                <fieldset disabled={hasActiveCobranca} className="group space-y-6">
                   <FormSection
                     title="6. Produtos"
             description={form.isAvulso ? "Configure o valor total dos produtos no modo avulso." : "Escolha do catálogo e configure quantidades, descontos e variações."}
@@ -2839,7 +3063,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           hasVariationError={errorFields.includes(`variacoes_${item.id}`)}
                           onUpdate={(updater) => updateItem(item.id, updater)}
                           onVariationChange={(idVariacao, tipoId) => updateItemVariation(item.id, idVariacao, tipoId)}
-                          onRemove={() => updateField("itens", form.itens.filter((current) => current.id !== item.id))}
+                          onRemove={() => handleRemoveProductClick(item.id)}
                           onSave={() => handleSaveItem(item.id)}
                           minQuantity={somaModelos}
                         />
@@ -2850,7 +3074,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           key={item.id}
                           item={item}
                           onEdit={() => handleEditItem(item.id)}
-                          onRemove={() => updateField("itens", form.itens.filter((current) => current.id !== item.id))}
+                          onRemove={() => handleRemoveProductClick(item.id)}
                         />
                       );
                     }
@@ -2868,11 +3092,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               </>
             )}
           </FormSection>
-        </div>
+        </fieldset>
       )}
 
       {activeFormTab === "fretes" && (
-        <div className="space-y-6">
+        <fieldset disabled={hasActiveCobranca} className="group space-y-6">
           <FormSection 
             title="7. Fretes e Entrega" 
             description={form.isAvulso ? "Configure o frete manual para a proposta avulsa." : "Integração em tempo real com cotações de SEDEX e cadastro de frete manual."}
@@ -3072,7 +3296,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               </>
             )}
           </FormSection>
-                </div>
+                </fieldset>
               )}
 
               {activeFormTab === "pagamentos" && (
@@ -3105,7 +3329,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
               <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
-              <div className="mt-4">
+              <fieldset disabled={hasActiveCobranca} className="group mt-4">
                 <div className="grid gap-3 grid-cols-[75px_1fr] items-start">
                   <Field label="Tipo">
                     <select
@@ -3134,7 +3358,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     🔒 Edição restrita a administradores e gerentes.
                   </p>
                 )}
-              </div>
+              </fieldset>
             </FormSection>
 
             <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
@@ -3233,6 +3457,54 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         />
       )}
       
+      {/* MODAL DE EXCLUSÃO DE PRODUTO */}
+      {deleteProductConfirmOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md scale-100 rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-4 text-red-600">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100">
+                <AlertOctagon className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl font-bold">Excluir produto?</h3>
+            </div>
+            <p className="mb-6 text-sm text-slate-600">
+              {(() => {
+                const item = form.itens.find(i => i.id === deletingProductId);
+                if (!item) return "Tem certeza que deseja excluir este produto do orçamento?";
+                const hasModels = form.pedidosModelos.some(
+                  (m) => 
+                    (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
+                    (m.item_temp_id && m.item_temp_id === item.id)
+                );
+                return hasModels 
+                  ? "Este produto possui modelos/lotes vinculados. Ao excluir o produto, os modelos deste produto também serão removidos. Deseja continuar?" 
+                  : "Tem certeza que deseja excluir este produto do orçamento?";
+              })()}
+            </p>
+            <div className="flex gap-3">
+              <button 
+                type="button"
+                onClick={() => { setDeleteProductConfirmOpen(false); setDeletingProductId(null); }}
+                disabled={isDeletingProduct}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                onClick={() => void confirmRemoveProduct()}
+                disabled={isDeletingProduct}
+                className="flex-1 rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {isDeletingProduct ? (
+                  <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Excluindo...</>
+                ) : "Sim, excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* MODAL DE SUCESSO DE SALVAMENTO */}
       {saveSuccessModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
@@ -3255,7 +3527,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             <div className="flex flex-col gap-3">
               <button
                 type="button"
-                onClick={() => setSaveSuccessModal({ isOpen: false, finalIdInt: "" })}
+                onClick={() => {
+                  setSaveSuccessModal({ isOpen: false, finalIdInt: "" });
+                  window.location.reload();
+                }}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-[#0b2f4a] hover:border-slate-300"
               >
                 1. Salvar e ficar
@@ -3923,7 +4198,11 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     status: proposta?.status ?? "NOVO",
     clienteId: clienteNaoCadastrado ? "" : (cliente ? cliente.idCliente.toString() : ""),
     contatoId: clienteNaoCadastrado ? "" : (proposta?.contato.id ?? cliente?.contatos[0]?.id ?? ""),
-    enderecoId: clienteNaoCadastrado ? "" : (endereco?.id ?? ""),
+    enderecoId: clienteNaoCadastrado ? "" : (endereco?.id ?? (
+      cliente?.enderecos?.find(e => e.tipo === "entrega")?.id || 
+      cliente?.enderecos?.find(e => e.tipo === "principal")?.id || 
+      cliente?.enderecos?.[0]?.id || ""
+    )),
     compradorId: (() => {
       if (clienteNaoCadastrado) return "";
       // Default: the client itself is the faturado (use cliente.id UUID)
@@ -3938,6 +4217,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
       return vinculo?.id ?? clienteSelfId;
     })(),
     itens: proposta?.itens ?? [],
+    deletedProdutoPropostaIds: [],
     pedidosModelos: [],
     fretes,
     freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),

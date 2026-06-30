@@ -31,13 +31,12 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { useDashboardFinanceiroSnapshot } from "@/features/cobrancas/hooks/useDashboardFinanceiroSnapshot";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
 
-type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "EMITIR_BOLETOS" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO";
+type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
   { value: "PENDENTES_APROVACAO", label: "Pendentes aprovação" },
   { value: "CONFIRMADOS_DIA", label: "Confirmados do dia" },
-  { value: "EMITIR_BOLETOS", label: "Emitir Boletos" },
   { value: "PIX", label: "PIX" },
   { value: "BOLETO", label: "Boleto" },
   { value: "FATURADO", label: "Faturado" },
@@ -108,56 +107,6 @@ function getEmpresaLabelVisual(nome: string) {
   return nome;
 }
 
-/**
- * Determina se a cobrança é elegível para aparecer na fila "Emitir Boletos".
- *
- * DEFINIÇÕES DE TERMINOLOGIA:
- * 1) "Boleto Preparado" = O faturamento já foi processado e existem registros correspondentes criados na tabela `public.boletos` (pelo id_int).
- * 2) "Boleto Registrado" = O boleto preparado já foi associado ao banco emissor (C6 Bank) e possui dados de registro (id_boleto_c6, linha_digitavel, etc.).
- *
- * INDICADOR AUXILIAR (pagamentos_v2.boleto_enviadoo):
- * - O campo `boleto_enviadoo` da tabela `pagamentos_v2` funciona como um indicador auxiliar/legado de controle.
- * - Por segurança e flexibilidade, a fila "Emitir Boletos" NÃO deve depender exclusivamente do valor desse campo.
- * - A regra de desqualificação prioritária é a existência de qualquer boleto ativo (não cancelado) em `public.boletos` para o id_int correspondente.
- */
-function isEmitirBoletos(
-  cobranca: Cobranca,
-  existingBoletoIdInts?: Set<number>,
-  hasBoletoHistoryIdInts?: Set<number>
-) {
-  const tipo = (cobranca.tipo_cobranca || "").toUpperCase();
-  const status = (cobranca.status || "").toUpperCase();
-  
-  const isEFaturado = tipo === "E-FATURADO";
-  const isCorrectStatus = status === "A_RECEBER" || status === "A_VENCER";
-  const isConfirmedIfAvencer = status !== "A_VENCER" || cobranca.confirmado === true;
-  
-  // A proposta já tem boletos preparados no banco?
-  const jaTemBoletoPreparado = !!(existingBoletoIdInts && cobranca.id_int && existingBoletoIdInts.has(Number(cobranca.id_int)));
-  
-  // A proposta possui histórico de boletos no banco?
-  const temHistoricoBoletos = !!(hasBoletoHistoryIdInts && cobranca.id_int && hasBoletoHistoryIdInts.has(Number(cobranca.id_int)));
-  
-  // REGRA DE LEGADO:
-  // Se boleto_enviadoo = true mas não houver histórico de boletos no banco de dados,
-  // é uma cobrança legada inconsistente. Ela NÃO deve aparecer na fila.
-  // Se boleto_enviadoo = true e houver histórico de boletos, ela só pode aparecer/reemitir se todos os boletos estiverem cancelados.
-  // Se boleto_enviadoo = false, ela é elegível normalmente.
-  const isBoletoEnviadoValido = !cobranca.boleto_enviadoo || (!jaTemBoletoPreparado && temHistoricoBoletos);
-  
-  // Não pode aparecer na fila se já houver boletos preparados ativos
-  const isBoletoNaoPreparado = !jaTemBoletoPreparado;
-  
-  return (
-    isEFaturado &&
-    isCorrectStatus &&
-    isConfirmedIfAvencer &&
-    isBoletoNaoPreparado &&
-    isBoletoEnviadoValido &&
-    isEmpresaValida(cobranca)
-  );
-}
-
 function matchesTipoFiltro(
   cobranca: Cobranca,
   tipo: TipoFiltro,
@@ -167,12 +116,7 @@ function matchesTipoFiltro(
   if (tipo === "PENDENTES_APROVACAO") {
     return isPendenteAprovacao(cobranca);
   }
-
-  if (tipo === "EMITIR_BOLETOS") {
-    return isEmitirBoletos(cobranca, existingBoletoIdInts, hasBoletoHistoryIdInts);
-  }
-
-  if (tipo === "TODOS") {
+if (tipo === "TODOS") {
     return true;
   }
 
@@ -338,8 +282,6 @@ export function CobrancasList() {
         ? cobrancasStats.filter((c) => isPendenteAprovacao(c))
         : tipo === "CONFIRMADOS_DIA"
           ? cobrancasStats.filter(isConfirmadoDia)
-          : tipo === "EMITIR_BOLETOS"
-            ? cobrancasStats.filter((c) => isEmitirBoletos(c, existingBoletoIdInts, hasBoletoHistoryIdInts))
             : tipo === "CANCELADO"
               ? cobrancasStats.filter((c) => c.status === "CANCELADO")
               : statusFilter === "CONFIRMADOS"
@@ -352,7 +294,7 @@ export function CobrancasList() {
       .filter((cobranca) => {
         const matchesSearch = cobrancaMatchesSearch(cobranca, search);
         const matchesTipo =
-          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "EMITIR_BOLETOS" || tipo === "CANCELADO"
+          tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "CANCELADO"
             ? true
             : matchesTipoFiltro(cobranca, tipo, existingBoletoIdInts, hasBoletoHistoryIdInts);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
@@ -634,7 +576,7 @@ export function CobrancasList() {
             onChange={(event) => {
               const val = event.target.value as TipoFiltro;
               setTipo(val);
-              if (val === "PENDENTES_APROVACAO" || val === "EMITIR_BOLETOS") {
+              if (val === "PENDENTES_APROVACAO") {
                 setStatusFilter("FILA");
               } else if (val !== "TODOS") {
                 setStatusFilter("CONFIRMADOS");

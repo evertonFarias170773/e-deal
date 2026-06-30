@@ -1,6 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { type BoletoDepositoMock } from "@/lib/mocks/contas-receber.mock";
-import { mapSupabaseBoletoRowToBoletoDepositoMock } from "../mappers";
+import { type RecebimentoOperacional } from "@/lib/mocks/contas-receber.mock";
+import { mapSupabaseBoletoRowToRecebimentoOperacional } from "../mappers";
 import type { SupabaseBoletoRow } from "../types.supabase";
 
 export const CONTAS_RECEBER_SELECT_COLUMNS = [
@@ -49,8 +49,8 @@ export type ContasReceberReadSource = "supabase" | "mock";
 
 export type ContasReceberReadResult = {
   source: ContasReceberReadSource;
-  recebiveis: BoletoDepositoMock[];
-  boletosDepositos: BoletoDepositoMock[];
+  recebiveis: RecebimentoOperacional[];
+  boletosDepositos: RecebimentoOperacional[];
 };
 
 async function fetchPagamentosRows() {
@@ -107,7 +107,7 @@ async function fetchPagamentosRows() {
 
 function mapRowsToReadModel(rows: SupabaseBoletoRow[]) {
   const boletos = rows
-    .map((row) => mapSupabaseBoletoRowToBoletoDepositoMock(row))
+    .map((row) => mapSupabaseBoletoRowToRecebimentoOperacional(row))
     .filter((item) => item.status !== "A_RECEBER");
 
   return {

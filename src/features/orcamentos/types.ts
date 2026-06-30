@@ -1,7 +1,25 @@
 import type { Cadastro, CadastroContato, CadastroEndereco, CadastroVinculoComercial } from "@/features/cadastros/types";
 import type { Produto, TipoVariacao, VariacaoGlobal } from "@/features/produtos/types";
 
-export type PropostaStatus = "NOVO" | "AGUARDANDO" | "APROVADO" | "CANCELADO";
+export type PropostaStatus = 
+  | "NOVO" 
+  | "NOVO / EM ARTE" 
+  | "AGUARDANDO" 
+  | "AGUARDANDO / EM ARTE" 
+  | "AGUARDANDO / PENDENTE" 
+  | "APROVADO" 
+  | "APROVADO / EM ARTE" 
+  | "REVISAO ATENDENTE" 
+  | "REVISAO PRODUCAO" 
+  | "EM PRODUCAO" 
+  | "EM IMPRESSAO" 
+  | "EM ACABAMENTO" 
+  | "EXPEDICAO" 
+  | "A RETIRAR" 
+  | "EM TRANSITO" 
+  | "ENTREGUE" 
+  | "CANCELADO"
+  | "STATUS_DESCONHECIDO";
 
 export type PropostaCobrancaStatus = "NAO_GERADA" | "PENDENTE" | "GERADA" | "PAGA" | "CANCELADA";
 
@@ -114,8 +132,8 @@ export type Proposta = {
   observacoes: string;
   is_avulso?: boolean;
   clienteNaoCadastrado?: boolean;
-  /** ID do cliente faturado (referencia public.clientes.id_cliente). Usado para restaurar compradorId ao reabrir proposta. */
   id_faturado?: number | null;
+  status_interno?: string;
 };
 
 export type PropostaFormState = {
@@ -123,11 +141,14 @@ export type PropostaFormState = {
   empresa: string;
   vendedor: string;
   status: PropostaStatus;
+  emArte?: boolean;
   clienteId: string;
   contatoId: string;
   enderecoId: string;
   compradorId: string;
   itens: PropostaItem[];
+  /** IDs reais de produtos_proposta.id pendentes de DELETE no banco ao salvar */
+  deletedProdutoPropostaIds: number[];
   pedidosModelos: PedidoModeloState[];
   fretes: PropostaFrete[];
   freteEscolhidoId: string;

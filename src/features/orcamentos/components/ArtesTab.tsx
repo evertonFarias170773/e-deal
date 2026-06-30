@@ -128,6 +128,17 @@ export function ArtesTab({ form }: ArtesTabProps) {
   };
 
   const hasDesigner = !!selectedDesignerId;
+  const hasModels = form.pedidosModelos && form.pedidosModelos.length > 0;
+
+  if (!hasModels) {
+    return (
+      <div className="space-y-6 relative pb-24">
+        <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
+          <p className="text-sm font-semibold text-amber-800">Configure os modelos/lotes na aba Pedido antes de iniciar a etapa de Artes.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 relative pb-24">

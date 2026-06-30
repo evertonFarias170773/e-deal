@@ -28,8 +28,15 @@ export const navigationItems: NavigationItem[] = [
   { label: "Conferência", href: "/cobrancas", icon: CreditCard },
   { label: "Contas a receber", href: "/contas-a-receber", icon: ReceiptText },
   { label: "Notas fiscais", href: "/notas-fiscais", icon: FileText },
-  { label: "Pedidos", href: "/pedidos", icon: Boxes },
-  { label: "OS / Producao", href: "/os-producao", icon: Building2 },
+  { 
+    label: "Pedidos", 
+    href: "/pedidos", 
+    icon: Boxes,
+    children: [
+      { label: "Painel geral", href: "/pedidos" },
+      { label: "Fila de impressão", href: "/pedidos/impressao" }
+    ]
+  },
   { label: "Expedicao", href: "/expedicao", icon: Truck },
   { label: "Relatorios", href: "/relatorios", icon: BarChart3, disabled: true },
   {

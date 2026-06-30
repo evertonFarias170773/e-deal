@@ -1,4 +1,4 @@
-import { ExpedicaoPage } from "@/features/pedidos";
+import { ExpedicaoPage } from "@/features/expedicao";
 
 export default function ExpedicaoRoute() {
   return <ExpedicaoPage />;

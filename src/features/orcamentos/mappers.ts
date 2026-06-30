@@ -1,5 +1,17 @@
 import type { SupabasePropostaRow } from "@/features/orcamentos/types.supabase";
 
+export function composeStatusEmArte(baseStatus: string, emArte: boolean | undefined): string {
+  if (!baseStatus) return "SEM_STATUS";
+  if (!emArte) return baseStatus;
+  
+  const allowed = ["NOVO", "AGUARDANDO", "LIBERADO"];
+  const upper = baseStatus.toUpperCase();
+  if (allowed.includes(upper)) {
+    return `${baseStatus} / EM ARTE`;
+  }
+  return baseStatus;
+}
+
 export type OrcamentoListSource = "supabase";
 
 export type OrcamentoListItem = {
@@ -26,6 +38,7 @@ export type OrcamentoListItem = {
   modelo: "AVULSO" | "PROPOSTA";
   source: OrcamentoListSource;
   rawColumns?: string[];
+  is_prd_aprovado?: boolean;
 };
 
 const EMPRESA_LABELS: Record<number, string> = {
@@ -135,34 +148,41 @@ function getEmpresaLabel(idEmpresa: number | null, empresaText = "") {
 
 function normalizeStatus(status: string) {
   const raw = normalize(status);
+  const isEmArte = raw.includes("em arte") || raw.includes("em_arte");
 
-  if (!raw) {
-    return "NOVO";
+  let base = "SEM_STATUS";
+  if (raw.includes("cancel")) base = "CANCELADO";
+  else if (raw.includes("aprov")) base = "LIBERADO";
+  else if (raw.includes("aguard") || raw.includes("pend")) base = "AGUARDANDO";
+  else if (raw.includes("liberad")) base = "LIBERADO";
+  else if (raw.includes("novo")) base = "NOVO";
+  else {
+    base = status.toUpperCase().replace(" / EM ARTE", "").replace(" / EM_ARTE", "").trim();
   }
 
-  if (raw.includes("cancel")) {
-    return "CANCELADO";
+  if (isEmArte && !base.includes("ARTE")) {
+    return `${base} / EM ARTE`;
   }
 
-  if (raw.includes("aprov")) {
-    return "APROVADO";
-  }
-
-  if (raw.includes("aguard") || raw.includes("pend")) {
-    return "AGUARDANDO";
-  }
-
-  return "NOVO";
+  return base;
 }
 
 function getStatusLabel(status: string) {
   const normalized = normalizeStatus(status);
+  const isEmArte = normalized.includes(" / EM ARTE");
+  const base = normalized.replace(" / EM ARTE", "");
 
-  if (normalized === "NOVO") return "Novo";
-  if (normalized === "AGUARDANDO") return "Aguardando";
-  if (normalized === "APROVADO") return "Aprovado";
-  if (normalized === "CANCELADO") return "Cancelado";
-  return status || "Sem status";
+  let label = base;
+  if (base === "NOVO") label = "Novo";
+  else if (base === "AGUARDANDO") label = "Aguardando";
+  else if (base === "CANCELADO") label = "Cancelado";
+  else if (base === "LIBERADO") label = "Liberado";
+
+  if (isEmArte) {
+    return `${label} / EM ARTE`;
+  }
+
+  return label || "Sem status";
 }
 
 
@@ -252,8 +272,10 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
   const vendedor = pickText(row, ["atendente", "vendedor", "responsavel"]);
   const data = parseMaybeDate(row.created_at ?? row.data ?? row.data_criacao ?? row.data_proposta);
   const dataAtualizacao = parseMaybeDate(row.updated_at ?? row.data_atualizacao);
+  const emArte = row.em_arte === true;
   const statusInterno = pickText(row, ["status_interno"]);
-  const statusRaw = statusInterno || pickText(row, ["status"]);
+  let statusRaw = statusInterno || pickText(row, ["status"]);
+  statusRaw = composeStatusEmArte(statusRaw || "", emArte);
   const valorTotalDb = pickNumber(row, ["valor_total"]);
   const valorDb = pickNumber(row, ["valor"]) ?? 0;
   const valorFreteDb = pickNumber(row, ["valor_frete"]) ?? 0;
@@ -296,7 +318,8 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     tipoCobrancaLabel: getTipoCobrancaLabel(tiposCobranca),
     modelo,
     source: "supabase",
-    rawColumns: Object.keys(row)
+    rawColumns: Object.keys(row),
+    is_prd_aprovado: row.is_prd_aprovado === true
   };
 }
 

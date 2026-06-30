@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PedidoProducaoListItem, ModeloMock, ProducaoStatus } from "./types";
+import { PropostaOperacionalListItem, ModeloMock, ProducaoStatus } from "./types";
 import { listarPedidosOperacionais, listarModelosImpressao } from "./services/pedidos-producao.service";
 import { useAppToast } from "@/components/common/AppToast";
 import type { PedidoModelo } from "@/features/producao/types";
@@ -22,7 +22,7 @@ import {
 export function PainelImpressaoPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
+  const [pedidos, setPedidos] = useState<PropostaOperacionalListItem[]>([]);
   const [modelos, setModelos] = useState<PedidoModelo[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -129,7 +129,7 @@ export function PainelImpressaoPage() {
 
   // Type definitions
   interface PrintItem {
-    pedido: PedidoProducaoListItem;
+    pedido: PropostaOperacionalListItem;
     modelo: ModeloMock;
   }
 
@@ -160,7 +160,7 @@ export function PainelImpressaoPage() {
     }
   });
 
-  const getItemStatus = (p: PedidoProducaoListItem, m: ModeloMock) => {
+  const getItemStatus = (p: PropostaOperacionalListItem, m: ModeloMock) => {
     if (p.financialBlock) return "BLOQUEADO FINANCEIRO";
     if (p.blockReason) return "PAUSADO OPERACIONAL";
     if (m.statusProducao === "EM_ACABAMENTO" || m.statusProducao === "CONCLUIDA") return "CONCLUÍDO";

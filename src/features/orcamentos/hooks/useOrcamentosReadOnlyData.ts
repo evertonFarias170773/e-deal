@@ -35,6 +35,9 @@ export function useOrcamentosReadOnlyData(periodo = "all") {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [loadedCount, setLoadedCount] = useState(0);
+  const [refreshCount, setRefreshCount] = useState(0);
+
+  const triggerRefresh = () => setRefreshCount(c => c + 1);
 
   useEffect(() => {
     let active = true;
@@ -61,12 +64,13 @@ export function useOrcamentosReadOnlyData(periodo = "all") {
     return () => {
       active = false;
     };
-  }, [periodo]);
+  }, [periodo, refreshCount]);
 
   return {
     ...state,
     isLoading,
-    loadedCount
-  } as OrcamentosReadResult & { loadedCount: number; isLoading: boolean };
+    loadedCount,
+    triggerRefresh
+  } as OrcamentosReadResult & { loadedCount: number; isLoading: boolean; triggerRefresh: () => void };
 }
 

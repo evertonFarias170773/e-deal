@@ -630,7 +630,7 @@ export function PedidoModelosTab({
               <h3 className="text-xl font-bold">Excluir modelo?</h3>
             </div>
             <p className="mb-6 text-sm text-slate-600">
-              Tem certeza que deseja excluir o modelo <strong>{deletingModelo.nome_modelo}</strong>?
+              Deseja excluir este modelo? Esta ação removerá o modelo da proposta.
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirmOpen(false)} className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50">

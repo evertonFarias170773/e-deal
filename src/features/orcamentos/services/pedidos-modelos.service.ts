@@ -435,10 +435,11 @@ export async function excluirModelo(id: number): Promise<ServiceResult> {
   try {
     const client = getClient();
 
-    const { error } = await client
+    const { data, error } = await client
       .from("pedidos_modelos")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .select("id");
 
     if (error) {
       console.error("[PedidosModelosService] excluirModelo:", error);
@@ -447,6 +448,10 @@ export async function excluirModelo(id: number): Promise<ServiceResult> {
         msg = "Exclusão bloqueada pela política de segurança.";
       }
       return { success: false, errorMessage: msg };
+    }
+
+    if (!data || data.length === 0) {
+      return { success: false, errorMessage: "Nenhuma linha foi excluída. O registro pode não existir ou a exclusão foi bloqueada por permissão." };
     }
 
     return { success: true };

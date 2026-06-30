@@ -13,11 +13,10 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
     return null;
   }
 
-  let query = client.from("pedidos").select(`
+  let query = client.from("propostas_os").select(`
     id,
     id_int,
     id_cliente,
-    id_vendedor,
     id_endereco,
     status_pedido,
     status_pagamento,
@@ -52,7 +51,8 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
     }
   }
 
-  const { data: row, error } = await query.maybeSingle();
+  const { data: rowData, error } = await query.maybeSingle();
+  let row = rowData;
 
   if (error) {
     console.error("[pedidos-detalhe.service] Erro ao obter pedido operacional:", error);
@@ -60,22 +60,50 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
   }
 
   if (!row) {
-    return null;
+    // Tenta verificar se existem modelos para este id_int, caso a OS (propostas_os) ainda não tenha sido criada
+    if (!isUuid) {
+      const idIntNum = Number(String(param).trim().replace("#", ""));
+      const { data: modelsData } = await client.from("pedidos_modelos").select("id").eq("id_int", idIntNum).limit(1);
+      
+      if (modelsData && modelsData.length > 0) {
+        // Cria um row sintético para carregar os modelos existentes
+        row = {
+          id: null,
+          id_int: idIntNum,
+          id_cliente: null,
+          status_pedido: "BOLETIM_FINALIZADO",
+          status_pagamento: "PENDENTE",
+          status_arte: "PENDENTE",
+          status_producao: "BLOQUEADO",
+          status_expedicao: "BLOQUEADO",
+          descricao: `Pedido Sintético #${idIntNum}`,
+          valor_total: 0,
+          forma_pagamento: null,
+          data_pedido: new Date().toISOString(),
+          obs: ""
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any;
+      } else {
+        return null;
+      }
+    } else {
+      return null;
+    }
   }
 
   // Enriquecer, se possível, com public.propostas pelo id_int
-  let clienteNome = row.descricao || `Pedido #${row.id_int}`;
+  let clienteNome = row?.descricao || `Pedido #${row?.id_int}`;
   let vendedor = "Não atribuído";
   let empresa = "Ideal Gráfica";
-  const dataPedido = row.data_pedido || new Date().toISOString();
+  const dataPedido = row?.data_pedido || new Date().toISOString();
   let idCliente = 0;
 
-  if (row.id_int !== null && row.id_int !== undefined) {
+  if (row?.id_int !== null && row?.id_int !== undefined) {
     try {
       const { data: propostaRow, error: propostaError } = await client
         .from("propostas")
         .select("cliente, vendedor, empresa, id_cliente")
-        .eq("id_int", row.id_int)
+        .eq("id_int", row?.id_int)
         .maybeSingle();
 
       if (propostaError) {
@@ -97,7 +125,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
     const { data: produtosRows, error: produtosError } = await client
       .from("produtos_proposta")
       .select("*")
-      .eq("id_int", row.id_int);
+      .eq("id_int", row?.id_int);
 
     if (produtosError) {
       console.warn("[pedidos-detalhe.service] Erro ao buscar produtos da proposta:", produtosError.message);
@@ -122,7 +150,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
     const { data: modelosRows, error: modelosError } = await client
       .from("pedidos_modelos")
       .select("*")
-      .eq("id_int", row.id_int)
+      .eq("id_int", row?.id_int)
       .order("ordem", { ascending: true });
 
     if (modelosError) {
@@ -131,20 +159,22 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
       modelos = modelosRows.map((m) => ({
         id: m.id,
         id_produto_proposta_origem: m.id_produto_proposta_origem,
-        nomeModelo: m.nome_modelo,
+        nomeModelo: m.nome_modelo || "Lote Principal",
         quantidade: Number(m.quantidade || 0),
         statusArte: m.status_arte,
         statusProducao: m.status_producao,
         setor: "Digital",
         numeracaoInicial: m.numeracao_inicio !== null ? Number(m.numeracao_inicio) : undefined,
         numeracaoFinal: m.numeracao_fim !== null ? Number(m.numeracao_fim) : undefined,
-        verso: m.verso || false,
-        corMaterial: m.cor_material || "Branco",
+        verso: m.frente_verso === true || m.frente_verso === 'true',
+        corMaterial: m.padrao || m.cor_material || "Branco",
         observacoesTecnicas: m.descricao || "",
+        gabaritoNumeracao: m.gabarito_operacional || "Sem gabarito",
         configImpressao: {
           tipoNumeracao: m.tipo_numeracao || "SEM_NUMERACAO",
           qrCode: false,
-          codBarras: false
+          codBarras: false,
+          rfid: m.rfid_nfc === true || m.rfid_nfc === 'true'
         },
         historicoArtes: [],
         tokenAprovacao: ""
@@ -164,7 +194,31 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
       setor: "Digital",
       modelos: modelos
     });
+  } else if (modelos.length === 0) {
+    // 6. Só usar "Lote Principal" como fallback quando não existir nenhum registro real em pedidos_modelos.
+    produtos.forEach((prod, index) => {
+      prod.modelos = [{
+        id: `mod_fallback_${prod.db_id || index}`,
+        nomeModelo: "Lote Principal",
+        quantidade: prod.quantidade,
+        statusArte: "PENDENTE",
+        statusProducao: "PENDENTE",
+        setor: "Digital",
+        verso: false,
+        corMaterial: "Branco",
+        observacoesTecnicas: "",
+        configImpressao: {
+          tipoNumeracao: "SEM_NUMERACAO",
+          qrCode: false,
+          codBarras: false,
+          rfid: false
+        },
+        historicoArtes: [],
+        tokenAprovacao: ""
+      }];
+    });
   } else {
+    // 7. Não exibir "Lote Principal" quando existirem modelos reais no banco.
     produtos.forEach((prod) => {
       prod.modelos = modelos.filter(
         (m) => m.id_produto_proposta_origem === prod.db_id
@@ -180,26 +234,26 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number)
   }
 
   return {
-    id: row.id,
-    id_int: row.id_int !== null ? Number(row.id_int) : 0,
+    id: row?.id,
+    id_int: row?.id_int !== null ? Number(row?.id_int) : 0,
     clienteNome,
     contatoNome: "",
     idCliente,
     empresa,
     vendedor,
     dataPedido,
-    dataPrevistaEntrega: row.data_termino || row.data_pedido || new Date().toISOString(),
-    statusPedido: (row.status_pedido || "BOLETIM_FINALIZADO") as PedidoStatus,
-    status_pedido: row.status_pedido || "BOLETIM_FINALIZADO",
-    status_pagamento: row.status_pagamento || "APROVADO",
-    status_arte: row.status_arte || "PENDENTE",
-    status_producao: row.status_producao || "BLOQUEADO",
-    status_expedicao: row.status_expedicao || "BLOQUEADO",
+    dataPrevistaEntrega: row?.data_termino || row?.data_pedido || new Date().toISOString(),
+    statusPedido: (row?.status_pedido || "BOLETIM_FINALIZADO") as PedidoStatus,
+    status_pedido: row?.status_pedido || "BOLETIM_FINALIZADO",
+    status_pagamento: row?.status_pagamento || "APROVADO",
+    status_arte: row?.status_arte || "PENDENTE",
+    status_producao: row?.status_producao || "BLOQUEADO",
+    status_expedicao: row?.status_expedicao || "BLOQUEADO",
     urgente: false,
-    formaPagamento: row.forma_pagamento || "",
-    valorTotal: row.valor_total !== null ? Number(row.valor_total) : 0,
+    formaPagamento: row?.forma_pagamento || "",
+    valorTotal: row?.valor_total !== null ? Number(row?.valor_total) : 0,
     pesoTeorico: 0,
-    obs: row.obs || "",
+    obs: row?.obs || "",
     produtos,
     modelos
   } as PedidoProducaoListItem;

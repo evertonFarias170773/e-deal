@@ -243,16 +243,39 @@ export async function POST(request: Request) {
           .neq("status", "CANCELADO");
 
         if (!countError && count === 0) {
-          const { error: updatePropError } = await supabase
+          const { data: propData } = await supabase
             .from("propostas")
-            .update({ status_interno: "NOVO", tipo_cobranca: null })
+            .select("status_interno")
             .eq("id_int", pagamento.id_int)
-            .neq("status_interno", "APROVADO");
-          
-          if (updatePropError) {
-            console.error("[API][CancelarExterno] Falha ao voltar status_interno para NOVO:", updatePropError);
-          } else {
-            console.log(`[API][CancelarExterno] Proposta ${pagamento.id_int} revertida para NOVO com sucesso.`);
+            .maybeSingle();
+
+          if (propData) {
+            const currentStatus = String(propData.status_interno || "NOVO").trim().toUpperCase();
+            const PROTECTED_STATUSES = [
+              "APROVADO", "APROVADO / EM ARTE",
+              "REVISAO ATENDENTE", "REVISAO PRODUCAO",
+              "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO",
+              "EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"
+            ];
+
+            if (!PROTECTED_STATUSES.includes(currentStatus)) {
+              let nextStatus = "NOVO";
+              if (currentStatus === "AGUARDANDO / EM ARTE" || currentStatus === "NOVO / EM ARTE") {
+                nextStatus = "NOVO / EM ARTE";
+              }
+              const { error: updatePropError } = await supabase
+                .from("propostas")
+                .update({ status_interno: nextStatus, tipo_cobranca: null })
+                .eq("id_int", pagamento.id_int);
+              
+              if (updatePropError) {
+                console.error("[API][CancelarExterno] Falha ao voltar status_interno:", updatePropError);
+              } else {
+                console.log(`[API][CancelarExterno] Proposta ${pagamento.id_int} revertida para ${nextStatus} com sucesso.`);
+              }
+            } else {
+              console.log(`[API][CancelarExterno] Reversão ignorada pois status ${currentStatus} é protegido.`);
+            }
           }
         } else if (countError) {
           console.error("[API][CancelarExterno] Falha ao contar pagamentos ativos:", countError);
@@ -288,16 +311,39 @@ export async function POST(request: Request) {
           .neq("status", "CANCELADO");
 
         if (!countError && count === 0) {
-          const { error: updatePropError } = await supabase
+          const { data: propData } = await supabase
             .from("propostas")
-            .update({ status_interno: "NOVO", tipo_cobranca: null })
+            .select("status_interno")
             .eq("id_int", pagamento.id_int)
-            .neq("status_interno", "APROVADO");
-          
-          if (updatePropError) {
-            console.error("[API][CancelarExterno] Falha ao voltar status_interno para NOVO:", updatePropError);
-          } else {
-            console.log(`[API][CancelarExterno] Proposta ${pagamento.id_int} revertida para NOVO com sucesso.`);
+            .maybeSingle();
+
+          if (propData) {
+            const currentStatus = String(propData.status_interno || "NOVO").trim().toUpperCase();
+            const PROTECTED_STATUSES = [
+              "APROVADO", "APROVADO / EM ARTE",
+              "REVISAO ATENDENTE", "REVISAO PRODUCAO",
+              "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO",
+              "EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"
+            ];
+
+            if (!PROTECTED_STATUSES.includes(currentStatus)) {
+              let nextStatus = "NOVO";
+              if (currentStatus === "AGUARDANDO / EM ARTE" || currentStatus === "NOVO / EM ARTE") {
+                nextStatus = "NOVO / EM ARTE";
+              }
+              const { error: updatePropError } = await supabase
+                .from("propostas")
+                .update({ status_interno: nextStatus, tipo_cobranca: null })
+                .eq("id_int", pagamento.id_int);
+              
+              if (updatePropError) {
+                console.error("[API][CancelarExterno] Falha ao voltar status_interno:", updatePropError);
+              } else {
+                console.log(`[API][CancelarExterno] Proposta ${pagamento.id_int} revertida para ${nextStatus} com sucesso.`);
+              }
+            } else {
+              console.log(`[API][CancelarExterno] Reversão ignorada pois status ${currentStatus} é protegido.`);
+            }
           }
         } else if (countError) {
           console.error("[API][CancelarExterno] Falha ao contar pagamentos ativos:", countError);

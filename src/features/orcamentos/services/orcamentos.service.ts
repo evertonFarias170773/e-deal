@@ -1,3 +1,5 @@
+import { SupabaseClient } from "@supabase/supabase-js";
+import { PROPOSTA_STATUS_GROUP_ATIVO_CLIENTE } from "@/features/orcamentos/constants";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { calculateResumo } from "@/features/orcamentos/orcamento-utils";
 import type {
@@ -222,7 +224,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
   }
 
   try {
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete";
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado";
 
     console.log("[Orcamentos][Query]", {
       table: "propostas",
@@ -299,6 +301,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
     );
 
     const paymentMap = new Map<string, string[]>();
+    const emArteMap = new Map<string, boolean>();
 
     if (proposalIds.length) {
       console.log("[Orcamentos][Query]", {
@@ -309,7 +312,7 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
 
       const { data: paymentData, error: paymentError } = await client
         .from("pagamentos_v2")
-        .select("id_int,tipo_cobranca")
+        .select("id_int,tipo_cobranca,status")
         .in("id_int", proposalIds)
         .returns<SupabasePagamentoTipoCobrancaRow[]>();
 
@@ -319,6 +322,11 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
         });
       } else if (Array.isArray(paymentData)) {
         paymentData.forEach((row) => {
+          const rawStatus = row.status === null || row.status === undefined ? "" : String(row.status).trim().toUpperCase();
+          if (rawStatus === "CANCELADO" || rawStatus === "EXTORNADO" || rawStatus === "RECUSADO") {
+            return;
+          }
+
           const idInt = row.id_int === null || row.id_int === undefined ? "" : String(row.id_int);
           const tipo = normalizeTipoCobranca(row.tipo_cobranca);
           if (!idInt || !tipo) {
@@ -335,7 +343,8 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
 
     const enrichedRows = proposalRows.map((row) => ({
       ...row,
-      tipos_cobranca: paymentMap.get(String(row.id_int ?? "")) ?? []
+      tipos_cobranca: paymentMap.get(String(row.id_int ?? "")) ?? [],
+      em_arte: row.em_arte === true
     }));
 
     console.log("[Orcamentos][SupabaseRows]", {
@@ -624,7 +633,14 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
     const clientObj = cadastro || fallbackCliente;
 
     // Resolve contact and address
-    let contact = clientObj.contatos.find((c) => c.nome === proposalRow.contato);
+    let contact = proposalRow.id_contato 
+      ? clientObj.contatos.find((c) => c.id === proposalRow.id_contato)
+      : undefined;
+
+    if (!contact) {
+      contact = clientObj.contatos.find((c) => c.nome === proposalRow.contato);
+    }
+
     if (!contact) {
       contact = clientObj.contatos[0] || {
         id: "cont_default",
@@ -979,21 +995,45 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
   const isUpdate = formState.id_int && Number.isInteger(Number(formState.id_int));
   let id_int: number | null = isUpdate ? Number(formState.id_int) : null;
 
+  let hasActiveCharge = false;
+
   if (isUpdate && id_int) {
     // Revalidação de segurança no service antes de salvar
     const { data: billings, error: billingsError } = await client
       .from("pagamentos_v2")
-      .select("id")
-      .eq("id_int", id_int)
-      .limit(1);
+      .select("id, status")
+      .eq("id_int", id_int);
 
     if (billingsError) {
       console.error("Erro ao verificar cobranças antes de salvar proposta:", billingsError);
     } else if (billings && billings.length > 0) {
-      return {
-        success: false,
-        errorMessage: "Esta proposta possui cobrança gerada. Para alterar, exclua primeiro a cobrança pendente."
-      };
+      hasActiveCharge = billings.some(b => b.status !== "CANCELADO" && b.status !== "CANCELADA" && b.status !== "EXTORNADO" && b.status !== "RECUSADO");
+      
+      if (hasActiveCharge) {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV][saveProposta] hasActiveCharge=true para id_int:", id_int, "→ return early, nenhum DELETE de produto será feito.");
+        }
+        // Salvamento Parcial Seguro
+        const { error: partialUpdateError } = await client
+          .from("propostas")
+          .update({
+            obs_proposta: formState.observacoes
+          })
+          .eq("id_int", id_int);
+
+        if (partialUpdateError) {
+          return {
+            success: false,
+            errorMessage: "Erro ao salvar observações da proposta: " + partialUpdateError.message
+          };
+        }
+
+        return {
+          success: true,
+          id_int: id_int,
+          errorMessage: "Campos operacionais salvos. Produtos, valores, descontos e frete permanecem bloqueados porque existe cobrança gerada."
+        };
+      }
     }
   }
 
@@ -1208,6 +1248,9 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
 
     let id_faturado: number | null = null;
     if (!formState.clienteNaoCadastrado && cadastro) {
+      if (!isNonEmpty(formState.compradorId)) {
+        return { success: false, errorMessage: "Selecione um responsável para nota fiscal antes de salvar o orçamento." };
+      }
       const vinculo = (cadastro as Cadastro).vinculosComerciais?.find((v) => v.id === formState.compradorId);
       if (vinculo) {
         id_faturado = vinculo.idClienteRelacionado;
@@ -1220,6 +1263,7 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       id_cliente: formState.clienteNaoCadastrado ? null : Number(formState.clienteId),
       id_faturado: id_faturado,
       id_endereco_ent: formState.enderecoId || null,
+      id_contato: formState.clienteNaoCadastrado ? null : formState.contatoId,
       cliente: clienteNome,
       empresa: formState.empresa,
       vendedor: formState.vendedor,
@@ -1326,13 +1370,17 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       if (fetchItemsError) {
         console.error("[OrcamentosService] Erro ao carregar itens existentes para conciliação:", fetchItemsError);
       }
-
       const existingIds = (existingItems || []).map((it) => it.id);
       const incomingItemIds: number[] = [];
 
       for (const item of formState.itens) {
         // Check if it is an existing item
-        const parsedItemId = item.id.startsWith("item_") ? Number(item.id.replace("item_", "")) : null;
+        // Use the preserved ID or fallback to parsing for legacy compatibility
+        let parsedItemId: number | null = item.id_produto_proposta_origem || null;
+        if (!parsedItemId && item.id.startsWith("item_")) {
+          const possibleId = Number(item.id.replace("item_", ""));
+          if (!isNaN(possibleId)) parsedItemId = possibleId;
+        }
         const isExistingItem = parsedItemId && existingIds.includes(parsedItemId);
 
         // Calculos de peso e valor extra
@@ -1459,25 +1507,88 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
         }
       }
 
-      // 5. DELETE removed items
-      const deletedItemIds = existingIds.filter((id) => !incomingItemIds.includes(id));
+      // 5a. DELETE EXPLÍCITO — fonte primária: lista rastreada no frontend
+      //     Essa é a fonte confiável de exclusões confirmadas pelo usuário.
+      const explicitDeleteIds = (formState.deletedProdutoPropostaIds || []).filter(
+        (id) => !incomingItemIds.includes(id) // segurança: não deletar item que ainda está no form
+      );
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("[DEV][saveProposta] deletedProdutoPropostaIds recebidos:", formState.deletedProdutoPropostaIds);
+        console.log("[DEV][saveProposta] explicitDeleteIds (após filtro):", explicitDeleteIds);
+        console.log("[DEV][saveProposta] existingIds do banco:", existingIds);
+        console.log("[DEV][saveProposta] incomingItemIds do form:", incomingItemIds);
+      }
+
+      if (explicitDeleteIds.length > 0) {
+        // Primeiro limpar variações (boa prática, mesmo com cascade)
+        const { error: deleteExplicitVarsError } = await client
+          .from("produtos_proposta_variacao")
+          .delete()
+          .in("id_produto_proposta", explicitDeleteIds);
+
+        if (deleteExplicitVarsError) {
+          console.error("[OrcamentosService] Erro ao deletar variações dos itens explicitamente removidos:", deleteExplicitVarsError);
+        }
+
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV][saveProposta] Executando DELETE em produtos_proposta para IDs:", explicitDeleteIds);
+        }
+
+        const { data: explicitDeletedRows, error: explicitDeleteError } = await client
+          .from("produtos_proposta")
+          .delete()
+          .in("id", explicitDeleteIds)
+          .select("id");
+
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV][saveProposta] Retorno do DELETE explícito:", { explicitDeletedRows, explicitDeleteError });
+        }
+
+        if (explicitDeleteError) {
+          throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
+        }
+
+        if (!explicitDeletedRows || explicitDeletedRows.length < explicitDeleteIds.length) {
+          console.warn(
+            "[OrcamentosService] DELETE explícito retornou menos linhas que o esperado.",
+            { esperado: explicitDeleteIds.length, retornado: explicitDeletedRows?.length ?? 0 }
+          );
+          // Não abortar por isso — pode ser que alguns IDs já foram deletados antes (idempotência)
+        }
+      }
+
+      // 5b. DELETE por diff — proteção secundária
+      //     Captura produtos que possam ter sumido do form sem passar pelo confirmRemoveProduct
+      const deletedItemIds = existingIds.filter(
+        (id) => !incomingItemIds.includes(id) && !explicitDeleteIds.includes(id)
+      );
       if (deletedItemIds.length > 0) {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV][saveProposta] DELETE por diff (secundário) para IDs:", deletedItemIds);
+        }
+
         const { error: deleteRemovedVarsError } = await client
           .from("produtos_proposta_variacao")
           .delete()
           .in("id_produto_proposta", deletedItemIds);
 
         if (deleteRemovedVarsError) {
-          console.error("[OrcamentosService] Erro ao deletar variações dos itens excluídos:", deleteRemovedVarsError);
+          console.error("[OrcamentosService] Erro ao deletar variações dos itens excluídos (diff):", deleteRemovedVarsError);
         }
 
-        const { error: deleteRemovedItemsError } = await client
+        const { data: diffDeletedRows, error: deleteRemovedItemsError } = await client
           .from("produtos_proposta")
           .delete()
-          .in("id", deletedItemIds);
+          .in("id", deletedItemIds)
+          .select("id");
+
+        if (process.env.NODE_ENV === "development") {
+          console.log("[DEV][saveProposta] Retorno do DELETE por diff:", { diffDeletedRows, deleteRemovedItemsError });
+        }
 
         if (deleteRemovedItemsError) {
-          throw new Error(`Erro ao excluir itens removidos da proposta: ${deleteRemovedItemsError.message}`);
+          throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
         }
       }
     }
@@ -2454,7 +2565,7 @@ export async function getEligiblePropostas(): Promise<Proposta[]> {
     const { data: proposalRows, error } = await client
       .from("propostas")
       .select("id_int")
-      .in("status_interno", ["APROVADO", "AGUARDANDO"])
+      .in("status_interno", PROPOSTA_STATUS_GROUP_ATIVO_CLIENTE)
       .order("id_int", { ascending: false });
 
     if (error || !proposalRows) {
@@ -2618,3 +2729,105 @@ export async function updatePropostaFiscalDados(
 }
 
 
+export async function updatePropostaStatusInterno(
+  idInt: number,
+  statusInterno: string
+): Promise<{ success: boolean; data?: any; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
+
+  const { data, error } = await client
+    .from("propostas")
+    .update({ status_interno: statusInterno })
+    .eq("id_int", idInt)
+    .select("id_int, status_interno")
+    .single();
+
+  if (error) {
+    console.error("[OrcamentosService] Erro ao atualizar status_interno da proposta:", error);
+    return { success: false, errorMessage: error.message || "Erro ao atualizar status interno no banco." };
+  }
+
+  return { success: true, data };
+}
+
+export async function liberarPropostaParaProducao(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
+
+  // 1. Validar contexto da proposta
+  const { data: prop, error: propErr } = await client
+    .from("propostas")
+    .select("is_avulso, status_interno, is_prd_aprovado")
+    .eq("id_int", idInt)
+    .single();
+
+  if (propErr || !prop) return { success: false, errorMessage: "Erro ao buscar proposta." };
+  if (prop.is_prd_aprovado) return { success: false, errorMessage: "Proposta já está liberada para produção." };
+  if (prop.is_avulso) return { success: false, errorMessage: "Propostas avulsas não vão para produção." };
+  if (prop.status_interno?.toUpperCase() !== "REVISAO ATENDENTE") return { success: false, errorMessage: "Status precisa ser REVISAO ATENDENTE." };
+
+  // 2. Validar pagamentos
+  const { data: pagamentos, error: pagErr } = await client
+    .from("pagamentos_v2")
+    .select("status, confirmado")
+    .eq("id_int", idInt)
+    .not("status", "in", '("CANCELADO","CANCELADA")');
+
+  if (pagErr) return { success: false, errorMessage: "Erro ao buscar pagamentos." };
+  const hasValid = pagamentos?.some(p => ["PAID", "A_VENCER"].includes(p.status?.toUpperCase()) && p.confirmado === true);
+  const hasInvalid = pagamentos?.some(p => !["PAID", "A_VENCER"].includes(p.status?.toUpperCase()) || p.confirmado !== true);
+  
+  if (!hasValid || hasInvalid) {
+    return { success: false, errorMessage: "Pendências financeiras. Todos os pagamentos ativos precisam estar confirmados (Paid/A Vencer) e deve haver pelo menos um." };
+  }
+
+  // 3. Validar artes
+  const { data: artes, error: artesErr } = await client
+    .from("pedidos_artes")
+    .select("status")
+    .eq("id_int", idInt);
+
+  if (artesErr) return { success: false, errorMessage: "Erro ao buscar artes." };
+  const hasPendenciasArte = artes?.some(a => a.status?.toUpperCase() !== "APROVADO");
+  
+  if (hasPendenciasArte) {
+    return { success: false, errorMessage: "Pendências de arte. Todas as artes devem estar com status APROVADO." };
+  }
+
+  // 4. Efetivar liberação
+  const { error: updateErr } = await client
+    .from("propostas")
+    .update({ is_prd_aprovado: true, status_interno: "REVISAO PRODUCAO" })
+    .eq("id_int", idInt);
+
+  if (updateErr) return { success: false, errorMessage: "Erro ao atualizar chave de liberação." };
+  return { success: true };
+}
+
+export async function retirarPropostaDaProducao(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
+
+  const { error: updateErr } = await client
+    .from("propostas")
+    .update({ is_prd_aprovado: false })
+    .eq("id_int", idInt);
+
+  if (updateErr) return { success: false, errorMessage: "Erro ao retirar proposta da produção." };
+  return { success: true };
+}
+export async function devolverPropostaParaRevisaoAtendente(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
+
+  const { error: updateErr } = await client
+    .from("propostas")
+    .update({ is_prd_aprovado: false, status_interno: "REVISAO ATENDENTE" })
+    .eq("id_int", idInt);
+
+  if (updateErr) return { success: false, errorMessage: "Erro ao devolver proposta para revisão." };
+  return { success: true };
+}

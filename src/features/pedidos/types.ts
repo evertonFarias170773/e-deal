@@ -43,6 +43,7 @@ export interface ConfigImpressaoMock {
   qtdDigitos?: number;
   cor?: string;
   qrCode?: boolean;
+  rfid?: boolean;
   qrTemplate?: string;
   codBarras?: boolean;
   codBarrasTipo?: string;
@@ -163,3 +164,57 @@ export interface PedidoProducaoListItem extends PedidoMock {
   status_expedicao?: string;
 }
 
+export interface PropostaOperacionalListItem {
+  id_int: number;
+  clienteNome: string;
+  empresa: string;
+  vendedor: string;
+  dataProposta: string;
+  dataPrevistaEntrega: string; // prazo prometido
+  valorTotal: number;
+  status_interno: string; // Da tabela propostas
+  libera_nf?: boolean | null; // Flag de liberação fiscal
+  urgente: boolean;
+  obs?: string;
+  volumes?: number;
+  pesoTeorico?: number;
+  pesoAferido?: number;
+
+  // Novos campos prioritários (Fase 1 migração)
+  produto_principal?: string;
+  quantidade_total?: number;
+  pendencias_operacionais?: string[];
+
+  // Evidências de OS/Boletim
+  hasOS: boolean;
+  isLegado: boolean;
+  osId?: string;
+  status_pedido?: PedidoStatus | string;
+  status_producao?: string;
+  status_expedicao?: string;
+  codigo_rastreamento?: string;
+
+  // Evidências Financeiras
+  cobrancas_validas: number;
+  cobrancas_confirmadas: number;
+  bloqueio_financeiro: boolean;
+  financeiro_status: "OK" | "PENDENTE" | "SEM_COBRANCA" | "PARCIAL";
+
+  // Evidências de Arte/Modelos
+  qtd_modelos: number;
+  arte_status_geral: string; // "LIBERADA", "PENDENTE", "AGUARDANDO_CLIENTE", "SEM_MODELO"
+  hasArtePendente: boolean;
+
+  // Hierarquia
+  produtos?: ProdutoMock[];
+  modelos?: ModeloMock[];
+  
+  // Retrocompatibilidade (para Kanban e views antigas não quebrarem por completo se injetado)
+  statusPedido?: PedidoStatus | string;
+  statusArte?: ArteStatus | string;
+  dadosEvento?: { nome?: string };
+  briefingOperacional?: string;
+  blockReason?: string;
+  financialBlock?: boolean;
+  idCliente?: number;
+}

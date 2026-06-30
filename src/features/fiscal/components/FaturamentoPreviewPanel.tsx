@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { X, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Play, Loader2 } from "lucide-react";
 import type { FaturavelOrigem, FaturavelItem } from "../types";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -38,6 +39,9 @@ function generateSimulatedNota(item: FaturavelOrigem, totalValue: number): NfeRe
 }
 
 export function FaturamentoPreviewPanel({ item, onClose, onEmitSuccess }: FaturamentoPreviewPanelProps) {
+  const { user } = useAuth();
+  const isPermitidoOperarFiscal = user?.isSuperAdmin || user?.isAdmin || user?.isGerente;
+
   const [editedItens, setEditedItens] = useState<FaturavelItem[]>(() =>
     JSON.parse(JSON.stringify(item.itens))
   );
@@ -105,18 +109,23 @@ export function FaturamentoPreviewPanel({ item, onClose, onEmitSuccess }: Fatura
     emissao_tipo: "simulada_draft"
   };
 
-  async function handleSimularEmissao() {
+  async function handleSimularEmissao(tipoFiscal: "NF-e" | "NFS-e") {
     if (hasErrors) return;
     setIsEmitting(true);
+
+    // Update item type for the simulated generation based on user choice
+    // Note: TipoOrigem can be PEDIDO (NFe) or OS (NFSe)
+    const mockTipo = tipoFiscal === "NF-e" ? "PEDIDO" : "OS";
+    const itemAtualizado = { ...item, tipo: mockTipo as any };
 
     // Simular atraso de comunicação Focus/SEFAZ (2 segundos)
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Gerar nota fiscal simulada no histórico via helper externo
-    const simulatedNota = generateSimulatedNota(item, totalValue);
+    const simulatedNota = generateSimulatedNota(itemAtualizado, totalValue);
 
     setIsEmitting(false);
-    onEmitSuccess(item.id, item.tipo, simulatedNota);
+    onEmitSuccess(item.id, mockTipo, simulatedNota);
   }
 
   return (
@@ -314,24 +323,32 @@ export function FaturamentoPreviewPanel({ item, onClose, onEmitSuccess }: Fatura
             >
               Cancelar
             </button>
-            <button
-              type="button"
-              onClick={handleSimularEmissao}
-              disabled={hasErrors || isEmitting}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-6 py-3 text-sm font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              {isEmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Emitindo Nota...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Emitir Nota
-                </>
-              )}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleSimularEmissao("NF-e")}
+                disabled={hasErrors || isEmitting}
+                className="inline-flex items-center gap-2 rounded-2xl bg-[#0b2f4a] px-6 py-3 text-sm font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                {isEmitting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Emitindo...</>
+                ) : (
+                  "Faturar NF-e (Produto)"
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSimularEmissao("NFS-e")}
+                disabled={hasErrors || isEmitting}
+                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                {isEmitting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Emitindo...</>
+                ) : (
+                  "Faturar NFS-e (Serviço)"
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </section>

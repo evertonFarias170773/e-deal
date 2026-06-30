@@ -20,6 +20,9 @@ import {
   getPropostaChatResumos,
   loadChatReadInfo,
   getPropostaDetailById,
+  updatePropostaStatusInterno,
+  liberarPropostaParaProducao,
+  retirarPropostaDaProducao,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
@@ -27,11 +30,28 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
+import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
 import type { Proposta } from "@/features/orcamentos/types";
 
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
-const defaultStatusOrder = ["NOVO", "AGUARDANDO", "APROVADO", "CANCELADO"];
+const defaultStatusOrder = [
+  "NOVO", 
+  "AGUARDANDO", 
+  "AGUARDANDO / PENDENTE",
+  "EM ARTE",
+  "LIBERADO", 
+  "REVISAO ATENDENTE", 
+  "REVISAO PRODUCAO",
+  "EM PRODUCAO", 
+  "EM IMPRESSAO", 
+  "EM ACABAMENTO", 
+  "EXPEDICAO", 
+  "A RETIRAR", 
+  "EM TRANSITO", 
+  "ENTREGUE", 
+  "CANCELADO"
+];
 
 function normalize(value: string) {
   return value
@@ -138,42 +158,36 @@ function getSelectedPeriodLabel(periodo: string, periodOptions: PeriodOption[]) 
 }
 
 function normalizeProposalStatus(status: string | null | undefined) {
-  const normalized = normalize(String(status ?? ""));
-
-  if (!normalized) {
-    return "SEM_STATUS";
-  }
-
-  if (normalized.includes("nov")) {
-    return "NOVO";
-  }
-
-  if (normalized.includes("aguard") || normalized.includes("pend")) {
-    return "AGUARDANDO";
-  }
-
-  if (normalized.includes("aprov")) {
-    return "APROVADO";
-  }
-
-  if (normalized.includes("cancel")) {
-    return "CANCELADO";
-  }
-
-  return "SEM_STATUS";
+  // Retained for fallback but we shouldn't rely on it for logic.
+  // The mappers.ts now handles it correctly, so we'll just return the upper case.
+  return String(status ?? "").trim().toUpperCase() || "SEM_STATUS";
 }
 
 function isEmAbertoStatus(status: string | null | undefined) {
-  const normalized = normalizeProposalStatus(status);
-  return normalized === "NOVO" || normalized === "AGUARDANDO" || normalized === "SEM_STATUS";
+  const s = normalizeProposalStatus(status);
+  return ["NOVO", "NOVO / EM ARTE", "SEM_STATUS"].includes(s);
 }
 
 function isAguardandoStatus(status: string | null | undefined) {
-  return normalizeProposalStatus(status) === "AGUARDANDO";
+  const s = normalizeProposalStatus(status);
+  return ["AGUARDANDO", "AGUARDANDO / EM ARTE", "AGUARDANDO / PENDENTE"].includes(s);
 }
 
 function isAprovadaStatus(status: string | null | undefined) {
-  return normalizeProposalStatus(status) === "APROVADO";
+  const s = normalizeProposalStatus(status);
+  // Reúne as aprovadas, liberadas e em revisão antes da fábrica rodar pesado
+  // Conservador: Inclui produção e expedição para que o valor total aprovado daquele mês
+  // não diminua quando a proposta entra na fábrica.
+  const isAprov = ["LIBERADO", "LIBERADO / EM ARTE", "REVISAO ATENDENTE", "REVISAO PRODUCAO"].includes(s);
+  return isAprov || isProducaoExpedicaoStatus(status);
+}
+
+function isProducaoExpedicaoStatus(status: string | null | undefined) {
+  const s = normalizeProposalStatus(status);
+  return [
+    "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO", 
+    "EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"
+  ].includes(s);
 }
 
 function sumPropostaTotal(items: OrcamentoListItem[]) {
@@ -182,7 +196,7 @@ function sumPropostaTotal(items: OrcamentoListItem[]) {
 
 function getStatusTone(status: string) {
   const normalized = normalize(status);
-  if (normalized.includes("aprov")) return "success";
+  if (normalized.includes("aprov") || normalized.includes("liberad")) return "success";
   if (normalized.includes("aguard") || normalized.includes("pend")) return "warning";
   if (normalized.includes("cancel")) return "neutral";
   return "info";
@@ -213,9 +227,14 @@ export function OrcamentosListPageReal() {
   const [selectedPropostaForCobranca, setSelectedPropostaForCobranca] = useState<Proposta | null>(null);
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
   const [isLoadingCobrancaProposta, setIsLoadingCobrancaProposta] = useState(false);
+
+  const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
+  const [selectedPropostaForLiberar, setSelectedPropostaForLiberar] = useState<OrcamentoListItem | null>(null);
+  const [isLiberarSubmitting, setIsLiberarSubmitting] = useState(false);
+
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
-  const { propostas, source, warnings, detectedColumns, loadedCount, isLoading, errorMessage } = useOrcamentosReadOnlyData(periodo);
+  const { propostas, source, warnings, detectedColumns, loadedCount, isLoading, errorMessage, triggerRefresh } = useOrcamentosReadOnlyData(periodo);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
@@ -254,11 +273,17 @@ export function OrcamentosListPageReal() {
   }
 
   const statusOptions = useMemo(() => {
-    const values = Array.from(new Set(propostas.map((item) => item.status))).filter(Boolean);
+    const values = Array.from(new Set(propostas.map((item) => {
+      if (item.status && item.status.includes("EM ARTE")) {
+        return "EM ARTE";
+      }
+      return item.status;
+    }))).filter(Boolean);
+    
     const ordered = values.sort((a, b) => {
-      const indexA = defaultStatusOrder.indexOf(a);
-      const indexB = defaultStatusOrder.indexOf(b);
-      if (indexA === -1 && indexB === -1) return a.localeCompare(b, "pt-BR");
+      const indexA = defaultStatusOrder.indexOf(a as string);
+      const indexB = defaultStatusOrder.indexOf(b as string);
+      if (indexA === -1 && indexB === -1) return (a as string).localeCompare(b as string, "pt-BR");
       if (indexA === -1) return 1;
       if (indexB === -1) return -1;
       return indexA - indexB;
@@ -293,7 +318,7 @@ export function OrcamentosListPageReal() {
           ? true
           : (normalizedSearch && searchableText.includes(normalizedSearch)) ||
             (digitsSearch && searchableDigits.includes(digitsSearch));
-      const matchesStatus = status === "TODOS" || item.status === status;
+      const matchesStatus = status === "TODOS" || (status === "EM ARTE" ? item.status?.includes("EM ARTE") : item.status === status);
       const matchesModelo =
         modelo === "TODOS_MODELOS" ||
         (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
@@ -568,6 +593,79 @@ export function OrcamentosListPageReal() {
     }
   }
 
+  async function handleLiberarProducao(item: OrcamentoListItem) {
+    setSelectedPropostaForLiberar(item);
+    setIsLiberarModalOpen(true);
+  }
+
+  async function confirmLiberarProducao() {
+    if (!selectedPropostaForLiberar) return;
+
+    setIsLiberarSubmitting(true);
+    showToast({
+      type: "info",
+      title: "Liberando para produção...",
+      description: "Aguarde a validação das regras."
+    });
+
+    try {
+      const res = await liberarPropostaParaProducao(selectedPropostaForLiberar.id_int);
+      if (res.success) {
+        showToast({
+          type: "success",
+          title: "Proposta liberada",
+          description: "A proposta agora está na lista de Produção/Pedidos."
+        });
+        setIsLiberarModalOpen(false);
+        setSelectedPropostaForLiberar(null);
+        triggerRefresh();
+      } else {
+        throw new Error(res.errorMessage || "Erro desconhecido.");
+      }
+    } catch (err) {
+      console.error("[OrcamentosListPageReal] Error sending to production:", err);
+      showToast({
+        type: "error",
+        title: "Erro de Validação",
+        description: err instanceof Error ? err.message : "Não foi possível enviar para produção."
+      });
+    } finally {
+      setIsLiberarSubmitting(false);
+    }
+  }
+
+  async function handleRetirarProducao(item: OrcamentoListItem) {
+    const ok = window.confirm(`Deseja RETIRAR a proposta #${item.id_int} da fila de produção?`);
+    if (!ok) return;
+
+    showToast({
+      type: "info",
+      title: "Atualizando status",
+      description: "Aguarde..."
+    });
+
+    try {
+      const res = await retirarPropostaDaProducao(item.id_int);
+      if (res.success) {
+        showToast({
+          type: "success",
+          title: "Proposta retirada",
+          description: "A proposta foi retirada da lista de Produção."
+        });
+        triggerRefresh();
+      } else {
+        throw new Error(res.errorMessage || "Erro desconhecido.");
+      }
+    } catch (err) {
+      console.error("[OrcamentosListPageReal] Error removing from production:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao retirar",
+        description: err instanceof Error ? err.message : "Não foi possível remover da produção."
+      });
+    }
+  }
+
   async function handleCopiarPropostaInformal(item: OrcamentoListItem) {
     showToast({
       type: "info",
@@ -635,7 +733,9 @@ export function OrcamentosListPageReal() {
       },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
       ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
-      ...(canCancelarProposta ? [{ label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }] : [])
+      ...(canCancelarProposta ? [{ label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }] : []),
+      ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
+      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
     ];
   }
 
@@ -705,7 +805,7 @@ export function OrcamentosListPageReal() {
             icon={FileText}
           />
           <SummaryCard
-            title="Aprovadas"
+            title="Liberadas"
             value={aprovadasResumo.quantidade.toString()}
             description={
               <span>
@@ -1023,7 +1123,16 @@ export function OrcamentosListPageReal() {
           onlyModal={true}
         />
       )}
+
+      {selectedPropostaForLiberar && (
+        <LiberarProducaoModal
+          propostaId={selectedPropostaForLiberar.id_int}
+          isOpen={isLiberarModalOpen}
+          isSubmitting={isLiberarSubmitting}
+          onClose={() => setIsLiberarModalOpen(false)}
+          onConfirm={() => void confirmLiberarProducao()}
+        />
+      )}
     </div>
   );
 }
-

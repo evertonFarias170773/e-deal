@@ -25,12 +25,12 @@ import {
   RefreshCw
 } from "lucide-react";
 import { formatDate } from "@/lib/formatters/date";
-import type { PedidoProducaoListItem } from "./types";
+import type { PropostaOperacionalListItem } from "./types";
 
 export function ExpedicaoPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const [pedidos, setPedidos] = useState<PedidoProducaoListItem[]>([]);
+  const [pedidos, setPedidos] = useState<PropostaOperacionalListItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -191,7 +191,7 @@ export function ExpedicaoPage() {
     return matchesStatus && matchesSearch;
   });
 
-  const handleDispatchWeight = (pedido: PedidoProducaoListItem) => {
+  const handleDispatchWeight = (pedido: PropostaOperacionalListItem) => {
     const expectedVol = pedido.volumes || 1;
     const count = getVolumesCount(pedido.id_int, expectedVol);
     
@@ -208,7 +208,8 @@ export function ExpedicaoPage() {
     const totalWeight = getPedidoTotalWeight(pedido.id_int, expectedVol);
 
     // Calcula desvio do peso (margem de tolerância de 5%)
-    const desvio = Math.abs(totalWeight - pedido.pesoTeorico) / pedido.pesoTeorico;
+    const pesoTeorico = pedido.pesoTeorico || 0;
+    const desvio = pesoTeorico > 0 ? Math.abs(totalWeight - pesoTeorico) / pesoTeorico : 0;
     if (desvio > 0.05) {
       showToast({
         type: "error",
@@ -342,7 +343,8 @@ export function ExpedicaoPage() {
                 // check if any volume is weighed
                 const hasAnyWeight = Array.from({ length: currentVol }).some((_, i) => pesoInputs[`${pedido.id_int}-${i}`]);
                 const isAllWeighed = isPedidoWeighed(pedido.id_int, expectedVol);
-                const desvio = Math.abs(totalWeight - pedido.pesoTeorico) / pedido.pesoTeorico;
+                const pesoTeorico = pedido.pesoTeorico || 0;
+                const desvio = pesoTeorico > 0 ? Math.abs(totalWeight - pesoTeorico) / pesoTeorico : 0;
                 const isDivergente = desvio > 0.05;
 
                 return (
@@ -385,12 +387,12 @@ export function ExpedicaoPage() {
                     }`}>
                       <div>
                         <span className="text-slate-400 block">Qtd Modelos:</span>
-                        <strong className="text-slate-800 dark:text-slate-200">{pedido.modelos.length} lote(s)</strong>
+                        <strong className="text-slate-800 dark:text-slate-200">{pedido.modelos?.length || 0} lote(s)</strong>
                       </div>
                       <div>
                         <span className="text-slate-400 block">Peso Esperado:</span>
                         <strong className="text-slate-800 dark:text-slate-200">
-                          {pedido.pesoTeorico.toFixed(2)} kg
+                          {(pedido.pesoTeorico || 0).toFixed(2)} kg
                         </strong>
                       </div>
                       <div>
@@ -555,9 +557,9 @@ export function ExpedicaoPage() {
                     </div>
 
                     <div className="text-[10px] text-slate-400 flex justify-between items-center border-t border-slate-100 dark:border-slate-800 pt-2">
-                      <span>Despachado: {pedido.volumes || 1} vol(s) • {pedido.pesoAferido?.toFixed(2) || pedido.pesoTeorico.toFixed(2)} kg</span>
+                      <span>Despachado: {pedido.volumes || 1} vol(s) • {pedido.pesoAferido?.toFixed(2) || (pedido.pesoTeorico || 0).toFixed(2)} kg</span>
                       <Link
-                        href={`/pedidos/${pedido.id_int}`}
+                        href={`/pedidos/boletim?id_int=${pedido.id_int}&modo=edicao`}
                         className="text-blue-500 font-bold hover:underline"
                       >
                         Ver detalhes

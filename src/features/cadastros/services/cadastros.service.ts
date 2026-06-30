@@ -1490,12 +1490,24 @@ export async function checkVinculoRemovability(
     return { blocked: true, errorMessage: "Cliente Supabase indisponível." };
   }
 
-  // PASSO 1: Verificar propostas APROVADAS
+  // PASSO 1: Verificar propostas APROVADAS ou ATIVAS na fábrica
   const { data: propostas, error: propError } = await client
     .from("propostas")
     .select("id, id_int")
     .eq("id_faturado", idFaturadoSocio)
-    .eq("status_interno", "APROVADO");
+    .in("status_interno", [
+      "APROVADO",
+      "APROVADO / EM ARTE",
+      "REVISAO ATENDENTE",
+      "REVISAO PRODUCAO",
+      "EM PRODUCAO",
+      "EM IMPRESSAO",
+      "EM ACABAMENTO",
+      "EXPEDICAO",
+      "A RETIRAR",
+      "EM TRANSITO",
+      "ENTREGUE"
+    ]);
 
   if (propError) {
     return { blocked: true, errorMessage: propError.message };

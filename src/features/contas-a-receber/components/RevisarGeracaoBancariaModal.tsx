@@ -78,6 +78,10 @@ export function RevisarGeracaoBancariaModal({
   const [idCliente, setIdCliente] = useState<number | null>(null);
   const [refreshValidationTrigger, setRefreshValidationTrigger] = useState(0);
 
+  const [isUsingFallbackEmail, setIsUsingFallbackEmail] = useState(false);
+  const [fallbackEmailOverride, setFallbackEmailOverride] = useState("");
+  const [fallbackEmailConfirmed, setFallbackEmailConfirmed] = useState(false);
+
   const revalidateCadastro = () => {
     setRefreshValidationTrigger(prev => prev + 1);
   };
@@ -128,7 +132,9 @@ export function RevisarGeracaoBancariaModal({
               // Fallback de E-mail do ERP
               const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
               let finalEmail = email;
+              let neededFallback = false;
               if (!email || !EMAIL_REGEX.test(email)) {
+                neededFallback = true;
                 if (idEmp === 1) {
                   finalEmail = "financeiro@ingressoideal.com.br";
                 } else if (idEmp === 3) {
@@ -136,6 +142,14 @@ export function RevisarGeracaoBancariaModal({
                 } else {
                   finalEmail = "financeiro@pay-ideal.com.br";
                 }
+                if (!isUsingFallbackEmail) {
+                  setFallbackEmailOverride(finalEmail);
+                }
+              }
+
+              setIsUsingFallbackEmail(neededFallback);
+              if (neededFallback) {
+                finalEmail = fallbackEmailOverride || finalEmail;
               }
 
               // 2. Buscar endereço principal ou fallback
@@ -263,7 +277,7 @@ export function RevisarGeracaoBancariaModal({
       }
 
       // 2. Chamar o webhook
-      const result = await registerBoletoViaN8n(boleto);
+      const result = await registerBoletoViaN8n(boleto, isUsingFallbackEmail ? fallbackEmailOverride : undefined);
       console.log("[RevisarGeracaoBancariaModal] Retorno do webhook n8n para boleto individual:", JSON.stringify(result, null, 2));
 
       // 3. Atualizar dados retornados
@@ -504,7 +518,7 @@ export function RevisarGeracaoBancariaModal({
             throw new Error(`Erro ao atualizar dados antes do registro: ${preSaveError.message}`);
           }
 
-          const result = await registerBoletoViaN8n(boleto);
+          const result = await registerBoletoViaN8n(boleto, isUsingFallbackEmail ? fallbackEmailOverride : undefined);
           console.log("[RevisarGeracaoBancariaModal] Retorno do webhook n8n para boleto em lote:", JSON.stringify(result, null, 2));
 
           if (result && result.data) {
@@ -732,6 +746,47 @@ export function RevisarGeracaoBancariaModal({
                         </button>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Bloco Fallback de E-mail */}
+                {isUsingFallbackEmail && cadastralErrors.length === 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-3xl p-4 space-y-3 font-sans">
+                    <div className="flex items-start gap-3 text-blue-800">
+                      <Info className="h-5 w-5 shrink-0 mt-0.5 text-blue-600" />
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-blue-950">
+                          E-mail de Cliente Ausente
+                        </h4>
+                        <p className="text-xs mt-1 text-blue-700 leading-normal">
+                          O cliente não possui e-mail cadastrado ou é inválido. Um e-mail interno será utilizado para receber o boleto pelo banco.
+                        </p>
+                        
+                        <div className="mt-3 flex flex-col gap-2">
+                          <label className="text-xs font-semibold text-blue-900">E-mail para envio:</label>
+                          <input
+                            type="email"
+                            value={fallbackEmailOverride}
+                            onChange={(e) => {
+                              setFallbackEmailOverride(e.target.value);
+                              setFallbackEmailConfirmed(false);
+                            }}
+                            className="w-full sm:w-64 px-3 py-2 text-sm border border-blue-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            placeholder="E-mail de recebimento"
+                          />
+                        </div>
+
+                        <label className="mt-3 flex items-center gap-2 text-xs font-medium text-blue-900 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={fallbackEmailConfirmed}
+                            onChange={(e) => setFallbackEmailConfirmed(e.target.checked)}
+                            className="w-4 h-4 text-blue-600 rounded border-blue-300 focus:ring-blue-500"
+                          />
+                          Confirmo o uso deste e-mail para o registro bancário.
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -994,8 +1049,8 @@ export function RevisarGeracaoBancariaModal({
                               boleto.status !== "PAID" && (
                                 <button
                                   type="button"
-                                  disabled={registeringBoletoId !== null || isRegisteringAll || isSavingReview || isLoadingReviewBoletos || cadastralErrors.length > 0}
-                                  title={cadastralErrors.length > 0 ? "Corrija as pendências de cadastro descritas no topo antes de registrar" : undefined}
+                                  disabled={registeringBoletoId !== null || isRegisteringAll || isSavingReview || isLoadingReviewBoletos || cadastralErrors.length > 0 || (isUsingFallbackEmail && !fallbackEmailConfirmed)}
+                                  title={cadastralErrors.length > 0 ? "Corrija as pendências de cadastro descritas no topo antes de registrar" : (isUsingFallbackEmail && !fallbackEmailConfirmed ? "Confirme o e-mail de recebimento no topo para registrar" : undefined)}
                                   onClick={() => setConfirmRegisterBoleto(boleto)}
                                   className="px-4 py-2 bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 text-white transition rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 min-w-[150px]"
                                 >
@@ -1037,6 +1092,11 @@ export function RevisarGeracaoBancariaModal({
                   const isLoteValido = distinctIdInts.size === 1 && Number(Array.from(distinctIdInts)[0]) === Number(idIntDoModal);
 
                   if (eligibleBoletos.length > 1 && isLoteValido) {
+                    const hasErrors = cadastralErrors.length > 0;
+                    const isLoading = isRegisteringAll;
+                    // Bloqueia se houver erro ou se precisar de fallback de e-mail sem confirmação
+                    const isBlocked = hasErrors || (isUsingFallbackEmail && !fallbackEmailConfirmed);
+                    
                     return (
                       <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3 font-sans">
                         <div className="flex items-center gap-2">
@@ -1048,8 +1108,8 @@ export function RevisarGeracaoBancariaModal({
                         </p>
                         <button
                           type="button"
-                          disabled={isRegisteringAll || registeringBoletoId !== null || isSavingReview || isLoadingReviewBoletos || cadastralErrors.length > 0}
-                          title={cadastralErrors.length > 0 ? "Corrija as pendências de cadastro descritas no topo antes de registrar" : undefined}
+                          disabled={isLoading || isBlocked || registeringBoletoId !== null || isSavingReview || isLoadingReviewBoletos}
+                          title={hasErrors ? "Corrija as pendências de cadastro descritas no topo antes de registrar" : (isUsingFallbackEmail && !fallbackEmailConfirmed ? "Confirme o e-mail de recebimento para registrar" : undefined)}
                           onClick={() => setConfirmRegisterAll(true)}
                           className="w-full px-4 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition rounded-xl flex items-center justify-center gap-1.5 shadow-sm"
                         >
@@ -1227,3 +1287,4 @@ export function RevisarGeracaoBancariaModal({
     </>
   );
 }
+

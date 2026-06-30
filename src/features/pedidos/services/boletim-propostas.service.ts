@@ -1,4 +1,13 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { sendPropostaChatMessage } from "@/features/orcamentos/services/orcamentos.service";
+
+export const BOLETIM_ELIGIBLE_STATUSES = [
+  "APROVADO",
+  "APROVADO / EM ARTE",
+  "REVISAO ATENDENTE",
+  "REVISAO PRODUCAO",
+  "EM PRODUCAO" // Pode fazer sentido listar para emissão retroativa se necessário
+];
 
 export interface PropostaLiberadaBoletim {
   id_int: number;
@@ -34,6 +43,7 @@ export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLib
 
   // Busca candidatos com status APROVADO e vendedor informado.
   // Usamos limit 200 para garantir que pegamos registros suficientes antes dos filtros em JS.
+  
   const { data: rows, error } = await client
     .from("propostas")
     .select(`
@@ -50,7 +60,7 @@ export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLib
       updated_at,
       produtos_proposta (id)
     `)
-    .eq("status_interno", "APROVADO")
+    .in("status_interno", BOLETIM_ELIGIBLE_STATUSES)
     .not("id_int", "is", null)
     .not("id_vendedor", "is", null)
     .order("updated_at", { ascending: false, nullsFirst: false })
@@ -78,7 +88,7 @@ export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLib
 
   if (idInts.length > 0) {
     const { data: pedidosData, error: pedidosError } = await client
-      .from("pedidos")
+      .from("propostas_os")
       .select("id_int")
       .in("id_int", idInts);
 
@@ -94,6 +104,9 @@ export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLib
   }
 
   // Filtra as elegíveis e mapeia para a interface final
+  // TODO (Fase Multi-OS): A nova regra prevê múltiplas OS para a mesma proposta. 
+  // O bloqueio abaixo será substituído por uma validação que permite novas OS (Boletins) 
+  // se houver necessidade parcial, e lista as já existentes.
   const eligible = withProducts.filter((p) => !existingPedidoIds.has(Number(p.id_int)));
 
   const mapped = eligible.map((row) => {
@@ -151,7 +164,7 @@ export async function buscarPropostasLiberadasParaBoletim(
       updated_at,
       produtos_proposta (id)
     `)
-    .eq("status_interno", "APROVADO")
+    .in("status_interno", BOLETIM_ELIGIBLE_STATUSES)
     .not("id_int", "is", null)
     .not("id_vendedor", "is", null);
 
@@ -186,7 +199,7 @@ export async function buscarPropostasLiberadasParaBoletim(
 
   if (idInts.length > 0) {
     const { data: pedidosData, error: pedidosError } = await client
-      .from("pedidos")
+      .from("propostas_os")
       .select("id_int")
       .in("id_int", idInts);
 
@@ -201,6 +214,9 @@ export async function buscarPropostasLiberadasParaBoletim(
     }
   }
 
+  // TODO (Fase Multi-OS): A nova regra prevê múltiplas OS para a mesma proposta. 
+  // O bloqueio abaixo será substituído por uma validação que permite novas OS (Boletins) 
+  // se houver necessidade parcial, e lista as já existentes.
   const eligible = withProducts.filter((p) => !existingPedidoIds.has(Number(p.id_int)));
 
   const mapped = eligible.map((row) => {
@@ -265,7 +281,7 @@ export async function obterPropostaLiberadaParaBoletim(
   }
 
   // 2. Verifica se está aprovada
-  if (proposalRow.status_interno !== "APROVADO") {
+  if (!BOLETIM_ELIGIBLE_STATUSES.includes(proposalRow.status_interno || "")) {
     return { success: false, error: "Proposta ainda não aprovada" };
   }
 
@@ -292,7 +308,7 @@ export async function obterPropostaLiberadaParaBoletim(
 
   // 5. Verifica se já existe pedido
   const { data: pedidosData, error: pedidosError } = await client
-    .from("pedidos")
+    .from("propostas_os")
     .select("id")
     .eq("id_int", idInt);
 
@@ -305,7 +321,7 @@ export async function obterPropostaLiberadaParaBoletim(
     return { success: false, error: "Pedido já aberto para esta proposta" };
   }
 
-  // 5b. Verifica se já existem modelos
+  // 5b. Verifica se já existem modelos (Apenas log, não bloqueia mais a abertura)
   const { data: modelsData, error: modelsError } = await client
     .from("pedidos_modelos")
     .select("id")
@@ -313,12 +329,9 @@ export async function obterPropostaLiberadaParaBoletim(
 
   if (modelsError) {
     console.error("[BoletimPropostasService] Erro ao verificar modelos existentes:", modelsError);
-    return { success: false, error: "Erro ao consultar modelos existentes." };
   }
 
-  if (modelsData && modelsData.length > 0) {
-    return { success: false, error: "Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura." };
-  }
+  // Removido o bloqueio de abertura por modelos existentes para permitir edição.
 
   // Elegível!
   const valor_total_calc = (proposalRow.valor_total && Number(proposalRow.valor_total) !== 0) ? Number(proposalRow.valor_total) : (Number(proposalRow.valor) || 0);
@@ -388,7 +401,7 @@ export async function criarPedidoParaBoletim(
   }
 
   // Validações de elegibilidade da proposta obtida
-  if (propostaRow.status_interno !== "APROVADO") {
+  if (!BOLETIM_ELIGIBLE_STATUSES.includes(propostaRow.status_interno || "")) {
     return { success: false, error: "Proposta ainda não aprovada" };
   }
 
@@ -420,7 +433,7 @@ export async function criarPedidoParaBoletim(
 
   // Validar se não existe pedido em public.pedidos para esse id_int
   const { data: pedidosData, error: pedidosError } = await client
-    .from("pedidos")
+    .from("propostas_os")
     .select("id")
     .eq("id_int", idInt);
 
@@ -438,20 +451,8 @@ export async function criarPedidoParaBoletim(
     return { success: false, error: "Pedido já aberto para esta proposta" };
   }
 
-  // Validar se não existem modelos em public.pedidos_modelos para esse id_int
-  const { data: modelsData, error: modelsError } = await client
-    .from("pedidos_modelos")
-    .select("id")
-    .eq("id_int", idInt);
-
-  if (modelsError) {
-    console.error("[BoletimPropostasService] Erro ao verificar modelos existentes:", modelsError);
-    return { success: false, error: `Erro ao verificar modelos existentes: ${modelsError.message}` };
-  }
-
-  if (modelsData && modelsData.length > 0) {
-    return { success: false, error: "Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura." };
-  }
+  // (Bloqueio de modelos removido aqui para permitir criação de OS retroativa. 
+  // A prevenção de duplicidade ocorre em salvarModelosBoletim)
 
   const valor_total_calc = (propostaRow.valor_total && Number(propostaRow.valor_total) !== 0)
     ? Number(propostaRow.valor_total)
@@ -460,7 +461,7 @@ export async function criarPedidoParaBoletim(
   // 2. Montar payload do pedido
   const payload = {
     id_int: Number(propostaRow.id_int),
-    id_vendedor: idVendedor,
+    nome_vendedor: idVendedor,
     id_cliente: null,
     status_pedido: "BOLETIM_FINALIZADO",
     status_pagamento: "APROVADO",
@@ -475,8 +476,8 @@ export async function criarPedidoParaBoletim(
   };
 
   // Validação de payload final antes do insert
-  if (!payload.id_vendedor) {
-    throw new Error("Payload inválido: id_vendedor ausente antes do INSERT.");
+  if (!payload.nome_vendedor) {
+    throw new Error("Payload inválido: nome_vendedor ausente antes do INSERT.");
   }
 
   // Log do payload em desenvolvimento
@@ -486,7 +487,7 @@ export async function criarPedidoParaBoletim(
 
   // 3. Executar o INSERT
   const { data, error } = await client
-    .from("pedidos")
+    .from("propostas_os")
     .insert(payload)
     .select("id")
     .single();
@@ -638,7 +639,6 @@ export async function salvarModelosBoletim(
   // 3. Mapear os dados para o payload
   const payloads = modelosInput.map((m, idx) => ({
     id_int: idInt,
-    id_pedido: idPedido,
     id_produto_proposta_origem: m.id_produto_proposta_origem || null,
     nome_modelo: m.nome_modelo,
     descricao: m.descricao || null,
@@ -675,6 +675,15 @@ export interface ParsedObs {
   orientacoesDesign: string;
   obsImpressao: string;
   obsAcabamento: string;
+  logistica?: {
+    servico_transporte?: string;
+    transportador?: string;
+    peso_real?: string;
+    qtd_volumes?: string;
+    tipo_volume?: string;
+    responsavel_logistica?: string;
+    observacoes_frete?: string;
+  };
 }
 
 export function parsePedidosObs(obsText: string | null | undefined): ParsedObs {
@@ -692,7 +701,8 @@ export function parsePedidosObs(obsText: string | null | undefined): ParsedObs {
     { key: "designer", header: "[Designer]" },
     { key: "orientacoesDesign", header: "[Orientações para design]" },
     { key: "obsImpressao", header: "[Impressão]" },
-    { key: "obsAcabamento", header: "[Acabamento]" }
+    { key: "obsAcabamento", header: "[Acabamento]" },
+    { key: "logistica", header: "[Logística]" }
   ];
 
   const extractBlock = (tagHeader: string): string => {
@@ -715,6 +725,7 @@ export function parsePedidosObs(obsText: string | null | undefined): ParsedObs {
   const designContent = extractBlock("[Orientações para design]");
   const impContent = extractBlock("[Impressão]");
   const acabContent = extractBlock("[Acabamento]");
+  const logisticaContent = extractBlock("[Logística]");
 
   const firstTagIndex = Math.min(
     ...tags.map(t => {
@@ -748,6 +759,26 @@ export function parsePedidosObs(obsText: string | null | undefined): ParsedObs {
     }
   }
 
+  if (logisticaContent) {
+    const servicoMatch = logisticaContent.match(/servico_transporte:\s*([^\n\r]+)/i);
+    const transportadorMatch = logisticaContent.match(/transportador:\s*([^\n\r]+)/i);
+    const pesoRealMatch = logisticaContent.match(/peso_real:\s*([^\n\r]+)/i);
+    const qtdVolumesMatch = logisticaContent.match(/qtd_volumes:\s*([^\n\r]+)/i);
+    const tipoVolumeMatch = logisticaContent.match(/tipo_volume:\s*([^\n\r]+)/i);
+    const responsavelMatch = logisticaContent.match(/responsavel_logistica:\s*([^\n\r]+)/i);
+    const obsFreteMatch = logisticaContent.match(/observacoes_frete:\s*([^\n\r]*)/i);
+
+    result.logistica = {
+      servico_transporte: servicoMatch ? servicoMatch[1].trim() : "",
+      transportador: transportadorMatch ? transportadorMatch[1].trim() : "",
+      peso_real: pesoRealMatch ? pesoRealMatch[1].trim() : "",
+      qtd_volumes: qtdVolumesMatch ? qtdVolumesMatch[1].trim() : "",
+      tipo_volume: tipoVolumeMatch ? tipoVolumeMatch[1].trim() : "",
+      responsavel_logistica: responsavelMatch ? responsavelMatch[1].trim() : "",
+      observacoes_frete: obsFreteMatch ? obsFreteMatch[1].trim() : ""
+    };
+  }
+
   return result;
 }
 
@@ -761,6 +792,15 @@ export interface SerializeObsInput {
   orientacoesDesign?: string;
   obsImpressao?: string;
   obsAcabamento?: string;
+  logistica?: {
+    servico_transporte?: string;
+    transportador?: string;
+    peso_real?: string;
+    qtd_volumes?: string;
+    tipo_volume?: string;
+    responsavel_logistica?: string;
+    observacoes_frete?: string;
+  };
 }
 
 export function serializePedidosObs(input: SerializeObsInput, existingObsText: string | null | undefined): string {
@@ -771,6 +811,7 @@ export function serializePedidosObs(input: SerializeObsInput, existingObsText: s
   const finalOrientacoes = input.orientacoesDesign !== undefined ? input.orientacoesDesign : parsed.orientacoesDesign;
   const finalImpressao = input.obsImpressao !== undefined ? input.obsImpressao : parsed.obsImpressao;
   const finalAcabamento = input.obsAcabamento !== undefined ? input.obsAcabamento : parsed.obsAcabamento;
+  const finalLogistica = input.logistica !== undefined ? input.logistica : parsed.logistica;
 
   let serialized = "";
   serialized += `[Observações críticas]\n${finalCriticas.trim() || "-"}\n\n`;
@@ -782,6 +823,17 @@ export function serializePedidosObs(input: SerializeObsInput, existingObsText: s
   serialized += `[Orientações para design]\n${finalOrientacoes.trim() || "-"}\n\n`;
   serialized += `[Impressão]\n${finalImpressao.trim() || "-"}\n\n`;
   serialized += `[Acabamento]\n${finalAcabamento.trim() || "-"}`;
+
+  if (finalLogistica) {
+    serialized += `\n\n[Logística]\n`;
+    serialized += `servico_transporte: ${finalLogistica.servico_transporte || ""}\n`;
+    serialized += `transportador: ${finalLogistica.transportador || ""}\n`;
+    serialized += `peso_real: ${finalLogistica.peso_real || ""}\n`;
+    serialized += `qtd_volumes: ${finalLogistica.qtd_volumes || ""}\n`;
+    serialized += `tipo_volume: ${finalLogistica.tipo_volume || ""}\n`;
+    serialized += `responsavel_logistica: ${finalLogistica.responsavel_logistica || ""}\n`;
+    serialized += `observacoes_frete: ${finalLogistica.observacoes_frete || ""}`;
+  }
 
   return serialized;
 }
@@ -806,21 +858,39 @@ export async function atualizarOrientacoesBoletim(
   const paramStr = String(idPedidoOuIdInt).trim();
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramStr);
 
-  let query = client.from("pedidos").update({ obs: obsText });
+  let selectQuery = client.from("propostas_os").select("id");
 
   if (isUuid) {
-    query = query.eq("id", paramStr);
+    selectQuery = selectQuery.eq("id", paramStr);
   } else {
     const cleanNumStr = paramStr.replace("#", "");
     const idInt = Number(cleanNumStr);
     if (!isNaN(idInt)) {
-      query = query.eq("id_int", idInt);
+      selectQuery = selectQuery.eq("id_int", idInt);
     } else {
       return { success: false, error: "Parâmetro identificador do pedido inválido." };
     }
   }
 
-  const { error } = await query;
+  const { data: existingOs } = await selectQuery.maybeSingle();
+
+  if (!existingOs) {
+    if (!isUuid) {
+      // OS não existe, vamos criar usando a lógica existente
+      const cleanNumStr = paramStr.replace("#", "");
+      const idInt = Number(cleanNumStr);
+      const createResult = await criarPedidoParaBoletim({ id_int: idInt, descricao: `Pedido #${idInt}`, obs: obsText });
+      if (!createResult.success) {
+        return { success: false, error: "Falha ao criar o pedido inexistente: " + createResult.error };
+      }
+      return { success: true };
+    } else {
+      return { success: false, error: "Pedido não encontrado para atualização." };
+    }
+  }
+
+  // OS existe, vamos atualizar
+  const { error } = await client.from("propostas_os").update({ obs: obsText }).eq(isUuid ? "id" : "id_int", isUuid ? paramStr : Number(paramStr.replace("#", "")));
 
   if (error) {
     console.error("[BoletimPropostasService] Erro ao atualizar orientações do boletim:", {
@@ -841,6 +911,107 @@ export async function atualizarOrientacoesBoletim(
   return { success: true };
 }
 
+export async function obterGabaritosOperacionais(): Promise<string[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  const { data } = await client.from("producao_numeracoes").select("name").order("name");
+  return data ? data.map(d => d.name) : [];
+}
+
+export async function obterFreteEscolhido(idInt: number): Promise<any | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data } = await client
+    .from("cotacao_frete")
+    .select("*")
+    .eq("id_int", idInt)
+    .eq("escolhido", true)
+    .limit(1)
+    .maybeSingle();
+  return data || null;
+}
+
+export async function atualizarModelosBoletim(modelosUpdates: { id: number, tipo_numeracao: string | null, gabarito_operacional: string | null, numeracao_inicio: number | null }[]): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Sem conexão." };
+
+  for (const m of modelosUpdates) {
+    if (!m.id || isNaN(Number(m.id))) continue;
+    const { error } = await client
+      .from("pedidos_modelos")
+      .update({
+        tipo_numeracao: m.tipo_numeracao,
+        gabarito_operacional: m.gabarito_operacional,
+        numeracao_inicio: m.numeracao_inicio
+      })
+      .eq("id", m.id);
+    if (error) {
+      console.error("[BoletimPropostasService] Erro ao atualizar modelo:", error);
+      return { success: false, error: error.message };
+    }
+  }
+  return { success: true };
+}
+
+/**
+ * Avança o status macro da proposta para EM PRODUCAO apenas se o status atual for REVISAO PRODUCAO.
+ */
+export async function avancarStatusParaEmProducao(idInt: number): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Supabase client not initialized" };
+
+  // Fetch current status
+  const { data, error } = await client.from("propostas").select("status_interno").eq("id_int", idInt).single();
+  if (error || !data) return { success: false, error: "Proposta não encontrada" };
+
+  if (data.status_interno === "REVISAO PRODUCAO") {
+    const { error: updateError } = await client
+      .from("propostas")
+      .update({ status_interno: "EM PRODUCAO" })
+      .eq("id_int", idInt)
+      .eq("status_interno", "REVISAO PRODUCAO");
+      
+    if (updateError) return { success: false, error: updateError.message };
+
+    await sendPropostaChatMessage({
+      id_int: idInt,
+      mensagem: "Status alterado automaticamente de [REVISAO PRODUCAO] para [EM PRODUCAO] após finalização do Boletim de Entrada.",
+      tipo: "SISTEMA",
+      autor_nome: "Sistema",
+      autor_uid: null,
+      autor_email: null,
+      setor: "PRODUCAO",
+      visivel_externo: false,
+      anexos: null,
+      id_cliente: null,
+      avatar: null
+    });
+  }
+
+  return { success: true };
+}
 
 
+export async function liberarPedidoParaFiscal(idInt: number): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, error: "Supabase client não encontrado." };
+  }
 
+  try {
+    const { error } = await client
+      .from("propostas")
+      .update({ libera_nf: true })
+      .eq("id_int", idInt);
+
+    if (error) {
+      console.error("[BoletimPropostasService] Erro ao liberar para NF:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error("[BoletimPropostasService] Exception ao liberar para NF:", err);
+    return { success: false, error: err.message || "Erro desconhecido." };
+  }
+}

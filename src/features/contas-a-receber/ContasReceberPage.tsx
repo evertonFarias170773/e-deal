@@ -29,7 +29,7 @@ import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/servic
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
-type ActiveTab = "CARTEIRA" | "BOLETOS" | "VENCIMENTOS" | "CARTOES" | "PREVISAO";
+type ActiveTab = "CARTEIRA" | "BOLETOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
 type StatusFilter = "TODOS" | "A_VENCER" | "VENCIDOS" | "PAID" | "VENCIDO" | "CANCELADO" | "NAO_REGISTRADO";
 
@@ -648,8 +648,7 @@ export function ContasReceberPage() {
   const tabs: Array<{ id: ActiveTab; label: string }> = [
     { id: "CARTEIRA", label: "Carteira" },
     { id: "BOLETOS", label: "Boletos e depósitos" },
-    { id: "VENCIMENTOS", label: "Vencimentos" },
-    { id: "CARTOES", label: "Cartões a receber" },
+        { id: "CARTOES", label: "Cartões a receber" },
     { id: "PREVISAO", label: "Previsão de caixa" }
   ];
 
@@ -811,8 +810,7 @@ export function ContasReceberPage() {
         />
       ) : null}
 
-      {activeTab === "VENCIMENTOS" ? <VencimentosTab items={recebiveis} today={today} /> : null}
-      {activeTab === "CARTOES" ? <CartoesFaturadoTab items={recebiveis} today={today} /> : null}
+            {activeTab === "CARTOES" ? <CartoesFaturadoTab items={recebiveis} today={today} /> : null}
       {activeTab === "PREVISAO" ? <PrevisaoCaixaTab items={recebiveis} boletos={boletosDepositos} today={today} /> : null}
 
       <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
@@ -1318,32 +1316,6 @@ function BoletosDepositosTab({
   );
 }
 
-function VencimentosTab({ items, today }: { items: BoletoDepositoMock[]; today: string }) {
-  const visibleItems = items.filter((item) => isAllowedTipo(item.tipo) && item.status === "VENCIDO");
-  const groups = [
-    { title: "Vencidos", items: visibleItems.filter((item) => isVisualVencido(item, today)), tone: "danger" as const },
-    { title: "Vencem hoje", items: visibleItems.filter((item) => item.vencimento === today), tone: "warning" as const },
-    { title: "Próximos 7 dias", items: visibleItems.filter((item) => isWithinDays(item.vencimento, 7, today)), tone: "info" as const },
-    { title: "Próximos 30 dias", items: visibleItems.filter((item) => isWithinDays(item.vencimento, 30, today)), tone: "neutral" as const }
-  ];
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      {groups.map((group) => (
-        <section key={group.title} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-950">{group.title}</h2>
-            <StatusBadge status={`${group.items.length} item(ns)`} tone={group.tone} />
-          </div>
-          <div className="space-y-3">
-            {group.items.length ? group.items.map((item) => <MiniRecebivel key={`${group.title}-${item.id}`} item={item} />) : <p className="text-sm text-slate-500">Nenhum recebível neste grupo.</p>}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
 function CartoesFaturadoTab({ items, today }: { items: BoletoDepositoMock[]; today: string }) {
   const filtered = items.filter((item) => isAllowedTipo(item.tipo) && item.tipo === "CARTAO");
   return (
@@ -1769,7 +1741,7 @@ function DetailField({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-slate-200 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-900">{value}</p>
+      <p className="mt-2 text-sm font-semibold text-slate-900 break-words break-all">{value}</p>
     </div>
   );
 }

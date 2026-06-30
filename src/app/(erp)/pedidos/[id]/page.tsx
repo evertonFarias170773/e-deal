@@ -1,14 +1,6 @@
-import { PedidoDetailPage } from "@/features/pedidos";
+import { redirect } from "next/navigation";
 
-type PedidoDetailRouteProps = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
-export default async function PedidoDetailRoute({ params }: PedidoDetailRouteProps) {
-  const { id } = await params;
-  const idInt = Number(id);
-
-  return <PedidoDetailPage idInt={idInt} />;
+export default function PedidoIdCompat() {
+  redirect("/pedidos");
 }
+

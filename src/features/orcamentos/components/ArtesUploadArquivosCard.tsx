@@ -114,6 +114,10 @@ export function ArtesUploadArquivosCard({
     }
   };
 
+  const parsedArquivos = Array.isArray(arquivosJsonb) 
+    ? arquivosJsonb 
+    : (typeof arquivosJsonb === 'string' ? JSON.parse(arquivosJsonb) : []);
+
   return (
     <>
       <FormSection
@@ -131,11 +135,11 @@ export function ArtesUploadArquivosCard({
             </button>
           </div>
 
-          {arquivosJsonb && arquivosJsonb.length > 0 && (
+          {parsedArquivos.length > 0 && (
             <div className="mt-6 border-t border-slate-100 pt-6">
               <h4 className="text-sm font-bold text-slate-800 mb-4">Arquivos Anexados</h4>
               <div className="grid gap-3 sm:grid-cols-2">
-                {arquivosJsonb.map((arq) => (
+                {parsedArquivos.map((arq: any) => (
                   <div key={arq.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm border border-slate-100 text-teal-600">
                       {arq.mime_type?.includes("pdf") ? <FileText size={20} /> : <ImageIcon size={20} />}

@@ -30,15 +30,32 @@ export async function carregarBriefingArtes(idInt: number): Promise<PedidoArte |
     .from("pedidos_artes")
     .select("*")
     .eq("id_int", idInt)
-    .limit(1)
-    .single();
+    .order("created_at", { ascending: false });
 
-  if (error && error.code !== "PGRST116") { // PGRST116 é "No rows found"
+  if (error) {
     console.error(`[PedidosArtesService] Erro ao carregar briefing (id_int: ${idInt}):`, error);
     return null;
   }
 
-  return (data as PedidoArte) || null;
+  if (!data || data.length === 0) {
+    return null;
+  }
+
+  // Se houver múltiplas linhas (devido a bug anterior), fazemos um merge dos arquivos
+  const firstRow = data[0] as PedidoArte;
+  let mergedArquivos: any[] = [];
+  
+  data.forEach((row) => {
+    if (Array.isArray(row.arquivos)) {
+      mergedArquivos = [...mergedArquivos, ...row.arquivos];
+    }
+  });
+
+  // Deduplicar pelo ID do arquivo, caso existam duplicatas
+  const uniqueArquivos = Array.from(new Map(mergedArquivos.map(a => [a.id, a])).values());
+  firstRow.arquivos = uniqueArquivos;
+
+  return firstRow;
 }
 
 /**
@@ -68,18 +85,23 @@ export async function salvarBriefingArtes(idInt: number, payload: Partial<Pedido
     }
   });
 
-  const { data: existente } = await client
+  const { data: existente, error: fetchError } = await client
     .from("pedidos_artes")
     .select("id")
     .eq("id_int", idInt)
-    .limit(1)
-    .single();
+    .order("created_at", { ascending: false })
+    .limit(1);
 
-  if (existente?.id) {
+  if (fetchError) {
+    console.error(`[PedidosArtesService] Erro ao buscar briefing existente:`, fetchError);
+    return null;
+  }
+
+  if (existente && existente.length > 0) {
     const { data: updateData, error: updateError } = await client
       .from("pedidos_artes")
       .update(savePayload)
-      .eq("id", existente.id)
+      .eq("id", existente[0].id)
       .select();
 
     if (updateError) {

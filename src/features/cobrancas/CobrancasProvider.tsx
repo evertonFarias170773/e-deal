@@ -583,16 +583,47 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       if (count === 0) {
-        const { error: updateError } = await client
+        // Obter status atual para evitar regressão destrutiva
+        const { data: propData, error: propError } = await client
           .from("propostas")
-          .update({ status_interno: "NOVO" })
+          .select("status_interno")
           .eq("id_int", idInt)
-          .neq("status_interno", "APROVADO");
+          .maybeSingle();
 
-        if (updateError) {
-          console.error("[CobrancasProvider] Erro ao reverter status da proposta:", updateError);
-        } else {
-          console.log(`[CobrancasProvider] Proposta ${idInt} revertida para NOVO com sucesso.`);
+        if (propError) {
+          console.error("[CobrancasProvider] Erro ao consultar status_interno:", propError);
+          return;
+        }
+
+        if (propData) {
+          const currentStatus = String(propData.status_interno || "NOVO").trim().toUpperCase();
+          const PROTECTED_STATUSES = [
+            "APROVADO", "APROVADO / EM ARTE",
+            "REVISAO ATENDENTE", "REVISAO PRODUCAO",
+            "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO",
+            "EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"
+          ];
+
+          if (PROTECTED_STATUSES.includes(currentStatus)) {
+            console.log(`[CobrancasProvider] Cancelamento ignorou regressão pois status ${currentStatus} é protegido.`);
+            return;
+          }
+
+          let nextStatus = "NOVO";
+          if (currentStatus === "AGUARDANDO / EM ARTE" || currentStatus === "NOVO / EM ARTE") {
+            nextStatus = "NOVO / EM ARTE";
+          }
+
+          const { error: updateError } = await client
+            .from("propostas")
+            .update({ status_interno: nextStatus })
+            .eq("id_int", idInt);
+
+          if (updateError) {
+            console.error("[CobrancasProvider] Erro ao reverter status da proposta:", updateError);
+          } else {
+            console.log(`[CobrancasProvider] Proposta ${idInt} revertida para ${nextStatus} com sucesso.`);
+          }
         }
       }
     } catch (err) {
