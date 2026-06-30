@@ -1400,12 +1400,7 @@ function PrevisaoCaixaTab({ items, itemsSemData, boletos, today, dataInicial, da
   const previsaoItems = items.filter((item) => isAllowedTipo(item.tipo) && item.status === "A_VENCER");
   const previsaoItemsSemData = (itemsSemData || items).filter((item) => isAllowedTipo(item.tipo) && item.status === "A_VENCER");
   
-  let rawWeekly = calculatePrevisaoFixed(previsaoItemsSemData, today);
-  let accumulated = 0;
-  const weekly = rawWeekly.map(row => {
-    accumulated += row.total;
-    return { ...row, total: accumulated };
-  });
+  const weekly = calculatePrevisaoFixed(previsaoItemsSemData, today);
   
   const byEmpresa = groupByEmpresa(previsaoItems);
   const recebido = items.filter((item) => isAllowedTipo(item.tipo) && item.status === "PAID").reduce((total, item) => total + item.valor, 0);
