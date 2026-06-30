@@ -29,7 +29,7 @@ import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/servic
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
-type ActiveTab = "CARTEIRA" | "BOLETOS" | "CARTOES" | "PREVISAO";
+type ActiveTab = "CARTEIRA" | "BOLETOS" | "DEPOSITOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
 type StatusFilter = "TODOS" | "A_VENCER" | "VENCIDOS" | "PAID" | "VENCIDO" | "CANCELADO" | "NAO_REGISTRADO";
 
@@ -237,8 +237,8 @@ export function ContasReceberPage() {
   );
 
   const activeItemsForCards = useMemo(() => {
-    if (activeTab === "BOLETOS") {
-      return filteredBoletos;
+    if (activeTab === "BOLETOS" || activeTab === "DEPOSITOS") {
+      return filteredBoletos.filter(item => item.tipo === (activeTab === "BOLETOS" ? "BOLETO" : "DEPOSITO"));
     }
     return filteredRecebiveis;
   }, [activeTab, filteredRecebiveis, filteredBoletos]);
@@ -647,9 +647,10 @@ export function ContasReceberPage() {
 
   const tabs: Array<{ id: ActiveTab; label: string }> = [
     { id: "CARTEIRA", label: "Carteira" },
-    { id: "BOLETOS", label: "Boletos e depósitos" },
-        { id: "CARTOES", label: "Cartões a receber" },
-    { id: "PREVISAO", label: "Previsão de caixa" }
+    { id: "BOLETOS", label: "Boletos" },
+    { id: "DEPOSITOS", label: "Depósitos" },
+    { id: "CARTOES", label: "Cartões a receber" },
+    { id: "PREVISAO", label: "Previsão de recebimento" }
   ];
 
   return (
@@ -661,8 +662,26 @@ export function ContasReceberPage() {
       />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="flex flex-col gap-2 rounded-3xl border border-[#d7e5e8] bg-white p-6 shadow-sm">
+          <span className="text-sm font-semibold text-slate-500 flex items-center gap-2">Período de consulta</span>
+          <div className="flex gap-2 w-full mt-2">
+            <input
+              type="date"
+              value={dataInicial}
+              onChange={(event) => setDataInicial(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
+              aria-label="Data inicial"
+            />
+            <input
+              type="date"
+              value={dataFinal}
+              onChange={(event) => setDataFinal(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
+              aria-label="Data final"
+            />
+          </div>
+        </div>
         <SummaryCard title="Vencidos reais" value={formatCurrency(resumo.vencidos)} description="Cobranças vencidas reais (A Receber expirado / Vencido)." tone="danger" icon={AlertTriangle} />
-        <SummaryCard title="Carteira ativa" value={formatCurrency(resumo.carteiraAtiva)} description="Cobranças operacionais ativas a receber em dia." tone="warning" icon={CalendarDays} />
         <SummaryCard title="Previsão futura" value={formatCurrency(resumo.previsaoFutura)} description="Previsões financeiras e recebíveis futuros de caixa." tone="info" icon={Wallet} />
         <SummaryCard title="Pagos" value={formatCurrency(resumo.pagos)} description="Cobranças e premissas quitadas no período." tone="success" icon={TrendingUp} />
       </section>
@@ -688,13 +707,6 @@ export function ContasReceberPage() {
             ))}
           </select>
 
-          <select value={tipo} onChange={(event) => setTipo(event.target.value as TipoFilter)} className={filterClass}>
-            <option value="TODOS">Todos os tipos</option>
-            <option value="BOLETO">Boleto</option>
-            <option value="DEPOSITO">Depósito</option>
-            <option value="CARTAO">Cartão</option>
-          </select>
-
           <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)} className={filterClass}>
             <option value="TODOS">Todos status</option>
             <option value="A_VENCER">Previsão futura / E-Faturado (A Vencer)</option>
@@ -703,22 +715,6 @@ export function ContasReceberPage() {
             <option value="CANCELADO">Cancelados</option>
             <option value="NAO_REGISTRADO">Boletos não registrados</option>
           </select>
-
-          <input
-            type="date"
-            value={dataInicial}
-            onChange={(event) => setDataInicial(event.target.value)}
-            className={filterClass}
-            aria-label="Data inicial"
-          />
-
-          <input
-            type="date"
-            value={dataFinal}
-            onChange={(event) => setDataFinal(event.target.value)}
-            className={filterClass}
-            aria-label="Data final"
-          />
 
           <button
             type="button"
@@ -781,9 +777,9 @@ export function ContasReceberPage() {
         />
       ) : null}
 
-      {activeTab === "BOLETOS" ? (
+      {activeTab === "BOLETOS" || activeTab === "DEPOSITOS" ? (
         <BoletosDepositosTab
-          items={filteredBoletos}
+          items={filteredBoletos.filter(item => activeTab === "BOLETOS" ? item.tipo === "BOLETO" : item.tipo === "DEPOSITO")}
           today={today}
           onConfirm={confirmRecebimento}
           onCancel={cancelRecebivel}
@@ -811,7 +807,7 @@ export function ContasReceberPage() {
       ) : null}
 
             {activeTab === "CARTOES" ? <CartoesFaturadoTab items={recebiveis} today={today} /> : null}
-      {activeTab === "PREVISAO" ? <PrevisaoCaixaTab items={recebiveis} boletos={boletosDepositos} today={today} /> : null}
+      {activeTab === "PREVISAO" ? <PrevisaoCaixaTab items={filteredRecebiveis} boletos={filteredBoletos} today={today} dataInicial={dataInicial} dataFinal={dataFinal} /> : null}
 
       <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
         Contas a Receber é a carteira financeira de acompanhamento. A criação de cobranças e baixas reais permanecem gerenciadas no módulo operacional.
@@ -1349,9 +1345,14 @@ function CartoesFaturadoTab({ items, today }: { items: BoletoDepositoMock[]; tod
   );
 }
 
-function PrevisaoCaixaTab({ items, boletos, today }: { items: BoletoDepositoMock[]; boletos: BoletoDepositoMock[]; today: string }) {
+function PrevisaoCaixaTab({ items, boletos, today, dataInicial, dataFinal }: { items: BoletoDepositoMock[]; boletos: BoletoDepositoMock[]; today: string; dataInicial: string; dataFinal: string }) {
   const previsaoItems = items.filter((item) => isAllowedTipo(item.tipo) && item.status === "A_VENCER");
-  const weekly = groupByWeek(previsaoItems, today);
+  let rawWeekly = groupByWeek(previsaoItems, today);
+  let accumulated = 0;
+  const weekly = rawWeekly.map(row => {
+    accumulated += row.total;
+    return { ...row, total: accumulated };
+  });
   const byEmpresa = groupByEmpresa(previsaoItems);
   const recebido = items.filter((item) => isAllowedTipo(item.tipo) && item.status === "PAID").reduce((total, item) => total + item.valor, 0);
   const aReceber = previsaoItems.reduce((total, item) => total + (item.valor_atualizado ?? item.valor), 0);
@@ -1364,7 +1365,7 @@ function PrevisaoCaixaTab({ items, boletos, today }: { items: BoletoDepositoMock
           <span className="rounded-2xl bg-sky-50 p-3 text-sky-700"><TrendingUp className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Previsão por semana</h2>
-            <p className="text-sm text-slate-500">Agrupamento dinâmico por vencimento.</p>
+            <p className="text-sm text-slate-500">Acumulado do período ({dataInicial && dataFinal ? `${dataInicial.split('-')[2]}/${dataInicial.split('-')[1]} a ${dataFinal.split('-')[2]}/${dataFinal.split('-')[1]}` : "selecionado"})</p>
           </div>
         </div>
         <div className="space-y-3">
