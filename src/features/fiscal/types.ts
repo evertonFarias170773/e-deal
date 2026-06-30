@@ -25,4 +25,5 @@ export interface FaturavelOrigem {
   os_ideal?: string;
   itens: FaturavelItem[];
   created_at: string;
+  tipo_cobranca?: string;
 }

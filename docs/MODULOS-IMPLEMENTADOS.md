@@ -1,3 +1,8 @@
+
+### [Contas a Receber] - Refatoração de Mock, Permissões e Segurança N8N
+- Status: Implementado
+- Ações: Proteção de botões sensíveis com N8N para apenas Administradores, alteração dos tipos (`RecebimentoOperacional`), fallback editável de emails sem banco de dados associado a modais transacionais.
+- Base afetada: `public.boletos` e componentes react de `src/features/contas-a-receber`.
 # Módulos Implementados
 
 ## Login
@@ -276,6 +281,8 @@ Funcionalidades:
 - opção de frete automática "Retirada Local (Sem custo)" para propostas com UF de destino = "RS";
 - preservação do frete selecionado pelo usuário ao alterar itens do orçamento, mantendo-o como frete "preservado" caso não seja retornado pelas cotações automáticas da API;
 - correção de cotações automáticas indevidas no mount através do ajuste na inicialização de chaves de frete com volumes corretos.
+- **Integração Fase 4A.1 (Centralização de Status)**: A interface, listagem, filtros, tooltips e agrupamentos de cards (`Em Aberto`, `Aguardando`, `Aprovadas`) estão totalmente compatíveis com os 17 status compostos da nova Engine de Status (`status_interno`). Cancelamento de cobrança foi blindado contra regressão para `NOVO` em propostas que já avançaram na fábrica.
+
 
 Pendências:
 
@@ -640,16 +647,13 @@ Funcionalidades e Regras de Elegibilidade:
 
 ## Fila Geral de OS / Pedidos (PCP)
 
-Status: Leitura real conectada ao Supabase na aba "Fila Geral". A listagem de pedidos agora consome diretamente a tabela `public.pedidos`, com enriquecimento opcional de dados a partir de `public.propostas`.
+Status: Leitura real conectada ao Supabase na aba "Fila Geral". A listagem de pedidos agora consome diretamente a tabela `public.propostas` (Fase 1), com enriquecimento da tabela `public.pedidos` tratada estritamente como OS/Boletim complementar. A interface visual foi padronizada com orçamentos (Fase 1.2), removendo o layout denso de PCP.
 
-Componentes principais:
-- `pedidos-producao.service.ts` (`src/features/pedidos/services/pedidos-producao.service.ts` - Contém a função `listarPedidosOperacionais` para buscar os pedidos no banco e realizar o link opcional/resiliente com as propostas)
-- `PedidosListPage.tsx` (`src/features/pedidos/PedidosListPage.tsx` - Interface principal da Fila Operacional atualizada para carregar dados reais, filtrar por novos status de cabeçalho, calcular progressos com campos do banco e exibir "Ainda sem modelos" de forma elegante)
+- `pedidos-producao.service.ts` (`src/features/pedidos/services/pedidos-producao.service.ts` - Contém a função `listarPropostasOperacionais` para buscar as propostas e realizar o merge em memória com pedidos/OS e pagamentos)
+- `PedidosListPage.tsx` (`src/features/pedidos/PedidosListPage.tsx` - Interface principal recriada visualmente usando `ResponsiveList`, padronizando headers, filtros em grid, cards nativos e status baseados primeiramente na proposta)
+- **Leitura Direta da Tabela public.propostas**: Substituição da raiz antiga baseada no `public.pedidos` pela raiz `public.propostas`. 
+- **Integração Visual Segura**: Layout limpo, separando a exibição de OS Criada / Sem OS, sem nenhuma automação de criação automática (apenas roteamento visual mantido).
 
-Funcionalidades Implementadas:
-- **Leitura Direta da Tabela public.pedidos**: Substituição do mock local/localStorage por leitura real no Supabase na aba Fila Geral.
-- **Enriquecimento Resiliente de Propostas**: A busca por dados da proposta (cliente, vendedor, empresa) é tolerante a falhas. Caso o RLS ou erro de rede impeçam o acesso a `public.propostas`, as informações básicas do pedido (`descricao`, `id_int`, `valor_total`) são utilizadas como fallback automático para que a linha nunca seja omitida.
-- **Pills de Modelos Adaptativas**: Se o pedido ainda não contiver modelos em `public.pedidos_modelos`, exibe a mensagem de feedback `"Ainda sem modelos"` sem quebrar o layout.
 - **Remoção de Aviso Local**: O aviso sobre salvamento em `localStorage` foi removido especificamente para a Fila Geral, preservando a integridade visual para dados reais.
 - **Resumo Financeiro e Cards de Métricas**: Cards reativos (`Tudo`, `Bloqueados`, `Produção`, `Aguardando Cliente`, `Expedição`) atualizados para cruzar os novos status operacionais (`status_producao === 'BLOQUEADO'`, `status_expedicao === 'BLOQUEADO'`, etc.).
 
@@ -684,3 +688,7 @@ Módulos no menu:
 - Expedição
 - Relatórios
 - Configurações
+
+- **Módulo Fiscal (Atualização)**: Filas de faturamento unificadas em uma única tela dependente da flag `libera_nf`.
+- **Módulo de Pedidos (Atualização)**: Adicionada ação explícita de "Liberar para NF" na listagem.
+

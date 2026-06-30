@@ -21,7 +21,6 @@ import { getSefazRejectionInfo } from "@/features/fiscal/constants/sefaz-rejeico
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
-import { faturaveisMocks } from "./mocks/faturaveis.mock";
 import { FaturamentoPreviewPanel } from "./components/FaturamentoPreviewPanel";
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -89,13 +88,13 @@ function getFormaPagamentoLabel(forma: string) {
   return `Outros (${forma})`;
 }
 
-type ActiveTab = "FILA_NFE" | "FILA_NFSE" | "HISTORICO_NFE" | "HISTORICO_NFSE";
+type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
 type TrackingStep = "IDLE" | "SENDING" | "SENT_WAITING" | "QUERYING" | "AUTHORIZED" | "STILL_PROCESSING" | "ERROR";
 
 export function NotasFiscaisPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const [activeTab, setActiveTab] = useState<ActiveTab>("FILA_NFE");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("FILA_FATURAMENTO");
   const [isFaturando, setIsFaturando] = useState(false);
   const [focusConfirmNote, setFocusConfirmNote] = useState<NfeReadModel | null>(null);
   const [isSendingToFocus, setIsSendingToFocus] = useState(false);
@@ -115,9 +114,7 @@ export function NotasFiscaisPage() {
   };
 
   // State para fila faturável
-  const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>(() =>
-    faturaveisMocks.filter(item => item.tipo !== "PEDIDO" && item.tipo !== "AVULSO")
-  );
+  const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>([]);
   const [selectedFaturavel, setSelectedFaturavel] = useState<FaturavelOrigem | null>(null);
   const [isFilaLoading, setIsFilaLoading] = useState(true);
 
@@ -128,8 +125,7 @@ export function NotasFiscaisPage() {
       try {
         const realPropostas = await getFaturaveisPropostas();
         if (isMounted) {
-          const osMocks = faturaveisMocks.filter(item => item.tipo !== "PEDIDO" && item.tipo !== "AVULSO");
-          setFaturaveisList([...realPropostas, ...osMocks]);
+          setFaturaveisList(realPropostas);
         }
       } catch (err) {
         console.error("[NotasFiscaisPage] Error loading faturaveis:", err);
@@ -684,27 +680,27 @@ export function NotasFiscaisPage() {
     }
   };
 
-  const isMockActive = activeTab === "FILA_NFE"
+  const isMockActive = activeTab === "FILA_FATURAMENTO"
     ? false
-    : activeTab === "FILA_NFSE"
+    : false
     ? true
-    : activeTab === "HISTORICO_NFE"
+    : activeTab === "HISTORICO_FISCAL"
     ? nfeData.source === "mock"
     : nfseData.source === "mock";
 
-  const isLoading = activeTab === "FILA_NFE"
+  const isLoading = activeTab === "FILA_FATURAMENTO"
     ? isFilaLoading
-    : activeTab === "FILA_NFSE"
+    : false
     ? false
-    : activeTab === "HISTORICO_NFE"
+    : activeTab === "HISTORICO_FISCAL"
     ? nfeData.isLoading
     : nfseData.isLoading;
 
-  const activeSource = activeTab === "FILA_NFE"
+  const activeSource = activeTab === "FILA_FATURAMENTO"
     ? "supabase"
-    : activeTab === "FILA_NFSE"
+    : false
     ? "mock"
-    : activeTab === "HISTORICO_NFE"
+    : activeTab === "HISTORICO_FISCAL"
     ? nfeData.source
     : nfseData.source;
 
@@ -1169,11 +1165,10 @@ export function NotasFiscaisPage() {
     // 2. Adicionar ao histórico correspondente e mudar aba
     if (itemType === "PEDIDO" || itemType === "AVULSO") {
       setSimulatedNfes((prev) => [simulatedNota as NfeReadModel, ...prev]);
-      setActiveTab("HISTORICO_NFE");
     } else {
       setSimulatedNfses((prev) => [simulatedNota as NfseReadModel, ...prev]);
-      setActiveTab("HISTORICO_NFSE");
     }
+    setActiveTab("HISTORICO_FISCAL");
 
     setSelectedFaturavel(null);
   }
@@ -1490,10 +1485,8 @@ export function NotasFiscaisPage() {
     }
   }
 
-  // Filtragem da Fila de Faturamento (NF-e)
+  // Filtragem da Fila de Faturamento (Unificada: NF-e e NFS-e)
   const filteredFilaNfe = faturaveisList.filter((item) => {
-    if (item.tipo !== "PEDIDO" && item.tipo !== "AVULSO") return false;
-
     if (nfeSearch) {
       const search = nfeSearch.toLowerCase().trim();
       const refStr = item.ref_origem.toLowerCase();
@@ -1631,64 +1624,36 @@ export function NotasFiscaisPage() {
           <button
             type="button"
             onClick={() => {
-              setActiveTab("FILA_NFE");
+              setActiveTab("FILA_FATURAMENTO");
               setNfeSearch("");
               setNfeEmpresa("");
               setNfeStatus("");
             }}
             className={`shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
-              activeTab === "FILA_NFE" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
+              activeTab === "FILA_FATURAMENTO" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
             }`}
           >
-            Fila Faturamento NF-e ({filteredFilaNfe.length})
+            Fila Faturamento ({filteredFilaNfe.length})
           </button>
           <button
             type="button"
             onClick={() => {
-              setActiveTab("FILA_NFSE");
-              setNfseSearch("");
-              setNfseEmpresa("");
-              setNfseStatus("");
-            }}
-            className={`shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
-              activeTab === "FILA_NFSE" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            Fila Faturamento NFS-e ({filteredFilaNfse.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("HISTORICO_NFE");
+              setActiveTab("HISTORICO_FISCAL");
               setNfeSearch("");
               setNfeEmpresa("");
               setNfeStatus("");
             }}
             className={`shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
-              activeTab === "HISTORICO_NFE" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
+              activeTab === "HISTORICO_FISCAL" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
             }`}
           >
-            Histórico NF-e (Produtos)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("HISTORICO_NFSE");
-              setNfseSearch("");
-              setNfseEmpresa("");
-              setNfseStatus("");
-            }}
-            className={`shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
-              activeTab === "HISTORICO_NFSE" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            Histórico NFS-e (Serviços)
+            Histórico NF-e / NFS-e
           </button>
         </div>
       </section>
 
       {/* Renderização da Fila NF-e */}
-      {activeTab === "FILA_NFE" ? (
+      {activeTab === "FILA_FATURAMENTO" ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
@@ -1759,8 +1724,8 @@ export function NotasFiscaisPage() {
                 align: "right"
               },
               {
-                header: "Data Liberação",
-                cell: (item) => formatDate(item.created_at),
+                header: "Tipo de cobrança",
+                cell: (item) => item.tipo_cobranca || "Não informado",
                 align: "center"
               },
               {
@@ -1821,7 +1786,7 @@ export function NotasFiscaisPage() {
       ) : null}
 
       {/* Renderização da Fila NFS-e */}
-      {activeTab === "FILA_NFSE" ? (
+      {false && false ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
@@ -1954,8 +1919,9 @@ export function NotasFiscaisPage() {
       ) : null}
 
       {/* Renderização do Histórico NF-e */}
-      {activeTab === "HISTORICO_NFE" ? (
+      {activeTab === "HISTORICO_FISCAL" ? (
         <div className="space-y-4">
+          <h2 className="text-xl font-bold px-4 py-2 border-b">Histórico NF-e (Produtos)</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
               <input
@@ -2125,8 +2091,9 @@ export function NotasFiscaisPage() {
       ) : null}
 
       {/* Renderização do Histórico NFS-e */}
-      {activeTab === "HISTORICO_NFSE" ? (
-        <div className="space-y-4">
+      {activeTab === "HISTORICO_FISCAL" ? (
+        <div className="space-y-4 mt-12">
+          <h2 className="text-xl font-bold px-4 py-2 border-b">Histórico NFS-e (Serviços)</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
             <div className="relative">
               <input

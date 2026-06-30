@@ -454,5 +454,21 @@ Decisão:
 - **Exclusão Lógica**: Soft delete preferencial para evitar deleção física de dados do catálogo.
 - **Segurança de Usuários**: Não criar sistemas paralelos de usuários, utilizando estritamente a autenticação nativa e a tabela `public.usuarios` centralizada.
 
+## Regra de Escalabilidade para Status (Fase 4A.1)
 
+Decisão: Status não devem ser tratados com strings soltas em componentes. 
+
+Regras:
+- Novas regras devem usar constantes/matriz central (ex: `mappers.ts`, `types.ts`).
+- Status desconhecido nunca pode virar `NOVO`.
+- Qualquer transição nova deve ser adicionada primeiro na matriz central.
+- Qualquer escrita real de status_interno precisa de log (propostas_chat) e origem identificada.
+- Qualquer automação nova de status precisa ser protegida por feature flag e ter documentação de rollback.
+- Validação em modo sombra antes de escrita real.
+
+
+## Refatoração da Esteira de Notas Fiscais (2026-06-30)
+- **Flag Única para Faturamento:** A liberação de notas foi centralizada na coluna `libera_nf` (`public.propostas`), desacoplando a esteira fiscal de status operacionais ou financeiros, o que evita que mudanças na operação quebrem a fila fiscal.
+- **Unificação Visual no Fiscal:** A interface foi simplificada. Há apenas uma "Fila de Faturamento" unificada e uma aba consolidada de Históricos. A decisão do tipo de documento (Produto vs Serviço) ocorre no momento da ação (gaveta lateral com botões específicos de simulação/emissão).
+- **Controle de Acesso (Workaround):** Devido à ausência atual de um RBAC granular, a liberação para NF foi protegida provisoriamente por verificações genéricas de perfil (`isSuperAdmin` ou `isAdmin`), gerando o débito técnico de implementar as permissões corretas.
 

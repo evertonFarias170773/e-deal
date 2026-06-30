@@ -1,3 +1,7 @@
+### PENDÊNCIA TÉCNICA: Permissões Granulares Financeiras
+**Módulo:** Contas a Receber & Conferência de Pagamentos
+**Descrição:** O sistema atualmente emprega um bloqueio macro baseado em perfis super-admin (`user?.isSuperAdmin || user?.isAdmin`) para segregação de privilégios de botões que afetam a base `public.boletos`. Assim que o módulo de Autorizações de API de escopo real for implementado globalmente, deve-se adotar checadores do tipo `hasPermissoes(["FINANCEIRO_ESCRITA", "FINANCEIRO_BOLETOS"])` para os botões do `ContasReceberPage.tsx`.
+
 # Próximos Passos
 
 ## Cadastros
@@ -45,6 +49,20 @@
 - Conectar a geração real de cobranças no módulo Cobranças/Pagamentos com as propostas do Supabase (reutilizando a escrita ativa de `pagamentos_v2`).
 - Revisar a matriz viva antes de liberar novos campos de propostas ou tabelas relacionadas.
 
+## Centralização de Status (Fase 4B)
+- A Fase 4A.1 (Preparação da Malha Receptora) foi homologada e concluída. A Fase 4B foi **formalmente pausada**.
+- Prioridade atual volta para os demais módulos pendentes do ERP (ex: Produção, Fiscal, Expedição).
+- O status atual do sistema está preparado visualmente e operacionalmente para a evolução dos novos compostos.
+- Qualquer automação ou retomada da Fase 4B precisará de nova matriz formal, feature flag e aprovação explícita.
+
+## Expedição
+- **Fase 1A concluída:** Módulo dedicado criado (`src/features/expedicao`), unindo leitura real de `propostas`, `pedidos` (legados) e `cotacao_frete`.
+- Foram desativados os mocks visuais baseados em `id_int % 3` e substituídos por regras de frete e rastreio reais (apenas leitura).
+- Pendências para **Fase 1B**:
+  - Implementar escrita real do código de rastreamento em `public.pedidos`.
+  - Implementar ação oficial de "Despachar", gerando log no Chat (`propostas_chat`).
+  - Implementar ações para "Marcar como Entregue" e "A Retirar".
+  - Reforçar que a mudança de `status_interno` automatizada (dependente da Fase 4B) continua pausada e será pensada depois ou substituída por fluxos manuais com feature flags.
 ## Financeiro e cobranças
 
 - Validar com o financeiro os filtros, cards e agrupamentos da primeira entrega de Contas a Receber.
@@ -91,3 +109,18 @@
 - Não alterar schema sem revisão.
 - Revisar RLS, RPCs, Edge Functions e integrações existentes antes de qualquer mudança real.
 - Atualizar `docs/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md` sempre que uma fase de escrita avançar.
+
+## Pedidos / OS Operacional
+
+- Diagnóstico próprio para escopo de Boletim/OS e como separar efetivamente o que é metadado do negócio do que é metadado de máquina (Ficha Técnica).
+- Diagnóstico próprio para a eventual renomeação conceitual de `public.pedidos` para algo mais alinhado à nova arquitetura, como `pedidos_boletim`.
+- Reestruturação futura do **Kanban** para seguir o novo conceito de fila operacional baseada em `public.propostas`.
+- Reestruturação futura da **Fila de Impressão** para refletir os mesmos conceitos unificados.
+- Fase 4B de automação de status de produção segue estritamente suspensa até nova liberação estratégica.
+
+
+## Módulo Fiscal e Pedidos (Pendências)
+- [ ] Criar permissão granular fiscal (ex: `pode_liberar_nf`) para substituir o bloqueio temporário atual (`user?.isSuperAdmin || user?.isAdmin`) na ação "Liberar para NF".
+- [ ] Avaliar se após a emissão com sucesso (NF-e ou NFS-e), a flag `libera_nf` deve retornar para `false` ou se criaremos uma nova coluna de controle fiscal definitivo.
+- [ ] No Histórico unificado (NF-e / NFS-e), adicionar futuramente um identificador visual discreto (ex: badge, ícone ou cor suave) para diferenciar rapidamente notas de produto das de serviço.
+

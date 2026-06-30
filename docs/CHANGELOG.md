@@ -1,3 +1,17 @@
+## [YYYY-MM-DD] - Higienização e Proteção: Módulo Contas a Receber
+### Adicionado
+- Proteção visual e funcional baseada em permissão (`isAdminOrGerente`) para botões de ações financeiras destrutivas ou de escrita (N8N, exclusão de banco, criação de PDFs de boleto com persistência) na tela de `ContasReceberPage`.
+- Suporte para uso de E-mail Fallback customizado e editável (`overrideEmail`) com confirmação de segurança obrigatória na tela `RevisarGeracaoBancariaModal`.
+- Alias de retrocompatibilidade para tipos legados do contas a receber em `src/lib/mocks/contas-receber.mock.ts`.
+
+### Removido
+- Removidas funções e referências residuais com prefixos de "Mock" da UI (`confirmRecebimento`, `cancelRecebivel`, `prorrogarBoleto`).
+- Removidos estados *hardcoded* (`useState("2026-06-04")`) para prevenir conflitos de *Hydration Mismatch*.
+
+### Modificado
+- Substituição massiva da estrutura de tipos: de `BoletoDepositoMock` para o tipo condizente com regras de negócio da arquitetura: `RecebimentoOperacional`.
+- Usuários comuns agora contam exclusivamente com permissões de acesso "Read-Only" às propostas e clientes no Contas a Receber.
+
 # Changelog
 
 ## 2026-06-18
@@ -465,3 +479,15 @@
 - Expedição.
 - Relatórios.
 - Configurações.
+
+## [2026-06-30] - Refatoração do Módulo de Notas Fiscais
+### Adicionado
+- Coluna `libera_nf` (boolean) na tabela `public.propostas` para simplificar a esteira fiscal.
+- Botão "Liberar para NF" no menu de ações dos Pedidos, visível temporariamente apenas para admins/gerentes.
+- Botões separados para "Faturar NF-e (Produto)" e "Faturar NFS-e (Serviço)" no painel de simulação do módulo Fiscal.
+- Badge visual "Liberado para NF" no grid de Pedidos (tabela e cards) caso a flag já esteja ativa.
+
+### Modificado
+- Fila de Faturamento do módulo Fiscal unificada, passando a listar registros baseados unicamente na flag `libera_nf = true`.
+- Abas de Notas Fiscais simplificadas para exibir apenas "Fila Faturamento" e "Histórico NF-e / NFS-e".
+
