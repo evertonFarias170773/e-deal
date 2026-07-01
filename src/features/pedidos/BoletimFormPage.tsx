@@ -39,6 +39,7 @@ import {
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
+import { useAuth } from "@/features/auth/AuthProvider";
 
 export interface GabaritoItem {
   id: string;
@@ -92,6 +93,10 @@ export function BoletimFormPage() {
   const modoParam = searchParams ? searchParams.get("modo") : null;
   const idIntParam = searchParams ? searchParams.get("id_int") : null;
   const isEditing = modoParam === "edicao" && !!idIntParam;
+
+  const { user } = useAuth();
+  const canEditDate = user?.isAdmin || user?.isGerente || user?.isSuperAdmin;
+  const lockDate = isEditing && !canEditDate;
 
   const [loadedPedidoId, setLoadedPedidoId] = useState<string | null>(null);
   const [existingObs, setExistingObs] = useState<string | null>(null);
@@ -862,7 +867,7 @@ export function BoletimFormPage() {
           }
         }, existingObs);
 
-        const result = await atualizarOrientacoesBoletim(Number(idIntParam), serializedObs);
+        const result = await atualizarOrientacoesBoletim(Number(idIntParam), serializedObs, dataPrevistaEntrega || undefined);
 
         if (!result.success) {
           showToast({
@@ -997,7 +1002,8 @@ export function BoletimFormPage() {
       const result = await criarPedidoParaBoletim({
         id_int: idInt,
         descricao: `${clienteNome} - Boletim de entrada`,
-        obs: formattedObs
+        obs: formattedObs,
+        data_termino: dataPrevistaEntrega || undefined
       });
 
       if (!result.success || !result.id) {
@@ -1303,20 +1309,20 @@ export function BoletimFormPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4 p-5 rounded-3xl bg-blue-50/80 border-2 border-blue-100">
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-blue-900 uppercase tracking-wider">Data Limite de Entrega *</label>
-                    <div className={`relative flex items-center w-full rounded-2xl border-2 h-11 transition focus-within:ring-4 ${isEditing ? "border-blue-200 bg-slate-100/80 cursor-not-allowed" : "border-blue-300 bg-white focus-within:border-blue-600 focus-within:ring-blue-100"}`}>
+                    <div className={`relative flex items-center w-full rounded-2xl border-2 h-11 transition focus-within:ring-4 ${lockDate ? "border-blue-200 bg-slate-100/80 cursor-not-allowed" : "border-blue-300 bg-white focus-within:border-blue-600 focus-within:ring-blue-100"}`}>
                       <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                        <span className={`text-xl font-bold font-mono ${isEditing ? "text-slate-800" : "text-blue-950"}`}>
+                        <span className={`text-xl font-bold font-mono ${lockDate ? "text-slate-800" : "text-blue-950"}`}>
                           {dataPrevistaEntrega ? dataPrevistaEntrega.split('-').reverse().join('/') : "DD/MM/AAAA"}
                         </span>
                       </div>
                       <input
                         type="date"
                         required
-                        readOnly={isEditing}
-                        disabled={isEditing}
+                        readOnly={lockDate}
+                        disabled={lockDate}
                         value={dataPrevistaEntrega}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDataPrevistaEntrega(e.target.value)}
-                        className={`w-full h-full bg-transparent border-none outline-none pl-4 pr-3 text-transparent [&::-webkit-datetime-edit]:text-transparent [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 ${isEditing ? "cursor-not-allowed" : "cursor-pointer"}`}
+                        className={`w-full h-full bg-transparent border-none outline-none pl-4 pr-3 text-transparent [&::-webkit-datetime-edit]:text-transparent [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 ${lockDate ? "cursor-not-allowed" : "cursor-pointer"}`}
                       />
                     </div>
                   </div>

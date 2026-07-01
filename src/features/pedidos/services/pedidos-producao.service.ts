@@ -38,7 +38,8 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       created_at, 
       is_avulso,
       em_arte,
-      is_prd_aprovado
+      is_prd_aprovado,
+      libera_nf
     `)
     .eq("is_prd_aprovado", true)
     // Filtra apenas status operacionais para evitar poluir a lista com os que já saíram da produção
@@ -57,7 +58,7 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   const idInts = propostasRows.map(p => Number(p.id_int));
 
   // 3. Buscar Modelos (necessário para calcular produto principal e quantidade total)
-  let modelos: any[] = [];
+  let modelos: { id_int: number; status_arte: string; nome_modelo: string; quantidade: number }[] = [];
   try {
     const { data: modelosRows } = await client
       .from("pedidos_modelos")
@@ -68,6 +69,29 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     console.warn("[pedidos-producao.service] Erro ao buscar modelos");
   }
 
+  let artes: { id_int: number; nome_evento: string | null; created_at: string }[] = [];
+  try {
+    const { data: artesRows } = await client
+      .from("pedidos_artes")
+      .select("id_int, nome_evento, created_at")
+      .in("id_int", idInts)
+      .order("created_at", { ascending: false });
+    if (artesRows) artes = artesRows;
+  } catch (error) {
+    console.warn("[pedidos-producao.service] Erro ao buscar artes");
+  }
+
+  let osDados: { id_int: number; data_termino: string | null }[] = [];
+  try {
+    const { data: osRows } = await client
+      .from("propostas_os")
+      .select("id_int, data_termino")
+      .in("id_int", idInts);
+    if (osRows) osDados = osRows;
+  } catch (error) {
+    console.warn("[pedidos-producao.service] Erro ao buscar propostas_os");
+  }
+
   // 4. Construir a resposta agregada
   const resultados: PropostaOperacionalListItem[] = [];
 
@@ -76,7 +100,7 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     const modelosDestaProposta = modelos.filter(m => m.id_int === idInt);
     
     const emArte = p.em_arte === true;
-    let pendencias: string[] = [];
+    const pendencias: string[] = [];
     
     if (emArte) {
       pendencias.push("Aguardando liberação de arte (ou arquivo pendente)");
@@ -90,6 +114,16 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       quantidadeTotal = modelosDestaProposta.reduce((acc, m) => acc + (Number(m.quantidade) || 0), 0);
     }
 
+    const artesDestaProposta = artes.filter(a => a.id_int === idInt);
+    const nomeEvento = artesDestaProposta.length > 0 && artesDestaProposta[0].nome_evento 
+      ? artesDestaProposta[0].nome_evento 
+      : produtoPrincipal;
+
+    const osDestaProposta = osDados.find(o => o.id_int === idInt);
+    const dataTermino = osDestaProposta && osDestaProposta.data_termino
+      ? osDestaProposta.data_termino
+      : null;
+
     resultados.push({
       id_int: idInt,
       clienteNome: p.cliente || `Proposta #${idInt}`,
@@ -97,10 +131,10 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       vendedor: p.vendedor || "Não atribuído",
       status_interno: composeStatusEmArte(p.status_interno || "INDEFINIDO", emArte),
       dataProposta: p.created_at || new Date().toISOString(),
-      dataPrevistaEntrega: p.created_at || new Date().toISOString(),
+      dataPrevistaEntrega: dataTermino || "",
       valorTotal: Number(p.valor_total) || 0,
       urgente: false,
-      produto_principal: produtoPrincipal,
+      produto_principal: nomeEvento,
       quantidade_total: quantidadeTotal,
       pendencias_operacionais: pendencias,
       hasOS: modelosDestaProposta.length > 0,
@@ -115,7 +149,8 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       qtd_modelos: modelosDestaProposta.length,
       arte_status_geral: emArte ? "PENDENTE" : "LIBERADA",
       hasArtePendente: emArte,
-      obs: ""
+      obs: "",
+      libera_nf: p.libera_nf === true
     });
   }
 

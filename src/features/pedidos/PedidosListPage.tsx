@@ -14,7 +14,10 @@ import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useAppToast } from "@/components/common/AppToast";
 import { listarPedidosOperacionais, atualizarFaseProducaoLista } from "./services/pedidos-producao.service";
-import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
+import { 
+  devolverPropostaParaRevisaoAtendente,
+  registrarMensagemSistemaProposta
+} from "@/features/orcamentos/services/orcamentos.service";
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
 import { liberarPedidoParaFiscal } from "./services/boletim-propostas.service";
 
@@ -175,6 +178,12 @@ export function PedidosListPage() {
       ));
     } else {
       showToast({ type: "success", title: "Sucesso", description: "Fase atualizada." });
+      registrarMensagemSistemaProposta({
+        idInt: proposta.id_int,
+        mensagem: `Fase de produção alterada de ${oldStatus} para ${newFase}.`
+      }).catch(err => {
+        console.warn("[PedidosListPage] Erro silencioso ao logar no chat:", err);
+      });
     }
   }
 
@@ -321,17 +330,32 @@ export function PedidosListPage() {
           },
           {
             header: "Data entrega",
-            cell: (proposta) => (
-              <div className="flex flex-col text-xs text-slate-600 gap-1">
-                 <span>-</span>
-              </div>
-            )
+            cell: (proposta) => {
+              const dateStr = proposta.dataPrevistaEntrega;
+              const formatted = dateStr && dateStr.trim() !== "" 
+                ? new Date(dateStr).toLocaleDateString("pt-BR", { timeZone: "UTC" })
+                : "-";
+              return (
+                <div className="flex flex-col text-xs font-medium text-slate-700 gap-1">
+                   <span>{formatted}</span>
+                </div>
+              );
+            }
           },
           {
             header: "Status",
             cell: (proposta) => {
               const st = (proposta.status_interno || "");
-              return <StatusBadge status={st} tone={getStatusTone(st)} />;
+              return (
+                <div className="flex flex-col gap-1.5 items-start">
+                  <StatusBadge status={st} tone={getStatusTone(st)} />
+                  {proposta.libera_nf && (
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20 whitespace-nowrap">
+                      Liberado para NF
+                    </span>
+                  )}
+                </div>
+              );
             }
           },
           {
@@ -339,18 +363,20 @@ export function PedidosListPage() {
             cell: (proposta) => {
               const fases = ["EM IMPRESSAO", "EM ACABAMENTO", "REVISAO"];
               const currentStatus = proposta.status_interno;
+              const isLocked = currentStatus === "REVISAO PRODUCAO";
               
               return (
                 <div className="flex items-center gap-3">
                   {fases.map(fase => (
-                    <label key={fase} className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700">
+                    <label key={fase} className={`flex items-center gap-1.5 text-xs font-medium ${isLocked ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer text-slate-700'}`}>
                       <input 
                         type="radio" 
                         name={`fase-${proposta.id_int}`}
                         value={fase}
                         checked={currentStatus === fase}
+                        disabled={isLocked}
                         onChange={() => handleFaseChange(proposta, fase)}
-                        className="w-3.5 h-3.5 text-blue-600 border-slate-300 focus:ring-blue-500"
+                        className={`w-3.5 h-3.5 text-blue-600 border-slate-300 focus:ring-blue-500 ${isLocked ? 'cursor-not-allowed opacity-50' : ''}`}
                       />
                       {fase.replace("EM ", "")}
                     </label>
@@ -377,10 +403,10 @@ export function PedidosListPage() {
                   onClick: () => router.push(`/orcamentos/${proposta.id_int}`)
                 },
                 ...(isAdminOrGerente ? [
-                  {
+                  ...(proposta.libera_nf ? [] : [{
                     label: "Liberar para NF",
                     onClick: () => handleLiberarNF(proposta)
-                  },
+                  }]),
                   {
                     label: "Voltar para Revisão Atendente",
                     destructive: true,

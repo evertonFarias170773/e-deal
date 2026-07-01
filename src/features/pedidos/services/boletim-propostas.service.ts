@@ -357,6 +357,7 @@ export interface CriarPedidoInput {
   id_int: number;
   descricao: string;
   obs: string | null;
+  data_termino?: string;
 }
 
 export interface CriarPedidoResult {
@@ -472,7 +473,8 @@ export async function criarPedidoParaBoletim(
     valor_total: valor_total_calc,
     forma_pagamento: null,
     obs: input.obs || null,
-    data_pedido: new Date().toISOString()
+    data_pedido: new Date().toISOString(),
+    data_termino: input.data_termino || null
   };
 
   // Validação de payload final antes do insert
@@ -848,7 +850,8 @@ export interface AtualizarBoletimResult {
 
 export async function atualizarOrientacoesBoletim(
   idPedidoOuIdInt: string | number,
-  obsText: string
+  obsText: string,
+  dataTermino?: string
 ): Promise<AtualizarBoletimResult> {
   const client = getSupabaseClient();
   if (!client) {
@@ -890,7 +893,12 @@ export async function atualizarOrientacoesBoletim(
   }
 
   // OS existe, vamos atualizar
-  const { error } = await client.from("propostas_os").update({ obs: obsText }).eq(isUuid ? "id" : "id_int", isUuid ? paramStr : Number(paramStr.replace("#", "")));
+  const payloadToUpdate: any = { obs: obsText };
+  if (dataTermino !== undefined) {
+    payloadToUpdate.data_termino = dataTermino || null;
+  }
+  
+  const { error } = await client.from("propostas_os").update(payloadToUpdate).eq(isUuid ? "id" : "id_int", isUuid ? paramStr : Number(paramStr.replace("#", "")));
 
   if (error) {
     console.error("[BoletimPropostasService] Erro ao atualizar orientações do boletim:", {
