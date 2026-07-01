@@ -241,6 +241,11 @@ export function ContasReceberPage() {
     [recebiveis, filterState, status, today]
   );
 
+  const filteredBoletosSemData = useMemo(
+    () => filterVisibleRows(boletosDepositos, { ...filterState, dataInicial: "", dataFinal: "" }, status, today),
+    [boletosDepositos, filterState, status, today]
+  );
+
   const activeItemsForCards = useMemo(() => {
     if (activeTab === "BOLETOS" || activeTab === "DEPOSITOS") {
       return filteredBoletos.filter(item => item.tipo === (activeTab === "BOLETOS" ? "BOLETO" : "DEPOSITO"));
@@ -248,9 +253,16 @@ export function ContasReceberPage() {
     return filteredRecebiveis;
   }, [activeTab, filteredRecebiveis, filteredBoletos]);
 
+  const activeItemsForCardsSemData = useMemo(() => {
+    if (activeTab === "BOLETOS" || activeTab === "DEPOSITOS") {
+      return filteredBoletosSemData.filter(item => item.tipo === (activeTab === "BOLETOS" ? "BOLETO" : "DEPOSITO"));
+    }
+    return filteredRecebiveisSemData;
+  }, [activeTab, filteredRecebiveisSemData, filteredBoletosSemData]);
+
   const resumo = useMemo(
-    () => buildResumoVisible(activeItemsForCards, today),
-    [activeItemsForCards, today]
+    () => buildResumoVisible(activeItemsForCards, activeItemsForCardsSemData, today),
+    [activeItemsForCards, activeItemsForCardsSemData, today]
   );
 
   const empresaOptions = useMemo(() => {
@@ -1814,13 +1826,14 @@ function matchesVisibleStatus(item: BoletoDepositoMock, status: StatusFilter, to
   return true;
 }
 
-function buildResumoVisible(recebiveis: BoletoDepositoMock[], today: string) {
+function buildResumoVisible(recebiveis: BoletoDepositoMock[], recebiveisSemData: BoletoDepositoMock[], today: string) {
   const carteira = recebiveis.filter((item) => isAllowedTipo(item.tipo));
+  const carteiraSemData = recebiveisSemData.filter((item) => isAllowedTipo(item.tipo));
 
   return {
-    vencidos: carteira.filter((item) => isVisualVencido(item, today)).reduce((total, item) => total + (item.valor_atualizado ?? item.valor), 0),
+    vencidos: carteiraSemData.filter((item) => isVisualVencido(item, today)).reduce((total, item) => total + (item.valor_atualizado ?? item.valor), 0),
     carteiraAtiva: 0, // A_RECEBER completely excluded from cards
-    previsaoFutura: carteira.filter((item) => item.status === "A_VENCER").reduce((total, item) => total + (item.valor_atualizado ?? item.valor), 0),
+    previsaoFutura: carteiraSemData.filter((item) => item.status === "A_VENCER").reduce((total, item) => total + (item.valor_atualizado ?? item.valor), 0),
     pagos: carteira.filter((item) => item.status === "PAID").reduce((total, item) => total + (item.valor_atualizado ?? item.valor), 0)
   };
 }
