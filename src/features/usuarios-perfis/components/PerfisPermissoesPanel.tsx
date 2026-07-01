@@ -13,33 +13,171 @@ interface PermissionDefinition {
   critica: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// CATÁLOGO DE PERMISSÕES V2.1 — ERP Ideal
+// Fase 1: expansão puramente visual do Editor de Perfis.
+// Nenhuma permissão nova está conectada a telas operacionais nesta fase.
+// A implementação operacional das novas permissões ocorre nas Fases 2 a 5.
+// ---------------------------------------------------------------------------
 const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
-  "Módulo Administrativo": [
-    { key: "admin.usuarios.view", label: "Visualizar Usuários", desc: "Permite ver a listagem de usuários e seus perfis vinculados.", critica: false },
-    { key: "admin.usuarios.edit", label: "Gerenciar Usuários e Perfis", desc: "Permite vincular perfis a usuários e editar permissões dos perfis.", critica: true }
+
+  // ── Administração ─────────────────────────────────────────────────────────
+  "Administração — Usuários e Perfis": [
+    { key: "admin.usuarios.view",  label: "Visualizar Usuários",          desc: "Permite ver a listagem de usuários e seus perfis vinculados.",                          critica: false },
+    { key: "admin.usuarios.edit",  label: "Gerenciar Usuários e Perfis",  desc: "Permite vincular perfis a usuários e editar permissões dos perfis.",                   critica: true  },
+    { key: "admin.perfis.view",    label: "Visualizar Perfis",            desc: "Permite ver o catálogo de perfis e suas permissões (somente leitura).",                critica: false },
+    { key: "admin.perfis.edit",    label: "Editar Permissões de Perfis",  desc: "Permite criar, editar e salvar permissões nos perfis do catálogo.",                    critica: true  }
   ],
-  "Módulo Comercial": [
-    { key: "propostas.view", label: "Visualizar Propostas", desc: "Permite visualizar a listagem e o detalhamento de propostas/orçamentos.", critica: false },
-    { key: "propostas.create", label: "Criar Propostas", desc: "Permite iniciar novos orçamentos ou rascunhos de propostas.", critica: false },
-    { key: "propostas.edit", label: "Editar Propostas", desc: "Permite editar itens, quantidades e descontos individuais nos itens.", critica: false },
-    { key: "propostas.desconto_geral", label: "Aplicar Desconto Geral", desc: "Permite aplicar descontos globais (em valor ou percentual) no fechamento de propostas.", critica: true },
-    { key: "propostas.alterar_vendedor", label: "Alterar Vendedor Responsável", desc: "Permite alterar o vendedor herdado do cadastro do cliente na proposta.", critica: true },
-    { key: "propostas.cancelar", label: "Cancelar Propostas", desc: "Permite cancelar propostas comerciais ativas no sistema.", critica: true }
+
+  // ── Dashboard ─────────────────────────────────────────────────────────────
+  "Dashboard": [
+    { key: "dashboard.view",           label: "Visualizar Dashboard",              desc: "Permite acessar o painel de indicadores gerais do sistema.",                            critica: false },
+    { key: "dashboard.view_financeiro", label: "Ver Indicadores Financeiros",      desc: "Permite visualizar cards e gráficos de faturamento e recebimentos no dashboard.",      critica: false },
+    { key: "dashboard.view_producao",   label: "Ver Indicadores de Produção",      desc: "Permite visualizar cards e gráficos de pedidos e produção no dashboard.",             critica: false }
   ],
-  "Módulo Financeiro": [
-    { key: "financeiro.view", label: "Visualizar Relatórios Financeiros", desc: "Permite ver painéis e relatórios de fluxo financeiro consolidado.", critica: false },
-    { key: "financeiro.aprovar", label: "Aprovação Financeira Geral", desc: "Permite conciliar e aprovar pagamentos gerais no financeiro.", critica: true },
-    { key: "cobrancas.view", label: "Visualizar Cobranças", desc: "Permite visualizar a lista e status das cobranças de propostas.", critica: false },
-    { key: "cobrancas.aprovar", label: "Confirmar Pagamentos / Liberar OS", desc: "Permite marcar cobranças como pagas e liberar pedidos para produção.", critica: true },
-    { key: "cobrancas.emitir_boleto", label: "Emitir Segunda Via de Boletos", desc: "Permite gerar links de boletos integrados.", critica: false }
+
+  // ── Cadastros ─────────────────────────────────────────────────────────────
+  "Cadastros (Clientes)": [
+    { key: "cadastros.view",       label: "Visualizar Cadastros",         desc: "Permite visualizar listagem de clientes, fornecedores e vendedores.",                   critica: false },
+    { key: "cadastros.create",     label: "Criar Cadastros",              desc: "Permite criar novos registros de clientes.",                                            critica: false },
+    { key: "cadastros.edit",       label: "Editar Cadastros",             desc: "Permite editar informações de clientes, endereços e contatos.",                         critica: false },
+    { key: "cadastros.edit_fiscal", label: "Editar Dados Fiscais",        desc: "Permite editar dados fiscais do cliente (CNPJ, IE, regime tributário).",                critica: true  },
+    { key: "cadastros.view_socios", label: "Ver Sócios e Vínculos",       desc: "Permite visualizar sócios e vínculos comerciais cadastrados.",                          critica: false }
   ],
-  "Módulo Fiscal": [
-    { key: "fiscal.view", label: "Visualizar Painel Fiscal", desc: "Permite ver status das notas fiscais e notas geradas.", critica: false },
-    { key: "fiscal.emitir", label: "Emitir Notas Fiscais (NFe/NFSe)", desc: "Permite a emissão oficial de notas fiscais de produtos (NFe) ou serviços (NFSe).", critica: true }
+
+  // ── Produtos ──────────────────────────────────────────────────────────────
+  "Produtos": [
+    { key: "produtos.view",         label: "Visualizar Produtos",         desc: "Permite listar e visualizar o catálogo de produtos.",                                   critica: false },
+    { key: "produtos.create",       label: "Criar Produtos",              desc: "Permite cadastrar novos produtos no catálogo.",                                         critica: false },
+    { key: "produtos.edit",         label: "Editar Produtos",             desc: "Permite editar dados básicos de produtos existentes.",                                   critica: false },
+    { key: "produtos.edit_preco",   label: "Editar Preço e Custo",        desc: "Permite alterar preço de venda e custo dos produtos (ação crítica de negócio).",        critica: true  },
+    { key: "produtos.edit_fiscal",  label: "Editar Dados Fiscais",        desc: "Permite alterar NCM, CEST, CFOP e tributação dos produtos.",                            critica: true  },
+    { key: "produtos.edit_producao", label: "Editar Dados de Produção",  desc: "Permite alterar formato, cor base, blocagem e dados de fabricação do produto.",         critica: false },
+    { key: "produtos.inativar",     label: "Inativar Produtos",           desc: "Permite marcar produtos como inativos (exclusão lógica).",                              critica: true  },
+    { key: "produtos.upload_foto",  label: "Upload de Fotos",             desc: "Permite fazer upload de imagens de produtos para o Storage.",                           critica: false }
   ],
-  "Módulo Cadastros": [
-    { key: "cadastros.view", label: "Visualizar Cadastros", desc: "Permite visualizar listagem de clientes, fornecedores e vendedores.", critica: false },
-    { key: "cadastros.edit", label: "Criar/Editar Cadastros", desc: "Permite cadastrar ou editar informações de clientes, vendedores padrão e endereços.", critica: false }
+
+  // ── Banco de Variações ────────────────────────────────────────────────────
+  "Banco de Variações": [
+    { key: "variacoes.view",     label: "Visualizar Variações",           desc: "Permite listar e visualizar o banco global de variações.",                              critica: false },
+    { key: "variacoes.create",   label: "Criar Variações",                desc: "Permite criar novos grupos e opções de variação global.",                               critica: false },
+    { key: "variacoes.edit",     label: "Editar Variações",               desc: "Permite editar grupos e opções de variação existentes.",                                critica: false },
+    { key: "variacoes.inativar", label: "Inativar Variações",             desc: "Permite inativar grupos de variação global (exclusão lógica).",                         critica: true  }
+  ],
+
+  // ── Orçamentos / Propostas ────────────────────────────────────────────────
+  "Orçamentos e Propostas": [
+    { key: "propostas.view",             label: "Visualizar Propostas",            desc: "Permite visualizar a listagem e o detalhamento de propostas e orçamentos.",           critica: false },
+    { key: "propostas.view_own",         label: "Ver Apenas Próprias Propostas",   desc: "Escopo de dados: limita a visualização às propostas do próprio atendente/vendedor.", critica: false },
+    { key: "propostas.view_all",         label: "Ver Todas as Propostas",          desc: "Escopo de dados: permite visualizar propostas de todos os atendentes.",              critica: false },
+    { key: "propostas.create",           label: "Criar Propostas",                 desc: "Permite iniciar novos orçamentos ou rascunhos de propostas.",                        critica: false },
+    { key: "propostas.edit",             label: "Editar Propostas",                desc: "Permite editar itens, quantidades e descontos individuais nos itens.",               critica: false },
+    { key: "propostas.desconto_geral",   label: "Aplicar Desconto Geral",          desc: "Permite aplicar descontos globais (em valor ou percentual) no fechamento.",          critica: true  },
+    { key: "propostas.edit_vendedor",    label: "Alterar Vendedor Responsável",    desc: "Permite alterar o vendedor/atendente responsável pela proposta.",                    critica: true  },
+    { key: "propostas.cancel",           label: "Cancelar Propostas",              desc: "Permite cancelar propostas comerciais ativas no sistema.",                           critica: true  },
+    { key: "propostas.release_producao", label: "Liberar para Produção",           desc: "Permite aprovar a proposta para produção (campo is_prd_aprovado).",                  critica: true  },
+    { key: "propostas.release_nf",       label: "Liberar para Nota Fiscal",        desc: "Permite marcar a proposta para faturamento (campo libera_nf).",                      critica: true  },
+    { key: "propostas.devolver_revisao", label: "Devolver para Revisão",           desc: "Permite devolver a proposta para a etapa de revisão de atendente.",                  critica: true  },
+    // Permissões V1 mantidas para compatibilidade retroativa durante migração
+    { key: "propostas.alterar_vendedor", label: "Alterar Vendedor (Legado V1)",    desc: "[LEGADO] Sera substituida por propostas.edit_vendedor na Fase 4.",     critica: true  },
+    { key: "propostas.cancelar",         label: "Cancelar Propostas (Legado V1)",  desc: "[LEGADO] Sera substituida por propostas.cancel na Fase 4.",            critica: true  }
+  ],
+
+  // ── Chat Interno ──────────────────────────────────────────────────────────
+  "Chat Interno": [
+    { key: "chat.view",      label: "Visualizar Chat",              desc: "Permite acessar e ler conversas do chat interno das propostas.",                       critica: false },
+    { key: "chat.send",      label: "Enviar Mensagens",             desc: "Permite enviar mensagens no chat interno.",                                            critica: false },
+    { key: "chat.mention",   label: "Mencionar Usuários",           desc: "Permite mencionar outros usuários em mensagens do chat.",                              critica: false },
+    { key: "chat.view_all",  label: "Ver Chat de Todas as Propostas", desc: "Permite visualizar conversas de propostas de outros atendentes (escopo amplo).",  critica: false }
+  ],
+
+  // ── Cobranças ─────────────────────────────────────────────────────────────
+  "Cobranças e Pagamentos": [
+    { key: "cobrancas.view",       label: "Visualizar Cobranças",         desc: "Permite visualizar a lista e status das cobranças de propostas.",                   critica: false },
+    { key: "cobrancas.create",     label: "Criar Cobranças",              desc: "Permite gerar novas cobranças (boleto, PIX, cartão) para propostas.",              critica: true  },
+    { key: "cobrancas.emit",       label: "Emitir Cobranças",             desc: "Permite acionar o gateway de pagamento para emitir a cobrança.",                   critica: true  },
+    { key: "cobrancas.confirm",    label: "Confirmar Recebimento",        desc: "Permite confirmar manualmente o recebimento de uma cobrança.",                     critica: true  },
+    { key: "cobrancas.cancel",     label: "Cancelar / Estornar Cobranças", desc: "Permite cancelar ou estornar cobranças emitidas.",                               critica: true  },
+    { key: "cobrancas.view_token", label: "Ver Link e Token da Cobrança", desc: "Permite visualizar o link público e o token de acesso da cobrança.",              critica: false },
+    // Permissões V1 mantidas para compatibilidade retroativa durante migração
+    { key: "cobrancas.aprovar",        label: "Liberar OS / Confirmar (Legado V1)", desc: "[LEGADO] Sera substituido por cobrancas.confirm na Fase 4.",         critica: true  },
+    { key: "cobrancas.emitir_boleto",  label: "Emitir Boleto (Legado V1)",          desc: "[LEGADO] Sera substituido por cobrancas.emit na Fase 4.",             critica: false }
+  ],
+
+  // ── Conferência ───────────────────────────────────────────────────────────
+  "Conferência de Pagamentos": [
+    { key: "conferencia.view",    label: "Visualizar Conferência",       desc: "Permite ver a lista de pagamentos confirmados para conferência.",                    critica: false },
+    { key: "conferencia.confirm", label: "Confirmar Pagamento",          desc: "Permite confirmar registros na tela de conferência.",                               critica: true  },
+    { key: "conferencia.export",  label: "Exportar Relatório",           desc: "Permite exportar o relatório de conferência de pagamentos.",                        critica: false }
+  ],
+
+  // ── Contas a Receber ──────────────────────────────────────────────────────
+  "Contas a Receber": [
+    { key: "contas_receber.view",       label: "Visualizar Títulos",          desc: "Permite listar e visualizar os títulos a receber.",                                critica: false },
+    { key: "contas_receber.baixa",      label: "Registrar Baixa",             desc: "Permite registrar a baixa de um título a receber.",                               critica: true  },
+    { key: "contas_receber.send_email", label: "Disparar E-mail de Cobrança", desc: "Permite enviar e-mail de cobrança para clientes em atraso.",                     critica: false },
+    // Permissões V1 mantidas para compatibilidade retroativa durante migração
+    { key: "financeiro.view",    label: "Relatorios Financeiros (Legado V1)", desc: "[LEGADO] Sera substituido por dashboard.view_financeiro + contas_receber.view.", critica: false },
+    { key: "financeiro.aprovar", label: "Aprovacao Financeira (Legado V1)",   desc: "[LEGADO] Sera substituido por contas_receber.baixa na Fase 4.",                  critica: true  }
+  ],
+
+  // ── Fiscal ────────────────────────────────────────────────────────────────
+  "Fiscal (NF-e / NFS-e)": [
+    { key: "fiscal.view",       label: "Visualizar Painel Fiscal",     desc: "Permite ver a fila de faturamento e o histórico de notas fiscais.",                   critica: false },
+    { key: "fiscal.simulate",   label: "Simular Emissão de NF",        desc: "Permite pré-visualizar e simular a emissão de notas fiscais antes de confirmar.",     critica: false },
+    { key: "fiscal.emit_nfe",   label: "Emitir NF-e (Produto)",        desc: "Permite emitir oficialmente Notas Fiscais de Produto (NF-e).",                        critica: true  },
+    { key: "fiscal.emit_nfse",  label: "Emitir NFS-e (Serviço)",       desc: "Permite emitir oficialmente Notas Fiscais de Serviço (NFS-e).",                       critica: true  },
+    { key: "fiscal.cancel_nf",  label: "Cancelar Nota Fiscal",         desc: "Permite solicitar cancelamento de NF junto à Sefaz ou Prefeitura.",                   critica: true  },
+    { key: "fiscal.admin",      label: "Configurar Parâmetros Fiscais", desc: "Permite configurar série, ambiente (produção/homologação) e CFOP padrão.",            critica: true  },
+    // Permissão V1 mantida para compatibilidade retroativa durante migração
+    { key: "fiscal.emitir", label: "Emitir NF (Legado V1)", desc: "[LEGADO] Sera substituido por fiscal.emit_nfe e fiscal.emit_nfse na Fase 4.",               critica: true  }
+  ],
+
+  // ── Pedidos / OS ──────────────────────────────────────────────────────────
+  "Pedidos e Ordens de Serviço": [
+    { key: "pedidos.view",          label: "Visualizar Pedidos e OS",     desc: "Permite listar pedidos e visualizar boletins de OS.",                                critica: false },
+    { key: "pedidos.edit_data",     label: "Editar Datas de Entrega",     desc: "Permite alterar a data de entrega e data da OS.",                                    critica: false },
+    { key: "pedidos.edit_obs",      label: "Editar Observações da OS",    desc: "Permite editar campos de observação internos da Ordem de Serviço.",                  critica: false },
+    { key: "pedidos.approve_arte",  label: "Aprovar Arte junto ao Cliente", desc: "Permite registrar a aprovação de arte pelo cliente.",                            critica: true  },
+    { key: "pedidos.release_nf",    label: "Liberar para Nota Fiscal",    desc: "Permite marcar o pedido como liberado para faturamento.",                           critica: true  },
+    { key: "pedidos.admin",         label: "Ações Administrativas de OS", desc: "Permite reatribuir, encerrar ou reverter etapas de OS (ação crítica).",             critica: true  }
+  ],
+
+  // ── Produção (Kanban) ─────────────────────────────────────────────────────
+  "Produção (Kanban)": [
+    { key: "producao.view",  label: "Visualizar Kanban",          desc: "Permite visualizar o quadro Kanban de produção com todos os pedidos.",                 critica: false },
+    { key: "producao.mover", label: "Mover Pedidos no Kanban",    desc: "Permite arrastar pedidos entre as etapas de produção no Kanban.",                     critica: false },
+    { key: "producao.admin", label: "Configurar Etapas",          desc: "Permite configurar as etapas do Kanban e suas regras de transição.",                  critica: true  }
+  ],
+
+  // ── Impressão ─────────────────────────────────────────────────────────────
+  "Impressão": [
+    { key: "impressao.view",     label: "Visualizar Fila de Impressão", desc: "Permite ver a fila de impressão e os itens pendentes.",                           critica: false },
+    { key: "impressao.iniciar",  label: "Iniciar Impressão",            desc: "Permite marcar um item como em processo de impressão.",                            critica: false },
+    { key: "impressao.concluir", label: "Concluir Impressão",           desc: "Permite marcar a impressão de um item como concluída.",                           critica: false }
+  ],
+
+  // ── Expedição ─────────────────────────────────────────────────────────────
+  "Expedição": [
+    { key: "expedicao.view",      label: "Visualizar Expedição",       desc: "Permite ver a fila de expedição e os pedidos prontos para envio.",                  critica: false },
+    { key: "expedicao.processar", label: "Processar Envio / Retirada", desc: "Permite registrar envios e confirmar retiradas na expedição.",                      critica: false },
+    { key: "expedicao.admin",     label: "Configurar Expedição",       desc: "Permite configurar métodos de envio e integrações logísticas.",                     critica: true  }
+  ],
+
+  // ── Relatórios ────────────────────────────────────────────────────────────
+  "Relatórios": [
+    { key: "relatorios.view",       label: "Visualizar Relatórios",         desc: "Permite acessar e visualizar relatórios gerais do sistema.",                       critica: false },
+    { key: "relatorios.financeiro", label: "Relatórios Financeiros",        desc: "Permite visualizar relatórios de faturamento, recebimentos e contas.",             critica: false },
+    { key: "relatorios.producao",   label: "Relatórios de Produção",        desc: "Permite visualizar relatórios de pedidos, produção e expedição.",                  critica: false },
+    { key: "relatorios.export",     label: "Exportar Dados (CSV / PDF)",    desc: "Permite exportar dados de relatórios em formato CSV ou PDF.",                      critica: false }
+  ],
+
+  // ── Configurações Gerais ──────────────────────────────────────────────────
+  "Configurações do Sistema": [
+    { key: "config.view",        label: "Acessar Configurações",      desc: "Permite acessar o hub de Configurações do sistema.",                                   critica: false },
+    { key: "config.empresas",    label: "Gerenciar Empresas",         desc: "Permite cadastrar e editar empresas e filiais do grupo.",                              critica: true  },
+    { key: "config.integracoes", label: "Configurar Integrações",     desc: "Permite configurar integrações externas (N8N, gateways de pagamento, etc.).",          critica: true  },
+    { key: "config.faturamento", label: "Configurar Faturamento",     desc: "Permite configurar parâmetros de cobrança, vencimentos e meios de pagamento.",         critica: true  }
   ]
 };
 
