@@ -124,3 +124,16 @@
 - [ ] Avaliar se após a emissão com sucesso (NF-e ou NFS-e), a flag `libera_nf` deve retornar para `false` ou se criaremos uma nova coluna de controle fiscal definitivo.
 - [ ] No Histórico unificado (NF-e / NFS-e), adicionar futuramente um identificador visual discreto (ex: badge, ícone ou cor suave) para diferenciar rapidamente notas de produto das de serviço.
 
+
+### PENDÊNCIA TÉCNICA: Módulo Fiscal / Notas Fiscais
+**Módulo:** Notas Fiscais & Faturamento
+**Descrição:**
+- Definir o ciclo de vida da flag `libera_nf` (se ela deve voltar para `false` após a emissão concluída ou se um novo status cobrirá o encerramento).
+- Criar controle fiscal mais robusto (caso haja emissão parcial ou cancelamentos).
+- Adicionar identificador visual claro no histórico separando NF-e (Produto) e NFS-e (Serviço).
+- Substituir o uso de `user?.isSuperAdmin || user?.isAdmin` por permissões granulares fiscais específicas.
+- Avaliar a integração real do histórico fiscal assim que os endpoints ou tabelas de resposta da Sefaz/Prefeitura estiverem modelados.
+
+### PENDÊNCIA TÉCNICA: Validação de Build (Prevenção)
+**Módulo:** Global / Rotas Compartilhadas
+**Descrição:** Após alterações em módulos compartilhados (Pedidos, Orçamentos, Fiscal, Financeiro), é obrigatória a execução de `npm run build` localmente antes de enviar para produção. O comando `npx tsc --noEmit` não substitui o build completo da Vercel/Next.js, visto que não detecta falhas de SSR e page rendering causadas por falha de exportação em subcomponentes.

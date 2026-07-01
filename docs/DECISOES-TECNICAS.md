@@ -472,3 +472,11 @@ Regras:
 - **Unificação Visual no Fiscal:** A interface foi simplificada. Há apenas uma "Fila de Faturamento" unificada e uma aba consolidada de Históricos. A decisão do tipo de documento (Produto vs Serviço) ocorre no momento da ação (gaveta lateral com botões específicos de simulação/emissão).
 - **Controle de Acesso (Workaround):** Devido à ausência atual de um RBAC granular, a liberação para NF foi protegida provisoriamente por verificações genéricas de perfil (`isSuperAdmin` ou `isAdmin`), gerando o débito técnico de implementar as permissões corretas.
 
+
+## Liberação Explícita para Faturamento (Fiscal)
+**Decisão:** Utilização da flag `public.propostas.libera_nf = true` como gatilho de liberação explícita e temporária para a fila de faturamento.
+**Motivo:** Evita que o setor fiscal fature acidentalmente pedidos que ainda estão em negociação ou validação comercial/produção. Mantém a separação de responsabilidades (Comercial libera -> Fiscal fatura). Mocks não são mais utilizados na fila de faturamento para evitar inconsistências contábeis.
+
+## Regra Preventiva de Build e Imports
+**Decisão:** Obrigatório confirmar a existência de arquivos e exports reais antes de importar novos componentes/services, e executar `npm run build` após alterações críticas.
+**Motivo:** Erros de importação em componentes centrais (ex: `PedidosListPage.tsx`) quebram rotas inteiras e módulos dependentes (como Fiscal e Notas Fiscais). Validações exclusivas de TypeScript (`tsc`) não garantem a integridade do empacotamento Next.js para produção.

@@ -1,4 +1,13 @@
-## [YYYY-MM-DD] - Higienização e Proteção: Módulo Contas a Receber
+## [2026-07-01] - Módulo Fiscal e Prevenção de Build
+
+### Adicionado
+- **Fila Faturamento (Módulo Fiscal)**: Consolidação da Fila de Faturamento operando exclusivamente com dados reais da tabela `public.propostas`, filtrando propostas autorizadas via flag `libera_nf = true`. Os mocks foram completamente removidos da fila.
+- **Registro de Prevenção de Build**: Documentada a falha de build gerada por imports/exports inválidos em `PedidosListPage.tsx` (que quebrou a rota `/pedidos` e afetou Fiscal/Notas Fiscais). Instituída a regra de validação via `npm run build` para garantir a integridade de rotas antes de pushes.
+
+### Modificado
+- **Módulo Contas a Receber**: Renomeadas as labels de previsão financeira de "Próximos 30/90 dias" para "Até 30/90 dias" visando esclarecer o efeito de acumulação a partir da data atual.
+
+## [2026-06-25] - Higienização e Proteção: Módulo Contas a Receber
 ### Adicionado
 - Proteção visual e funcional baseada em permissão (`isAdminOrGerente`) para botões de ações financeiras destrutivas ou de escrita (N8N, exclusão de banco, criação de PDFs de boleto com persistência) na tela de `ContasReceberPage`.
 - Suporte para uso de E-mail Fallback customizado e editável (`overrideEmail`) com confirmação de segurança obrigatória na tela `RevisarGeracaoBancariaModal`.

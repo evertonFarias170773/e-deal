@@ -692,3 +692,8 @@ Módulos no menu:
 - **Módulo Fiscal (Atualização)**: Filas de faturamento unificadas em uma única tela dependente da flag `libera_nf`.
 - **Módulo de Pedidos (Atualização)**: Adicionada ação explícita de "Liberar para NF" na listagem.
 
+
+### [Módulo Fiscal / Notas Fiscais] - Fila de Faturamento Real
+- Status: Parcialmente Implementado
+- Ações: A Fila de Faturamento agora exibe exclusivamente propostas que possuem a flag `libera_nf = true`, sem mistura com mocks. A aba de Histórico NF-e/NFS-e ainda está em fase de modelagem e pode conter dados simulados ou estrutura pendente de integração total.
+- Base afetada: Leitura de `public.propostas` utilizando a flag `libera_nf`.
