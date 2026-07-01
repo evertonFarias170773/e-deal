@@ -5,12 +5,15 @@ export type UserSector = "COMERCIAL" | "FINANCEIRO" | "FISCAL" | "PRODUCAO" | "A
 /**
  * Slugs válidos dos perfis cadastrados em public.perfis.
  * Espelha os slugs do seed do banco.
+ * V2.1: adicionados gerente_comercial e atendente para suporte a escopo de dados.
  */
 export type PerfilSlug =
   | "super_admin"
   | "admin"
   | "financeiro"
   | "vendedor"
+  | "atendente"          // V2.1 — vendedor com escopo view_own
+  | "gerente_comercial"  // V2.1 — gerente com escopo view_all
   | "producao"
   | "fiscal"
   | "operador";
@@ -38,12 +41,19 @@ export type MockUser = {
   isGerente?: boolean;
   isSuperAdmin: boolean;
   isSeller: boolean;
-  /** Slug do perfil atribuído via public.perfis (Fase 1). Opcional — fallback via flags legadas. */
+  /** Slug do perfil atribuído via public.perfis. Opcional — fallback via flags legadas. */
   perfilSlug?: PerfilSlug | string;
   /** Permissões resolvidas do perfil ou fallback legado. */
   permissoes?: string[];
-  /** ID do perfil atribuído via public.perfis (Fase 1). Opcional. */
+  /** ID do perfil atribuído via public.perfis. Opcional. */
   id_perfil?: number | null;
+  /**
+   * V2.1 — Nome completo do usuário conforme public.usuarios.nome_usuario.
+   * Usado para match de escopo de dados `view_own` em Orçamentos enquanto
+   * a coluna `id_vendedor` não existe na tabela public.propostas.
+   * Fase transitória: propostas.vendedor === user.nomeUsuario
+   */
+  nomeUsuario?: string;
 };
 
 export type Company = {

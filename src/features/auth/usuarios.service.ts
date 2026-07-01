@@ -101,6 +101,27 @@ const PERMISSOES_OPERADOR: string[] = [
   "propostas.view", "pedidos.view", "cadastros.view"
 ];
 
+// V2.1 — Novos perfis com suporte a escopo de dados
+// Atendente: acesso restrito às próprias propostas (view_own)
+const PERMISSOES_ATENDENTE: string[] = [
+  "propostas.view", "propostas.view_own", "propostas.create", "propostas.edit",
+  "pedidos.view",
+  "cadastros.view", "cadastros.edit",
+  "cobrancas.view",
+  "chat.view", "chat.send"
+];
+
+// Gerente comercial: acesso amplo a todas as propostas (view_all)
+const PERMISSOES_GERENTE_COMERCIAL: string[] = [
+  "propostas.view", "propostas.view_all", "propostas.create", "propostas.edit",
+  "propostas.desconto_geral", "propostas.edit_vendedor", "propostas.cancel",
+  "pedidos.view", "pedidos.edit_data", "pedidos.edit_obs", "pedidos.admin",
+  "cadastros.view", "cadastros.edit",
+  "cobrancas.view",
+  "chat.view", "chat.send", "chat.view_all",
+  "dashboard.view", "dashboard.view_financeiro"
+];
+
 const PERMISSOES_POR_SETOR: Record<string, string[]> = {
   FINANCEIRO: PERMISSOES_FINANCEIRO,
   FISCAL: PERMISSOES_FISCAL,
@@ -150,17 +171,10 @@ function resolvePermissoesFallback(row: UsuarioRow): {
     };
   }
 
-  const setor = row.setor?.toUpperCase() ?? "";
-  const permissoes = PERMISSOES_POR_SETOR[setor] ?? PERMISSOES_OPERADOR;
-  const perfilSlug = (setor.toLowerCase() as PerfilSlug) || "operador";
-
-  return {
-    perfilSlug,
-    permissoes,
-    isAdmin: false,
-    isSuperAdmin: false,
-    isSeller: false
-  };
+  if (row.setor === "FINANCEIRO") return { perfilSlug: "financeiro", permissoes: PERMISSOES_FINANCEIRO, isAdmin: false, isSuperAdmin: false, isSeller: false };
+  if (row.setor === "FISCAL") return { perfilSlug: "fiscal", permissoes: PERMISSOES_FISCAL, isAdmin: false, isSuperAdmin: false, isSeller: false };
+  if (row.setor === "PRODUCAO") return { perfilSlug: "producao", permissoes: PERMISSOES_PRODUCAO, isAdmin: false, isSuperAdmin: false, isSeller: false };
+  return { perfilSlug: "operador", permissoes: PERMISSOES_OPERADOR, isAdmin: false, isSuperAdmin: false, isSeller: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +295,10 @@ export async function fetchUsuarioEnriquecido(
       isGerente: perfilResolvido ? permissoes.includes("*") || permissoes.includes("admin.usuarios.view") : (row.is_admin || row.is_super_adm),
       perfilSlug,
       permissoes,
-      id_perfil: row.id_perfil
+      id_perfil: row.id_perfil,
+      // V2.1 — nome_usuario para match de escopo view_own em Orçamentos
+      // Fase transitória: propostas.vendedor === nomeUsuario
+      nomeUsuario: row.nome_usuario ?? undefined
     };
 
     return enriched;
@@ -342,6 +359,57 @@ export function hasAllPermissoes(user: MockUser | null | undefined, codigos: str
  */
 export function hasAnyPermissao(user: MockUser | null | undefined, codigos: string[]): boolean {
   return codigos.some((c) => hasPermissao(user, c));
+}
+
+// ---------------------------------------------------------------------------
+// Helpers de escopo de dados V2.1
+// ---------------------------------------------------------------------------
+
+/**
+ * Determina o escopo de visibilidade de propostas para o usuário.
+ *
+ * Regras (em ordem de prioridade):
+ *   1. Tem `propostas.view_all` ou wildcard `*` → escopo `all` (vê tudo)
+ *   2. Tem `propostas.view_own` sem `view_all` → escopo `own` (só as próprias)
+ *   3. Nenhuma permissão de escopo definida → `all` (retrocompatível com V1)
+ *
+ * O fallback para `all` garante que nenhum usuário existente perca acesso
+ * antes que o administrador configure as permissões V2.1 nos perfis.
+ *
+ * @param user - MockUser atual (pode ser null durante carregamento)
+ * @returns `"own"` | `"all"`
+ */
+export function getEscopoPropostas(user: MockUser | null | undefined): "own" | "all" {
+  if (!user) return "all"; // sem contexto → acesso não restrito (evita bloquear telas admin)
+
+  // Wildcard = acesso total
+  if (hasPermissao(user, "*")) return "all";
+
+  // Permissão explícita de acesso total
+  if (hasPermissao(user, "propostas.view_all")) return "all";
+
+  // Permissão explícita de acesso restrito ao próprio
+  if (hasPermissao(user, "propostas.view_own")) return "own";
+
+  // Fallback V1: sem permissão de escopo → comportamento atual (all)
+  // Isso garante que todos os usuários existentes continuam vendo tudo
+  // até que o admin configure as permissões V2.1.
+  return "all";
+}
+
+/**
+ * Retorna o nome do usuário para match de escopo `view_own`.
+ * Usa `nomeUsuario` (nome_usuario do banco) com fallback para `name`.
+ *
+ * ATENÇÃO: Este match é temporário. Quando existir a coluna `id_vendedor`
+ * em public.propostas, o match deverá usar UUID em vez de nome.
+ *
+ * @param user - MockUser atual
+ * @returns string com o nome para comparar com propostas.vendedor
+ */
+export function getNomeParaEscopo(user: MockUser | null | undefined): string {
+  if (!user) return "";
+  return user.nomeUsuario ?? user.name ?? "";
 }
 
 // Re-export tipo para uso no AuthProvider e components
