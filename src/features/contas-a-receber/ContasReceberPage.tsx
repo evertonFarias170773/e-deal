@@ -1401,7 +1401,10 @@ function calculatePrevisaoFixed(items: BoletoDepositoMock[], today: string) {
   
   return ranges.map(range => {
     const total = items
-      .filter(item => item.vencimento >= range.start && item.vencimento <= range.end)
+      .filter(item => {
+        const vDate = item.vencimento ? item.vencimento.slice(0, 10) : "";
+        return vDate >= range.start && vDate <= range.end;
+      })
       .reduce((sum, item) => sum + (item.valor_atualizado ?? item.valor), 0);
       
     return { ...range, total };
