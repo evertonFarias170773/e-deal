@@ -1384,19 +1384,16 @@ function formatSubtitle(start: string, end: string) {
 
 function calculatePrevisaoFixed(items: BoletoDepositoMock[], today: string) {
   const w1End = addDays(today, 6);
-  const qEnd = addDays(today, 13);
+  const qEnd = addDays(today, 14); // Quinzena = 15 dias (hoje + 14)
   
-  const m30Start = getFirstDayOfMonth(today, 1);
-  const m30End = getLastDayOfMonth(today, 1);
-  
-  const m90Start = m30Start;
-  const m90End = getLastDayOfMonth(today, 3);
+  const m30End = addDays(today, 30);
+  const m90End = addDays(today, 90);
   
   const ranges = [
     { label: "Semana atual", start: today, end: w1End, subtitle: formatSubtitle(today, w1End) },
     { label: "Quinzena", start: today, end: qEnd, subtitle: formatSubtitle(today, qEnd) },
-    { label: "Próximos 30 dias", start: m30Start, end: m30End, subtitle: formatSubtitle(m30Start, m30End) },
-    { label: "Próximos 90 dias", start: m90Start, end: m90End, subtitle: formatSubtitle(m90Start, m90End) },
+    { label: "Próximos 30 dias", start: today, end: m30End, subtitle: formatSubtitle(today, m30End) },
+    { label: "Próximos 90 dias", start: today, end: m90End, subtitle: formatSubtitle(today, m90End) },
   ];
   
   return ranges.map(range => {
