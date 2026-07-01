@@ -257,7 +257,7 @@ export function mapSupabasePagamentoV2RowToCobranca(row: SupabasePagamentoV2Row)
   const status = resolveStatus(row);
   const valor = toNumber(row.valor, 0);
   const tokenPublico = resolveTokenPublico(row);
-  const dataConfirmacao = toIsoDate(row.data_confirmacao) || toIsoDate(row.paid_at) || undefined;
+  const dataConfirmacao = toIsoDateTime(row.data_confirmacao) || toIsoDateTime(row.paid_at) || undefined;
 
   if (!id || !idPagamento) {
     return null;

@@ -1,0 +1,265 @@
+# ERP Ideal — Fluxo Oficial de Status das Propostas
+
+## Princípio Geral
+
+A tabela `public.propostas` é a entidade principal do ERP.
+
+O campo `status_interno` é a fonte oficial do estado operacional, comercial e produtivo da proposta.
+
+Tabelas secundárias (`pagamentos_v2`, `pedidos_artes`, `pedidos_modelos`, etc.) atuam como motores auxiliares responsáveis por promover automaticamente a evolução dos status.
+
+---
+
+# Fluxograma Oficial
+
+```text
+NOVO
+│
+├── Cobrança gerada
+│       ↓
+│   AGUARDANDO
+│
+├── Arte solicitada sem cobrança
+│       ↓
+│   NOVO / EM ARTE
+│
+└─────────────────────────────┐
+                              │
+AGUARDANDO                    │
+│                             │
+├── Designer atribuído        │
+│       ↓                     │
+│   AGUARDANDO / EM ARTE      │
+│                             │
+├── Pagamento aprovado        │
+│       ↓                     │
+│   LIBERADO                  │
+│                             │
+└─────────────────────────────┘
+
+
+LIBERADO
+│
+├── Possui arte sem designer
+│       ↓
+│   LIBERADO / PENDENTE
+│
+├── Designer atribuído
+│       ↓
+│   LIBERADO / EM ARTE
+│
+├── Não possui arte
+│       ↓
+│   REVISAO ATENDENTE
+│
+└─────────────────────────────┐
+                              │
+LIBERADO / EM ARTE            │
+│                             │
+├── Todos modelos aprovados   │
+│       ↓                     │
+│   REVISAO ATENDENTE         │
+│                             │
+└─────────────────────────────┘
+
+
+REVISAO ATENDENTE
+│
+├── Atendente aprova produção
+│       ↓
+│   REVISAO PRODUCAO
+│
+
+REVISAO PRODUCAO
+│
+├── Produção iniciada
+│       ↓
+│   EM PRODUCAO
+│
+
+EM PRODUCAO
+│
+├── Impressão iniciada
+│       ↓
+│   EM IMPRESSAO
+│
+
+EM IMPRESSAO
+│
+├── Finalização iniciada
+│       ↓
+│   EM ACABAMENTO
+│
+
+EM ACABAMENTO
+│
+├── Produto enviado
+│       ↓
+│   EXPEDICAO
+│
+
+EXPEDICAO
+│
+├── Cliente retirará
+│       ↓
+│   A RETIRAR
+│
+└── Transportadora coletou
+        ↓
+    EM TRANSITO
+
+EM TRANSITO
+│
+└── Entrega confirmada
+        ↓
+    ENTREGUE
+```
+
+---
+
+# Regras Oficiais
+
+## 1. Status Base
+
+### NOVO
+
+Proposta criada sem cobrança e sem fluxo de arte.
+
+### AGUARDANDO
+
+Existe cobrança gerada.
+
+Origem:
+
+`public.pagamentos_v2`
+
+Status válidos:
+
+* A_RECEBER
+* A_VENCER
+* CANCELADA
+
+---
+
+## 2. Liberação Financeira
+
+Uma proposta é considerada liberada quando:
+
+```text
+pagamentos_v2.status = PAID
+
+OU
+
+pagamentos_v2.status = A_VENCER
+E confirmado = true
+```
+
+---
+
+## 3. Fluxo de Arte
+
+Origem principal:
+
+`public.pedidos_artes`
+
+### PENDENTE
+
+Arte criada sem designer.
+
+### EM ARTE
+
+Designer atribuído.
+
+### EM APROVACAO
+
+Existe pelo menos um modelo enviado ao cliente.
+
+### APROVADO PARCIAL
+
+Pelo menos um modelo aprovado.
+
+### APROVADO
+
+Todos os modelos aprovados.
+
+---
+
+# Fluxo dos Modelos
+
+Tabela:
+
+`public.pedidos_modelos`
+
+Status possíveis:
+
+* EM ARTE
+* AGUARDANDO
+* APROVADO
+
+---
+
+# Fluxo Produtivo
+
+Após liberação comercial:
+
+```text
+REVISAO ATENDENTE
+↓
+REVISAO PRODUCAO
+↓
+EM PRODUCAO
+↓
+EM IMPRESSAO
+↓
+EM ACABAMENTO
+↓
+EXPEDICAO
+↓
+A RETIRAR ou EM TRANSITO
+↓
+ENTREGUE
+```
+
+---
+
+# Cancelamento
+
+Status:
+
+```text
+CANCELADO
+```
+
+Fluxo ainda pendente de definição detalhada.
+
+---
+
+# Regra Arquitetural Oficial
+
+Sempre considerar prioritariamente:
+
+```text
+public.propostas.status_interno
+```
+
+As demais tabelas apenas promovem ou validam transições de status.
+
+Nenhum módulo do ERP deve manter regras paralelas de status fora desta especificação.
+
+---
+
+# Entrada na Produ��o
+
+A decis�o de entrada oficial de uma proposta na lista de Produ��o/Pedidos � governada exclusivamente pela flag:
+
+``text
+public.propostas.is_prd_aprovado
+``
+
+**Regras Homologadas (Libera��o Manual):**
+1. A coluna � de controle exclusivamente manual pela interface (A��o: "Liberar para Produ��o").
+2. N�o existem automa��es, triggers ou sincroniza��es autom�ticas atualizando esta coluna.
+3. A lista de pedidos consome estritamente .eq('is_prd_aprovado', true).
+4. A a��o de liberar s� � permitida ap�s valida��o de pagamentos, artes e contexto operacional (status LIBERADO).
+5. A a��o "Retirar da Produ��o" reverte a flag para alse e � restrita a admin/gerente.
+6. O status_interno permanece intocado durante estas opera��es, pois ele � a fonte do estado global da proposta e n�o uma flag de controle de fila de UI.

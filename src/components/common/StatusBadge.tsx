@@ -7,6 +7,8 @@ const toneByStatus: Record<string, StatusTone> = {
   BOLETIM_FINALIZADO: "info",
   BLOQUEADO: "danger",
   NOVO: "info",
+  NOVO_ARTE_APROVADA: "info",
+  AGUARDANDO_ARTE_APROVADA: "warning",
   ARTE_EM_ANDAMENTO: "info",
   AGUARDANDO_APROVACAO_CLIENTE: "warning",
   AGUARDANDO_APROVACAO_ATENDENTE: "warning",

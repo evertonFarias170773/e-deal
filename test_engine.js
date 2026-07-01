@@ -1,50 +1,13 @@
-/**
- * Engine Pura de Cálculo de Status Interno de Propostas.
- * Esta engine NÃO possui efeitos colaterais. Ela não consulta o Supabase 
- * e não realiza escritas. Ela recebe evidências (estado atual de pagamentos, 
- * artes, modelos, propostas) e retorna uma recomendação do status.
- *
- * Utilizada para a Fase 1 (Shadow Mode) da transição de arquitetura.
- */
-
-export interface EvidenciaStatus {
-  statusInternoAtual: string;
-  pagamentosAtivos: {
-    status: string; // 'PAID', 'A_RECEBER', 'A_VENCER', etc
-    confirmado: boolean;
-  }[];
-  modelos: {
-    status_arte: string;
-    status_producao: string;
-  }[];
-  isAvulso: boolean;
-}
-
-export interface EngineStatusResult {
-  statusAtual: string;
-  statusRecomendado: string;
-  mudariaStatus: boolean;
-  motivo: string;
-  bloqueios: string[];
-  evidenciasUsadas: Record<string, any>;
-  nivelConfianca: "ALTO" | "MEDIO" | "BAIXO";
-  podeGravarAutomaticamente: boolean;
-  emArte: boolean;
-}
-
-export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineStatusResult {
+function calcularStatusRecomendado(evidencias) {
   const { statusInternoAtual, pagamentosAtivos, modelos, isAvulso } = evidencias;
   
   let statusRecomendado = statusInternoAtual || "NOVO";
-  const bloqueios: string[] = [];
+  const bloqueios = [];
   let motivo = "Nenhuma alteração calculada";
-  let nivelConfianca: "ALTO" | "MEDIO" | "BAIXO" = "BAIXO";
+  let nivelConfianca = "BAIXO";
   let podeGravarAutomaticamente = false;
   let emArte = false;
 
-  // REGRAS FINANCEIRAS
-  // Para uma proposta ser considerada financeiramente aprovada, todos os registros 
-  // válidos de pagamentos_v2 do mesmo id_int precisam estar confirmados/aprovados.
   const temPagamentos = pagamentosAtivos.length > 0;
   const todosPagamentosConfirmados = temPagamentos && pagamentosAtivos.every(p => p.confirmado === true || p.status === "PAID");
   const possuiPagamentoPendente = temPagamentos && !todosPagamentosConfirmados;
@@ -65,21 +28,13 @@ export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineSt
 
   // REGRAS DE ARTE / PRODUCAO
   if (!isAvulso && modelos.length > 0) {
-    const statusesAprovados = ["APROVADA", "APROVADO", "APROVADA_CLIENTE", "LIBERADA", "IMPRESSA", "NAO_NECESSARIA"];
+    const statusesAprovados = ["APROVADA", "APROVADA_CLIENTE", "LIBERADA", "IMPRESSA", "NAO_NECESSARIA"];
     const todosAprovados = modelos.every(m => m.status_arte && statusesAprovados.includes(m.status_arte.toUpperCase()));
     
     if (todosAprovados) {
       if (statusRecomendado === "APROVADO") {
         statusRecomendado = "REVISAO ATENDENTE";
         motivo = "Aprovado financeiramente e todas as artes aprovadas";
-        nivelConfianca = "ALTO";
-      } else if (statusRecomendado === "NOVO") {
-        statusRecomendado = "NOVO_ARTE_APROVADA";
-        motivo = "Sem cobrança válida confirmada, mas com todas as artes aprovadas";
-        nivelConfianca = "ALTO";
-      } else if (statusRecomendado === "AGUARDANDO") {
-        statusRecomendado = "AGUARDANDO_ARTE_APROVADA";
-        motivo = "Aguardando confirmação financeira, mas com todas as artes aprovadas";
         nivelConfianca = "ALTO";
       }
     } else {
@@ -111,3 +66,22 @@ export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineSt
     emArte
   };
 }
+
+const evidencias = {
+  statusInternoAtual: "APROVADO",
+  pagamentosAtivos: [
+    {
+      status: "PAID",
+      confirmado: true
+    }
+  ],
+  modelos: [
+    { status_arte: 'APROVADO', status_producao: 'PENDENTE' },
+    { status_arte: 'APROVADO', status_producao: 'PENDENTE' }
+  ],
+  isAvulso: false
+};
+
+const result = calcularStatusRecomendado(evidencias);
+console.log("=== ENGINE RESULT ===");
+console.log(result);

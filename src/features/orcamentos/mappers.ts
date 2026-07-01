@@ -148,16 +148,27 @@ function getEmpresaLabel(idEmpresa: number | null, empresaText = "") {
 
 function normalizeStatus(status: string) {
   const raw = normalize(status);
+  
+  if (status === "NOVO_ARTE_APROVADA" || raw === "novo_arte_aprovada") return "NOVO / ARTE APROVADA";
+  if (status === "AGUARDANDO_ARTE_APROVADA" || raw === "aguardando_arte_aprovada") return "AGUARDANDO / ARTE APROVADA";
+
   const isEmArte = raw.includes("em arte") || raw.includes("em_arte");
+  const isArteAprovada = raw.includes("arte aprovada") || raw.includes("arte_aprovada");
 
   let base = "SEM_STATUS";
   if (raw.includes("cancel")) base = "CANCELADO";
-  else if (raw.includes("aprov")) base = "LIBERADO";
+  else if (raw.includes("novo_arte_aprovada")) base = "NOVO";
+  else if (raw.includes("aguardando_arte_aprovada")) base = "AGUARDANDO";
+  else if (raw.includes("aprov") && !isArteAprovada) base = "LIBERADO";
   else if (raw.includes("aguard") || raw.includes("pend")) base = "AGUARDANDO";
   else if (raw.includes("liberad")) base = "LIBERADO";
   else if (raw.includes("novo")) base = "NOVO";
   else {
-    base = status.toUpperCase().replace(" / EM ARTE", "").replace(" / EM_ARTE", "").trim();
+    base = status.toUpperCase().replace(" / EM ARTE", "").replace(" / EM_ARTE", "").replace(" / ARTE APROVADA", "").trim();
+  }
+
+  if (isArteAprovada && !base.includes("ARTE")) {
+    return `${base} / ARTE APROVADA`;
   }
 
   if (isEmArte && !base.includes("ARTE")) {
@@ -169,6 +180,10 @@ function normalizeStatus(status: string) {
 
 function getStatusLabel(status: string) {
   const normalized = normalizeStatus(status);
+  
+  if (normalized === "NOVO / ARTE APROVADA") return "Novo / Arte aprovada";
+  if (normalized === "AGUARDANDO / ARTE APROVADA") return "Aguardando / Arte aprovada";
+
   const isEmArte = normalized.includes(" / EM ARTE");
   const base = normalized.replace(" / EM ARTE", "");
 

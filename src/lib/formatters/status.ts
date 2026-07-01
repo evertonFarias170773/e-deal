@@ -4,6 +4,8 @@ export function humanizeStatus(status: string) {
     BOLETIM_FINALIZADO: "Boletim Finalizado",
     BLOQUEADO: "Bloqueado",
     NOVO: "Novo",
+    NOVO_ARTE_APROVADA: "Novo / Arte aprovada",
+    AGUARDANDO_ARTE_APROVADA: "Aguardando / Arte aprovada",
     ARTE_EM_ANDAMENTO: "Arte em Andamento",
     AGUARDANDO_APROVACAO_CLIENTE: "Aguardando Cliente",
     AGUARDANDO_APROVACAO_ATENDENTE: "Aguardando Atendente",
