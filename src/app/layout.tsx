@@ -20,6 +20,13 @@ export const metadata: Metadata = {
   description: "Sistema ERP Ideal — Painel operacional"
 };
 
+// Script anti-flash extraído como constante para evitar bug de geração do
+// validator.ts do Next.js com parênteses dentro de dangerouslySetInnerHTML inline.
+const antiFlashScript =
+  "(function(){try{var t=localStorage.getItem('erp-theme');" +
+  "if(t==='dark'||(t==null&&window.matchMedia('(prefers-color-scheme: dark)').matches))" +
+  "{document.documentElement.classList.add('dark')}}catch(e){}})();";
+
 export default function RootLayout({
   children
 }: Readonly<{
@@ -31,7 +38,7 @@ export default function RootLayout({
         {/* Script anti-flash: aplica classe dark antes do React hidratar */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('erp-theme');if(t==='dark'||(t==null&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`
+            __html: antiFlashScript
           }}
         />
       </head>
