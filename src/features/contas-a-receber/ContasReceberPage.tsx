@@ -1392,8 +1392,8 @@ function calculatePrevisaoFixed(items: BoletoDepositoMock[], today: string) {
   const ranges = [
     { label: "Semana atual", start: today, end: w1End, subtitle: formatSubtitle(today, w1End) },
     { label: "Quinzena", start: today, end: qEnd, subtitle: formatSubtitle(today, qEnd) },
-    { label: "Próximos 30 dias", start: today, end: m30End, subtitle: formatSubtitle(today, m30End) },
-    { label: "Próximos 90 dias", start: today, end: m90End, subtitle: formatSubtitle(today, m90End) },
+    { label: "Até 30 dias", start: today, end: m30End, subtitle: formatSubtitle(today, m30End) },
+    { label: "Até 90 dias", start: today, end: m90End, subtitle: formatSubtitle(today, m90End) },
   ];
   
   return ranges.map(range => {
