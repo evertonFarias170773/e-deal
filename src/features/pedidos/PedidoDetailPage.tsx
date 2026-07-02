@@ -12,6 +12,7 @@ const anexarArteVersao1 = async (input: any): Promise<any> => ({ success: false,
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
+import { EmptyState } from "@/components/common/EmptyState";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { usePedidosMockDb, type MockChatMessage } from "./hooks/usePedidosMockDb";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
@@ -21,6 +22,7 @@ import { ProducaoArtesPanel } from "@/features/producao";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 import type { PedidoArte } from "@/features/producao/types";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -62,6 +64,9 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
   const [supportFiles, setSupportFiles] = useState<{ name: string; url: string; size?: number; created_at?: string }[]>([]);
   const [loadingSupportFiles, setLoadingSupportFiles] = useState(false);
   const [activeTab, setActiveTab] = useState<"resumo" | "dados_comerciais" | "produtos" | "artes" | "producao" | "expedicao" | "timeline">("resumo");
+
+  const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.view");
+  const canApproveArte = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.approve_arte");
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -476,6 +481,18 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
       window.removeEventListener(`chat_updated_${idInt}`, handleChatUpdate);
     };
   }, [idInt, getChatMessages]);
+
+  if (!canView) {
+    return (
+      <div className="p-6">
+        <EmptyState
+          title="Acesso Negado"
+          description="Você não tem permissão para visualizar o detalhe deste pedido."
+          icon={AlertCircle}
+        />
+      </div>
+    );
+  }
 
   if (!isLoaded || loadingReal) {
     return (
@@ -1310,8 +1327,20 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                     idInt={idInt}
                     produtos={pedido.produtos}
                     onUploadArte={(modeloId, fileName) => uploadArteModelo(idInt, modeloId, fileName)}
-                    onLiberarArte={(modeloId) => liberarArteModelo(idInt, modeloId)}
-                    onEnviarAprovacaoCliente={(modeloId) => enviarParaAprovacaoCliente(idInt, modeloId)}
+                    onLiberarArte={(modeloId) => {
+                      if (!canApproveArte) {
+                        showToast({ type: "error", title: "Acesso Negado", description: "Você não tem permissão para liberar arte." });
+                        return;
+                      }
+                      liberarArteModelo(idInt, modeloId);
+                    }}
+                    onEnviarAprovacaoCliente={(modeloId) => {
+                      if (!canApproveArte) {
+                        showToast({ type: "error", title: "Acesso Negado", description: "Você não tem permissão para enviar arte para aprovação." });
+                        return;
+                      }
+                      enviarParaAprovacaoCliente(idInt, modeloId);
+                    }}
                     onAdicionarComentarioInterno={(modeloId, text) => salvarComentarioInternoModelo(idInt, modeloId, text)}
                     onRegistrarDecisaoCliente={(token, status, comentario, clienteNome) => registrarDecisaoCliente(token, status, comentario, clienteNome)}
                   />

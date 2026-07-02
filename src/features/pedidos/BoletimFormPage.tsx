@@ -96,8 +96,10 @@ export function BoletimFormPage() {
   const isEditing = modoParam === "edicao" && !!idIntParam;
 
   const { user } = useAuth();
-  const canEditDate = user?.isAdmin || user?.isGerente || user?.isSuperAdmin || hasPermissao(user, "pedidos.edit_data");
+  const canEditDate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.edit_data");
+  const canEditObs = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.edit_obs");
   const lockDate = isEditing && !canEditDate;
+  const lockObs = isEditing && !canEditObs;
 
   const [loadedPedidoId, setLoadedPedidoId] = useState<string | null>(null);
   const [existingObs, setExistingObs] = useState<string | null>(null);
@@ -1968,11 +1970,13 @@ export function BoletimFormPage() {
                               <div className="space-y-1.5 md:col-span-4 border-t border-slate-100 pt-5 mt-2">
                                 <label className="text-xs font-semibold text-slate-500 uppercase">Observações Gerais (OS)</label>
                                 <textarea
-                                  placeholder="Observações gerais operacionais, avisos importantes e restrições..."
-                                  rows={3}
+                                  id="obsCriticas"
+                                  rows={2}
+                                  className={`w-full rounded-2xl border bg-transparent px-4 py-3 text-sm outline-none transition-shadow ${lockObs ? 'bg-slate-50 cursor-not-allowed border-slate-200 text-slate-500' : 'border-slate-300 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10'}`}
+                                  placeholder={lockObs ? "Apenas coordenadores podem editar" : "Ex: Cliente não aceita receber de sexta-feira..."}
                                   value={obsCriticas}
                                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setObsCriticas(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] resize-y"
+                                  disabled={lockObs}
                                 />
                               </div>
                             </div>

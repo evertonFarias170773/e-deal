@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { EmptyState } from "@/components/common/EmptyState";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useAppToast } from "@/components/common/AppToast";
@@ -39,6 +40,9 @@ export function PedidosListPage() {
   const [isLiberando, setIsLiberando] = useState(false);
   const [selectedPropostaForDevolver, setSelectedPropostaForDevolver] = useState<PropostaOperacionalListItem | null>(null);
   const [isDevolverSubmitting, setIsDevolverSubmitting] = useState(false);
+
+  // Autorização (V2.1 + Legado V1)
+  const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.view");
 
   async function load() {
     setIsLoaded(false);
@@ -186,6 +190,18 @@ export function PedidosListPage() {
         console.warn("[PedidosListPage] Erro silencioso ao logar no chat:", err);
       });
     }
+  }
+
+  if (!canView) {
+    return (
+      <div className="p-6">
+        <EmptyState
+          title="Acesso Negado"
+          description="Você não tem permissão para visualizar os pedidos de produção."
+          icon={AlertCircle}
+        />
+      </div>
+    );
   }
 
   return (
@@ -389,7 +405,7 @@ export function PedidosListPage() {
           {
             header: "Ações",
             cell: (proposta) => {
-              const canLiberarNF = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_nf");
+              const canLiberarNF = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.release_nf");
               const canVoltarRevisao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.admin");
 
               const actions = [
