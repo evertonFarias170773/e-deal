@@ -27,7 +27,7 @@ import {
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { hasPermissao } from "@/features/auth/usuarios.service";
+import { hasPermissao, getEscopoPropostas, getNomeParaEscopo } from "@/features/auth/usuarios.service";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
@@ -234,7 +234,22 @@ export function OrcamentosListPageReal() {
 
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
-  const { propostas, source, warnings, detectedColumns, loadedCount, isLoading, errorMessage, triggerRefresh } = useOrcamentosReadOnlyData(periodo);
+  const { propostas: rawPropostas, source, warnings, detectedColumns, loadedCount, isLoading, errorMessage, triggerRefresh } = useOrcamentosReadOnlyData(periodo);
+
+  // V2.1: Aplica Escopo de Dados Global (own vs all)
+  const propostas = useMemo(() => {
+    const escopo = getEscopoPropostas(user);
+    if (escopo === "all") return rawPropostas;
+
+    const meuNome = getNomeParaEscopo(user).trim().toLowerCase();
+    if (!meuNome) return rawPropostas; // Fallback seguro (evita tela vazia se o nome não for carregado)
+
+    return rawPropostas.filter((p) => {
+      const vendedorProposta = (p.vendedor || "").trim().toLowerCase();
+      return vendedorProposta === meuNome;
+    });
+  }, [rawPropostas, user]);
+
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("TODOS");
   const [modelo, setModelo] = useState("TODOS_MODELOS");
