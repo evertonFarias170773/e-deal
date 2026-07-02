@@ -12,6 +12,7 @@ import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { listarPedidosOperacionais, atualizarFaseProducaoLista } from "./services/pedidos-producao.service";
 import { 
@@ -388,7 +389,9 @@ export function PedidosListPage() {
           {
             header: "Ações",
             cell: (proposta) => {
-              const isAdminOrGerente = user?.isSuperAdmin || user?.isAdmin;
+              const canLiberarNF = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_nf");
+              const canVoltarRevisao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.admin");
+
               const actions = [
                 {
                   label: proposta.hasOS ? "Editar OS / Boletim" : "Criar OS / Boletim",
@@ -402,11 +405,13 @@ export function PedidosListPage() {
                   label: "Detalhes da proposta",
                   onClick: () => router.push(`/orcamentos/${proposta.id_int}`)
                 },
-                ...(isAdminOrGerente ? [
+                ...(canLiberarNF ? [
                   ...(proposta.libera_nf ? [] : [{
                     label: "Liberar para NF",
                     onClick: () => handleLiberarNF(proposta)
-                  }]),
+                  }])
+                ] : []),
+                ...(canVoltarRevisao ? [
                   {
                     label: "Voltar para Revisão Atendente",
                     destructive: true,
@@ -464,7 +469,7 @@ export function PedidosListPage() {
               >
                 Detalhes
               </button>
-              {(user?.isSuperAdmin || user?.isAdmin) && (
+              {(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.admin")) && (
                 <button
                   type="button"
                   onClick={() => {

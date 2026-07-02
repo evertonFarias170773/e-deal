@@ -292,7 +292,7 @@ export async function fetchUsuarioEnriquecido(
       isAdmin: perfilResolvido ? permissoes.includes("*") || permissoes.includes("admin.usuarios.view") : fallback.isAdmin,
       isSuperAdmin: perfilResolvido ? permissoes.includes("*") : fallback.isSuperAdmin,
       isSeller: perfilResolvido ? permissoes.includes("propostas.create") : fallback.isSeller,
-      isGerente: perfilResolvido ? permissoes.includes("*") || permissoes.includes("admin.usuarios.view") : (row.is_admin || row.is_super_adm),
+      isGerente: perfilResolvido ? permissoes.includes("*") || permissoes.includes("pedidos.admin") : (row.is_admin || row.is_super_adm),
       perfilSlug,
       permissoes,
       id_perfil: row.id_perfil,

@@ -6,6 +6,7 @@ import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { isCreditoPendente, isPendenteAprovacao } from "@/features/cobrancas/cobrancas-utils";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
@@ -206,7 +207,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     {
       label: "Cancelar cobrança",
       destructive: true,
-      disabled: cobranca.status === "CANCELADO",
+      disabled: cobranca.status === "CANCELADO" || (!user?.isSuperAdmin && !user?.isAdmin && !hasPermissao(user, "cobrancas.cancel")),
       onClick: () => setIsCancelModalOpen(true)
     }
   ];

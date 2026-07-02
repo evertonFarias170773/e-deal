@@ -211,7 +211,8 @@ export function OrcamentosListPageReal() {
   const canCancelarProposta = Boolean(
     user?.isSuperAdmin ||
     user?.isAdmin ||
-    hasPermissao(user, "propostas.cancelar")
+    hasPermissao(user, "propostas.cancelar") || // Legado V1
+    hasPermissao(user, "propostas.cancel")      // V2.1
   );
 
   useEffect(() => {
@@ -750,7 +751,7 @@ export function OrcamentosListPageReal() {
       ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
       ...(canCancelarProposta ? [{ label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }] : []),
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
-      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
+      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
     ];
   }
 

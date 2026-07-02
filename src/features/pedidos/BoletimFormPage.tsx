@@ -40,6 +40,7 @@ import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.s
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 export interface GabaritoItem {
   id: string;
@@ -95,7 +96,7 @@ export function BoletimFormPage() {
   const isEditing = modoParam === "edicao" && !!idIntParam;
 
   const { user } = useAuth();
-  const canEditDate = user?.isAdmin || user?.isGerente || user?.isSuperAdmin;
+  const canEditDate = user?.isAdmin || user?.isGerente || user?.isSuperAdmin || hasPermissao(user, "pedidos.edit_data");
   const lockDate = isEditing && !canEditDate;
 
   const [loadedPedidoId, setLoadedPedidoId] = useState<string | null>(null);

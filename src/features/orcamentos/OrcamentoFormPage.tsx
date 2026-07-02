@@ -211,7 +211,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     user?.isSuperAdmin ||
     user?.isAdmin ||
     user?.isGerente ||
-    hasPermissao(user, "propostas.alterar_vendedor")
+    hasPermissao(user, "propostas.alterar_vendedor") || // Legado V1
+    hasPermissao(user, "propostas.edit_vendedor")       // V2.1
   );
 
   const canEditarDescontoGeral = Boolean(

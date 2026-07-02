@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { X, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Play, Loader2 } from "lucide-react";
 import type { FaturavelOrigem, FaturavelItem } from "../types";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -40,7 +41,12 @@ function generateSimulatedNota(item: FaturavelOrigem, totalValue: number): NfeRe
 
 export function FaturamentoPreviewPanel({ item, onClose, onEmitSuccess }: FaturamentoPreviewPanelProps) {
   const { user } = useAuth();
-  const isPermitidoOperarFiscal = user?.isSuperAdmin || user?.isAdmin || user?.isGerente;
+  const isPermitidoOperarFiscal = 
+    user?.isSuperAdmin || 
+    user?.isAdmin || 
+    user?.isGerente ||
+    hasPermissao(user, "fiscal.emit_nfe") ||
+    hasPermissao(user, "fiscal.emit_nfse");
 
   const [editedItens, setEditedItens] = useState<FaturavelItem[]>(() =>
     JSON.parse(JSON.stringify(item.itens))
