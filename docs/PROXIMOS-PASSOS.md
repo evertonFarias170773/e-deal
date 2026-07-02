@@ -137,3 +137,9 @@
 ### PEND√äNCIA T√âCNICA: Valida√ß√£o de Build (Preven√ß√£o)
 **M√≥dulo:** Global / Rotas Compartilhadas
 **Descri√ß√£o:** Ap√≥s altera√ß√µes em m√≥dulos compartilhados (Pedidos, Or√ßamentos, Fiscal, Financeiro), √© obrigat√≥ria a execu√ß√£o de `npm run build` localmente antes de enviar para produ√ß√£o. O comando `npx tsc --noEmit` n√£o substitui o build completo da Vercel/Next.js, visto que n√£o detecta falhas de SSR e page rendering causadas por falha de exporta√ß√£o em subcomponentes.
+
+ # # #   P E N D   N C I A   T … C N I C A :   S i n c r o n i z a Á „ o   e m   L o t e   d e   D a t a s   ( O r Á a m e n t o s ) 
+ * * M Û d u l o : * *   O r Á a m e n t o s   /   B a n c o   d e   D a d o s 
+ * * D e s c r i Á „ o : * *   F o i   d o c u m e n t a d o   q u e   a s   d a t a s   d e   v · r i a s   p r o p o s t a s   a p r e s e n t a m   o   m e s m o   e x a t o   m i n u t o   ( e x :   2 0 2 6 - 0 6 - 2 9 T 0 0 : 3 8 Z ) .   O   f r o n t e n d   r e n d e r i z a   c o r r e t a m e n t e   e s s e   d a d o   q u e   v e m   d o   b a n c o . 
+ -   * * A Á „ o : * *   S e   e s s e   p a d r „ o   v o l t a r   a   o c o r r e r   e m   r e g i s t r o s   n o v o s   c o m   f r e q u Í n c i a ,   a   o r i g e m   p r o v · v e l   d e v e   s e r   i n v e s t i g a d a   n o s   s c r i p t s ,   f l u x o s   d o   n 8 n ,   w e b h o o k s   d e   i n t e g r a Á „ o   o u   r o t i n a s   d e   s i n c r o n i z a Á „ o   q u e   d i s p a r a m   \ U P D A T E \   e m   l o t e ,   p a r a   e v i t a r   m a s c a r a r   o   t i m e s t a m p   r e a l   e m   q u e   o   e v e n t o   c o m e r c i a l   a c o n t e c e u .  
+ 

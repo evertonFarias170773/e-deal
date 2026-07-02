@@ -36,13 +36,14 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "dashboard.view_producao",   label: "Ver Indicadores de Produção",      desc: "Permite visualizar cards e gráficos de pedidos e produção no dashboard.",             critica: false }
   ],
 
-  // ── Cadastros ─────────────────────────────────────────────────────────────
   "Cadastros (Clientes)": [
     { key: "cadastros.view",       label: "Visualizar Cadastros",         desc: "Permite visualizar listagem de clientes, fornecedores e vendedores.",                   critica: false },
     { key: "cadastros.create",     label: "Criar Cadastros",              desc: "Permite criar novos registros de clientes.",                                            critica: false },
     { key: "cadastros.edit",       label: "Editar Cadastros",             desc: "Permite editar informações de clientes, endereços e contatos.",                         critica: false },
     { key: "cadastros.edit_fiscal", label: "Editar Dados Fiscais",        desc: "Permite editar dados fiscais do cliente (CNPJ, IE, regime tributário).",                critica: true  },
-    { key: "cadastros.view_socios", label: "Ver Sócios e Vínculos",       desc: "Permite visualizar sócios e vínculos comerciais cadastrados.",                          critica: false }
+    { key: "cadastros.view_socios", label: "Ver Sócios e Vínculos",       desc: "Permite visualizar sócios e vínculos comerciais cadastrados.",                          critica: false },
+    { key: "cadastros.view_credito", label: "Visualizar Crédito / Financeiro", desc: "Permite visualizar o bloco Crédito / Financeiro do cadastro de clientes.",       critica: false },
+    { key: "cadastros.edit_credito", label: "Editar Crédito / Financeiro", desc: "Permite editar campos do bloco Crédito / Financeiro do cadastro de clientes.",         critica: true  }
   ],
 
   // ── Produtos ──────────────────────────────────────────────────────────────
@@ -79,8 +80,8 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "propostas.release_nf",       label: "Liberar para Nota Fiscal",        desc: "Permite marcar a proposta para faturamento (campo libera_nf).",                      critica: true  },
     { key: "propostas.devolver_revisao", label: "Devolver para Revisão",           desc: "Permite devolver a proposta para a etapa de revisão de atendente.",                  critica: true  },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
-    { key: "propostas.alterar_vendedor", label: "Alterar Vendedor (Legado V1)",    desc: "[LEGADO] Sera substituida por propostas.edit_vendedor na Fase 4.",     critica: true  },
-    { key: "propostas.cancelar",         label: "Cancelar Propostas (Legado V1)",  desc: "[LEGADO] Sera substituida por propostas.cancel na Fase 4.",            critica: true  }
+    { key: "propostas.alterar_vendedor", label: "Alterar Vendedor",    desc: "Sera substituida por propostas.edit_vendedor na Fase 4.",     critica: true  },
+    { key: "propostas.cancelar",         label: "Cancelar Propostas",  desc: "Sera substituida por propostas.cancel na Fase 4.",            critica: true  }
   ],
 
   // ── Chat Interno ──────────────────────────────────────────────────────────
@@ -100,8 +101,8 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "cobrancas.cancel",     label: "Cancelar / Estornar Cobranças", desc: "Permite cancelar ou estornar cobranças emitidas.",                               critica: true  },
     { key: "cobrancas.view_token", label: "Ver Link e Token da Cobrança", desc: "Permite visualizar o link público e o token de acesso da cobrança.",              critica: false },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
-    { key: "cobrancas.aprovar",        label: "Liberar OS / Confirmar (Legado V1)", desc: "[LEGADO] Sera substituido por cobrancas.confirm na Fase 4.",         critica: true  },
-    { key: "cobrancas.emitir_boleto",  label: "Emitir Boleto (Legado V1)",          desc: "[LEGADO] Sera substituido por cobrancas.emit na Fase 4.",             critica: false }
+    { key: "cobrancas.aprovar",        label: "Liberar OS / Confirmar", desc: "Sera substituido por cobrancas.confirm na Fase 4.",         critica: true  },
+    { key: "cobrancas.emitir_boleto",  label: "Emitir Boleto",          desc: "Sera substituido por cobrancas.emit na Fase 4.",             critica: false }
   ],
 
   // ── Conferência ───────────────────────────────────────────────────────────
@@ -117,8 +118,8 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "contas_receber.baixa",      label: "Registrar Baixa",             desc: "Permite registrar a baixa de um título a receber.",                               critica: true  },
     { key: "contas_receber.send_email", label: "Disparar E-mail de Cobrança", desc: "Permite enviar e-mail de cobrança para clientes em atraso.",                     critica: false },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
-    { key: "financeiro.view",    label: "Relatorios Financeiros (Legado V1)", desc: "[LEGADO] Sera substituido por dashboard.view_financeiro + contas_receber.view.", critica: false },
-    { key: "financeiro.aprovar", label: "Aprovacao Financeira (Legado V1)",   desc: "[LEGADO] Sera substituido por contas_receber.baixa na Fase 4.",                  critica: true  }
+    { key: "financeiro.view",    label: "Relatorios Financeiros", desc: "Sera substituido por dashboard.view_financeiro + contas_receber.view.", critica: false },
+    { key: "financeiro.aprovar", label: "Aprovacao Financeira",   desc: "Sera substituido por contas_receber.baixa na Fase 4.",                  critica: true  }
   ],
 
   // ── Fiscal ────────────────────────────────────────────────────────────────
@@ -130,7 +131,7 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "fiscal.cancel_nf",  label: "Cancelar Nota Fiscal",         desc: "Permite solicitar cancelamento de NF junto à Sefaz ou Prefeitura.",                   critica: true  },
     { key: "fiscal.admin",      label: "Configurar Parâmetros Fiscais", desc: "Permite configurar série, ambiente (produção/homologação) e CFOP padrão.",            critica: true  },
     // Permissão V1 mantida para compatibilidade retroativa durante migração
-    { key: "fiscal.emitir", label: "Emitir NF (Legado V1)", desc: "[LEGADO] Sera substituido por fiscal.emit_nfe e fiscal.emit_nfse na Fase 4.",               critica: true  }
+    { key: "fiscal.emitir", label: "Emitir NF", desc: "Sera substituido por fiscal.emit_nfe e fiscal.emit_nfse na Fase 4.",               critica: true  }
   ],
 
   // ── Pedidos / OS ──────────────────────────────────────────────────────────
@@ -477,7 +478,13 @@ export function PerfisPermissoesPanel() {
                   </div>
 
                   {!isCollapsed && (
-                    <div className="border-t p-4 grid gap-3 sm:grid-cols-2" style={{ borderColor: "var(--border)" }}>
+                    <div className="border-t p-4" style={{ borderColor: "var(--border)" }}>
+                      {groupName === "Banco de Variações" && (
+                        <p className="text-xs text-slate-500 mb-4 px-2">
+                          Permissões para gerenciar o banco global de opções reutilizáveis dos produtos, como tamanhos, cores, acabamentos, chips, fundos e extras.
+                        </p>
+                      )}
+                      <div className="grid gap-3 sm:grid-cols-2">
                       {permissions.map((perm) => {
                         const checked = isSelected(perm.key);
                         const isSuperAdmin = perfilSelecionado.slug === "super_admin";
@@ -523,6 +530,7 @@ export function PerfisPermissoesPanel() {
                           </label>
                         );
                       })}
+                      </div>
                     </div>
                   )}
                 </div>

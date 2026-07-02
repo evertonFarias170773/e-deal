@@ -10,6 +10,8 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatDocument } from "@/lib/formatters/document";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import {
   createCadastroContatos,
   createCadastroEnderecos,
@@ -98,6 +100,11 @@ const categoriaOptions: CadastroCategoria[] = ["CLIENTE", "FORNECEDOR", "TRANSPO
 
 export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const router = useRouter();
+  const { user } = useAuth();
+  
+  const canViewCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.view_credito");
+  const canEditCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit_credito");
+
   const { showToast } = useAppToast();
   const [isInitialValidated, setIsInitialValidated] = useState(mode === "edit");
   const [message, setMessage] = useState<FormMessage | null>(null);
@@ -1085,6 +1092,8 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
           onResetDocumento={handleResetDocumentoValidation}
           onReconsultar={form.tipoCliente === "CNPJ" ? handleReconsultarCnpj : undefined}
           onToast={showToast}
+          canViewCredito={canViewCredito}
+          canEditCredito={canEditCredito}
         />
       )}
 
@@ -1225,7 +1234,9 @@ function CompleteForm({
   modelosCobranca,
   onResetDocumento,
   onReconsultar,
-  onToast
+  onToast,
+  canViewCredito,
+  canEditCredito
 }: {
   form: CadastroFormState;
   formattedDocument: string;
@@ -1244,11 +1255,18 @@ function CompleteForm({
   onResetDocumento: () => void;
   onReconsultar?: () => void;
   onToast: (toast: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
+  canViewCredito: boolean;
+  canEditCredito: boolean;
 }) {
   const companies = mockCompanies.filter((company) => !company.isConsolidated);
   const documentChanged =
     mode === "edit" &&
-    normalizeDocumentDigits(form.documento) !== normalizeDocumentDigits(originalDocument);
+    form.documento !== originalDocument &&
+    form.documento !== "" &&
+    originalDocument !== "";
+
+  const inputClass = "w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]";
+  const inputClassCredito = !canEditCredito ? "w-full rounded-2xl border border-slate-300 bg-slate-100 text-slate-500 px-4 py-3 text-sm outline-none transition-shadow cursor-not-allowed" : inputClass;
   const [vinculoBusca, setVinculoBusca] = useState<Record<string, string>>({});
   const [vinculoResultados, setVinculoResultados] = useState<Record<string, SearchCadastroVinculoItem[]>>({});
   const [vinculoLoadingId, setVinculoLoadingId] = useState<string | null>(null);
@@ -1773,65 +1791,70 @@ function CompleteForm({
         </div>
       </FormSection>
 
-      <FormSection title="Crédito / Financeiro" description="Informacoes financeiras, comerciais e flags operacionais.">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Data cadastro"><input type="date" value={form.dataCadastro} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
-          <Field label="Data fundacao"><input type="date" value={form.dataFundacao} onChange={(event) => onUpdate("dataFundacao", event.target.value)} className={inputClass} /></Field>
-          <Field label="Data verificacao"><input type="date" value={form.dataVerificacao} onChange={(event) => onUpdate("dataVerificacao", event.target.value)} className={inputClass} /></Field>
-          <Field label="Limite de credito"><input value={form.limiteCredito} onChange={(event) => onUpdate("limiteCredito", event.target.value)} className={inputClass} /></Field>
-          <Field label="Credito"><input value={form.credito} onChange={(event) => onUpdate("credito", event.target.value)} className={inputClass} /></Field>
-          <Field label="Credito acumulado"><input value={form.creditoDisponivel} onChange={(event) => onUpdate("creditoDisponivel", event.target.value)} className={inputClass} /></Field>
-          <Field label="Risco financeiro"><select value={form.riscoCredito} onChange={(event) => onUpdate("riscoCredito", event.target.value as "BAIXO" | "MEDIO" | "ALTO")} className={inputClass}><option value="BAIXO">Baixo</option><option value="MEDIO">Medio</option><option value="ALTO">Alto</option></select></Field>
-          <Field label="Ultima compra"><input type="date" value={form.ultimaCompra} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
-          <Field label="Total compras (qtd)"><input value={form.totalCompras} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
-          <Field label="Valor total comprado">
-            <input value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(form.valorTotalComprado || 0)} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} />
-          </Field>
-          <Field label="Formas de pagamento">
-            <select 
-              value={form.padraoPagamento} 
-              onChange={(event) => {
-                const val = event.target.value;
-                onUpdate("padraoPagamento", val);
-                if (val !== "FATURADO") {
-                  onUpdate("modeloCobrancaId", undefined);
-                }
-              }} 
-              className={inputClass}
-            >
-              <option value="">Selecione...</option>
-              <option value="PIX">PIX</option>
-              <option value="BOLETO">BOLETO</option>
-              <option value="CARTAO">CARTAO</option>
-              <option value="FATURADO">FATURADO</option>
-            </select>
-          </Field>
-          {form.padraoPagamento === "FATURADO" && (
-            <Field label="Modelo de Cobrança">
+      {canViewCredito && (
+        <FormSection title="Crédito / Financeiro" description="Informacoes financeiras, comerciais e flags operacionais.">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Data cadastro"><input type="date" value={form.dataCadastro} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
+            <Field label="Data fundacao"><input type="date" value={form.dataFundacao} onChange={(event) => canEditCredito && onUpdate("dataFundacao", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            <Field label="Data verificacao"><input type="date" value={form.dataVerificacao} onChange={(event) => canEditCredito && onUpdate("dataVerificacao", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            <Field label="Limite de credito"><input value={form.limiteCredito} onChange={(event) => canEditCredito && onUpdate("limiteCredito", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            <Field label="Credito"><input value={form.credito} onChange={(event) => canEditCredito && onUpdate("credito", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            <Field label="Credito acumulado"><input value={form.creditoDisponivel} onChange={(event) => canEditCredito && onUpdate("creditoDisponivel", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            <Field label="Risco financeiro"><select value={form.riscoCredito} disabled={!canEditCredito} onChange={(event) => canEditCredito && onUpdate("riscoCredito", event.target.value as "BAIXO" | "MEDIO" | "ALTO")} className={inputClassCredito}><option value="BAIXO">Baixo</option><option value="MEDIO">Medio</option><option value="ALTO">Alto</option></select></Field>
+            <Field label="Ultima compra"><input type="date" value={form.ultimaCompra} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
+            <Field label="Total compras (qtd)"><input value={form.totalCompras} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
+            <Field label="Valor total comprado">
+              <input value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(form.valorTotalComprado || 0)} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} />
+            </Field>
+            <Field label="Formas de pagamento">
               <select 
-                value={form.modeloCobrancaId || ""} 
-                onChange={(event) => onUpdate("modeloCobrancaId", event.target.value || undefined)} 
-                className={inputClass}
+                value={form.padraoPagamento}
+                disabled={!canEditCredito} 
+                onChange={(event) => {
+                  if (!canEditCredito) return;
+                  const val = event.target.value;
+                  onUpdate("padraoPagamento", val);
+                  if (val !== "FATURADO") {
+                    onUpdate("modeloCobrancaId", undefined);
+                  }
+                }} 
+                className={inputClassCredito}
               >
-                <option value="">Selecione o modelo...</option>
-                {modelosCobranca.map(m => (
-                  <option key={m.id} value={m.id}>{m.resultado}</option>
-                ))}
+                <option value="">Selecione...</option>
+                <option value="PIX">PIX</option>
+                <option value="BOLETO">BOLETO</option>
+                <option value="CARTAO">CARTAO</option>
+                <option value="FATURADO">FATURADO</option>
               </select>
             </Field>
-          )}
-          <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => onUpdate("percentualBonus", event.target.value)} className={inputClass} /></Field>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          <Toggle label="Bonus" checked={form.bonusAtivo} onChange={(value) => onUpdate("bonusAtivo", value)} />
-          <Toggle label="Nota" checked={form.nota} onChange={(value) => onUpdate("nota", value)} />
-          <Toggle label="Restricao" checked={form.restricao} onChange={(value) => onUpdate("restricao", value)} />
-          <Toggle label="Verificado" checked={form.verificado} onChange={(value) => onUpdate("verificado", value)} />
-          <Toggle label="CPF invalido" checked={form.cpfInvalido} onChange={(value) => onUpdate("cpfInvalido", value)} />
-          <Toggle label="Receber e-mail" checked={form.sendMail} onChange={(value) => onUpdate("sendMail", value)} />
-          <Toggle label="Receber WhatsApp" checked={form.sendWhats} onChange={(value) => onUpdate("sendWhats", value)} />
-        </div>
-      </FormSection>
+            {form.padraoPagamento === "FATURADO" && (
+              <Field label="Modelo de Cobrança">
+                <select 
+                  value={form.modeloCobrancaId || ""}
+                  disabled={!canEditCredito} 
+                  onChange={(event) => canEditCredito && onUpdate("modeloCobrancaId", event.target.value || undefined)} 
+                  className={inputClassCredito}
+                >
+                  <option value="">Selecione o modelo...</option>
+                  {modelosCobranca.map(m => (
+                    <option key={m.id} value={m.id}>{m.resultado}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => canEditCredito && onUpdate("percentualBonus", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <Toggle label="Bonus" checked={form.bonusAtivo} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("bonusAtivo", value)} />
+            <Toggle label="Nota" checked={form.nota} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("nota", value)} />
+            <Toggle label="Restricao" checked={form.restricao} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("restricao", value)} />
+            <Toggle label="Verificado" checked={form.verificado} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("verificado", value)} />
+            <Toggle label="CPF invalido" checked={form.cpfInvalido} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("cpfInvalido", value)} />
+            <Toggle label="Receber e-mail" checked={form.sendMail} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("sendMail", value)} />
+            <Toggle label="Receber WhatsApp" checked={form.sendWhats} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("sendWhats", value)} />
+          </div>
+        </FormSection>
+      )}
 
       <FormSection title="Observacoes" description="Informacoes internas importantes do cadastro. Limite visual de 500 caracteres.">
         <textarea value={form.observacoes} maxLength={500} onChange={(event) => onUpdate("observacoes", event.target.value)} className={`${inputClass} min-h-36 resize-y`} />
@@ -1955,9 +1978,9 @@ function AddButton({
   );
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+function Toggle({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${checked ? "border-teal-200 bg-teal-50 text-teal-700" : "border-slate-200 bg-white text-slate-600"}`}>
+    <button type="button" disabled={disabled} onClick={() => onChange(!checked)} className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${disabled ? "opacity-50 cursor-not-allowed" : ""} ${checked ? "border-teal-200 bg-teal-50 text-teal-700" : "border-slate-200 bg-white text-slate-600"}`}>
       {label}: {checked ? "Sim" : "Nao"}
     </button>
   );

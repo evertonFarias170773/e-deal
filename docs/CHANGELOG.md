@@ -500,3 +500,10 @@
 - Fila de Faturamento do mÃ³dulo Fiscal unificada, passando a listar registros baseados unicamente na flag `libera_nf = true`.
 - Abas de Notas Fiscais simplificadas para exibir apenas "Fila Faturamento" e "HistÃ³rico NF-e / NFS-e".
 
+
+ # #   [ 2 0 2 6 - 0 7 - 0 1 ]   -   D i a g n ó s t i c o   d e   D a t a / H o r a   n a   L i s t a   d e   O r ç a m e n t o s 
+ # # #   I n v e s t i g a d o 
+ -   I n v e s t i g a d a   d e n ú n c i a   d e   h o r á r i o s   i d ê n t i c o s   ( e x :   \ 2 8 / 0 6 / 2 0 2 6 ,   2 1 : 3 8 \ )   a o   f i l t r a r   a   l i s t a   d e   O r ç a m e n t o s   p o r   ' T i p o   d e   C o b r a n ç a ' . 
+ -   C o m p r o v a d o ,   a p ó s   e x t r a ç ã o   d i r e t a   v i a   S u p a b a s e ,   q u e   n ã o   s e   t r a t a   d e   b u g   n o   f r o n t e n d   o u   n o   t r u n c a m e n t o   d e   t i m e z o n e ,   m a s   d a   e x i b i ç ã o   f i e l   d e   u m   e v e n t o   d e   \ U P D A T E \   e m   l o t e   n a   t a b e l a   \ p u b l i c . p r o p o s t a s \   ( 7 7 6   r e g i s t r o s   s o f r e r a m   a l t e r a ç ã o   n o   e x a t o   m i n u t o   2 0 2 6 - 0 6 - 2 9 T 0 0 : 3 8 Z ) . 
+ -   R e g i s t r a d o   e m   d o c u m e n t a ç ã o   ( \ D E C I S O E S - T E C N I C A S . m d \   e   \ P R O X I M O S - P A S S O S . m d \ )   a   n ã o - a l t e r a ç ã o   d o   c ó d i g o   d a   U I   p a r a   e v i t a r   m a s c a r a m e n t o   a r t i f i c i a l   d e   d a d o s   h i s t ó r i c o s   d o   b a n c o .  
+ 
