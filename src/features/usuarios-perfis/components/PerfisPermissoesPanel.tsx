@@ -560,7 +560,7 @@ export function PerfisPermissoesPanel() {
       )}
       {/* Botão Salvar Flutuante (Sticky) */}
       {perfilSelecionado && perfilSelecionado.slug !== "super_admin" && (
-        <div className="fixed bottom-6 right-6 z-40">
+        <div className="fixed bottom-24 right-6 md:right-8 z-40">
           <button
             type="button"
             onClick={handleOpenConfirmacao}
