@@ -112,23 +112,16 @@ export async function updatePermissoesPerfil(
     throw new Error("Cliente Supabase não configurado no ambiente.");
   }
 
-  // Whitelist explícita de campos a serem modificados: apenas permissoes.
-  const payload = {
-    permissoes: permissoes
-  };
-
-  const { data, error } = await client
-    .from("perfis")
-    .update(payload)
-    .eq("id", idPerfil)
-    .select("id");
+  // A RPC recebe o p_id_perfil e p_permissoes (tratado automaticamente como JSON pelo Postgres).
+  const { error } = await client.rpc("update_permissoes_perfil", {
+    p_id_perfil: idPerfil,
+    p_permissoes: permissoes
+  });
 
   if (error) {
-    console.error("[UsuariosPerfisService] Erro ao atualizar permissões do perfil:", error.message);
-    throw new Error(`Não foi possível salvar as permissões: ${error.message}`);
-  }
-
-  if (!data || data.length === 0) {
-    throw new Error("Nenhuma linha foi alterada. Você não tem permissão no banco (RLS) para atualizar este perfil.");
+    console.error("[UsuariosPerfisService] Erro na RPC update_permissoes_perfil:", error.message);
+    // A RPC dispara exceções amigáveis via RAISE EXCEPTION,
+    // então a mensagem que volta do Supabase é a exata String definida no banco.
+    throw new Error(error.message);
   }
 }
