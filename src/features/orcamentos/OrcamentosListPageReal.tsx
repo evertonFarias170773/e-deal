@@ -27,7 +27,7 @@ import {
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { hasPermissao, getEscopoPropostas, getNomeParaEscopo } from "@/features/auth/usuarios.service";
+import { hasPermissao, getDataScope, getNomeParaEscopo } from "@/features/auth/usuarios.service";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
@@ -239,7 +239,7 @@ export function OrcamentosListPageReal() {
 
   // V2.1: Aplica Escopo de Dados Global (own vs all)
   const propostas = useMemo(() => {
-    const escopo = getEscopoPropostas(user);
+    const escopo = getDataScope(user, "propostas");
     if (escopo === "all") return rawPropostas;
 
     const meuNome = getNomeParaEscopo(user).trim().toLowerCase();

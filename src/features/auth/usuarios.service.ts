@@ -379,21 +379,23 @@ export function hasAnyPermissao(user: MockUser | null | undefined, codigos: stri
  * @param user - MockUser atual (pode ser null durante carregamento)
  * @returns `"own"` | `"all"`
  */
-export function getEscopoPropostas(user: MockUser | null | undefined): "own" | "all" {
-  if (!user) return "all"; // sem contexto → acesso não restrito (evita bloquear telas admin)
+export type DataScope = "own" | "team" | "company" | "all";
 
-  // Wildcard = acesso total
-  if (hasPermissao(user, "*")) return "all";
+export function getDataScope(user: MockUser | null | undefined, modulo: string): DataScope {
+  if (!user) return "all";
 
-  // Permissão explícita de acesso total
-  if (hasPermissao(user, "propostas.view_all")) return "all";
+  // Na V2.1 o super admin sempre vê tudo
+  if (user.isSuperAdmin || user.perfilSlug === "super_admin") {
+    return "all";
+  }
 
-  // Permissão explícita de acesso restrito ao próprio
-  if (hasPermissao(user, "propostas.view_own")) return "own";
+  // Verifica escopos específicos
+  if (hasPermissao(user, `${modulo}.view_all`)) return "all";
+  if (hasPermissao(user, `${modulo}.view_company`)) return "company";
+  if (hasPermissao(user, `${modulo}.view_team`)) return "team";
+  if (hasPermissao(user, `${modulo}.view_own`)) return "own";
 
-  // Fallback V1: sem permissão de escopo → comportamento atual (all)
-  // Isso garante que todos os usuários existentes continuam vendo tudo
-  // até que o admin configure as permissões V2.1.
+  // Fallback V1
   return "all";
 }
 
