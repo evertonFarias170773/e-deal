@@ -257,6 +257,38 @@ export function PerfisPermissoesPanel() {
     }
   };
 
+  const handleGroupSelection = (groupName: string, selectAll: boolean) => {
+    if (!perfilSelecionado || perfilSelecionado.slug === "super_admin") return;
+
+    const groupPerms = CATALOGO_PERMISSOES[groupName].map((p) => p.key);
+    const isSelfProfile = user && user.id_perfil === perfilSelecionado.id;
+
+    setEditedPermissoes((prev) => {
+      let updated = [...prev];
+      if (selectAll) {
+        const toAdd = groupPerms.filter((k) => !updated.includes(k));
+        updated.push(...toAdd);
+      } else {
+        updated = updated.filter((k) => {
+          if (groupPerms.includes(k)) {
+            // Se for auto-bloqueio, impede
+            if (isSelfProfile && k === "admin.usuarios.edit") {
+              showToast({
+                type: "warning",
+                title: "Ação bloqueada",
+                description: "Você não pode remover a permissão admin.usuarios.edit do seu próprio perfil para evitar auto-bloqueio."
+              });
+              return true; // mantém
+            }
+            return false; // remove
+          }
+          return true; // mantém as outras
+        });
+      }
+      return Array.from(new Set(updated));
+    });
+  };
+
   const isSelected = (permKey: string) => {
     if (perfilSelecionado?.slug === "super_admin") {
       return true; // Super admin tem todas as permissões e wildcard implícito
@@ -412,14 +444,34 @@ export function PerfisPermissoesPanel() {
               const isCollapsed = collapsedGroups[groupName];
               return (
                 <div key={groupName} className="rounded-2xl border bg-neutral-50/20" style={{ borderColor: "var(--border)" }}>
-                  <button
-                    type="button"
-                    onClick={() => toggleAccordion(groupName)}
-                    className="w-full flex items-center justify-between p-4 font-bold text-sm select-none"
-                  >
-                    <span>{groupName}</span>
-                    {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                  </button>
+                  <div className="w-full flex items-center justify-between p-4 border-b border-transparent hover:border-slate-100 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleAccordion(groupName)}
+                      className="flex-1 flex items-center justify-start gap-2 font-bold text-sm select-none"
+                    >
+                      <span>{groupName}</span>
+                      {isCollapsed ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronUp className="h-4 w-4 text-slate-400" />}
+                    </button>
+                    {!isCollapsed && perfilSelecionado?.slug !== "super_admin" && (
+                      <div className="flex items-center gap-3">
+                        <button 
+                          type="button" 
+                          onClick={() => handleGroupSelection(groupName, true)}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                        >
+                          Marcar todas
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => handleGroupSelection(groupName, false)}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition"
+                        >
+                          Desmarcar
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {!isCollapsed && (
                     <div className="border-t p-4 grid gap-3 sm:grid-cols-2" style={{ borderColor: "var(--border)" }}>
@@ -505,6 +557,19 @@ export function PerfisPermissoesPanel() {
           perfilNome={perfilSelecionado.nome}
           isSaving={isSaving}
         />
+      )}
+      {/* Botão Salvar Flutuante (Sticky) */}
+      {perfilSelecionado && perfilSelecionado.slug !== "super_admin" && (
+        <div className="fixed bottom-6 right-6 z-40">
+          <button
+            type="button"
+            onClick={handleOpenConfirmacao}
+            className="rounded-full bg-blue-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-600/30 flex items-center gap-2 hover:bg-blue-700 hover:-translate-y-1 hover:shadow-xl transition-all"
+          >
+            <Save className="h-4.5 w-4.5" />
+            Salvar
+          </button>
+        </div>
       )}
     </div>
   );

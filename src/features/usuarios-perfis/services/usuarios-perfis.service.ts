@@ -117,13 +117,18 @@ export async function updatePermissoesPerfil(
     permissoes: permissoes
   };
 
-  const { error } = await client
+  const { data, error } = await client
     .from("perfis")
     .update(payload)
-    .eq("id", idPerfil);
+    .eq("id", idPerfil)
+    .select("id");
 
   if (error) {
     console.error("[UsuariosPerfisService] Erro ao atualizar permissões do perfil:", error.message);
     throw new Error(`Não foi possível salvar as permissões: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error("Nenhuma linha foi alterada. Você não tem permissão no banco (RLS) para atualizar este perfil.");
   }
 }
