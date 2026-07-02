@@ -333,11 +333,14 @@ export function PerfisPermissoesPanel() {
       await fetchPerfis();
     } catch (err: unknown) {
       console.error("[Erro RLS/Database] Falha ao executar updatePermissoesPerfil:", err);
+      const errorMessage = err instanceof Error ? err.message : "O banco de dados recusou a atualização.";
       
       showToast({
         type: "error",
-        title: "Erro de permissão (RLS)",
-        description: "O banco de dados recusou a atualização. Certifique-se de que as políticas de escrita estão ativas no Supabase."
+        title: "Não foi possível salvar",
+        description: errorMessage.includes("Nenhuma linha foi alterada") 
+          ? "Não foi possível salvar: permissão de atualização bloqueada ou perfil não encontrado."
+          : errorMessage
       });
     } finally {
       setIsSaving(false);
