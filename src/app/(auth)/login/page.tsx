@@ -1,44 +1,64 @@
 import { LoginForm } from "@/features/auth/LoginForm";
+import Image from "next/image";
 
 export default function LoginPage() {
   return (
     <main className="grid min-h-screen bg-slate-950 lg:grid-cols-[1.1fr_0.9fr]">
-      <section className="hidden flex-col justify-between bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-12 text-white lg:flex">
-        <div>
-          <div className="mb-16 inline-flex items-center rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-blue-100">
-            ERP Ideal Mockado
+      <section className="hidden flex-col justify-between bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-12 text-white lg:flex relative overflow-hidden">
+        {/* Abstract background elements */}
+        <div className="absolute -top-40 -right-40 h-[600px] w-[600px] rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 h-[400px] w-[400px] rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
+
+        <div className="relative z-10">
+          <div className="mb-12">
+            <Image 
+              src="/logos/logo-dark.png" 
+              alt="Logo Ideal" 
+              width={160} 
+              height={50} 
+              className="object-contain"
+              priority
+            />
           </div>
-          <h1 className="max-w-2xl text-5xl font-bold tracking-tight">
-            Operacao comercial, fiscal e financeira em uma interface moderna.
+          <h1 className="max-w-2xl text-5xl font-bold tracking-tight leading-tight">
+            Operação comercial, fiscal e financeira em uma interface moderna.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
-            Primeira versao navegavel para validar layout, navegacao e produtividade antes de
-            conectar dados reais.
+            Sistema de Gestão Empresarial integrado e seguro, desenvolvido para escalar com o seu negócio.
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 text-sm text-slate-300">
-          <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-            Login mockado
+        <div className="grid grid-cols-3 gap-4 text-sm text-slate-300 relative z-10">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm transition hover:bg-white/10">
+            <h3 className="font-semibold text-white mb-1">Acesso Seguro</h3>
+            <p className="text-slate-400 text-xs">Proteção com Supabase Auth.</p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-            Multiempresa
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm transition hover:bg-white/10">
+            <h3 className="font-semibold text-white mb-1">Multiempresa</h3>
+            <p className="text-slate-400 text-xs">Gerencie diversas filiais.</p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-            Dashboard inicial
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm transition hover:bg-white/10">
+            <h3 className="font-semibold text-white mb-1">Visão 360º</h3>
+            <p className="text-slate-400 text-xs">Métricas em tempo real.</p>
           </div>
         </div>
       </section>
 
-      <section className="flex items-center justify-center bg-slate-50 p-6">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5">
-          <div className="mb-8">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-600">
-              Acesso ao ERP
-            </p>
-            <h2 className="mt-3 text-3xl font-bold text-slate-950">Entrar</h2>
+      <section className="flex items-center justify-center bg-slate-50 p-6 relative">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5 relative z-10">
+          <div className="mb-8 text-center lg:text-left">
+            <div className="mb-6 flex justify-center lg:hidden">
+              <Image 
+                src="/logos/ingressoideal.png" 
+                alt="Logo Ideal" 
+                width={140} 
+                height={45} 
+                className="object-contain"
+              />
+            </div>
+            <h2 className="text-3xl font-bold text-slate-950">Acesso ao ERP</h2>
             <p className="mt-2 text-sm text-slate-500">
-              Use o acesso preenchido para entrar na versao visual mockada.
+              Entre com suas credenciais para acessar o sistema.
             </p>
           </div>
 

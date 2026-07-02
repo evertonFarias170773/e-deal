@@ -7,11 +7,13 @@
 
 ## Login
 
-Status: mockado inicial.
+Status: integrado e funcional com Supabase Auth.
 
 Rotas:
 
 - `/login`
+- `/esqueci-minha-senha`
+- `/atualizar-senha`
 
 Componentes principais:
 
@@ -21,12 +23,11 @@ Componentes principais:
 
 Mocks usados:
 
-- `usuarios.mock.ts`
+- Nenhum. O mock de usuário foi completamente removido e as permissões provêm apenas das tabelas `public.usuarios` e `public.perfis`.
 
 Pendências:
 
-- integrar Supabase Auth futuramente;
-- fluxo real de recuperação/redefinição de senha.
+- Fluxo de criação de contas e alteração de perfis via painel visual no ERP.
 
 ## Layout autenticado
 
@@ -701,3 +702,11 @@ Módulos no menu:
 - Status: Implementado
 - Ações: Reorganização modular, botões de ação em lote, botão flutuante, RPC segura para atualização de permissões, remoção de indicativos visuais de legado, nova seção "Banco de Variações" formalizada e novas permissões granulares de crédito em Cadastros (`cadastros.view_credito`, `cadastros.edit_credito`).
 - Base afetada: `public.perfis` e matriz visual em `PerfisPermissoesPanel.tsx`.
+
+### Modernização de Auth (Fase de Estabilização)
+- Fluxo de Boas-Vindas (Pós-confirmação de e-mail)
+- Rota `/boas-vindas` orientando que a liberação aguarda administrador
+- Login Google via `signInWithOAuth`
+- Rota de Callback App Router SSR
+- Tela de Cadastro com `supabase.auth.signUp()`
+- Bloqueio dinâmico no `AuthGuard` para acessos pendentes.

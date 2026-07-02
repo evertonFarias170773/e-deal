@@ -3,47 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { mockCurrentUser, mockSellerUser } from "@/lib/mocks/usuarios.mock";
 import type { MockUser } from "@/lib/types";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchUsuarioEnriquecido } from "@/features/auth/usuarios.service";
-
-function resolveMockUser(email: string): MockUser {
-  const normalizedEmail = email.trim().toLowerCase();
-
-  if (normalizedEmail === mockSellerUser.email.toLowerCase()) {
-    return mockSellerUser;
-  }
-
-  if (normalizedEmail === mockCurrentUser.email.toLowerCase()) {
-    return mockCurrentUser;
-  }
-
-  // Se for qualquer outro e-mail, retornar um usuário básico limitado (operador/guest)
-  return {
-    id: "guest-user",
-    name: "Usuário",
-    email: normalizedEmail,
-    sector: "COMERCIAL",
-    companyId: 1,
-    isAdmin: false,
-    isSuperAdmin: false,
-    isSeller: false
-  };
-}
-
-function buildFallbackUser(email: string): MockUser {
-  const normalizedEmail = email.trim().toLowerCase();
-  const baseUser = resolveMockUser(normalizedEmail);
-  const suggestedName = normalizedEmail.split("@")[0]?.replace(/[._-]+/g, " ").trim();
-
-  return {
-    ...baseUser,
-    id: `supabase_${baseUser.id}`,
-    email: normalizedEmail,
-    name: suggestedName ? suggestedName.replace(/\b\w/g, (char) => char.toUpperCase()) : baseUser.name
-  };
-}
 
 function mapSessionToUser(session: Session | null): MockUser | null {
   const email = session?.user?.email;
@@ -58,11 +20,21 @@ function mapSessionToUser(session: Session | null): MockUser | null {
         ? session.user.user_metadata.name
         : null;
 
-  const fallbackUser = buildFallbackUser(email);
+  const suggestedName = email.split("@")[0]?.replace(/[._-]+/g, " ").trim();
+  const name = metadataName || (suggestedName ? suggestedName.replace(/\b\w/g, (char) => char.toUpperCase()) : "Usuário");
+
   return {
-    ...fallbackUser,
-    id: session.user.id, // Always use the real Supabase Auth session UUID
-    name: metadataName || fallbackUser.name
+    id: session.user.id,
+    email: email,
+    name: name,
+    sector: "ADMIN",
+    companyId: 1,
+    isAdmin: false,
+    isSuperAdmin: false,
+    isSeller: false,
+    isGerente: false,
+    perfilSlug: "",
+    permissoes: [],
   };
 }
 
@@ -70,23 +42,22 @@ function mapSessionToUser(session: Session | null): MockUser | null {
  * Enriquece o usuário base (mapeado da sessão) com dados reais de
  * public.usuarios + public.perfis.
  *
- * - Nunca lança exceção — retorna o baseUser inalterado se falhar.
- * - Chamado de forma assíncrona após o login, sem bloquear a UI.
+ * Retorna null se o usuário não for encontrado ou se falhar,
+ * indicando que a conta está bloqueada ou sem perfil configurado.
  */
-async function enrichUserWithSupabaseData(baseUser: MockUser): Promise<MockUser> {
+async function enrichUserWithSupabaseData(baseUser: MockUser): Promise<MockUser | null> {
   try {
     const enriched = await fetchUsuarioEnriquecido(baseUser.id, baseUser.email, baseUser.name);
-    if (!enriched) return baseUser;
+    if (!enriched) return null;
 
     return {
       ...baseUser,
       ...enriched,
-      // Sempre manter o id da sessão auth — nunca sobrescrever
       id: baseUser.id
     };
   } catch (err) {
     console.warn("[AuthProvider] Falha ao enriquecer usuário com dados do banco:", err);
-    return baseUser;
+    return null;
   }
 }
 
@@ -94,6 +65,7 @@ type AuthContextValue = {
   user: MockUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isBlocked: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -101,9 +73,10 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [authState, setAuthState] = useState<{ user: MockUser | null; isLoading: boolean }>(() => ({
+  const [authState, setAuthState] = useState<{ user: MockUser | null; isLoading: boolean; isBlocked: boolean }>(() => ({
     user: null,
-    isLoading: Boolean(getSupabaseClient())
+    isLoading: Boolean(getSupabaseClient()),
+    isBlocked: false,
   }));
 
   useEffect(() => {
@@ -124,16 +97,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const baseUser = mapSessionToUser(data.session);
 
       if (baseUser) {
-        // Setar imediatamente com dados de sessão para não bloquear a UI
-        setAuthState({ user: baseUser, isLoading: false });
+        // Setar temporariamente para não bloquear a UI, isBlocked: false
+        setAuthState({ user: baseUser, isLoading: false, isBlocked: false });
 
         // Enriquecer com dados reais do banco de forma assíncrona
         const enrichedUser = await enrichUserWithSupabaseData(baseUser);
         if (isMounted) {
-          setAuthState({ user: enrichedUser, isLoading: false });
+          if (enrichedUser) {
+            setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
+          } else {
+            setAuthState({ user: baseUser, isLoading: false, isBlocked: true });
+          }
         }
       } else {
-        setAuthState({ user: null, isLoading: false });
+        setAuthState({ user: null, isLoading: false, isBlocked: false });
       }
     });
 
@@ -144,16 +121,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (baseUser) {
         // Setar imediatamente (sem esperar enriquecimento) para não bloquear
-        setAuthState({ user: baseUser, isLoading: false });
+        setAuthState({ user: baseUser, isLoading: false, isBlocked: false });
 
         // Enriquecer assincronamente
         void enrichUserWithSupabaseData(baseUser).then((enrichedUser) => {
           if (isMounted) {
-            setAuthState({ user: enrichedUser, isLoading: false });
+            if (enrichedUser) {
+              setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
+            } else {
+              setAuthState({ user: baseUser, isLoading: false, isBlocked: true });
+            }
           }
         });
       } else {
-        setAuthState({ user: null, isLoading: false });
+        setAuthState({ user: null, isLoading: false, isBlocked: false });
       }
     });
 
@@ -188,18 +169,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Setar usuário base imediatamente para liberar a UI
-    setAuthState({ user: mappedUser, isLoading: false });
+    setAuthState({ user: mappedUser, isLoading: false, isBlocked: false });
 
     // Enriquecimento assíncrono pós-login (não bloqueia o redirecionamento)
     void enrichUserWithSupabaseData(mappedUser).then((enrichedUser) => {
-      setAuthState({ user: enrichedUser, isLoading: false });
+      if (enrichedUser) {
+        setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
+      } else {
+        setAuthState({ user: mappedUser, isLoading: false, isBlocked: true });
+      }
     });
   }, []);
 
   const logout = useCallback(async () => {
     const client = getSupabaseClient();
     if (!client) {
-      setAuthState({ user: null, isLoading: false });
+      setAuthState({ user: null, isLoading: false, isBlocked: false });
       return;
     }
 
@@ -208,7 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.message || "Nao foi possivel encerrar sessao.");
     }
 
-    setAuthState({ user: null, isLoading: false });
+    setAuthState({ user: null, isLoading: false, isBlocked: false });
   }, []);
 
   const value = useMemo(
@@ -216,10 +201,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: authState.user,
       isAuthenticated: Boolean(authState.user),
       isLoading: authState.isLoading,
+      isBlocked: authState.isBlocked,
       login,
       logout
     }),
-    [authState.isLoading, authState.user, login, logout]
+    [authState.isLoading, authState.isBlocked, authState.user, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

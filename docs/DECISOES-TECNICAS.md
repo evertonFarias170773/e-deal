@@ -7,3 +7,6 @@
 ## 7. Infraestrutura Unificada de Escopo de Dados
 **Decisão:** Em vez de helpers engessados por módulo (ex. `getEscopoPropostas`), adotou-se uma infraestrutura genérica de Escopo de Dados (`getDataScope`), que retorna os níveis padronizados: `own`, `team`, `company` ou `all`.
 **Impacto:** A fundação já suporta a expansão orgânica de escopos. O módulo de Orçamentos é o primeiro piloto a utilizar escopo por vendedor (`own`).
+
+### Novos Usuários e Segurança Auth
+Decidido que novos cadastros via Auth Google ou Email não darão acesso imediato. Uma trigger `AFTER INSERT` no `auth.users` irá criar a linha correspondente em `public.usuarios` assinalada ao perfil `pendente_aprovacao` (sem permissões). O `AuthGuard` intercepta contas ativas no Supabase com esse perfil e exibe a mensagem de "Acesso Pendente".
