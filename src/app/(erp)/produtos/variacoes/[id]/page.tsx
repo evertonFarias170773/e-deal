@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ProdutoVariacaoFormPage } from "@/features/produtos/variacoes/ProdutoVariacaoFormPage";
+import { PermissionGuard } from "@/components/common/PermissionGuard";
 
 type EditarProdutoVariacaoRouteProps = {
   params: Promise<{
@@ -15,5 +16,9 @@ export default async function EditarProdutoVariacaoRoute({ params }: EditarProdu
     notFound();
   }
 
-  return <ProdutoVariacaoFormPage mode="edit" id={idVariacao} />;
+  return (
+    <PermissionGuard permission="variacoes.edit">
+      <ProdutoVariacaoFormPage mode="edit" id={idVariacao} />
+    </PermissionGuard>
+  );
 }

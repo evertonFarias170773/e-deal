@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ProdutoFormRouteClient } from "@/features/produtos/ProdutoFormRouteClient";
+import { PermissionGuard } from "@/components/common/PermissionGuard";
 
 type EditarProdutoRouteProps = {
   params: Promise<{
@@ -15,5 +16,9 @@ export default async function EditarProdutoRoute({ params }: EditarProdutoRouteP
     notFound();
   }
 
-  return <ProdutoFormRouteClient idProduto={idProduto} />;
+  return (
+    <PermissionGuard permission="produtos.edit">
+      <ProdutoFormRouteClient idProduto={idProduto} />
+    </PermissionGuard>
+  );
 }

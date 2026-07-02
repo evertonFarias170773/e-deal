@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ProdutoDetailRouteClient } from "@/features/produtos/ProdutoDetailRouteClient";
+import { PermissionGuard } from "@/components/common/PermissionGuard";
 
 type ProdutoDetailRouteProps = {
   params: Promise<{
@@ -15,5 +16,9 @@ export default async function ProdutoDetailRoute({ params }: ProdutoDetailRouteP
     notFound();
   }
 
-  return <ProdutoDetailRouteClient idProduto={idProduto} />;
+  return (
+    <PermissionGuard permission="produtos.view">
+      <ProdutoDetailRouteClient idProduto={idProduto} />
+    </PermissionGuard>
+  );
 }

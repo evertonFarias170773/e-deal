@@ -18,6 +18,8 @@ import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { useAppToast } from "@/components/common/AppToast";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
   getTipoRecebivelLabel
@@ -1487,6 +1489,9 @@ function RecebivelActions({
 }) {
   const showConsultaC6 = !!item.id_boleto_c6 && item.status !== "PAID" && item.tipo === "BOLETO";
   const showConsultarPdf = !!item.id_boleto_c6 && !item.url_pdf && !item.pdf_storage && item.tipo === "BOLETO";
+  const { user } = useAuth();
+  const canAdmin = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "contas_receber.admin");
+  const canBaixa = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "contas_receber.baixa");
 
   const actionItems: Array<{
     label: string;
@@ -1523,10 +1528,16 @@ function RecebivelActions({
 
   actionItems.push(
     { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) },
-    { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
-    { label: "Cancelar recebível", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
+    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) }
   );
+
+  if (canBaixa) {
+    actionItems.push({ label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) });
+  }
+
+  if (canAdmin) {
+    actionItems.push({ label: "Cancelar recebível", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) });
+  }
 
   return (
     <ActionsMenu
@@ -1573,6 +1584,10 @@ function BoletoActions({
   const showConsultaC6 = !!item.id_boleto_c6 && item.status !== "PAID" && item.tipo === "BOLETO";
   const showConsultarPdf = !!item.id_boleto_c6 && !item.url_pdf && !item.pdf_storage && item.tipo === "BOLETO";
 
+  const { user } = useAuth();
+  const canAdmin = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "contas_receber.admin");
+  const canBaixa = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "contas_receber.baixa");
+
   const actionItems: Array<{
     label: string;
     onClick?: () => void;
@@ -1588,11 +1603,11 @@ function BoletoActions({
     actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
   }
 
-  if (showRegister) {
+  if (showRegister && canAdmin) {
     actionItems.push({ label: "Registrar boleto", onClick: () => onRegister!(item) });
   }
 
-  if (showDelete) {
+  if (showDelete && canAdmin) {
     actionItems.push({ label: "Excluir boleto do banco", destructive: true, onClick: () => onDeleteFromBank!(item) });
   }
 
@@ -1615,11 +1630,17 @@ function BoletoActions({
 
   actionItems.push(
     { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) },
-    { label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) },
-    { label: "Prorrogar vencimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onProrrogar(item.id) },
-    { label: "Cancelar boleto", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) }
+    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) }
   );
+
+  if (canBaixa) {
+    actionItems.push({ label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) });
+  }
+
+  if (canAdmin) {
+    actionItems.push({ label: "Prorrogar vencimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onProrrogar(item.id) });
+    actionItems.push({ label: "Cancelar boleto", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) });
+  }
 
   return (
     <ActionsMenu

@@ -18,6 +18,8 @@ import { useRouter } from "next/navigation";
 import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 import { getSefazRejectionInfo } from "@/features/fiscal/constants/sefaz-rejeicoes";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
@@ -94,6 +96,10 @@ type TrackingStep = "IDLE" | "SENDING" | "SENT_WAITING" | "QUERYING" | "AUTHORIZ
 export function NotasFiscaisPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { user } = useAuth();
+  const canEmitNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
+  const canEmitNfse = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfse");
+  const canCancelNf = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.cancel_nf");
   const [activeTab, setActiveTab] = useState<ActiveTab>("FILA_FATURAMENTO");
   const [isFaturando, setIsFaturando] = useState(false);
   const [focusConfirmNote, setFocusConfirmNote] = useState<NfeReadModel | null>(null);
@@ -1024,10 +1030,12 @@ export function NotasFiscaisPage() {
         });
       }
 
-      actions.push({
-        label: "Cancelar NF-e",
-        onClick: () => handleOpenCancelNfeModal(item)
-      });
+      if (canCancelNf) {
+        actions.push({
+          label: "Cancelar NF-e",
+          onClick: () => handleOpenCancelNfeModal(item)
+        });
+      }
 
       const events = cceEventsMap[item.ref] || [];
       const latestCceEvent = events.find(e => e.tipo_evento === "CARTA_CORRECAO");
@@ -1113,11 +1121,13 @@ export function NotasFiscaisPage() {
 
     const nfseStatus = (item.status || "").toUpperCase();
     if (nfseStatus === "AUTORIZADA") {
-      actions.push({
-        label: "Cancelar NFS-e",
-        onClick: () => handleOpenCancelNfseModal(item),
-        icon: AlertTriangle
-      });
+      if (canCancelNf) {
+        actions.push({
+          label: "Cancelar NFS-e",
+          onClick: () => handleOpenCancelNfseModal(item),
+          icon: AlertTriangle
+        });
+      }
     }
 
     if (item.url_pdf) {
@@ -1731,15 +1741,17 @@ export function NotasFiscaisPage() {
               {
                 header: "Ação",
                 cell: (item) => (
-                  <button
-                    type="button"
-                    onClick={() => handleFaturarClick(item)}
-                    disabled={isFaturando}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
-                  >
-                    <Play className="h-3 w-3" />
-                    Faturar
-                  </button>
+                  canEmitNfe ? (
+                    <button
+                      type="button"
+                      onClick={() => handleFaturarClick(item)}
+                      disabled={isFaturando}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
+                    >
+                      <Play className="h-3 w-3" />
+                      Faturar
+                    </button>
+                  ) : null
                 ),
                 align: "right"
               }
@@ -1769,15 +1781,17 @@ export function NotasFiscaisPage() {
                   <p>Data: {formatDate(item.created_at)}</p>
                 </div>
                 <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleFaturarClick(item)}
-                    disabled={isFaturando}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
-                  >
-                    <Play className="h-3 w-3" />
-                    Faturar
-                  </button>
+                  {canEmitNfe && (
+                    <button
+                      type="button"
+                      onClick={() => handleFaturarClick(item)}
+                      disabled={isFaturando}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
+                    >
+                      <Play className="h-3 w-3" />
+                      Faturar
+                    </button>
+                  )}
                 </div>
               </article>
             )}
@@ -1864,15 +1878,17 @@ export function NotasFiscaisPage() {
               {
                 header: "Ação",
                 cell: (item) => (
-                  <button
-                    type="button"
-                    onClick={() => handleFaturarClick(item)}
-                    disabled={isFaturando}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
-                  >
-                    <Play className="h-3 w-3" />
-                    Faturar
-                  </button>
+                  canEmitNfse ? (
+                    <button
+                      type="button"
+                      onClick={() => handleFaturarClick(item)}
+                      disabled={isFaturando}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
+                    >
+                      <Play className="h-3 w-3" />
+                      Faturar
+                    </button>
+                  ) : null
                 ),
                 align: "right"
               }
@@ -1902,15 +1918,17 @@ export function NotasFiscaisPage() {
                   <p>Data: {formatDate(item.created_at)}</p>
                 </div>
                 <div className="flex justify-end pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleFaturarClick(item)}
-                    disabled={isFaturando}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
-                  >
-                    <Play className="h-3 w-3" />
-                    Faturar
-                  </button>
+                  {canEmitNfse && (
+                    <button
+                      type="button"
+                      onClick={() => handleFaturarClick(item)}
+                      disabled={isFaturando}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b2f4a] px-4 py-2 text-xs font-semibold text-white hover:bg-[#061d2e] disabled:opacity-50 transition"
+                    >
+                      <Play className="h-3 w-3" />
+                      Faturar
+                    </button>
+                  )}
                 </div>
               </article>
             )}

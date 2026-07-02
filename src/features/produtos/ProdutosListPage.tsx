@@ -11,6 +11,8 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useProdutosReadOnlyData } from "@/features/produtos/hooks/useProdutosReadOnlyData";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import type { Produto, ProdutoCategoria } from "@/features/produtos/types";
 
 type StatusFilter = "TODOS" | "ATIVO" | "INATIVO";
@@ -49,6 +51,7 @@ function produtoMatchesSearch(produto: Produto, search: string) {
 export function ProdutosListPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { user } = useAuth();
   const { produtos, source, warnings, resumo, categorias, isLoading, error } = useProdutosReadOnlyData();
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState<"TODAS" | ProdutoCategoria>("TODAS");
@@ -114,15 +117,32 @@ export function ProdutosListPage() {
   }
 
   function getActions(produto: Produto) {
-    return [
-      { label: "Ver produto", onClick: () => router.push(`/produtos/${produto.id_produto}`) },
-      { label: "Editar produto", onClick: () => router.push(`/produtos/${produto.id_produto}/editar`) },
-      { label: "Gerenciar fotos", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#fotos`) },
-      { label: "Gerenciar variacoes", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#variacoes`) },
-      { label: "Testar no Maestro", onClick: () => showMockAction("Teste no Maestro") },
-      { label: "Duplicar produto", onClick: () => showMockAction("Duplicar produto") },
-      { label: "Inativar produto", destructive: true, onClick: () => showMockAction("Inativar produto") }
+    const isSup = user?.isSuperAdmin || user?.isAdmin;
+    const canEdit = isSup || hasPermissao(user, "produtos.edit");
+    const canUploadFoto = isSup || hasPermissao(user, "produtos.upload_foto");
+    const canInativar = isSup || hasPermissao(user, "produtos.inativar");
+
+    const actions: Array<{ label: string; onClick: () => void; destructive?: boolean }> = [
+      { label: "Ver produto", onClick: () => router.push(`/produtos/${produto.id_produto}`) }
     ];
+
+    if (canEdit) {
+      actions.push({ label: "Editar produto", onClick: () => router.push(`/produtos/${produto.id_produto}/editar`) });
+      actions.push({ label: "Gerenciar variacoes", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#variacoes`) });
+      actions.push({ label: "Duplicar produto", onClick: () => showMockAction("Duplicar produto") });
+    }
+    
+    if (canUploadFoto) {
+      actions.push({ label: "Gerenciar fotos", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#fotos`) });
+    }
+
+    actions.push({ label: "Testar no Maestro", onClick: () => showMockAction("Teste no Maestro") });
+
+    if (canInativar) {
+      actions.push({ label: "Inativar produto", destructive: true, onClick: () => showMockAction("Inativar produto") });
+    }
+
+    return actions;
   }
 
   return (
@@ -140,20 +160,26 @@ export function ProdutosListPage() {
             >
               Ver variações
             </button>
-            <button
-              type="button"
-              onClick={() => router.push("/produtos/variacoes/nova")}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              + Nova variação
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/produtos/novo")}
-              className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-            >
-              + Novo produto
-            </button>
+            <div className="flex gap-3">
+            {(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "variacoes.create")) && (
+              <button
+                type="button"
+                onClick={() => router.push("/produtos/variacoes/nova")}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                + Nova variação
+              </button>
+            )}
+            {(user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "produtos.create")) && (
+              <button
+                type="button"
+                onClick={() => router.push("/produtos/novo")}
+                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                + Novo produto
+              </button>
+            )}
+          </div>
           </div>
         }
       />

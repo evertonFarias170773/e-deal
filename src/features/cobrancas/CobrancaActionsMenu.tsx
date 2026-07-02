@@ -140,7 +140,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     ...(
       !cobranca.confirmado
         ? isPendenteAprovacao(cobranca)
-          ? (user?.isAdmin || user?.isSuperAdmin)
+          ? (user?.isAdmin || user?.isSuperAdmin || hasPermissao(user, "cobrancas.aprovar"))
             ? [
                 {
                   label: "Autorizar faturamento",
@@ -155,27 +155,31 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
               ]
             : []
           : (cobranca.status === "PAID" || cobranca.status === "A_VENCER")
+            ? (user?.isAdmin || user?.isSuperAdmin || hasPermissao(user, "conferencia.confirm"))
+              ? [
+                  {
+                    label: "Confirmar Conferência",
+                    onClick: () => {
+                      if (!cobranca.id) {
+                        showToast({ type: "error", title: "ID da cobrança inválido para liberação." });
+                        return;
+                      }
+                      setIsLiberarModalOpen(true);
+                    }
+                  }
+                ]
+              : []
+            : []
+        : (cobranca.status === "PAID" || cobranca.status === "A_VENCER")
+          ? (user?.isAdmin || user?.isSuperAdmin || hasPermissao(user, "conferencia.confirm"))
             ? [
                 {
-                  label: "Confirmar Conferência",
-                  onClick: () => {
-                    if (!cobranca.id) {
-                      showToast({ type: "error", title: "ID da cobrança inválido para liberação." });
-                      return;
-                    }
-                    setIsLiberarModalOpen(true);
-                  }
+                  label: isUpdating ? "Estornando..." : "Voltar para lista principal",
+                  disabled: isUpdating,
+                  onClick: () => void handleVoltarFilaReal()
                 }
               ]
             : []
-        : (cobranca.status === "PAID" || cobranca.status === "A_VENCER")
-          ? [
-              {
-                label: isUpdating ? "Estornando..." : "Voltar para lista principal",
-                disabled: isUpdating,
-                onClick: () => void handleVoltarFilaReal()
-              }
-            ]
           : []
     ),
     ...(cobranca.tipo_cobranca?.toUpperCase() === "E-FATURADO" &&
