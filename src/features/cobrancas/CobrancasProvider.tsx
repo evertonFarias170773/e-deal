@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Cobranca, CriarCobrancaFormValues, CreditAnalysisResult } from "@/features/cobrancas/types";
+import type { Cobranca, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
 import { canLiberarParaPedido, roundMoney, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
@@ -33,6 +33,8 @@ type CobrancasContextValue = {
   liberarCobrancaReal: (id: string, confirmadoPor: string, status?: string, confirmado?: boolean, acao?: string) => Promise<boolean>;
   voltarCobrancaFilaReal: (id: string) => Promise<boolean>;
   emitirBoletoReal: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
+  alterarCondicaoCobrancaReal: (id: string, novoModelo: ModeloCobranca, operador: string, obs?: string) => Promise<{ success: boolean; errorMessage?: string }>;
+  reprovarCondicaoCobrancaReal: (id: string, motivo: string, operador: string) => Promise<{ success: boolean; errorMessage?: string }>;
   existingBoletoIdInts: Set<number>;
   hasBoletoHistoryIdInts: Set<number>;
   marcarComoBoletosPreparadosLocal: (id: string, idInt: number) => void;
@@ -303,6 +305,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
          obs_v2: values.observacao || null,
          confirmado: false,
          forma_fatu: isFaturadoType ? (values.forma_fatu || null) : null,
+         forma_pgto: isFaturadoType ? (values.forma_fatu || null) : null,
          p_valor_entrada: isFaturadoType ? (values.p_valor_entrada ?? null) : null,
          p_qtd_parcelas: isFaturadoType ? (values.p_qtd_parcelas ?? null) : null,
          p_dias_pra_inicio: isFaturadoType ? (values.p_dias_pra_inicio ?? null) : null,
@@ -432,7 +435,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         let msg = "";
         if (isFaturadoType) {
           const label = getTipoCobrancaLabel(values.tipoCobranca);
-          msg = `${label} enviado para análise financeira. Observações: ${values.observacao || "Nenhuma"}`;
+          let condicaoText = "";
+          if (values.forma_fatu) {
+            condicaoText = ` - Condição solicitada pelo vendedor: ${values.forma_fatu}. Sujeita à aprovação do Financeiro.`;
+          }
+          msg = `${label} enviado para análise financeira.${condicaoText} Observações: ${values.observacao || "Nenhuma"}`;
         } else {
           msg = `Registrada nova cobrança CARTÃO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
         }
@@ -1259,6 +1266,107 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     }
   }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
 
+  const alterarCondicaoCobrancaReal = useCallback(async (id: string, novoModelo: ModeloCobranca, operador: string, obs?: string) => {
+    if (source !== "supabase") return { success: false, errorMessage: "Ambiente mock não suporta alteração real." };
+    const client = getSupabaseClient();
+    if (!client) return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+
+    try {
+      const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
+      if (!cobranca) return { success: false, errorMessage: "Cobrança não encontrada no front-end." };
+
+      const payloadUpdate: any = {
+        forma_pgto: novoModelo.resultado,
+        // id_modelo_cobranca: novoModelo.id, // TODO: Descomentar após migration
+      };
+
+      const { error } = await client
+        .from("pagamentos_v2")
+        .update(payloadUpdate)
+        .eq("id", id);
+
+      if (error) {
+        return { success: false, errorMessage: error.message };
+      }
+
+      // Log no chat da proposta
+      const obsSuffix = obs?.trim() ? ` Obs: ${obs.trim()}` : "";
+      const mensagemChat = `Condição de faturamento alterada pelo financeiro.\nCondição anterior: ${cobranca.forma_fatu || cobranca.forma_pgto || "Não informada"}\nNova condição: ${novoModelo.resultado}${obsSuffix}`;
+
+      await registrarMensagemSistemaProposta({
+        idInt: cobranca.id_int,
+        idCliente: cobranca.id_cliente,
+        mensagem: mensagemChat,
+        setor: "Financeiro"
+      }).catch(err => console.warn("Falha ao registrar historico:", err));
+
+      const updateList = (list: Cobranca[]) =>
+        list.map((item) =>
+          item.id === id
+            ? { ...item, forma_pgto: novoModelo.resultado, id_modelo_cobranca: novoModelo.id }
+            : item
+        );
+      setCobrancas(updateList);
+      setCobrancasStats(updateList);
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, errorMessage: err.message || "Erro inesperado." };
+    }
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
+
+  const reprovarCondicaoCobrancaReal = useCallback(async (id: string, motivo: string, operador: string) => {
+    if (source !== "supabase") return { success: false, errorMessage: "Ambiente mock não suporta reprovação real." };
+    const client = getSupabaseClient();
+    if (!client) return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+
+    try {
+      const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
+      if (!cobranca) return { success: false, errorMessage: "Cobrança não encontrada no front-end." };
+
+      // Mantém a cobrança, apenas atualiza a observação e (opcionalmente) volta pra pendente se estava aprovada. 
+      // Mas a cobrança de Faturado começa pendente. 
+      const nowStr = new Date().toISOString();
+      const obsPrefix = cobranca.obs_v2 ? cobranca.obs_v2 + ` | ` : "";
+      const newObsV2 = `${obsPrefix}[Reprovado em ${new Date().toLocaleDateString('pt-BR')}] ${motivo.trim()}`;
+      const { error } = await client
+        .from("pagamentos_v2")
+        .update({
+          status: "CANCELADO",
+          motivo_cancela: motivo.trim(),
+          obs_v2: newObsV2
+        })
+        .eq("id", id);
+
+      if (error) {
+        return { success: false, errorMessage: error.message };
+      }
+
+      const condicaoSolicitada = cobranca.forma_pgto || cobranca.forma_fatu || "Não informada";
+      const mensagemChat = `A condição de faturamento solicitada pelo vendedor (${condicaoSolicitada}) foi reprovada pelo Financeiro.\nMotivo: ${motivo.trim()}\nA cobrança atual foi cancelada para permitir que uma nova solicitação seja criada.`;
+
+      await registrarMensagemSistemaProposta({
+        idInt: cobranca.id_int,
+        idCliente: cobranca.id_cliente,
+        mensagem: mensagemChat,
+        setor: "Financeiro"
+      }).catch(err => console.warn("Falha ao registrar historico:", err));
+
+      const updateList = (list: Cobranca[]) =>
+        list.map((item) =>
+          item.id === id
+            ? { ...item, status: "CANCELADO" as const, motivo_cancela: motivo.trim(), obs_v2: newObsV2 }
+            : item
+        );
+      setCobrancas(updateList);
+      setCobrancasStats(updateList);
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, errorMessage: err.message || "Erro inesperado." };
+    }
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
+
   const value = useMemo<CobrancasContextValue>(
     () => ({
       cobrancas,
@@ -1278,6 +1386,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       liberarCobrancaReal,
       voltarCobrancaFilaReal,
       emitirBoletoReal,
+      alterarCondicaoCobrancaReal,
+      reprovarCondicaoCobrancaReal,
       existingBoletoIdInts,
       hasBoletoHistoryIdInts,
       marcarComoBoletosPreparadosLocal,
@@ -1297,6 +1407,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       liberarCobrancaReal,
       voltarCobrancaFilaReal,
       emitirBoletoReal,
+      alterarCondicaoCobrancaReal,
+      reprovarCondicaoCobrancaReal,
       existingBoletoIdInts,
       hasBoletoHistoryIdInts,
       marcarComoBoletosPreparadosLocal,

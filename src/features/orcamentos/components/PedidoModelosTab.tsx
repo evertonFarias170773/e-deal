@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, Image as ImageIcon, AlertOctagon, ChevronDown } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
@@ -51,6 +51,14 @@ function ModeloInlineCard({
   const { showToast } = useAppToast();
   const isNew = !modelo.isPersisted;
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const isCustomInit = modelo.bloco ? !["10", "15", "20", "25", "40", "50", "75", "100"].includes(modelo.bloco) : false;
+  const [showCustomBloco, setShowCustomBloco] = useState(isCustomInit);
+
+  // Mantém uma referência sempre atualizada do modelo para o onBlur ler os dados mais frescos
+  const latestModelo = useRef(modelo);
+  useEffect(() => {
+    latestModelo.current = modelo;
+  }, [modelo]);
 
   // Default numeracao_inicio to 1 if new and not set
   useEffect(() => {
@@ -59,30 +67,42 @@ function ModeloInlineCard({
     }
   }, [isNew, modelo.numeracao_inicio, onUpdateParent]);
 
-  // Numeracao_fim calculation
-  useEffect(() => {
-    if (modelo.tipo_numeracao !== "SEM_NUMERACAO" && modelo.quantidade && modelo.numeracao_inicio !== null) {
-      const start = Number(modelo.numeracao_inicio);
-      const qty = Number(modelo.quantidade);
-      if (!isNaN(start) && !isNaN(qty) && qty > 0) {
-        const expectedFim = start + qty - 1;
-        if (modelo.numeracao_fim !== expectedFim) {
-          onUpdateParent({ numeracao_fim: expectedFim });
+  const handleChange = (partial: Partial<PedidoModeloState>) => {
+    const updated = { ...partial };
+
+    // Calcula numeracao_fim de forma síncrona
+    const novoTipo = updated.tipo_numeracao !== undefined ? updated.tipo_numeracao : latestModelo.current.tipo_numeracao;
+    if (novoTipo !== "SEM_NUMERACAO") {
+      const novaQtd = updated.quantidade !== undefined ? updated.quantidade : latestModelo.current.quantidade;
+      const novoInicio = updated.numeracao_inicio !== undefined ? updated.numeracao_inicio : latestModelo.current.numeracao_inicio;
+      
+      if (novaQtd && novoInicio !== null) {
+        const start = Number(novoInicio);
+        const qty = Number(novaQtd);
+        if (!isNaN(start) && !isNaN(qty) && qty > 0) {
+          const expectedFim = start + qty - 1;
+          if (expectedFim !== latestModelo.current.numeracao_fim && updated.numeracao_fim === undefined) {
+            updated.numeracao_fim = expectedFim;
+          }
         }
       }
     }
-  }, [modelo.quantidade, modelo.numeracao_inicio, modelo.tipo_numeracao, modelo.numeracao_fim, onUpdateParent]);
 
-  const handleChange = (partial: Partial<PedidoModeloState>) => {
-    onUpdateParent(partial);
+    // Atualiza a ref imediatamente para o onBlur capturar caso dispare antes do render
+    latestModelo.current = { ...latestModelo.current, ...updated };
+    onUpdateParent(updated);
   };
 
-  const handleBlur = () => {
-    if (!modelo.quantidade || modelo.quantidade <= 0) return; // Somente avisa/valida no auto-save se ele digitou
+  const handleBlur = (e?: React.FocusEvent) => {
+    // Se o evento foi disparado e o foco ainda está dentro deste card, ignora
+    if (e && e.currentTarget.contains(e.relatedTarget as Node)) return;
+
+    const mod = latestModelo.current;
+    if (!mod.quantidade || mod.quantidade <= 0) return; // Somente avisa/valida no auto-save se ele digitou
 
     if (isNew) {
-      if (!modelo.nome_modelo) return; // Não salva modelo vazio
-      if (!idInt || !modelo.id_produto_proposta_origem) {
+      if (!mod.nome_modelo) return; // Não salva modelo vazio
+      if (!idInt || !mod.id_produto_proposta_origem) {
         showToast({ type: "warning", title: "Atenção", description: "Salve o orçamento principal antes de configurar modelos persistentes." });
         return;
       }
@@ -90,20 +110,22 @@ function ModeloInlineCard({
       setSaveStatus("saving");
       criarModelo({
          id_int: idInt,
-         id_produto_proposta_origem: modelo.id_produto_proposta_origem,
-         nome_modelo: modelo.nome_modelo,
-         padrao: modelo.padrao || null,
-         quantidade: modelo.quantidade,
+         id_produto_proposta_origem: mod.id_produto_proposta_origem,
+         nome_modelo: mod.nome_modelo,
+         padrao: mod.padrao || null,
+         quantidade: mod.quantidade,
          tipo_numeracao: "SEQUENCIAL",
-         numeracao_inicio: modelo.numeracao_inicio || null,
-         numeracao_fim: modelo.numeracao_fim || null,
-         verso_tipo: modelo.verso_tipo || null,
-         gabarito_operacional: modelo.gabarito_operacional || null,
+         numeracao_inicio: mod.numeracao_inicio || null,
+         numeracao_fim: mod.numeracao_fim || null,
+         verso_tipo: mod.verso_tipo || null,
+         bloco: mod.bloco || null,
+         gabarito_operacional: mod.gabarito_operacional || null,
       }).then(res => {
          if (res.success && res.data) {
            setSaveStatus("saved");
            onUpdateParent({ id: res.data.id, isPersisted: true });
            setTimeout(() => setSaveStatus("idle"), 2000);
+           // Mantemos o reload ao criar para puxar datas e IDs defaults caso existam
            if (onReloadModelos) onReloadModelos();
          } else {
            setSaveStatus("error");
@@ -111,23 +133,24 @@ function ModeloInlineCard({
          }
       });
     } else {
-      const draftId = modelo.id;
+      const draftId = mod.id;
       if (draftId && draftId > 0) {
          setSaveStatus("saving");
          atualizarModeloParcial(draftId, {
-           nome_modelo: modelo.nome_modelo,
-           padrao: modelo.padrao || null,
-           quantidade: modelo.quantidade,
+           nome_modelo: mod.nome_modelo,
+           padrao: mod.padrao || null,
+           quantidade: mod.quantidade,
            tipo_numeracao: "SEQUENCIAL",
-           numeracao_inicio: modelo.numeracao_inicio || null,
-           numeracao_fim: modelo.numeracao_fim || null,
-           verso_tipo: modelo.verso_tipo || null,
-           gabarito_operacional: modelo.gabarito_operacional || null,
+           numeracao_inicio: mod.numeracao_inicio || null,
+           numeracao_fim: mod.numeracao_fim || null,
+           verso_tipo: mod.verso_tipo || null,
+           bloco: mod.bloco || null,
+           gabarito_operacional: mod.gabarito_operacional || null,
          }).then(res => {
            if(res.success) {
              setSaveStatus("saved");
              setTimeout(() => setSaveStatus("idle"), 2000);
-             if (onReloadModelos) onReloadModelos();
+             // Sem reload automático aqui para evitar race conditions com edições locais
            } else {
              setSaveStatus("error");
            }
@@ -184,7 +207,7 @@ function ModeloInlineCard({
       </div>
 
       <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
-        <div className="flex-[2] min-w-[120px]">
+        <div className="flex-[2] min-w-[110px]">
           <label className={labelClass}>Modelo *</label>
           <input
             type="text"
@@ -195,7 +218,7 @@ function ModeloInlineCard({
           />
         </div>
 
-        <div className="flex-[1] min-w-[70px]">
+        <div className="flex-[0.8] min-w-[60px]">
           <label className={labelClass}>Qtd *</label>
           <input
             type="number"
@@ -210,7 +233,29 @@ function ModeloInlineCard({
           />
         </div>
 
-        <div className="flex-[1.5] min-w-[110px]">
+        <div className="flex-[0.8] min-w-[70px]">
+          <label className={labelClass}>Nº Inicial</label>
+          <input
+            type="number"
+            className={inputClass}
+            placeholder="Ex: 1"
+            value={modelo.numeracao_inicio ?? ""}
+            onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
+          />
+        </div>
+
+        <div className="flex-[0.8] min-w-[70px]">
+          <label className={labelClass}>Nº Final</label>
+          <input
+            type="number"
+            className={`${inputClass} bg-slate-50`}
+            placeholder="Auto"
+            value={modelo.numeracao_fim ?? ""}
+            readOnly
+          />
+        </div>
+
+        <div className="flex-[1.5] min-w-[100px]">
           <label className={labelClass}>Cor papel *</label>
             <select
               className={inputClass}
@@ -231,7 +276,71 @@ function ModeloInlineCard({
             </select>
         </div>
 
-        <div className="flex-[1.5] min-w-[120px]">
+        <div className="flex-[1.2] min-w-[90px]">
+          <label className={labelClass}>Bloco</label>
+          {showCustomBloco ? (
+            <div className="flex gap-1">
+              <input
+                type="text"
+                className={inputClass}
+                placeholder="Ex: 50x2"
+                value={modelo.bloco || ""}
+                onChange={(e) => handleChange({ bloco: e.target.value || null })}
+              />
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowCustomBloco(false);
+                  handleChange({ bloco: null });
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-slate-500 hover:bg-slate-50"
+                title="Voltar para opções fixas"
+              >
+                X
+              </button>
+            </div>
+          ) : (
+            <select
+              className={inputClass}
+              value={modelo.bloco || ""}
+              onChange={(e) => {
+                if (e.target.value === "Outro") {
+                  setShowCustomBloco(true);
+                  handleChange({ bloco: null });
+                } else {
+                  handleChange({ bloco: e.target.value || null });
+                }
+              }}
+            >
+              <option value="">Nenhum</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="25">25</option>
+              <option value="40">40</option>
+              <option value="50">50</option>
+              <option value="75">75</option>
+              <option value="100">100</option>
+              <option value="Outro">Outro</option>
+            </select>
+          )}
+        </div>
+
+        <div className="flex-[1.2] min-w-[100px]">
+          <label className={labelClass}>Verso</label>
+          <select
+            className={inputClass}
+            value={modelo.verso_tipo || ""}
+            onChange={(e) => handleChange({ verso_tipo: e.target.value })}
+          >
+            <option value="SÓ FRENTE">SÓ FRENTE</option>
+            <option value="FRENTE E VERSO">FRENTE E VERSO</option>
+            <option value="VERSO FIXO">VERSO FIXO</option>
+            <option value="VERSO VARIÁVEL">VERSO VARIÁVEL</option>
+          </select>
+        </div>
+
+        <div className="flex-[1.5] min-w-[100px]">
           <label className={labelClass}>Numerador</label>
           <select
             className={inputClass}
@@ -252,42 +361,6 @@ function ModeloInlineCard({
                 ))}
               </>
             )}
-          </select>
-        </div>
-
-        <div className="flex-[1] min-w-[80px]">
-          <label className={labelClass}>Nº Inicial</label>
-          <input
-            type="number"
-            className={inputClass}
-            placeholder="Ex: 1"
-            value={modelo.numeracao_inicio ?? ""}
-            onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
-          />
-        </div>
-
-        <div className="flex-[1] min-w-[80px]">
-          <label className={labelClass}>Nº Final</label>
-          <input
-            type="number"
-            className={`${inputClass} bg-slate-50`}
-            placeholder="Automático"
-            value={modelo.numeracao_fim ?? ""}
-            readOnly
-          />
-        </div>
-
-        <div className="flex-[1.5] min-w-[110px]">
-          <label className={labelClass}>Verso</label>
-          <select
-            className={inputClass}
-            value={modelo.verso_tipo || ""}
-            onChange={(e) => handleChange({ verso_tipo: e.target.value })}
-          >
-            <option value="SÓ FRENTE">SÓ FRENTE</option>
-            <option value="FRENTE E VERSO">FRENTE E VERSO</option>
-            <option value="VERSO FIXO">VERSO FIXO</option>
-            <option value="VERSO VARIÁVEL">VERSO VARIÁVEL</option>
           </select>
         </div>
       </div>

@@ -13,9 +13,10 @@ import { Save, Send } from "lucide-react";
 
 interface ArtesTabProps {
   form: PropostaFormState;
+  onBriefingChange?: (draft: any) => void;
 }
 
-export function ArtesTab({ form }: ArtesTabProps) {
+export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
   const idCliente = form.clienteId || null;
   const { showToast } = useAppToast();
   const { user } = useAuth();
@@ -60,24 +61,52 @@ export function ArtesTab({ form }: ArtesTabProps) {
   useEffect(() => {
     let isMounted = true;
 
+    // Se mudou de orçamento e o componente continuou montado
     if (form.id_int !== prevIdIntRef.current) {
-      setNomeEvento("");
-      setDataEvento("");
-      setLocalEvento("");
-      setObservacoesItens({});
-      setSelectedDesignerId(null);
-      setSelectedDesignerNome(null);
-      setArquivos([]);
+      setNomeEvento(form.briefingArtesDraft?.nome_evento || "");
+      setDataEvento(form.briefingArtesDraft?.data_evento ? form.briefingArtesDraft.data_evento.split("T")[0] : "");
+      setLocalEvento(form.briefingArtesDraft?.local_evento || "");
+      setObservacoesItens(form.briefingArtesDraft?.observacoes || {});
+      setSelectedDesignerId(form.briefingArtesDraft?.designer_uid || null);
+      setSelectedDesignerNome(form.briefingArtesDraft?.designer_nome || null);
+      setArquivos(form.briefingArtesDraft?.arquivos || []);
       prevIdIntRef.current = form.id_int;
       setIsInitialLoad(true);
+      loadData(isMounted);
+    } else if (isInitialLoad && form.briefingArtesDraft) {
+      // Se acabou de montar e já tem draft em memória (ex: voltou pra aba)
+      setNomeEvento(form.briefingArtesDraft.nome_evento || "");
+      setDataEvento(form.briefingArtesDraft.data_evento ? form.briefingArtesDraft.data_evento.split("T")[0] : "");
+      setLocalEvento(form.briefingArtesDraft.local_evento || "");
+      setObservacoesItens(form.briefingArtesDraft.observacoes || {});
+      setSelectedDesignerId(form.briefingArtesDraft.designer_uid || null);
+      setSelectedDesignerNome(form.briefingArtesDraft.designer_nome || null);
+      setArquivos(form.briefingArtesDraft.arquivos || []);
+      setIsInitialLoad(false);
+    } else if (isInitialLoad) {
+      // Primeira montagem sem draft
+      loadData(isMounted);
     }
-
-    loadData(isMounted);
 
     return () => {
       isMounted = false;
     };
-  }, [form.id_int]);
+  }, [form.id_int, form.briefingArtesDraft, isInitialLoad]);
+
+  // Sincroniza estado local da aba com o estado global do Form
+  useEffect(() => {
+    if (!isInitialLoad && onBriefingChange) {
+      onBriefingChange({
+        nome_evento: nomeEvento,
+        data_evento: dataEvento ? `${dataEvento}T00:00:00` : null,
+        local_evento: localEvento,
+        observacoes: observacoesItens,
+        designer_uid: selectedDesignerId,
+        designer_nome: selectedDesignerNome,
+        arquivos: arquivos,
+      });
+    }
+  }, [nomeEvento, dataEvento, localEvento, observacoesItens, selectedDesignerId, selectedDesignerNome, arquivos, isInitialLoad, onBriefingChange]);
 
   const handleUploadSuccess = async () => {
     if (form.id_int === "NOVO") return;
@@ -87,10 +116,16 @@ export function ArtesTab({ form }: ArtesTabProps) {
 
   const handleSaveBriefing = async () => {
     if (form.id_int === "NOVO" || !form.id_int) return;
+    
+    // Validação de obrigatoriedade ao enviar para arte
+    if (selectedDesignerId && !nomeEvento.trim()) {
+      showToast({ type: "warning", title: "Atenção", description: "Informe o Nome do Evento / Tema antes de enviar para arte." });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const finalDate = dataEvento ? `${dataEvento}T00:00:00` : null;
-      const statusToSave = selectedDesignerId ? "EM_ARTE" : "AGUARDANDO"; // Or whatever matching string is in the new constraint if we restored it, wait, user dropped it. But EM ARTE or AGUARDANDO are fine. Let's use EM ARTE and AGUARDANDO.
       const rawStatus = selectedDesignerId ? "EM ARTE" : "AGUARDANDO";
 
       const savedData = await salvarBriefingArtes(Number(form.id_int), {

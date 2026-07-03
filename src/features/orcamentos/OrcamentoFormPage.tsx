@@ -43,6 +43,7 @@ import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadast
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
@@ -2274,6 +2275,23 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         } else {
           setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
         }
+        
+        if (formToSave.briefingArtesDraft) {
+          try {
+            await salvarBriefingArtes(Number(finalIdInt), {
+              ...formToSave.briefingArtesDraft,
+              status: "AGUARDANDO"
+            });
+          } catch (arteErr) {
+            console.error("[handleSave] Falha ao salvar rascunho de artes:", arteErr);
+            showToast({
+              type: "warning",
+              title: "Artes não salvas",
+              description: "A proposta foi salva, mas ocorreu um erro ao salvar o rascunho da aba Artes."
+            });
+          }
+        }
+        
         setSaveSuccessModal({ isOpen: true, finalIdInt });
       } else {
         showToast({
@@ -2389,10 +2407,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             { id: "fretes", label: "Fretes" },
             { id: "pedido", label: "Pedido" },
             { id: "artes", label: "Artes" },
-            { id: "boletim", label: "Boletim" },
             { id: "pagamentos", label: "Pagamentos" },
             { id: "historico", label: "Histórico" }
-          ].map((tab) => (
+          ].filter(tab => form.isAvulso ? (tab.id !== "pedido" && tab.id !== "artes") : true).map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -2465,7 +2482,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (
-            <ArtesTab form={form} />
+            <ArtesTab form={form} onBriefingChange={(draft) => updateField("briefingArtesDraft", draft)} />
           )}
           {activeFormTab === "boletim" && shouldShowRest && (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -3067,6 +3084,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onRemove={() => handleRemoveProductClick(item.id)}
                           onSave={() => handleSaveItem(item.id)}
                           minQuantity={somaModelos}
+                          isSuperAdmin={user?.isSuperAdmin || false}
                         />
                       );
                     } else {
@@ -3074,6 +3092,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         <ProductItemSummary
                           key={item.id}
                           item={item}
+                          isSuperAdmin={user?.isSuperAdmin || false}
                           onEdit={() => handleEditItem(item.id)}
                           onRemove={() => handleRemoveProductClick(item.id)}
                         />
@@ -3561,10 +3580,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
 function ProductItemSummary({
   item,
+  isSuperAdmin,
   onEdit,
   onRemove
 }: {
   item: PropostaItem;
+  isSuperAdmin?: boolean;
   onEdit: () => void;
   onRemove: () => void;
 }) {
@@ -3603,8 +3624,9 @@ function ProductItemSummary({
             <button
               type="button"
               onClick={onRemove}
-              className="rounded-2xl border border-red-100 bg-white p-2 text-red-600 hover:bg-red-50 hover:border-red-200 transition-all"
-              title="Remover item"
+              disabled={!isSuperAdmin}
+              className={`rounded-2xl border border-red-100 bg-white p-2 text-red-600 hover:bg-red-50 hover:border-red-200 transition-all ${!isSuperAdmin ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={!isSuperAdmin ? "Apenas super admin pode remover itens" : "Remover item"}
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -3623,7 +3645,8 @@ function ProductItemEditor({
   onVariationChange,
   onRemove,
   onSave,
-  minQuantity
+  minQuantity,
+  isSuperAdmin
 }: {
   item: PropostaItem;
   bonusPercent: number;
@@ -3633,6 +3656,7 @@ function ProductItemEditor({
   onRemove: () => void;
   onSave: () => void;
   minQuantity?: number;
+  isSuperAdmin?: boolean;
 }) {
   const { showToast } = useAppToast();
   return (
@@ -3674,6 +3698,7 @@ function ProductItemEditor({
               onChange={(event) => onUpdate((current) => ({ ...current, valorUnitario: Math.max(0, Number(event.target.value)) }))}
               className={inputClass}
               placeholder="0,00"
+              disabled={!isSuperAdmin}
             />
           </Field>
           <Field label="Fixo (R$)">
@@ -3684,6 +3709,7 @@ function ProductItemEditor({
               onChange={(event) => onUpdate((current) => ({ ...current, valorFixo: Math.max(0, Number(event.target.value)) }))}
               className={inputClass}
               placeholder="0,00"
+              disabled={!isSuperAdmin}
             />
           </Field>
           <InfoBox label="Subtotal final" value={formatCurrency(item.subtotal)} />
@@ -3697,6 +3723,7 @@ function ProductItemEditor({
             value={item.descontoTipo}
             onChange={(event) => onUpdate((current) => ({ ...current, descontoTipo: event.target.value as TipoDescontoProposta }))}
             className={inputClass}
+            disabled={!isSuperAdmin}
           >
             <option value="PERCENTUAL">%</option>
             <option value="VALOR">R$</option>
@@ -3709,6 +3736,7 @@ function ProductItemEditor({
             onChange={(event) => onUpdate((current) => ({ ...current, descontoValor: Number(event.target.value) || 0 }))}
             className={inputClass}
             placeholder="0"
+            disabled={!isSuperAdmin}
           />
         </Field>
         <InfoBox label="Desconto aplicado" value={`-${formatCurrency(item.descontoValorCalculado)}`} />
@@ -3734,6 +3762,7 @@ function ProductItemEditor({
                     value={selected?.tipo.id ?? ""}
                     onChange={(event) => onVariationChange(variacao.id_variacao, event.target.value)}
                     className={`${inputClass} ${isMissing ? "border-red-300 bg-red-50 focus:ring-red-100" : ""}`}
+                    disabled={!isSuperAdmin}
                   >
                     <option value="">Selecione</option>
                     {variacao.tipos.map((tipo) => (
@@ -3754,7 +3783,8 @@ function ProductItemEditor({
         <button
           type="button"
           onClick={onRemove}
-          className="rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all flex items-center gap-2"
+          disabled={!isSuperAdmin}
+          className={`rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all flex items-center gap-2 ${!isSuperAdmin ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <Trash2 className="h-4 w-4" />
           Remover item

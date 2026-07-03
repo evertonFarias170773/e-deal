@@ -594,6 +594,7 @@ export function PropostaCobrancaPanel({
 
       extraPayload = {
         forma_fatu: selectedModel.resultado,
+        id_modelo_cobranca: selectedModel.id,
         p_qtd_parcelas: selectedModel.qtd_parcela,
         p_dias_pra_inicio: selectedModel.inicio,
         p_intervalo: selectedModel.intervalo,

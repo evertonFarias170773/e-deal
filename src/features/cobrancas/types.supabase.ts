@@ -45,5 +45,7 @@ export type SupabasePagamentoV2Row = {
   forma_fatu?: SupabaseValue;
   forma_pgto?: SupabaseValue;
   boleto_enviadoo?: SupabaseValue;
+  /** Depende da migration futura docs/migrations/20260702_pagamentos_v2_id_modelo_cobranca.sql */
+  id_modelo_cobranca?: SupabaseValue;
 };
 

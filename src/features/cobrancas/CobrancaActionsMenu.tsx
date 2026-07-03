@@ -143,7 +143,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
           ? (user?.isAdmin || user?.isSuperAdmin || hasPermissao(user, "cobrancas.aprovar"))
             ? [
                 {
-                  label: "Autorizar faturamento",
+                  label: "Analisar condição",
                   onClick: () => {
                     if (!cobranca.id) {
                       showToast({ type: "error", title: "ID da cobrança inválido para autorização." });

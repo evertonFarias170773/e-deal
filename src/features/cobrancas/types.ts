@@ -108,7 +108,9 @@ export type Cobranca = {
   saldo_pendente?: number;
   valor_frete?: number;
   forma_fatu?: string;
+  forma_pgto?: string;
   obs_v2?: string;
+  id_modelo_cobranca?: string | null;
   motivo_cancela?: string;
   multaPercentual?: number;
   jurosPercentual?: number;
@@ -169,6 +171,7 @@ export type CriarCobrancaFormValues = {
   parcelaSelecionada?: CobrancaParcelaSimulada;
   modeloFatu?: "BOLETO" | "DEPÓSITO";
   forma_fatu?: string | null;
+  id_modelo_cobranca?: string | null;
   p_valor_entrada?: number | null;
   p_qtd_parcelas?: number | null;
   p_dias_pra_inicio?: number | null;

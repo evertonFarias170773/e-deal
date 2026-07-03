@@ -667,7 +667,25 @@ export function CobrancasList() {
               return <span>{formatDateTime(reference)}</span>;
             }
           },
-          { header: "Ações", cell: (cobranca) => <CobrancaActionsMenu cobranca={cobranca} />, align: "right" }
+          {
+            header: "Ações",
+            cell: (cobranca) => (
+              <div className="flex items-center justify-end gap-2">
+                {cobranca.os_ideal && (
+                  <a
+                    href={`https://www.ingressoideal.com.br/sistema/restrito/DetalhePedido.aspx?pedido=${encodeURIComponent(String(cobranca.os_ideal))}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                  >
+                    OS Ideal
+                  </a>
+                )}
+                <CobrancaActionsMenu cobranca={cobranca} />
+              </div>
+            ),
+            align: "right"
+          }
         ]}
         renderCard={(cobranca) => (
           <article key={cobranca.id} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
@@ -697,13 +715,25 @@ export function CobrancasList() {
             </div>
 
             <div className="mt-4 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => router.push(`/cobrancas/${cobranca.id}`)}
-                className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
-              >
-                Ver cobrança
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => router.push(`/cobrancas/${cobranca.id}`)}
+                  className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Ver cobrança
+                </button>
+                {cobranca.os_ideal && (
+                  <a
+                    href={`https://www.ingressoideal.com.br/sistema/restrito/DetalhePedido.aspx?pedido=${encodeURIComponent(String(cobranca.os_ideal))}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                  >
+                    OS Ideal
+                  </a>
+                )}
+              </div>
               <CobrancaActionsMenu cobranca={cobranca} label="Mais" />
             </div>
           </article>

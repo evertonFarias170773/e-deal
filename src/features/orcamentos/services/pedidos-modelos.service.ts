@@ -17,6 +17,7 @@ export interface PedidoModeloRow {
   gabarito_operacional?: string | null;
   especificacao_dados?: string | null;
   verso_tipo: string | null;
+  bloco?: string | null;
   status_arte: string;
   status_producao: string;
   ordem: number;
@@ -49,6 +50,7 @@ export interface ModeloInput {
   numeracao_inicio: number | null;
   numeracao_fim: number | null;
   verso_tipo: string | null;
+  bloco?: string | null;
   gabarito_operacional?: string | null;
 }
 
@@ -168,6 +170,7 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
       numeracao_inicio: m.numeracao_inicio !== null ? Number(m.numeracao_inicio) : null,
       numeracao_fim: m.numeracao_fim !== null ? Number(m.numeracao_fim) : null,
       verso_tipo: m.verso_tipo as string | null,
+      // bloco: m.bloco as string | null, // TODO: Descomentar após aplicar a migration
       status_arte: String(m.status_arte || "PENDENTE"),
       status_producao: String(m.status_producao || "PENDENTE"),
       ordem: Number(m.ordem || 0),
@@ -300,6 +303,7 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       numeracao_inicio: input.numeracao_inicio,
       numeracao_fim: input.numeracao_fim,
       verso_tipo: input.verso_tipo?.trim() || null,
+      // bloco: input.bloco?.trim() || null, // TODO: Descomentar após aplicar a migration 20260703_pedidos_modelos_bloco.sql
       gabarito_operacional: input.gabarito_operacional?.trim() || null,
       status_arte: "AGUARDANDO",
       status_producao: "AGUARDANDO",
@@ -354,6 +358,7 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
       numeracao_inicio: input.numeracao_inicio,
       numeracao_fim: input.numeracao_fim,
       verso_tipo: input.verso_tipo?.trim() || null,
+      // bloco: input.bloco?.trim() || null, // TODO: Descomentar após aplicar a migration
       gabarito_operacional: input.gabarito_operacional?.trim() || null,
     };
 
@@ -403,6 +408,7 @@ export async function atualizarModeloParcial(id: number, partialInput: Partial<M
     if (partialInput.numeracao_inicio !== undefined) payload.numeracao_inicio = partialInput.numeracao_inicio;
     if (partialInput.numeracao_fim !== undefined) payload.numeracao_fim = partialInput.numeracao_fim;
     if (partialInput.verso_tipo !== undefined) payload.verso_tipo = partialInput.verso_tipo?.trim() || null;
+    // if (partialInput.bloco !== undefined) payload.bloco = partialInput.bloco?.trim() || null; // TODO: Descomentar após aplicar a migration
     if (partialInput.gabarito_operacional !== undefined) payload.gabarito_operacional = partialInput.gabarito_operacional?.trim() || null;
 
     if (Object.keys(payload).length === 0) {

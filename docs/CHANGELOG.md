@@ -1,3 +1,22 @@
+## [Unreleased] - 2026-07-03
+
+### Fixed
+- **Orçamentos**: O botão geral 'Salvar alterações' agora salva o rascunho preenchido na aba 'Artes'.
+- **Orçamentos/Artes**: Tornou-se obrigatório informar o 'Nome do Evento / Tema' ao 'Enviar para arte'.
+
+## [0.2.3] - 2026-07-03
+### Adicionado
+- **Or�amentos:** Adicionado campo `Bloco` (op��es fixas e livre) para controle de vias e blocos na aba Pedido.
+
+## [0.2.2] - 2026-07-02
+### Adicionado
+- **Proposta Avulsa:** Ao marcar a flag avulsa, as abas de Pedido e Artes agora são automaticamente ocultadas e a navegação redirecionada se necessário.
+- **Cobranças:** A condição de pagamento escolhida no Faturado (ex: Prazo 7/14/21 dias) agora é salva de forma persistente em `pagamentos_v2.forma_pgto` e registrada no chat/timeline da proposta para histórico.
+
+### Alterado
+- **Aba Produtos:** Usuários comuns (não-super_admin) agora podem alterar apenas a quantidade do item no orçamento, tendo bloqueada a edição de valor unitário, fixo, descontos, variações e remoção de itens. O bloco de variações passa a renderizar apenas quando o produto possui variações ativas.
+- **Abas do Orçamento:** A aba `Boletim` foi removida da interface do orçamento para simplificação da navegação.
+
 ## [0.2.1] - 2026-07-02
 ### Adicionado
 - **Fluxo de Boas-Vindas:** Redirecionamento da confirmação de e-mail e criação de cadastro via `supabase.auth.signUp()` para a nova tela pública `/boas-vindas`, melhorando a UX e esclarecendo a dependência de aprovação administrativa.
@@ -26,3 +45,5 @@
 
 ### Corrigido
 - Falso positivo de salvamento no Editor de Perfis foi eliminado com a adoção de RPC segura em substituição à permissão de UPDATE direto na tabela `public.perfis`.
+
+

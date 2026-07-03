@@ -43,6 +43,7 @@ export type PedidoModeloState = {
   numeracao_inicio: number | null;
   numeracao_fim: number | null;
   verso_tipo: string | null;
+  bloco?: string | null;
   gabarito_operacional?: string | null;
   status_arte?: string;
   status_producao?: string;
@@ -150,6 +151,7 @@ export type PropostaFormState = {
   /** IDs reais de produtos_proposta.id pendentes de DELETE no banco ao salvar */
   deletedProdutoPropostaIds: number[];
   pedidosModelos: PedidoModeloState[];
+  briefingArtesDraft?: any;
   fretes: PropostaFrete[];
   freteEscolhidoId: string;
   descontoGeralTipo: TipoDescontoProposta;

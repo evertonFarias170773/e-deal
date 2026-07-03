@@ -304,6 +304,8 @@ export function mapSupabasePagamentoV2RowToCobranca(row: SupabasePagamentoV2Row)
     saldo_pendente: status === "PAID" ? 0 : valor,
     valor_frete: 0,
     forma_fatu: toText(row.forma_fatu) || undefined,
+    forma_pgto: toText(row.forma_pgto) || undefined,
+    id_modelo_cobranca: toText(row.id_modelo_cobranca) || undefined,
     obs_v2: toText(row.obs_v2) || undefined,
     motivo_cancela: toText(row.motivo_cancela) || undefined,
     multaPercentual: undefined,

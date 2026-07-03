@@ -40,7 +40,9 @@ export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "cod_solicitacao_inter",
   "data_confirmacao",
   "n_url_pdf",
-  "boleto_enviadoo"
+  "boleto_enviadoo",
+  "forma_pgto",
+  "forma_fatu"
 ] as const;
 
 export const PAGAMENTOS_V2_SELECT = PAGAMENTOS_V2_SELECT_COLUMNS.join(", ");
