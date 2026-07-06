@@ -24,7 +24,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Produtos", href: "/produtos", icon: Package },
   { label: "Orcamentos", href: "/orcamentos", icon: ClipboardList },
   { label: "Pendências", href: "/pendencias", icon: CheckSquare },
-  { label: "Maestro", href: "/maestro", icon: Bot, disabled: true },
+  { label: "Maestro", href: "/maestro", icon: Bot },
   { label: "Conferência", href: "/cobrancas", icon: CreditCard },
   { label: "Contas a receber", href: "/contas-a-receber", icon: ReceiptText },
   { label: "Notas fiscais", href: "/notas-fiscais", icon: FileText },

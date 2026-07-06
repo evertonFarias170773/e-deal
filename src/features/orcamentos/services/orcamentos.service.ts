@@ -1490,6 +1490,8 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
               numeracao_inicio: m.numeracao_inicio || null,
               numeracao_fim: m.numeracao_fim || null,
               verso_tipo: m.verso_tipo || null,
+              bloco: m.bloco || null,
+              gabarito_operacional: m.gabarito_operacional || null,
               status_arte: m.status_arte || "PENDENTE",
               status_producao: m.status_producao || "PENDENTE",
               ordem: m.ordem || (index + 1)

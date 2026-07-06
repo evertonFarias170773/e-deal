@@ -281,6 +281,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             status_producao: String(m.status_producao || "PENDENTE"),
             ordem: Number(m.ordem || 0),
             gabarito_operacional: m.gabarito_operacional as string | null,
+            bloco: m.bloco as string | null,
           }));
           setForm((prev) => ({ ...prev, pedidosModelos: modelos }));
         }
@@ -3072,6 +3073,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       ? modelosDoItem.reduce((acc, curr) => acc + curr.quantidade, 0) 
                       : undefined;
 
+                    const isRemoveAllowed = form.status !== "APROVADO" && form.status !== "AGUARDANDO";
+
                     if (isOpen) {
                       return (
                         <ProductItemEditor
@@ -3085,6 +3088,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onSave={() => handleSaveItem(item.id)}
                           minQuantity={somaModelos}
                           isSuperAdmin={user?.isSuperAdmin || false}
+                          isRemoveAllowed={isRemoveAllowed}
                         />
                       );
                     } else {
@@ -3093,6 +3097,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           key={item.id}
                           item={item}
                           isSuperAdmin={user?.isSuperAdmin || false}
+                          isRemoveAllowed={isRemoveAllowed}
                           onEdit={() => handleEditItem(item.id)}
                           onRemove={() => handleRemoveProductClick(item.id)}
                         />
@@ -3581,11 +3586,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 function ProductItemSummary({
   item,
   isSuperAdmin,
+  isRemoveAllowed,
   onEdit,
   onRemove
 }: {
   item: PropostaItem;
   isSuperAdmin?: boolean;
+  isRemoveAllowed?: boolean;
   onEdit: () => void;
   onRemove: () => void;
 }) {
@@ -3624,9 +3631,9 @@ function ProductItemSummary({
             <button
               type="button"
               onClick={onRemove}
-              disabled={!isSuperAdmin}
-              className={`rounded-2xl border border-red-100 bg-white p-2 text-red-600 hover:bg-red-50 hover:border-red-200 transition-all ${!isSuperAdmin ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={!isSuperAdmin ? "Apenas super admin pode remover itens" : "Remover item"}
+              disabled={!isRemoveAllowed}
+              className={`rounded-2xl border border-red-100 bg-white p-2 text-red-600 hover:bg-red-50 hover:border-red-200 transition-all ${!isRemoveAllowed ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={!isRemoveAllowed ? "Item não pode ser removido neste status" : "Remover item"}
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -3646,7 +3653,8 @@ function ProductItemEditor({
   onRemove,
   onSave,
   minQuantity,
-  isSuperAdmin
+  isSuperAdmin,
+  isRemoveAllowed
 }: {
   item: PropostaItem;
   bonusPercent: number;
@@ -3657,6 +3665,7 @@ function ProductItemEditor({
   onSave: () => void;
   minQuantity?: number;
   isSuperAdmin?: boolean;
+  isRemoveAllowed?: boolean;
 }) {
   const { showToast } = useAppToast();
   return (
@@ -3783,8 +3792,9 @@ function ProductItemEditor({
         <button
           type="button"
           onClick={onRemove}
-          disabled={!isSuperAdmin}
-          className={`rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all flex items-center gap-2 ${!isSuperAdmin ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={!isRemoveAllowed}
+          className={`rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all flex items-center gap-2 ${!isRemoveAllowed ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title={!isRemoveAllowed ? "Item não pode ser removido neste status" : "Remover item"}
         >
           <Trash2 className="h-4 w-4" />
           Remover item

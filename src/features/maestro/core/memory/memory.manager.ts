@@ -1,0 +1,2 @@
+// Stub — Memory Manager
+export {}

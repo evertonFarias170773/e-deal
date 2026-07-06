@@ -696,7 +696,7 @@ Módulos no menu:
 
 ### [Módulo Fiscal / Notas Fiscais] - Fila de Faturamento Real
 - Status: Parcialmente Implementado
-- Ações: A Fila de Faturamento agora exibe exclusivamente propostas que possuem a flag `libera_nf = true`, sem mistura com mocks. A aba de Histórico NF-e/NFS-e ainda está em fase de modelagem e pode conter dados simulados ou estrutura pendente de integração total.
+- Ações: A Fila de faturamento real e valores recebidos vêm de pagamentos_v2 que possuem a flag `libera_nf = true`, sem mistura com mocks. A aba de Histórico NF-e/NFS-e ainda está em fase de modelagem e pode conter dados simulados ou estrutura pendente de integração total.
 - Base afetada: Leitura de `public.propostas` utilizando a flag `libera_nf`.
 ### [Configurações / Perfis] - Matriz V2.1, RPC Segura e Escopo de Dados
 - Status: Implementado

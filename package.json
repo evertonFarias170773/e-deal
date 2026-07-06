@@ -17,6 +17,7 @@
     "dotenv": "^17.4.2",
     "lucide-react": "latest",
     "next": "latest",
+    "openai": "^6.45.0",
     "pg": "^8.22.0",
     "react": "latest",
     "react-dom": "latest",

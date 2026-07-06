@@ -590,6 +590,7 @@ export interface ModeloBoletimInput {
   numeracao_inicio: number | null;
   numeracao_fim: number | null;
   obs_impressao: string | null;
+  bloco?: string | null;
 }
 
 /**
@@ -649,6 +650,7 @@ export async function salvarModelosBoletim(
     numeracao_inicio: m.numeracao_inicio || null,
     numeracao_fim: m.numeracao_fim || null,
     obs_impressao: m.obs_impressao || null,
+    bloco: m.bloco || null,
     status_arte: "PENDENTE",
     status_producao: "BLOQUEADO",
     ordem: idx + 1

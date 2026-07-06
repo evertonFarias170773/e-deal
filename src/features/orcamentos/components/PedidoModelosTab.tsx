@@ -93,12 +93,12 @@ function ModeloInlineCard({
     onUpdateParent(updated);
   };
 
-  const handleBlur = (e?: React.FocusEvent) => {
-    // Se o evento foi disparado e o foco ainda está dentro deste card, ignora
-    if (e && e.currentTarget.contains(e.relatedTarget as Node)) return;
-
+  const handleSaveModelo = () => {
     const mod = latestModelo.current;
-    if (!mod.quantidade || mod.quantidade <= 0) return; // Somente avisa/valida no auto-save se ele digitou
+    if (!mod.quantidade || mod.quantidade <= 0) {
+      showToast({ type: "warning", title: "Atenção", description: "A quantidade deve ser maior que zero para salvar." });
+      return;
+    }
 
     if (isNew) {
       if (!mod.nome_modelo) return; // Não salva modelo vazio
@@ -175,7 +175,7 @@ function ModeloInlineCard({
   }) : [];
 
   return (
-    <div className="relative rounded-2xl border-2 border-teal-500 bg-teal-50/30 p-5 shadow-sm transition-all" onBlur={handleBlur}>
+    <div className="relative rounded-2xl border-2 border-teal-500 bg-teal-50/30 p-5 shadow-sm transition-all">
       <div className="mb-4 flex items-center justify-between border-b border-teal-100 pb-3">
         <div className="flex items-center gap-3">
           <h4 className="text-sm font-bold text-teal-800">
@@ -198,6 +198,13 @@ function ModeloInlineCard({
             Fechar
           </button>
           <button
+            onClick={handleSaveModelo}
+            disabled={saveStatus === "saving"}
+            className="flex items-center gap-2 rounded-xl border border-teal-500 bg-teal-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-teal-700 disabled:opacity-50"
+          >
+            {saveStatus === "saving" ? "Salvando..." : "Salvar modelo"}
+          </button>
+          <button
             onClick={onRemove}
             className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100"
           >
@@ -205,6 +212,10 @@ function ModeloInlineCard({
           </button>
         </div>
       </div>
+      
+      <p className="mb-4 text-[11px] font-medium text-amber-600">
+        Alterações neste modelo só são gravadas ao clicar em &quot;Salvar modelo&quot;.
+      </p>
 
       <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
         <div className="flex-[2] min-w-[110px]">

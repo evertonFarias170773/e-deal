@@ -1,19 +1,17 @@
-# ERP Ideal Mockado
+# ERP Ideal
 
 ## Visão geral
 
 O ERP Ideal é um sistema gráfico/comercial/fiscal voltado para operação real de vendas, cadastros, propostas, produção, financeiro e emissão fiscal.
 
-Esta versão é a primeira base visual mockada do projeto. O objetivo atual é validar experiência de uso, layout administrativo, responsividade, navegação, componentes globais e padrões de operação antes de conectar dados reais.
+O projeto está em pleno desenvolvimento, com integração ativa ao Supabase e foco atual na estabilização do núcleo de Inteligência (Maestro V2 com Router Semântico) e módulos Financeiro/Comercial.
 
 ## Estado atual
 
-- Há conexão com Supabase somente para leitura no módulo de Cadastros.
-- Não há migrations.
-- Não há backend real.
-- Não há chamadas de escrita reais.
-- Os dados continuam com fallback mockado em `src/lib/mocks`.
-- A arquitetura segue preparada para futura conexão com Supabase módulo por módulo.
+- Conexão nativa com Supabase para leitura e gravação em diversos módulos (ex: Cadastros, Boletos, Pedidos).
+- O backend funciona integralmente pelo App Router do Next.js + rotas API + actions.
+- O Maestro (Assistente AI) opera na versão V2 (Router Semântico baseado em tools seguras).
+- Autenticação e RLS ativos e mandatórios no Supabase.
 
 ## Módulos com tela inicial
 

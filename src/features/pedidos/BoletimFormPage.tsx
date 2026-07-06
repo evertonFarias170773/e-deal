@@ -1030,7 +1030,8 @@ export function BoletimFormPage() {
           gabarito_operacional: m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" ? m.gabaritoNumeracao : null,
           numeracao_inicio: m.numeracaoInicial !== undefined && m.numeracaoInicial !== null ? Number(m.numeracaoInicial) : null,
           numeracao_fim: m.numeracaoFinal !== undefined && m.numeracaoFinal !== null ? Number(m.numeracaoFinal) : null,
-          obs_impressao: m.comentarioInterno || null
+          obs_impressao: m.comentarioInterno || null,
+          bloco: m.bloco || null
         }))
       );
 

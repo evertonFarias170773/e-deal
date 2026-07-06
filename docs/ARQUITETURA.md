@@ -1,3 +1,7 @@
+> [!IMPORTANT]
+> ESTE DOCUMENTO ESTÁ DEPRECIADO.
+> A documentação canônica de arquitetura do ERP Ideal agora reside em: [ARQUITETURA-MODULAR-ERP-IDEAL.md](./ARQUITETURA-MODULAR-ERP-IDEAL.md)
+
 # Arquitetura
 
 ## Stack
