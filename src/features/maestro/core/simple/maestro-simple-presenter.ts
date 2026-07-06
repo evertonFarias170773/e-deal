@@ -1397,4 +1397,220 @@ export function presenterAnaliseComparacao(
   return presenterErro('Operação de análise não suportada.');
 }
 
+function getShortProductName(descricao: string, termoSolicitado: string): string {
+  const lowerDesc = descricao.toLowerCase();
+  const lowerTerm = termoSolicitado.toLowerCase();
+
+  // Mapeamentos específicos comuns:
+  if (lowerDesc.includes('pulseira') && lowerTerm.includes('triband')) {
+    return 'Triband';
+  }
+  if (lowerDesc.includes('mobi') || lowerTerm.includes('mobi')) {
+    return 'Ingresso MOBI';
+  }
+  if (lowerDesc.includes('up box') || lowerTerm.includes('up')) {
+    return 'Ingresso UP BOX';
+  }
+  if (lowerDesc.includes('cordao') || lowerTerm.includes('jacare')) {
+    return 'Cordão Jacaré';
+  }
+
+  // Fallback: Cortar por delimitadores
+  const separators = [
+    ' - ',
+    ' : ',
+    ':',
+    ' formato ',
+    ' tamanho ',
+    ' de lacre ',
+    ' com ',
+    ' para ',
+    ' de alta ',
+    ' ideal para '
+  ];
+  
+  let short = descricao;
+  for (const sep of separators) {
+    const parts = short.split(sep);
+    if (parts[0].trim().length > 3) {
+      short = parts[0];
+    }
+  }
+
+  short = short.trim();
+  short = short.charAt(0).toUpperCase() + short.slice(1);
+  return short;
+}
+
+// ─── Orçamento Avulso (Simulação) ─────────────────────────────────────────────
+
+export function presenterOrcamentoAvulso(result: OrcamentoAvulsoResult): PresenterResult {
+  const { itens, totalGeral } = result;
+
+  let contentText = 'Olá, 😀\n\nSegue orçamento para os itens solicitados.\n\nProdutos Orçados:\n\n';
+  let allSuccess = true;
+
+  itens.forEach(item => {
+    if (item.status === 'nao_encontrado') {
+      contentText += `❌ **${item.quantidade}x ${item.termo}**: Não encontrei nenhum produto com esse nome no cadastro.\n`;
+      allSuccess = false;
+    } else if (item.status === 'ambiguo') {
+      contentText += `⚠️ **${item.quantidade}x ${item.termo}**: Encontrei ${item.produtosEncontrados.length} opções para esse termo. Qual delas você quer usar?\n`;
+      item.produtosEncontrados.slice(0, 5).forEach(p => {
+        contentText += `   - ${p.descricao} (ID: ${p.id_produto})\n`;
+      });
+      allSuccess = false;
+    } else if (item.status === 'inativo') {
+      const p = item.produtosEncontrados[0];
+      contentText += `🚫 **${item.quantidade}x ${item.termo}**: O produto **${p.descricao}** encontra-se inativo no momento. Não é possível incluí-lo.\n`;
+      allSuccess = false;
+    } else if (item.status === 'preco_incompleto') {
+      const p = item.produtosEncontrados[0];
+      contentText += `⚠️ **${item.quantidade}x ${item.termo}**: O produto **${p.descricao}** está sem preço base no cadastro.\n`;
+      allSuccess = false;
+    } else if (item.status === 'sucesso') {
+      const p = item.produtosEncontrados[0];
+      const sub = item.subtotalCalculado;
+      const formattedQtd = new Intl.NumberFormat('pt-BR').format(item.quantidade);
+      const shortName = getShortProductName(p.descricao, item.termo);
+      contentText += `✅ ${formattedQtd} ${shortName}: ${fmtBRL(sub)}\n`;
+    }
+  });
+
+  if (allSuccess && totalGeral !== null) {
+    contentText += `\nFrete: a combinar\n\nO valor total do pedido ficou em ${fmtBRL(totalGeral)}\n\nSe estiver tudo certo, me confirma por aqui que já dou andamento ao processo!\n`;
+  } else {
+    contentText += `\n*Como houve itens não encontrados, inativos ou com dúvidas, o total geral não foi calculado.*\n`;
+  }
+
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: contentText,
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Simulação de orçamento avulso', detail: `Itens: ${itens.length}`, status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
+export function presenterEsclarecerOrcamento(): PresenterResult {
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: 'Você quer fazer um orçamento avulso ou consultar informações de um cliente?',
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Esclarecer intenção', detail: 'Orçamento vs Cliente', status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
+export function presenterContinuacaoOrcamento(): PresenterResult {
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: 'Você quer continuar o orçamento avulso ou consultar um cliente?',
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Esclarecer intenção', detail: 'Continuar orçamento avulso', status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
+export function presenterLimparOrcamento(): PresenterResult {
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: 'Orçamento limpo. O que você gostaria de orçar agora?',
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Limpar orçamento', detail: 'Itens removidos', status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
+export function presenterVoltarOrcamento(): PresenterResult {
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: 'Eu saí do orçamento avulso ao consultar o cliente. Quer que eu monte novamente com os itens?',
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Voltar ao orçamento', detail: 'Domínio restaurado', status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
+export function presenterPerguntarQuantidade(): PresenterResult {
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: 'Quantas unidades você quer orçar?',
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Perguntar quantidade', detail: 'Quantidade ausente', status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
+export function presenterRecuperacaoOrcamento(itens: OrcamentoAvulsoItem[], userName?: string): PresenterResult {
+  const nome = userName || 'Everton';
+  const itensStr = itens && itens.length > 0
+    ? itens.map(it => `✅ ${it.quantidade.toLocaleString('pt-BR')} ${it.termo}`).join('\n')
+    : 'Nenhum item válido';
+  
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: `Foi mal, ${nome}. Mantive só os itens válidos do orçamento. Hoje tenho:\n\n${itensStr}\n\nQuer que eu continue daqui ou limpe e recomece?`,
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Recuperar orçamento', detail: 'Erro ou reclamação do usuário', status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
 

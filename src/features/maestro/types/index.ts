@@ -141,6 +141,7 @@ export interface ConversationContext {
   registryResolution?: RegistryResolution;
   toolResults?: Record<string, ToolResult>;
   policyDecisions?: Record<string, PolicyDecision>;
+  v2ContextJson?: string | null;
 }
 
 export interface ConversationSession {

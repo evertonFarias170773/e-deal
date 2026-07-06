@@ -73,6 +73,7 @@ export function MaestroMessage({ message }: Props) {
                   ? "after:content-[''] after:inline-block after:w-1.5 after:h-4 after:-mb-0.5 after:ml-0.5 after:bg-[var(--secondary)] after:animate-pulse"
                   : ''
               }`}
+              style={{ whiteSpace: 'pre-wrap' }}
               dangerouslySetInnerHTML={{ __html: parseContent(message.content) }}
             />
           )}

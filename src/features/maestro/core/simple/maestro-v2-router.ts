@@ -11,6 +11,8 @@
  */
 
 import type { SimpleClientContext, LastAnswerRecord } from './maestro-simple-context';
+import type { MaestroV2Context } from './maestro-v2-context-manager';
+import { handleContextContinuation } from './maestro-v2-context-manager';
 
 export interface RouterPeriodoMeses {
   mes: number;
@@ -35,7 +37,14 @@ export type AllowedToolName =
   | 'consultarUltimoOrcamento'
   | 'consultarRecebimentoClientePeriodo'
   | 'compararRecebimentoClienteMeses'
-  | 'revalidarUltimaConsulta';
+  | 'revalidarUltimaConsulta'
+  | 'simularOrcamentoAvulso'
+  | 'perguntar_tipo_orcamento'
+  | 'perguntar_continuacao_orcamento'
+  | 'limpar_orcamento_avulso'
+  | 'voltar_orcamento_anterior'
+  | 'perguntar_quantidade_orcamento'
+  | 'recuperacao_orcamento_avulso';
 
 export interface RouterStep {
   tool: AllowedToolName;
@@ -48,6 +57,7 @@ export interface RouterStep {
     mesesRetroativos?: number;
     meses?: RouterPeriodoMeses[];
     periodo?: RouterPeriodo;
+    itens?: { quantidade: number; termo: string }[];
   };
 }
 
@@ -71,8 +81,86 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'consultarUltimoOrcamento',
   'consultarRecebimentoClientePeriodo',
   'compararRecebimentoClienteMeses',
-  'revalidarUltimaConsulta'
+  'revalidarUltimaConsulta',
+  'simularOrcamentoAvulso',
+  'perguntar_tipo_orcamento',
+  'perguntar_continuacao_orcamento',
+  'limpar_orcamento_avulso',
+  'voltar_orcamento_anterior',
+  'perguntar_quantidade_orcamento'
 ];
+
+function parseOrcamentoAvulso(query: string): { quantidade: number; termo: string }[] | null {
+  const clean = query
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .trim();
+
+  // Prioridade absoluta: Se contiver referências explícitas a cliente com IDs
+  const regexClient1 = /\b(cliente|cli|cadastro)\s*([a-z\d]+)/i;
+  const regexClient2 = /\bc\s*\d+/i;
+  if (regexClient1.test(clean) || regexClient2.test(clean)) {
+    return null;
+  }
+
+  // Aborta orçamento avulso se contiver termos estritamente relacionados a clientes/histórico real
+  const strictClientKeywords = /\b(faturamento|faturou|boleto|pagamento|historico|limite|cnpj|telefone|email|cidade|vendedor|risco)\b/i;
+  if (strictClientKeywords.test(clean)) {
+    return null;
+  }
+
+  const splitRegex = /(?:\s*\+\s*|\s*,\s*|\s+(?:e|ou)\s+)/i;
+  const parts = clean.split(splitRegex);
+  const items: { quantidade: number; termo: string }[] = [];
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+
+    let phrase = trimmed
+      .replace(/\b(boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|cotacao|orcamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!phrase) continue;
+
+    const regexNumBefore = /^(\d+(?:\.\d+)?)\s*([kk]?)\s*(.+)$/i;
+    const regexNumAfter = /^(.+?)\s*(\d+(?:\.\d+)?)\s*([kk]?)$/i;
+
+    let match = phrase.match(regexNumBefore);
+    if (match) {
+      const numStr = match[1];
+      const isK = match[2].toLowerCase() === 'k';
+      const termo = match[3].replace(/[?]/g, '').trim();
+      
+      let qtd = parseFloat(numStr);
+      if (isK) qtd *= 1000;
+      
+      if (termo && !isNaN(qtd)) {
+        items.push({ quantidade: qtd, termo });
+        continue;
+      }
+    }
+
+    match = phrase.match(regexNumAfter);
+    if (match) {
+      const termo = match[1].replace(/[?]/g, '').trim();
+      const numStr = match[2];
+      const isK = match[3].toLowerCase() === 'k';
+      
+      let qtd = parseFloat(numStr);
+      if (isK) qtd *= 1000;
+      
+      if (termo && !isNaN(qtd)) {
+        items.push({ quantidade: qtd, termo });
+        continue;
+      }
+    }
+  }
+
+  return items.length > 0 ? items : null;
+}
 
 /**
  * Roteia a query do usuário para um plano de ferramentas financeiras ou cadastrais estruturado (JSON).
@@ -81,10 +169,92 @@ export async function routeToolSimple(
   query: string,
   activeClient: SimpleClientContext | null,
   lastAnswer: LastAnswerRecord | null,
+  v2Ctx: MaestroV2Context,
   currentDateIso: string = new Date().toISOString()
 ): Promise<RouterResult> {
   // 1. Feature Flag check
   if (process.env.MAESTRO_V2_ENABLED !== 'true') {
+    return { routed: false };
+  }
+
+  // 1z. CONTINUAÇÃO DE CONTEXTO ATIVO
+  const continuation = handleContextContinuation(query, v2Ctx, activeClient);
+  if (continuation) {
+    const firstStep = continuation.plan.steps[0];
+    console.log('====== [MaestroV2Router] LOG DE DEV ======');
+    console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+    console.log(`- Mensagem recebida: "${query}"`);
+    console.log(`- Decisão: continuação`);
+    console.log(`- Tool/handler usado: "${firstStep?.tool}"`);
+    console.log(`- Estado atualizado: ${JSON.stringify(v2Ctx.orcamentoItens ?? [])}`);
+    console.log('==========================================');
+    return continuation;
+  }
+
+  // 1a. REGRA DETERMINÍSTICA DE ORÇAMENTO AVULSO
+  const parsedItems = parseOrcamentoAvulso(query);
+  if (parsedItems) {
+    // Inicializa o domínio como orçamento avulso no contexto
+    v2Ctx.domain = 'orcamento_avulso';
+    v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+    v2Ctx.orcamentoItens = parsedItems;
+    v2Ctx.lastRequestedQuantity = parsedItems[0].quantidade;
+
+    console.log('====== [MaestroV2Router] LOG DE DEV ======');
+    console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+    console.log(`- Mensagem recebida: "${query}"`);
+    console.log(`- Decisão: router normal (inicialização determinística)`);
+    console.log(`- Tool escolhida: "simularOrcamentoAvulso"`);
+    console.log(`- Itens extraídos: ${JSON.stringify(parsedItems)}`);
+    console.log(`- Estado atualizado: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
+    console.log('==========================================');
+
+    return {
+      routed: true,
+      plan: {
+        steps: [
+          {
+            tool: 'simularOrcamentoAvulso',
+            params: { itens: parsedItems }
+          }
+        ]
+      }
+    };
+  }
+
+  // 1b. REGRA DETERMINÍSTICA DE FALLBACK INTELIGENTE (ESCLARECIMENTO)
+  const cleanQuery = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const hasBudgetKeyword = /\b(orcamento|valor|preco|cotacao|custa)\b/i.test(cleanQuery);
+  const clientPattern = /\b(cliente|cli|c|cadastro)\s*(\d+|[a-z]+)\b/i;
+  const isClientFlow = clientPattern.test(cleanQuery) || /\b(boleto|pagamento|faturamento|limite|historico|cadastro|ativo|vendedor|risco|cnpj|telefone|email|cidade)\b/i.test(cleanQuery);
+
+  if (hasBudgetKeyword && !isClientFlow && !activeClient) {
+    console.log('====== [MaestroV2Router] LOG DE DEV ======');
+    console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+    console.log(`- Mensagem recebida: "${query}"`);
+    console.log(`- Decisão: router normal (esclarecimento)`);
+    console.log(`- Tool escolhida: "perguntar_tipo_orcamento"`);
+    console.log(`- Itens extraídos: []`);
+    console.log('==========================================');
+
+    return {
+      routed: true,
+      plan: {
+        steps: [
+          {
+            tool: 'perguntar_tipo_orcamento',
+            params: {}
+          }
+        ]
+      }
+    };
+  }
+
+  // 1c. Evita chamar LLM para comandos estáticos imediatos seguros
+  const { detectIntent } = require('./maestro-simple-intents');
+  const initialIntent = detectIntent(query);
+  const isImmediateStatic = ['client_lookup', 'client_switch', 'help', 'closure', 'wait_user'].includes(initialIntent.type);
+  if (isImmediateStatic) {
     return { routed: false };
   }
 
@@ -125,8 +295,16 @@ WHITELIST DE FERRAMENTAS PERMITIDAS:
    - Parâmetros: { meses: [{ mes: number, ano: number, label?: string }] } (máximo de 6 meses).
 9. "revalidarUltimaConsulta": Acionar para intenções de confirmação ("tem certeza?", "você conferiu?", "posso confiar?", "isso está certo?", "confere de novo").
    - Parâmetros: {}
+10. "simularOrcamentoAvulso": Acionar para simular orçamentos de produtos avulsos por apelido e quantidade ("qual o valor de 2 placas triband e 10 rolos"). NÃO exige cliente ativo.
+   - Parâmetros: { itens: [{ quantidade: number, termo: string }] }
 
 REGRAS DE DECISÃO RÍGIDAS E PERÍODOS:
+- ORÇAMENTO AVULSO (PRIORIDADE ALTA): Se o usuário pedir "valor", "preço", "cotação" ou "orçamento" com QUANTIDADE e PRODUTO, escolha SEMPRE "simularOrcamentoAvulso".
+  - NÃO exija cliente para Orçamento Avulso.
+  - Reconheça a quantidade ANTES ("2000 triband"), DEPOIS ("triband 2000"), GRUDADA ("2000triband") ou ABREVIADA ("10k" = 10000).
+  - Reconheça múltiplos itens unidos por "e", "+" ou vírgula ("1560 triband + 60 cordão jacaré").
+  - NÃO extraia nomes fixos, passe o termo EXATO que o usuário digitou (a tool busca no banco).
+- CLIENTE ESPECÍFICO (PRIORIDADE MÁXIMA): Se a frase citar expressamente um cliente (ex: "cliente 14", "cliente João"), histórico, boleto ou propostas reais ("último orçamento do cliente 14"), NÃO use orçamento avulso. Priorize ferramentas de cliente (ex: "consultarUltimoOrcamento", "consultarPropostasCliente", "buscarCliente").
 - "Últimos X meses": Significa SEMPRE o mês atual da DATA REFERÊNCIA + os (X-1) meses imediatamente anteriores. Exemplo: Se hoje é Julho/2026, os últimos 3 meses são Maio, Junho e Julho de 2026. NUNCA projete meses futuros.
 - Ano Ausente: Se o usuário citar apenas um mês (ex: "maio"), assuma obrigatoriamente o ano da DATA REFERÊNCIA (ex: 2026).
 - Edição de Comparação: Se o usuário pedir para alterar a comparação ("traga maio e tire agosto", "troca agosto por maio", "inclui maio", "remove agosto"), leia o JSON "Última resposta dados", modifique a lista de meses conforme solicitado (preenchendo anos ausentes com o ano atual), e chame "compararRecebimentoClienteMeses" emitindo a nova lista COMPLETA de meses.
@@ -189,7 +367,16 @@ Pergunta do usuário: "${query}"
       }
 
       // Validar cliente ativo
-      if (step.tool !== 'requisicao_nao_suportada' && step.tool !== 'buscarCliente') {
+      if (
+        step.tool !== 'requisicao_nao_suportada' && 
+        step.tool !== 'buscarCliente' && 
+        step.tool !== 'simularOrcamentoAvulso' &&
+        step.tool !== 'perguntar_tipo_orcamento' &&
+        step.tool !== 'perguntar_continuacao_orcamento' &&
+        step.tool !== 'limpar_orcamento_avulso' &&
+        step.tool !== 'voltar_orcamento_anterior' &&
+        step.tool !== 'perguntar_quantidade_orcamento'
+      ) {
         if (!clientId) {
           console.warn('[MaestroV2Router] Rejeitado: ferramenta de consulta necessita de cliente ativo.');
           return { routed: false };
@@ -246,6 +433,14 @@ Pergunta do usuário: "${query}"
         }
       }
     }
+
+    const firstStep = plan.steps[0];
+    console.log('====== [MaestroV2Router] LOG DE DEV ======');
+    console.log(`- Mensagem recebida: "${query}"`);
+    console.log(`- Intenção detectada: Fluxo LLM`);
+    console.log(`- Tool escolhida: "${firstStep?.tool}"`);
+    console.log(`- Itens extraídos: ${JSON.stringify(firstStep?.params?.itens ?? [])}`);
+    console.log('==========================================');
 
     return {
       routed: true,

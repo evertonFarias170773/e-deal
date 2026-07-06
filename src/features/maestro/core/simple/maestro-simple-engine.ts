@@ -34,6 +34,7 @@ import {
 import {
   buscarBoletosCliente,
 } from './maestro-simple-boletos.server';
+import { simularOrcamentoAvulsoDb } from './maestro-simple-produtos.server';
 
 import { detectIntent } from './maestro-simple-intents';
 import type {
@@ -77,9 +78,17 @@ import {
   presenterAnaliseComparacao,
   presenterUltimoOrcamento,
   presenterUltimoPedido,
+  presenterOrcamentoAvulso,
+  presenterEsclarecerOrcamento,
+  presenterContinuacaoOrcamento,
+  presenterLimparOrcamento,
+  presenterVoltarOrcamento,
+  presenterPerguntarQuantidade,
+  presenterRecuperacaoOrcamento,
   type PresenterResult,
 } from './maestro-simple-presenter';
 import { routeToolSimple } from './maestro-v2-router';
+import { deserializeV2Context, serializeV2Context } from './maestro-v2-context-manager';
 
 import type { ConversationMessage, ActivityStep, ConversationContext } from '../../types';
 
@@ -424,6 +433,9 @@ export async function processSimpleQueryWithBrain(
   const { supabase } = options;
   const simpleCtx = legacyContextToSimple(legacyCtx);
 
+  // Carrega o contexto V2 (controlado por código) do historico da conversa
+  const v2Ctx = deserializeV2Context(legacyCtx.v2ContextJson);
+
   // Helper toResult idêntico para construir o resultado com novo contexto
   function toResult(
     pr: PresenterResult,
@@ -439,6 +451,10 @@ export async function processSimpleQueryWithBrain(
     } else {
       newCtx = updateLastAnswerInCtx(legacyCtx, newLastAnswer);
     }
+
+    // Salva o estado atualizado do contexto V2
+    newCtx.v2ContextJson = serializeV2Context(v2Ctx);
+
     return {
       message:      pr.message,
       activity:     pr.activity,
@@ -454,13 +470,29 @@ export async function processSimpleQueryWithBrain(
   const initialIntent = detectIntent(query);
   const isImmediateStatic = ['client_lookup', 'client_switch', 'help', 'closure', 'wait_user'].includes(initialIntent.type);
 
-  if (process.env.MAESTRO_V2_ENABLED === 'true' && !isImmediateStatic) {
+  if (process.env.MAESTRO_V2_ENABLED === 'true') {
     try {
-      const routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer);
+      const routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
       if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
         const step = routeResult.plan.steps[0];
         let pr: PresenterResult | null = null;
         let clientForCtx = simpleCtx.activeClient;
+
+        // Atualizações do Gerenciador de Contexto Conversacional Geral
+        v2Ctx.lastTool = step.tool;
+        if (['consultarBoletos', 'consultarRecebimentoClientePeriodo', 'compararRecebimentoClienteMeses'].includes(step.tool)) {
+          v2Ctx.domain = 'financeiro';
+        } else if (['buscarCliente', 'consultarCampoCadastro'].includes(step.tool)) {
+          v2Ctx.domain = 'cliente';
+        } else if (['consultarPropostasCliente', 'consultarUltimoOrcamento'].includes(step.tool)) {
+          v2Ctx.domain = 'proposta';
+        }
+
+        if (simpleCtx.activeClient) {
+          v2Ctx.activeEntities.clientId = simpleCtx.activeClient.clientDisplayCode;
+          v2Ctx.activeEntities.clientInternalId = simpleCtx.activeClient.clientInternalId;
+          v2Ctx.activeEntities.clientName = simpleCtx.activeClient.clientName;
+        }
 
         if (step.tool === 'requisicao_nao_suportada') {
           pr = presenterFallback(simpleCtx); // Usa o fallback natural como resposta de "não sei"
@@ -571,6 +603,86 @@ export async function processSimpleQueryWithBrain(
           }
         }
 
+        else if (step.tool === 'simularOrcamentoAvulso') {
+          const itens = step.params.itens;
+          if (!itens || itens.length === 0) {
+            pr = presenterFallback(simpleCtx);
+          } else {
+            const result = await simularOrcamentoAvulsoDb(supabase, itens);
+            
+            const failedItem = result.itens.find(it => it.status !== 'sucesso');
+            if (failedItem) {
+              // Reverte o orcamentoItens no contexto para o estado anterior
+              if (v2Ctx.previousOrcamentoItens && v2Ctx.previousOrcamentoItens.length > 0) {
+                console.log(`[MaestroEngine] Item falhou (${failedItem.status}). Revertendo orçamento para o estado anterior.`);
+                v2Ctx.orcamentoItens = JSON.parse(JSON.stringify(v2Ctx.previousOrcamentoItens));
+              } else {
+                v2Ctx.orcamentoItens = (v2Ctx.orcamentoItens || []).filter(it => it.termo !== failedItem.termo);
+              }
+
+              if (failedItem.status === 'ambiguo') {
+                v2Ctx.pendingAmbiguousItem = {
+                  lastRequestedQuantity: failedItem.quantidade,
+                  lastRequestedTerm: failedItem.termo,
+                  options: failedItem.produtosEncontrados.map(p => p.descricao)
+                };
+                v2Ctx.pendingProductResolution = null;
+              } else {
+                v2Ctx.pendingProductResolution = {
+                  lastRequestedQuantity: failedItem.quantidade,
+                  lastRequestedTerm: failedItem.termo,
+                  status: failedItem.status as any
+                };
+                v2Ctx.pendingAmbiguousItem = null;
+              }
+
+              console.log('====== [MaestroEngine] DEV LOG ======');
+              console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+              console.log(`- pendingProductResolution: ${JSON.stringify(v2Ctx.pendingProductResolution)}`);
+              console.log(`- pendingAmbiguousItem: ${JSON.stringify(v2Ctx.pendingAmbiguousItem)}`);
+              console.log(`- Handler usado: simularOrcamentoAvulso`);
+              console.log('=====================================');
+            } else {
+              // Se tudo deu certo, limpamos as pendências
+              if (v2Ctx.pendingProductResolution || v2Ctx.pendingAmbiguousItem) {
+                console.log('====== [MaestroEngine] DEV LOG ======');
+                console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+                console.log(`- pendências resolvidas/limpas!`);
+                console.log(`- Handler usado: simularOrcamentoAvulso`);
+                console.log('=====================================');
+                v2Ctx.pendingProductResolution = null;
+                v2Ctx.pendingAmbiguousItem = null;
+              }
+            }
+            
+            pr = presenterOrcamentoAvulso(result);
+          }
+        }
+
+        else if (step.tool === 'perguntar_tipo_orcamento') {
+          pr = presenterEsclarecerOrcamento();
+        }
+
+        else if (step.tool === 'perguntar_continuacao_orcamento') {
+          pr = presenterContinuacaoOrcamento();
+        }
+
+        else if (step.tool === 'limpar_orcamento_avulso') {
+          pr = presenterLimparOrcamento();
+        }
+
+        else if (step.tool === 'voltar_orcamento_anterior') {
+          pr = presenterVoltarOrcamento();
+        }
+
+        else if (step.tool === 'perguntar_quantidade_orcamento') {
+          pr = presenterPerguntarQuantidade();
+        }
+
+        else if (step.tool === 'recuperacao_orcamento_avulso') {
+          pr = presenterRecuperacaoOrcamento(v2Ctx.orcamentoItens || [], options.userName);
+        }
+
         else if (step.tool === 'consultarRecebimentoClientePeriodo') {
           const { id_cliente, periodo } = step.params;
           if (id_cliente && periodo) {
@@ -674,8 +786,8 @@ export async function processSimpleQueryWithBrain(
     deterministicResult = await processSimpleQuery(query, legacyCtx, options);
   }
 
-  // 3. Se LLM não está habilitado, retorna diretamente a resposta determinística
-  if (process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true') {
+  // 3. Se LLM não está habilitado, ou se for domínio de orçamento avulso (para preservar a formatação comercial), retorna diretamente a resposta determinística
+  if (process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true' || v2Ctx.domain === 'orcamento_avulso') {
     return deterministicResult;
   }
 
