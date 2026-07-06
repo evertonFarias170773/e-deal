@@ -435,7 +435,7 @@ export function PedidoModelosTab({
     const [resFormatos, resCores, resNum] = await Promise.all([
       supabase.from("producao_formatos").select("id, name, id_formato_num"),
       supabase.from("producao_cores").select("id, name, formato_id, id_modelo_cor_num").order("id_modelo_cor_num", { ascending: true }),
-      supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids").order("name", { ascending: true }),
+      supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids, id_gabarito").order("name", { ascending: true }),
     ]);
 
     if (resFormatos.data) setFormatosOpcoes(resFormatos.data);
@@ -455,27 +455,16 @@ export function PedidoModelosTab({
       return;
     }
 
-    // Resolvendo formato UUID para buscar numerador compatível
-    const numFormatId = item.produto?.id_formato;
-    const formatoObj = formatosOpcoes.find(f => 
-      String(f.id_formato_num) === String(numFormatId) || String(f.id) === String(numFormatId)
-    );
-    const realFormatoUUID = formatoObj ? formatoObj.id : null;
-
     // Default de Cor do papel (padrao) vindo do cadastro do produto
     const defaultCor = coresOpcoes.find(c => 
       item.produto?.id_modelo_cor && String(c.id_modelo_cor_num) === String(item.produto.id_modelo_cor)
     );
     const defaultCorName = defaultCor ? defaultCor.name : null;
 
-    // Default de Numerador (gabarito_operacional) vindo do formato do produto
-    const defaultNum = numeracoesOpcoes.find((n) => {
-      if (realFormatoUUID) {
-        if (String(n.formato_id) === realFormatoUUID) return true;
-        if (Array.isArray(n.formato_ids) && n.formato_ids.some((id: any) => String(id) === realFormatoUUID)) return true;
-      }
-      return false;
-    });
+    // Default de Numerador (gabarito_operacional) vindo de id_gabarito do produto
+    const defaultNum = numeracoesOpcoes.find((n) => 
+      item.produto?.id_gabarito && String(n.id_gabarito) === String(item.produto.id_gabarito)
+    );
     const defaultNumName = defaultNum ? defaultNum.name : null;
 
     const newId = `new_${Date.now()}`;
