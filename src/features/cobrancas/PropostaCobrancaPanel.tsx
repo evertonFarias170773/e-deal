@@ -1030,7 +1030,6 @@ export function PropostaCobrancaPanel({
                     if (!saved) return;
                   }
                   openModal();
-                  patchForm({ valor: saldoRestante });
                 }}
                 disabled={isSaving}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
@@ -1078,7 +1077,6 @@ export function PropostaCobrancaPanel({
                           if (!saved) return;
                         }
                         openModal();
-                        patchForm({ valor: saldoRestante });
                       }}
                       disabled={isSaving}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"

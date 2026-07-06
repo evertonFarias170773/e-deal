@@ -2343,6 +2343,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           return true;
         }
         showToast({ type: "success", title: "Orçamento atualizado antes de gerar cobrança." });
+        if (onReload) {
+          await onReload();
+        }
         return true;
       } else {
         showToast({

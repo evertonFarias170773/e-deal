@@ -661,9 +661,7 @@ export function PedidoModelosTab({
                           )}
                           <span className="rounded bg-slate-100 px-2.5 py-1">Qtd: {m.quantidade}</span>
                           {m.padrao && <span className="rounded bg-slate-100 px-2.5 py-1">Cor: {m.padrao}</span>}
-                          {m.tipo_numeracao && m.tipo_numeracao !== "SEM_NUMERACAO" && (
-                            <span className="rounded bg-slate-100 px-2.5 py-1">Numeração: {m.tipo_numeracao} ({m.numeracao_inicio || 0} a {m.numeracao_fim || 0})</span>
-                          )}
+                          <span className="rounded bg-slate-100 px-2.5 py-1">Numerador: {m.gabarito_operacional || "-"}</span>
                         </div>
                       </div>
                       
