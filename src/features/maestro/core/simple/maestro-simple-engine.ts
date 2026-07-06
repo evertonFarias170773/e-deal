@@ -560,7 +560,7 @@ export async function processSimpleQueryWithBrain(
                   const contatos = await buscarContatosCliente(supabase, idCliente);
                   simpleCtx.activeClient.contatos = contatos;
                   console.log(`- Registros retornados: ${contatos.length}`);
-                } else if ((campo === 'socios' || campo === 'vinculos') && (!simpleCtx.activeClient.socios || simpleCtx.activeClient.socios.length === 0)) {
+                } else if (campo === 'socios' && (!simpleCtx.activeClient.socios || simpleCtx.activeClient.socios.length === 0)) {
                   console.log(`[MaestroEngine] Carregando sócios do cliente ${idCliente} sob demanda.`);
                   const socios = await buscarSociosCliente(supabase, idCliente);
                   simpleCtx.activeClient.socios = socios;

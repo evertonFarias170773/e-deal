@@ -43,6 +43,7 @@ export type AllowedToolName =
   | 'perguntar_continuacao_orcamento'
   | 'limpar_orcamento_avulso'
   | 'voltar_orcamento_anterior'
+  | 'perguntar_quantidade_orcamento'
   | 'recuperacao_orcamento_avulso'
   | 'cancelar_orcamento_avulso';
 

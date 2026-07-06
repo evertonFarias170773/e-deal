@@ -544,7 +544,7 @@ export function presenterCampoContextual(
         buildField('socios', 'Sócios/Vínculos', undefined,
           `Não consegui consultar os vínculos cadastrais agora.`, 'low', 'public.clientes_socios');
       } else if (c.socios && c.socios.length > 0) {
-        sources.push(getSource(c, 'socios'));
+        sources.push(getSource(c, 'clientes_socios'));
         const lines = c.socios.map(s => {
           const nome = s.nomeSocio || `Cliente ${s.idClienteSocio}`;
           return s.tipoRelacao ? `• **${nome}** — ${s.tipoRelacao}` : `• **${nome}**`;
