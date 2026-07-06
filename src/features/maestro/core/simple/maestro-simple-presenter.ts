@@ -1686,4 +1686,28 @@ export function presenterRecuperacaoOrcamento(itens: OrcamentoAvulsoItem[], user
   };
 }
 
+export function presenterCancelarOrcamentoAvulso(activeClient: any): PresenterResult {
+  const msgText = activeClient
+    ? `Tudo bem, deixei o orçamento avulso de lado. Seguimos com o cliente ativo **${activeClient.clientName || `código ${activeClient.clientDisplayCode}`}**.`
+    : `Tudo bem, deixei o orçamento avulso de lado. Como posso ajudar agora?`;
+    
+  return {
+    message: {
+      id:          genId(),
+      role:        'maestro',
+      content:     msgText,
+      contentType: 'text',
+      sources:     [],
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Cancelar orçamento', detail: 'Foco no cliente ativo', status: 'done', timestamp: nowTime() }
+    ],
+    lastAnswerUpdate: null
+  };
+}
+
 

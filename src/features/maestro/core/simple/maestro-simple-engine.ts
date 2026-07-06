@@ -497,7 +497,12 @@ export async function processSimpleQueryWithBrain(
           v2Ctx.activeEntities.clientName = simpleCtx.activeClient.clientName;
         }
 
-        if (step.tool === 'requisicao_nao_suportada') {
+        if (step.tool === 'cancelar_orcamento_avulso') {
+          const { presenterCancelarOrcamentoAvulso } = require('./maestro-simple-presenter');
+          pr = presenterCancelarOrcamentoAvulso(simpleCtx.activeClient);
+        }
+
+        else if (step.tool === 'requisicao_nao_suportada') {
           pr = presenterFallback(simpleCtx); // Usa o fallback natural como resposta de "não sei"
         }
 
@@ -816,6 +821,17 @@ export async function processSimpleQueryWithBrain(
   // 2. Roda o motor determinístico normal (fallback clássico) se não foi resolvido pelo Roteador
   if (!deterministicResult) {
     deterministicResult = await processSimpleQuery(query, legacyCtx, options);
+    
+    if (deterministicResult.simpleClient) {
+      v2Ctx.domain = 'cliente';
+      v2Ctx.activeEntities.clientId = deterministicResult.simpleClient.clientDisplayCode;
+      v2Ctx.activeEntities.clientInternalId = deterministicResult.simpleClient.clientInternalId;
+      v2Ctx.activeEntities.clientName = deterministicResult.simpleClient.clientName;
+      v2Ctx.pendingProductResolution = null;
+      v2Ctx.pendingAmbiguousItem = null;
+    }
+    
+    deterministicResult.context.v2ContextJson = serializeV2Context(v2Ctx);
   }
 
   // 3. Se LLM não está habilitado, ou se for domínio de orçamento avulso (para preservar a formatação comercial), retorna diretamente a resposta determinística

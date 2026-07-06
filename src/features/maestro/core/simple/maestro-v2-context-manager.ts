@@ -214,12 +214,96 @@ export function handleContextContinuation(
 ): { routed: boolean; plan: any } | null {
   const clean = normalizeText(query);
 
+  // ── 1. CANCELAMENTO DO ORÇAMENTO AVULSO (PRIORIDADE CRÍTICA)
+  const isCancelOrcamento = /\b(nao\s*(quero|e)\s*orca(r|mento)|esquece\s*orca(r|mento))\b/i.test(clean);
+  if (isCancelOrcamento) {
+    console.log('[MaestroV2Context] Ação: Cancelamento de orçamento avulso solicitado.');
+    v2Ctx.orcamentoItens = [];
+    v2Ctx.pendingProductResolution = null;
+    v2Ctx.pendingAmbiguousItem = null;
+    v2Ctx.domain = activeClient ? 'cliente' : 'desconhecido';
+    return {
+      routed: true,
+      plan: {
+        steps: [
+          {
+            tool: 'cancelar_orcamento_avulso',
+            params: {}
+          }
+        ]
+      }
+    };
+  }
+
+  // ── 2. COMANDO DE CLIENTE EXPLÍCITO (PRIORIDADE MÁXIMA)
   const regexClient1 = /\b(cliente|cli|cadastro)\s*([a-z\d]+)/i;
   const regexClient2 = /\bc\s*\d+/i;
   if (regexClient1.test(clean) || regexClient2.test(clean)) {
     console.log('[MaestroV2Context] Comando de cliente explícito detectado. Suspendendo orçamento avulso.');
     v2Ctx.domain = 'cliente';
     return null;
+  }
+
+  // ── 3. PERGUNTAS CONTEXTUAIS DE CLIENTE ATIVO (PRIORIDADE ALTA)
+  if (activeClient) {
+    // Verifica se a mensagem contém palavras chave de relacionamento/dados cadastrais
+    const hasClientFieldKeyword = /\b(endereco|enderecos|contato|contatos|telefone|whats|whatsapp|email|e-mail|vinculo|vinculos|socio|socios|dele|desse cliente|dessa empresa|onde entrega|entrega)\b/i.test(clean);
+    
+    if (hasClientFieldKeyword) {
+      let campo: string | null = null;
+      
+      if (/\b(endereco|enderecos|onde entrega|entrega)\b/i.test(clean)) {
+        campo = 'enderecos';
+      } else if (/\b(contato|contatos)\b/i.test(clean)) {
+        campo = 'contatos';
+      } else if (/\b(vinculo|vinculos|socio|socios)\b/i.test(clean)) {
+        campo = 'socios';
+      } else if (/\b(telefone|whats|whatsapp)\b/i.test(clean)) {
+        campo = 'telefone';
+      } else if (/\b(email|e-mail)\b/i.test(clean)) {
+        campo = 'email';
+      } else if (/\b(cidade|localizacao)\b/i.test(clean)) {
+        campo = 'cidade';
+      } else if (/\b(credito|limite)\b/i.test(clean)) {
+        campo = 'credito';
+      } else if (/\b(vendedor)\b/i.test(clean)) {
+        campo = 'vendedor';
+      } else if (/\b(restricao)\b/i.test(clean)) {
+        campo = 'restricao';
+      } else if (/\b(ativo|status)\b/i.test(clean)) {
+        campo = 'ativo';
+      } else if (/\b(risco)\b/i.test(clean)) {
+        campo = 'risco_credito';
+      } else if (/\b(nome|razao|social)\b/i.test(clean)) {
+        campo = 'nome';
+      } else if (/\b(fundacao)\b/i.test(clean)) {
+        campo = 'fundacao';
+      }
+
+      if (campo) {
+        console.log(`[MaestroV2Context] Roteamento determinístico contextual de cliente ativo. Campo: "${campo}", Cliente: ${activeClient.clientName}`);
+        v2Ctx.domain = 'cliente';
+        
+        // Zera pendências de orçamento avulso, pois mudamos de assunto
+        v2Ctx.pendingProductResolution = null;
+        v2Ctx.pendingAmbiguousItem = null;
+        
+        return {
+          routed: true,
+          plan: {
+            steps: [
+              {
+                tool: 'consultarCampoCadastro',
+                params: {
+                  campo,
+                  id_cliente: activeClient.clientInternalId
+                }
+              }
+            ]
+          }
+        };
+      }
+    }
   }
 
   const isBackToOrcamento = /\b(voltar\s*(ao|para\s*o)?\s*orcamento\s*(anterior)?)\b/i.test(clean);
