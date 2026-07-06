@@ -455,6 +455,29 @@ export function PedidoModelosTab({
       return;
     }
 
+    // Resolvendo formato UUID para buscar numerador compatível
+    const numFormatId = item.produto?.id_formato;
+    const formatoObj = formatosOpcoes.find(f => 
+      String(f.id_formato_num) === String(numFormatId) || String(f.id) === String(numFormatId)
+    );
+    const realFormatoUUID = formatoObj ? formatoObj.id : null;
+
+    // Default de Cor do papel (padrao) vindo do cadastro do produto
+    const defaultCor = coresOpcoes.find(c => 
+      item.produto?.id_modelo_cor && String(c.id_modelo_cor_num) === String(item.produto.id_modelo_cor)
+    );
+    const defaultCorName = defaultCor ? defaultCor.name : null;
+
+    // Default de Numerador (gabarito_operacional) vindo do formato do produto
+    const defaultNum = numeracoesOpcoes.find((n) => {
+      if (realFormatoUUID) {
+        if (String(n.formato_id) === realFormatoUUID) return true;
+        if (Array.isArray(n.formato_ids) && n.formato_ids.some((id: any) => String(id) === realFormatoUUID)) return true;
+      }
+      return false;
+    });
+    const defaultNumName = defaultNum ? defaultNum.name : null;
+
     const newId = `new_${Date.now()}`;
     const newModel: PedidoModeloState = {
       tempId: newId,
@@ -462,12 +485,14 @@ export function PedidoModelosTab({
       isPersisted: false,
       id_produto_proposta_origem: item.id_produto_proposta_origem || null,
       nome_modelo: "",
-      padrao: null,
+      padrao: defaultCorName || null,
       quantidade: 0,
-      tipo_numeracao: "SEM_NUMERACAO",
-      numeracao_inicio: null,
+      tipo_numeracao: defaultNumName ? "SEQUENCIAL" : "SEM_NUMERACAO",
+      numeracao_inicio: defaultNumName ? 1 : null,
       numeracao_fim: null,
       verso_tipo: "SÓ FRENTE",
+      bloco: "50",
+      gabarito_operacional: defaultNumName || null,
     };
 
     onModelosChange([...modelos, newModel]);

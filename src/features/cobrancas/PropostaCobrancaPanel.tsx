@@ -146,6 +146,14 @@ export function PropostaCobrancaPanel({
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
 
   useEffect(() => {
+    if (modalOpen) {
+      setIsUserEditingValor(false);
+      setForm(buildInitialFormState());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen]);
+
+  useEffect(() => {
     if (!isUserEditingValor) {
       setForm((current) => ({ ...current, valor: roundMoney(saldoRestante) }));
     }

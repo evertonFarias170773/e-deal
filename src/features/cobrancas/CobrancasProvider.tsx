@@ -769,8 +769,20 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         console.warn("[cancelCobranca] Falha ao registrar histórico no chat:", chatErr);
       }
 
+      // Update local state immediately so UI updates reactively
+      const updateCobLocal = (list: Cobranca[]): Cobranca[] =>
+        list.map((cobranca) => {
+          if (cobranca.id !== id) return cobranca;
+          return { ...cobranca, status: "CANCELADO", motivo_cancela: motivo };
+        });
+      setCobrancas(updateCobLocal);
+      setCobrancasStats(updateCobLocal);
+
       await refreshCobrancas();
-      if (cob.id_int) await checkAndRevertPropostaStatus(cob.id_int);
+      if (cob.id_int) {
+        await recalcularBoletoIdIntsLocal(cob.id_int);
+        await checkAndRevertPropostaStatus(cob.id_int);
+      }
       return { success: true };
     }
 
@@ -802,7 +814,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setCobrancas(updateCob);
     setCobrancasStats(updateCob);
     return { success: true };
-  }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas, recalcularBoletoIdIntsLocal]);
 
   const cancelarExterno = useCallback(async (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string): Promise<{ success: boolean; errorMessage?: string }> => {
     try {
@@ -824,13 +836,28 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: data.message || "Erro desconhecido ao cancelar externamente." };
       }
 
+      // Update local state immediately so UI updates reactively
+      if (acaoLocal === "DELETE") {
+        const updateCob = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== cobranca.id);
+        setCobrancas(updateCob);
+        setCobrancasStats(updateCob);
+      } else {
+        const updateCob = (list: Cobranca[]): Cobranca[] =>
+          list.map((c) => (c.id === cobranca.id ? { ...c, status: "CANCELADO", motivo_cancela: motivo || "" } : c));
+        setCobrancas(updateCob);
+        setCobrancasStats(updateCob);
+      }
+
       await refreshCobrancas();
-      if (cobranca.id_int) await checkAndRevertPropostaStatus(cobranca.id_int);
+      if (cobranca.id_int) {
+        await recalcularBoletoIdIntsLocal(cobranca.id_int);
+        await checkAndRevertPropostaStatus(cobranca.id_int);
+      }
       return { success: true };
     } catch (error: any) {
       return { success: false, errorMessage: error.message || "Falha na comunicação com a API." };
     }
-  }, [refreshCobrancas]);
+  }, [refreshCobrancas, recalcularBoletoIdIntsLocal]);
 
   const deleteCobranca = useCallback(async (id: string): Promise<{ success: boolean; errorMessage?: string }> => {
     const cobranca = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
@@ -879,8 +906,16 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: error.message };
       }
 
+      // Update local state immediately so UI updates reactively
+      const updateCobLocal = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== id);
+      setCobrancas(updateCobLocal);
+      setCobrancasStats(updateCobLocal);
+
       await refreshCobrancas();
-      if (cobranca.id_int) await checkAndRevertPropostaStatus(cobranca.id_int);
+      if (cobranca.id_int) {
+        await recalcularBoletoIdIntsLocal(cobranca.id_int);
+        await checkAndRevertPropostaStatus(cobranca.id_int);
+      }
       return { success: true };
     } else {
       const updateCob = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== id);
@@ -888,7 +923,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       setCobrancasStats(updateCob);
       return { success: true };
     }
-  }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas, recalcularBoletoIdIntsLocal]);
 
 
   const liberarParaPedido = useCallback((idInt: number) => {
