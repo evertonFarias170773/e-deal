@@ -1710,4 +1710,28 @@ export function presenterCancelarOrcamentoAvulso(activeClient: any): PresenterRe
   };
 }
 
+export function presenterMostrarItensOrcamento(itens: OrcamentoAvulsoItem[]): PresenterResult {
+  const lines = itens && itens.length > 0
+    ? itens.map(it => `✅ **${it.quantidade.toLocaleString('pt-BR')}** ${it.termo}`).join('\n')
+    : 'Nenhum item ativo no momento.';
+    
+  return {
+    message: {
+      id:          genId(),
+      role:        'maestro',
+      content:     `No orçamento atual temos os seguintes itens:\n\n${lines}`,
+      contentType: 'text',
+      sources:     [],
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Mostrar itens', detail: 'Listar itens ativos', status: 'done', timestamp: nowTime() }
+    ],
+    lastAnswerUpdate: null
+  };
+}
+
 

@@ -38,6 +38,9 @@ export interface MaestroV2Context {
   pendingAmbiguousItem?: PendingAmbiguousItem | null;
   previousOrcamentoItens?: OrcamentoAvulsoItem[];
   lastRequestedQuantity?: number;
+  lastExplicitBudgetRequestText?: string;
+  lastExplicitBudgetItems?: OrcamentoAvulsoItem[];
+  lastSuccessfulBudgetItems?: OrcamentoAvulsoItem[];
 }
 
 const CONTEXT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos de validade
@@ -53,7 +56,10 @@ export function getEmptyV2Context(): MaestroV2Context {
     pendingProductResolution: null,
     pendingAmbiguousItem: null,
     previousOrcamentoItens: [],
-    lastRequestedQuantity: undefined
+    lastRequestedQuantity: undefined,
+    lastExplicitBudgetRequestText: undefined,
+    lastExplicitBudgetItems: [],
+    lastSuccessfulBudgetItems: []
   };
 }
 
@@ -96,7 +102,7 @@ export function serializeV2Context(ctx: MaestroV2Context): string {
   return JSON.stringify(ctx);
 }
 
-function normalizeText(text: string): string {
+export function normalizeText(text: string): string {
   return text
     .toLowerCase()
     .normalize("NFD")
@@ -201,10 +207,29 @@ function detectAndExecuteChangeAction(clean: string, query: string, v2Ctx: Maest
     console.log(`- Item alvo: "${oldTerm}"`);
     console.log(`- Mutação: ${oldQtd} -> ${newQtd} (Termo temporário: "${v2Ctx.orcamentoItens[matchedItemIdx].termo}")`);
     console.log(`- Orçamento depois: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
+    logDevContinuation('CHANGE', query, { termo: oldTerm, quantidade: newQtd }, v2Ctx.previousOrcamentoItens, v2Ctx.orcamentoItens, null);
     return true;
   }
 
   return false;
+}
+
+function logDevContinuation(
+  acao: 'REPLACE_LIST' | 'ADD' | 'RESTORE' | 'REPEAT' | 'SHOW' | 'REMOVE' | 'REACTION' | 'CHANGE' | 'UNKNOWN',
+  query: string,
+  extraido: any,
+  antes: any,
+  depois: any,
+  pendencias: any
+) {
+  console.log('====== [MaestroV2Context] LOG TÉCNICO DEV ======');
+  console.log(`- Texto recebido: "${query}"`);
+  console.log(`- Ação detectada: ${acao}`);
+  console.log(`- Itens extraídos: ${JSON.stringify(extraido)}`);
+  console.log(`- Orçamento antes: ${JSON.stringify(antes)}`);
+  console.log(`- Orçamento depois: ${JSON.stringify(depois)}`);
+  console.log(`- Pendências: ${JSON.stringify(pendencias)}`);
+  console.log('================================================');
 }
 
 export function handleContextContinuation(
@@ -346,7 +371,125 @@ export function handleContextContinuation(
   if (v2Ctx.domain === 'orcamento_avulso') {
     const hasPending = !!v2Ctx.pendingProductResolution;
     const hasAmbiguous = !!v2Ctx.pendingAmbiguousItem;
-    
+
+    // ── A. REPETIR / REFAZER ORÇAMENTO
+    const isRepeat = /\b(refaca|faz\s*de\s*novo|recalcula|repete)\b/i.test(clean);
+    if (isRepeat) {
+      const targetItems = v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || v2Ctx.previousOrcamentoItens;
+      if (targetItems && targetItems.length > 0) {
+        const antes = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+        v2Ctx.domain = 'orcamento_avulso';
+        v2Ctx.orcamentoItens = JSON.parse(JSON.stringify(targetItems));
+        v2Ctx.pendingProductResolution = null;
+        v2Ctx.pendingAmbiguousItem = null;
+        logDevContinuation('REPEAT', query, targetItems, antes, v2Ctx.orcamentoItens, null);
+        return {
+          routed: true,
+          plan: {
+            steps: [
+              {
+                tool: 'simularOrcamentoAvulso',
+                params: { itens: v2Ctx.orcamentoItens }
+              }
+            ]
+          }
+        };
+      }
+    }
+
+    // ── B. MOSTRAR ITENS DO ORÇAMENTO
+    const isShowItemsQuery = /\b(o\s*que\s*(eu\s*)?te\s*pedi|qual\s*era\s*o\s*primeiro\s*item|o\s*que\s*tinha\s*no\s*pedido|quais\s*itens|quais\s*os\s*itens)\b/i.test(clean);
+    if (isShowItemsQuery) {
+      const targetItems = v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0
+        ? v2Ctx.orcamentoItens
+        : (v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || []);
+      if (targetItems && targetItems.length > 0) {
+        logDevContinuation('SHOW', query, null, v2Ctx.orcamentoItens, targetItems, null);
+        return {
+          routed: true,
+          plan: {
+            steps: [
+              {
+                tool: 'mostrar_itens_orcamento',
+                params: {}
+              }
+            ]
+          }
+        };
+      }
+    }
+
+    // ── C. RESTAURAR ITEM DE ANTES (MANTÉM / NÃO ERA PRA TIRAR)
+    const isRestore = /\b(nao\s*era\s*pra\s*(tirar|remover)|nao\s*remove|mantem|manter|mantenha|deixa|deixar|deixe|volta|voltar|volte)\b/i.test(clean);
+    if (isRestore) {
+      const productTerm = clean
+        .replace(/\b(mante(m|r|nha|nham|nas)?|deixa(r|s|a|am|as)?|volta(r|s|a|am|as)?|o|a|os|as|no|em|orcamento|anterior|item|da\s*proposta|de\s*antes|nao\s*era\s*pra\s*(tirar|remover)|nao\s*remove|tambem)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (productTerm) {
+        const normTerm = normalizeText(productTerm);
+        const alreadyActive = (v2Ctx.orcamentoItens || []).find(item => normalizeText(item.termo).includes(normTerm));
+
+        if (alreadyActive) {
+          console.log(`[MaestroV2Context] Ação: Manter item "${alreadyActive.termo}" (já está ativo).`);
+          logDevContinuation('RESTORE', query, alreadyActive, v2Ctx.orcamentoItens, v2Ctx.orcamentoItens, null);
+          return {
+            routed: true,
+            plan: {
+              steps: [
+                {
+                  tool: 'simularOrcamentoAvulso',
+                  params: { itens: v2Ctx.orcamentoItens }
+                }
+              ]
+            }
+          };
+        } else {
+          // Combina todas as fontes de histórico para encontrar o item
+          const targetHistory: OrcamentoAvulsoItem[] = [];
+          const seen = new Set<string>();
+          
+          const addToHistory = (list?: OrcamentoAvulsoItem[]) => {
+            if (!list) return;
+            for (const item of list) {
+              const norm = normalizeText(item.termo);
+              if (!seen.has(norm)) {
+                seen.add(norm);
+                targetHistory.push(item);
+              }
+            }
+          };
+          
+          addToHistory(v2Ctx.previousOrcamentoItens);
+          addToHistory(v2Ctx.lastSuccessfulBudgetItems);
+          addToHistory(v2Ctx.lastExplicitBudgetItems);
+
+          const historical = targetHistory.find(item => normalizeText(item.termo).includes(normTerm));
+          if (historical) {
+            const antes = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+            v2Ctx.orcamentoItens = v2Ctx.orcamentoItens || [];
+            v2Ctx.orcamentoItens.push({ ...historical });
+            v2Ctx.pendingProductResolution = null;
+            v2Ctx.pendingAmbiguousItem = null;
+            logDevContinuation('RESTORE', query, historical, antes, v2Ctx.orcamentoItens, null);
+
+            return {
+              routed: true,
+              plan: {
+                steps: [
+                  {
+                    tool: 'simularOrcamentoAvulso',
+                    params: { itens: v2Ctx.orcamentoItens }
+                  }
+                ]
+              }
+            };
+          }
+        }
+      }
+    }
+
     const isQuantityReference = /\b(mas\s*na\s*quantidade|na\s*qtd|quantidade\s*anterior|com\s*os|que\s*eu\s*pedi|quantidade\s*que\s*falei)\b/i.test(clean);
     const isSameQtd = /\b(a\s*mesma\s*(de\s*antes)?|mesma\s*quantidade|na\s*quantidade\s*anterior|qtd\s*anterior)\b/i.test(clean);
     const isKeep = /\b(mantem|manter|mantenha|deixa|deixar|deixe|volta|voltar|volte)\b/i.test(clean);
@@ -364,6 +507,7 @@ export function handleContextContinuation(
     // 1. PRIORIDADE: Reação/Reclamação do usuário
     if (isReaction) {
       console.log('[MaestroV2Context] Reação/Reclamação do usuário detectada. Ativando recuperação.');
+      logDevContinuation('REACTION', query, null, v2Ctx.orcamentoItens, v2Ctx.orcamentoItens, { ambiguous: v2Ctx.pendingAmbiguousItem, pending: v2Ctx.pendingProductResolution });
       return {
         routed: true,
         plan: {
@@ -474,51 +618,7 @@ export function handleContextContinuation(
       };
     }
 
-    if (isKeep) {
-      const productTerm = clean
-        .replace(/\b(mante(m|r|nha|nham|nas)?|deixa(r|s|a|am|as)?|volta(r|s|a|am|as)?|o|a|os|as|no|em|orcamento|anterior|item|da\s*proposta|de\s*antes)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
 
-      if (productTerm) {
-        const normTerm = normalizeText(productTerm);
-        const alreadyActive = (v2Ctx.orcamentoItens || []).find(item => normalizeText(item.termo).includes(normTerm));
-
-        if (alreadyActive) {
-          console.log(`[MaestroV2Context] Ação: Manter item "${alreadyActive.termo}" (já está ativo).`);
-          return {
-            routed: true,
-            plan: {
-              steps: [
-                {
-                  tool: 'simularOrcamentoAvulso',
-                  params: { itens: v2Ctx.orcamentoItens }
-                }
-              ]
-            }
-          };
-        } else {
-          const historical = (v2Ctx.previousOrcamentoItens || []).find(item => normalizeText(item.termo).includes(normTerm));
-          if (historical) {
-            console.log(`[MaestroV2Context] Ação: Restaurar item "${historical.termo}" do snapshot com quantidade ${historical.quantidade}.`);
-            v2Ctx.orcamentoItens = v2Ctx.orcamentoItens || [];
-            v2Ctx.orcamentoItens.push({ ...historical });
-
-            return {
-              routed: true,
-              plan: {
-                steps: [
-                  {
-                    tool: 'simularOrcamentoAvulso',
-                    params: { itens: v2Ctx.orcamentoItens }
-                  }
-                ]
-              }
-            };
-          }
-        }
-      }
-    }
 
     if (detectAndExecuteChangeAction(clean, query, v2Ctx)) {
       return {
@@ -534,7 +634,7 @@ export function handleContextContinuation(
       };
     }
 
-    if (!hasNumber && !isClear && !isRemove && !isChange && !isMerge && !isRecalc && !isQuantityReference && !isKeep && !isSameQtd && !isReaction) {
+    if (!hasNumber && !isClear && !isRemove && !isChange && !isMerge && !isRecalc && !isQuantityReference && !isRestore && !isSameQtd && !isReaction) {
       if (clean.length > 2 && !/\b(oi|ola|bom\s*dia|boa\s*tarde|boa\s*noite|ok|sim|nao|quero)\b/i.test(clean)) {
         console.log('[MaestroV2Context] Termo de produto sem quantidade e sem pendência. Perguntando quantidade.');
         return {
@@ -593,6 +693,7 @@ export function handleContextContinuation(
           return !normalizeText(item.termo).includes(termoToRemove);
         });
         console.log(`[MaestroV2Context] Ação: Remover item "${termoToRemove}". Removidos: ${originalCount - v2Ctx.orcamentoItens.length}`);
+        logDevContinuation('REMOVE', query, termoToRemove, v2Ctx.previousOrcamentoItens, v2Ctx.orcamentoItens, null);
       }
       return {
         routed: true,
@@ -642,8 +743,10 @@ export function handleContextContinuation(
 
     if (parsedNewItems) {
       v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+      const antes = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
       
-      const cleanStartsAddition = /^\s*(?:add|mais|\+|inclui(r)?|adiciona(r)?|insere|coloca(r)?)\b/i.test(clean);
+      const cleanStartsAddition = /^\s*(?:add|mais|\+|inclui(r)?|adiciona(r)?|insere|coloca(r)?)\b/i.test(clean) ||
+                                  /\b(esqueceu|faltou|corrigindo|correcao)\b/i.test(clean);
       if (cleanStartsAddition) {
         console.log('[MaestroV2Context] Ação: Adicionar novos itens (acumulativo):', parsedNewItems);
         const current = v2Ctx.orcamentoItens || [];
@@ -658,12 +761,16 @@ export function handleContextContinuation(
           v2Ctx.lastRequestedQuantity = newItem.quantidade;
         }
         v2Ctx.orcamentoItens = current;
+        logDevContinuation('ADD', query, parsedNewItems, antes, v2Ctx.orcamentoItens, null);
       } else {
         console.log('[MaestroV2Context] Ação: Substituir lista de itens explícita:', parsedNewItems);
         v2Ctx.orcamentoItens = parsedNewItems;
         v2Ctx.lastRequestedQuantity = parsedNewItems[0].quantidade;
         v2Ctx.pendingProductResolution = null;
         v2Ctx.pendingAmbiguousItem = null;
+        v2Ctx.lastExplicitBudgetItems = parsedNewItems;
+        v2Ctx.lastExplicitBudgetRequestText = query;
+        logDevContinuation('REPLACE_LIST', query, parsedNewItems, antes, v2Ctx.orcamentoItens, null);
       }
 
       return {
@@ -702,9 +809,6 @@ export function handleContextContinuation(
   return null;
 }
 
-/**
- * Função utilitária para extração rápida de itens avulsos em mensagens de continuação.
- */
 function parseOrcamentoAvulsoItems(query: string): OrcamentoAvulsoItem[] | null {
   const clean = query
     .toLowerCase()
@@ -712,7 +816,8 @@ function parseOrcamentoAvulsoItems(query: string): OrcamentoAvulsoItem[] | null 
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
 
-  const splitRegex = /(?:\s*\+\s*|\s*,\s*|\s+(?:e|ou)\s+)/i;
+  // Split por separadores comuns (+, vírgula, e, ou, mais)
+  const splitRegex = /(?:\s*\+\s*|\s*,\s*|\s+(?:e|ou|mais)\s+)/i;
   const parts = clean.split(splitRegex);
   const items: OrcamentoAvulsoItem[] = [];
 
@@ -720,42 +825,42 @@ function parseOrcamentoAvulsoItems(query: string): OrcamentoAvulsoItem[] | null 
     const trimmed = part.trim();
     if (!trimmed) continue;
 
-    let phrase = trimmed
-      .replace(/\b(add|mais|inclui|incluir|coloca|colocar|boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|cotacao|orcamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca)\b/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!phrase) continue;
-
-    const regexNumBefore = /^(\d+(?:\.\d+)?)\s*([kk]?)\s*(.+)$/i;
-    const regexNumAfter = /^(.+?)\s*(\d+(?:\.\d+)?)\s*([kk]?)$/i;
-
-    let match = phrase.match(regexNumBefore);
-    if (match) {
-      const numStr = match[1];
-      const isK = match[2].toLowerCase() === 'k';
-      const termo = match[3].replace(/[?]/g, '').trim();
-      
+    // Procura número antes do termo: ex "5800 mobi"
+    const matchBefore = trimmed.match(/\b(\d+(?:\.\d+)?)\s*([kk]?)\s+([a-z\d\s-]+)/i);
+    if (matchBefore) {
+      const numStr = matchBefore[1];
+      const isK = matchBefore[2].toLowerCase() === 'k';
+      const termo = matchBefore[3].replace(/[?]/g, '').trim();
       let qtd = parseFloat(numStr);
       if (isK) qtd *= 1000;
       
-      if (termo && !isNaN(qtd)) {
-        items.push({ quantidade: qtd, termo });
+      const cleanTerm = termo
+        .replace(/\b(add|mais|inclui|incluir|coloca|colocar|boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|preço|cotacao|cotação|orcamento|orçamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (cleanTerm && !isNaN(qtd)) {
+        items.push({ quantidade: qtd, termo: cleanTerm });
         continue;
       }
     }
 
-    match = phrase.match(regexNumAfter);
-    if (match) {
-      const termo = match[1].replace(/[?]/g, '').trim();
-      const numStr = match[2];
-      const isK = match[3].toLowerCase() === 'k';
-      
+    // Procura número após o termo: ex "mobi 5800"
+    const matchAfter = trimmed.match(/\b([a-z\d\s-]+?)\s+(\d+(?:\.\d+)?)\s*([kk]?)\b/i);
+    if (matchAfter) {
+      const termo = matchAfter[1].replace(/[?]/g, '').trim();
+      const numStr = matchAfter[2];
+      const isK = matchAfter[3].toLowerCase() === 'k';
       let qtd = parseFloat(numStr);
       if (isK) qtd *= 1000;
       
-      if (termo && !isNaN(qtd)) {
-        items.push({ quantidade: qtd, termo });
+      const cleanTerm = termo
+        .replace(/\b(add|mais|inclui|incluir|coloca|colocar|boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|preço|cotacao|cotação|orcamento|orçamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (cleanTerm && !isNaN(qtd)) {
+        items.push({ quantidade: qtd, termo: cleanTerm });
         continue;
       }
     }

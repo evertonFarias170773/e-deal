@@ -45,7 +45,8 @@ export type AllowedToolName =
   | 'voltar_orcamento_anterior'
   | 'perguntar_quantidade_orcamento'
   | 'recuperacao_orcamento_avulso'
-  | 'cancelar_orcamento_avulso';
+  | 'cancelar_orcamento_avulso'
+  | 'mostrar_itens_orcamento';
 
 export interface RouterStep {
   tool: AllowedToolName;
@@ -111,7 +112,8 @@ function parseOrcamentoAvulso(query: string): { quantidade: number; termo: strin
     return null;
   }
 
-  const splitRegex = /(?:\s*\+\s*|\s*,\s*|\s+(?:e|ou)\s+)/i;
+  // Split por separadores comuns (+, vírgula, e, ou, mais)
+  const splitRegex = /(?:\s*\+\s*|\s*,\s*|\s+(?:e|ou|mais)\s+)/i;
   const parts = clean.split(splitRegex);
   const items: { quantidade: number; termo: string }[] = [];
 
@@ -119,42 +121,42 @@ function parseOrcamentoAvulso(query: string): { quantidade: number; termo: strin
     const trimmed = part.trim();
     if (!trimmed) continue;
 
-    let phrase = trimmed
-      .replace(/\b(boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|cotacao|orcamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca)\b/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!phrase) continue;
-
-    const regexNumBefore = /^(\d+(?:\.\d+)?)\s*([kk]?)\s*(.+)$/i;
-    const regexNumAfter = /^(.+?)\s*(\d+(?:\.\d+)?)\s*([kk]?)$/i;
-
-    let match = phrase.match(regexNumBefore);
-    if (match) {
-      const numStr = match[1];
-      const isK = match[2].toLowerCase() === 'k';
-      const termo = match[3].replace(/[?]/g, '').trim();
-      
+    // Procura número antes do termo: ex "5800 mobi"
+    const matchBefore = trimmed.match(/\b(\d+(?:\.\d+)?)\s*([kk]?)\s+([a-z\d\s-]+)/i);
+    if (matchBefore) {
+      const numStr = matchBefore[1];
+      const isK = matchBefore[2].toLowerCase() === 'k';
+      const termo = matchBefore[3].replace(/[?]/g, '').trim();
       let qtd = parseFloat(numStr);
       if (isK) qtd *= 1000;
       
-      if (termo && !isNaN(qtd)) {
-        items.push({ quantidade: qtd, termo });
+      const cleanTerm = termo
+        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (cleanTerm && !isNaN(qtd)) {
+        items.push({ quantidade: qtd, termo: cleanTerm });
         continue;
       }
     }
 
-    match = phrase.match(regexNumAfter);
-    if (match) {
-      const termo = match[1].replace(/[?]/g, '').trim();
-      const numStr = match[2];
-      const isK = match[3].toLowerCase() === 'k';
-      
+    // Procura número após o termo: ex "mobi 5800"
+    const matchAfter = trimmed.match(/\b([a-z\d\s-]+?)\s+(\d+(?:\.\d+)?)\s*([kk]?)\b/i);
+    if (matchAfter) {
+      const termo = matchAfter[1].replace(/[?]/g, '').trim();
+      const numStr = matchAfter[2];
+      const isK = matchAfter[3].toLowerCase() === 'k';
       let qtd = parseFloat(numStr);
       if (isK) qtd *= 1000;
       
-      if (termo && !isNaN(qtd)) {
-        items.push({ quantidade: qtd, termo });
+      const cleanTerm = termo
+        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (cleanTerm && !isNaN(qtd)) {
+        items.push({ quantidade: qtd, termo: cleanTerm });
         continue;
       }
     }
@@ -200,6 +202,8 @@ export async function routeToolSimple(
     v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
     v2Ctx.orcamentoItens = parsedItems;
     v2Ctx.lastRequestedQuantity = parsedItems[0].quantidade;
+    v2Ctx.lastExplicitBudgetItems = parsedItems;
+    v2Ctx.lastExplicitBudgetRequestText = query;
 
     console.log('====== [MaestroV2Router] LOG DE DEV ======');
     console.log(`- Domínio ativo: "${v2Ctx.domain}"`);

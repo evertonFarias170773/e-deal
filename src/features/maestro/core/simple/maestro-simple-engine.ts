@@ -91,7 +91,7 @@ import {
   type PresenterResult,
 } from './maestro-simple-presenter';
 import { routeToolSimple } from './maestro-v2-router';
-import { deserializeV2Context, serializeV2Context } from './maestro-v2-context-manager';
+import { deserializeV2Context, serializeV2Context, normalizeText } from './maestro-v2-context-manager';
 
 import type { ConversationMessage, ActivityStep, ConversationContext } from '../../types';
 
@@ -502,6 +502,14 @@ export async function processSimpleQueryWithBrain(
           pr = presenterCancelarOrcamentoAvulso(simpleCtx.activeClient);
         }
 
+        else if (step.tool === 'mostrar_itens_orcamento') {
+          const { presenterMostrarItensOrcamento } = require('./maestro-simple-presenter');
+          const targetItems = v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0
+            ? v2Ctx.orcamentoItens
+            : (v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || []);
+          pr = presenterMostrarItensOrcamento(targetItems);
+        }
+
         else if (step.tool === 'requisicao_nao_suportada') {
           pr = presenterFallback(simpleCtx); // Usa o fallback natural como resposta de "não sei"
         }
@@ -649,13 +657,12 @@ export async function processSimpleQueryWithBrain(
             
             const failedItem = result.itens.find(it => it.status !== 'sucesso');
             if (failedItem) {
-              // Reverte o orcamentoItens no contexto para o estado anterior
-              if (v2Ctx.previousOrcamentoItens && v2Ctx.previousOrcamentoItens.length > 0) {
-                console.log(`[MaestroEngine] Item falhou (${failedItem.status}). Revertendo orçamento para o estado anterior.`);
-                v2Ctx.orcamentoItens = JSON.parse(JSON.stringify(v2Ctx.previousOrcamentoItens));
-              } else {
-                v2Ctx.orcamentoItens = (v2Ctx.orcamentoItens || []).filter(it => it.termo !== failedItem.termo);
-              }
+              // Remove apenas os itens que falharam da lista ativa, preservando os demais itens válidos
+              const failedTerms = result.itens.filter(it => it.status !== 'sucesso').map(it => normalizeText(it.termo));
+              v2Ctx.orcamentoItens = (v2Ctx.orcamentoItens || []).filter(it => {
+                return !failedTerms.includes(normalizeText(it.termo));
+              });
+              console.log(`[MaestroEngine] Item falhou (${failedItem.status}): "${failedItem.termo}". Mantendo apenas os válidos no orçamento ativo: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
 
               if (failedItem.status === 'ambiguo') {
                 v2Ctx.pendingAmbiguousItem = {
@@ -680,7 +687,8 @@ export async function processSimpleQueryWithBrain(
               console.log(`- Handler usado: simularOrcamentoAvulso`);
               console.log('=====================================');
             } else {
-              // Se tudo deu certo, limpamos as pendências
+              // Se tudo deu certo, limpamos as pendências e salvamos como último sucesso consolidado completo
+              v2Ctx.lastSuccessfulBudgetItems = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
               if (v2Ctx.pendingProductResolution || v2Ctx.pendingAmbiguousItem) {
                 console.log('====== [MaestroEngine] DEV LOG ======');
                 console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
