@@ -29,6 +29,8 @@ import type {
   ComparacaoRecebimentosResult,
   ComparacaoItem,
 } from './maestro-simple-pagamentos.server';
+import type { OrcamentoAvulsoResult } from './maestro-simple-produtos.server';
+import type { OrcamentoAvulsoItem } from './maestro-v2-context-manager';
 
 export interface PresenterResult {
   message: ConversationMessage;
