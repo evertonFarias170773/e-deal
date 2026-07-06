@@ -198,6 +198,82 @@ async function buildDetailedClientContext(
 }
 
 
+export async function buscarEnderecosCliente(
+  supabase: SupabaseClient,
+  idCliente: number
+): Promise<EnderecoSimples[]> {
+  const { data } = await supabase
+    .from('enderecos')
+    .select('tipo_endereco, cep, endereco, numero, complemento, bairro, cidade, uf, obs')
+    .eq('id_cliente', idCliente)
+    .limit(20);
+  
+  return (data || []).map(e => ({
+    tipoEndereco: e.tipo_endereco || null,
+    cep: e.cep || null,
+    endereco: e.endereco || null,
+    numero: e.numero || null,
+    complemento: e.complemento || null,
+    bairro: e.bairro || null,
+    cidade: e.cidade || null,
+    uf: e.uf || null,
+    obs: e.obs || null
+  }));
+}
+
+export async function buscarContatosCliente(
+  supabase: SupabaseClient,
+  idCliente: number
+): Promise<ContatoSimples[]> {
+  const { data } = await supabase
+    .from('contatos')
+    .select('nome_contato, cargo, whats, e_mail')
+    .eq('id_cliente', idCliente)
+    .limit(20);
+  
+  return (data || []).map(ct => ({
+    nomeContato: ct.nome_contato || null,
+    cargo: ct.cargo || null,
+    whats: ct.whats || null,
+    email: ct.e_mail || null
+  }));
+}
+
+export async function buscarSociosCliente(
+  supabase: SupabaseClient,
+  idCliente: number
+): Promise<SocioSimples[]> {
+  const { data: sociosRaw } = await supabase
+    .from('clientes_socios')
+    .select('id_cliente_socio, tipo_relacao')
+    .eq('id_cliente_principal', idCliente)
+    .limit(20);
+  
+  const socios = (sociosRaw || []).map(s => ({
+    idClienteSocio: s.id_cliente_socio != null ? Number(s.id_cliente_socio) : null,
+    tipoRelacao: s.tipo_relacao || null,
+  }));
+
+  const socioIds = socios.map(s => s.idClienteSocio).filter((id): id is number => id !== null);
+  if (socioIds.length > 0) {
+    const { data: socioNames } = await supabase
+      .from('clientes')
+      .select('id_cliente, nome, fantasia')
+      .in('id_cliente', socioIds);
+    
+    if (socioNames) {
+      return socios.map(s => {
+        const found = socioNames.find(sn => sn.id_cliente === s.idClienteSocio);
+        return {
+          ...s,
+          nomeSocio: found ? (found.fantasia || found.nome || `Cliente ${s.idClienteSocio}`) : undefined
+        };
+      });
+    }
+  }
+  return socios;
+}
+
 // ─── Buscas Principais ────────────────────────────────────────────────────
 
 /**

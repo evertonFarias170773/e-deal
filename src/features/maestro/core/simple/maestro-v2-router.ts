@@ -50,7 +50,7 @@ export interface RouterStep {
   tool: AllowedToolName;
   params: {
     id_cliente?: number;
-    campo?: 'padrao_pagamento' | 'telefone' | 'cnpj' | 'email' | 'cidade' | 'vendedor' | 'credito' | 'restricao' | 'ativo' | 'risco_credito' | 'nome' | 'fundacao';
+    campo?: 'padrao_pagamento' | 'telefone' | 'cnpj' | 'email' | 'cidade' | 'vendedor' | 'credito' | 'restricao' | 'ativo' | 'risco_credito' | 'nome' | 'fundacao' | 'enderecos' | 'contatos' | 'socios';
     busca?: string;
     filtro?: 'todos' | 'atrasados' | 'abertos';
     status?: 'abertas' | 'aprovadas' | 'todas';
@@ -280,7 +280,7 @@ WHITELIST DE FERRAMENTAS PERMITIDAS:
 1. "requisicao_nao_suportada": Use obrigatoriamente se a pergunta não for atendida pelas outras tools.
    - Parâmetros: {}
 2. "consultarCampoCadastro": Buscar informação estática.
-   - Parâmetros: { campo: "padrao_pagamento" | "telefone" | "cnpj" | "email" | "cidade" | "vendedor" | "credito" | "restricao" | "ativo" | "risco_credito" | "nome" | "fundacao" }
+   - Parâmetros: { campo: "padrao_pagamento" | "telefone" | "cnpj" | "email" | "cidade" | "vendedor" | "credito" | "restricao" | "ativo" | "risco_credito" | "nome" | "fundacao" | "enderecos" | "contatos" | "socios" }
 3. "buscarCliente": Selecionar cliente pelo nome ou ID.
    - Parâmetros: { busca: string }
 4. "consultarBoletos": Consultar saúde de pagamentos ou dívidas reais ("ele paga em dia?", "atrasa?").
@@ -309,6 +309,7 @@ REGRAS DE DECISÃO RÍGIDAS E PERÍODOS:
 - Ano Ausente: Se o usuário citar apenas um mês (ex: "maio"), assuma obrigatoriamente o ano da DATA REFERÊNCIA (ex: 2026).
 - Edição de Comparação: Se o usuário pedir para alterar a comparação ("traga maio e tire agosto", "troca agosto por maio", "inclui maio", "remove agosto"), leia o JSON "Última resposta dados", modifique a lista de meses conforme solicitado (preenchendo anos ausentes com o ano atual), e chame "compararRecebimentoClienteMeses" emitindo a nova lista COMPLETA de meses.
 - Perguntas sobre "padrão de pagamento", "como ele paga", "ele é faturado?" usam "consultarCampoCadastro" com campo="padrao_pagamento".
+- Perguntas contextuais sobre relacionamentos ou dados estruturados do cliente ativo como endereços (ex: "e os endereços?", "onde entrega?", "endereço de entrega", "endereços dele", "endereços desse cliente"), contatos (ex: "quem são os contatos?", "contatos dele", "quem são os contatos dele?", "e os contatos?") e sócios/vínculos (ex: "tem sócios?", "sócios dele", "quais os sócios?", "vínculos", "e os vínculos?") usam obrigatoriamente "consultarCampoCadastro" com campo="enderecos", campo="contatos" ou campo="socios". NUNCA use a tool "buscarCliente" ou tente pesquisar por "quem são os contatos" como se fosse o nome de um cliente.
 - A ferramenta "buscarCliente" não deve ser usada se o usuário já estiver se referindo ao cliente ativo ("ele", "dele", "desse cliente").
 
 FORMATO DE RETORNO (JSON RÍGIDO):
@@ -389,7 +390,8 @@ Pergunta do usuário: "${query}"
         const { campo } = step.params;
         const validFields = [
           'padrao_pagamento', 'telefone', 'cnpj', 'email', 'cidade', 'vendedor',
-          'credito', 'restricao', 'ativo', 'risco_credito', 'nome', 'fundacao'
+          'credito', 'restricao', 'ativo', 'risco_credito', 'nome', 'fundacao',
+          'enderecos', 'contatos', 'socios'
         ];
         if (!campo || !validFields.includes(campo)) {
           console.warn('[MaestroV2Router] Rejeitado: campo de cadastro inválido.');

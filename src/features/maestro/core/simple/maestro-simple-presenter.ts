@@ -487,8 +487,79 @@ export function presenterCampoContextual(
       break;
     }
 
+    case 'enderecos': {
+      const hasErro = (c as any).erroCarregamentoRelacao;
+      if (hasErro) {
+        buildField('enderecos', 'Endereços', undefined,
+          `Não consegui consultar os endereços agora.`, 'low', 'public.enderecos');
+      } else if (c.enderecos && c.enderecos.length > 0) {
+        sources.push(getSource(c, 'enderecos'));
+        const lines = c.enderecos.map((e, index) => {
+          const tipo = e.tipoEndereco ? `**${e.tipoEndereco}**` : `**Endereço ${index + 1}**`;
+          const detalhes = [
+            e.endereco,
+            e.numero ? `Nº ${e.numero}` : '',
+            e.complemento ? `(${e.complemento})` : '',
+            e.bairro ? `Bairro ${e.bairro}` : '',
+            e.cidade ? `${e.cidade} - ${e.uf || ''}` : '',
+            e.cep ? `CEP: ${e.cep}` : ''
+          ].filter(Boolean).join(', ');
+          return `• ${tipo}: ${detalhes}`;
+        });
+        buildField('enderecos', 'Endereços', 'Listado',
+          `Endereços cadastrados para **${c.clientName}**:\n${lines.join('\n')}`, 'high', 'public.enderecos');
+      } else {
+        buildField('enderecos', 'Endereços', undefined,
+          `Não encontrei endereços cadastrados para esse cliente.`, 'medium', 'public.enderecos');
+      }
+      break;
+    }
+
+    case 'contatos': {
+      const hasErro = (c as any).erroCarregamentoRelacao;
+      if (hasErro) {
+        buildField('contatos', 'Contatos', undefined,
+          `Não consegui consultar os contatos agora.`, 'low', 'public.contatos');
+      } else if (c.contatos && c.contatos.length > 0) {
+        sources.push(getSource(c, 'contatos'));
+        const lines = c.contatos.map(ct => {
+          const cargoStr = ct.cargo ? ` (${ct.cargo})` : '';
+          const whatsStr = ct.whats ? ` · WhatsApp: ${ct.whats}` : '';
+          const emailStr = ct.email ? ` · E-mail: ${ct.email}` : '';
+          return `• **${ct.nomeContato}**${cargoStr}${whatsStr}${emailStr}`;
+        });
+        buildField('contatos', 'Contatos', 'Listado',
+          `Contatos cadastrados para **${c.clientName}**:\n${lines.join('\n')}`, 'high', 'public.contatos');
+      } else {
+        buildField('contatos', 'Contatos', undefined,
+          `Não encontrei contatos cadastrados para esse cliente.`, 'medium', 'public.contatos');
+      }
+      break;
+    }
+
+    case 'socios':
+    case 'vinculos': {
+      const hasErro = (c as any).erroCarregamentoRelacao;
+      if (hasErro) {
+        buildField('socios', 'Sócios/Vínculos', undefined,
+          `Não consegui consultar os vínculos cadastrais agora.`, 'low', 'public.clientes_socios');
+      } else if (c.socios && c.socios.length > 0) {
+        sources.push(getSource(c, 'socios'));
+        const lines = c.socios.map(s => {
+          const nome = s.nomeSocio || `Cliente ${s.idClienteSocio}`;
+          return s.tipoRelacao ? `• **${nome}** — ${s.tipoRelacao}` : `• **${nome}**`;
+        });
+        buildField('socios', 'Sócios/Vínculos', 'Listado',
+          `Sócios/vínculos cadastrados para **${c.clientName}**:\n${lines.join('\n')}`, 'high', 'public.clientes_socios');
+      } else {
+        buildField('socios', 'Sócios/Vínculos', undefined,
+          `Não encontrei sócios ou vínculos cadastrados para esse cliente.`, 'medium', 'public.clientes_socios');
+      }
+      break;
+    }
+
     default: {
-      content = `Não encontrei a informação solicitada no cadastro completo de **${c.clientName}**. Posso responder sobre: telefone, CNPJ, e-mail, cidade, vendedor, crédito, padrão de pagamento, restrição, status do cadastro, risco de crédito, bônus, fundação ou contatos.`;
+      content = `Não encontrei a informação solicitada no cadastro completo de **${c.clientName}**. Posso responder sobre: telefone, CNPJ, e-mail, cidade, vendedor, crédito, padrão de pagamento, restrição, status do cadastro, risco de crédito, bônus, fundação, endereços, contatos ou vínculos.`;
       lastAnswer = null;
     }
   }

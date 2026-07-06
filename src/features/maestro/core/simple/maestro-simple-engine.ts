@@ -19,6 +19,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   buscarClientePorCodigo,
   buscarClientePorTexto,
+  buscarEnderecosCliente,
+  buscarContatosCliente,
+  buscarSociosCliente,
 } from './maestro-simple-clientes.server';
 import {
   buscarUltimosPedidos,
@@ -535,7 +538,36 @@ export async function processSimpleQueryWithBrain(
           if (!simpleCtx.activeClient) {
             pr = presenterSemContexto();
           } else {
-            pr = presenterCampoContextual(step.params.campo, simpleCtx);
+            const campo = step.params.campo;
+            const idCliente = simpleCtx.activeClient.clientInternalId;
+            
+            console.log(`[MaestroEngine] consultarCampoCadastro executado. Campo: "${campo}", Cliente: "${simpleCtx.activeClient.clientName}" (${idCliente})`);
+            
+            if (idCliente) {
+              try {
+                if (campo === 'enderecos' && (!simpleCtx.activeClient.enderecos || simpleCtx.activeClient.enderecos.length === 0)) {
+                  console.log(`[MaestroEngine] Carregando endereços do cliente ${idCliente} sob demanda.`);
+                  const enderecos = await buscarEnderecosCliente(supabase, idCliente);
+                  simpleCtx.activeClient.enderecos = enderecos;
+                  console.log(`- Registros retornados: ${enderecos.length}`);
+                } else if (campo === 'contatos' && (!simpleCtx.activeClient.contatos || simpleCtx.activeClient.contatos.length === 0)) {
+                  console.log(`[MaestroEngine] Carregando contatos do cliente ${idCliente} sob demanda.`);
+                  const contatos = await buscarContatosCliente(supabase, idCliente);
+                  simpleCtx.activeClient.contatos = contatos;
+                  console.log(`- Registros retornados: ${contatos.length}`);
+                } else if ((campo === 'socios' || campo === 'vinculos') && (!simpleCtx.activeClient.socios || simpleCtx.activeClient.socios.length === 0)) {
+                  console.log(`[MaestroEngine] Carregando sócios do cliente ${idCliente} sob demanda.`);
+                  const socios = await buscarSociosCliente(supabase, idCliente);
+                  simpleCtx.activeClient.socios = socios;
+                  console.log(`- Registros retornados: ${socios.length}`);
+                }
+              } catch (err) {
+                console.error(`[MaestroEngine] Erro ao carregar relacionamento "${campo}" sob demanda:`, err);
+                (simpleCtx.activeClient as any).erroCarregamentoRelacao = true;
+              }
+            }
+            
+            pr = presenterCampoContextual(campo, simpleCtx);
           }
         }
 
