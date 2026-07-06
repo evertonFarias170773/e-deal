@@ -131,7 +131,7 @@ function parseOrcamentoAvulso(query: string): { quantidade: number; termo: strin
       if (isK) qtd *= 1000;
       
       const cleanTerm = termo
-        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento)\b/gi, ' ')
+        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento|qual|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       
@@ -151,7 +151,7 @@ function parseOrcamentoAvulso(query: string): { quantidade: number; termo: strin
       if (isK) qtd *= 1000;
       
       const cleanTerm = termo
-        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento)\b/gi, ' ')
+        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento|qual|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       

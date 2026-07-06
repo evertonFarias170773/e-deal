@@ -687,7 +687,16 @@ export async function processSimpleQueryWithBrain(
               console.log(`- Handler usado: simularOrcamentoAvulso`);
               console.log('=====================================');
             } else {
-              // Se tudo deu certo, limpamos as pendências e salvamos como último sucesso consolidado completo
+              // Se tudo deu certo, atualizamos os termos no contexto com a descrição real do produto encontrado
+              if (v2Ctx.orcamentoItens) {
+                v2Ctx.orcamentoItens.forEach((item) => {
+                  const match = result.itens.find(it => it.status === 'sucesso' && normalizeText(it.termo) === normalizeText(item.termo));
+                  if (match && match.produtosEncontrados && match.produtosEncontrados.length > 0) {
+                    item.termo = match.produtosEncontrados[0].descricao;
+                  }
+                });
+              }
+              // Salva como último sucesso consolidado completo
               v2Ctx.lastSuccessfulBudgetItems = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
               if (v2Ctx.pendingProductResolution || v2Ctx.pendingAmbiguousItem) {
                 console.log('====== [MaestroEngine] DEV LOG ======');

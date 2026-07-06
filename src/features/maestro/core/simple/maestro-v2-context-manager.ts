@@ -68,9 +68,9 @@ export function limparItensInvalidosContexto(v2Ctx: MaestroV2Context): void {
     v2Ctx.orcamentoItens = v2Ctx.orcamentoItens.filter(item => {
       const cleanTerm = item.termo.trim().toLowerCase();
       if (!cleanTerm) return false;
-      if (cleanTerm.split(/\s+/).length > 4) return false;
-      const blacklistedTerms = /\b(boa\s*tarde|bom\s*dia|boa\s*noite|jesus|doido|bagunca|errado|nao|sim|ok|quero|remova|muda|altera|troca|agora|proposta|doida|doideira|que\s*isso|vc|ficou)\b/i;
+      const blacklistedTerms = /\b(boa\s*tarde|bom\s*dia|boa\s*noite|jesus|doido|bagunca|errado|nao|sim|ok|quero|remova|muda|altera|troca|agora|proposta|doida|doideira|que\s*isso|vc|ficou|quis\s*dizer|refaca|recalcula|faz\s*de\s*novo)\b/i;
       if (blacklistedTerms.test(cleanTerm)) return false;
+      if (cleanTerm.split(/\s+/).length > 20) return false;
       return true;
     });
   }
@@ -375,7 +375,11 @@ export function handleContextContinuation(
     // ── A. REPETIR / REFAZER ORÇAMENTO
     const isRepeat = /\b(refaca|faz\s*de\s*novo|recalcula|repete)\b/i.test(clean);
     if (isRepeat) {
-      const targetItems = v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || v2Ctx.previousOrcamentoItens;
+      const targetItems = (v2Ctx.lastSuccessfulBudgetItems && v2Ctx.lastSuccessfulBudgetItems.length > 0)
+        ? v2Ctx.lastSuccessfulBudgetItems
+        : ((v2Ctx.lastExplicitBudgetItems && v2Ctx.lastExplicitBudgetItems.length > 0)
+          ? v2Ctx.lastExplicitBudgetItems
+          : (v2Ctx.orcamentoItens || v2Ctx.previousOrcamentoItens));
       if (targetItems && targetItems.length > 0) {
         const antes = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
         v2Ctx.domain = 'orcamento_avulso';
@@ -521,14 +525,33 @@ export function handleContextContinuation(
       };
     }
 
-    // 2. Correção de pendência (sem número)
-    if (isCorrection && !hasNumber && !isClear && !isRemove && !isChange && !isMerge && !isRecalc && !isQuantityReference && !isKeep && !isSameQtd && !isReaction) {
-      const correctedTerm = extractCorrectedTerm(clean);
-      if (correctedTerm) {
+    // 2. Correção de pendência (texto, ID ou número puro)
+    if (hasPending || hasAmbiguous) {
+      // Verifica se a mensagem é um padrão de ID de produto (ex: "101", "id do produto 101", "id 101")
+      const isIdMatch = clean.match(/^(\d+)$/) || clean.match(/\b(?:id\s*do\s*produto|id\s*produto|id|prod)?\s*(\d+)\b/i);
+      const parsedId = isIdMatch ? parseInt(isIdMatch[1], 10) : NaN;
+      
+      let correctedTerm: string | null = null;
+      let isCorrectionIntent = false;
+
+      if (!isNaN(parsedId)) {
+        // É uma correção por ID de produto!
+        correctedTerm = `id:${parsedId}`;
+        isCorrectionIntent = true;
+      } else {
+        if (!isClear && !isRemove && !isChange && !isMerge && !isRecalc && !isQuantityReference && !isKeep && !isSameQtd && !isReaction) {
+          correctedTerm = extractCorrectedTerm(clean);
+          if (correctedTerm) {
+            isCorrectionIntent = true;
+          }
+        }
+      }
+
+      if (isCorrectionIntent && correctedTerm) {
         let pendingQtd = v2Ctx.pendingProductResolution?.lastRequestedQuantity || 
                          v2Ctx.pendingAmbiguousItem?.lastRequestedQuantity;
         if (pendingQtd) {
-          console.log(`[MaestroV2Context] Correção de produto detectada. Termo: "${correctedTerm}", Quantidade: ${pendingQtd}`);
+          console.log(`[MaestroV2Context] Resolvendo pendência de produto. Termo: "${correctedTerm}", Quantidade: ${pendingQtd}`);
           v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
           
           const newItem: OrcamentoAvulsoItem = {
@@ -546,6 +569,9 @@ export function handleContextContinuation(
           }
           v2Ctx.orcamentoItens = current;
           v2Ctx.lastRequestedQuantity = pendingQtd;
+          
+          v2Ctx.pendingProductResolution = null;
+          v2Ctx.pendingAmbiguousItem = null;
 
           return {
             routed: true,
@@ -835,7 +861,7 @@ function parseOrcamentoAvulsoItems(query: string): OrcamentoAvulsoItem[] | null 
       if (isK) qtd *= 1000;
       
       const cleanTerm = termo
-        .replace(/\b(add|mais|inclui|incluir|coloca|colocar|boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|preço|cotacao|cotação|orcamento|orçamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode)\b/gi, ' ')
+        .replace(/\b(add|mais|inclui|incluir|coloca|colocar|boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|preço|cotacao|cotação|orcamento|orçamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       
@@ -855,7 +881,7 @@ function parseOrcamentoAvulsoItems(query: string): OrcamentoAvulsoItem[] | null 
       if (isK) qtd *= 1000;
       
       const cleanTerm = termo
-        .replace(/\b(add|mais|inclui|incluir|coloca|colocar|boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|preço|cotacao|cotação|orcamento|orçamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode)\b/gi, ' ')
+        .replace(/\b(add|mais|inclui|incluir|coloca|colocar|boa tarde|bom dia|boa noite|ola|oi|por favor|gentileza|queria|gostaria|qual|o|valor|preco|preço|cotacao|cotação|orcamento|orçamento|pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       

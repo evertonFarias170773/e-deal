@@ -61,34 +61,57 @@ export async function simularOrcamentoAvulsoDb(
 
     const termoNorm = normalizeText(termoOriginal);
 
-    const [resApelido, resDesc] = await Promise.all([
-      supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo').ilike('apelidos', `%${termoOriginal}%`),
-      supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo').ilike('descricao', `%${termoOriginal}%`)
-    ]);
+    let data: OrcamentoAvulsoProdutoDb[] = [];
 
-    const map = new Map<number, OrcamentoAvulsoProdutoDb>();
-    if (resApelido.data) {
-      for (const p of resApelido.data as OrcamentoAvulsoProdutoDb[]) map.set(p.id_produto, p);
-    }
-    if (resDesc.data) {
-      for (const p of resDesc.data as OrcamentoAvulsoProdutoDb[]) map.set(p.id_produto, p);
+    // Prioridade 1: Se for um ID numérico explícito ou implícito
+    const isIdMatch = termoOriginal.match(/^(\d+)$/) || termoOriginal.match(/\b(?:id\s*do\s*produto|id\s*produto|id|prod)?\s*(\d+)\b/i);
+    const parsedId = isIdMatch ? parseInt(isIdMatch[1], 10) : NaN;
+
+    if (!isNaN(parsedId)) {
+      const resId = await supabase.from('produtos')
+        .select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo')
+        .eq('id_produto', parsedId)
+        .limit(1);
+      console.log(`[MaestroProductsServer] Busca por ID ${parsedId} -> data:`, resId.data, "error:", resId.error);
+      if (resId.data && resId.data.length > 0) {
+        data = resId.data as OrcamentoAvulsoProdutoDb[];
+      }
     }
 
-    const data = Array.from(map.values());
+    // Fallback: busca textual normal se não encontrou por ID
+    if (data.length === 0) {
+      const [resApelido, resDesc] = await Promise.all([
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo').ilike('apelidos', `%${termoOriginal}%`),
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo').ilike('descricao', `%${termoOriginal}%`)
+      ]);
+
+      const map = new Map<number, OrcamentoAvulsoProdutoDb>();
+      if (resApelido.data) {
+        for (const p of resApelido.data as OrcamentoAvulsoProdutoDb[]) map.set(p.id_produto, p);
+      }
+      if (resDesc.data) {
+        for (const p of resDesc.data as OrcamentoAvulsoProdutoDb[]) map.set(p.id_produto, p);
+      }
+      data = Array.from(map.values());
+    }
     let rankedProducts: OrcamentoAvulsoProdutoDb[] = [];
 
     if (data.length > 0) {
-      // 1. Match exato em apelidos
-      const exactAliasMatch = data.filter(p => {
-        const apList = getApelidosList(p.apelidos);
-        return apList.includes(termoNorm);
-      });
-
-      if (exactAliasMatch.length > 0) {
-        rankedProducts = exactAliasMatch;
+      if (!isNaN(parsedId)) {
+        // Encontrado por ID direto - não faz filtragem textual
+        rankedProducts = data;
       } else {
-        // 2. Match parcial em apelidos
-        const partialAliasMatch = data.filter(p => {
+        // 1. Match exato em apelidos
+        const exactAliasMatch = data.filter(p => {
+          const apList = getApelidosList(p.apelidos);
+          return apList.includes(termoNorm);
+        });
+
+        if (exactAliasMatch.length > 0) {
+          rankedProducts = exactAliasMatch;
+        } else {
+          // 2. Match parcial em apelidos
+          const partialAliasMatch = data.filter(p => {
           const apList = getApelidosList(p.apelidos);
           return apList.some(ap => ap.includes(termoNorm));
         });
@@ -105,6 +128,7 @@ export async function simularOrcamentoAvulsoDb(
         }
       }
     }
+  }
 
     const match: OrcamentoAvulsoMatch = {
       termo: termoOriginal,

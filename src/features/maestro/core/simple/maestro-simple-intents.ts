@@ -139,7 +139,6 @@ const CLIENT_CODE_PATTERNS = [
   /^cad\s+(\d{1,})\b/,
   /^c(\d{1,})$/,          // c14 (exato — sem espaço)
   /^#(\d{1,})$/,          // #14 (exato)
-  /^(\d{3,})$/,           // somente dígitos 3+ (exato — mantido \d{3,} para evitar conflitos com números aleatórios)
   // Não anchorados — código no meio da frase
   /\bcliente\s+(\d{1,})\b/,
   /\bcli\s+(\d{1,})\b/,
