@@ -41,3 +41,11 @@ Organizar o ERP Ideal por módulos para facilitar manutenção, evolução e lei
 - `src/features/cobrancas/CobrancasList.tsx`
 - `src/features/contas-a-receber/ContasReceberPage.tsx`
 
+
+
+## Inteligência (Maestro)
+
+- O Maestro atual opera na arquitetura **V2**.
+- O núcleo baseia-se em um **Router Semântico** acoplado a **tools seguras**.
+- A abordagem antiga (Maestro Simple) via regex/intents agora é considerada **legado** ou usada estritamente para comandos mínimos e diretos.
+- **Orçamentos** continua como próxima etapa de implementação, e ainda não está integrado ao Maestro V2.

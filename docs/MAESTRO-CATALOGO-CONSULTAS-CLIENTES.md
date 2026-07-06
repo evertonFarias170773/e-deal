@@ -1,6 +1,6 @@
 # Catálogo de Capacidades do Maestro (Consultas de Clientes)
 
-Este catálogo define a fonte da verdade para as capacidades de resposta do **Maestro Simple** para o módulo de Clientes, Comercial e Financeiro, baseado na estrutura de tabelas do ERP Ideal.
+Este catálogo define a fonte da verdade para as capacidades de resposta do **Maestro V2 (Semantic Router)** para o módulo de Clientes, Comercial e Financeiro, baseado na estrutura de tabelas do ERP Ideal.
 
 ---
 
