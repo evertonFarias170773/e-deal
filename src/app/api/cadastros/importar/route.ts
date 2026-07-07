@@ -10,8 +10,9 @@ export async function POST(req: NextRequest) {
   // 1. Validar chave OpenAI
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
+    const loadedKeys = Object.keys(process.env).filter(k => k.includes("OPENAI") || k.includes("SUPABASE") || k.includes("MAESTRO"));
     return NextResponse.json(
-      { error: "Serviço de importação por IA temporariamente indisponível (Chave de API ausente no servidor)." },
+      { error: `Serviço de importação por IA temporariamente indisponível (Chave de API ausente no servidor). Chaves carregadas: ${loadedKeys.join(", ")}` },
       { status: 500 }
     );
   }
