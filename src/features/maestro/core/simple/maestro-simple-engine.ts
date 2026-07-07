@@ -713,6 +713,18 @@ export async function processSimpleQueryWithBrain(
           }
         }
 
+        else if (step.tool === 'orcamento_avulso_desativado') {
+          v2Ctx.domain = 'desconhecido';
+          pr = {
+            message: {
+              id: 'maestro-msg-' + Date.now(),
+              role: 'maestro',
+              content: "Ainda estou ajustando a simulação de orçamento avulso. Por enquanto, me passe consultas de cliente ou financeiro.",
+              timestamp: new Date().toISOString()
+            },
+            activity: []
+          };
+        }
         else if (step.tool === 'perguntar_tipo_orcamento') {
           pr = presenterEsclarecerOrcamento();
         }

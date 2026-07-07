@@ -42,16 +42,16 @@ O `handleContextContinuation` deve avaliar as queries do usuário na seguinte or
 
 ---
 
-## 3. Regras do Orçamento Avulso
+## 3. Arquitetura do Orçamento Avulso
 
-*   **Extração de Múltiplos Itens**: O parser deve extrair todos os pares quantitativo + termo de produto informados de forma acumulada ou sequencial em uma mesma frase (usando separadores comuns como `+`, `mais`, `e`, `,` ou `ou`).
-*   **Limpeza de Termos**: Stop-words de intenção de negócio (ex: `"qual valor"`, `"qual preco"`, `"quanto custa"`, `"orçar"`, `"orçamento"`) devem ser limpas da descrição do termo do produto, evitando nomes de produtos poluídos (ex: extrair `"triband"` ao invés de `"triband qual"`).
-*   **Histórico de Sucesso**: O contexto de sessão deve persistir a lista do último orçamento simulado com sucesso total (`lastSuccessfulBudgetItems`) e o texto do último pedido explícito (`lastExplicitBudgetRequestText`).
-*   **Ação Refazer (Repeat)**: O Maestro deve usar a lista gravada no histórico de sucesso conversacional para recalcular o orçamento, sem solicitar quantidade novamente.
-*   **Tratamento de Erros Parciais**: Se uma lista explícita com múltiplos produtos contiver itens válidos e itens inválidos, o orçamento ativo deve manter todas as linhas válidas, isolando apenas a pendência do item problemático.
+*   **Isolamento de Responsabilidade**: O Router principal (`maestro-v2-router.ts`) e o Context Manager (`maestro-v2-context-manager.ts`) **não devem realizar nenhum parsing de intenções, quantidades ou itens de orçamento**.
+*   **Motor Isolado**: Toda a lógica de interpretação de orçamento (criação, adição, remoção, alteração de quantidade, resolução de ambiguidades e limpeza) pertence única e exclusivamente ao motor isolado determinístico (`maestro-orcamento-engine.ts`).
+*   **Delegação Simples**: O Router e o Context Manager atuam apenas como despachantes. Eles enviam a query do usuário e o estado do orçamento ativo para o motor isolado, e reagem à ação retornada (`ADD`, `REMOVE`, `UPDATE_QTD`, etc.).
+*   **Tratamento de Erros Parciais**: Se uma lista explícita com múltiplos produtos contiver itens válidos e itens inválidos, o orçamento ativo deve manter todas as linhas válidas, isolando apenas a pendência do item problemático dentro do próprio motor.
 
 ---
 
 ## 4. Fallback Seguro
 
 Qualquer query que falhe em todas as regras determinísticas e não consiga ser resolvida semanticamente deve cair no presenter de esclarecimento de intenção (`presenterEsclarecerOrcamento`), orientando o usuário a especificar o comando de forma inequívoca.
+

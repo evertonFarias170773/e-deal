@@ -13,6 +13,7 @@
 import type { SimpleClientContext, LastAnswerRecord } from './maestro-simple-context';
 import type { MaestroV2Context } from './maestro-v2-context-manager';
 import { handleContextContinuation } from './maestro-v2-context-manager';
+import { processarOrcamentoAvulso } from './maestro-orcamento-engine';
 
 export interface RouterPeriodoMeses {
   mes: number;
@@ -46,7 +47,8 @@ export type AllowedToolName =
   | 'perguntar_quantidade_orcamento'
   | 'recuperacao_orcamento_avulso'
   | 'cancelar_orcamento_avulso'
-  | 'mostrar_itens_orcamento';
+  | 'mostrar_itens_orcamento'
+  | 'orcamento_avulso_desativado';
 
 export interface RouterStep {
   tool: AllowedToolName;
@@ -89,81 +91,14 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'perguntar_continuacao_orcamento',
   'limpar_orcamento_avulso',
   'voltar_orcamento_anterior',
-  'perguntar_quantidade_orcamento'
+  'perguntar_quantidade_orcamento',
+  'recuperacao_orcamento_avulso',
+  'cancelar_orcamento_avulso',
+  'mostrar_itens_orcamento',
+  'orcamento_avulso_desativado'
 ];
 
-function parseOrcamentoAvulso(query: string): { quantidade: number; termo: string }[] | null {
-  const clean = query
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // remove acentos
-    .trim();
 
-  // Prioridade absoluta: Se contiver referências explícitas a cliente com IDs
-  const regexClient1 = /\b(cliente|cli|cadastro)\s*([a-z\d]+)/i;
-  const regexClient2 = /\bc\s*\d+/i;
-  if (regexClient1.test(clean) || regexClient2.test(clean)) {
-    return null;
-  }
-
-  // Aborta orçamento avulso se contiver termos estritamente relacionados a clientes/histórico real
-  const strictClientKeywords = /\b(faturamento|faturou|boleto|pagamento|historico|limite|cnpj|telefone|email|cidade|vendedor|risco)\b/i;
-  if (strictClientKeywords.test(clean)) {
-    return null;
-  }
-
-  // Split por separadores comuns (+, vírgula, e, ou, mais)
-  const splitRegex = /(?:\s*\+\s*|\s*,\s*|\s+(?:e|ou|mais)\s+)/i;
-  const parts = clean.split(splitRegex);
-  const items: { quantidade: number; termo: string }[] = [];
-
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-
-    // Procura número antes do termo: ex "5800 mobi"
-    const matchBefore = trimmed.match(/\b(\d+(?:\.\d+)?)\s*([kk]?)\s+([a-z\d\s-]+)/i);
-    if (matchBefore) {
-      const numStr = matchBefore[1];
-      const isK = matchBefore[2].toLowerCase() === 'k';
-      const termo = matchBefore[3].replace(/[?]/g, '').trim();
-      let qtd = parseFloat(numStr);
-      if (isK) qtd *= 1000;
-      
-      const cleanTerm = termo
-        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento|qual|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      if (cleanTerm && !isNaN(qtd)) {
-        items.push({ quantidade: qtd, termo: cleanTerm });
-        continue;
-      }
-    }
-
-    // Procura número após o termo: ex "mobi 5800"
-    const matchAfter = trimmed.match(/\b([a-z\d\s-]+?)\s+(\d+(?:\.\d+)?)\s*([kk]?)\b/i);
-    if (matchAfter) {
-      const termo = matchAfter[1].replace(/[?]/g, '').trim();
-      const numStr = matchAfter[2];
-      const isK = matchAfter[3].toLowerCase() === 'k';
-      let qtd = parseFloat(numStr);
-      if (isK) qtd *= 1000;
-      
-      const cleanTerm = termo
-        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento|qual|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      if (cleanTerm && !isNaN(qtd)) {
-        items.push({ quantidade: qtd, termo: cleanTerm });
-        continue;
-      }
-    }
-  }
-
-  return items.length > 0 ? items : null;
-}
 
 /**
  * Roteia a query do usuário para um plano de ferramentas financeiras ou cadastrais estruturado (JSON).
@@ -195,36 +130,58 @@ export async function routeToolSimple(
   }
 
   // 1a. REGRA DETERMINÍSTICA DE ORÇAMENTO AVULSO
-  const parsedItems = parseOrcamentoAvulso(query);
-  if (parsedItems) {
-    // Inicializa o domínio como orçamento avulso no contexto
-    v2Ctx.domain = 'orcamento_avulso';
-    v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
-    v2Ctx.orcamentoItens = parsedItems;
-    v2Ctx.lastRequestedQuantity = parsedItems[0].quantidade;
-    v2Ctx.lastExplicitBudgetItems = parsedItems;
-    v2Ctx.lastExplicitBudgetRequestText = query;
+  const engineResult = processarOrcamentoAvulso(query, { itens: [], pendingAmbiguity: false });
+  if (engineResult.action === 'ADD' || engineResult.action === 'REPLACE') {
+    const isAvulsoEnabled = process.env.MAESTRO_AVULSO_ENABLED === 'true';
 
-    console.log('====== [MaestroV2Router] LOG DE DEV ======');
-    console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
-    console.log(`- Mensagem recebida: "${query}"`);
-    console.log(`- Decisão: router normal (inicialização determinística)`);
-    console.log(`- Tool escolhida: "simularOrcamentoAvulso"`);
-    console.log(`- Itens extraídos: ${JSON.stringify(parsedItems)}`);
-    console.log(`- Estado atualizado: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
-    console.log('==========================================');
+    if (!isAvulsoEnabled) {
+      console.log('====== [MaestroV2Router] LOG DE DEV ======');
+      console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+      console.log(`- Mensagem recebida: "${query}"`);
+      console.log(`- Decisão: router normal (orçamento avulso detectado mas desativado via feature flag)`);
+      console.log(`- Tool escolhida: "orcamento_avulso_desativado"`);
+      console.log('==========================================');
 
-    return {
-      routed: true,
-      plan: {
-        steps: [
-          {
-            tool: 'simularOrcamentoAvulso',
-            params: { itens: parsedItems }
-          }
-        ]
-      }
-    };
+      return {
+        routed: true,
+        plan: {
+          steps: [
+            {
+              tool: 'orcamento_avulso_desativado',
+              params: {}
+            }
+          ]
+        }
+      };
+    } else {
+      // Comportamento original quando a flag está ligada
+      v2Ctx.domain = 'orcamento_avulso';
+      v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+      v2Ctx.orcamentoItens = engineResult.items;
+      v2Ctx.lastRequestedQuantity = engineResult.items[0].quantidade;
+      v2Ctx.lastExplicitBudgetItems = engineResult.items;
+      v2Ctx.lastExplicitBudgetRequestText = query;
+
+      console.log('====== [MaestroV2Router] LOG DE DEV ======');
+      console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+      console.log(`- Mensagem recebida: "${query}"`);
+      console.log(`- Decisão: router normal (inicialização determinística delegada ao motor)`);
+      console.log(`- Tool escolhida: "simularOrcamentoAvulso"`);
+      console.log(`- Itens extraídos: ${JSON.stringify(engineResult.items)}`);
+      console.log('==========================================');
+
+      return {
+        routed: true,
+        plan: {
+          steps: [
+            {
+              tool: 'simularOrcamentoAvulso',
+              params: { itens: engineResult.items }
+            }
+          ]
+        }
+      };
+    }
   }
 
   // 1b. REGRA DETERMINÍSTICA DE FALLBACK INTELIGENTE (ESCLARECIMENTO)
@@ -234,25 +191,47 @@ export async function routeToolSimple(
   const isClientFlow = clientPattern.test(cleanQuery) || /\b(boleto|pagamento|faturamento|limite|historico|cadastro|ativo|vendedor|risco|cnpj|telefone|email|cidade)\b/i.test(cleanQuery);
 
   if (hasBudgetKeyword && !isClientFlow && !activeClient) {
-    console.log('====== [MaestroV2Router] LOG DE DEV ======');
-    console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
-    console.log(`- Mensagem recebida: "${query}"`);
-    console.log(`- Decisão: router normal (esclarecimento)`);
-    console.log(`- Tool escolhida: "perguntar_tipo_orcamento"`);
-    console.log(`- Itens extraídos: []`);
-    console.log('==========================================');
+    const isAvulsoEnabled = process.env.MAESTRO_AVULSO_ENABLED === 'true';
 
-    return {
-      routed: true,
-      plan: {
-        steps: [
-          {
-            tool: 'perguntar_tipo_orcamento',
-            params: {}
-          }
-        ]
-      }
-    };
+    if (!isAvulsoEnabled) {
+      console.log('====== [MaestroV2Router] LOG DE DEV ======');
+      console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+      console.log(`- Mensagem recebida: "${query}"`);
+      console.log(`- Decisão: router normal (esclarecimento redirecionado para bypass)`);
+      console.log(`- Tool escolhida: "orcamento_avulso_desativado"`);
+      console.log('==========================================');
+
+      return {
+        routed: true,
+        plan: {
+          steps: [
+            {
+              tool: 'orcamento_avulso_desativado',
+              params: {}
+            }
+          ]
+        }
+      };
+    } else {
+      console.log('====== [MaestroV2Router] LOG DE DEV ======');
+      console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+      console.log(`- Mensagem recebida: "${query}"`);
+      console.log(`- Decisão: router normal (esclarecimento)`);
+      console.log(`- Tool escolhida: "perguntar_tipo_orcamento"`);
+      console.log('==========================================');
+
+      return {
+        routed: true,
+        plan: {
+          steps: [
+            {
+              tool: 'perguntar_tipo_orcamento',
+              params: {}
+            }
+          ]
+        }
+      };
+    }
   }
 
   // 1c. Evita chamar LLM para comandos estáticos imediatos seguros
