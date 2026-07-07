@@ -257,17 +257,18 @@ function factsToText(f: ClientFacts): string {
   if (f.qtdPedidos != null) lines.push(`Pedidos registrados no histórico: ${f.qtdPedidos}`);
   if (f.dataUltPedido) lines.push(`Data do último pedido: ${f.dataUltPedido}`);
 
+  // REGRA: só mencionar endereços/contatos se foram CARREGADOS (array não-vazio).
+  // Array vazio pode significar "não carregado neste turno", não "ausente no banco".
+  // Não emitir falso negativo "nenhum" quando os dados não foram consultados.
   if (f.enderecos && f.enderecos.length > 0) {
     lines.push(`Endereços: ${f.enderecos.join(' | ')}`);
-  } else {
-    lines.push('Endereços cadastrados: nenhum');
   }
+  // se vazio: omitir — o LLM não deve afirmar ausência sem consulta real
 
   if (f.contatos && f.contatos.length > 0) {
     lines.push(`Contatos secundários: ${f.contatos.join(', ')}`);
-  } else {
-    lines.push('Contatos secundários: nenhum cadastrado');
   }
+  // se vazio: omitir — o LLM não deve afirmar ausência sem consulta real
 
   if (f.socios && f.socios.length > 0) {
     lines.push(`Sócios/vínculos: ${f.socios.join(', ')}`);

@@ -233,3 +233,93 @@ A Fase 4 (religamento no chat principal) **só pode ser iniciada** após:
 3. Todos os 8 critérios de guarda da Seção 6 verificados
 4. Aprovação explícita do usuário
 
+---
+
+## 9. Catálogo Oficial de Aliases de Produtos
+
+> **Status:** Implementado ✅ — 2026-07-07  
+> **Arquivo:** `maestro-orcamento-catalogo-oficial.ts`
+
+### Responsabilidade
+
+O catálogo oficial **mapeia termos digitados pelo usuário para `id_produto`**. Ele **nunca** é fonte de preço, valorUnt, valorFixo ou status.
+
+### Princípio fundamental
+
+| Fonte | Resolve |
+|-------|---------|
+| Catálogo oficial (`maestro-orcamento-catalogo-oficial.ts`) | alias → id_produto |
+| Banco real (`public.produtos`) | id_produto → preço, status, ativo |
+| Brain/LLM | **NADA** — não decide produto |
+
+### Prioridade de resolução
+
+1. **ID numérico explícito** informado pelo usuário (ex: `"101"`, `"id do produto 101"`)
+2. **Alias exato no catálogo oficial** (ex: `"tri"` → ID 101, `"mobi"` → ID 401)
+3. **Alias parcial seguro no catálogo oficial**
+4. **`public.produtos.apelidos`** (banco) — fallback textual
+5. **`public.produtos.descricao`** (banco) — fallback final
+
+### Produtos Operacionais Registrados (base 2026-07-07)
+
+| ID | Nome Comercial | Aliases Canônicos |
+|----|---------------|-------------------|
+| 101 | Pulseira Triband Sintética | `triband`, `tri`, `tri band`, `tyvek` |
+| 102 | Pulseira de Tecido (Velcro) | `tecido`, `velcro`, `fabric` |
+| 103 | Pulseira de Silicone | `silicone`, `borracha` |
+| 401 | Ingresso MOBI | `mobi`, `moby` |
+| 402 | Ingresso UP | `up`, `cali` |
+| 501 | Ticket | `ticket`, `tike`, `tiket` |
+| 601 | Cordão Jacaré | `cordao jacare`, `jacare`, `cordao` |
+| 602 | Cordão com Argola Giratória | `cordao argola`, `argola` |
+| 701 | Crachá PVC | `cracha pvc`, `pvc` |
+| 702 | Crachá Papel | `cracha papel`, `credencial` |
+
+### Regra Anti-Ambiguidade
+
+- **`"tri"` → ID 101** (catálogo oficial vence produto de teste #9001 do banco)
+- Se um alias constar em dois produtos no catálogo → `verificarConflitosAlias()` detecta e deve retornar `[]`
+- Produto de teste no banco **nunca** vence alias oficial no catálogo
+
+### Testes
+
+- `test_orcamento_catalogo_oficial.ts` — **45/45** (zero acesso ao banco)
+- `test_orcamento_resolver.ts` — **31/31** (com catálogo integrado)
+- `test_orcamento_integracao.ts` — **46/46**
+
+---
+
+## 10. Correção — Regressão "ok" com Fatos Falsos (2026-07-07)
+
+### Problema corrigido
+
+Mensagem curta `"ok"` após bloqueio de orçamento gerava resumo do cliente com falso negativo:  
+- `"Endereços cadastrados: Nenhum"`  
+- `"Contatos secundários: Nenhum cadastrado"`
+
+Mesmo após o Maestro ter listado endereços e contatos reais no turno anterior.
+
+### Causa
+
+1. `"ok"` não estava em `CLOSURE_TRIGGERS` → caia em `fallback` → passava pelo Brain/LLM
+2. `legacyContextToSimple()` sempre preenche `enderecos:[]`, `contatos:[]` (não serializado entre turnos)
+3. `factsToText()` tratava array vazio como ausência real → enviava `"nenhum"` ao LLM
+
+### Correção aplicada
+
+| Arquivo | Mudança |
+|---------|---------|
+| `maestro-simple-intents.ts` | `CLOSURE_TRIGGERS` expandido: `ok`, `blz`, `certo`, `combinado`, `entendido`, `ta bom`, `ta`, `fechou`, `otimo`, `ate mais`, `ate logo`, `tcau` |
+| `maestro-simple-brain.ts` | `factsToText()` — removido `else { "Endereços: nenhum" }` e `else { "Contatos: nenhum" }`. Array vazio = omitir. |
+| `test_baseline_regressao.ts` | Turno 5 adicionado: `"ok"` após bloqueio → 5 verificações |
+
+### Regra permanente
+
+> **Array vazio ≠ ausência real.**  
+> `factsToText()` só afirma ausência se o dado foi consultado e retornou vazio.  
+> Quando não carregado entre turnos, omitir — nunca inventar `"nenhum"`.
+
+### Testes pós-correção
+
+- `test_baseline_regressao.ts` — **25/25** (incluindo Turno 5 "ok")
+- `CLOSURE_TRIGGERS` cobre: `ok`, `blz`, `show`, `beleza`, `certo`, `valeu`, `obrigado` e mais 14 variantes

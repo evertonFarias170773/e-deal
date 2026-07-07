@@ -186,8 +186,26 @@ const HELP_TRIGGERS = [
 
 /** Gatilhos de encerramento / agradecimento */
 const CLOSURE_TRIGGERS = [
-  'obrigado', 'obrigada', 'valeu', 'perfeito', 'esta otimo', 'esta otimo',
-  'show', 'beleza', 'ok obrigado', 'era isso', 'tudo certo',
+  // Agradecimentos
+  'obrigado', 'obrigada', 'valeu',
+  // Confirmações positivas
+  'perfeito', 'esta otimo', 'tudo certo', 'era isso',
+  'ok obrigado',
+  // Encerramento simples (incluídos para evitar Brain com fatos falsos)
+  'show', 'beleza',
+  'ok',             // ← acknowledgement simples
+  'blz',            // ← "beleza" abreviado
+  'certo',          // ← confirmação
+  'combinado',      // ← encerramento
+  'entendido',      // ← acknowledgement
+  'ta bom',         // ← confirmação coloquial
+  'ta',             // ← encerramento coloquial
+  'fechou',         // ← encerramento comercial
+  'ótimo',          // ← com acento (normalizado)
+  'otimo',          // ← sem acento
+  'ate mais',       // ← despedida
+  'ate logo',       // ← despedida
+  'tcau',           // ← tchau normalizado
 ];
 
 /** Gatilhos de aguardo / pausa do usuário */

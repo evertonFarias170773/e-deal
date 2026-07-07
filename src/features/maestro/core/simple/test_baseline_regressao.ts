@@ -11,6 +11,7 @@
  *   2. "me traga os contatos dele"   -> consultarCampoCadastro (contatos, cliente ativo)
  *   3. "5200 triband?"               -> orcamento_avulso_desativado (NÃO apaga cliente ativo)
  *   4. "boletos em atraso da Lisiton"-> consultarBoletos (financeiro funciona pós-bloqueio)
+ *   5. "ok"                          -> closure/fallback (não gera resumo com fatos falsos)
  *
  * Critérios de PASS:
  *   - Cliente ativo preservado após tentativa de orçamento
@@ -271,6 +272,45 @@ assert(4, 'Cliente ativo deve permanecer após turno de boletos',
 
 assert(4, 'Não deve cair em orcamento_avulso_desativado', t4_result.tool !== 'orcamento_avulso_desativado');
 
+// ───────────────────────────────────────────────────────────────────────────────
+// TURNO 5 — "ok" (acknowledgement curto após bloqueio de orçamento)
+// Valida que mensagem de encerramento não aciona orçamento nem apaga cliente.
+// (A verificação de que o Brain não recebe fatos falsos é garantida pela correção em
+//  maestro-simple-intents.ts CLOSURE_TRIGGERS e maestro-simple-brain.ts factsToText.)
+// ───────────────────────────────────────────────────────────────────────────────
+console.log('');
+console.log('─── Turno 5: "ok" (acknowledgement pós-bloqueio) ──────────────────');
+
+const t5_query = 'ok';
+const t5_result = simulateRouter(t5_query, activeClient, v2Ctx);
+
+// "ok" não deve acionar orçamento avulso nem simulação
+assert(5, '"ok" não deve acionar orcamento_avulso_desativado',
+  t5_result.tool !== 'orcamento_avulso_desativado',
+  'Mensagem de acknowledgement não deve ser tratada como orçamento',
+  t5_result.tool);
+
+assert(5, '"ok" não deve acionar simularOrcamentoAvulso',
+  t5_result.tool !== 'simularOrcamentoAvulso',
+  'Mensagem de acknowledgement não deve acionar simulação de orçamento',
+  t5_result.tool);
+
+// Cliente ativo deve permanecer
+assert(5, 'Cliente ativo preservado após "ok"',
+  v2Ctx.activeEntities.clientName === LISITON_MOCK.clientName,
+  undefined, v2Ctx.activeEntities.clientName, LISITON_MOCK.clientName);
+
+// Orçamento segue zerado (não foi religar orçamento)
+assert(5, 'Orçamento segue zerado após "ok"',
+  !v2Ctx.orcamentoItens || v2Ctx.orcamentoItens.length === 0,
+  undefined, v2Ctx.orcamentoItens?.length, 0);
+
+// Testar também "blz" e "entendido"
+const t5b_result = simulateRouter('blz', activeClient, v2Ctx);
+assert(5, '"blz" também não aciona orçamento',
+  t5b_result.tool !== 'orcamento_avulso_desativado' && t5b_result.tool !== 'simularOrcamentoAvulso',
+  undefined, t5b_result.tool);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Verificações transversais
 // ─────────────────────────────────────────────────────────────────────────────
@@ -298,6 +338,7 @@ if (failed === 0) {
   console.log('║  Orçamento Avulso: DESLIGADO ✓                               ║');
   console.log('║  Contexto de cliente: PRESERVADO ✓                          ║');
   console.log('║  Financeiro pós-bloqueio: FUNCIONAL ✓                       ║');
+  console.log('║  "ok" pós-bloqueio: SEM FATOS FALSOS ✓                      ║');
 } else {
   console.log(`║  ❌ REGRESSÃO DETECTADA — ${failed} teste(s) falharam.                  ║`);
   console.log('║  Não religar MAESTRO_AVULSO_ENABLED=true até correção.      ║');

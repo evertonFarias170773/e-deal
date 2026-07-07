@@ -27,6 +27,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
 // ─── Tipos Exportados ─────────────────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ export async function resolverOrcamento(
 
     let candidatos: ProdutoDb[] = [];
 
-    // ── Prioridade 1: Busca por ID numérico ──────────────────────────────────
+    // ── Prioridade 1: Busca por ID numérico explícito ─────────────────────────────
     if (idExplicito !== null) {
       const { data, error } = await supabase
         .from('produtos')
@@ -163,7 +164,38 @@ export async function resolverOrcamento(
       }
     }
 
-    // ── Prioridade 2-4: Busca textual (apelido e descrição) ──────────────────
+    // ── Prioridade 2: Catálogo oficial de aliases (antes de busca textual no banco) ──
+    // Resolve o termo para um ID oficial sem ambiguidade de produtos de teste.
+    if (candidatos.length === 0) {
+      const resolvido = resolverTermoCatalogo(termoOriginal);
+
+      if (resolvido.tipoMatch === 'exato' || resolvido.tipoMatch === 'parcial') {
+        if (resolvido.id_produto !== null) {
+          // Busca o produto real no banco pelo ID resolvido pelo catálogo oficial
+          const { data, error } = await supabase
+            .from('produtos')
+            .select(SELECT_COLS)
+            .eq('id_produto', resolvido.id_produto)
+            .limit(1);
+
+          if (error) {
+            console.error('[OrcamentoResolver] Erro ao buscar por ID do catálogo oficial:', error.message);
+          } else if (data && data.length > 0) {
+            candidatos = data as ProdutoDb[];
+          } else {
+            // Catálogo resolveu mas produto não existe no banco — continua para busca textual
+            console.warn(`[OrcamentoResolver] Catálogo oficial resolveu ID ${resolvido.id_produto} mas produto não existe no banco para termo "${termoOriginal}"`);
+          }
+        }
+      } else if (resolvido.tipoMatch === 'ambiguo') {
+        // Ambiguíade no catálogo oficial — sinaliza imediatamente sem ir ao banco
+        // (caso raro: dois produtos com mesmo alias no catálogo — requer correção do catálogo)
+        console.warn(`[OrcamentoResolver] Ambiguíade no catálogo oficial para "${termoOriginal}" — candidatos: ${resolvido.candidatos?.map(c => c.id_produto).join(', ')}`);
+        // Deixa candidatos vazio e cai no banco textual abaixo
+      }
+    }
+
+    // ── Prioridade 3-5: Busca textual no banco (apelido e descrição) ─────────────
     if (candidatos.length === 0) {
       const [resApelido, resDesc] = await Promise.all([
         supabase
