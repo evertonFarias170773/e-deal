@@ -23,6 +23,7 @@ export interface ExtractedData {
     apelido: string;
     contato: string;
     ins_estadual: string;
+    ins_municipal?: string;
     email: string;
     email_contato: string;
     telefone_fixo: string;
@@ -30,6 +31,7 @@ export interface ExtractedData {
     whatsapp_2: string;
     senha_importada: string;
     nome_vendedor: string;
+    site?: string;
     obs: string;
   };
   endereco: {
@@ -305,6 +307,8 @@ export function ImportSistemaAntigoModal({
                     <li><strong>Tipo Pessoa:</strong> {extracted.cliente.tipo_pessoa || "-"}</li>
                     <li><strong>Documento:</strong> {extracted.cliente.documento || "-"}</li>
                     <li><strong>IE:</strong> {extracted.cliente.ins_estadual || "-"}</li>
+                    {extracted.cliente.ins_municipal && <li><strong>IM:</strong> {extracted.cliente.ins_municipal}</li>}
+                    {extracted.cliente.site && <li><strong>Site:</strong> {extracted.cliente.site}</li>}
                     <li><strong>E-mail:</strong> {extracted.cliente.email || "-"}</li>
                     <li><strong>Telefone:</strong> {extracted.cliente.telefone_fixo || "-"}</li>
                     <li><strong>WhatsApp:</strong> {extracted.cliente.whatsapp_1 || "-"}</li>

@@ -75,6 +75,7 @@ Formato de Saída Obrigatório:
     "apelido": "",
     "contato": "",
     "ins_estadual": "",
+    "ins_municipal": "",
     "email": "",
     "email_contato": "",
     "telefone_fixo": "",
@@ -82,6 +83,7 @@ Formato de Saída Obrigatório:
     "whatsapp_2": "",
     "senha_importada": "",
     "nome_vendedor": "",
+    "site": "",
     "obs": ""
   },
   "endereco": {

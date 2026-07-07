@@ -217,10 +217,27 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       email: c.e_mail || ""
     }));
 
+    const city = data.endereco.cidade ? data.endereco.cidade.trim() : "";
+    const state = data.endereco.uf ? data.endereco.uf.trim().toUpperCase() : "";
+    const cityStateStr = city && state ? `${city}/${state}` : (city || state || "");
+
     const dateStr = new Date().toLocaleDateString("pt-BR");
-    const importObs = `Cadastro importado do sistema antigo via texto bruto em ${dateStr}.`;
-    const finalObs = form.observacoes 
-      ? `${form.observacoes}\n${importObs}`
+    let importObs = `Cadastro importado do sistema antigo via texto bruto em ${dateStr}.`;
+    if (data.metadados?.data_cadastro_origem) {
+      importObs += ` Data de cadastro original: ${data.metadados.data_cadastro_origem}.`;
+    }
+    if (data.metadados?.data_atualizacao_origem) {
+      importObs += ` Última atualização original: ${data.metadados.data_atualizacao_origem}.`;
+    }
+
+    const cleanCurrentObs = (form.observacoes || "")
+      .split("\n")
+      .filter((line) => !line.includes("Cadastro importado do sistema antigo via texto bruto"))
+      .join("\n")
+      .trim();
+
+    const finalObs = cleanCurrentObs 
+      ? `${cleanCurrentObs}\n${importObs}`
       : importObs;
 
     setForm((current) => ({
@@ -233,12 +250,15 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       apelido: data.cliente.apelido || "",
       contato: data.cliente.contato || "",
       inscricaoEstadual: data.cliente.ins_estadual || "",
+      inscricaoMunicipal: data.cliente.ins_municipal || "",
       isentoInscricaoEstadual: data.cliente.ins_estadual?.toUpperCase() === "ISENTO",
       email: data.cliente.email || "",
       emailFinanceiro: data.cliente.email_contato || "",
       telefoneFixo: data.cliente.telefone_fixo || "",
       whatsapp: data.cliente.whatsapp_1 || "",
       whatsapp2: data.cliente.whatsapp_2 || "",
+      site: data.cliente.site || "",
+      cidadeUf: cityStateStr,
       atendente: matchedVendedorNome,
       idVendedor: matchedVendedorId,
       observacoes: finalObs,
