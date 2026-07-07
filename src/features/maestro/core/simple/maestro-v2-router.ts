@@ -130,7 +130,10 @@ export async function routeToolSimple(
   }
 
   // 1a. REGRA DETERMINÍSTICA DE ORÇAMENTO AVULSO
-  const engineResult = processarOrcamentoAvulso(query, { itens: [], pendingAmbiguity: false });
+  const engineResult = processarOrcamentoAvulso(query, { 
+    itens: v2Ctx.domain === 'orcamento_avulso' ? (v2Ctx.orcamentoItens || []) : [], 
+    pendingAmbiguity: false 
+  });
   if (engineResult.action === 'ADD' || engineResult.action === 'REPLACE') {
     const isAvulsoEnabled = process.env.MAESTRO_AVULSO_ENABLED === 'true';
 

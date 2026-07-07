@@ -310,6 +310,201 @@ Mesmo após o Maestro ter listado endereços e contatos reais no turno anterior.
 | Arquivo | Mudança |
 |---------|---------|
 | `maestro-simple-intents.ts` | `CLOSURE_TRIGGERS` expandido: `ok`, `blz`, `certo`, `combinado`, `entendido`, `ta bom`, `ta`, `fechou`, `otimo`, `ate mais`, `ate logo`, `tcau` |
+3. **Isolamento de namespace numérico** — números isolados não disparam busca de cliente quando há pendência de produto ativa.
+4. **Motor de orçamento puro** — nenhum parsing de produto deve existir fora de `maestro-orcamento-engine.ts`.
+5. **Testes isolados verdes** — `test_orcamento_isolado.ts` deve passar 7/7.
+6. **Teste de regressão verde** — `test_baseline_regressao.ts` deve passar todos os turnos.
+7. **Teste do resolver verde** — `test_orcamento_resolver.ts` deve passar 31/31.
+8. **Teste de integração verde** — `test_orcamento_integracao.ts` deve passar 46/46.
+
+---
+
+## 7. Fase 3 — Integração Motor + Resolver + Cálculo (Serviço Isolado)
+
+> **Status:** Implementado — não conectado ao chat principal.  
+> **Data:** 2026-07-07  
+> **MAESTRO_AVULSO_ENABLED:** `false`
+
+### Arquitetura da Fase 3
+
+A Fase 3 integra os três módulos isolados em uma camada de serviço orquestradora:
+
+```
+query do usuário
+     │
+     ▼
+maestro-orcamento-engine.ts    ← parsing puro (sem DB)
+     │ OrcamentoResult (action, items, nextState)
+     ▼
+maestro-orcamento-service.server.ts   ← orquestrador
+     │ mapeia items → ResolverItemReq[]
+     ▼
+maestro-orcamento-resolver.server.ts  ← consulta read-only public.produtos
+     │ ResolverResult (itens com status, subtotais, totalGeral)
+     ▼
+OrcamentoServiceResult  ← retornado ao chamador
+```
+
+### Responsabilidades por módulo
+
+| Módulo | Responsabilidade |
+|--------|-----------------|
+| `maestro-orcamento-engine.ts` | Parsing textual puro, sem DB, sem IO |
+| `maestro-orcamento-resolver.server.ts` | Consulta read-only em `public.produtos` |
+| `maestro-orcamento-service.server.ts` | Orquestração: recebe query + state, devolve resultado completo |
+| `maestro-v2-router.ts` | Decisão de routing; verifica `MAESTRO_AVULSO_ENABLED` |
+| `maestro-v2-context-manager.ts` | Continuação de contexto; delega ao service quando habilitado |
+
+### Regras de Cálculo (Fase 3)
+
+- `subtotal = quantidade × valorUnt + (valorFixo ?? 0)`
+- `valorUnt == null` → `preco_incompleto` (cálculo bloqueado)
+- `valorFixo == null` → tratado como `0` (documentado)
+- `ativo = false` → `inativo` (não entra no total)
+- `totalGeral = null` se qualquer item não for `sucesso`
+- Em ambiguidade, `temPendencia = true` e o usuário deve informar ID
+
+### Estado da Fase 3
+
+- [x] Serviço orquestrador criado e testado
+- [x] Testes de integração: 46/46 passando com fixtures locais
+- [ ] Religamento no chat principal (aguardando aprovação — Fase 4)
+
+---
+
+## 8. Fase 3.5 — Sandbox com Catálogo Real (OBRIGATÓRIO antes da Fase 4)
+
+> **Status:** Concluído ✅  
+> **Data:** 2026-07-07  
+> **Arquivo:** `test_orcamento_catalogo_real.ts`  
+> **Banco:** public.produtos — READ-ONLY — ANON KEY
+
+### Resultados do Catálogo Real (2026-07-07)
+
+| Termo | Produto Real | ID | valorUnt | valorFixo | Status |
+|-------|-------------|-----|----------|-----------|--------|
+| `mobi` | O ingresso MOBI é a solução... | #401 | 0.23 | 40 | ✅ sucesso |
+| `triband` | Pulseira sintetica de lacre adesivo... | #101 | 0.16 | 40 | ✅ sucesso |
+| ID `101` | Pulseira sintetica de lacre adesivo... | #101 | 0.16 | - | ✅ sucesso |
+| `tri` | — | — | — | — | ⚠️ ambíguo (2 candidatos: #9001 e #101) |
+| `xyznaocadastrado99999` | — | — | — | — | ✅ nao_encontrado (correto) |
+
+### Diálogos Testados com Dados Reais
+
+| Diálogo | Action | Total Real |
+|---------|--------|------------|
+| `"15600 mobi + 1500 triband qual valor?"` | ADD | R$ 3.908,00 |
+| `"muda a qtd do mobi pra 10k"` | UPDATE_QTD | R$ 2.620,00 |
+| `"muda a quantidade do mobi para 10.000"` | UPDATE_QTD | R$ 2.620,00 |
+| `"10600 mobi + 1500 triband qual valor?"` | REPLACE | R$ 2.758,00 |
+| `"1500 tri"` | ADD | BLOQUEADO (ambíguo: #9001 e #101) |
+| `"101"` com pendência | ADD | ID 101 resolvido corretamente |
+| `"assim não dá"` | CLEAR | — |
+
+### Aviso de Catálogo
+
+> ⚠️ **"tri" é ambíguo** no catálogo real — retorna 2 produtos:  
+> - #9001 — Teste de cadastro de pulseira (apelido: `tri`)  
+> - #101 — Pulseira sintetica triband (apelido: `tri`)  
+> 
+> **Recomendação antes da Fase 4:** ajustar apelidos para que `triband` seja único
+> e `tri` mostre pedido de escolha corretamente no chat.
+
+### Checklist de Segurança Fase 3.5
+
+- [x] Apenas `public.produtos` acessada — ZERO tabelas proibidas
+- [x] ZERO escrita no banco
+- [x] ANON KEY usada — ZERO service_role
+- [x] MAESTRO_AVULSO_ENABLED = false confirmado
+- [x] Baseline 20/20 preservado
+- [x] Tsc sem erros no código de negócio (error de `.next` pré-existente, sem relação)
+
+### Requisito: Fase 3.5 é OBRIGATÓRIA antes da Fase 4
+
+A Fase 4 (religamento no chat principal) **só pode ser iniciada** após:
+
+1. Fase 3.5 aprovada com dados reais ✅
+2. Ambiguidade de `"tri"` resolvida (apelido ajustado no banco) ou aceita como comportamento documentado
+3. Todos os 8 critérios de guarda da Seção 6 verificados
+4. Aprovação explícita do usuário
+
+---
+
+## 9. Catálogo Oficial de Aliases de Produtos
+
+> **Status:** Implementado ✅ — 2026-07-07  
+> **Arquivo:** `maestro-orcamento-catalogo-oficial.ts`
+
+### Responsabilidade
+
+O catálogo oficial **mapeia termos digitados pelo usuário para `id_produto`**. Ele **nunca** é fonte de preço, valorUnt, valorFixo ou status.
+
+### Princípio fundamental
+
+| Fonte | Resolve |
+|-------|---------|
+| Catálogo oficial (`maestro-orcamento-catalogo-oficial.ts`) | alias → id_produto |
+| Banco real (`public.produtos`) | id_produto → preço, status, ativo |
+| Brain/LLM | **NADA** — não decide produto |
+
+### Prioridade de resolução
+
+1. **ID numérico explícito** informado pelo usuário (ex: `"101"`, `"id do produto 101"`)
+2. **Alias exato no catálogo oficial** (ex: `"tri"` → ID 101, `"mobi"` → ID 401)
+3. **Alias parcial seguro no catálogo oficial**
+4. **`public.produtos.apelidos`** (banco) — fallback textual
+5. **`public.produtos.descricao`** (banco) — fallback final
+
+### Produtos Operacionais Registrados (base 2026-07-07)
+
+| ID | Nome Comercial | Aliases Canônicos |
+|----|---------------|-------------------|
+| 101 | Pulseira Triband Sintética | `triband`, `tri`, `tri band`, `tyvek` |
+| 102 | Pulseira de Tecido (Velcro) | `tecido`, `velcro`, `fabric` |
+| 103 | Pulseira de Silicone | `silicone`, `borracha` |
+| 401 | Ingresso MOBI | `mobi`, `moby` |
+| 402 | Ingresso UP | `up`, `cali` |
+| 501 | Ticket | `ticket`, `tike`, `tiket` |
+| 601 | Cordão Jacaré | `cordao jacare`, `jacare`, `cordao` |
+| 602 | Cordão com Argola Giratória | `cordao argola`, `argola` |
+| 701 | Crachá PVC | `cracha pvc`, `pvc` |
+| 702 | Crachá Papel | `cracha papel`, `credencial` |
+
+### Regra Anti-Ambiguidade
+
+- **`"tri"` → ID 101** (catálogo oficial vence produto de teste #9001 do banco)
+- Se um alias constar em dois produtos no catálogo → `verificarConflitosAlias()` detecta e deve retornar `[]`
+- Produto de teste no banco **nunca** vence alias oficial no catálogo
+
+### Testes
+
+- `test_orcamento_catalogo_oficial.ts` — **45/45** (zero acesso ao banco)
+- `test_orcamento_resolver.ts` — **31/31** (com catálogo integrado)
+- `test_orcamento_integracao.ts` — **46/46**
+
+---
+
+## 10. Correção — Regressão "ok" com Fatos Falsos (2026-07-07)
+
+### Problema corrigido
+
+Mensagem curta `"ok"` após bloqueio de orçamento gerava resumo do cliente com falso negativo:  
+- `"Endereços cadastrados: Nenhum"`  
+- `"Contatos secundários: Nenhum cadastrado"`
+
+Mesmo após o Maestro ter listado endereços e contatos reais no turno anterior.
+
+### Causa
+
+1. `"ok"` não estava em `CLOSURE_TRIGGERS` → caia em `fallback` → passava pelo Brain/LLM
+2. `legacyContextToSimple()` sempre preenche `enderecos:[]`, `contatos:[]` (não serializado entre turnos)
+3. `factsToText()` tratava array vazio como ausência real → enviava `"nenhum"` ao LLM
+
+### Correção aplicada
+
+| Arquivo | Mudança |
+|---------|---------|
+| `maestro-simple-intents.ts` | `CLOSURE_TRIGGERS` expandido: `ok`, `blz`, `certo`, `combinado`, `entendido`, `ta bom`, `ta`, `fechou`, `otimo`, `ate mais`, `ate logo`, `tcau` |
 | `maestro-simple-brain.ts` | `factsToText()` — removido `else { "Endereços: nenhum" }` e `else { "Contatos: nenhum" }`. Array vazio = omitir. |
 | `test_baseline_regressao.ts` | Turno 5 adicionado: `"ok"` após bloqueio → 5 verificações |
 
@@ -323,3 +518,25 @@ Mesmo após o Maestro ter listado endereços e contatos reais no turno anterior.
 
 - `test_baseline_regressao.ts` — **25/25** (incluindo Turno 5 "ok")
 - `CLOSURE_TRIGGERS` cobre: `ok`, `blz`, `show`, `beleza`, `certo`, `valeu`, `obrigado` e mais 14 variantes
+
+---
+
+## 11. Retomada Explícita de Orçamento (2026-07-07)
+
+### Regra Permanente
+
+> **Menção explícita a orçamento com itens salvos retoma o domínio `orcamento_avulso`, mesmo que o domínio atual seja financeiro ou cliente.**
+
+### Comportamento esperado
+
+Se o usuário estiver simulando um orçamento (ex: `"qual o valor de 1000 mobi"`), em seguida realizar uma consulta financeira (`"ele tem boletos em atraso?"`) e depois pedir para remover ou recalcular o orçamento (`"remove as triband do orçamento"` ou `"refazer sem o mobi"`):
+1. O Context Manager detectará a **retomada explícita** por palavras-chave (`do orçamento`, `sem as`, `remove`, `tira`, `refazer o orçamento`).
+2. Se houver itens de orçamento salvos no histórico (`orcamentoItens` ou `lastSuccessfulBudgetItems`), o **domínio será forçado de volta para `orcamento_avulso`**.
+3. O LLM e o Brain **não** serão acionados.
+4. O `maestro-orcamento-engine.ts` processará a remoção ou restauração e retornará o cálculo atualizado imediatamente.
+
+### Ação `REMOVE`
+A ação `REMOVE` foi incluída no motor e permite:
+- Filtrar itens existentes pelo termo normalizado.
+- Remover os itens citados preservando os demais (ex: `"remove as triband"` em um carrinho com Triband e Tex resulta apenas em Tex).
+- Salvar o estado anterior (`previousItens`) para suportar a ação `RESTORE` (ex: `"volta as triband"`).

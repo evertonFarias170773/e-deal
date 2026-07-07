@@ -94,7 +94,51 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
     };
   }
 
-  // 5a. Detectar RESTORE — "mantem", "volta", "coloca de volta", "não tira", "preserva", "restaura"
+  // 5a. Detectar REMOVE — "remove as triband", "tira as triband", "sem as triband",
+  //   "refaz sem as triband", "retira as triband", "exclui as triband"
+  //   Nota: "sem as" sozinho sem produto não dispara (requer match de item existente)
+  const isRemoveIntent = /\b(remove|retira|tira(r)?|exclui(r)?)\b/i.test(clean)
+    || /\bsem\s+a(s)?\s+\w/i.test(clean)
+    || /\brefaz(er)?\s+(o\s+)?(orcamento|pedido)\s+sem\b/i.test(clean)
+    || /\brecalcula(r)?\s+(o\s+)?(orcamento|pedido)\s+sem\b/i.test(clean);
+
+  // REMOVE nunca deve ser confundido com "cliente remove" ou "remove cliente"
+  const isClientRemove = /\b(remove|retira|tira)\s+(o\s+)?(cliente|cadastro)\b/i.test(clean);
+
+  if (isRemoveIntent && !isClientRemove && state.itens.length > 0) {
+    const cleanWords = clean.split(/\s+/).filter(w => w.length > 2);
+    const itensParaRemover = state.itens.filter(item =>
+      cleanWords.some(w => {
+        const termoNorm = normalizarTermoEngine(item.termo);
+        return termoNorm.includes(w) || w.includes(termoNorm);
+      })
+    );
+    if (itensParaRemover.length > 0) {
+      const novosItens = state.itens.filter(i => !itensParaRemover.includes(i));
+      nextState.previousItens = JSON.parse(JSON.stringify(state.itens));
+      nextState.itens = novosItens;
+      return {
+        action: 'REMOVE',
+        items: novosItens,
+        pending: null,
+        errors: [],
+        nextState,
+        response: `Removido: ${itensParaRemover.map(i => i.termo).join(', ')}.`
+      };
+    }
+    // Frase de remoção mas nenhum produto identificado — mantém estado atual
+    return {
+      action: 'NONE',
+      items: state.itens,
+      pending: null,
+      errors: [],
+      nextState: state,
+      response: ''
+    };
+  }
+
+  // 5b. Detectar RESTORE — "mantem", "volta", "coloca de volta", "não tira", "preserva", "restaura"
+
   const isRestoreIntent = /\b(mantem|mantém|mantém|volta\s+o|volta\s+a|coloca\s+de\s+volta|nao\s+tira|nao\s+remove|preserva|restaura|manter)\b/i.test(clean);
   if (isRestoreIntent) {
     const previousItens = state.previousItens || [];

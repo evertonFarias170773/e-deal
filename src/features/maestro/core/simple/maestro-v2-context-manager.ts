@@ -215,6 +215,20 @@ export function handleContextContinuation(
     }
   }
 
+  // ── 3.0 RETOMADA EXPLÍCITA DE ORÇAMENTO (SOBREPÕE FINANCEIRO)
+  const hasOrcamentoKeyword = /\b(do\s*orcamento|no\s*orcamento|nesse\s*orcamento|desse\s*orcamento|do\s*pedido\s*avulso|refazer\s*(o\s*)?orcamento|recalcular\s*(o\s*)?orcamento)\b/i.test(clean)
+    || /\b(remove|tira(r)?|retira|sem\s+a(s)?|sem\s+o(s)?|refaz\s+sem)\b.+/i.test(clean);
+  const hasItemsToRecover = (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0)
+    || (v2Ctx.lastSuccessfulBudgetItems && v2Ctx.lastSuccessfulBudgetItems.length > 0)
+    || (v2Ctx.previousOrcamentoItens && v2Ctx.previousOrcamentoItens.length > 0);
+
+  if (hasOrcamentoKeyword && hasItemsToRecover && v2Ctx.domain !== 'orcamento_avulso') {
+    console.log(`[MaestroV2Context] Retomada explícita de orçamento detectada. Restaurando domínio para orcamento_avulso.`);
+    v2Ctx.domain = 'orcamento_avulso';
+    if (!v2Ctx.orcamentoItens || v2Ctx.orcamentoItens.length === 0) {
+       v2Ctx.orcamentoItens = v2Ctx.lastSuccessfulBudgetItems || v2Ctx.previousOrcamentoItens || [];
+    }
+  }
   
   // ── 3.1 BYPASS TEMPORÁRIO E DELEGAÇÃO AO MOTOR ISOLADO
   if (v2Ctx.domain === 'orcamento_avulso') {

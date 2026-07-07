@@ -1,4 +1,4 @@
-﻿/**
+/**
  * test_fluxo_real_avulso.ts
  * Teste de fluxo real turno a turno do Orcamento Avulso.
  * Simula caminho de /api/maestro/simple via context manager + engine.
@@ -154,6 +154,55 @@ async function runTests() {
     const state: OrcamentoAvulsoState = { itens: [{ quantidade: 1560, termo: 'tri' }], pendingAmbiguity: false };
     const eng = processarOrcamentoAvulso('ok obrigado', state);
     assert('engine NONE para closure', eng.action === 'NONE', eng.action, 'NONE');
+  }
+
+  // T9: context manager retomada de orçamento após financeiro
+  console.log('--- T9: Retomada explícita de orçamento ---');
+  {
+    const ctx: MaestroV2Context = getEmptyV2Context();
+    ctx.domain = 'financeiro'; // Simula estado atual financeiro
+    // Mas temos itens salvos de sucesso
+    ctx.lastSuccessfulBudgetItems = [{ quantidade: 1560, termo: 'tri' }, { quantidade: 200, termo: 'tex' }];
+    
+    const cont = handleContextContinuation('remove as triband do orçamento', ctx, null);
+    assert('interceptado pelo context manager', cont !== null, cont, 'non-null');
+    assert('domínio restaurado para orcamento_avulso', (ctx.domain as string) === 'orcamento_avulso', ctx.domain, 'orcamento_avulso');
+    if (cont) {
+      const tool = cont.plan?.steps?.[0]?.tool;
+      assert('tool simularOrcamentoAvulso', tool === 'simularOrcamentoAvulso', tool, 'simularOrcamentoAvulso');
+      const itens = cont.plan?.steps?.[0]?.params?.itens;
+      assert('triband removida', !(itens || []).some((i: any) => String(i.termo).includes('tri')), true);
+      assert('tex preservado', (itens || []).some((i: any) => i.quantidade === 200 && String(i.termo).includes('tex')), itens?.map((i: any) => `${i.quantidade} ${i.termo}`));
+    }
+  }
+
+  // T10: remove as triband - REMOVE
+  console.log('--- T10: "remove as triband" - REMOVE action ---');
+  {
+    const stateParaRemover: OrcamentoAvulsoState = {
+      itens: [{ quantidade: 1560, termo: 'tri' }, { quantidade: 200, termo: 'tex' }],
+      pendingAmbiguity: false,
+      previousItens: []
+    };
+    const eng = processarOrcamentoAvulso('remove as triband', stateParaRemover);
+    assert('REMOVE detectado', eng.action === 'REMOVE', eng.action, 'REMOVE');
+    assert('apenas 1 item sobra', eng.items.length === 1, eng.items.length, 1);
+    assert('tex sobra', eng.items.some((i: any) => i.termo.includes('tex')), eng.items.map((i: any) => i.termo));
+    assert('triband removida', !eng.items.some((i: any) => i.termo.includes('tri')), eng.items.map((i: any) => i.termo));
+    assert('estado anterior salvo', eng.nextState.previousItens?.length === 2, eng.nextState.previousItens?.length, 2);
+  }
+
+  // T11: refazer o orcamento sem as triband
+  console.log('--- T11: "refazer o orcamento sem as triband" - REMOVE action ---');
+  {
+    const stateParaRemover: OrcamentoAvulsoState = {
+      itens: [{ quantidade: 1560, termo: 'tri' }, { quantidade: 200, termo: 'tex' }],
+      pendingAmbiguity: false,
+      previousItens: []
+    };
+    const eng = processarOrcamentoAvulso('refazer o orçamento sem as triband', stateParaRemover);
+    assert('REMOVE detectado', eng.action === 'REMOVE', eng.action, 'REMOVE');
+    assert('apenas tex sobra', eng.items.length === 1 && eng.items[0].termo.includes('tex'), true);
   }
 
   if (savedEnv === undefined) delete process.env.MAESTRO_AVULSO_ENABLED;
