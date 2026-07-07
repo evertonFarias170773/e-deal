@@ -11,9 +11,11 @@ export interface OrcamentoAvulsoState {
   pendingAmbiguity: boolean;
   pendingTerm?: string;
   pendingQuantidade?: number;
+  /** Itens do orçamento antes da última alteração destrutiva (usado para RESTORE) */
+  previousItens?: OrcamentoAvulsoItem[];
 }
 
-export type OrcamentoActionType = 'ADD' | 'REPLACE' | 'UPDATE_QTD' | 'REMOVE' | 'CLEAR' | 'NONE' | 'ERROR';
+export type OrcamentoActionType = 'ADD' | 'REPLACE' | 'UPDATE_QTD' | 'REMOVE' | 'RESTORE' | 'CLEAR' | 'NONE' | 'ERROR';
 
 export interface OrcamentoResult {
   action: OrcamentoActionType;
@@ -92,10 +94,53 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
     };
   }
 
-  // 5. Tratar alteração de quantidade "muda a qtd do mobi pra 10k" ou "muda a quantidade do mobi para 10.000"
+  // 5a. Detectar RESTORE — "mantem", "volta", "coloca de volta", "não tira", "preserva", "restaura"
+  const isRestoreIntent = /\b(mantem|mantém|mantém|volta\s+o|volta\s+a|coloca\s+de\s+volta|nao\s+tira|nao\s+remove|preserva|restaura|manter)\b/i.test(clean);
+  if (isRestoreIntent) {
+    const previousItens = state.previousItens || [];
+    // Identifica itens que estavam antes mas não estão agora
+    const removedItens = previousItens.filter(prev =>
+      !state.itens.some(cur => normalizarTermoEngine(cur.termo) === normalizarTermoEngine(prev.termo))
+    );
+    // Identifica itens mencionados na frase que existem no histórico
+    const cleanWords = clean.split(/\s+/).filter(w => w.length > 2);
+    const itensParaRestaurar = removedItens.filter(item =>
+      cleanWords.some(w => normalizarTermoEngine(item.termo).includes(w) || w.includes(normalizarTermoEngine(item.termo)))
+    );
+    if (itensParaRestaurar.length > 0) {
+      const novosItens = [...state.itens, ...itensParaRestaurar];
+      nextState.itens = novosItens;
+      nextState.previousItens = JSON.parse(JSON.stringify(state.itens));
+      return {
+        action: 'RESTORE',
+        items: novosItens,
+        pending: null,
+        errors: [],
+        nextState,
+        response: `Restaurado: ${itensParaRestaurar.map(i => i.termo).join(', ')}.`
+      };
+    }
+    // Se não há itens removidos mas a frase menciona algo — mantém o estado atual
+    return {
+      action: 'NONE',
+      items: state.itens,
+      pending: null,
+      errors: [],
+      nextState: state,
+      response: ''
+    };
+  }
+
+  // 5b. Tratar alteração de quantidade:
+  //   - "muda a qtd do mobi pra 10k"
+  //   - "muda pra 200 tex"
+  //   - "muda a quantidade do mobi para 10.000"
+  //   - "altera tex pra 200"
   const isBudgetChange = /\b(muda|altera|troca|atualiza)\b/i.test(clean);
-  if (isBudgetChange && state.itens.length > 0) {
-    const numMatch = clean.match(/\b(\d+(?:\.\d+)?)\s*([kk]?)\b/i);
+  // Também detecta padrão de quantificação direta sem "muda": "pra 200 tex" com estado ativo e produto identificável
+  const isDirectQtyUpdate = state.itens.length > 0 && /\bpra\s+(\d+(?:\.\d+)?k?)\s+([a-z][a-z\d\s-]+)$/i.test(clean);
+  if ((isBudgetChange || isDirectQtyUpdate) && state.itens.length > 0) {
+    const numMatch = clean.match(/\b(\d+(?:\.\d+)?)\s*([k]?)\b/i);
     if (numMatch) {
       let qtd = parseFloat(numMatch[1].replace(/\./g, '')); // 10.000 -> 10000
       if (numMatch[1].includes('.') && numMatch[1].split('.')[1].length !== 3) {
@@ -103,16 +148,22 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
       }
       if (numMatch[2].toLowerCase() === 'k') qtd *= 1000;
 
-      const words = clean.split(/\s+/);
+      const cleanWords = clean.split(/\s+/);
       let targetIdx = -1;
       for (let i = 0; i < state.itens.length; i++) {
-        if (words.some(w => w.length > 2 && state.itens[i].termo.includes(w))) {
+        const termoNorm = normalizarTermoEngine(state.itens[i].termo);
+        // Match: palavra da query tem ≥3 chars e o termo do item contém essa palavra OU vice-versa
+        if (cleanWords.some(w => {
+          if (w.length < 2) return false;
+          return termoNorm.includes(w) || w.includes(termoNorm);
+        })) {
           targetIdx = i;
           break;
         }
       }
 
       if (targetIdx !== -1) {
+        nextState.previousItens = JSON.parse(JSON.stringify(state.itens));
         nextState.itens[targetIdx] = { ...nextState.itens[targetIdx], quantidade: qtd };
         return {
           action: 'UPDATE_QTD',
@@ -137,6 +188,7 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
 
     if (state.itens.length > 0 && isFullReplace) {
       // É replace puro mesmo se tiver +, pois está pedindo o valor de tudo
+      nextState.previousItens = JSON.parse(JSON.stringify(state.itens));
       nextState.itens = items;
       return {
         action: 'REPLACE',
@@ -147,7 +199,8 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
         response: `Substituído pelos itens: ${items.map(i => i.termo).join(', ')}`
       };
     } else {
-      const isAddition = isExplicitAddition || (state.itens.length > 0 && hasPlusOrMais && clean.startsWith('+') || clean.startsWith('mais'));
+      const isAddition = isExplicitAddition || (state.itens.length > 0 && (hasPlusOrMais && (clean.startsWith('+') || clean.startsWith('mais'))));
+      nextState.previousItens = JSON.parse(JSON.stringify(state.itens));
       nextState.itens = isAddition ? [...state.itens, ...items] : items;
       return {
         action: state.itens.length === 0 ? 'ADD' : (isAddition ? 'ADD' : 'REPLACE'),
@@ -155,7 +208,7 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
         pending: null,
         errors: [],
         nextState,
-        response: `Adicionado itens: ${items.map(i => i.termo).join(', ')}`
+        response: `Adicionado/substituído itens: ${items.map(i => i.termo).join(', ')}`
       };
     }
   }
@@ -168,6 +221,17 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
     nextState,
     response: ''
   };
+}
+
+/** Normaliza um termo de produto para comparação (lowercase, sem acento, trim) */
+function normalizarTermoEngine(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function parseOrcamento(clean: string): OrcamentoAvulsoItem[] {

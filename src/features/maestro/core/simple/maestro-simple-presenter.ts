@@ -31,6 +31,8 @@ import type {
 } from './maestro-simple-pagamentos.server';
 import type { OrcamentoAvulsoResult } from './maestro-simple-produtos.server';
 import type { OrcamentoAvulsoItem } from './maestro-v2-context-manager';
+import type { OrcamentoServiceResult } from './maestro-orcamento-service.server';
+import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
 export interface PresenterResult {
   message: ConversationMessage;
@@ -1569,6 +1571,67 @@ export function presenterOrcamentoAvulso(result: OrcamentoAvulsoResult): Present
     },
     activity: [
       { id: genId('step'), label: 'Simulação de orçamento avulso', detail: `Itens: ${itens.length}`, status: 'done', timestamp: nowTime() }
+    ]
+  };
+}
+
+/**
+ * Formata resposta de orçamento avulso usando o novo OrcamentoService.
+ * Prefere nomeComercial do catálogo oficial quando o ID foi resolvido por ele.
+ * Nunca exibe descrições longas do banco.
+ */
+export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult): PresenterResult {
+  const { resolucao, totalGeral, errors, temPendencia } = result;
+
+  let contentText = 'Olá, 😀\n\nSegue orçamento para os itens solicitados.\n\nProdutos Orçados:\n\n';
+  let allSuccess = !temPendencia && errors.length === 0;
+
+  resolucao.forEach(item => {
+    if (item.status === 'nao_encontrado') {
+      contentText += `❌ **${item.quantidade}x ${item.termo}**: Não encontrei nenhum produto com esse nome no cadastro.\n`;
+      allSuccess = false;
+    } else if (item.status === 'ambiguo') {
+      contentText += `⚠️ **${item.quantidade}x ${item.termo}**: Encontrei ${item.candidatos?.length ?? 0} opções. Qual ID você quer usar?\n`;
+      (item.candidatos || []).slice(0, 5).forEach(p => {
+        contentText += `   - ${p.descricao} (ID: ${p.id_produto})\n`;
+      });
+      allSuccess = false;
+    } else if (item.status === 'inativo') {
+      const descricao = item.produto?.descricao ?? item.termo;
+      contentText += `🚫 **${item.quantidade}x ${item.termo}**: O produto **${descricao}** está inativo. Não é possível incluí-lo.\n`;
+      allSuccess = false;
+    } else if (item.status === 'preco_incompleto') {
+      const descricao = item.produto?.descricao ?? item.termo;
+      contentText += `⚠️ **${item.quantidade}x ${item.termo}**: O produto **${descricao}** está sem preço no cadastro.\n`;
+      allSuccess = false;
+    } else if (item.status === 'sucesso' && item.produto) {
+      const formattedQtd = new Intl.NumberFormat('pt-BR').format(item.quantidade);
+      // Preferir nomeComercial do catálogo oficial quando ID foi resolvido
+      const catalogoInfo = resolverTermoCatalogo(item.termo);
+      const nomeProduto = catalogoInfo.nomeComercial ?? getShortProductName(item.produto.descricao, item.termo);
+      contentText += `✅ ${formattedQtd} ${nomeProduto}: ${fmtBRL(item.subtotal ?? 0)}\n`;
+    }
+  });
+
+  if (allSuccess && totalGeral !== null) {
+    contentText += `\nFrete: a combinar\n\nO valor total do pedido ficou em ${fmtBRL(totalGeral)}\n\nSe estiver tudo certo, me confirma por aqui que já dou andamento ao processo!\n`;
+  } else {
+    contentText += `\n*Como houve itens não encontrados, inativos ou com dúvidas, o total geral não foi calculado.*\n`;
+  }
+
+  return {
+    message: {
+      id: genId(),
+      role: 'maestro',
+      content: contentText,
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      { id: genId('step'), label: 'Simulação de orçamento avulso (service)', detail: `Itens: ${resolucao.length}`, status: 'done', timestamp: nowTime() }
     ]
   };
 }

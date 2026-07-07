@@ -38,6 +38,8 @@ import {
   buscarBoletosCliente,
 } from './maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb } from './maestro-simple-produtos.server';
+import { processarOrcamentoService } from './maestro-orcamento-service.server';
+import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
 import { detectIntent } from './maestro-simple-intents';
 import type {
@@ -82,6 +84,7 @@ import {
   presenterUltimoOrcamento,
   presenterUltimoPedido,
   presenterOrcamentoAvulso,
+  presenterOrcamentoAvulsoService,
   presenterEsclarecerOrcamento,
   presenterContinuacaoOrcamento,
   presenterLimparOrcamento,
@@ -653,63 +656,60 @@ export async function processSimpleQueryWithBrain(
           if (!itens || itens.length === 0) {
             pr = presenterFallback(simpleCtx);
           } else {
-            const result = await simularOrcamentoAvulsoDb(supabase, itens);
-            
-            const failedItem = result.itens.find(it => it.status !== 'sucesso');
-            if (failedItem) {
-              // Remove apenas os itens que falharam da lista ativa, preservando os demais itens válidos
-              const failedTerms = result.itens.filter(it => it.status !== 'sucesso').map(it => normalizeText(it.termo));
-              v2Ctx.orcamentoItens = (v2Ctx.orcamentoItens || []).filter(it => {
-                return !failedTerms.includes(normalizeText(it.termo));
-              });
-              console.log(`[MaestroEngine] Item falhou (${failedItem.status}): "${failedItem.termo}". Mantendo apenas os válidos no orçamento ativo: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
+            // ─── CAMINHO NOVO: usa processarOrcamentoService (catálogo oficial + banco) ───
+            // NUNCA usa simularOrcamentoAvulsoDb para o fluxo principal do chat
+            const orcamentoState = {
+              itens: (v2Ctx.orcamentoItens || []).map(i => ({ quantidade: i.quantidade, termo: i.termo })),
+              pendingAmbiguity: !!v2Ctx.pendingProductResolution || !!v2Ctx.pendingAmbiguousItem,
+              previousItens: (v2Ctx.previousOrcamentoItens || []).map(i => ({ quantidade: i.quantidade, termo: i.termo })),
+            };
 
-              if (failedItem.status === 'ambiguo') {
-                v2Ctx.pendingAmbiguousItem = {
-                  lastRequestedQuantity: failedItem.quantidade,
-                  lastRequestedTerm: failedItem.termo,
-                  options: failedItem.produtosEncontrados.map(p => p.descricao)
-                };
-                v2Ctx.pendingProductResolution = null;
+            const serviceResult = await processarOrcamentoService({
+              query: step.params.itens
+                ? `${itens.map(i => `${i.quantidade} ${i.termo}`).join(' + ')}`
+                : '',
+              state: { ...orcamentoState, itens: itens.map(i => ({ quantidade: i.quantidade, termo: i.termo })) },
+              supabase,
+            });
+
+            // Atualiza contexto com o estado resolvido pelo service
+            if (serviceResult.action !== 'NONE' && serviceResult.action !== 'ERROR') {
+              v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+              v2Ctx.orcamentoItens = serviceResult.items.map(i => ({ quantidade: i.quantidade, termo: i.termo }));
+              v2Ctx.lastSuccessfulBudgetItems = serviceResult.errors.length === 0
+                ? JSON.parse(JSON.stringify(v2Ctx.orcamentoItens))
+                : v2Ctx.lastSuccessfulBudgetItems;
+              v2Ctx.pendingProductResolution = null;
+              v2Ctx.pendingAmbiguousItem = null;
+
+              if (serviceResult.temPendencia) {
+                const itemAmbiguo = serviceResult.resolucao.find(r => r.status === 'ambiguo');
+                if (itemAmbiguo) {
+                  v2Ctx.pendingAmbiguousItem = {
+                    lastRequestedQuantity: itemAmbiguo.quantidade,
+                    lastRequestedTerm: itemAmbiguo.termo,
+                    options: (itemAmbiguo.candidatos || []).map(c => c.descricao)
+                  };
+                }
               } else {
-                v2Ctx.pendingProductResolution = {
-                  lastRequestedQuantity: failedItem.quantidade,
-                  lastRequestedTerm: failedItem.termo,
-                  status: failedItem.status as any
-                };
-                v2Ctx.pendingAmbiguousItem = null;
-              }
-
-              console.log('====== [MaestroEngine] DEV LOG ======');
-              console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
-              console.log(`- pendingProductResolution: ${JSON.stringify(v2Ctx.pendingProductResolution)}`);
-              console.log(`- pendingAmbiguousItem: ${JSON.stringify(v2Ctx.pendingAmbiguousItem)}`);
-              console.log(`- Handler usado: simularOrcamentoAvulso`);
-              console.log('=====================================');
-            } else {
-              // Se tudo deu certo, atualizamos os termos no contexto com a descrição real do produto encontrado
-              if (v2Ctx.orcamentoItens) {
-                v2Ctx.orcamentoItens.forEach((item) => {
-                  const match = result.itens.find(it => it.status === 'sucesso' && normalizeText(it.termo) === normalizeText(item.termo));
-                  if (match && match.produtosEncontrados && match.produtosEncontrados.length > 0) {
-                    item.termo = match.produtosEncontrados[0].descricao;
-                  }
-                });
-              }
-              // Salva como último sucesso consolidado completo
-              v2Ctx.lastSuccessfulBudgetItems = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
-              if (v2Ctx.pendingProductResolution || v2Ctx.pendingAmbiguousItem) {
-                console.log('====== [MaestroEngine] DEV LOG ======');
-                console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
-                console.log(`- pendências resolvidas/limpas!`);
-                console.log(`- Handler usado: simularOrcamentoAvulso`);
-                console.log('=====================================');
-                v2Ctx.pendingProductResolution = null;
-                v2Ctx.pendingAmbiguousItem = null;
+                const itemFailed = serviceResult.resolucao.find(r => r.status !== 'sucesso');
+                if (itemFailed) {
+                  v2Ctx.pendingProductResolution = {
+                    lastRequestedQuantity: itemFailed.quantidade,
+                    lastRequestedTerm: itemFailed.termo,
+                    status: itemFailed.status as any
+                  };
+                }
               }
             }
-            
-            pr = presenterOrcamentoAvulso(result);
+
+            console.log('====== [MaestroEngine] DEV LOG ======');
+            console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+            console.log(`- Handler usado: simularOrcamentoAvulso (via SERVICE NOVO)`);
+            console.log(`- itens no contexto: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
+            console.log('=====================================');
+
+            pr = presenterOrcamentoAvulsoService(serviceResult);
           }
         }
 

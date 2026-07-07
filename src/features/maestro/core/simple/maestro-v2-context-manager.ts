@@ -224,7 +224,9 @@ export function handleContextContinuation(
       itens: v2Ctx.orcamentoItens || [],
       pendingAmbiguity: !!v2Ctx.pendingProductResolution || !!v2Ctx.pendingAmbiguousItem,
       pendingQuantidade: v2Ctx.pendingProductResolution?.lastRequestedQuantity || v2Ctx.pendingAmbiguousItem?.lastRequestedQuantity,
-      pendingTerm: v2Ctx.pendingProductResolution?.lastRequestedTerm || v2Ctx.pendingAmbiguousItem?.lastRequestedTerm
+      pendingTerm: v2Ctx.pendingProductResolution?.lastRequestedTerm || v2Ctx.pendingAmbiguousItem?.lastRequestedTerm,
+      // Passa histórico de itens para suportar RESTORE
+      previousItens: v2Ctx.previousOrcamentoItens || [],
     });
 
     if (engineResult.action !== 'NONE') {
@@ -240,7 +242,10 @@ export function handleContextContinuation(
         };
       }
 
-      v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+      // Salvar histórico apenas para ações destrutivas (não para RESTORE)
+      if (engineResult.action !== 'RESTORE') {
+        v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+      }
       v2Ctx.orcamentoItens = engineResult.items;
 
       if (engineResult.action === 'CLEAR') {
@@ -257,6 +262,7 @@ export function handleContextContinuation(
         }
         v2Ctx.pendingProductResolution = null;
         v2Ctx.pendingAmbiguousItem = null;
+        console.log(`[MaestroV2Context] Ação: ${engineResult.action} → simularOrcamentoAvulso. Itens: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
         return {
           routed: true,
           plan: { steps: [{ tool: 'simularOrcamentoAvulso', params: { itens: v2Ctx.orcamentoItens } }] }
