@@ -119,4 +119,60 @@ Antes de qualquer religamento de `MAESTRO_AVULSO_ENABLED=true`, os seguintes cri
 4. **Motor de orçamento puro** — nenhum parsing de produto deve existir fora de `maestro-orcamento-engine.ts`.
 5. **Testes isolados verdes** — `test_orcamento_isolado.ts` deve passar 7/7.
 6. **Teste de regressão verde** — `test_baseline_regressao.ts` deve passar todos os turnos.
+7. **Teste do resolver verde** — `test_orcamento_resolver.ts` deve passar 31/31.
+8. **Teste de integração verde** — `test_orcamento_integracao.ts` deve passar 46/46.
+
+---
+
+## 7. Fase 3 — Integração Motor + Resolver + Cálculo (Serviço Isolado)
+
+> **Status:** Implementado — não conectado ao chat principal.  
+> **Data:** 2026-07-07  
+> **MAESTRO_AVULSO_ENABLED:** `false`
+
+### Arquitetura da Fase 3
+
+A Fase 3 integra os três módulos isolados em uma camada de serviço orquestradora:
+
+```
+query do usuário
+     │
+     ▼
+maestro-orcamento-engine.ts    ← parsing puro (sem DB)
+     │ OrcamentoResult (action, items, nextState)
+     ▼
+maestro-orcamento-service.server.ts   ← orquestrador
+     │ mapeia items → ResolverItemReq[]
+     ▼
+maestro-orcamento-resolver.server.ts  ← consulta read-only public.produtos
+     │ ResolverResult (itens com status, subtotais, totalGeral)
+     ▼
+OrcamentoServiceResult  ← retornado ao chamador
+```
+
+### Responsabilidades por módulo
+
+| Módulo | Responsabilidade |
+|--------|-----------------|
+| `maestro-orcamento-engine.ts` | Parsing textual puro, sem DB, sem IO |
+| `maestro-orcamento-resolver.server.ts` | Consulta read-only em `public.produtos` |
+| `maestro-orcamento-service.server.ts` | Orquestração: recebe query + state, devolve resultado completo |
+| `maestro-v2-router.ts` | Decisão de routing; verifica `MAESTRO_AVULSO_ENABLED` |
+| `maestro-v2-context-manager.ts` | Continuação de contexto; delega ao service quando habilitado |
+
+### Regras de Cálculo (Fase 3)
+
+- `subtotal = quantidade × valorUnt + (valorFixo ?? 0)`
+- `valorUnt == null` → `preco_incompleto` (cálculo bloqueado)
+- `valorFixo == null` → tratado como `0` (documentado)
+- `ativo = false` → `inativo` (não entra no total)
+- `totalGeral = null` se qualquer item não for `sucesso`
+- Em ambiguidade, `temPendencia = true` e o usuário deve informar ID
+
+### Estado da Fase 3
+
+- [x] Serviço orquestrador criado e testado
+- [x] Testes de integração: 46/46 passando com fixtures locais
+- [ ] Religamento no chat principal (aguardando aprovação — Fase 4)
+
 
