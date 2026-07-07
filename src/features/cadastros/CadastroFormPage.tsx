@@ -49,6 +49,8 @@ import type {
   CadastroVinculoComercial,
   TipoClienteDocumento
 } from "@/features/cadastros/types";
+import { ImportSistemaAntigoModal } from "./components/ImportSistemaAntigoModal";
+import type { ExtractedData } from "./components/ImportSistemaAntigoModal";
 
 type CadastroFormPageProps = {
   mode: "new" | "edit";
@@ -120,6 +122,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
     mode === "edit" ? normalizeDocumentDigits(cadastro?.documento ?? "") : null
   );
   const [hasImportedApiData, setHasImportedApiData] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const originalDocument = cadastro?.documento ?? "";
 
   const title = mode === "new" ? "Novo cadastro" : `Editar cadastro #${cadastro?.idCliente}`;
@@ -172,6 +175,79 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       delete next[field];
       return next;
     });
+  }
+
+  function handleApplyImport(data: ExtractedData) {
+    let matchedVendedorNome = "";
+    let matchedVendedorId = "";
+    if (data.cliente.nome_vendedor) {
+      const query = data.cliente.nome_vendedor.trim().toLowerCase();
+      const matched = vendedorOptions.find(
+        (v) => v.nome.trim().toLowerCase().includes(query) || query.includes(v.nome.trim().toLowerCase())
+      );
+      if (matched) {
+        matchedVendedorNome = matched.nome;
+        matchedVendedorId = String(matched.idVendedor ?? "");
+      }
+    }
+
+    const enderecos: CadastroEndereco[] = [];
+    if (data.endereco.cep || data.endereco.endereco) {
+      enderecos.push({
+        id: `end_${Date.now()}`,
+        tipo: "principal",
+        cep: data.endereco.cep || "",
+        endereco: data.endereco.endereco || "",
+        numero: data.endereco.numero || "",
+        complemento: data.endereco.complemento || "",
+        bairro: data.endereco.bairro || "",
+        cidade: data.endereco.cidade || "",
+        uf: (data.endereco.uf || "").toUpperCase().slice(0, 2),
+        obs: "",
+        recebedor: "",
+        cpfRecebedor: ""
+      });
+    }
+
+    const contatos: CadastroContato[] = (data.contatos || []).map((c, index) => ({
+      id: `cont_${Date.now()}_${index}`,
+      nome: (c.nome_contato || "").trim(),
+      cargo: c.cargo || "",
+      whatsapp: c.whats || "",
+      email: c.e_mail || ""
+    }));
+
+    const dateStr = new Date().toLocaleDateString("pt-BR");
+    const importObs = `Cadastro importado do sistema antigo via texto bruto em ${dateStr}.`;
+    const finalObs = form.observacoes 
+      ? `${form.observacoes}\n${importObs}`
+      : importObs;
+
+    setForm((current) => ({
+      ...current,
+      idCliente: data.cliente.id_cliente || "",
+      tipoCliente: data.cliente.tipo_pessoa === "CPF" ? "CPF" : "CNPJ",
+      documento: data.cliente.documento || "",
+      nome: data.cliente.nome || "",
+      fantasia: data.cliente.fantasia || "",
+      apelido: data.cliente.apelido || "",
+      contato: data.cliente.contato || "",
+      inscricaoEstadual: data.cliente.ins_estadual || "",
+      isentoInscricaoEstadual: data.cliente.ins_estadual?.toUpperCase() === "ISENTO",
+      email: data.cliente.email || "",
+      emailFinanceiro: data.cliente.email_contato || "",
+      telefoneFixo: data.cliente.telefone_fixo || "",
+      whatsapp: data.cliente.whatsapp_1 || "",
+      whatsapp2: data.cliente.whatsapp_2 || "",
+      atendente: matchedVendedorNome,
+      idVendedor: matchedVendedorId,
+      observacoes: finalObs,
+      enderecos,
+      contatos
+    }));
+
+    setValidatedDocumentoDigits(data.cliente.documento || null);
+    setIsInitialValidated(true);
   }
 
   async function handleReconsultarCnpj() {
@@ -1032,14 +1108,23 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
               Voltar para lista
             </Link>
             {mode === "new" && !isInitialValidated ? (
-              <button
-                type="button"
-                onClick={handleInitialValidation}
-                disabled={isInitialChecking}
-                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isInitialChecking ? "Validando..." : "Continuar"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(true)}
+                  className="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
+                >
+                  Importar do sistema antigo
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInitialValidation}
+                  disabled={isInitialChecking}
+                  className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isInitialChecking ? "Validando..." : "Continuar"}
+                </button>
+              </>
             ) : (
               <button
                 type="button"
@@ -1097,6 +1182,12 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
         />
       )}
 
+      <ImportSistemaAntigoModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onApply={handleApplyImport}
+        vendedorOptions={vendedorOptions}
+      />
     </div>
   );
 }
