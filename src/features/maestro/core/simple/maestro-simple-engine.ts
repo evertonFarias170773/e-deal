@@ -688,7 +688,11 @@ export async function processSimpleQueryWithBrain(
                   v2Ctx.pendingAmbiguousItem = {
                     lastRequestedQuantity: itemAmbiguo.quantidade,
                     lastRequestedTerm: itemAmbiguo.termo,
-                    options: (itemAmbiguo.candidatos || []).map(c => c.descricao)
+                    options: (itemAmbiguo.candidatos || []).map((c, i) => ({
+                      index: i + 1,
+                      id: c.id_produto,
+                      name: c.descricao
+                    }))
                   };
                 }
               } else {
@@ -709,7 +713,7 @@ export async function processSimpleQueryWithBrain(
             console.log(`- itens no contexto: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
             console.log('=====================================');
 
-            pr = presenterOrcamentoAvulsoService(serviceResult);
+            pr = presenterOrcamentoAvulsoService(serviceResult, cliente);
           }
         }
 
@@ -863,8 +867,13 @@ export async function processSimpleQueryWithBrain(
     deterministicResult.context.v2ContextJson = serializeV2Context(v2Ctx);
   }
 
-  // 3. Se LLM não está habilitado, ou se for domínio de orçamento avulso (para preservar a formatação comercial), retorna diretamente a resposta determinística
-  if (process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true' || v2Ctx.domain === 'orcamento_avulso') {
+  // 3. Se LLM não está habilitado, ou se for domínio de orçamento avulso (para preservar a formatação comercial), retorna resposta determinística
+  // E também ignorar LLM se for 'orcamento_avulso_desativado', pois ele já tem resposta pronta
+  const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true' 
+    || v2Ctx.domain === 'orcamento_avulso'
+    || v2Ctx.lastTool === 'orcamento_avulso_desativado';
+
+  if (skipLLM) {
     return deterministicResult;
   }
 
