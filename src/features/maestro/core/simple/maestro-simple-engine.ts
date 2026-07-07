@@ -713,7 +713,7 @@ export async function processSimpleQueryWithBrain(
             console.log(`- itens no contexto: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
             console.log('=====================================');
 
-            pr = presenterOrcamentoAvulsoService(serviceResult, cliente);
+            pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined);
           }
         }
 
