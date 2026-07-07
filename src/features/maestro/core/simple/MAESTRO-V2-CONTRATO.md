@@ -55,3 +55,68 @@ O `handleContextContinuation` deve avaliar as queries do usuário na seguinte or
 
 Qualquer query que falhe em todas as regras determinísticas e não consiga ser resolvida semanticamente deve cair no presenter de esclarecimento de intenção (`presenterEsclarecerOrcamento`), orientando o usuário a especificar o comando de forma inequívoca.
 
+---
+
+## 5. Baseline de Regressão — Fluxo Aprovado em Produção
+
+> **Data de aprovação:** 2026-07-07  
+> **Ambiente:** Vercel Production — `MAESTRO_AVULSO_ENABLED=false`
+
+Este fluxo é o **comportamento obrigatório** que deve ser preservado em qualquer atualização do Maestro V2. Qualquer mudança que o quebre **deve ser bloqueada antes do merge**.
+
+### Turno 1 — Busca de Cliente por Nome
+
+| Item | Valor |
+|------|-------|
+| Input | `"cliente Lisiton"` |
+| Ferramenta esperada | `buscarCliente` |
+| Esperado | Encontrar **LISITON DOCUMENTOS SEGUROS LTDA** |
+| Domínio pós-resposta | `cliente` |
+| Cliente ativo | `true` |
+| Deve contaminar orçamento? | `false` |
+
+### Turno 2 — Consulta Contextual (sem repetir o cliente)
+
+| Item | Valor |
+|------|-------|
+| Input | `"me traga os contatos dele"` |
+| Ferramenta esperada | `consultarCampoCadastro` com `campo: "contatos"` |
+| Cliente a consultar | ID interno do cliente ativo (sem nova busca) |
+| Deve pedir cliente novamente? | `false` |
+| Deve responder genericamente? | `false` |
+
+### Turno 3 — Tentativa de Orçamento (desativado)
+
+| Item | Valor |
+|------|-------|
+| Input | `"show e vc pode ver pra mim o valor de 5200 triband?"` |
+| Ferramenta esperada | `orcamento_avulso_desativado` |
+| Deve calcular? | `false` |
+| Deve inventar preço? | `false` |
+| Deve apagar o cliente ativo? | **`false` — CRÍTICO** |
+| Deve contaminar o contexto? | `false` |
+| Resposta esperada | Mensagem informando que a simulação de orçamento avulso está em ajuste |
+
+### Turno 4 — Financeiro após bloqueio de orçamento
+
+| Item | Valor |
+|------|-------|
+| Input | `"e sabe me dizer se a Lisiton tem boletos em atraso?"` |
+| Ferramenta esperada | `consultarBoletos` |
+| Deve usar cliente ativo? | `true` |
+| Deve citar fonte | `public.boletos` |
+| Deve responder com dados reais? | `true` (ou informar que não encontrou, sem inventar) |
+
+---
+
+## 6. Critérios de Guarda para Regressão
+
+Antes de qualquer religamento de `MAESTRO_AVULSO_ENABLED=true`, os seguintes critérios **obrigatoriamente devem passar**:
+
+1. **Cliente ativo preservado após tentativa de orçamento** — o `activeEntities.clientId` não pode ser apagado pela interceptação de orçamento avulso.
+2. **Financeiro funciona após tentativa de orçamento** — o domínio `financeiro` deve ser atingível mesmo que o turno anterior tenha sido capturado pelo bloqueio de orçamento.
+3. **Isolamento de namespace numérico** — números isolados não disparam busca de cliente quando há pendência de produto ativa.
+4. **Motor de orçamento puro** — nenhum parsing de produto deve existir fora de `maestro-orcamento-engine.ts`.
+5. **Testes isolados verdes** — `test_orcamento_isolado.ts` deve passar 7/7.
+6. **Teste de regressão verde** — `test_baseline_regressao.ts` deve passar todos os turnos.
+
