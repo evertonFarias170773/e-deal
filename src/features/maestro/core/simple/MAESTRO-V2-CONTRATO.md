@@ -175,4 +175,61 @@ OrcamentoServiceResult  ← retornado ao chamador
 - [x] Testes de integração: 46/46 passando com fixtures locais
 - [ ] Religamento no chat principal (aguardando aprovação — Fase 4)
 
+---
+
+## 8. Fase 3.5 — Sandbox com Catálogo Real (OBRIGATÓRIO antes da Fase 4)
+
+> **Status:** Concluído ✅  
+> **Data:** 2026-07-07  
+> **Arquivo:** `test_orcamento_catalogo_real.ts`  
+> **Banco:** public.produtos — READ-ONLY — ANON KEY
+
+### Resultados do Catálogo Real (2026-07-07)
+
+| Termo | Produto Real | ID | valorUnt | valorFixo | Status |
+|-------|-------------|-----|----------|-----------|--------|
+| `mobi` | O ingresso MOBI é a solução... | #401 | 0.23 | 40 | ✅ sucesso |
+| `triband` | Pulseira sintetica de lacre adesivo... | #101 | 0.16 | 40 | ✅ sucesso |
+| ID `101` | Pulseira sintetica de lacre adesivo... | #101 | 0.16 | - | ✅ sucesso |
+| `tri` | — | — | — | — | ⚠️ ambíguo (2 candidatos: #9001 e #101) |
+| `xyznaocadastrado99999` | — | — | — | — | ✅ nao_encontrado (correto) |
+
+### Diálogos Testados com Dados Reais
+
+| Diálogo | Action | Total Real |
+|---------|--------|------------|
+| `"15600 mobi + 1500 triband qual valor?"` | ADD | R$ 3.908,00 |
+| `"muda a qtd do mobi pra 10k"` | UPDATE_QTD | R$ 2.620,00 |
+| `"muda a quantidade do mobi para 10.000"` | UPDATE_QTD | R$ 2.620,00 |
+| `"10600 mobi + 1500 triband qual valor?"` | REPLACE | R$ 2.758,00 |
+| `"1500 tri"` | ADD | BLOQUEADO (ambíguo: #9001 e #101) |
+| `"101"` com pendência | ADD | ID 101 resolvido corretamente |
+| `"assim não dá"` | CLEAR | — |
+
+### Aviso de Catálogo
+
+> ⚠️ **"tri" é ambíguo** no catálogo real — retorna 2 produtos:  
+> - #9001 — Teste de cadastro de pulseira (apelido: `tri`)  
+> - #101 — Pulseira sintetica triband (apelido: `tri`)  
+> 
+> **Recomendação antes da Fase 4:** ajustar apelidos para que `triband` seja único
+> e `tri` mostre pedido de escolha corretamente no chat.
+
+### Checklist de Segurança Fase 3.5
+
+- [x] Apenas `public.produtos` acessada — ZERO tabelas proibidas
+- [x] ZERO escrita no banco
+- [x] ANON KEY usada — ZERO service_role
+- [x] MAESTRO_AVULSO_ENABLED = false confirmado
+- [x] Baseline 20/20 preservado
+- [x] Tsc sem erros no código de negócio (error de `.next` pré-existente, sem relação)
+
+### Requisito: Fase 3.5 é OBRIGATÓRIA antes da Fase 4
+
+A Fase 4 (religamento no chat principal) **só pode ser iniciada** após:
+
+1. Fase 3.5 aprovada com dados reais ✅
+2. Ambiguidade de `"tri"` resolvida (apelido ajustado no banco) ou aceita como comportamento documentado
+3. Todos os 8 critérios de guarda da Seção 6 verificados
+4. Aprovação explícita do usuário
 
