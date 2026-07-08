@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
   // ── 5. Motor simples — sem LLM, sem planner, sem policy ───────────────────
   try {
-    const result = await processSimpleQueryWithBrain(query, context, { supabase, userName });
+    const result = await processSimpleQueryWithBrain(query, context, { supabase, userName, userId: user.id });
     return NextResponse.json(result, { status: 200 });
 
   } catch (err: unknown) {

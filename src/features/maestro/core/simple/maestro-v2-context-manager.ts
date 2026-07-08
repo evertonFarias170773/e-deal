@@ -44,6 +44,58 @@ export interface PendingAddressChoice {
   addresses: MaestroEndereco[];
 }
 
+/** Cotação completa aguardando confirmação explícita do usuário para ser salva */
+export interface PendingSaveQuotation {
+  /** ID interno do cliente (PK inteira) */
+  clientInternalId: number;
+  /** Nome do cliente */
+  clientName: string;
+  /** ID do endereço selecionado (string UUID) */
+  enderecoId: string;
+  /** CEP do endereço */
+  cep: string;
+  /** Cidade */
+  cidade: string;
+  /** UF */
+  uf: string;
+  /** Endereço completo formatado */
+  enderecoFull: string;
+  /** ID do contato (preenchido em momento de save ou deixado vazio para buscar) */
+  contatoId?: string;
+  /** Itens resolvidos com id_produto, preço e peso */
+  itens: Array<{
+    id_produto: number;
+    nome: string;
+    quantidade: number;
+    valorUnitario: number;
+    valorFixo: number;
+    subtotal: number;
+    pesoUnitario: number;
+  }>;
+  /** Frete escolhido para salvar */
+  freteEscolhido: {
+    id: string;
+    servico: string;
+    transportadora: string;
+    valor: number;
+    prazo: string;
+    pesoUsado: number;
+    id_cotacao?: number;
+  };
+  /** Subtotal dos produtos */
+  subtotal: number;
+  /** Total geral (produtos + frete) */
+  total: number;
+  /** Peso total em gramas (com margem de 2%) */
+  pesoTotalGramas: number;
+  /** Timestamp de criação da cotação */
+  timestamp: string;
+  /** Preenchido após save bem-sucedido — impede duplicação */
+  savedIdInt?: number;
+  /** Timestamp do save */
+  savedAt?: string;
+}
+
 export interface MaestroV2Context {
   version: number;
   updatedAt: string;
@@ -73,6 +125,8 @@ export interface MaestroV2Context {
   budgetAddressCidade?: string;
   budgetAddressUf?: string;
   pendingAddressChoice?: PendingAddressChoice | null;
+  /** Cotação completa aguardando confirmação do usuário para salvar */
+  pendingSaveQuotation?: PendingSaveQuotation | null;
 }
 
 const CONTEXT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos de validade
@@ -94,7 +148,8 @@ export function getEmptyV2Context(): MaestroV2Context {
     lastSuccessfulBudgetItems: [],
     budgetAddressId: undefined,
     budgetAddressFull: undefined,
-    pendingAddressChoice: null
+    pendingAddressChoice: null,
+    pendingSaveQuotation: null,
   };
 }
 
@@ -156,6 +211,50 @@ export function handleContextContinuation(
   activeClient: any
 ): { routed: boolean; plan: any } | null {
   const clean = normalizeText(query);
+
+  // ── 0. INTERCEPTAÇÃO DE CONFIRMAÇÃO DE SAVE (PRIORIDADE MÁXIMA)
+  if (v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt) {
+    const isSalvar = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?|confirmar?\s+save|sim[,.]?\s*(salva|quero\s+salvar?))\b/i.test(clean)
+      || /^(salvar?\s+cota[cç]a[oã]|salva(r)?|quero\s+salvar?|confirmar?)$/i.test(clean);
+    const isCancelar = /\b(cancela(r)?|não\s+salva(r)?|não\s+quero|descarta(r)?|abort(a|ar)?)\b/i.test(clean)
+      || /^(cancela(r)?|não|nao)$/i.test(clean);
+    const isEditarAntes = /\b(editar?\s+antes|quero\s+editar?|edita(r)?\s+primeiro|ajustar?\s+antes)\b/i.test(clean)
+      || /^(editar?\s+antes|edita(r)?)$/i.test(clean);
+
+    if (isSalvar) {
+      console.log('[MaestroV2Context] Confirmação de save detectada.');
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'salvar_cotacao_confirmada', params: {} }] }
+      };
+    }
+    if (isCancelar) {
+      console.log('[MaestroV2Context] Cancelamento de save detectado.');
+      v2Ctx.pendingSaveQuotation = null;
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'cancelar_save_cotacao', params: {} }] }
+      };
+    }
+    if (isEditarAntes) {
+      console.log('[MaestroV2Context] Editar antes detectado.');
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'editar_antes_save', params: {} }] }
+      };
+    }
+  }
+
+  // Proposta já salva — retorna link sem duplicar
+  if (v2Ctx.pendingSaveQuotation?.savedIdInt) {
+    const isSalvarDuplicado = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?)\b/i.test(clean);
+    if (isSalvarDuplicado) {
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'proposta_ja_salva', params: {} }] }
+      };
+    }
+  }
 
   // ── 1. CANCELAMENTO DO ORÇAMENTO AVULSO (PRIORIDADE CRÍTICA)
   const isCancelOrcamento = /\b(nao\s*(quero|e)\s*orca(r|mento)|esquece\s*orca(r|mento))\b/i.test(clean);

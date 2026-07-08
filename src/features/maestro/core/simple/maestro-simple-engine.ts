@@ -95,10 +95,18 @@ import {
   presenterRecuperacaoOrcamento,
   presenterEscolhaEndereco,
   presenterSolicitarEnderecoManual,
+  // Fase 3a: Save
+  presenterPerguntarSalvarCotacao,
+  presenterSaveCotacaoSucesso,
+  presenterCancelarSaveCotacao,
+  presenterEditarAntesSave,
+  presenterPropostaJaSalva,
+  presenterErroSaveCotacao,
   type PresenterResult,
 } from './maestro-simple-presenter';
 import { routeToolSimple } from './maestro-v2-router';
 import { deserializeV2Context, serializeV2Context, normalizeText } from './maestro-v2-context-manager';
+import { salvarCotacaoComoPropostaReal } from './maestro-save-proposta.server';
 
 import type { ConversationMessage, ActivityStep, ConversationContext } from '../../types';
 
@@ -109,6 +117,8 @@ export interface SimpleEngineOptions {
   supabase: SupabaseClient;
   /** Nome do usuário logado (usado para humanização amigável) */
   userName?: string;
+  /** UUID do usuário logado — usado para salvar proposta com RLS correta */
+  userId?: string;
 }
 
 // ─── Resultado do Motor ───────────────────────────────────────────────────
@@ -876,6 +886,78 @@ export async function processSimpleQueryWithBrain(
                  }
                }
                pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined);
+
+               // ── FASE 3a: Preenche pendingSaveQuotation se tiver tudo necessário
+               if (
+                 clientForCtx?.clientInternalId &&
+                 v2Ctx.budgetAddressId &&
+                 v2Ctx.budgetAddressCep &&
+                 fretesCalculados.length > 0 &&
+                 serviceResult.totalGeral !== null &&
+                 serviceResult.resolucao.every(r => r.status === 'sucesso')
+               ) {
+                 // Escolhe o frete mais barato como sugestão padrão
+                 const fretesSorted = [...fretesCalculados].sort((a, b) => a.valor - b.valor);
+                 const freteEscolhido = fretesSorted[0];
+
+                 // Calcula peso total com margem 2%
+                 let pesoBase = 0;
+                 serviceResult.items.forEach(i => {
+                   if (i.pesoUnitario && i.quantidade) {
+                     pesoBase += (i.pesoUnitario * i.quantidade);
+                   }
+                 });
+                 const pesoTotalGramas = Math.ceil(pesoBase * 1.02);
+
+                 // Monta itens para salvar
+                 const itensSave = serviceResult.resolucao
+                   .filter(r => r.status === 'sucesso' && r.produto)
+                   .map(r => ({
+                     id_produto: r.produto!.id_produto,
+                     nome: r.produto!.descricao,
+                     quantidade: r.quantidade,
+                     valorUnitario: r.produto!.valorUnt ?? 0,
+                     valorFixo: r.produto!.valorFixo ?? 0,
+                     subtotal: r.subtotal ?? 0,
+                     pesoUnitario: r.produto!.peso ?? 0,
+                   }));
+
+                 const subtotal = serviceResult.totalGeral;
+                 const total = subtotal + freteEscolhido.valor;
+
+                 v2Ctx.pendingSaveQuotation = {
+                   clientInternalId: clientForCtx.clientInternalId!,
+                   clientName: clientForCtx.clientName || clientForCtx.clientFantasia || 'Cliente',
+                   enderecoId: v2Ctx.budgetAddressId,
+                   cep: v2Ctx.budgetAddressCep,
+                   cidade: v2Ctx.budgetAddressCidade || '',
+                   uf: v2Ctx.budgetAddressUf || '',
+                   enderecoFull: v2Ctx.budgetAddressFull || '',
+                   itens: itensSave,
+                   freteEscolhido: {
+                     id: freteEscolhido.id,
+                     servico: freteEscolhido.servico,
+                     transportadora: freteEscolhido.transportadora,
+                     valor: freteEscolhido.valor,
+                     prazo: freteEscolhido.prazo,
+                     pesoUsado: freteEscolhido.pesoUsado,
+                     id_cotacao: freteEscolhido.id_cotacao,
+                   },
+                   subtotal,
+                   total,
+                   pesoTotalGramas,
+                   timestamp: new Date().toISOString(),
+                   savedIdInt: undefined,
+                 };
+
+                 console.log('[MaestroEngine] pendingSaveQuotation preenchida:', v2Ctx.pendingSaveQuotation.clientName);
+
+                 // Adiciona a pergunta de save ao conteúdo do presenter
+                 const { presenterPerguntarSalvarCotacao: perguntarSave } = await import('./maestro-simple-presenter');
+                 const prSave = perguntarSave(v2Ctx.pendingSaveQuotation);
+                 // Concatena a pergunta de save ao message
+                 pr.message.content = pr.message.content + '\n\n' + prSave.message.content;
+               }
             }
           }
         }
@@ -992,6 +1074,86 @@ export async function processSimpleQueryWithBrain(
             } else {
               pr = presenterFallback(simpleCtx);
             }
+          }
+        }
+
+        if (step.tool === 'salvar_cotacao_confirmada') {
+          if (!v2Ctx.pendingSaveQuotation) {
+            pr = {
+              message: {
+                id: 'maestro-msg-' + Date.now(),
+                role: 'maestro',
+                content: 'Não encontrei nenhuma cotação pendente para salvar. Por favor, faça uma nova cotação primeiro.',
+                contentType: 'text',
+                timestamp: new Date().toISOString()
+              },
+              activity: []
+            };
+          } else if (v2Ctx.pendingSaveQuotation.savedIdInt) {
+            // Já salvo — evita duplicação
+            pr = presenterPropostaJaSalva(
+              v2Ctx.pendingSaveQuotation.savedIdInt,
+              v2Ctx.pendingSaveQuotation.clientName
+            );
+          } else {
+            // Valida userId
+            if (!options.userId) {
+              pr = presenterErroSaveCotacao('Sessão do usuário não identificada. Faça login novamente e tente outra vez.');
+            } else {
+              try {
+                const saveResult = await salvarCotacaoComoPropostaReal(
+                  v2Ctx.pendingSaveQuotation,
+                  supabase,
+                  options.userId
+                );
+
+                if (saveResult.success && saveResult.idInt) {
+                  // Grava idInt no contexto para impedir duplicação
+                  v2Ctx.pendingSaveQuotation.savedIdInt = saveResult.idInt;
+                  v2Ctx.pendingSaveQuotation.savedAt = new Date().toISOString();
+                  pr = presenterSaveCotacaoSucesso(saveResult.idInt, v2Ctx.pendingSaveQuotation.clientName);
+                } else {
+                  pr = presenterErroSaveCotacao(
+                    saveResult.errorMessage || 'Erro desconhecido.',
+                    saveResult.bloqueadoPorContato
+                  );
+                }
+              } catch (saveErr) {
+                const msg = saveErr instanceof Error ? saveErr.message : 'Erro interno.';
+                console.error('[MaestroEngine] Erro ao salvar proposta:', saveErr);
+                pr = presenterErroSaveCotacao(msg);
+              }
+            }
+          }
+        }
+
+        else if (step.tool === 'cancelar_save_cotacao') {
+          v2Ctx.pendingSaveQuotation = null;
+          pr = presenterCancelarSaveCotacao();
+        }
+
+        else if (step.tool === 'editar_antes_save') {
+          const idInt = v2Ctx.pendingSaveQuotation?.savedIdInt;
+          pr = presenterEditarAntesSave(idInt);
+        }
+
+        else if (step.tool === 'proposta_ja_salva') {
+          if (v2Ctx.pendingSaveQuotation?.savedIdInt) {
+            pr = presenterPropostaJaSalva(
+              v2Ctx.pendingSaveQuotation.savedIdInt,
+              v2Ctx.pendingSaveQuotation.clientName
+            );
+          } else {
+            pr = {
+              message: {
+                id: 'maestro-msg-' + Date.now(),
+                role: 'maestro',
+                content: 'Não encontrei nenhuma proposta salva recentemente.',
+                contentType: 'text',
+                timestamp: new Date().toISOString()
+              },
+              activity: []
+            };
           }
         }
 

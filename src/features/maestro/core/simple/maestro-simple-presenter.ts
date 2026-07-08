@@ -1917,7 +1917,7 @@ export function presenterEscolhaEndereco(pending: { clientId: number, addresses:
 export function presenterSolicitarEnderecoManual(cliente: any): PresenterResult {
   return {
     message: {
-      id: 'maestro-msg-' + Date.now(),
+    id: 'maestro-msg-' + Date.now(),
       role: 'maestro',
       content: `Para prosseguir com a cotação de frete para **${cliente?.clientName || 'este cliente'}**, preciso do endereço ou CEP de destino (nenhum endereço foi encontrado no cadastro).\n\nPor favor, digite o CEP ou endereço completo para calcularmos o frete.`,
       contentType: 'text',
@@ -1938,3 +1938,204 @@ export function presenterSolicitarEnderecoManual(cliente: any): PresenterResult 
     ]
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 3a: Presenters de Salvar Cotação
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { PendingSaveQuotation } from './maestro-v2-context-manager';
+
+/**
+ * Pergunta de confirmação exibida ao final da cotação vinculada com frete.
+ * Exibida automaticamente pelo engine após montar a cotação completa.
+ */
+export function presenterPerguntarSalvarCotacao(pending: PendingSaveQuotation): PresenterResult {
+  const formatBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const lines: string[] = [];
+
+  lines.push(`---`);
+  lines.push(`💾 **Deseja salvar esta cotação como proposta no ERP?**`);
+  lines.push(``);
+  lines.push(`**Cliente:** ${pending.clientName}`);
+  lines.push(`**Endereço:** ${pending.enderecoFull}`);
+  lines.push(`**Itens:** ${pending.itens.length}`);
+  lines.push(`**Subtotal:** ${formatBRL(pending.subtotal)}`);
+  lines.push(`**Frete (${pending.freteEscolhido.transportadora}):** ${formatBRL(pending.freteEscolhido.valor)}`);
+  lines.push(`**Total:** ${formatBRL(pending.total)}`);
+  lines.push(``);
+  lines.push(`Responda:`);
+  lines.push(`• **salvar cotação** — salva como proposta com status NOVO`);
+  lines.push(`• **editar antes** — orienta como editar na tela de Orçamentos`);
+  lines.push(`• **cancelar** — descarta sem salvar nada`);
+
+  return {
+    message: {
+      id: genId('save-confirm'),
+      role: 'maestro',
+      content: lines.join('\n'),
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      {
+        id: genId('save-act'),
+        label: 'Aguardando Confirmação',
+        detail: 'Cotação completa — aguardando resposta do usuário',
+        status: 'done',
+        timestamp: now(),
+      },
+    ],
+  };
+}
+
+/**
+ * Resposta de sucesso após salvar a proposta.
+ */
+export function presenterSaveCotacaoSucesso(idInt: number, clientName: string): PresenterResult {
+  const lines: string[] = [];
+  lines.push(`✅ **Proposta criada com sucesso!**`);
+  lines.push(``);
+  lines.push(`**Cliente:** ${clientName}`);
+  lines.push(`**Número da proposta:** #${idInt}`);
+  lines.push(``);
+  lines.push(`📋 [Abrir proposta #${idInt} no ERP](/orcamentos/${idInt}/editar)`);
+  lines.push(``);
+  lines.push(`> ⚠️ **Antes de avançar, revise a proposta no ERP:** verifique cliente, itens, frete e valores antes de gerar cobrança ou enviar ao cliente.`);
+
+  return {
+    message: {
+      id: genId('save-ok'),
+      role: 'maestro',
+      content: lines.join('\n'),
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [
+      {
+        id: genId('save-ok-act'),
+        label: 'Proposta Salva',
+        detail: `#${idInt} criada com status NOVO`,
+        status: 'done',
+        timestamp: now(),
+      },
+    ],
+  };
+}
+
+/**
+ * Resposta quando o usuário cancela o salvamento.
+ */
+export function presenterCancelarSaveCotacao(): PresenterResult {
+  return {
+    message: {
+      id: genId('save-cancel'),
+      role: 'maestro',
+      content: `🚫 **Salvamento cancelado.** A cotação foi descartada — nenhum dado foi gravado no ERP.\n\nSe quiser fazer uma nova cotação, é só me pedir.`,
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [],
+  };
+}
+
+/**
+ * Resposta quando o usuário escolhe "editar antes".
+ */
+export function presenterEditarAntesSave(idInt?: number): PresenterResult {
+  const lines: string[] = [];
+  if (idInt) {
+    lines.push(`✏️ **Para editar a proposta #${idInt}:**`);
+    lines.push(``);
+    lines.push(`📋 [Abrir proposta #${idInt} no ERP](/orcamentos/${idInt}/editar)`);
+    lines.push(``);
+    lines.push(`Nenhum dado automático foi alterado. Edite pela tela de Orçamentos e salve lá.`);
+  } else {
+    lines.push(`✏️ **Para editar antes de salvar:**`);
+    lines.push(``);
+    lines.push(`Primeiro salve a cotação respondendo **salvar cotação** e depois edite pelo link que aparecer.`);
+    lines.push(``);
+    lines.push(`Ou, se preferir, monte o orçamento diretamente na tela de **Orçamentos** do ERP para ter controle completo.`);
+  }
+
+  return {
+    message: {
+      id: genId('save-edit'),
+      role: 'maestro',
+      content: lines.join('\n'),
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [],
+  };
+}
+
+/**
+ * Resposta quando o usuário tenta salvar uma cotação que já foi salva.
+ * Evita duplicação.
+ */
+export function presenterPropostaJaSalva(idInt: number, clientName: string): PresenterResult {
+  return {
+    message: {
+      id: genId('already-saved'),
+      role: 'maestro',
+      content: `ℹ️ Esta cotação já foi salva como proposta **#${idInt}** para **${clientName}**.\n\n📋 [Abrir proposta #${idInt} no ERP](/orcamentos/${idInt}/editar)\n\nSe quiser fazer uma nova cotação, é só me pedir.`,
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [],
+  };
+}
+
+/**
+ * Resposta de erro ao tentar salvar.
+ */
+export function presenterErroSaveCotacao(errorMessage: string, bloqueadoPorContato?: boolean): PresenterResult {
+  const lines: string[] = [];
+  if (bloqueadoPorContato) {
+    lines.push(`⛔ **Não foi possível salvar a proposta.**`);
+    lines.push(``);
+    lines.push(errorMessage);
+  } else {
+    lines.push(`❌ **Erro ao salvar a proposta.**`);
+    lines.push(``);
+    lines.push(`${errorMessage}`);
+    lines.push(``);
+    lines.push(`Tente novamente ou abra a tela de Orçamentos para salvar manualmente.`);
+  }
+
+  return {
+    message: {
+      id: genId('save-err'),
+      role: 'maestro',
+      content: lines.join('\n'),
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high',
+    },
+    activity: [],
+  };
+}
+

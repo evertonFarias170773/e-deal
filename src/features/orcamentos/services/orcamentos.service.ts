@@ -982,12 +982,16 @@ function isNonEmpty(value: unknown): boolean {
   return value !== null && value !== undefined && String(value).trim() !== "";
 }
 
-export async function saveProposta(formState: PropostaFormState): Promise<{
+export async function saveProposta(
+  formState: PropostaFormState,
+  injectedClient?: import('@supabase/supabase-js').SupabaseClient,
+  injectedUserId?: string
+): Promise<{
   success: boolean;
   id_int?: number;
   errorMessage?: string;
 }> {
-  const client = getSupabaseClient();
+  const client = injectedClient ?? getSupabaseClient();
   if (!client) {
     return { success: false, errorMessage: "Cliente Supabase indisponível." };
   }
@@ -1239,8 +1243,12 @@ export async function saveProposta(formState: PropostaFormState): Promise<{
       return { success: false, errorMessage: "O texto/resumo informal da proposta é obrigatório." };
     }
 
-    const { data: { session } } = await client.auth.getSession();
-    const userId = session?.user?.id;
+    // userId: usa injectedUserId se fornecido (Maestro server-side), senão lê da sessão
+    let userId: string | undefined = injectedUserId;
+    if (!userId) {
+      const { data: { session } } = await client.auth.getSession();
+      userId = session?.user?.id;
+    }
 
     if (!isUpdate && !userId) {
       return { success: false, errorMessage: "Usuário não identificado. Faça login novamente antes de criar a proposta." };

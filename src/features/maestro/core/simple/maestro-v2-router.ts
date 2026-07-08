@@ -49,7 +49,12 @@ export type AllowedToolName =
   | 'recuperacao_orcamento_avulso'
   | 'cancelar_orcamento_avulso'
   | 'mostrar_itens_orcamento'
-  | 'orcamento_avulso_desativado';
+  | 'orcamento_avulso_desativado'
+  // Fase 3a: Save confirmação
+  | 'salvar_cotacao_confirmada'
+  | 'cancelar_save_cotacao'
+  | 'editar_antes_save'
+  | 'proposta_ja_salva';
 
 export interface RouterStep {
   tool: AllowedToolName;
@@ -97,7 +102,12 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'recuperacao_orcamento_avulso',
   'cancelar_orcamento_avulso',
   'mostrar_itens_orcamento',
-  'orcamento_avulso_desativado'
+  'orcamento_avulso_desativado',
+  // Fase 3a
+  'salvar_cotacao_confirmada',
+  'cancelar_save_cotacao',
+  'editar_antes_save',
+  'proposta_ja_salva',
 ];
 
 
