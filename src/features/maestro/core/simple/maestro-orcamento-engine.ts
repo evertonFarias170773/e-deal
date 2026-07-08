@@ -6,11 +6,18 @@ export interface OrcamentoAvulsoItem {
   unidadeMedida?: string;
 }
 
+export interface PendingAmbiguousOption {
+  id: number;
+  name: string;
+  index: number;
+}
+
 export interface OrcamentoAvulsoState {
   itens: OrcamentoAvulsoItem[];
   pendingAmbiguity: boolean;
   pendingTerm?: string;
   pendingQuantidade?: number;
+  pendingOptions?: PendingAmbiguousOption[];
   /** Itens do orçamento antes da última alteração destrutiva (usado para RESTORE) */
   previousItens?: OrcamentoAvulsoItem[];
 }
@@ -59,31 +66,67 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
     };
   }
 
-  // 3. Tratar resolução de ambiguidade ("101" com pendência)
-  if (state.pendingAmbiguity && /^\d+$/.test(clean)) {
-    const id = parseInt(clean, 10);
-    const resolvedItem = {
-      quantidade: state.pendingQuantidade || 1,
-      termo: state.pendingTerm || '',
-      produtoId: id
-    };
-    nextState.itens.push(resolvedItem);
-    nextState.pendingAmbiguity = false;
-    nextState.pendingTerm = undefined;
-    nextState.pendingQuantidade = undefined;
-    
-    return {
-      action: 'ADD',
-      items: nextState.itens,
-      pending: null,
-      errors: [],
-      nextState,
-      response: `Produto resolvido com ID ${id}.`
-    };
+  // 3. Tratar resolução de ambiguidade
+  if (state.pendingAmbiguity && state.pendingOptions && state.pendingOptions.length > 0) {
+    let resolvedId: number | null = null;
+    let resolvedName: string | null = null;
+
+    // a) Escolha por número da opção (ex: "1" ou "2")
+    if (/^\d+$/.test(clean)) {
+      const idx = parseInt(clean, 10);
+      const option = state.pendingOptions.find(o => o.index === idx);
+      if (option) {
+        resolvedId = option.id;
+        resolvedName = option.name;
+      }
+    }
+
+    // b) Escolha por ID direto (ex: "101")
+    if (!resolvedId && /^\d+$/.test(clean)) {
+      const idStr = parseInt(clean, 10);
+      const option = state.pendingOptions.find(o => o.id === idStr);
+      if (option) {
+        resolvedId = option.id;
+        resolvedName = option.name;
+      }
+    }
+
+    // c) Escolha por nome do produto
+    if (!resolvedId) {
+      const option = state.pendingOptions.find(o => 
+        normalizarTermoEngine(o.name).includes(clean) || clean.includes(normalizarTermoEngine(o.name))
+      );
+      if (option) {
+        resolvedId = option.id;
+        resolvedName = option.name;
+      }
+    }
+
+    if (resolvedId !== null) {
+      const resolvedItem = {
+        quantidade: state.pendingQuantidade || 1,
+        termo: state.pendingTerm || '',
+        produtoId: resolvedId
+      };
+      nextState.itens.push(resolvedItem);
+      nextState.pendingAmbiguity = false;
+      nextState.pendingTerm = undefined;
+      nextState.pendingQuantidade = undefined;
+      nextState.pendingOptions = undefined;
+      
+      return {
+        action: 'ADD',
+        items: nextState.itens,
+        pending: null,
+        errors: [],
+        nextState,
+        response: `Produto resolvido: ${resolvedName || resolvedId}.`
+      };
+    }
   }
 
-  // 4. Tratar "101" solto sem ambiguidade
-  if (/^\d+$/.test(clean) && !state.pendingAmbiguity) {
+  // 4. Tratar número solto quando houver pendência de produto (bloqueia o router)
+  if (/^\d+$/.test(clean) && (state.pendingAmbiguity || !!state.pendingTerm)) {
     return {
       action: 'NONE',
       items: state.itens,

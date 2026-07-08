@@ -100,12 +100,49 @@ const categoriaLabel: Record<CadastroCategoria, string> = {
 
 const categoriaOptions: CadastroCategoria[] = ["CLIENTE", "FORNECEDOR", "TRANSPORTADORA", "ORGAO_PUBLICO"];
 
+function validateEnderecos(enderecos: CadastroEndereco[]): { isValid: boolean; message?: string } {
+  const hasPrincipal = enderecos.some(e => e.tipo === "principal");
+  if (!hasPrincipal) {
+    return { isValid: false, message: "O cadastro deve conter pelo menos um endereço do tipo Principal." };
+  }
+
+  for (let i = 0; i < enderecos.length; i++) {
+    const end = enderecos[i];
+    const cleanCep = (end.cep || "").replace(/\D/g, "");
+    if (cleanCep.length !== 8) {
+      return { isValid: false, message: `O CEP do endereço ${i + 1} (${end.tipo}) deve conter exatamente 8 dígitos.` };
+    }
+    if (!(end.endereco || "").trim()) {
+      return { isValid: false, message: `O logradouro do endereço ${i + 1} (${end.tipo}) é obrigatório.` };
+    }
+    if (!(end.numero || "").trim()) {
+      return { isValid: false, message: `O número do endereço ${i + 1} (${end.tipo}) é obrigatório.` };
+    }
+    if (!(end.bairro || "").trim()) {
+      return { isValid: false, message: `O bairro do endereço ${i + 1} (${end.tipo}) é obrigatório.` };
+    }
+    if (!(end.cidade || "").trim()) {
+      return { isValid: false, message: `A cidade do endereço ${i + 1} (${end.tipo}) é obrigatória.` };
+    }
+    if (!(end.uf || "").trim() || end.uf.trim().length !== 2) {
+      return { isValid: false, message: `A UF (2 letras) do endereço ${i + 1} (${end.tipo}) é obrigatória.` };
+    }
+  }
+
+  return { isValid: true };
+}
+
 export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const router = useRouter();
   const { user } = useAuth();
   
   const canViewCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.view_credito");
   const canEditCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit_credito");
+  const canCreate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.create");
+  const canEdit = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit");
+  const canEditFiscal = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit_fiscal");
+
+  const isEditAllowed = mode === "edit" ? canEdit : canCreate;
 
   const { showToast } = useAppToast();
   const [isInitialValidated, setIsInitialValidated] = useState(mode === "edit");
@@ -577,26 +614,67 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
           title: "Consulta externa indisponível",
           description: "Continue o preenchimento manual e revise os dados antes de salvar."
         });
+        setForm((current) => {
+          let enderecos = current.enderecos;
+          if (enderecos.length === 0) {
+            enderecos = [{
+              id: `end_${Date.now()}`,
+              tipo: "principal",
+              cep: "",
+              endereco: "",
+              numero: "",
+              complemento: "",
+              bairro: "",
+              cidade: "",
+              uf: "",
+              obs: "",
+              recebedor: "",
+              cpfRecebedor: ""
+            }];
+          }
+          return { ...current, enderecos };
+        });
       } else {
         const payload = data.payload;
         const enderecoImportado = payload.enderecoPreparado
           ? mapPreparedEnderecoToForm(payload.enderecoPreparado)
           : null;
 
-        setForm((current) => ({
-          ...current,
-          tipoCliente: payload.tipoPessoa === "FISICA" ? "CPF" : "CNPJ",
-          documento: payload.documento || current.documento,
-          nome: payload.nome || current.nome,
-          fantasia: payload.fantasia || current.fantasia,
-          dataFundacao: payload.dataFundacao || current.dataFundacao,
-          email: payload.emailContato || current.email,
-          telefoneFixo: payload.telefoneFixo || current.telefoneFixo,
-          tipoContribuinte: payload.tipoContribuinte || current.tipoContribuinte,
-          inscricaoEstadual: payload.insEstadual || current.inscricaoEstadual,
-          isentoInscricaoEstadual: payload.tipoContribuinte === "ISENTO",
-          enderecos: enderecoImportado ? [enderecoImportado] : current.enderecos
-        }));
+        setForm((current) => {
+          let enderecos = current.enderecos;
+          if (enderecoImportado) {
+            enderecos = [enderecoImportado];
+          } else if (enderecos.length === 0) {
+            enderecos = [{
+              id: `end_${Date.now()}`,
+              tipo: "principal",
+              cep: "",
+              endereco: "",
+              numero: "",
+              complemento: "",
+              bairro: "",
+              cidade: "",
+              uf: "",
+              obs: "",
+              recebedor: "",
+              cpfRecebedor: ""
+            }];
+          }
+          return {
+            ...current,
+            tipoCliente: payload.tipoPessoa === "FISICA" ? "CPF" : "CNPJ",
+            documento: payload.documento || current.documento,
+            nome: payload.nome || current.nome,
+            fantasia: payload.fantasia || current.fantasia,
+            dataFundacao: payload.dataFundacao || current.dataFundacao,
+            email: payload.emailContato || current.email,
+            telefoneFixo: payload.telefoneFixo || current.telefoneFixo,
+            tipoContribuinte: payload.tipoContribuinte || current.tipoContribuinte,
+            inscricaoEstadual: payload.insEstadual || current.inscricaoEstadual,
+            isentoInscricaoEstadual: payload.tipoContribuinte === "ISENTO",
+            enderecos
+          };
+        });
 
         setHasImportedApiData(true);
         consultaMessage = payload.enderecoPreparado
@@ -618,6 +696,26 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
         title: "Consulta externa indisponível",
         description: "Continue o preenchimento manual e revise os dados antes de salvar."
       });
+      setForm((current) => {
+        let enderecos = current.enderecos;
+        if (enderecos.length === 0) {
+          enderecos = [{
+            id: `end_${Date.now()}`,
+            tipo: "principal",
+            cep: "",
+            endereco: "",
+            numero: "",
+            complemento: "",
+            bairro: "",
+            cidade: "",
+            uf: "",
+            obs: "",
+            recebedor: "",
+            cpfRecebedor: ""
+          }];
+        }
+        return { ...current, enderecos };
+      });
     }
 
     setIsInitialValidated(true);
@@ -630,6 +728,15 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   }
 
   async function handleCreateCadastro() {
+    if (!canCreate) {
+      showToast({
+        type: "error",
+        title: "Acesso negado",
+        description: "Você não tem permissão para criar cadastros."
+      });
+      return;
+    }
+
     setMessage(null);
     setErrorFields([]);
 
@@ -650,22 +757,35 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       !inferredTipoPessoa ? "documento" : null,
       !inferredTipoPessoa ? "documento" : null,
       !contactEmail && !contactWhatsApp ? "email" : null,
-      !contactEmail && !contactWhatsApp ? "whatsapp" : null,
-      !form.enderecos.some(e => e.tipo === 'principal' && e.cep) ? "enderecos" : null,
-      form.enderecos.some(e => !e.numero.trim()) ? "enderecos-numero" : null
+      !contactEmail && !contactWhatsApp ? "whatsapp" : null
     ].filter(Boolean) as string[];
 
     if (missingFields.length) {
       setErrorFields(Array.from(new Set(missingFields)));
       setMessage({
         tone: "danger",
-        title: "Campos obrigatorios ausentes",
-        description: missingFields.includes("enderecos-numero") ? "Todos os endereços devem ter o número preenchido." : "Preencha ID, nome, documento, contato e o endereço principal (com CEP)."
+        title: "Campos obrigatórios ausentes",
+        description: "Preencha ID, nome, documento, contato e o atendente antes de continuar."
       });
       showToast({
         type: "error",
-        title: "Nao foi possivel salvar",
+        title: "Não foi possível salvar",
         description: "Revise os campos destacados antes de continuar."
+      });
+      return;
+    }
+
+    const addrValidation = validateEnderecos(form.enderecos);
+    if (!addrValidation.isValid) {
+      setMessage({
+        tone: "danger",
+        title: "Endereço incompleto ou inválido",
+        description: addrValidation.message || ""
+      });
+      showToast({
+        type: "error",
+        title: "Falha na validação",
+        description: addrValidation.message || ""
       });
       return;
     }
@@ -929,6 +1049,15 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       return;
     }
 
+    if (!canEdit) {
+      showToast({
+        type: "error",
+        title: "Acesso negado",
+        description: "Você não tem permissão para editar cadastros."
+      });
+      return;
+    }
+
     setMessage(null);
     setErrorFields([]);
     setIsSaving(true);
@@ -948,18 +1077,18 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       return;
     }
 
-    if (form.enderecos.some(e => !e.numero.trim())) {
+    const addrValidation = validateEnderecos(form.enderecos);
+    if (!addrValidation.isValid) {
       setIsSaving(false);
-      setErrorFields(["enderecos-numero"]);
       setMessage({
         tone: "danger",
-        title: "Endereço incompleto",
-        description: "Todos os endereços devem ter o campo Número preenchido."
+        title: "Endereço incompleto ou inválido",
+        description: addrValidation.message || ""
       });
       showToast({
         type: "error",
         title: "Falha na validação",
-        description: "O número do endereço é obrigatório."
+        description: addrValidation.message || ""
       });
       return;
     }
@@ -1148,9 +1277,9 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
             ) : (
               <button
                 type="button"
-                  onClick={mode === "new" ? handleCreateCadastro : handleUpdateCadastro}
-                disabled={isSaving}
-                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60"
+                onClick={mode === "new" ? handleCreateCadastro : handleUpdateCadastro}
+                disabled={isSaving || !isEditAllowed}
+                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isSaving
                   ? "Salvando..."
@@ -1369,6 +1498,14 @@ function CompleteForm({
   canViewCredito: boolean;
   canEditCredito: boolean;
 }) {
+  const { user } = useAuth();
+  const canCreate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.create");
+  const canEdit = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit");
+  const canEditFiscal = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit_fiscal");
+
+  const isEditAllowed = mode === "edit" ? canEdit : canCreate;
+  const isFiscalBlocked = form.tipoCliente === "CNPJ" && !canEditFiscal;
+
   const companies = mockCompanies.filter((company) => !company.isConsolidated);
   const documentChanged =
     mode === "edit" &&
@@ -1377,6 +1514,8 @@ function CompleteForm({
     originalDocument !== "";
 
   const inputClass = "w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]";
+  const inputClassGeneral = !isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
+  const inputClassFiscal = (!isEditAllowed || isFiscalBlocked) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
   const inputClassCredito = !canEditCredito ? "w-full rounded-2xl border border-slate-300 bg-slate-100 text-slate-500 px-4 py-3 text-sm outline-none transition-shadow cursor-not-allowed" : inputClass;
   const [vinculoBusca, setVinculoBusca] = useState<Record<string, string>>({});
   const [vinculoResultados, setVinculoResultados] = useState<Record<string, SearchCadastroVinculoItem[]>>({});
@@ -1402,19 +1541,18 @@ function CompleteForm({
           if (!data.erro) {
             const currentEnderecos = [...form.enderecos];
             const current = currentEnderecos[index];
-            const updated = { ...current, cep: rawCep };
-            let hasChanges = false;
+            const updated = {
+              ...current,
+              cep: rawCep,
+              endereco: data.logradouro || "",
+              bairro: data.bairro || "",
+              cidade: data.localidade || "",
+              uf: (data.uf || "").toUpperCase().slice(0, 2)
+            };
             
-            if (!current.endereco && data.logradouro) { updated.endereco = data.logradouro; hasChanges = true; }
-            if (!current.bairro && data.bairro) { updated.bairro = data.bairro; hasChanges = true; }
-            if (!current.cidade && data.localidade) { updated.cidade = data.localidade; hasChanges = true; }
-            if (!current.uf && data.uf) { updated.uf = data.uf; hasChanges = true; }
-            
-            if (hasChanges) {
-              currentEnderecos[index] = updated;
-              onUpdate("enderecos", currentEnderecos);
-              onToast({ type: "success", title: "Endereço preenchido", description: `Dados recuperados via CEP (${data.localidade}/${data.uf}).` });
-            }
+            currentEnderecos[index] = updated;
+            onUpdate("enderecos", currentEnderecos);
+            onToast({ type: "success", title: "Endereço preenchido", description: `Dados recuperados via CEP (${data.localidade}/${data.uf}).` });
           } else {
             onToast({ type: "warning", title: "CEP não encontrado", description: "O CEP informado não foi localizado no ViaCEP." });
           }
@@ -1568,14 +1706,14 @@ function CompleteForm({
             />
           </Field>
           <Field label="Tipo de cadastro">
-            <select value={form.categoria} onChange={(event) => onUpdate("categoria", event.target.value as CadastroCategoria)} className={inputClass}>
+            <select disabled={!isEditAllowed} value={form.categoria} onChange={(event) => onUpdate("categoria", event.target.value as CadastroCategoria)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}>
               {categoriaOptions.map((categoria) => (
                 <option key={categoria} value={categoria}>{categoriaLabel[categoria]}</option>
               ))}
             </select>
           </Field>
           <Field label="Situacao / Ativo">
-            <select value={form.ativo ? "ATIVO" : "INATIVO"} onChange={(event) => onUpdate("ativo", event.target.value === "ATIVO")} className={inputClass}>
+            <select value={form.ativo ? "ATIVO" : "INATIVO"} disabled={!isEditAllowed} onChange={(event) => onUpdate("ativo", event.target.value === "ATIVO")} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}>
               <option value="ATIVO">Ativo</option>
               <option value="INATIVO">Inativo</option>
             </select>
@@ -1584,15 +1722,15 @@ function CompleteForm({
             <div className="flex gap-2">
               <input
                 value={formattedDocument}
-                readOnly={isDocumentoLocked}
+                readOnly={isDocumentoLocked || isFiscalBlocked || !isEditAllowed}
                 onChange={(event) => onUpdate("documento", normalizeDocumentDigits(event.target.value))}
                 className={
-                  isDocumentoLocked
+                  (isDocumentoLocked || isFiscalBlocked || !isEditAllowed)
                     ? `${inputClass} cursor-not-allowed bg-slate-100 text-slate-500 w-full`
                     : `${getInputClass(errorFields.includes("documento"))} w-full`
                 }
               />
-              {mode === "edit" && onReconsultar && (
+              {mode === "edit" && onReconsultar && isEditAllowed && !isFiscalBlocked && (
                 <button
                   type="button"
                   onClick={onReconsultar}
@@ -1604,59 +1742,59 @@ function CompleteForm({
             </div>
           </Field>
           <Field label="Razao social / Nome">
-            <input value={form.nome} onChange={(event) => onUpdate("nome", event.target.value)} className={getInputClass(errorFields.includes("nome"))} />
+            <input value={form.nome} readOnly={!isEditAllowed} onChange={(event) => onUpdate("nome", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("nome"))} />
           </Field>
           <Field label="Nome fantasia / Apelido">
-            <input value={form.fantasia} onChange={(event) => onUpdate("fantasia", event.target.value)} className={inputClass} />
+            <input value={form.fantasia} readOnly={!isEditAllowed} onChange={(event) => onUpdate("fantasia", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Apelido">
-            <input value={form.apelido} onChange={(event) => onUpdate("apelido", event.target.value)} className={inputClass} />
+            <input value={form.apelido} readOnly={!isEditAllowed} onChange={(event) => onUpdate("apelido", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Contato">
-            <input value={form.contato} onChange={(event) => onUpdate("contato", event.target.value)} className={inputClass} />
+            <input value={form.contato} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contato", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
-          <Field label="Tipo de contribuinte">
-            <select value={form.tipoContribuinte} onChange={(event) => onUpdate("tipoContribuinte", event.target.value)} className={inputClass}>
+          <Field label="Tipo de distribuinte">
+            <select value={form.tipoContribuinte} disabled={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("tipoContribuinte", event.target.value)} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}>
               <option value="">Selecione...</option>
               <option value="CONTRIBUINTE">Contribuinte</option>
               <option value="ISENTO">Isento</option>
             </select>
           </Field>
           <Field label="E-mail principal">
-            <input value={form.email} onChange={(event) => onUpdate("email", event.target.value)} className={getInputClass(errorFields.includes("email"))} />
+            <input value={form.email} readOnly={!isEditAllowed} onChange={(event) => onUpdate("email", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("email"))} />
           </Field>
           <Field label="E-mail financeiro">
-            <input value={form.emailFinanceiro} onChange={(event) => onUpdate("emailFinanceiro", event.target.value)} className={inputClass} />
+            <input value={form.emailFinanceiro} readOnly={!isEditAllowed} onChange={(event) => onUpdate("emailFinanceiro", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Inscricao estadual">
-            <input value={form.inscricaoEstadual} onChange={(event) => onUpdate("inscricaoEstadual", event.target.value)} className={inputClass} />
+            <input value={form.inscricaoEstadual} readOnly={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("inscricaoEstadual", event.target.value)} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Isento?">
-            <select value={form.isentoInscricaoEstadual ? "SIM" : "NAO"} onChange={(event) => onUpdate("isentoInscricaoEstadual", event.target.value === "SIM")} className={inputClass}>
+            <select value={form.isentoInscricaoEstadual ? "SIM" : "NAO"} disabled={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("isentoInscricaoEstadual", event.target.value === "SIM")} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}>
               <option value="NAO">Nao</option>
               <option value="SIM">Sim</option>
             </select>
           </Field>
           <Field label="Inscricao municipal">
-            <input value={form.inscricaoMunicipal} onChange={(event) => onUpdate("inscricaoMunicipal", event.target.value)} className={inputClass} />
+            <input value={form.inscricaoMunicipal} readOnly={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("inscricaoMunicipal", event.target.value)} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Cidade / UF">
-            <input value={form.cidadeUf} onChange={(event) => onUpdate("cidadeUf", event.target.value)} className={inputClass} placeholder="Cidade - UF" />
+            <input value={form.cidadeUf} readOnly={!isEditAllowed} onChange={(event) => onUpdate("cidadeUf", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} placeholder="Cidade - UF" />
           </Field>
           <Field label="Telefone fixo comercial">
-            <input value={form.telefoneFixo} onChange={(event) => onUpdate("telefoneFixo", event.target.value)} className={inputClass} />
+            <input value={form.telefoneFixo} readOnly={!isEditAllowed} onChange={(event) => onUpdate("telefoneFixo", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Site da empresa">
-            <input value={form.site} onChange={(event) => onUpdate("site", event.target.value)} className={inputClass} />
+            <input value={form.site} readOnly={!isEditAllowed} onChange={(event) => onUpdate("site", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="WhatsApp 1">
-            <input value={form.whatsapp} onChange={(event) => onUpdate("whatsapp", event.target.value)} className={getInputClass(errorFields.includes("whatsapp"))} />
+            <input value={form.whatsapp} readOnly={!isEditAllowed} onChange={(event) => onUpdate("whatsapp", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("whatsapp"))} />
           </Field>
           <Field label="WhatsApp 2">
-            <input value={form.whatsapp2} onChange={(event) => onUpdate("whatsapp2", event.target.value)} className={inputClass} />
+            <input value={form.whatsapp2} readOnly={!isEditAllowed} onChange={(event) => onUpdate("whatsapp2", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
           <Field label="Atendente do cliente">
-            <select value={form.atendente} onChange={(event) => onUpdate("atendente", event.target.value)} className={getInputClass(errorFields.includes("atendente"))}>
+            <select value={form.atendente} disabled={!isEditAllowed} onChange={(event) => onUpdate("atendente", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("atendente"))}>
               <option value="">Selecione</option>
               {vendedorOptions.map((vendedor) => (
                 <option key={`${vendedor.nome}-${String(vendedor.idVendedor ?? "")}`} value={vendedor.nome}>{vendedor.nome}</option>
@@ -1664,7 +1802,7 @@ function CompleteForm({
             </select>
           </Field>
           <Field label="Empresa padrao de cobranca">
-            <select value={form.empresaPadrao} onChange={(event) => onUpdate("empresaPadrao", event.target.value)} className={inputClass}>
+            <select value={form.empresaPadrao} disabled={!isEditAllowed} onChange={(event) => onUpdate("empresaPadrao", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}>
               {companies.map((company) => (
                 <option key={company.id} value={company.name}>{company.shortName}</option>
               ))}
@@ -1699,7 +1837,7 @@ function CompleteForm({
       <FormSection
         title="Enderecos"
         description="Enderecos vinculados ao id_cliente. Futuramente serao usados em propostas, frete e notas fiscais."
-        action={
+        action={isEditAllowed ? (
           <AddButton
             label="Adicionar endereco"
             onClick={() => {
@@ -1707,77 +1845,93 @@ function CompleteForm({
               onToast({ type: "info", title: "Endereco adicionado", description: "Endereco incluido no formulario." });
             }}
           />
-        }
+        ) : null}
       >
         <div className="space-y-4">
-          {form.enderecos.map((endereco, index) => (
-            <div key={endereco.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
-                {endereco.tipo !== 'principal' && (
-                  <button type="button" onClick={async () => {
-                    if (isTemporaryId(endereco.id)) {
+          {form.enderecos.map((endereco, index) => {
+            const isPrincipalCnpj = form.tipoCliente === "CNPJ" && endereco.tipo === "principal";
+            const isAddressBlocked = !isEditAllowed || isPrincipalCnpj;
+            const addrInputClass = isAddressBlocked ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
+
+            return (
+              <div key={endereco.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <StatusBadge status={endereco.tipo.toUpperCase()} tone="neutral" />
+                  {endereco.tipo !== 'principal' && isEditAllowed && (
+                    <button type="button" onClick={async () => {
+                      if (isTemporaryId(endereco.id)) {
+                        onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
+                        onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
+                        return;
+                      }
+                      const refCheck = await checkEnderecoReferenciadoEmProposta(endereco.id);
+                      if (refCheck.referenciado) {
+                        onToast({ type: "error", title: "Exclusão bloqueada", description: refCheck.errorMessage || "Este endereço está vinculado a uma proposta e não pode ser excluído." });
+                        return;
+                      }
+                      const deleteResult = await deleteCadastroEndereco(endereco.id);
+                      if (!deleteResult.success) {
+                        onToast({ type: "error", title: "Erro ao excluir", description: deleteResult.errorMessage || "Não foi possível excluir o endereço." });
+                        return;
+                      }
                       onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
-                      onToast({ type: "warning", title: "Endereco removido", description: "Remocao aplicada no formulário antes do salvamento." });
-                      return;
-                    }
-                    const refCheck = await checkEnderecoReferenciadoEmProposta(endereco.id);
-                    if (refCheck.referenciado) {
-                      onToast({ type: "error", title: "Exclusão bloqueada", description: refCheck.errorMessage || "Este endereço está vinculado a uma proposta e não pode ser excluído." });
-                      return;
-                    }
-                    const deleteResult = await deleteCadastroEndereco(endereco.id);
-                    if (!deleteResult.success) {
-                      onToast({ type: "error", title: "Erro ao excluir", description: deleteResult.errorMessage || "Não foi possível excluir o endereço." });
-                      return;
-                    }
-                    onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
-                    onToast({ type: "success", title: "Endereço excluído", description: "Endereço removido com sucesso do banco de dados." });
-                  }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <Field label="Tipo">
-                  <select value={endereco.tipo} onChange={(event) => updateEndereco(index, "tipo", event.target.value as any)} className={inputClass}>
-                    {endereco.tipo === "principal" && <option value="principal">Principal</option>}
-                    <option value="entrega">Entrega</option>
-                    <option value="cobranca">Cobrança</option>
-                    <option value="fiscal">Fiscal</option>
-                  </select>
-                </Field>
-                <Field label="CEP">
-                  <div className="relative">
-                    <input value={endereco.cep} onChange={(event) => handleCepChange(index, event.target.value)} className={inputClass} />
-                    {cepLoadingIndex === index && (
-                      <div className="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
-                    )}
+                      onToast({ type: "success", title: "Endereço excluído", description: "Endereço removido com sucesso do banco de dados." });
+                    }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                {isPrincipalCnpj && (
+                  <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3.5 text-xs text-blue-900 flex gap-2.5 items-start">
+                    <span className="text-base leading-none">ℹ️</span>
+                    <p className="leading-relaxed">
+                      Este é o endereço oficial do CNPJ. Para alterá-lo, reconsulte os dados do CNPJ no topo da página ou adicione um endereço do tipo <strong>Entrega</strong> ou <strong>Cobrança</strong> abaixo.
+                    </p>
                   </div>
-                </Field>
-                <Field label="Logradouro"><input value={endereco.endereco} onChange={(event) => updateEndereco(index, "endereco", event.target.value)} className={inputClass} /></Field>
-                <Field label="Número *"><input value={endereco.numero} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={getInputClass(errorFields.includes("enderecos-numero") && !endereco.numero.trim())} /></Field>
-                <Field label="Complemento"><input value={endereco.complemento ?? ""} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={inputClass} /></Field>
-                <Field label="Bairro"><input value={endereco.bairro} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={inputClass} /></Field>
-                <Field label="Cidade"><input value={endereco.cidade} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={inputClass} /></Field>
-                <Field label="UF"><input value={endereco.uf} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={inputClass} maxLength={2} /></Field>
-                <Field label="Recebedor">
-                  <input value={endereco.recebedor ?? ""} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={inputClass} placeholder="Nome do recebedor" />
-                </Field>
-                <Field label="CPF do Recebedor">
-                  <input value={endereco.cpfRecebedor ?? ""} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={inputClass} placeholder="Apenas números ou formatado" maxLength={14} />
-                </Field>
-                <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={inputClass} /></Field></div>
+                )}
+
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <Field label="Tipo">
+                    <select value={endereco.tipo} disabled={isAddressBlocked} onChange={(event) => updateEndereco(index, "tipo", event.target.value as any)} className={addrInputClass}>
+                      {endereco.tipo === "principal" && <option value="principal">Principal</option>}
+                      <option value="entrega">Entrega</option>
+                      <option value="cobranca">Cobrança</option>
+                      <option value="fiscal">Fiscal</option>
+                    </select>
+                  </Field>
+                  <Field label="CEP">
+                    <div className="relative">
+                      <input value={endereco.cep} readOnly={isAddressBlocked} onChange={(event) => handleCepChange(index, event.target.value)} className={addrInputClass} />
+                      {cepLoadingIndex === index && (
+                        <div className="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+                      )}
+                    </div>
+                  </Field>
+                  <Field label="Logradouro"><input value={endereco.endereco} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "endereco", event.target.value)} className={addrInputClass} /></Field>
+                  <Field label="Número *"><input value={endereco.numero} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "numero", event.target.value)} className={isAddressBlocked ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : getInputClass(errorFields.includes("enderecos-numero") && !endereco.numero.trim())} /></Field>
+                  <Field label="Complemento"><input value={endereco.complemento ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "complemento", event.target.value)} className={addrInputClass} /></Field>
+                  <Field label="Bairro"><input value={endereco.bairro} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "bairro", event.target.value)} className={addrInputClass} /></Field>
+                  <Field label="Cidade"><input value={endereco.cidade} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "cidade", event.target.value)} className={addrInputClass} /></Field>
+                  <Field label="UF"><input value={endereco.uf} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "uf", event.target.value.toUpperCase())} className={addrInputClass} maxLength={2} /></Field>
+                  <Field label="Recebedor">
+                    <input value={endereco.recebedor ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "recebedor", event.target.value)} className={addrInputClass} placeholder="Nome do recebedor" />
+                  </Field>
+                  <Field label="CPF do Recebedor">
+                    <input value={endereco.cpfRecebedor ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "cpfRecebedor", event.target.value)} className={addrInputClass} placeholder="Apenas números ou formatado" maxLength={14} />
+                  </Field>
+                  <div className="md:col-span-2 xl:col-span-4"><Field label="Observacao"><input value={endereco.obs ?? ""} readOnly={isAddressBlocked} onChange={(event) => updateEndereco(index, "obs", event.target.value)} className={addrInputClass} /></Field></div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </FormSection>
 
       <FormSection
         title="Contatos"
         description="Pessoas fisicas vinculadas ao cadastro."
-        action={
+        action={isEditAllowed ? (
           <AddButton
             label="Adicionar contato"
             onClick={() => {
@@ -1785,32 +1939,37 @@ function CompleteForm({
               onToast({ type: "info", title: "Contato adicionado", description: "Contato incluido no formulario." });
             }}
           />
-        }
+        ) : null}
       >
         <div className="space-y-4">
-          {form.contatos.map((contato, index) => (
-            <div key={contato.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
-              <Field label="Nome"><input value={contato.nome} onChange={(event) => updateContato(index, "nome", event.target.value)} className={inputClass} /></Field>
-              <Field label="Cargo"><input value={contato.cargo} onChange={(event) => updateContato(index, "cargo", event.target.value)} className={inputClass} /></Field>
-              <Field label="WhatsApp"><input value={contato.whatsapp} onChange={(event) => updateContato(index, "whatsapp", event.target.value)} className={inputClass} /></Field>
-              <Field label="E-mail"><input value={contato.email} onChange={(event) => updateContato(index, "email", event.target.value)} className={inputClass} /></Field>
-              <button type="button" onClick={() => {
-                if (!isTemporaryId(contato.id)) {
-                  onToast({ type: "warning", title: "Remoção bloqueada", description: "Contato já salvo não pode ser removido nesta fase." });
-                  return;
-                }
-                onUpdate("contatos", form.contatos.filter((_, itemIndex) => itemIndex !== index));
-                onToast({ type: "warning", title: "Contato removido", description: "Remocao aplicada no formulário antes do salvamento." });
-              }} className="self-end rounded-xl p-3 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
-            </div>
-          ))}
+          {form.contatos.map((contato, index) => {
+            const contactInputClass = !isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
+            return (
+              <div key={contato.id} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+                <Field label="Nome"><input value={contato.nome} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, nome: event.target.value } : c))} className={contactInputClass} /></Field>
+                <Field label="Cargo"><input value={contato.cargo} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, cargo: event.target.value } : c))} className={contactInputClass} /></Field>
+                <Field label="WhatsApp"><input value={contato.whatsapp} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, whatsapp: event.target.value } : c))} className={contactInputClass} /></Field>
+                <Field label="E-mail"><input value={contato.email} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contatos", form.contatos.map((c, idx) => idx === index ? { ...c, email: event.target.value } : c))} className={contactInputClass} /></Field>
+                {isEditAllowed && (
+                  <button type="button" onClick={() => {
+                    if (!isTemporaryId(contato.id)) {
+                      onToast({ type: "warning", title: "Remoção bloqueada", description: "Contato já salvo não pode ser removido nesta fase." });
+                      return;
+                    }
+                    onUpdate("contatos", form.contatos.filter((_, itemIndex) => itemIndex !== index));
+                    onToast({ type: "warning", title: "Contato removido", description: "Remocao aplicada no formulário antes do salvamento." });
+                  }} className="self-end rounded-xl p-3 text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </FormSection>
 
       <FormSection
         title="Dados da Nota Fiscal"
         description="Cadastros autorizados ou relacionados comercialmente a este cliente."
-        action={
+        action={isEditAllowed ? (
           <AddButton
             label="Adicionar vínculo"
             onClick={() => {
@@ -1818,7 +1977,7 @@ function CompleteForm({
               onToast({ type: "info", title: "Vinculo comercial adicionado", description: "Vinculo incluido no formulario." });
             }}
           />
-        }
+        ) : null}
       >
         <div className="space-y-4">
           {form.vinculosComerciais.map((vinculo, index) => (
@@ -1828,27 +1987,32 @@ function CompleteForm({
                   <div className="flex gap-2">
                     <input
                       value={vinculoBusca[vinculo.id] ?? ""}
+                      readOnly={!isEditAllowed}
                       onChange={(event) =>
                         setVinculoBusca((current) => ({ ...current, [vinculo.id]: event.target.value }))
                       }
-                      className={inputClass}
+                      className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}
                     />
-                    <button
-                      type="button"
-                      onClick={() => void handleSearchVinculo(vinculo.id)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
-                    >
-                      {vinculoLoadingId === vinculo.id ? "Buscando..." : "Buscar"}
-                    </button>
+                    {isEditAllowed && (
+                      <button
+                        type="button"
+                        onClick={() => void handleSearchVinculo(vinculo.id)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
+                      >
+                        {vinculoLoadingId === vinculo.id ? "Buscando..." : "Buscar"}
+                      </button>
+                    )}
                   </div>
                 </Field>
-                <button
-                  type="button"
-                  onClick={() => handleRemoverVinculo(index)}
-                  className="self-end rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600"
-                >
-                  Remover vínculo
-                </button>
+                {isEditAllowed && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoverVinculo(index)}
+                    className="self-end rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600"
+                  >
+                    Remover vínculo
+                  </button>
+                )}
               </div>
 
               {vinculoResultados[vinculo.id]?.length ? (
@@ -1871,9 +2035,11 @@ function CompleteForm({
               ) : vinculoBusca[vinculo.id] && !vinculo.idClienteRelacionado && vinculoResultados[vinculo.id] && vinculoResultados[vinculo.id].length === 0 ? (
                 <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-center">
                   <p className="text-sm font-medium text-orange-800">Nenhum cadastro encontrado para o documento informado.</p>
-                  <Link href={`/cadastros/novo?documento=${vinculoBusca[vinculo.id].replace(/\D/g, "")}`} className="mt-3 inline-block rounded-xl bg-white px-4 py-2 text-sm font-semibold text-orange-900 shadow-sm transition hover:bg-orange-100">
-                    + Novo Cadastro
-                  </Link>
+                  {isEditAllowed && (
+                    <Link href={`/cadastros/novo?documento=${vinculoBusca[vinculo.id].replace(/\D/g, "")}`} className="mt-3 inline-block rounded-xl bg-white px-4 py-2 text-sm font-semibold text-orange-900 shadow-sm transition hover:bg-orange-100">
+                      + Novo Cadastro
+                    </Link>
+                  )}
                 </div>
               ) : null}
 
@@ -1892,8 +2058,9 @@ function CompleteForm({
               <Field label="Tipo de relacao">
                 <input
                   value={vinculo.tipoRelacao}
+                  readOnly={!isEditAllowed}
                   onChange={(event) => updateVinculo(index, "tipoRelacao", event.target.value)}
-                  className={inputClass}
+                  className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}
                   placeholder="autorizado"
                 />
               </Field>
@@ -1980,7 +2147,7 @@ function CompleteForm({
           <div className="flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={onCancel} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
             <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Voltar ao topo</button>
-            <button type="button" onClick={onSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+             <button type="button" onClick={onSave} disabled={isSaving || !isEditAllowed} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed">
               {isSaving
                 ? "Salvando..."
                 : mode === "edit"

@@ -14,10 +14,16 @@ export interface PendingProductResolution {
   status: 'nao_encontrado' | 'preco_incompleto';
 }
 
+export interface PendingAmbiguousOption {
+  id: number;
+  name: string;
+  index: number;
+}
+
 export interface PendingAmbiguousItem {
   lastRequestedQuantity: number;
   lastRequestedTerm: string;
-  options: string[];
+  options: PendingAmbiguousOption[];
 }
 
 export interface MaestroV2Context {
@@ -216,8 +222,8 @@ export function handleContextContinuation(
   }
 
   // ── 3.0 RETOMADA EXPLÍCITA DE ORÇAMENTO (SOBREPÕE FINANCEIRO)
-  const hasOrcamentoKeyword = /\b(do\s*orcamento|no\s*orcamento|nesse\s*orcamento|desse\s*orcamento|do\s*pedido\s*avulso|refazer\s*(o\s*)?orcamento|recalcular\s*(o\s*)?orcamento)\b/i.test(clean)
-    || /\b(remove|tira(r)?|retira|sem\s+a(s)?|sem\s+o(s)?|refaz\s+sem)\b.+/i.test(clean);
+  const hasOrcamentoKeyword = /\b(do\s*orcamento|no\s*orcamento|nesse\s*orcamento|desse\s*orcamento|do\s*pedido\s*avulso|refazer\s*(o\s*)?orcamento|recalcular\s*(o\s*)?orcamento|qual\s*(e\s*)?(o\s*)?total|total\s*agora)\b/i.test(clean)
+    || /\b(remove|tira(r)?|retira|sem\s+a(s)?|sem\s+o(s)?|refaz\s+sem|mantem|mantém|volta\s+o|volta\s+a|coloca\s+de\s+volta|nao\s+tira|nao\s+remove|preserva|restaura)\b.+/i.test(clean);
   const hasItemsToRecover = (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0)
     || (v2Ctx.lastSuccessfulBudgetItems && v2Ctx.lastSuccessfulBudgetItems.length > 0)
     || (v2Ctx.previousOrcamentoItens && v2Ctx.previousOrcamentoItens.length > 0);

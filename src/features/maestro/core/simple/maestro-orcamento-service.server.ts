@@ -171,14 +171,20 @@ export async function processarOrcamentoService(
     };
   });
 
+  const ambiguoItem = resolucaoResult.itens.find(i => i.status === 'ambiguo');
+
   const nextStateAtualizado: OrcamentoAvulsoState = {
     ...engineResult.nextState,
     itens: itemsEnriquecidos,
     // Marcar pendência de ambiguidade se houver
     pendingAmbiguity: temPendencia,
-    pendingTerm: temPendencia
-      ? resolucaoResult.itens.find(i => i.status === 'ambiguo')?.termo
-      : engineResult.nextState.pendingTerm,
+    pendingTerm: ambiguoItem?.termo,
+    pendingQuantidade: ambiguoItem?.quantidade,
+    pendingOptions: ambiguoItem?.candidatos?.map((c, i) => ({
+      index: i + 1,
+      id: c.id_produto,
+      name: c.descricao
+    }))
   };
 
   // ── Passo 7: Construir resposta textual ───────────────────────────────────

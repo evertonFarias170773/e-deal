@@ -540,3 +540,28 @@ A ação `REMOVE` foi incluída no motor e permite:
 - Filtrar itens existentes pelo termo normalizado.
 - Remover os itens citados preservando os demais (ex: `"remove as triband"` em um carrinho com Triband e Tex resulta apenas em Tex).
 - Salvar o estado anterior (`previousItens`) para suportar a ação `RESTORE` (ex: `"volta as triband"`).
+
+---
+
+## 12. Ambiguidade de Produtos e Formato Visual (2026-07-07)
+
+### Tratamento de Ambiguidade
+
+> **Sempre que o alias informado retornar mais de um produto compatível no banco (`status === 'ambiguo'`), o motor interrompe o cálculo do total e solicita a decisão do usuário.**
+
+1. O Context Manager salva os candidatos em `pendingOptions` e o estado atual vira `temPendencia = true`.
+2. O LLM não intervém, a resposta estruturada exibe as opções enumeradas (ex: `1. Pulseira A`, `2. Pulseira B`).
+3. O usuário pode responder com o **número da opção**, **ID do produto** ou **nome comercial**.
+4. O motor lê a escolha, resolve a ambiguidade mantendo a quantidade solicitada original, e prossegue.
+
+### Formato Comercial (Mock)
+
+O formato visual do orçamento avulso inclui as seguintes características estritas (Mock/Fase 3):
+- **Cabeçalho:** `📄 Orçamento conforme solicitação`
+- **Dimensões e Prazos:** Os produtos extraem suas dimensões (ex: `25x2cm`) e prazo de produção (ex: `1 dia útil`) do `maestro-orcamento-catalogo-oficial.ts`.
+- **Frete Mockado:** São incluídos 3 blocos informativos inalteráveis de transportadoras:
+  - Sedex (R$ 29,42)
+  - Expresso São Miguel (R$ 50,00)
+  - Unesul (R$ 39,00)
+- **Localização:** Se o cliente possuir CEP/Cidade na ficha, ela é exibida. Caso contrário, assume-se `Centro | Santa Cruz do Sul / RS`.
+- **Total:** O subtotal soma os produtos; o **Total Final** sempre considera o valor fixo do Sedex Mock (R$ 29,42).

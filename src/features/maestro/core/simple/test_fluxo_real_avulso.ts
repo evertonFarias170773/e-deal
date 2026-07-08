@@ -218,7 +218,91 @@ async function runTests() {
   if (failed > 0) process.exit(1);
 }
 
-runTests().catch(err => {
+async function runE2ETests() {
+  console.log('\n=== Teste E2E: Cliente -> Financeiro -> Orçamento -> Financeiro -> Retomada -> Remove -> Restore ===\n');
+  const savedEnv = process.env.MAESTRO_AVULSO_ENABLED;
+  process.env.MAESTRO_AVULSO_ENABLED = 'true';
+
+  let ctx: MaestroV2Context = getEmptyV2Context();
+
+  // 1. "Sobre o cliente Lisiton"
+  console.log('Turno 1: "Sobre o cliente Lisiton"');
+  ctx.domain = 'cliente';
+  ctx.activeEntities.clientInternalId = 123;
+  ctx.activeEntities.clientName = 'LISITON DOCUMENTOS SEGUROS LTDA';
+
+  // 2. "ele tem boletos em aberto?"
+  console.log('Turno 2: "ele tem boletos em aberto?"');
+  ctx.domain = 'financeiro';
+
+  // 3. "qual valor pra 1560 tri"
+  console.log('Turno 3: "qual valor pra 1560 tri"');
+  let eng = processarOrcamentoAvulso('qual valor pra 1560 tri', { itens: [], pendingAmbiguity: false });
+  assert('ADD detectado', eng.action === 'ADD', eng.action, 'ADD');
+  ctx.domain = 'orcamento_avulso';
+  ctx.orcamentoItens = eng.items;
+  ctx.lastSuccessfulBudgetItems = eng.items;
+
+  // 4. "adiciona + 120 tex"
+  console.log('Turno 4: "adiciona + 120 tex"');
+  eng = processarOrcamentoAvulso('adiciona + 120 tex', { itens: ctx.orcamentoItens, pendingAmbiguity: false });
+  assert('ADD detectado', eng.action === 'ADD', eng.action, 'ADD');
+  ctx.orcamentoItens = eng.items;
+  ctx.lastSuccessfulBudgetItems = eng.items;
+  assert('2 itens no orcamento', ctx.orcamentoItens.length === 2);
+
+  // 5. "e sabe me dizer se a Lisiton tem boletos em atraso?"
+  console.log('Turno 5: "e sabe me dizer se a Lisiton tem boletos em atraso?"');
+  // O router mudaria o domínio para financeiro
+  ctx.domain = 'financeiro';
+  
+  // 6. "remove as triband do orçamento"
+  console.log('Turno 6: "remove as triband do orçamento"');
+  let cont = handleContextContinuation('remove as triband do orçamento', ctx, null);
+  assert('interceptado pelo context manager', cont !== null, cont, 'non-null');
+  assert('domínio restaurado para orcamento_avulso', (ctx.domain as string) === 'orcamento_avulso', ctx.domain, 'orcamento_avulso');
+  let tool = cont?.plan?.steps?.[0]?.tool;
+  assert('tool simularOrcamentoAvulso', tool === 'simularOrcamentoAvulso', tool, 'simularOrcamentoAvulso');
+  let itensParam = cont?.plan?.steps?.[0]?.params?.itens || [];
+  assert('triband removida', !itensParam.some((i: any) => i.termo.includes('tri')));
+  assert('tex preservada', itensParam.some((i: any) => i.termo.includes('tex')));
+  ctx.orcamentoItens = itensParam; // Simulando que o service salvou
+
+  // 7. "qual o total agora?"
+  console.log('Turno 7: "qual o total agora?"');
+  cont = handleContextContinuation('qual o total agora?', ctx, null);
+  // "qual o total agora" tem keyword de orçamento? "total"? Não adicionei na regex!
+  // Mas o domínio JÁ É orcamento_avulso (foi restaurado no turno 6).
+  // Se o domínio já é orcamento_avulso, o CM roda processarOrcamentoAvulso
+  eng = processarOrcamentoAvulso('qual o total agora?', { itens: ctx.orcamentoItens || [], pendingAmbiguity: false });
+  assert('action NONE', eng.action === 'NONE', eng.action, 'NONE');
+  // No router, "qual o total agora?" com NONE cairá no LLM com domínio orcamento_avulso, o que é OK porque não trará tabelas financeiras.
+
+  // 8. "mas mantem as triband"
+  console.log('Turno 8: "mas mantem as triband"');
+  cont = handleContextContinuation('mas mantem as triband', ctx, null);
+  assert('interceptado pelo context manager RESTORE', cont !== null, cont, 'non-null');
+  tool = cont?.plan?.steps?.[0]?.tool;
+  assert('tool simularOrcamentoAvulso', tool === 'simularOrcamentoAvulso', tool, 'simularOrcamentoAvulso');
+  itensParam = cont?.plan?.steps?.[0]?.params?.itens || [];
+  assert('triband restaurada', itensParam.some((i: any) => i.termo.includes('tri')));
+  ctx.orcamentoItens = itensParam;
+
+  // 9. "ok obrigado"
+  console.log('Turno 9: "ok obrigado"');
+  eng = processarOrcamentoAvulso('ok obrigado', { itens: ctx.orcamentoItens || [], pendingAmbiguity: false });
+  assert('action NONE', eng.action === 'NONE', eng.action, 'NONE');
+
+  if (savedEnv === undefined) delete process.env.MAESTRO_AVULSO_ENABLED;
+  else process.env.MAESTRO_AVULSO_ENABLED = savedEnv;
+}
+
+async function main() {
+  await runTests();
+  await runE2ETests();
+}
+
+main().catch(err => {
   console.error('Erro no teste de fluxo real:', err);
   process.exit(1);
 });

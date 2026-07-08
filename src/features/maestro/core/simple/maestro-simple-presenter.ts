@@ -1580,42 +1580,99 @@ export function presenterOrcamentoAvulso(result: OrcamentoAvulsoResult): Present
  * Prefere nomeComercial do catálogo oficial quando o ID foi resolvido por ele.
  * Nunca exibe descrições longas do banco.
  */
-export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult): PresenterResult {
-  const { resolucao, totalGeral, errors, temPendencia } = result;
+export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, cliente?: SimpleClientContext): PresenterResult {
+  const { resolucao, totalGeral, errors, temPendencia, nextState } = result;
 
-  let contentText = 'Olá, 😀\n\nSegue orçamento para os itens solicitados.\n\nProdutos Orçados:\n\n';
   let allSuccess = !temPendencia && errors.length === 0;
+  let contentText = '';
+
+  if (temPendencia && nextState.pendingOptions && nextState.pendingOptions.length > 0) {
+    const termo = nextState.pendingTerm || 'produto';
+    contentText = `Encontrei ${nextState.pendingOptions.length} opções para "${termo}". Qual deles você quer usar?\n\n`;
+    nextState.pendingOptions.forEach(opt => {
+      contentText += `${opt.index}. ${opt.name}\n`;
+    });
+    contentText += `\nPode responder com o número ou com o nome.`;
+    
+    return {
+      message: {
+        id: genId(),
+        role: 'maestro',
+        content: contentText,
+        contentType: 'text',
+        specialist: 'comercial',
+        timestamp: now(),
+        status: 'completed',
+        confidence: 'high',
+      },
+      activity: [
+        { id: genId('step'), label: 'Resolvendo ambiguidade', detail: `Opções: ${nextState.pendingOptions.length}`, status: 'done', timestamp: nowTime() }
+      ]
+    };
+  }
+
+  contentText = '📄 Orçamento conforme solicitação\n\n';
+
+  let hasErrorsOrInactives = false;
 
   resolucao.forEach(item => {
     if (item.status === 'nao_encontrado') {
-      contentText += `❌ **${item.quantidade}x ${item.termo}**: Não encontrei nenhum produto com esse nome no cadastro.\n`;
-      allSuccess = false;
-    } else if (item.status === 'ambiguo') {
-      contentText += `⚠️ **${item.quantidade}x ${item.termo}**: Encontrei ${item.candidatos?.length ?? 0} opções. Qual ID você quer usar?\n`;
-      (item.candidatos || []).slice(0, 5).forEach(p => {
-        contentText += `   - ${p.descricao} (ID: ${p.id_produto})\n`;
-      });
-      allSuccess = false;
+      contentText += `❌ **${item.quantidade}x ${item.termo}**: Não encontrei nenhum produto com esse nome no cadastro.\n\n`;
+      hasErrorsOrInactives = true;
     } else if (item.status === 'inativo') {
       const descricao = item.produto?.descricao ?? item.termo;
-      contentText += `🚫 **${item.quantidade}x ${item.termo}**: O produto **${descricao}** está inativo. Não é possível incluí-lo.\n`;
-      allSuccess = false;
+      contentText += `🚫 **${item.quantidade}x ${item.termo}**: O produto **${descricao}** está inativo.\n\n`;
+      hasErrorsOrInactives = true;
     } else if (item.status === 'preco_incompleto') {
       const descricao = item.produto?.descricao ?? item.termo;
-      contentText += `⚠️ **${item.quantidade}x ${item.termo}**: O produto **${descricao}** está sem preço no cadastro.\n`;
-      allSuccess = false;
+      contentText += `⚠️ **${item.quantidade}x ${item.termo}**: O produto **${descricao}** está sem preço no cadastro.\n\n`;
+      hasErrorsOrInactives = true;
     } else if (item.status === 'sucesso' && item.produto) {
       const formattedQtd = new Intl.NumberFormat('pt-BR').format(item.quantidade);
-      // Preferir nomeComercial do catálogo oficial quando ID foi resolvido
       const catalogoInfo = resolverTermoCatalogo(item.termo);
       const nomeProduto = catalogoInfo.nomeComercial ?? getShortProductName(item.produto.descricao, item.termo);
-      contentText += `✅ ${formattedQtd} ${nomeProduto}: ${fmtBRL(item.subtotal ?? 0)}\n`;
+      const dimensao = catalogoInfo.dimensaoComercial ? ` (${catalogoInfo.dimensaoComercial})` : '';
+      const prazo = catalogoInfo.prazoProducaoTexto ?? 'Prazo sob consulta';
+      
+      contentText += `🎟️ ${nomeProduto}${dimensao}\n`;
+      contentText += `📦 Quantidade: ${formattedQtd} unidades — ${fmtBRL(item.subtotal ?? 0)}\n`;
+      contentText += `🏭 Prazo de produção: ${prazo}\n\n`;
     }
   });
 
   if (allSuccess && totalGeral !== null) {
-    contentText += `\nFrete: a combinar\n\nO valor total do pedido ficou em ${fmtBRL(totalGeral)}\n\nSe estiver tudo certo, me confirma por aqui que já dou andamento ao processo!\n`;
-  } else {
+    let enderecoDesc = 'Centro | Santa Cruz do Sul / RS';
+    if (cliente?.enderecos?.length) {
+      const end = cliente.enderecos[0];
+      if (end.cidade && end.uf) {
+        const bairro = end.bairro ? `${end.bairro} | ` : '';
+        enderecoDesc = `${bairro}${end.cidade} / ${end.uf}`;
+      } else if (end.cep) {
+        enderecoDesc = `CEP ${end.cep}`;
+      }
+    }
+
+    contentText += `-----------------------------\n`;
+    contentText += `📌 ${enderecoDesc}\n`;
+    contentText += `-----------------------------\n\n`;
+
+    contentText += `🚚 Sedex: R$ 29,42\n`;
+    contentText += `Prazo de entrega: 1 dia útil (+ prazo de produção)\n\n`;
+
+    contentText += `🚚 Expresso São Miguel: R$ 50,00\n`;
+    contentText += `Prazo de entrega sob consulta.\n\n`;
+
+    contentText += `🚚 Unesul: R$ 39,00\n`;
+    contentText += `Prazo de entrega sob consulta.\n\n`;
+
+    const subtotalStr = fmtBRL(totalGeral);
+    const totalFinalStr = fmtBRL(totalGeral + 29.42);
+
+    contentText += `🧾 Subtotal produtos: ${subtotalStr}\n`;
+    contentText += `Frete padrão (Sedex): R$ 29,42\n\n`;
+
+    contentText += `💰 Total final: ${totalFinalStr}\n`;
+  } else if (hasErrorsOrInactives) {
     contentText += `\n*Como houve itens não encontrados, inativos ou com dúvidas, o total geral não foi calculado.*\n`;
   }
 

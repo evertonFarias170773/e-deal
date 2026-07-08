@@ -37,6 +37,10 @@ export interface ProdutoCatalogoOficial {
    * O primeiro alias é o canônico (preferido em mensagens).
    */
   aliases: string[];
+  /** Dimensão ou característica extra apresentada na interface comercial (novo padrão) */
+  dimensaoComercial?: string;
+  /** Texto informando o prazo de produção médio */
+  prazoProducaoTexto?: string;
 }
 
 // ─── Catálogo Operacional ─────────────────────────────────────────────────────
@@ -54,6 +58,8 @@ export const CATALOGO_OFICIAL: ProdutoCatalogoOficial[] = [
     nomeComercial: 'Ingresso MOBI (Papel BOPP/Couchê com picote)',
     categoria: 'ingresso',
     aliases: ['mobi', 'moby', 'ingresso mobi', 'ingresso moby', 'papel mobi'],
+    dimensaoComercial: '10×5cm', // exemplo genérico
+    prazoProducaoTexto: '3 dias úteis',
   },
 
   {
@@ -61,6 +67,8 @@ export const CATALOGO_OFICIAL: ProdutoCatalogoOficial[] = [
     nomeComercial: 'Ingresso UP (Papel Couchê com picote)',
     categoria: 'ingresso',
     aliases: ['up', 'ingresso up', 'papel up', 'cali', 'california'],
+    dimensaoComercial: '10×5cm',
+    prazoProducaoTexto: '3 dias úteis',
   },
 
   {
@@ -68,6 +76,8 @@ export const CATALOGO_OFICIAL: ProdutoCatalogoOficial[] = [
     nomeComercial: 'Ticket (Papel Couchê sem picote)',
     categoria: 'ticket',
     aliases: ['ticket', 'tickets', 'ingresso sem picote', 'papel sem picote', 'tike', 'tiket'],
+    dimensaoComercial: '10×5cm',
+    prazoProducaoTexto: '3 dias úteis',
   },
 
   // ── PULSEIRAS ─────────────────────────────────────────────────────────────
@@ -83,13 +93,17 @@ export const CATALOGO_OFICIAL: ProdutoCatalogoOficial[] = [
       'tyvek',           // sinônimo operacional comum
       'pulseira tri', 'pulseira triband',
     ],
+    dimensaoComercial: '25×2cm',
+    prazoProducaoTexto: '1 dia útil',
   },
 
   {
     id_produto: 102,
     nomeComercial: 'Pulseira de Tecido (Velcro)',
     categoria: 'pulseira',
-    aliases: ['tecido', 'pulseira tecido', 'velcro', 'pulseira velcro', 'fabric'],
+    aliases: ['tecido', 'pulseira tecido', 'velcro', 'pulseira velcro', 'fabric', 'texband'],
+    dimensaoComercial: '35×2cm',
+    prazoProducaoTexto: '3 dias úteis',
   },
 
   {
@@ -97,6 +111,8 @@ export const CATALOGO_OFICIAL: ProdutoCatalogoOficial[] = [
     nomeComercial: 'Pulseira de Silicone',
     categoria: 'pulseira',
     aliases: ['silicone', 'pulseira silicone', 'borracha'],
+    dimensaoComercial: 'Padrão',
+    prazoProducaoTexto: '3 dias úteis',
   },
 
   // ── CORDÕES ───────────────────────────────────────────────────────────────
@@ -111,16 +127,17 @@ export const CATALOGO_OFICIAL: ProdutoCatalogoOficial[] = [
       'cordao',          // generico — resolvido para jacaré (produto principal)
       'cordon jacare', 'cordao com jacare',
     ],
+    dimensaoComercial: '85×2cm',
+    prazoProducaoTexto: '3 dias úteis',
   },
 
   {
     id_produto: 602,
     nomeComercial: 'Cordão com Argola Giratória',
     categoria: 'cordao',
-    aliases: [
-      'cordao argola',   // canônico normalizado
-      'argola', 'argola giratoria',
-    ],
+    aliases: ['cordao argola', 'argola'],
+    dimensaoComercial: '85×2cm',
+    prazoProducaoTexto: '3 dias úteis',
   },
 
   // ── CRACHÁS / CREDENCIAIS ─────────────────────────────────────────────────
@@ -162,6 +179,10 @@ export interface ResoluçãoCatalogoResult {
   id_produto: number | null;
   /** Nome comercial do produto */
   nomeComercial?: string;
+  /** Dimensão ou tamanho */
+  dimensaoComercial?: string;
+  /** Prazo de produção descritivo */
+  prazoProducaoTexto?: string;
   /** Tipo de match encontrado */
   tipoMatch: 'exato' | 'parcial' | 'nao_encontrado' | 'ambiguo';
   /** Todos os candidatos em caso de ambiguidade */
