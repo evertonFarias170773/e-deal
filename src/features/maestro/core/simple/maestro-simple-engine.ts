@@ -91,6 +91,8 @@ import {
   presenterVoltarOrcamento,
   presenterPerguntarQuantidade,
   presenterRecuperacaoOrcamento,
+  presenterEscolhaEndereco,
+  presenterSolicitarEnderecoManual,
   type PresenterResult,
 } from './maestro-simple-presenter';
 import { routeToolSimple } from './maestro-v2-router';
@@ -652,9 +654,31 @@ export async function processSimpleQueryWithBrain(
         }
 
         else if (step.tool === 'simularOrcamentoAvulso') {
-          const itens = step.params.itens;
+          if (step.params.addressIndex && v2Ctx.pendingAddressChoice) {
+            const chosenIndex = step.params.addressIndex - 1;
+            const chosenAddress = v2Ctx.pendingAddressChoice.addresses[chosenIndex];
+            if (chosenAddress) {
+              v2Ctx.budgetAddressId = chosenAddress.id;
+              v2Ctx.budgetAddressFull = `${chosenAddress.endereco}, ${chosenAddress.numero} - ${chosenAddress.bairro}, ${chosenAddress.cidade}/${chosenAddress.uf}`;
+            }
+            v2Ctx.pendingAddressChoice = null;
+          }
+
+          const itens = step.params.itens || v2Ctx.orcamentoItens;
           if (!itens || itens.length === 0) {
-            pr = presenterFallback(simpleCtx);
+            pr = {
+              message: {
+                id: 'maestro-msg-' + Date.now(),
+                role: 'maestro',
+                content: `Não encontrei nenhum produto no seu orçamento atual. Por favor, me informe quais produtos você deseja cotar (ex: "5000 triband").`,
+                contentType: 'text',
+                specialist: 'comercial',
+                timestamp: new Date().toISOString(),
+                status: 'completed',
+                confidence: 'high'
+              },
+              activity: []
+            };
           } else {
             // ─── CAMINHO NOVO: usa processarOrcamentoService (catálogo oficial + banco) ───
             // NUNCA usa simularOrcamentoAvulsoDb para o fluxo principal do chat
@@ -665,10 +689,10 @@ export async function processSimpleQueryWithBrain(
             };
 
             const serviceResult = await processarOrcamentoService({
-              query: step.params.itens
-                ? `${itens.map(i => `${i.quantidade} ${i.termo}`).join(' + ')}`
-                : '',
-              state: { ...orcamentoState, itens: itens.map(i => ({ quantidade: i.quantidade, termo: i.termo })) },
+              query: itens && itens.length > 0
+                ? `${itens.map((i: any) => `${i.quantidade} ${i.termo}`).join(' + ')}`
+                : 'restaura',
+              state: { ...orcamentoState, itens: itens.map((i: any) => ({ quantidade: i.quantidade, termo: i.termo })) },
               supabase,
             });
 
@@ -713,7 +737,93 @@ export async function processSimpleQueryWithBrain(
             console.log(`- itens no contexto: ${JSON.stringify(v2Ctx.orcamentoItens)}`);
             console.log('=====================================');
 
-            pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined);
+            // ── NOVA LÓGICA DE ENRIQUECIMENTO ──
+            if (!clientForCtx && (v2Ctx.activeEntities?.clientInternalId || v2Ctx.activeEntities?.clientSearchName)) {
+              let resolveResult = { found: false } as any;
+              
+              if (v2Ctx.activeEntities.clientInternalId) {
+                resolveResult = await buscarClientePorCodigo(supabase, String(v2Ctx.activeEntities.clientInternalId));
+              }
+              
+              if (!resolveResult.found && v2Ctx.activeEntities.clientSearchName) {
+                // Faremos uma consulta manual rápida para checar ambiguidade, pois buscarClientePorTexto sempre pega o 1º
+                const termo = normalizeText(v2Ctx.activeEntities.clientSearchName);
+                if (termo && termo.length >= 3) {
+                  const { data: rows } = await supabase
+                    .from('vw_cadastros_clientes_lista')
+                    .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido')
+                    .ilike('busca_geral', `%${termo}%`)
+                    .order('id_cliente', { ascending: false })
+                    .limit(2);
+                    
+                  if (rows && rows.length > 1) {
+                    resolveResult = { found: false, reason: 'multiple_found', candidates: rows };
+                  } else if (rows && rows.length === 1) {
+                    resolveResult = await buscarClientePorCodigo(supabase, String(rows[0].id_cliente));
+                  }
+                }
+              }
+
+              if (resolveResult.found && resolveResult.client) {
+                clientForCtx = resolveResult.client;
+                // Preenche com o ID interno VERDADEIRO (Integer PK) e nome real
+                v2Ctx.activeEntities!.clientInternalId = clientForCtx!.clientInternalId;
+                v2Ctx.activeEntities!.clientName = clientForCtx!.clientName;
+                v2Ctx.activeEntities!.clientId = clientForCtx!.clientDisplayCode;
+              } else if (resolveResult.reason === 'multiple_found') {
+                v2Ctx.domain = 'cliente';
+                // Fallback simplificado pedindo para o usuário especificar o código
+                pr = {
+                  message: {
+                    id: 'maestro-msg-' + Date.now(),
+                    role: 'maestro',
+                    content: `Encontrei mais de um cliente chamado "${v2Ctx.activeEntities.clientSearchName}". Por favor, me informe o código ou CNPJ exato do cliente para a cotação.`,
+                    contentType: 'text',
+                    specialist: 'comercial',
+                    timestamp: new Date().toISOString(),
+                    status: 'completed',
+                    confidence: 'high'
+                  },
+                  activity: []
+                };
+                return toResult(pr);
+              }
+            }
+
+            // Verifica necessidade de endereço
+            let aguardandoEndereco = false;
+            let solicitandoEnderecoManual = false;
+
+            if (v2Ctx.activeEntities?.clientInternalId && !v2Ctx.budgetAddressId && !v2Ctx.pendingAddressChoice) {
+              const { data: enderecos } = await supabase
+                .from('enderecos')
+                .select('id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf')
+                .eq('id_cliente', v2Ctx.activeEntities.clientInternalId)
+                .limit(10);
+              
+              if (enderecos && enderecos.length === 1) {
+                const end = enderecos[0];
+                v2Ctx.budgetAddressId = end.id;
+                v2Ctx.budgetAddressFull = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
+              } else if (enderecos && enderecos.length > 1) {
+                v2Ctx.pendingAddressChoice = {
+                  clientId: v2Ctx.activeEntities.clientInternalId,
+                  addresses: enderecos
+                };
+                aguardandoEndereco = true;
+              } else {
+                // 0 endereços encontrados para este cliente no banco
+                solicitandoEnderecoManual = true;
+              }
+            }
+
+            if (aguardandoEndereco && v2Ctx.pendingAddressChoice) {
+               pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
+            } else if (solicitandoEnderecoManual) {
+               pr = presenterSolicitarEnderecoManual(clientForCtx);
+            } else {
+               pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull);
+            }
           }
         }
 

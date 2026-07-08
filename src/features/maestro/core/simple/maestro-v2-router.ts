@@ -13,6 +13,7 @@
 import type { SimpleClientContext, LastAnswerRecord } from './maestro-simple-context';
 import type { MaestroV2Context } from './maestro-v2-context-manager';
 import { handleContextContinuation } from './maestro-v2-context-manager';
+import { detectIntent } from './maestro-simple-intents';
 import { processarOrcamentoAvulso } from './maestro-orcamento-engine';
 
 export interface RouterPeriodoMeses {
@@ -62,6 +63,7 @@ export interface RouterStep {
     meses?: RouterPeriodoMeses[];
     periodo?: RouterPeriodo;
     itens?: { quantidade: number; termo: string }[];
+    addressIndex?: number;
   };
 }
 
@@ -129,6 +131,25 @@ export async function routeToolSimple(
     return continuation;
   }
 
+  // Interceptador para escolha de endereço pendente
+  if (v2Ctx.pendingAddressChoice) {
+    const isChoosing = /^(?:use|escolho|escolha|pode usar|quero)?\s*(?:o\s*|endere[cç]o\s*)?(\d+)\b/i.exec(query.trim());
+    if (isChoosing) {
+      console.log(`[MaestroV2Router] Escolha de endereço detectada: índice ${isChoosing[1]}`);
+      return {
+        routed: true,
+        plan: {
+          steps: [
+            {
+              tool: 'simularOrcamentoAvulso',
+              params: { addressIndex: parseInt(isChoosing[1], 10) }
+            }
+          ]
+        }
+      };
+    }
+  }
+
   // 1a. REGRA DETERMINÍSTICA DE ORÇAMENTO AVULSO
   const engineResult = processarOrcamentoAvulso(query, { 
     itens: v2Ctx.domain === 'orcamento_avulso' ? (v2Ctx.orcamentoItens || []) : [], 
@@ -159,6 +180,19 @@ export async function routeToolSimple(
     } else {
       // Comportamento original quando a flag está ligada
       v2Ctx.domain = 'orcamento_avulso';
+      
+      // Em vez de usar detectIntent (que pode falhar em intenções mistas),
+      // extraímos manualmente a menção de cliente na query se houver.
+      const clientMatch = query.match(/\b(?:para\s+o\s+|pro\s+|pra\s+|ao\s+)?(?:cliente|cli|cadastro)\s*(?:[-:]?\s*)?(\d+|[a-z]+)\b/i);
+      if (clientMatch) {
+         const clientTerm = clientMatch[1].trim();
+         if (/^\d+$/.test(clientTerm)) {
+           v2Ctx.activeEntities.clientInternalId = parseInt(clientTerm, 10);
+         } else {
+           v2Ctx.activeEntities.clientSearchName = clientTerm;
+         }
+      }
+
       v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
       v2Ctx.orcamentoItens = engineResult.items;
       v2Ctx.lastRequestedQuantity = engineResult.items[0].quantidade;
@@ -238,7 +272,6 @@ export async function routeToolSimple(
   }
 
   // 1c. Evita chamar LLM para comandos estáticos imediatos seguros
-  const { detectIntent } = require('./maestro-simple-intents');
   const initialIntent = detectIntent(query);
   const isImmediateStatic = ['client_lookup', 'client_switch', 'help', 'closure', 'wait_user'].includes(initialIntent.type);
   if (isImmediateStatic) {

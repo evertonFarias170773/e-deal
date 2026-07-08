@@ -130,6 +130,14 @@ export interface ConversationContext {
 
   orderId?: string;
   specialist?: SpecialistType;
+  activeEntities?: {
+    clientId?: string;
+    clientInternalId?: number;
+    clientName?: string;
+    clientSearchName?: string; // ← Adicionado
+    proposalId?: string;
+    activeIdInt?: number;
+  };
   company?: string;
   intentId?: string;
   intent?: string;

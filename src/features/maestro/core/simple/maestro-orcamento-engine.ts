@@ -34,11 +34,15 @@ export interface OrcamentoResult {
 }
 
 export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoState): OrcamentoResult {
-  const clean = query
+  let clean = query
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // remove acentos
     .trim();
+
+  // Remover menções a cliente para não poluir o nome do produto no parse
+  // Ex: "5000 triband para o cli 8469" vira "5000 triband"
+  clean = clean.replace(/\b(para|pro|pra|ao)?\s*(o\s+)?(cliente|cli|cadastro)\s+(\d+|[a-z]+)\b/gi, ' ').trim();
 
   const nextState = { ...state, itens: [...state.itens] };
 
@@ -51,18 +55,6 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
       errors: [],
       nextState: { itens: [], pendingAmbiguity: false },
       response: 'Orçamento avulso cancelado e limpo.'
-    };
-  }
-
-  // 2. Tratar "cliente 101" (deve ignorar e retornar NONE para deixar o router principal agir)
-  if (/\b(cliente|cli|cadastro)\s*(\d+|[a-z]+)\b/i.test(clean) || /\bc\s*\d+/i.test(clean)) {
-    return {
-      action: 'NONE',
-      items: state.itens,
-      pending: null,
-      errors: [],
-      nextState: state,
-      response: ''
     };
   }
 

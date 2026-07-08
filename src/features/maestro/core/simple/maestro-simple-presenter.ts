@@ -1580,7 +1580,7 @@ export function presenterOrcamentoAvulso(result: OrcamentoAvulsoResult): Present
  * Prefere nomeComercial do catálogo oficial quando o ID foi resolvido por ele.
  * Nunca exibe descrições longas do banco.
  */
-export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, cliente?: SimpleClientContext): PresenterResult {
+export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, cliente?: SimpleClientContext, budgetAddressFull?: string): PresenterResult {
   const { resolucao, totalGeral, errors, temPendencia, nextState } = result;
 
   let allSuccess = !temPendencia && errors.length === 0;
@@ -1611,7 +1611,11 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
     };
   }
 
-  contentText = '📄 Orçamento conforme solicitação\n\n';
+  if (cliente?.clientName) {
+    contentText = `📄 Orçamento para **${cliente.clientName}**\n\n`;
+  } else {
+    contentText = '📄 Orçamento conforme solicitação\n\n';
+  }
 
   let hasErrorsOrInactives = false;
 
@@ -1642,7 +1646,9 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
 
   if (allSuccess && totalGeral !== null) {
     let enderecoDesc = 'Centro | Santa Cruz do Sul / RS';
-    if (cliente?.enderecos?.length) {
+    if (budgetAddressFull) {
+      enderecoDesc = budgetAddressFull;
+    } else if (cliente?.enderecos?.length) {
       const end = cliente.enderecos[0];
       if (end.cidade && end.uf) {
         const bairro = end.bairro ? `${end.bairro} | ` : '';
@@ -1854,4 +1860,58 @@ export function presenterMostrarItensOrcamento(itens: OrcamentoAvulsoItem[]): Pr
   };
 }
 
+export function presenterEscolhaEndereco(pending: { clientId: number, addresses: any[] }): PresenterResult {
+  const opcoesMd = pending.addresses.map((end, idx) => {
+    const endFormatado = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
+    return `**Opção ${idx + 1}**: ${end.tipo_endereco || 'ENTREGA'} - ${endFormatado} (CEP: ${end.cep})`;
+  }).join('\n');
 
+  return {
+    message: {
+      id: 'maestro-msg-' + Date.now(),
+      role: 'maestro',
+      content: `Encontrei ${pending.addresses.length} endereços para este cadastro. Qual deles uso para cotação do frete?\n\n${opcoesMd}\n\nResponda com "use o 1", "use o 2", etc.`,
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: new Date().toISOString(),
+      status: 'completed',
+      confidence: 'high'
+    },
+    activity: [
+      {
+        id: 'escolha-endereco-' + Date.now(),
+        label: `Escolhendo Endereço`,
+        detail: `Cliente ID ${pending.clientId}`,
+        status: 'done',
+        timestamp: new Date().toISOString()
+      }
+    ]
+  };
+}
+
+
+export function presenterSolicitarEnderecoManual(cliente: any): PresenterResult {
+  return {
+    message: {
+      id: 'maestro-msg-' + Date.now(),
+      role: 'maestro',
+      content: `Para prosseguir com a cotação de frete para **${cliente?.clientName || 'este cliente'}**, preciso do endereço ou CEP de destino (nenhum endereço foi encontrado no cadastro).\n\nPor favor, digite o CEP ou endereço completo para calcularmos o frete.`,
+      contentType: 'text',
+      sources: [],
+      specialist: 'comercial',
+      timestamp: new Date().toISOString(),
+      status: 'completed',
+      confidence: 'high'
+    },
+    activity: [
+      {
+        id: 'endereco-manual-' + Date.now(),
+        label: 'Aguardando Endereço',
+        detail: 'Nenhum endereço no cadastro',
+        status: 'done',
+        timestamp: new Date().toISOString()
+      }
+    ]
+  };
+}

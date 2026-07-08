@@ -26,6 +26,24 @@ export interface PendingAmbiguousItem {
   options: PendingAmbiguousOption[];
 }
 
+export interface MaestroEndereco {
+  id: string;
+  id_cliente: number;
+  tipo_endereco: string;
+  cep: string;
+  endereco: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+}
+
+export interface PendingAddressChoice {
+  clientId: number;
+  addresses: MaestroEndereco[];
+}
+
 export interface MaestroV2Context {
   version: number;
   updatedAt: string;
@@ -35,6 +53,7 @@ export interface MaestroV2Context {
     clientId?: string;
     clientInternalId?: number;
     clientName?: string;
+    clientSearchName?: string;
     proposalId?: string;
     activeIdInt?: number;
   };
@@ -48,6 +67,9 @@ export interface MaestroV2Context {
   lastExplicitBudgetRequestText?: string;
   lastExplicitBudgetItems?: OrcamentoAvulsoItem[];
   lastSuccessfulBudgetItems?: OrcamentoAvulsoItem[];
+  budgetAddressId?: string;
+  budgetAddressFull?: string;
+  pendingAddressChoice?: PendingAddressChoice | null;
 }
 
 const CONTEXT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos de validade
@@ -66,7 +88,10 @@ export function getEmptyV2Context(): MaestroV2Context {
     lastRequestedQuantity: undefined,
     lastExplicitBudgetRequestText: undefined,
     lastExplicitBudgetItems: [],
-    lastSuccessfulBudgetItems: []
+    lastSuccessfulBudgetItems: [],
+    budgetAddressId: undefined,
+    budgetAddressFull: undefined,
+    pendingAddressChoice: null
   };
 }
 

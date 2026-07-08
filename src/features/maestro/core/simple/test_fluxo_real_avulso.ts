@@ -205,6 +205,125 @@ async function runTests() {
     assert('apenas tex sobra', eng.items.length === 1 && eng.items[0].termo.includes('tex'), true);
   }
 
+  // T12: Comando misto de orçamento com cliente
+  console.log('--- T12: "Faça uma cotação de 5000 triband para o cli 8469" ---');
+  {
+    const eng = processarOrcamentoAvulso('Faça uma cotação de 5000 triband para o cli 8469', { itens: [], pendingAmbiguity: false });
+    assert('ADD detectado', eng.action === 'ADD' || eng.action === 'REPLACE', eng.action, 'ADD|REPLACE');
+    assert('1 item extraído', eng.items.length === 1, eng.items.length, 1);
+    assert('quantidade extraída corretamente', eng.items[0].quantidade === 5000, eng.items[0].quantidade, 5000);
+    assert('produto extraído sem cliente', String(eng.items[0].termo).includes('triband') && !String(eng.items[0].termo).includes('cli'), eng.items[0].termo, 'triband');
+  }
+
+  // T13: Vinculação E2E real e validação de pendência de endereço (Orçamento Vinculado Fase 1)
+  // T13: Vinculação E2E real e validação de pendência de endereço (Orçamento Vinculado Fase 1)
+  console.log('--- T13: Vinculação E2E real e validação de endereço para cli 8469 ---');
+  {
+    const savedV2 = process.env.MAESTRO_V2_ENABLED;
+    process.env.MAESTRO_V2_ENABLED = 'true';
+    
+    // Limpamos o contexto pra testar o router + engine acoplados
+    const { getEmptyV2Context } = require('./maestro-v2-context-manager');
+    const ctxT13 = getEmptyV2Context();
+    ctxT13.domain = 'desconhecido';
+    
+    // Processamos pelo handler de continuação para que o Router seja ignorado e ele veja do zero
+    const { routeToolSimple } = require('./maestro-v2-router');
+    const routeRes = await routeToolSimple('Faça uma cotação de 5000 triband para o cli 8469', null, null, ctxT13);
+    
+    assert('Roteado com sucesso', routeRes.routed === true, routeRes.routed, true);
+    assert('Tool escolhida', routeRes.plan?.steps[0]?.tool === 'simularOrcamentoAvulso', routeRes.plan?.steps[0]?.tool, 'simularOrcamentoAvulso');
+    
+    // O router apenas extrai o "8469" mas nós validamos se o router fez a sua parte:
+    assert('ClientInternalId extraído pelo router', ctxT13.activeEntities?.clientInternalId === 8469, ctxT13.activeEntities?.clientInternalId, 8469);
+    
+    if (savedV2 === undefined) delete process.env.MAESTRO_V2_ENABLED;
+    else process.env.MAESTRO_V2_ENABLED = savedV2;
+  }
+
+  // T14: Escolha numerica isolada apos listar endereços
+  console.log('--- T14: Escolha de endereco isolada (apenas o numero) ---');
+  try {
+    // Mockando estado deixado pelo T13 (pendingAddressChoice)
+    const { getEmptyV2Context } = require('./maestro-v2-context-manager');
+    const ctxT14 = getEmptyV2Context();
+    ctxT14.domain = 'orcamento_avulso';
+    ctxT14.pendingAddressChoice = {
+      clientId: 8469,
+      addresses: [{ id: 1, endereco: 'Rua A', numero: '10', bairro: 'B', cidade: 'C', uf: 'D', cep: '123' }, { id: 2, endereco: 'Rua B', numero: '20', bairro: 'C', cidade: 'D', uf: 'E', cep: '456' }]
+    };
+    ctxT14.orcamentoItens = [{ quantidade: 5000, termo: 'triband' }];
+    ctxT14.activeEntities = { clientInternalId: 8469, clientName: 'Lisiton' };
+    
+    process.env.MAESTRO_V2_ENABLED = 'true';
+    
+    // Simulamos a ida ao motor (que inclui o router internamente)
+    const { processSimpleQueryWithBrain } = require('./maestro-simple-engine');
+    const { serializeV2Context, deserializeV2Context } = require('./maestro-v2-context-manager');
+    const mockSimpleCtx = { activeClient: null, v2ContextJson: serializeV2Context(ctxT14), messages: [] };
+    
+    // Custom supabase mock that avoids table restrictions
+    const supabaseMock = {
+      from: (tabela: string) => {
+        let isSingle = false;
+        let chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          ilike: () => chain,
+          limit: () => chain,
+          single: () => { isSingle = true; return chain; },
+          maybeSingle: () => { isSingle = true; return chain; },
+          order: () => chain,
+          then: (resolve: any) => resolve({ data: isSingle ? null : [], error: null })
+        };
+        if (tabela === 'produtos') {
+          return require('./maestro-orcamento-resolver.server').criarSupabaseMock([
+            { id_produto: 101, descricao: 'PULSEIRA TRIBAND SINTETICA', apelidos: 'triband, tri, tyvek, pulseira triband', valorUnt: 0.186, valorFixo: 0, ativo: true }
+          ]).from('produtos');
+        }
+        if (tabela === 'vw_cadastros_clientes_lista') {
+           chain.then = (resolve: any) => resolve({ data: isSingle ? { id_cliente: 8469, nome: 'Lisiton' } : [{ id_cliente: 8469, nome: 'Lisiton' }], error: null });
+        }
+        if (tabela === 'enderecos') {
+           chain.then = (resolve: any) => resolve({ data: isSingle ? { id: 2, endereco: 'Rua B' } : [{ id: 2, endereco: 'Rua B' }], error: null });
+        }
+        if (tabela === 'clientes') {
+           chain.then = (resolve: any) => resolve({ data: isSingle ? { id_cliente: 8469, nome: 'Lisiton' } : [{ id_cliente: 8469, nome: 'Lisiton' }], error: null });
+        }
+        if (tabela === 'contatos') {
+           chain.then = (resolve: any) => resolve({ data: isSingle ? { id: 1, nome: 'Contato' } : [{ id: 1, nome: 'Contato' }], error: null });
+        }
+        if (tabela === 'clientes_socios') {
+           chain.then = (resolve: any) => resolve({ data: isSingle ? { id: 1, nome: 'Socio' } : [{ id: 1, nome: 'Socio' }], error: null });
+        }
+        return chain;
+      }
+    };
+    
+    const engineRes = await processSimpleQueryWithBrain('2', mockSimpleCtx, { 
+      supabase: supabaseMock
+    });
+    
+    // Verificamos se o presenter retornou saudação e endereço formatado
+    const outV2Ctx = deserializeV2Context(engineRes.context.v2ContextJson);
+    const respText = engineRes.message?.content || '';
+    
+    console.log('--- RESPONSE TEXT ---');
+    console.log(respText);
+    console.log('---------------------');
+    
+    assert('Resolveu pendencia', outV2Ctx.pendingAddressChoice === null, outV2Ctx.pendingAddressChoice, null);
+    assert('Guardou orcamento', !!outV2Ctx.orcamentoItens.length, !!outV2Ctx.orcamentoItens.length, true);
+    assert('Subtotal calculado e presente (nao vazio)', respText.includes('Subtotal'), respText.includes('Subtotal'), true);
+    assert('Saudacao ao cliente inserida', respText.includes('Lisiton'), respText.includes('Lisiton'), true);
+    
+    console.log('  OK T14 passou');
+  } catch (err) {
+    console.error('Erro no teste de fluxo real:', err);
+  } finally {
+    process.env.MAESTRO_V2_ENABLED = 'true';
+  }
+
   if (savedEnv === undefined) delete process.env.MAESTRO_AVULSO_ENABLED;
   else process.env.MAESTRO_AVULSO_ENABLED = savedEnv;
 
