@@ -278,13 +278,17 @@ export function handleContextContinuation(
   }
 
   // ── 2. COMANDO DE CLIENTE EXPLÍCITO (PRIORIDADE MÁXIMA)
-  const regexClient1 = /\b(cliente|cli|cadastro)\s*([a-z\d]+)/i;
-  const regexClient2 = /\bc\s*\d+/i;
-  if (regexClient1.test(clean) || regexClient2.test(clean)) {
+  // Aceita: cliente, cli, cadastro, liente, clinte, ciente + id_cliente NNN
+  // NÃO aceita: "id 8469" sozinho (sem prefixo explícito de cliente)
+  const regexClientePrefixo = /\b(cliente|cli|cadastro|liente|clinte|ciente)\s*([a-z\d]+)/i;
+  const regexIdCliente      = /\bid[_\s]cliente\s*:?\s*\d+/i;
+  const regexCodigo         = /\bc\s*\d+/i;
+  if (regexClientePrefixo.test(clean) || regexIdCliente.test(clean) || regexCodigo.test(clean)) {
     console.log('[MaestroV2Context] Comando de cliente explícito detectado. Suspendendo orçamento avulso.');
     v2Ctx.domain = 'cliente';
     return null;
   }
+
 
   // ── 3. PERGUNTAS CONTEXTUAIS DE CLIENTE ATIVO (PRIORIDADE ALTA)
   if (activeClient) {

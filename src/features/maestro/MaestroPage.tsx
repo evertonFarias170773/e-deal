@@ -53,7 +53,7 @@ function MaestroLayout() {
           ) : (
             <div className="max-w-4xl mx-auto px-6 py-4">
               {messages.map(msg => (
-                <MaestroMessage key={msg.id} message={msg} />
+                <MaestroMessage key={msg.id} message={msg} onSend={sendMessage} />
               ))}
               {/* Optional fallback loading bubble if there's no thinking message */}
               {isLoading && !messages.some(m => m.status === 'thinking' || m.status === 'streaming') && (

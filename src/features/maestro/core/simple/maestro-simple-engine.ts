@@ -896,9 +896,17 @@ export async function processSimpleQueryWithBrain(
                  serviceResult.totalGeral !== null &&
                  serviceResult.resolucao.every(r => r.status === 'sucesso')
                ) {
-                 // Escolhe o frete mais barato como sugestão padrão
-                 const fretesSorted = [...fretesCalculados].sort((a, b) => a.valor - b.valor);
-                 const freteEscolhido = fretesSorted[0];
+                  // Escolhe o frete sugerido: prioriza Sedex, fallback = menor valor
+                  const freteEscolhido = (() => {
+                    const sedex = fretesCalculados.find(f => {
+                      const transp = (f.transportadora || '').toLowerCase();
+                      const servico = (f.servico || '').toLowerCase();
+                      const id = (f.id || '').toLowerCase();
+                      return transp.includes('sedex') || servico.includes('sedex') || id.includes('sedex');
+                    });
+                    if (sedex) return sedex;
+                    return [...fretesCalculados].sort((a, b) => a.valor - b.valor)[0];
+                  })();
 
                  // Calcula peso total com margem 2%
                  let pesoBase = 0;

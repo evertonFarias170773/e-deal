@@ -232,10 +232,12 @@ async function runTests() {
     const routeRes = await routeToolSimple('Faça uma cotação de 5000 triband para o cli 8469', null, null, ctxT13);
     
     assert('Roteado com sucesso', routeRes.routed === true, routeRes.routed, true);
-    assert('Tool escolhida', routeRes.plan?.steps[0]?.tool === 'simularOrcamentoAvulso', routeRes.plan?.steps[0]?.tool, 'simularOrcamentoAvulso');
-    
-    // O router apenas extrai o "8469" mas nós validamos se o router fez a sua parte:
-    assert('ClientInternalId extraído pelo router', ctxT13.activeEntities?.clientInternalId === 8469, ctxT13.activeEntities?.clientInternalId, 8469);
+    // Fase 3b: produto + cliente → busca cliente primeiro (não avulso puro)
+    assert('Tool escolhida (buscarCliente)', routeRes.plan?.steps[0]?.tool === 'buscarCliente', routeRes.plan?.steps[0]?.tool, 'buscarCliente');
+    assert('Busca passada corretamente', routeRes.plan?.steps[0]?.params?.busca === '8469', routeRes.plan?.steps[0]?.params?.busca, '8469');
+    // Itens devem ter sido preservados no contexto para uso após resolução do cliente
+    assert('Itens preservados no contexto', ctxT13.orcamentoItens?.length === 1, ctxT13.orcamentoItens?.length, 1);
+    assert('Item triband preservado', ctxT13.orcamentoItens?.[0]?.termo?.includes('triband'), ctxT13.orcamentoItens?.[0]?.termo, 'triband');
     
     if (savedV2 === undefined) delete process.env.MAESTRO_V2_ENABLED;
     else process.env.MAESTRO_V2_ENABLED = savedV2;

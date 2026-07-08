@@ -38,6 +38,15 @@ export interface MessageComponent {
 
 export type MessageStatus = 'waiting' | 'thinking' | 'streaming' | 'completed' | 'error';
 
+export interface MaestroAction {
+  /** Texto exibido no botão */
+  label: string;
+  /** Texto enviado ao chat ao clicar, ou URL iniciando com '/' para navegação */
+  value: string;
+  /** Estilo visual do botão */
+  style?: 'primary' | 'danger' | 'default';
+}
+
 export interface ConversationMessage {
   id: string;
   role: MessageRole;
@@ -53,7 +62,10 @@ export interface ConversationMessage {
   
   responseModel?: ResponseModel;
   responseMetadata?: ResponseMetadata;
+  /** Botões de ação inline exibidos abaixo da mensagem */
+  actions?: MaestroAction[];
 }
+
 
 export interface ActivityStep {
   id: string;

@@ -110,7 +110,31 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'proposta_ja_salva',
 ];
 
+/**
+ * Extrai intenção de cliente de uma query mista (produto + cliente).
+ * Aceita: id_cliente NNN, cliente NNN, cli NNN, cadastro NNN, liente NNN, clinte NNN, ciente NNN.
+ * NÃO aceita: "id 8469" sozinho sem prefixo de cliente.
+ */
+function extrairClienteDaQuery(query: string): { tipo: 'id' | 'nome'; valor: string } | null {
+  const norm = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+  // id_cliente 8469 (com underscore ou espaço)
+  const matchIdCliente = /\bid[_\s]cliente\s*:?\s*(\d+)/i.exec(norm);
+  if (matchIdCliente) return { tipo: 'id', valor: matchIdCliente[1] };
+
+  // cliente 8469 / cli 8469 / cadastro 8469 + typos aceitos
+  const matchPrefixo = /\b(cliente|cli|cadastro|liente|clinte|ciente)\s*:?\s*(\d+)/i.exec(norm);
+  if (matchPrefixo) return { tipo: 'id', valor: matchPrefixo[2] };
+
+  // cliente Lisiton / cli Lisiton (nome textual — mínimo 3 chars, sem dígitos)
+  const matchNome = /\b(cliente|cli|cadastro|liente|clinte|ciente)\s+([a-z][a-z\s]{2,30})$/i.exec(norm);
+  if (matchNome) {
+    const nome = matchNome[2].trim();
+    if (!/^\d+$/.test(nome) && nome.length >= 3) return { tipo: 'nome', valor: nome };
+  }
+
+  return null;
+}
 
 /**
  * Roteia a query do usuário para um plano de ferramentas financeiras ou cadastrais estruturado (JSON).
@@ -187,34 +211,26 @@ export async function routeToolSimple(
           ]
         }
       };
-    } else {
-      // Comportamento original quando a flag está ligada
-      v2Ctx.domain = 'orcamento_avulso';
-      
-      // Em vez de usar detectIntent (que pode falhar em intenções mistas),
-      // extraímos manualmente a menção de cliente na query se houver.
-      const clientMatch = query.match(/\b(?:para\s+o\s+|pro\s+|pra\s+|ao\s+)?(?:cliente|cli|cadastro)\s*(?:[-:]?\s*)?(\d+|[a-z]+)\b/i);
-      if (clientMatch) {
-         const clientTerm = clientMatch[1].trim();
-         if (/^\d+$/.test(clientTerm)) {
-           v2Ctx.activeEntities.clientInternalId = parseInt(clientTerm, 10);
-         } else {
-           v2Ctx.activeEntities.clientSearchName = clientTerm;
-         }
-      }
+    }
 
+    // ── VERIFICAÇÃO DE CLIENTE NA QUERY (ANTES de avulso puro) ──────────────
+    // Se a query contém produto + sinal de cliente, busca o cliente primeiro.
+    // Nunca transforma em avulso puro quando há intenção clara de cliente.
+    const clienteNaQuery = extrairClienteDaQuery(query);
+    if (clienteNaQuery) {
+      // Salva os itens no contexto para uso após resolução do cliente
       v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
       v2Ctx.orcamentoItens = engineResult.items;
-      v2Ctx.lastRequestedQuantity = engineResult.items[0].quantidade;
       v2Ctx.lastExplicitBudgetItems = engineResult.items;
       v2Ctx.lastExplicitBudgetRequestText = query;
+      v2Ctx.domain = 'orcamento_avulso'; // mantém domínio para retomada posterior
 
       console.log('====== [MaestroV2Router] LOG DE DEV ======');
       console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
       console.log(`- Mensagem recebida: "${query}"`);
-      console.log(`- Decisão: router normal (inicialização determinística delegada ao motor)`);
-      console.log(`- Tool escolhida: "simularOrcamentoAvulso"`);
-      console.log(`- Itens extraídos: ${JSON.stringify(engineResult.items)}`);
+      console.log(`- Decisão: produto + cliente detectados → buscarCliente primeiro`);
+      console.log(`- Cliente extraído: ${JSON.stringify(clienteNaQuery)}`);
+      console.log(`- Itens preservados: ${JSON.stringify(engineResult.items)}`);
       console.log('==========================================');
 
       return {
@@ -222,14 +238,43 @@ export async function routeToolSimple(
         plan: {
           steps: [
             {
-              tool: 'simularOrcamentoAvulso',
-              params: { itens: engineResult.items }
+              tool: 'buscarCliente',
+              params: { busca: clienteNaQuery.valor }
             }
           ]
         }
       };
     }
+
+    // Sem sinal de cliente — orçamento avulso puro
+    v2Ctx.domain = 'orcamento_avulso';
+    v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+    v2Ctx.orcamentoItens = engineResult.items;
+    v2Ctx.lastRequestedQuantity = engineResult.items[0].quantidade;
+    v2Ctx.lastExplicitBudgetItems = engineResult.items;
+    v2Ctx.lastExplicitBudgetRequestText = query;
+
+    console.log('====== [MaestroV2Router] LOG DE DEV ======');
+    console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
+    console.log(`- Mensagem recebida: "${query}"`);
+    console.log(`- Decisão: router normal (inicialização determinística delegada ao motor)`);
+    console.log(`- Tool escolhida: "simularOrcamentoAvulso"`);
+    console.log(`- Itens extraídos: ${JSON.stringify(engineResult.items)}`);
+    console.log('==========================================');
+
+    return {
+      routed: true,
+      plan: {
+        steps: [
+          {
+            tool: 'simularOrcamentoAvulso',
+            params: { itens: engineResult.items }
+          }
+        ]
+      }
+    };
   }
+
 
   // 1b. REGRA DETERMINÍSTICA DE FALLBACK INTELIGENTE (ESCLARECIMENTO)
   const cleanQuery = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();

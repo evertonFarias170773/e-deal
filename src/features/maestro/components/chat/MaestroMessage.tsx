@@ -1,5 +1,6 @@
 'use client';
 import { Bot, User } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import type { ConversationMessage } from '../../types';
 import { MaestroTableRenderer } from '../renderers/MaestroTableRenderer';
 import { MaestroCardRenderer } from '../renderers/MaestroCardRenderer';
@@ -7,6 +8,7 @@ import { MaestroMessageRenderer } from '../renderers/MaestroMessageRenderer';
 
 interface Props {
   message: ConversationMessage;
+  onSend?: (text: string) => void;
 }
 
 function parseContent(text: string): string {
@@ -15,8 +17,20 @@ function parseContent(text: string): string {
     .replace(/\*(.*?)\*/g, '<em>$1</em>');
 }
 
-export function MaestroMessage({ message }: Props) {
+export function MaestroMessage({ message, onSend }: Props) {
+  const router = useRouter();
   const isUser = message.role === 'user';
+
+  /** Trata o clique num botão de ação:
+   * - Se value começa com '/' → navega via router.push (link interno ao ERP)
+   * - Caso contrário → envia como texto ao chat */
+  function handleAction(value: string) {
+    if (value.startsWith('/')) {
+      router.push(value);
+    } else {
+      onSend?.(value);
+    }
+  }
 
   if (isUser) {
     return (
@@ -46,6 +60,7 @@ export function MaestroMessage({ message }: Props) {
   const isThinking = message.status === 'thinking';
   const isStreaming = message.status === 'streaming';
   const showComponents = message.status === 'completed' && message.components;
+  const showActions = message.status === 'completed' && message.actions && message.actions.length > 0;
 
   return (
     <div className="flex justify-start mb-7 group animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -89,6 +104,35 @@ export function MaestroMessage({ message }: Props) {
               )}
             </div>
           ))}
+
+          {/* Action Buttons */}
+          {showActions && (
+            <div className="flex flex-wrap gap-2 pt-1 animate-in fade-in slide-in-from-bottom-1 duration-500">
+              {message.actions!.map((action, i) => {
+                const isDefault = !action.style || action.style === 'default';
+                const isPrimary = action.style === 'primary';
+                const isDanger = action.style === 'danger';
+                return (
+                  <button
+                    key={i}
+                    onClick={() => handleAction(action.value)}
+                    className={`
+                      px-4 py-1.5 rounded-full text-sm font-medium border transition-all duration-200
+                      focus:outline-none focus:ring-2 focus:ring-offset-1
+                      ${isPrimary
+                        ? 'bg-indigo-500 text-white border-indigo-500 hover:bg-indigo-600 focus:ring-indigo-400'
+                        : isDanger
+                          ? 'border-red-500/40 text-red-500 hover:bg-red-500 hover:text-white focus:ring-red-400'
+                          : 'border-[var(--border)] text-[var(--foreground)] hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-400 focus:ring-indigo-400'
+                      }
+                    `}
+                  >
+                    {action.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
         </div>
       </div>

@@ -54,6 +54,22 @@ function nowTime(): string {
   return new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+/**
+ * Seleciona o frete sugerido: prioriza Sedex (por nome da transportadora ou servi\u00e7o).
+ * Fallback: menor valor dispon\u00edvel.
+ */
+function selecionarFreteSugerido(fretes: PropostaFrete[]): PropostaFrete {
+  const sedex = fretes.find(f => {
+    const transp = (f.transportadora || '').toLowerCase();
+    const servico = (f.servico || '').toLowerCase();
+    const id = (f.id || '').toLowerCase();
+    return transp.includes('sedex') || servico.includes('sedex') || id.includes('sedex');
+  });
+  if (sedex) return sedex;
+  return [...fretes].sort((a, b) => a.valor - b.valor)[0];
+}
+
+
 function formatBRL(v: number | null | undefined): string {
   if (typeof v !== 'number') return 'não disponível';
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -1647,7 +1663,8 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
   });
 
   if (allSuccess && totalGeral !== null) {
-    let enderecoDesc = 'Centro | Santa Cruz do Sul / RS';
+    // Monta linha de endereço apenas se houver endereço real
+    let enderecoDesc: string | null = null;
     if (budgetAddressFull) {
       enderecoDesc = budgetAddressFull;
     } else if (cliente?.enderecos?.length) {
@@ -1660,14 +1677,17 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
       }
     }
 
-    contentText += `-----------------------------\n`;
-    contentText += `📌 ${enderecoDesc}\n`;
-    contentText += `-----------------------------\n\n`;
+    if (enderecoDesc) {
+      contentText += `-----------------------------\n`;
+      contentText += `📌 ${enderecoDesc}\n`;
+      contentText += `-----------------------------\n\n`;
+    }
 
     if (fretes && fretes.length > 0) {
-      // Sort fretes by value ascending to pick the cheapest as default
+      // Exibe todos os fretes ordenados por valor
       const sortedFretes = [...fretes].sort((a, b) => a.valor - b.valor);
-      const fretePadrao = sortedFretes[0];
+      // Prioriza Sedex como frete sugerido; fallback = menor valor
+      const fretePadrao = selecionarFreteSugerido(fretes);
 
       sortedFretes.forEach(f => {
         contentText += `🚚 ${f.transportadora}: ${fmtBRL(f.valor)}\n`;
@@ -1683,23 +1703,10 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
 
       contentText += `💰 Total final: ${totalFinalStr}\n`;
     } else {
-      // Mock fallback
-      contentText += `🚚 Sedex: R$ 29,42\n`;
-      contentText += `Prazo de entrega: 1 dia útil (+ prazo de produção)\n\n`;
-
-      contentText += `🚚 Expresso São Miguel: R$ 50,00\n`;
-      contentText += `Prazo de entrega sob consulta.\n\n`;
-
-      contentText += `🚚 Unesul: R$ 39,00\n`;
-      contentText += `Prazo de entrega sob consulta.\n\n`;
-
-      const subtotalStr = fmtBRL(totalGeral);
-      const totalFinalStr = fmtBRL(totalGeral + 29.42);
-
-      contentText += `🧾 Subtotal produtos: ${subtotalStr}\n`;
-      contentText += `Frete padrão (Sedex): R$ 29,42\n\n`;
-
-      contentText += `💰 Total final: ${totalFinalStr}\n`;
+      // Sem cliente/endereço/CEP — sem frete real disponível
+      contentText += `🧾 Subtotal produtos: ${fmtBRL(totalGeral)}\n`;
+      contentText += `🚚 Frete: a calcular após informar cliente/endereço\n\n`;
+      contentText += `💰 Total (sem frete): ${fmtBRL(totalGeral)}\n`;
     }
   } else if (hasErrorsOrInactives) {
     contentText += `\n*Como houve itens não encontrados, inativos ou com dúvidas, o total geral não foi calculado.*\n`;
@@ -1963,10 +1970,7 @@ export function presenterPerguntarSalvarCotacao(pending: PendingSaveQuotation): 
   lines.push(`**Frete (${pending.freteEscolhido.transportadora}):** ${formatBRL(pending.freteEscolhido.valor)}`);
   lines.push(`**Total:** ${formatBRL(pending.total)}`);
   lines.push(``);
-  lines.push(`Responda:`);
-  lines.push(`• **salvar cotação** — salva como proposta com status NOVO`);
-  lines.push(`• **editar antes** — orienta como editar na tela de Orçamentos`);
-  lines.push(`• **cancelar** — descarta sem salvar nada`);
+  lines.push(`Responda ou use os botões abaixo:`);
 
   return {
     message: {
@@ -1979,6 +1983,11 @@ export function presenterPerguntarSalvarCotacao(pending: PendingSaveQuotation): 
       timestamp: now(),
       status: 'completed',
       confidence: 'high',
+      actions: [
+        { label: '💾 Salvar cotação', value: 'salvar cotação', style: 'primary' },
+        { label: '✏️ Editar antes', value: 'editar antes', style: 'default' },
+        { label: '🚫 Cancelar', value: 'cancelar', style: 'danger' },
+      ],
     },
     activity: [
       {
@@ -2017,6 +2026,9 @@ export function presenterSaveCotacaoSucesso(idInt: number, clientName: string): 
       timestamp: now(),
       status: 'completed',
       confidence: 'high',
+      actions: [
+        { label: `📋 Abrir proposta #${idInt}`, value: `/orcamentos/${idInt}/editar`, style: 'primary' },
+      ],
     },
     activity: [
       {
