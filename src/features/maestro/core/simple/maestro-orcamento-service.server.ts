@@ -168,6 +168,7 @@ export async function processarOrcamentoService(
       ...item,
       produtoId: res.produto?.id_produto,
       precoUnitario: res.produto?.valorUnt ?? undefined,
+      pesoUnitario: res.produto?.peso ?? undefined,
     };
   });
 

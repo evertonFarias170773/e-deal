@@ -4,6 +4,7 @@ export interface OrcamentoAvulsoItem {
   produtoId?: number;
   precoUnitario?: number;
   unidadeMedida?: string;
+  pesoUnitario?: number;
 }
 
 export interface PendingAmbiguousOption {

@@ -11,6 +11,7 @@ export interface OrcamentoAvulsoProdutoDb {
   apelidos: string | null;
   valorUnt: number | null;
   valorFixo: number | null;
+  pesoUnitario?: number | null;
   ativo: boolean;
 }
 
@@ -69,28 +70,29 @@ export async function simularOrcamentoAvulsoDb(
 
     if (!isNaN(parsedId)) {
       const resId = await supabase.from('produtos')
-        .select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo')
+        .select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso')
         .eq('id_produto', parsedId)
         .limit(1);
       console.log(`[MaestroProductsServer] Busca por ID ${parsedId} -> data:`, resId.data, "error:", resId.error);
       if (resId.data && resId.data.length > 0) {
-        data = resId.data as OrcamentoAvulsoProdutoDb[];
+        // Mapeando a resposta para lidar com snake_case vs camelCase
+        data = resId.data.map(p => ({ ...p, pesoUnitario: p.peso })) as OrcamentoAvulsoProdutoDb[];
       }
     }
 
     // Fallback: busca textual normal se não encontrou por ID
     if (data.length === 0) {
       const [resApelido, resDesc] = await Promise.all([
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo').ilike('apelidos', `%${termoOriginal}%`),
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo').ilike('descricao', `%${termoOriginal}%`)
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso').ilike('apelidos', `%${termoOriginal}%`),
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso').ilike('descricao', `%${termoOriginal}%`)
       ]);
 
       const map = new Map<number, OrcamentoAvulsoProdutoDb>();
       if (resApelido.data) {
-        for (const p of resApelido.data as OrcamentoAvulsoProdutoDb[]) map.set(p.id_produto, p);
+        for (const p of resApelido.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
       }
       if (resDesc.data) {
-        for (const p of resDesc.data as OrcamentoAvulsoProdutoDb[]) map.set(p.id_produto, p);
+        for (const p of resDesc.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
       }
       data = Array.from(map.values());
     }

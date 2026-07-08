@@ -69,6 +69,9 @@ export interface MaestroV2Context {
   lastSuccessfulBudgetItems?: OrcamentoAvulsoItem[];
   budgetAddressId?: string;
   budgetAddressFull?: string;
+  budgetAddressCep?: string;
+  budgetAddressCidade?: string;
+  budgetAddressUf?: string;
   pendingAddressChoice?: PendingAddressChoice | null;
 }
 

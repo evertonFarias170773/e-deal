@@ -31,6 +31,8 @@ import type {
 } from './maestro-simple-pagamentos.server';
 import type { OrcamentoAvulsoResult } from './maestro-simple-produtos.server';
 import type { OrcamentoAvulsoItem } from './maestro-v2-context-manager';
+import type { OrcamentoAvulsoItemReq } from './maestro-simple-produtos.server';
+import type { PropostaFrete } from '@/features/orcamentos/types';
 import type { OrcamentoServiceResult } from './maestro-orcamento-service.server';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
@@ -1580,7 +1582,7 @@ export function presenterOrcamentoAvulso(result: OrcamentoAvulsoResult): Present
  * Prefere nomeComercial do catálogo oficial quando o ID foi resolvido por ele.
  * Nunca exibe descrições longas do banco.
  */
-export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, cliente?: SimpleClientContext, budgetAddressFull?: string): PresenterResult {
+export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, cliente?: SimpleClientContext, budgetAddressFull?: string, fretes?: PropostaFrete[]): PresenterResult {
   const { resolucao, totalGeral, errors, temPendencia, nextState } = result;
 
   let allSuccess = !temPendencia && errors.length === 0;
@@ -1662,22 +1664,43 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
     contentText += `📌 ${enderecoDesc}\n`;
     contentText += `-----------------------------\n\n`;
 
-    contentText += `🚚 Sedex: R$ 29,42\n`;
-    contentText += `Prazo de entrega: 1 dia útil (+ prazo de produção)\n\n`;
+    if (fretes && fretes.length > 0) {
+      // Sort fretes by value ascending to pick the cheapest as default
+      const sortedFretes = [...fretes].sort((a, b) => a.valor - b.valor);
+      const fretePadrao = sortedFretes[0];
 
-    contentText += `🚚 Expresso São Miguel: R$ 50,00\n`;
-    contentText += `Prazo de entrega sob consulta.\n\n`;
+      sortedFretes.forEach(f => {
+        contentText += `🚚 ${f.transportadora}: ${fmtBRL(f.valor)}\n`;
+        const prazoStr = typeof f.prazo === 'number' ? `${f.prazo} dia(s) útil(eis)` : (f.prazo || 'Sob consulta');
+        contentText += `Prazo de entrega: ${prazoStr}\n\n`;
+      });
 
-    contentText += `🚚 Unesul: R$ 39,00\n`;
-    contentText += `Prazo de entrega sob consulta.\n\n`;
+      const subtotalStr = fmtBRL(totalGeral);
+      const totalFinalStr = fmtBRL(totalGeral + fretePadrao.valor);
 
-    const subtotalStr = fmtBRL(totalGeral);
-    const totalFinalStr = fmtBRL(totalGeral + 29.42);
+      contentText += `🧾 Subtotal produtos: ${subtotalStr}\n`;
+      contentText += `Frete sugerido (${fretePadrao.transportadora}): ${fmtBRL(fretePadrao.valor)}\n\n`;
 
-    contentText += `🧾 Subtotal produtos: ${subtotalStr}\n`;
-    contentText += `Frete padrão (Sedex): R$ 29,42\n\n`;
+      contentText += `💰 Total final: ${totalFinalStr}\n`;
+    } else {
+      // Mock fallback
+      contentText += `🚚 Sedex: R$ 29,42\n`;
+      contentText += `Prazo de entrega: 1 dia útil (+ prazo de produção)\n\n`;
 
-    contentText += `💰 Total final: ${totalFinalStr}\n`;
+      contentText += `🚚 Expresso São Miguel: R$ 50,00\n`;
+      contentText += `Prazo de entrega sob consulta.\n\n`;
+
+      contentText += `🚚 Unesul: R$ 39,00\n`;
+      contentText += `Prazo de entrega sob consulta.\n\n`;
+
+      const subtotalStr = fmtBRL(totalGeral);
+      const totalFinalStr = fmtBRL(totalGeral + 29.42);
+
+      contentText += `🧾 Subtotal produtos: ${subtotalStr}\n`;
+      contentText += `Frete padrão (Sedex): R$ 29,42\n\n`;
+
+      contentText += `💰 Total final: ${totalFinalStr}\n`;
+    }
   } else if (hasErrorsOrInactives) {
     contentText += `\n*Como houve itens não encontrados, inativos ou com dúvidas, o total geral não foi calculado.*\n`;
   }

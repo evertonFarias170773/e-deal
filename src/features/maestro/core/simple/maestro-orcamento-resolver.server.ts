@@ -38,6 +38,7 @@ export interface ProdutoDb {
   apelidos: string | null;
   valorUnt: number | null;
   valorFixo: number | null;
+  peso?: number | null;
   ativo: boolean;
 }
 
@@ -120,7 +121,7 @@ function extrairIdNumerica(termo: string): number | null {
   return null;
 }
 
-const SELECT_COLS = 'id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo';
+const SELECT_COLS = 'id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso';
 
 // ─── Função principal ──────────────────────────────────────────────────────────
 
@@ -160,7 +161,7 @@ export async function resolverOrcamento(
       if (error) {
         console.error('[OrcamentoResolver] Erro na busca por ID:', error.message);
       } else if (data && data.length > 0) {
-        candidatos = data as ProdutoDb[];
+        candidatos = data.map((p: any) => ({ ...p, pesoUnitario: p.peso })) as ProdutoDb[];
       }
     }
 
@@ -181,7 +182,7 @@ export async function resolverOrcamento(
           if (error) {
             console.error('[OrcamentoResolver] Erro ao buscar por ID do catálogo oficial:', error.message);
           } else if (data && data.length > 0) {
-            candidatos = data as ProdutoDb[];
+            candidatos = data.map((p: any) => ({ ...p, pesoUnitario: p.peso })) as ProdutoDb[];
           } else {
             // Catálogo resolveu mas produto não existe no banco — continua para busca textual
             console.warn(`[OrcamentoResolver] Catálogo oficial resolveu ID ${resolvido.id_produto} mas produto não existe no banco para termo "${termoOriginal}"`);
@@ -208,9 +209,16 @@ export async function resolverOrcamento(
           .ilike('descricao', `%${termoOriginal}%`)
       ]);
 
+      const dataApelido = resApelido.data;
+      const dataDesc = resDesc.data;
       const mapa = new Map<number, ProdutoDb>();
-      for (const p of (resApelido.data ?? []) as ProdutoDb[]) mapa.set(p.id_produto, p);
-      for (const p of (resDesc.data ?? []) as ProdutoDb[]) mapa.set(p.id_produto, p);
+      
+      if (dataDesc) dataDesc.forEach((p: any) => {
+        mapa.set(p.id_produto, { ...p, pesoUnitario: p.peso } as ProdutoDb);
+      });
+      if (dataApelido) dataApelido.forEach((p: any) => {
+        mapa.set(p.id_produto, { ...p, pesoUnitario: p.peso } as ProdutoDb);
+      });
       const todos = Array.from(mapa.values());
 
       if (todos.length > 0) {

@@ -39,6 +39,8 @@ import {
 } from './maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb } from './maestro-simple-produtos.server';
 import { processarOrcamentoService } from './maestro-orcamento-service.server';
+import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from '@/features/orcamentos/services/frete.service';
+import type { PropostaFrete } from '@/features/orcamentos/types';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
 import { detectIntent } from './maestro-simple-intents';
@@ -660,6 +662,9 @@ export async function processSimpleQueryWithBrain(
             if (chosenAddress) {
               v2Ctx.budgetAddressId = chosenAddress.id;
               v2Ctx.budgetAddressFull = `${chosenAddress.endereco}, ${chosenAddress.numero} - ${chosenAddress.bairro}, ${chosenAddress.cidade}/${chosenAddress.uf}`;
+              v2Ctx.budgetAddressCep = chosenAddress.cep;
+              v2Ctx.budgetAddressCidade = chosenAddress.cidade;
+              v2Ctx.budgetAddressUf = chosenAddress.uf;
             }
             v2Ctx.pendingAddressChoice = null;
           }
@@ -699,7 +704,13 @@ export async function processSimpleQueryWithBrain(
             // Atualiza contexto com o estado resolvido pelo service
             if (serviceResult.action !== 'NONE' && serviceResult.action !== 'ERROR') {
               v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
-              v2Ctx.orcamentoItens = serviceResult.items.map(i => ({ quantidade: i.quantidade, termo: i.termo }));
+              v2Ctx.orcamentoItens = serviceResult.items.map(i => ({
+                quantidade: i.quantidade,
+                termo: i.termo,
+                produtoId: i.produtoId,
+                precoUnitario: i.precoUnitario,
+                pesoUnitario: i.pesoUnitario
+              }));
               v2Ctx.lastSuccessfulBudgetItems = serviceResult.errors.length === 0
                 ? JSON.parse(JSON.stringify(v2Ctx.orcamentoItens))
                 : v2Ctx.lastSuccessfulBudgetItems;
@@ -805,6 +816,9 @@ export async function processSimpleQueryWithBrain(
                 const end = enderecos[0];
                 v2Ctx.budgetAddressId = end.id;
                 v2Ctx.budgetAddressFull = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
+                v2Ctx.budgetAddressCep = end.cep;
+                v2Ctx.budgetAddressCidade = end.cidade;
+                v2Ctx.budgetAddressUf = end.uf;
               } else if (enderecos && enderecos.length > 1) {
                 v2Ctx.pendingAddressChoice = {
                   clientId: v2Ctx.activeEntities.clientInternalId,
@@ -822,7 +836,46 @@ export async function processSimpleQueryWithBrain(
             } else if (solicitandoEnderecoManual) {
                pr = presenterSolicitarEnderecoManual(clientForCtx);
             } else {
-               pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull);
+               let fretesCalculados: PropostaFrete[] = [];
+               
+               if (v2Ctx.budgetAddressCep && serviceResult.totalGeral !== null) {
+                 // Calcula pesoTotal
+                 let pesoTotalBase = 0;
+                 serviceResult.items.forEach(i => {
+                   if (i.pesoUnitario && i.quantidade) {
+                     pesoTotalBase += (i.pesoUnitario * i.quantidade);
+                   }
+                 });
+                 
+                 // Aplica 2% de margem e usa Math.ceil para arredondar as gramas para cima
+                 const pesoTotal = Math.ceil(pesoTotalBase * 1.02);
+                 
+                 // Se tem peso válido, consulta APIs
+                 if (pesoTotal > 0) {
+                   const [sedexReq, azulReq, transpReq] = await Promise.allSettled([
+                     solicitarCotacaoSedex({
+                       peso: pesoTotal,
+                       vol: 1, // Default para orçamento
+                       cep: v2Ctx.budgetAddressCep
+                     }),
+                     v2Ctx.budgetAddressUf?.toUpperCase() === 'RS' ? Promise.resolve([]) : solicitarCotacaoAzulCargo({
+                       peso: pesoTotal,
+                       cep: v2Ctx.budgetAddressCep,
+                       valorTotal: serviceResult.totalGeral
+                     }),
+                     v2Ctx.budgetAddressCidade && v2Ctx.budgetAddressUf ? solicitarCotacaoTransportadoras({
+                       peso: pesoTotal,
+                       cidade: v2Ctx.budgetAddressCidade,
+                       uf: v2Ctx.budgetAddressUf
+                     }) : Promise.resolve([])
+                   ]);
+                   
+                   if (sedexReq.status === 'fulfilled') fretesCalculados.push(...sedexReq.value);
+                   if (azulReq.status === 'fulfilled') fretesCalculados.push(...azulReq.value);
+                   if (transpReq.status === 'fulfilled') fretesCalculados.push(...transpReq.value);
+                 }
+               }
+               pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined);
             }
           }
         }
