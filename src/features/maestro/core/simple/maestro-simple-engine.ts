@@ -1186,7 +1186,7 @@ export async function processSimpleQueryWithBrain(
                  pr.message.content += `\n\n⚠️ **Nota:** Esta alteração não afeta a proposta #${idAntigo} já salva no ERP. Você está simulando um novo orçamento.`;
                }
 
-               // ── FASE 3a: Preenche pendingSaveQuotation se tiver tudo necessário
+               // FASE 3a: calcula dados comuns e bifurca por numero de fretes
                if (
                  clientForCtx?.clientInternalId &&
                  v2Ctx.budgetAddressId &&
@@ -1195,31 +1195,15 @@ export async function processSimpleQueryWithBrain(
                  serviceResult.totalGeral !== null &&
                  serviceResult.resolucao.every(r => r.status === 'sucesso')
                ) {
-                  // Escolhe o frete sugerido: prioriza Sedex, fallback = menor valor
-                  const freteEscolhido = (() => {
-                    const sedex = fretesCalculados.find(f => {
-                      const transp = (f.transportadora || '').toLowerCase();
-                      const servico = (f.servico || '').toLowerCase();
-                      const id = (f.id || '').toLowerCase();
-                      return transp.includes('sedex') || servico.includes('sedex') || id.includes('sedex');
-                    });
-                    if (sedex) return sedex;
-                    return [...fretesCalculados].sort((a, b) => a.valor - b.valor)[0];
-                  })();
-
-                 // Calcula peso total com margem 2%
                  let pesoBase = 0;
-                 serviceResult.items.forEach(i => {
-                   if (i.pesoUnitario && i.quantidade) {
-                     pesoBase += (i.pesoUnitario * i.quantidade);
-                   }
+                 serviceResult.items.forEach((i) => {
+                   if (i.pesoUnitario && i.quantidade) pesoBase += (i.pesoUnitario * i.quantidade);
                  });
                  const pesoTotalGramas = Math.ceil(pesoBase * 1.02);
 
-                 // Monta itens para salvar
                  const itensSave = serviceResult.resolucao
-                   .filter(r => r.status === 'sucesso' && r.produto)
-                   .map(r => ({
+                   .filter((r) => r.status === 'sucesso' && r.produto)
+                   .map((r) => ({
                      id_produto: r.produto!.id_produto,
                      nome: r.produto!.descricao,
                      quantidade: r.quantidade,
@@ -1230,89 +1214,142 @@ export async function processSimpleQueryWithBrain(
                    }));
 
                  const subtotal = serviceResult.totalGeral;
-                 const total = subtotal + freteEscolhido.valor;
+                 const clientNameFase3 = clientForCtx.clientName || clientForCtx.clientFantasia || 'Cliente';
+                 const enderecoFullFase3 = v2Ctx.budgetAddressFull || '';
 
-                 v2Ctx.pendingSaveQuotation = {
-                   clientInternalId: clientForCtx.clientInternalId!,
-                   clientName: clientForCtx.clientName || clientForCtx.clientFantasia || 'Cliente',
-                   enderecoId: v2Ctx.budgetAddressId,
-                   cep: v2Ctx.budgetAddressCep,
-                   cidade: v2Ctx.budgetAddressCidade || '',
-                   uf: v2Ctx.budgetAddressUf || '',
-                   enderecoFull: v2Ctx.budgetAddressFull || '',
-                   itens: itensSave,
-                   freteEscolhido: {
-                     id: freteEscolhido.id,
-                     servico: freteEscolhido.servico,
-                     transportadora: freteEscolhido.transportadora,
-                     valor: freteEscolhido.valor,
-                     prazo: freteEscolhido.prazo,
-                     pesoUsado: freteEscolhido.pesoUsado,
-                     id_cotacao: freteEscolhido.id_cotacao,
-                   },
-                   fretes: fretesCalculados,
-                   subtotal,
-                   total,
-                   pesoTotalGramas,
-                   timestamp: new Date().toISOString(),
-                   savedIdInt: undefined,
-                 };
+                 if (fretesCalculados.length > 1) {
+                   // Multiplas transportadoras: salva rascunho e pede escolha numerada
+                   v2Ctx.pendingFreightChoice = {
+                     clientInternalId: clientForCtx.clientInternalId!,
+                     clientName: clientNameFase3,
+                     enderecoId: v2Ctx.budgetAddressId,
+                     enderecoFull: enderecoFullFase3,
+                     cep: v2Ctx.budgetAddressCep,
+                     cidade: v2Ctx.budgetAddressCidade || '',
+                     uf: v2Ctx.budgetAddressUf || '',
+                     itens: itensSave,
+                     subtotal,
+                     pesoTotalGramas,
+                     fretes: fretesCalculados.map((f: any) => ({
+                       id: f.id ?? f.servico,
+                       servico: f.servico,
+                       transportadora: f.transportadora,
+                       valor: f.valor,
+                       prazo: f.prazo,
+                       pesoUsado: f.pesoUsado ?? pesoTotalGramas,
+                       id_cotacao: f.id_cotacao ? String(f.id_cotacao) : undefined,
+                     })),
+                   };
+                   console.log('[MaestroEngine] pendingFreightChoice salvo - aguardando escolha de transportadora');
+                   const { presenterEscolhaTransportadora } = await import('./maestro-simple-presenter');
+                   pr = presenterEscolhaTransportadora(clientNameFase3, enderecoFullFase3, itensSave, subtotal, fretesCalculados);
 
-                 console.log('[MaestroEngine] pendingSaveQuotation preenchida:', v2Ctx.pendingSaveQuotation.clientName);
+                 } else {
+                   // Apenas 1 frete: finaliza direto
+                   const freteEscolhido = fretesCalculados[0];
+                   const total = subtotal + freteEscolhido.valor;
 
-                 // ── Grava activeQuote snapshot (cotação ativa conversável) ──────────
-                 // Este snapshot permite que o P4 responda perguntas sobre subtotal,
-                 // total, fretes, endereço, itens e peso sem precisar do Brain.
-                 v2Ctx.activeQuote = {
-                   createdAt: new Date().toISOString(),
-                   clientInternalId: clientForCtx.clientInternalId!,
-                   clientName: clientForCtx.clientName || clientForCtx.clientFantasia || 'Cliente',
-                   itens: itensSave.map((it: any) => ({
-                     id_produto: it.id_produto,
-                     nome: it.nome,
-                     quantidade: it.quantidade,
-                     valorUnitario: it.valorUnitario,
-                     valorFixo: it.valorFixo,
-                     subtotal: it.subtotal,
-                     pesoUnitario: it.pesoUnitario ?? 0,
-                   })),
-                   enderecoId: v2Ctx.budgetAddressId,
-                   enderecoFull: v2Ctx.budgetAddressFull || '',
-                   cep: v2Ctx.budgetAddressCep,
-                   cidade: v2Ctx.budgetAddressCidade || '',
-                   uf: v2Ctx.budgetAddressUf || '',
-                   fretes: fretesCalculados.map((f: any) => ({
-                     id: f.id ?? f.servico,
-                     servico: f.servico,
-                     transportadora: f.transportadora,
-                     valor: f.valor,
-                     prazo: f.prazo,
-                     pesoUsado: f.pesoUsado ?? pesoTotalGramas,
-                   })),
-                   freteSelecionado: {
-                     id: freteEscolhido.id ?? freteEscolhido.servico,
-                     servico: freteEscolhido.servico,
-                     transportadora: freteEscolhido.transportadora,
-                     valor: freteEscolhido.valor,
-                     prazo: freteEscolhido.prazo,
-                     pesoUsado: freteEscolhido.pesoUsado ?? pesoTotalGramas,
-                   },
-                   subtotalProdutos: subtotal,
-                   total,
-                   pesoTotalGramas,
-                   status: 'nao_salva',
-                 };
-                 console.log('[MaestroEngine] activeQuote gravado para cliente:', v2Ctx.activeQuote.clientName, '| total:', total);
+                   v2Ctx.pendingSaveQuotation = {
+                     clientInternalId: clientForCtx.clientInternalId!,
+                     clientName: clientNameFase3,
+                     enderecoId: v2Ctx.budgetAddressId,
+                     cep: v2Ctx.budgetAddressCep ?? '',
+                     cidade: v2Ctx.budgetAddressCidade || '',
+                     uf: v2Ctx.budgetAddressUf || '',
+                     enderecoFull: enderecoFullFase3,
+                     itens: itensSave,
+                     freteEscolhido: { id: freteEscolhido.id, servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo, pesoUsado: freteEscolhido.pesoUsado, id_cotacao: freteEscolhido.id_cotacao },
+                     fretes: fretesCalculados,
+                     subtotal,
+                     total,
+                     pesoTotalGramas,
+                     timestamp: new Date().toISOString(),
+                     savedIdInt: undefined,
+                   };
 
-                 // Adiciona a pergunta de save ao conteúdo do presenter
-                 const { presenterPerguntarSalvarCotacao: perguntarSave } = await import('./maestro-simple-presenter');
-                 const prSave = perguntarSave(v2Ctx.pendingSaveQuotation);
-                 // Concatena a pergunta de save ao message
-                 pr.message.content = pr.message.content + '\n\n' + prSave.message.content;
+                   v2Ctx.activeQuote = {
+                     createdAt: new Date().toISOString(),
+                     clientInternalId: clientForCtx.clientInternalId,
+                     clientName: clientNameFase3,
+                     itens: itensSave.map((it) => ({ id_produto: it.id_produto, nome: it.nome, quantidade: it.quantidade, valorUnitario: it.valorUnitario, valorFixo: it.valorFixo, subtotal: it.subtotal, pesoUnitario: it.pesoUnitario ?? 0 })),
+                     enderecoId: v2Ctx.budgetAddressId,
+                     enderecoFull: enderecoFullFase3,
+                     cep: v2Ctx.budgetAddressCep,
+                     cidade: v2Ctx.budgetAddressCidade || '',
+                     uf: v2Ctx.budgetAddressUf || '',
+                     fretes: fretesCalculados.map((f) => ({ id: f.id ?? f.servico, servico: f.servico, transportadora: f.transportadora, valor: f.valor, prazo: f.prazo, pesoUsado: f.pesoUsado ?? pesoTotalGramas })),
+                     freteSelecionado: { id: freteEscolhido.id ?? freteEscolhido.servico, servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo, pesoUsado: freteEscolhido.pesoUsado ?? pesoTotalGramas },
+                     subtotalProdutos: subtotal,
+                     total,
+                     pesoTotalGramas,
+                     status: 'nao_salva',
+                   };
+                   console.log('[MaestroEngine] activeQuote (1 frete) gravado:', clientNameFase3, '| total:', total);
+
+                   const { presenterPerguntarSalvarCotacao: perguntarSave } = await import('./maestro-simple-presenter');
+                   const prSave = perguntarSave(v2Ctx.pendingSaveQuotation!);
+                   pr.message.content = pr.message.content + '\n\n' + prSave.message.content;
+                 }
                }
             }
           }
         }
+        else if ((step.tool as string) === 'confirmar_frete_cotacao') {
+          const draft = v2Ctx.pendingFreightChoice;
+          if (!draft || draft.fretes.length === 0) {
+            pr = { message: { id: 'maestro-msg-' + Date.now(), role: 'maestro', content: 'Nenhuma selecao de transportadora pendente. Por favor, gere uma cotacao primeiro.', contentType: 'text', specialist: 'comercial', timestamp: new Date().toISOString(), status: 'completed', confidence: 'medium' }, activity: [] };
+          } else {
+            const idx = Math.max(1, Math.min(step.params.freteIndex ?? 1, draft.fretes.length));
+            const freteEscolhido = draft.fretes[idx - 1];
+            const total = draft.subtotal + freteEscolhido.valor;
+
+            v2Ctx.activeQuote = {
+              createdAt: new Date().toISOString(),
+              clientInternalId: draft.clientInternalId,
+              clientName: draft.clientName,
+              itens: draft.itens.map((it) => ({ id_produto: it.id_produto, nome: it.nome, quantidade: it.quantidade, valorUnitario: it.valorUnitario, valorFixo: it.valorFixo, subtotal: it.subtotal, pesoUnitario: it.pesoUnitario ?? 0 })),
+              enderecoId: draft.enderecoId != null ? String(draft.enderecoId) : '',
+              enderecoFull: draft.enderecoFull,
+              cep: draft.cep ?? '',
+              cidade: draft.cidade,
+              uf: draft.uf,
+              fretes: draft.fretes.map((f) => ({ id: f.id ?? f.servico, servico: f.servico, transportadora: f.transportadora, valor: f.valor, prazo: f.prazo ?? '', pesoUsado: f.pesoUsado ?? draft.pesoTotalGramas })),
+              freteSelecionado: { id: freteEscolhido.id ?? freteEscolhido.servico, servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo ?? '', pesoUsado: freteEscolhido.pesoUsado ?? draft.pesoTotalGramas },
+              subtotalProdutos: draft.subtotal,
+              total,
+              pesoTotalGramas: draft.pesoTotalGramas,
+              status: 'nao_salva',
+            };
+
+            v2Ctx.pendingSaveQuotation = {
+              clientInternalId: draft.clientInternalId,
+              clientName: draft.clientName,
+              enderecoId: draft.enderecoId != null ? String(draft.enderecoId) : '',
+              cep: draft.cep ?? '',
+              cidade: draft.cidade,
+              uf: draft.uf,
+              enderecoFull: draft.enderecoFull,
+              itens: draft.itens,
+              freteEscolhido: { id: freteEscolhido.id ?? '', servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo ?? '', pesoUsado: freteEscolhido.pesoUsado ?? 0, id_cotacao: freteEscolhido.id_cotacao ? parseInt(freteEscolhido.id_cotacao, 10) || undefined : undefined },
+              fretes: draft.fretes as any[],
+              subtotal: draft.subtotal,
+              total,
+              pesoTotalGramas: draft.pesoTotalGramas,
+              timestamp: new Date().toISOString(),
+              savedIdInt: undefined,
+            };
+
+            v2Ctx.pendingFreightChoice = null;
+            console.log('[MaestroEngine] confirmar_frete_cotacao:', freteEscolhido.transportadora, '| total:', total);
+
+            const { presenterConsultarCotacaoAtiva } = await import('./maestro-simple-presenter');
+            pr = presenterConsultarCotacaoAtiva(v2Ctx.activeQuote!, 'resumo');
+            const { presenterPerguntarSalvarCotacao: perguntarSave2 } = await import('./maestro-simple-presenter');
+            const prSave2 = perguntarSave2(v2Ctx.pendingSaveQuotation!);
+            pr.message.content = pr.message.content + '\n\n' + prSave2.message.content;
+          }
+        }
+
         else if (step.tool === 'consultar_fretes_cotacao') {
           if (v2Ctx.pendingSaveQuotation && v2Ctx.pendingSaveQuotation.fretes && v2Ctx.pendingSaveQuotation.fretes.length > 0) {
             const { presenterConsultarFretesCotacao } = await import('./maestro-simple-presenter');

@@ -2369,3 +2369,71 @@ export function presenterFreteNaoDisponivel(fretes: ActiveQuoteSnapshot['fretes'
     lastAnswerUpdate: null,
   };
 }
+
+/** Apresenta itens + subtotal + lista numerada de transportadoras para escolha.
+ *  Análogo ao presenterEscolhaEndereco — usuário responde com "1", "2", etc.
+ *  Destaca a opção de menor preço com 💚.
+ */
+export function presenterEscolhaTransportadora(
+  clientName: string,
+  enderecoFull: string,
+  itens: Array<{ nome: string; quantidade: number; subtotal: number }>,
+  subtotal: number,
+  fretes: Array<{ transportadora: string; servico: string; valor: number; prazo?: string }>
+): PresenterResult {
+  const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const menorValor = Math.min(...fretes.map(f => f.valor));
+
+  const listaItens = itens
+    .map(it => `🎟️ ${it.nome}\n📦 Quantidade: ${it.quantidade.toLocaleString('pt-BR')} unidades — ${fmtBRL(it.subtotal)}`)
+    .join('\n\n');
+
+  const listaOpcoes = fretes.length > 2
+    ? fretes.map((_, i) => `"${i + 1}"`).join(', ')
+    : fretes.map((_, i) => `"${i + 1}"`).join(' ou ');
+
+  const listaFretes = fretes
+    .map((f, i) => {
+      const destaque = f.valor === menorValor ? ' 💚 menor preço' : '';
+      const prazo = f.prazo ? ` — Prazo: ${f.prazo}` : '';
+      return `Opção ${i + 1}: ${f.transportadora} — ${fmtBRL(f.valor)}${prazo}${destaque}`;
+    })
+    .join('\n');
+
+  const content = [
+    `📄 Orçamento para ${clientName}`,
+    ``,
+    listaItens,
+    ``,
+    `-----------------------------`,
+    `📌 ${enderecoFull}`,
+    `-----------------------------`,
+    ``,
+    `🧾 Subtotal produtos: ${fmtBRL(subtotal)}`,
+    ``,
+    `🚚 Escolha a transportadora para entrega:`,
+    ``,
+    listaFretes,
+    ``,
+    `Responda com ${listaOpcoes}:`,
+  ].join('\n');
+
+  return {
+    message: {
+      id:          genId('frete-choice'),
+      role:        'maestro',
+      content,
+      contentType: 'text',
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'high',
+    },
+    activity: [
+      { id: 'step-1', label: 'Produtos calculados',                    status: 'done',    timestamp: nowTime() },
+      { id: 'step-2', label: 'Fretes calculados',                      status: 'done',    timestamp: nowTime() },
+      { id: 'step-3', label: 'Aguardando escolha de transportadora',   status: 'pending', timestamp: nowTime() },
+    ],
+    lastAnswerUpdate: null,
+  };
+}

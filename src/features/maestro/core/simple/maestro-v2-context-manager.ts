@@ -213,6 +213,36 @@ export interface MaestroV2Context {
   pendingClientSearchTerm?: string | null;
   /** Itens do orçamento pendentes para o candidato confirmado */
   pendingBudgetForCandidate?: OrcamentoAvulsoItem[] | null;
+  /** Seleção de transportadora pendente — usuário escolhe por número (análogo ao endereço) */
+  pendingFreightChoice?: {
+    clientInternalId: number;
+    clientName: string;
+    enderecoId?: string | number;
+    enderecoFull: string;
+    cep?: string;
+    cidade: string;
+    uf: string;
+    itens: Array<{
+      id_produto: number;
+      nome: string;
+      quantidade: number;
+      valorUnitario: number;
+      valorFixo: number;
+      subtotal: number;
+      pesoUnitario: number;
+    }>;
+    subtotal: number;
+    pesoTotalGramas: number;
+    fretes: Array<{
+      id?: string;
+      servico: string;
+      transportadora: string;
+      valor: number;
+      prazo?: string;
+      pesoUsado?: number;
+      id_cotacao?: string;
+    }>;
+  } | null;
 }
 
 const CONTEXT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos de validade
@@ -241,6 +271,7 @@ export function getEmptyV2Context(): MaestroV2Context {
     pendingClientCandidates: null,
     pendingClientSearchTerm: null,
     pendingBudgetForCandidate: null,
+    pendingFreightChoice: null,
   };
 }
 
@@ -500,6 +531,20 @@ export function handleContextContinuation(
       };
     }
     // Perguntas sobre frete pós-save são tratadas pelo P4 abaixo (activeQuote)
+  }
+
+  // ── P3.5: ESCOLHA DE TRANSPORTADORA PENDENTE (análogo ao endereço) ─────────
+  // Se há seleção de transportadora pendente e usuário digitou um número, confirmar
+  if (v2Ctx.pendingFreightChoice) {
+    const isChoosing = /^(?:(?:use?|escolho|quero|pode|coloca|opç[aã]o)\s+(?:a\s+|o\s+|))?(?:op[cç][aã]o\s+)?(\d+)\b/i.exec(clean.trim());
+    if (isChoosing) {
+      const idx = parseInt(isChoosing[1], 10);
+      console.log(`[MaestroV2Context] P3.5: escolha de transportadora índice ${idx}`);
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'confirmar_frete_cotacao', params: { freteIndex: idx } }] }
+      };
+    }
   }
 
   // ── P4. PERGUNTA OU ALTERAÇÃO SOBRE COTAÇÃO ATIVA ────────────────────────

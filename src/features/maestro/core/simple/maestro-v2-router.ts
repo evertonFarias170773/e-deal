@@ -62,7 +62,9 @@ export type AllowedToolName =
   | 'consultar_cotacao_ativa'
   | 'trocar_frete_cotacao_ativa'
   | 'iniciar_troca_endereco_cotacao'
-  | 'frete_nao_disponivel';
+  | 'frete_nao_disponivel'
+  // Escolha de transportadora numerada
+  | 'confirmar_frete_cotacao';
 
 export interface RouterStep {
   tool: AllowedToolName;
@@ -83,6 +85,8 @@ export interface RouterStep {
     query?: string;
     /** Para trocar_frete_cotacao_ativa: id do frete escolhido */
     freteId?: string;
+    /** Para confirmar_frete_cotacao: índice (1-based) da transportadora escolhida */
+    freteIndex?: number;
     /** Para frete_nao_disponivel: transportadora mencionada */
     mentioned?: string;
   };
@@ -132,6 +136,8 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'trocar_frete_cotacao_ativa',
   'iniciar_troca_endereco_cotacao',
   'frete_nao_disponivel',
+  // Escolha de transportadora numerada
+  'confirmar_frete_cotacao',
 ];
 
 /**
@@ -203,6 +209,21 @@ export async function routeToolSimple(
               params: { addressIndex: parseInt(isChoosing[1], 10) }
             }
           ]
+        }
+      };
+    }
+  }
+
+  // Interceptador para escolha de transportadora pendente (análogo ao endereço)
+  if (v2Ctx.pendingFreightChoice) {
+    const isChoosing = /^(?:(?:use?|escolho|quero|pode|coloca|op[cç][aã]o)\s+(?:a\s+|o\s+|))?(?:op[cç][aã]o\s+)?(\d+)\b/i.exec(query.trim());
+    if (isChoosing) {
+      const idx = parseInt(isChoosing[1], 10);
+      console.log(`[MaestroV2Router] Escolha de transportadora detectada: índice ${idx}`);
+      return {
+        routed: true,
+        plan: {
+          steps: [{ tool: 'confirmar_frete_cotacao', params: { freteIndex: idx } }]
         }
       };
     }
