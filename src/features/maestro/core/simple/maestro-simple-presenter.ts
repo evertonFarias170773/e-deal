@@ -2080,7 +2080,6 @@ export function presenterPerguntarSalvarCotacao(pending: PendingSaveQuotation): 
       confidence: 'high',
       actions: [
         { label: '💾 Salvar cotação', value: 'salvar cotação', style: 'primary' },
-        { label: '✏️ Editar antes', value: 'editar antes', style: 'default' },
         { label: '🚫 Cancelar', value: 'cancelar', style: 'danger' },
       ],
     },
