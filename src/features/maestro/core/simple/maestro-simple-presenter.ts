@@ -227,6 +227,27 @@ export function presenterClienteNaoEncontrado(busca: string): PresenterResult {
   };
 }
 
+export function presenterClienteMultiplosCandidatos(busca: string, candidates: any[]): PresenterResult {
+  const lista = candidates.map((c, i) => `${i + 1}. **${c.nome}**${c.fantasia ? ` (${c.fantasia})` : ''}\n   *Documento: ${c.documento || 'ND'} — Cidade: ${c.cidade_uf || 'ND'} (Código: ${c.id_cliente})*`).join('\n\n');
+  return {
+    message: {
+      id:          genId(),
+      role:        'maestro',
+      content:     `Não encontrei exatamente o nome **"${busca}"**, mas encontrei ${candidates.length} cadastros parecidos. Deseja usar algum destes?\n\n${lista}\n\n*Responda com o código do cliente desejado.*`,
+      contentType: 'text',
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'medium',
+    },
+    activity: [
+      { id: 'step-1', label: 'Consultando cliente no ERP', status: 'done',  timestamp: nowTime() },
+      { id: 'step-2', label: 'Candidatos parciais encontrados', status: 'done', timestamp: nowTime() },
+    ],
+    lastAnswerUpdate: null,
+  };
+}
+
 export function presenterClienteErroAuth(): PresenterResult {
   return {
     message: {
@@ -2148,6 +2169,47 @@ export function presenterErroSaveCotacao(errorMessage: string, bloqueadoPorConta
       confidence: 'high',
     },
     activity: [],
+  };
+}
+
+/**
+ * Resposta para consultar os fretes da cotação ativa no contexto V2.
+ */
+export function presenterConsultarFretesCotacao(pendingQuotation: any): PresenterResult {
+  const fretes = pendingQuotation.fretes || [];
+  if (fretes.length === 0) {
+    return {
+      message: {
+        id: genId('frete-vazio'),
+        role: 'maestro',
+        content: 'Não encontrei nenhuma opção de frete retornada para essa cotação.',
+        contentType: 'text',
+        timestamp: now(),
+        status: 'completed'
+      },
+      activity: []
+    };
+  }
+
+  let contentText = 'Aqui estão as opções de frete retornadas para esta cotação:\n\n';
+  fretes.forEach((f: any) => {
+    const isSedex = f.servico?.toLowerCase().includes('sedex') || f.transportadora?.toLowerCase().includes('sedex');
+    const badge = isSedex ? ' 🚀' : '';
+    contentText += `- **${f.transportadora}** (${f.servico})${badge}: ${fmtBRL(f.valor)} — Prazo: ${f.prazo}\n`;
+  });
+
+  return {
+    message: {
+      id: genId('frete-info'),
+      role: 'maestro',
+      content: contentText,
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high'
+    },
+    activity: []
   };
 }
 

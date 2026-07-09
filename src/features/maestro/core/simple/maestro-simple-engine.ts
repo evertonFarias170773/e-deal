@@ -56,6 +56,7 @@ import {
 import {
   presenterClienteEncontrado,
   presenterClienteNaoEncontrado,
+  presenterClienteMultiplosCandidatos,
   presenterClienteErroAuth,
   presenterClienteSummary,
   presenterCampoContextual,
@@ -559,6 +560,8 @@ export async function processSimpleQueryWithBrain(
             clientForCtx = lookupResult.client;
           } else if (lookupResult.reason === 'auth_error') {
             pr = presenterClienteErroAuth();
+          } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
+            pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
           } else {
             pr = presenterClienteNaoEncontrado(busca);
           }
@@ -857,15 +860,15 @@ export async function processSimpleQueryWithBrain(
                    }
                  });
                  
-                 // Aplica 2% de margem e usa Math.ceil para arredondar as gramas para cima
-                 const pesoTotal = Math.ceil(pesoTotalBase * 1.02);
+                 const pesoTotal = pesoTotalBase;
+                 const volumesBase = Math.max(1, Math.ceil(pesoTotal / 14500));
                  
                  // Se tem peso válido, consulta APIs
                  if (pesoTotal > 0) {
                    const [sedexReq, azulReq, transpReq] = await Promise.allSettled([
                      solicitarCotacaoSedex({
                        peso: pesoTotal,
-                       vol: 1, // Default para orçamento
+                       vol: volumesBase,
                        cep: v2Ctx.budgetAddressCep
                      }),
                      v2Ctx.budgetAddressUf?.toUpperCase() === 'RS' ? Promise.resolve([]) : solicitarCotacaoAzulCargo({
@@ -886,6 +889,16 @@ export async function processSimpleQueryWithBrain(
                  }
                }
                pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined);
+
+               // ── FASE 3c: Se houve mutação em orçamento já salvo, desvincula e avisa
+               if (
+                 v2Ctx.pendingSaveQuotation?.savedIdInt &&
+                 ['ADD', 'UPDATE_QTD', 'REMOVE', 'REPLACE', 'RESTORE'].includes(serviceResult.action)
+               ) {
+                 const idAntigo = v2Ctx.pendingSaveQuotation.savedIdInt;
+                 v2Ctx.pendingSaveQuotation = null; // desvincula
+                 pr.message.content += `\n\n⚠️ **Nota:** Esta alteração não afeta a proposta #${idAntigo} já salva no ERP. Você está simulando um novo orçamento.`;
+               }
 
                // ── FASE 3a: Preenche pendingSaveQuotation se tiver tudo necessário
                if (
@@ -951,6 +964,7 @@ export async function processSimpleQueryWithBrain(
                      pesoUsado: freteEscolhido.pesoUsado,
                      id_cotacao: freteEscolhido.id_cotacao,
                    },
+                   fretes: fretesCalculados,
                    subtotal,
                    total,
                    pesoTotalGramas,
@@ -967,6 +981,22 @@ export async function processSimpleQueryWithBrain(
                  pr.message.content = pr.message.content + '\n\n' + prSave.message.content;
                }
             }
+          }
+        }
+        else if (step.tool === 'consultar_fretes_cotacao') {
+          if (v2Ctx.pendingSaveQuotation && v2Ctx.pendingSaveQuotation.fretes && v2Ctx.pendingSaveQuotation.fretes.length > 0) {
+            const { presenterConsultarFretesCotacao } = await import('./maestro-simple-presenter');
+            pr = presenterConsultarFretesCotacao(v2Ctx.pendingSaveQuotation);
+          } else {
+            pr = {
+              message: {
+                id: 'maestro-msg-' + Date.now(),
+                role: 'maestro',
+                content: "Não encontrei opções de frete na cotação ativa.",
+                timestamp: new Date().toISOString()
+              },
+              activity: []
+            };
           }
         }
 

@@ -21,6 +21,7 @@ export interface MaestroClientLookupResult {
   found: boolean;
   reason?: 'not_found' | 'auth_error' | 'multiple';
   client?: SimpleClientContext | null;
+  candidates?: Array<{ id_cliente: number; nome: string; fantasia: string; documento: string; cidade_uf: string }>;
 }
 
 function toStr(val: any): string {
@@ -351,13 +352,22 @@ export async function buscarClientePorTexto(
   const t = normalizeSearchTerm(termo);
   if (!t || t.length < 3) return { found: false, reason: 'not_found' };
 
+  const weakWords = ['tem', 'cliente', 'chamado', 'sobre', 'o', 'a', 'de', 'do', 'da', 'e'];
+  const words = t.split(' ').filter(w => w.length > 0 && !weakWords.includes(w));
+  if (words.length === 0) return { found: false, reason: 'not_found' };
+
   try {
-    const { data: rows, error } = await supabase
+    let query = supabase
       .from('vw_cadastros_clientes_lista')
-      .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido')
-      .ilike('busca_geral', `%${t}%`)
+      .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido');
+      
+    words.forEach(w => {
+      query = query.ilike('busca_geral', `%${w}%`);
+    });
+
+    const { data: rows, error } = await query
       .order('id_cliente', { ascending: false })
-      .limit(2);
+      .limit(5);
 
     if (error) {
       if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
@@ -370,15 +380,37 @@ export async function buscarClientePorTexto(
       return { found: false, reason: 'not_found' };
     }
 
-    // Se retornar mais de 1, ainda assim pegamos o mais recente.
-    // Em implementações futuras podemos tratar múltiplos resultados.
-    const row = rows[0];
+    let row = rows[0];
+    if (rows.length > 1) {
+      const rawT = termo.toLowerCase().trim();
+      const exactMatch = rows.find(r => 
+        r.id_cliente_text === t || 
+        r.documento.replace(/[^\d]/g, '') === t.replace(/[^\d]/g, '') ||
+        r.nome.toLowerCase() === rawT ||
+        (r.fantasia && r.fantasia.toLowerCase() === rawT)
+      );
+      
+      if (exactMatch) {
+        row = exactMatch;
+      } else {
+        return { 
+          found: false, 
+          reason: 'multiple', 
+          candidates: rows.map(r => ({
+            id_cliente: r.id_cliente,
+            nome: r.nome,
+            fantasia: r.fantasia,
+            documento: r.documento,
+            cidade_uf: r.cidade_uf
+          })) 
+        };
+      }
+    }
 
     // 2. Enriquece
     const detailedClient = await buildDetailedClientContext(supabase, row.id_cliente, row.id_cliente_text, row);
     
     if (!detailedClient) {
-      // Fallback
       console.warn('[MaestroSimpleServer] Enriquecimento falhou na busca por texto, retornando dados básicos da view', row.id_cliente);
       return {
         found: true,
