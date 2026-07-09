@@ -1567,12 +1567,10 @@ export async function processSimpleQueryWithBrain(
 
   // 3. Se LLM não está habilitado, ou se for domínio de orçamento avulso (para preservar a formatação comercial), retorna resposta determinística
   // E também ignorar LLM se for 'orcamento_avulso_desativado', pois ele já tem resposta pronta
-  // Ignorar LLM para todos os tools de cotação ativa (P4) — já têm resposta precisa e determinística
-  const ACTIVE_QUOTE_TOOLS = new Set(['consultar_cotacao_ativa', 'trocar_frete_cotacao_ativa', 'frete_nao_disponivel', 'iniciar_troca_endereco_cotacao']);
+  // Para tools do P4 (cotação ativa): NÃO bloquear LLM — passa activeQuote como contexto e deixa o Brain humanizar
   const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true'
     || v2Ctx.domain === 'orcamento_avulso'
-    || v2Ctx.lastTool === 'orcamento_avulso_desativado'
-    || ACTIVE_QUOTE_TOOLS.has(v2Ctx.lastTool ?? '');
+    || v2Ctx.lastTool === 'orcamento_avulso_desativado';
 
   if (skipLLM) {
     return deterministicResult;
@@ -1598,6 +1596,7 @@ export async function processSimpleQueryWithBrain(
       fallbackText: deterministicResult.message.content,
       maestroCtx:   brainCtx,
       userName:     options.userName,
+      activeQuote:  v2Ctx.activeQuote ?? null, // contexto da cotação ativa para responder perguntas naturais
     });
 
     // 4. Se o LLM humanizou, substitui o conteúdo da mensagem

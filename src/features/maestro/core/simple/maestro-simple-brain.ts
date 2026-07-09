@@ -290,6 +290,20 @@ export interface BrainInput {
   maestroCtx: SimpleMaestroContext;
   /** Nome do usuário logado (para humanização) */
   userName?: string;
+  /** Snapshot da cotação ativa — permite ao Brain responder perguntas sobre a cotação */
+  activeQuote?: {
+    clientName: string;
+    itens: Array<{ nome: string; quantidade: number; subtotal: number; pesoUnitario?: number }>;
+    enderecoFull: string;
+    cep?: string;
+    fretes: Array<{ transportadora: string; servico: string; valor: number; prazo?: string }>;
+    freteSelecionado: { transportadora: string; servico: string; valor: number; prazo?: string };
+    subtotalProdutos: number;
+    total: number;
+    pesoTotalGramas: number;
+    status: string;
+    savedIdInt?: number;
+  } | null;
 }
 
 export interface BrainResult {
@@ -323,10 +337,37 @@ export async function humanizeWithBrain(input: BrainInput): Promise<BrainResult>
   const { maestroCtx, userQuery, intentType, fallbackText } = input;
   const activeClient = maestroCtx.activeClient;
 
-  // ── Monta bloco de fatos sanitizados ─────────────────────────────────────
+  // ── Monta bloco de fatos sanitizados — cliente ───────────────────────────
   const factsBlock = activeClient
     ? factsToText(buildClientFacts(activeClient))
     : 'Nenhum cliente ativo nesta conversa.';
+
+  // ── Monta bloco de fatos da cotação ativa (quando existe) ────────────────
+  const q = input.activeQuote;
+  const quoteBlock = q ? [
+    `--- COTAÇÃO ATIVA ---`,
+    `Cliente: ${q.clientName}`,
+    `Endereço de entrega: ${q.enderecoFull}${q.cep ? ` (CEP: ${q.cep})` : ''}`,
+    ``,
+    `Itens:`,
+    ...q.itens.map((it, i) =>
+      `  ${i + 1}. ${it.nome} — ${it.quantidade.toLocaleString('pt-BR')} un. — Subtotal: R$ ${it.subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` +
+      (it.pesoUnitario ? ` (peso unit.: ${it.pesoUnitario} g)` : '')
+    ),
+    ``,
+    `Subtotal produtos: R$ ${q.subtotalProdutos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    `Peso total calculado (c/ margem 2%): ${q.pesoTotalGramas.toLocaleString('pt-BR')} g`,
+    ``,
+    `Opções de frete:`,
+    ...q.fretes.map((f, i) =>
+      `  ${i + 1}. ${f.transportadora} (${f.servico}): R$ ${f.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` +
+      (f.prazo ? ` — Prazo: ${f.prazo}` : '')
+    ),
+    ``,
+    `Frete selecionado: ${q.freteSelecionado.transportadora} — R$ ${q.freteSelecionado.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${q.freteSelecionado.prazo ? ` (${q.freteSelecionado.prazo})` : ''}`,
+    `Total final: R$ ${q.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    q.status === 'salva' && q.savedIdInt ? `Status: Salva como proposta #${q.savedIdInt}` : `Status: Não salva ainda`,
+  ].join('\n') : '';
 
   const userPrompt = `
 Pergunta do usuário: "${sanitizeText(userQuery, 500)}"
@@ -334,20 +375,21 @@ Intenção detectada pelo sistema: ${intentType}
 
 [DADOS DISPONÍVEIS NO ERP]
 ${sanitizeText(factsBlock, 2000)}
+${quoteBlock ? '\n' + sanitizeText(quoteBlock, 1500) : ''}
 
 [SUGESTÃO DE RESPOSTA PREPARADA PELO SISTEMA]
 ${sanitizeText(fallbackText, 1000)}
 
 Responda à pergunta do usuário seguindo as regras do seu Prompt Base.
-Use os DADOS DISPONÍVEIS NO ERP e a SUGESTÃO DE RESPOSTA PREPARADA PELO SISTEMA como suas únicas fontes de fatos.
+Use os DADOS DISPONÍVEIS NO ERP (incluindo a COTAÇÃO ATIVA acima, se presente) e a SUGESTÃO DE RESPOSTA como suas únicas fontes de fatos.
 A SUGESTÃO foi gerada pelo motor determinístico do Maestro com dados reais dos adapters read-only.
-Na Fase 2, a SUGESTÃO pode conter pedidos, propostas, faturamento, boletos, valores, datas, IDs e status calculados diretamente do banco.
 Você pode humanizar e organizar a resposta, mas não pode alterar, corrigir, inventar, arredondar ou remover valores, datas, IDs, status ou totais.
-- ATENÇÃO: Se a SUGESTÃO contiver dados para tabelas estruturadas, NÃO reescreva ou tente desenhar a tabela em Markdown no content. Mantenha o content como um texto introdutório curto e amigável e deixe a renderização da tabela para os componentes da UI.
+Se a COTAÇÃO ATIVA estiver presente, use APENAS os dados dela para responder perguntas sobre subtotal, total, frete, peso, itens e endereço.
+NÃO diga que não tem acesso a esses dados quando a COTAÇÃO ATIVA estiver no bloco acima.
+- ATENÇÃO: Se a SUGESTÃO contiver dados para tabelas estruturadas, NÃO reescreva a tabela em Markdown. Mantenha o content como texto introdutório curto.
 Se faltar dado, diga que não está disponível.
-Se a pergunta depender de fase ainda não conectada, explique isso com naturalidade.
 Responda em português brasileiro, com tom humano, simpático e profissional.
-${input.userName ? `\nO nome do usuário logado fazendo a pergunta é "${input.userName}". Você pode chamá-lo pelo nome em respostas curtas de saudações, encerramentos, confirmações ou fallbacks para deixar a conversa mais natural. Não repita o nome dele em toda frase para não ficar artificial.` : ''}
+${input.userName ? `\nO nome do usuário logado é "${input.userName}". Use-o com naturalidade em saudações, confirmações ou encerramentos — não em toda frase.` : ''}
 `.trim();
 
   // ── Chamada ao LLM com timeout ────────────────────────────────────────────
