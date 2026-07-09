@@ -20,6 +20,7 @@
  */
 
 import { useContext, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { MaestroContext } from '../../context/maestro.context';
 import { MOCK_WELCOME_MESSAGES, MOCK_INITIAL_CONTEXT } from '../../mocks/maestro.mock';
 import { getSupabaseClient } from '@/lib/supabase/client';
@@ -31,6 +32,7 @@ export const MAESTRO_ENGINE: 'simple' | 'legacy' = 'simple';
 // ─── Hook ─────────────────────────────────────────────────────────────────
 
 export function useConversationManagerSimple() {
+  const router = useRouter();
   const context = useContext(MaestroContext);
   if (!context) throw new Error('Must be used within MaestroProvider');
 
@@ -134,6 +136,21 @@ export function useConversationManagerSimple() {
       );
       setActivity(result.activity || []);
       setGlobalContext(result.context || globalContextRef.current);
+
+      // Redireciona automaticamente se a proposta foi salva com sucesso
+      if (
+        result.message.id.startsWith('save-ok') &&
+        result.message.actions &&
+        result.message.actions.length > 0
+      ) {
+        const redirectUrl = result.message.actions[0].value;
+        if (redirectUrl.startsWith('/')) {
+          console.log(`[Maestro] Proposta salva. Redirecionando para ${redirectUrl}`);
+          setTimeout(() => {
+            router.push(redirectUrl);
+          }, 800);
+        }
+      }
 
     } catch (err: any) {
       console.error('[MaestroSimple] Erro no sendMessage:', err?.message);
