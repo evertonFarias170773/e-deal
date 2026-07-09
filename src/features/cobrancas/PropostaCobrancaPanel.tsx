@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CreditCard, Landmark, QrCode, ReceiptText, X } from "lucide-react";
+import { CreditCard, Landmark, QrCode, ReceiptText, X, Copy } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
@@ -1111,11 +1111,15 @@ export function PropostaCobrancaPanel({
           <div className="mx-auto flex h-[calc(100vh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl sm:h-auto sm:max-h-[94vh] sm:rounded-[28px]">
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-4 sm:p-5 md:p-6">
               <div>
-                <h2 className="text-xl font-semibold text-slate-950">Criar cobrança</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  {proposta.cliente.nome} • {empresa?.nome ?? proposta.empresa} • Total {formatCurrency(totalPropostaRounded)} • Já cobrado {formatCurrency(totalGerado)} • Saldo {formatCurrency(saldoRestante)}
+                <h2 className="text-xl font-semibold text-slate-950">Criar cobrança - {pagador?.nome ?? proposta.cliente.nome}</h2>
+                <p className="mt-1 text-sm text-slate-600 flex flex-wrap gap-x-2 gap-y-1">
+                  <span><strong>Empresa:</strong> {empresa?.nome ?? proposta.empresa}</span>
+                  <span>• <strong>Total:</strong> {formatCurrency(totalPropostaRounded)}</span>
+                  <span>• <strong>Já cobrado:</strong> {formatCurrency(totalGerado)}</span>
+                  <span>• <strong>Saldo:</strong> {formatCurrency(saldoRestante)}</span>
+                  <span>• <strong>Proposta:</strong> #{proposta.id_int}</span>
+                  <span>• <strong>Situação:</strong> {situacaoFinanceira}</span>
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Proposta #{proposta.id_int} • Situação {situacaoFinanceira}</p>
                 {hasCobrancaExcedente ? (
                   <p className="mt-1 text-xs font-semibold text-orange-700">
                     {source === "supabase"
@@ -1429,6 +1433,19 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const handleCopyUrl = async (url: string | undefined) => {
+    if (!url) {
+      showToast({ type: "error", title: "URL indisponível." });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast({ type: "success", title: "URL copiada com sucesso." });
+    } catch {
+      showToast({ type: "error", title: "Erro ao copiar URL." });
+    }
+  };
+
 
 
   if (!cobrancas.length) {
@@ -1585,6 +1602,16 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                     </button>
                   )
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => handleCopyUrl(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                  disabled={!(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                  className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copiar
+                </button>
 
                 <button
                   type="button"
@@ -1760,6 +1787,16 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                       </button>
                     )
                   )}
+                  <button
+                    type="button"
+                    onClick={() => handleCopyUrl(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                    disabled={!(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Copiar link"
+                  >
+                    <Copy className="mr-1.5 h-3.5 w-3.5" />
+                    Copiar
+                  </button>
                   <button
                     type="button"
                     onClick={() => onSelectCobranca(cobranca.id)}

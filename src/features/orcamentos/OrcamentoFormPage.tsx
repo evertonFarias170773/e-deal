@@ -358,7 +358,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const shouldShowRest = mode !== "new" || cliente !== null || form.clienteNaoCadastrado;
 
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
-  const [clientSearch, setClientSearch] = useState(() => proposta?.cliente ? `${proposta.cliente.idCliente} - ${proposta.cliente.nome}` : "");
+  const [clientSearch, setClientSearch] = useState(() => proposta?.cliente ? `${proposta.cliente.idCliente} - ${proposta.cliente.nome}` : (mode === "new" ? "#" : ""));
   const [showClientResults, setShowClientResults] = useState(false);
   const [clientResults, setClientResults] = useState<Cadastro[]>([]);
   const [isSearchingClients, setIsSearchingClients] = useState(false);
@@ -435,7 +435,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const snapshotCaptured    = useRef(false);
   const isDirtyRef          = useRef(false);
   const handleNavigateRef   = useRef<(href: string) => void>(() => {});
+  const searchInputRef      = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (mode === "new" && !cliente && searchInputRef.current) {
+      searchInputRef.current.focus();
+      const length = searchInputRef.current.value.length;
+      searchInputRef.current.setSelectionRange(length, length);
+    }
+  }, [mode, cliente]);
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+  const [carteiraWarning, setCarteiraWarning] = useState<string | null>(null);
   const [pendingNavigation,  setPendingNavigation]  = useState<string | null>(null);
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -1267,6 +1277,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       pesoTotal: calculateItemWeight(item)
     };
   }
+  const handleClearCliente = useCallback((searchReset: string = "") => {
+    setCliente(null);
+    setClientSearch(searchReset);
+    setProposalContacts([]);
+    setProposalAddresses([]);
+    updateField("clienteId", "");
+    updateField("contatoId", "");
+    updateField("enderecoId", "");
+    updateField("compradorId", "");
+    updateField("vendedor", "");
+    updateField("empresa", "");
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [updateField]);
 
   async function selectCliente(basicCliente: Cadastro) {
     setShowClientResults(false);
@@ -1313,6 +1338,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         fretes: [],
         freteEscolhidoId: ""
       }));
+
+      const isApenasVendedor = user?.isSeller === true && !user?.isGerente && !user?.isAdmin && !user?.isSuperAdmin;
+      if (isApenasVendedor && hasSeller && user?.name) {
+        if (normalizeName(defaultVendedor) !== normalizeName(user.name)) {
+          setCarteiraWarning(defaultVendedor);
+        }
+      }
     } catch (err) {
       console.error("Erro ao carregar detalhes do cliente selecionado:", err);
       showToast({
@@ -1335,6 +1367,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           description: "Este cliente não possui um vendedor padrão cadastrado. Selecione o vendedor manualmente."
         });
       }
+
+      const isApenasVendedor = user?.isSeller === true && !user?.isGerente && !user?.isAdmin && !user?.isSuperAdmin;
+      if (isApenasVendedor && hasSeller && user?.name) {
+        if (normalizeName(defaultVendedor) !== normalizeName(user.name)) {
+          setCarteiraWarning(defaultVendedor);
+        }
+      }
+
       setCliente(basicCliente);
       setProposalContacts([]);
       setProposalAddresses([]);
@@ -2599,6 +2639,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 <label className={`flex items-center gap-3 rounded-2xl border bg-slate-50 px-4 py-3 ${errorFields.includes("clienteId") ? "border-red-300" : "border-slate-200"}`}>
                   <Search className="h-4 w-4 text-[#0f9f9a]" />
                   <input
+                    ref={searchInputRef}
                     value={clientSearch}
                     onChange={(event) => { setClientSearch(event.target.value); setShowClientResults(true); }}
                     onFocus={() => setShowClientResults(true)}
@@ -2611,16 +2652,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   {cliente && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setCliente(null);
-                        setClientSearch("");
-                        setProposalContacts([]);
-                        setProposalAddresses([]);
-                        updateField("clienteId", "");
-                        updateField("contatoId", "");
-                        updateField("enderecoId", "");
-                        updateField("compradorId", "");
-                      }}
+                      onClick={() => handleClearCliente("")}
                       className="rounded-xl p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition"
                     >
                       <X className="h-4 w-4" />
@@ -3485,7 +3517,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         />
       )}
       
-      {/* MODAL DE EXCLUSÃO DE PRODUTO */}
+      {/* MODAL DE SUCESSO DE SALVAMENTO */}
+      {carteiraWarning && (
+        <Modal
+          title="Atenção à Carteira"
+          onClose={() => {
+            setCarteiraWarning(null);
+            handleClearCliente("#");
+          }}
+          onSave={() => setCarteiraWarning(null)}
+          saveLabel="Ciente, continuar"
+        >
+          <div className="flex items-start gap-3 mt-2">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+            </div>
+            <p className="text-sm text-slate-600 pt-2">
+              Este cliente pertence à carteira do vendedor <strong>{carteiraWarning}</strong>. Você pode continuar a proposta normalmente, mas fique ciente desta vinculação.
+            </p>
+          </div>
+        </Modal>
+      )}
       {deleteProductConfirmOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md scale-100 rounded-3xl bg-white p-6 shadow-2xl">
@@ -3672,7 +3724,18 @@ function ProductItemEditor({
 }) {
   const { showToast } = useAppToast();
   return (
-    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-inner space-y-4">
+    <div 
+      className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-inner space-y-4"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          const target = e.target as HTMLElement;
+          if (target.tagName.toLowerCase() === 'select' || target.tagName.toLowerCase() === 'textarea') return;
+          e.preventDefault();
+          e.stopPropagation();
+          onSave();
+        }
+      }}
+    >
       {/* Title bar / Header */}
       <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
         <div className="flex items-center gap-2">

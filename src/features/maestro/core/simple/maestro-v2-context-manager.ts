@@ -82,6 +82,8 @@ export interface PendingSaveQuotation {
     pesoUsado: number;
     id_cotacao?: number;
   };
+  /** Opções de frete retornadas (para consulta posterior) */
+  fretes?: any[];
   /** Subtotal dos produtos */
   subtotal: number;
   /** Total geral (produtos + frete) */
@@ -252,6 +254,15 @@ export function handleContextContinuation(
       return {
         routed: true,
         plan: { steps: [{ tool: 'proposta_ja_salva', params: {} }] }
+      };
+    }
+
+    // Intercepta perguntas de frete pós-save
+    const isConsultaFrete = /\b(qual.*frete|tem.*sedex|quais.*op|opcoes.*frete|valor.*frete|frete)\b/i.test(clean);
+    if (isConsultaFrete) {
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'consultar_fretes_cotacao', params: {} }] }
       };
     }
   }

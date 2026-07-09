@@ -216,7 +216,7 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
   //   - "muda pra 200 tex"
   //   - "muda a quantidade do mobi para 10.000"
   //   - "altera tex pra 200"
-  const isBudgetChange = /\b(muda|altera|troca|atualiza)\b/i.test(clean);
+  const isBudgetChange = /\b(muda|altera|troca|atualiza|recalcula|recalcule)\b/i.test(clean);
   // Também detecta padrão de quantificação direta sem "muda": "pra 200 tex" com estado ativo e produto identificável
   const isDirectQtyUpdate = state.itens.length > 0 && /\bpra\s+(\d+(?:\.\d+)?k?)\s+([a-z][a-z\d\s-]+)$/i.test(clean);
   if ((isBudgetChange || isDirectQtyUpdate) && state.itens.length > 0) {
@@ -252,6 +252,28 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
           errors: [],
           nextState,
           response: `Quantidade de ${state.itens[targetIdx].termo} alterada para ${qtd}.`
+        };
+      } else if (state.itens.length === 1) {
+        // Fallback: se há apenas 1 item, altera a quantidade desse único item, ignorando o match falho
+        nextState.previousItens = JSON.parse(JSON.stringify(state.itens));
+        nextState.itens[0] = { ...nextState.itens[0], quantidade: qtd };
+        return {
+          action: 'UPDATE_QTD',
+          items: nextState.itens,
+          pending: null,
+          errors: [],
+          nextState,
+          response: `Quantidade alterada para ${qtd}.`
+        };
+      } else {
+        // Fallback: múltiplos itens, mas não deu match em nenhum específico -> pedir desambiguação
+        return {
+          action: 'NONE',
+          items: state.itens,
+          pending: null,
+          errors: [],
+          nextState: state,
+          response: `Como há ${state.itens.length} produtos no orçamento, para qual deles você quer alterar a quantidade?`
         };
       }
     }
@@ -336,7 +358,7 @@ function parseOrcamento(clean: string): OrcamentoAvulsoItem[] {
       if (isK) qtd *= 1000;
       
       const cleanTerm = termo
-        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento|qual|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
+        .replace(/\b(pra|para|de|um|uma|unidades|unidade|un|unid|unids|und|unds|pecas|peca|mim|orcar|orçar|pode|gostaria|queria|valor|preco|preço|cotacao|cotação|orcamento|orçamento|qual|quanto|custa|orco|orça|do\s*produto|produto|id|prod)\b/gi, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       

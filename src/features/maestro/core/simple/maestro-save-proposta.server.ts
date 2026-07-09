@@ -90,6 +90,22 @@ export async function salvarCotacaoComoPropostaReal(
     console.warn('[MaestroSave] Não conseguiu resolver nome_usuario, usando fallback:', err);
   }
 
+  // ── 2b. Resolver bônus (percentual_bunus) do cliente ──────────────────────
+  let percentualBonus = 0;
+  try {
+    const { data: clienteRow } = await supabase
+      .from('clientes')
+      .select('percentual_bunus, is_bonus')
+      .eq('id_cliente', pending.clientInternalId)
+      .maybeSingle();
+
+    if (clienteRow?.is_bonus && clienteRow.percentual_bunus) {
+      percentualBonus = Number(clienteRow.percentual_bunus) || 0;
+    }
+  } catch (err) {
+    console.warn('[MaestroSave] Erro ao buscar bônus do cliente:', err);
+  }
+
   // ── 3. Montar PropostaItem[] a partir dos itens resolvidos ────────────────
   const itens: PropostaItem[] = pending.itens.map((item, idx) => {
     const subtotal = item.valorUnitario * item.quantidade + item.valorFixo;
@@ -155,10 +171,10 @@ export async function salvarCotacaoComoPropostaReal(
     pedidosModelos: [],
     fretes,
     freteEscolhidoId: pending.freteEscolhido.id,
-    descontoGeralTipo: 'VALOR',
-    descontoGeralValor: '0',
+    descontoGeralTipo: 'PERCENTUAL',
+    descontoGeralValor: percentualBonus > 0 ? String(percentualBonus) : '0',
     formaPagamento: 'A definir',
-    observacoes: 'Orçamento gerado pelo Maestro.',
+    observacoes: 'Orçamento gerado via Maestro.',
     isAvulso: false,
     clienteNaoCadastrado: false,
   };
