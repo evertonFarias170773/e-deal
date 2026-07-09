@@ -564,7 +564,6 @@ export async function processSimpleQueryWithBrain(
                 .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido')
                 .eq('id_cliente', numCode).limit(1);
               if (resExato.data && resExato.data.length > 0) {
-                // Reaproveitamos a busca para forçar o enriquecimento chamando buscarClientePorCodigo diretamente com o id exato transformado pra string
                 lookupResult = await buscarClientePorCodigo(supabase, numCode.toString());
               }
             }
@@ -575,19 +574,112 @@ export async function processSimpleQueryWithBrain(
             lookupResult = await buscarClientePorTexto(supabase, busca, { documentPartial, documentType });
           }
 
+          // Itens da mensagem atual (somente os gerados por esta interação)
+          const itensDaMensagemAtual =
+            (v2Ctx.lastExplicitBudgetItems && v2Ctx.lastExplicitBudgetItems.length > 0)
+              ? v2Ctx.lastExplicitBudgetItems
+              : null;
+
           if (lookupResult.found && lookupResult.client) {
+            // Limpar candidatos pendentes ao encontrar com confiança
+            v2Ctx.pendingClientCandidate = null;
+            v2Ctx.pendingClientCandidates = null;
+            v2Ctx.pendingClientSearchTerm = null;
+            v2Ctx.pendingBudgetForCandidate = null;
+            // Limpar endereço se o cliente mudou
+            const anteriorId = v2Ctx.activeEntities.clientInternalId;
+            if (anteriorId && anteriorId !== lookupResult.client.clientInternalId) {
+              console.log(`[MaestroEngine] buscarCliente: cliente mudou ${anteriorId} -> ${lookupResult.client.clientInternalId} — limpando endereço.`);
+              v2Ctx.budgetAddressId = undefined;
+              v2Ctx.budgetAddressFull = undefined;
+              v2Ctx.budgetAddressCep = undefined;
+              v2Ctx.budgetAddressCidade = undefined;
+              v2Ctx.budgetAddressUf = undefined;
+              v2Ctx.pendingAddressChoice = null;
+            }
             pr = presenterClienteEncontrado(lookupResult.client);
             clientForCtx = lookupResult.client;
           } else if (lookupResult.reason === 'auth_error') {
             pr = presenterClienteErroAuth();
           } else if (lookupResult.reason === 'too_many') {
+            v2Ctx.pendingClientCandidate = null;
+            v2Ctx.pendingClientCandidates = null;
+            v2Ctx.pendingClientSearchTerm = null;
             pr = presenterClienteBuscaAmpla(lookupResult.searchTerm ?? busca);
           } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
+            // 2-6 candidatos: grava lista para confirmação por código
+            v2Ctx.pendingClientCandidates = lookupResult.candidates.map((c: any) => ({
+              id_cliente: c.id_cliente,
+              nome: c.nome ?? '',
+              fantasia: c.fantasia ?? '',
+              documento: c.documento ?? '',
+              cidade_uf: c.cidade_uf ?? '',
+            }));
+            v2Ctx.pendingClientCandidate = null;
+            v2Ctx.pendingClientSearchTerm = busca;
+            if (itensDaMensagemAtual) v2Ctx.pendingBudgetForCandidate = itensDaMensagemAtual;
             pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
           } else if (lookupResult.reason === 'partial_match' && lookupResult.candidates?.length) {
-            pr = presenterClienteMatchParcial(busca, lookupResult.candidates[0]);
+            const cand = lookupResult.candidates[0];
+            // Candidato único: grava para confirmação por 'sim'/'esse'/código
+            v2Ctx.pendingClientCandidate = {
+              id_cliente: cand.id_cliente,
+              nome: cand.nome ?? '',
+              fantasia: cand.fantasia ?? '',
+              documento: cand.documento ?? '',
+              cidade_uf: cand.cidade_uf ?? '',
+            };
+            v2Ctx.pendingClientCandidates = null;
+            v2Ctx.pendingClientSearchTerm = busca;
+            if (itensDaMensagemAtual) v2Ctx.pendingBudgetForCandidate = itensDaMensagemAtual;
+            pr = presenterClienteMatchParcial(busca, cand);
           } else {
+            // Não encontrado: limpa, não usa cliente ativo anterior
+            v2Ctx.pendingClientCandidate = null;
+            v2Ctx.pendingClientCandidates = null;
+            v2Ctx.pendingClientSearchTerm = null;
             pr = presenterClienteNaoEncontrado(busca);
+          }
+        }
+
+        else if ((step.tool as string) === 'confirmar_cliente_pendente') {
+          const idCliente = step.params.id_cliente;
+          if (!idCliente) {
+            pr = presenterClienteNaoEncontrado('candidato pendente');
+          } else {
+            const confirmedResult = await buscarClientePorCodigo(supabase, String(idCliente));
+            if (confirmedResult.found && confirmedResult.client) {
+              const novoCliente = confirmedResult.client;
+              // Limpar endereço se o cliente mudou
+              const anteriorId = v2Ctx.activeEntities.clientInternalId;
+              if (anteriorId && anteriorId !== novoCliente.clientInternalId) {
+                console.log(`[MaestroEngine] confirmar_cliente_pendente: ${anteriorId} -> ${novoCliente.clientInternalId} — limpando endereço.`);
+                v2Ctx.budgetAddressId = undefined;
+                v2Ctx.budgetAddressFull = undefined;
+                v2Ctx.budgetAddressCep = undefined;
+                v2Ctx.budgetAddressCidade = undefined;
+                v2Ctx.budgetAddressUf = undefined;
+                v2Ctx.pendingAddressChoice = null;
+              }
+              const itensPendentes = v2Ctx.pendingBudgetForCandidate;
+              v2Ctx.pendingClientCandidate = null;
+              v2Ctx.pendingClientCandidates = null;
+              v2Ctx.pendingClientSearchTerm = null;
+              v2Ctx.pendingBudgetForCandidate = null;
+
+              if (itensPendentes && itensPendentes.length > 0) {
+                v2Ctx.orcamentoItens = itensPendentes;
+                v2Ctx.domain = 'orcamento_avulso';
+                v2Ctx.lastExplicitBudgetItems = itensPendentes;
+                const { presenterClienteConfirmadoComOrcamento } = require('./maestro-simple-presenter');
+                pr = presenterClienteConfirmadoComOrcamento(novoCliente, itensPendentes);
+              } else {
+                pr = presenterClienteEncontrado(novoCliente);
+              }
+              clientForCtx = novoCliente;
+            } else {
+              pr = presenterClienteNaoEncontrado(String(idCliente));
+            }
           }
         }
 

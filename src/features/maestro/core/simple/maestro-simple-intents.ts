@@ -237,7 +237,9 @@ export function detectIntent(query: string): DetectedIntent {
   // Deve ser checado antes de fields para evitar falsos positivos
   if (CLOSURE_TRIGGERS.some(t => norm === t || norm.startsWith(t) || norm.endsWith(t) || norm.includes(t))) {
     // Validação extra: não deve conter palavras de busca (para evitar conflito com "ok busca o cliente X")
-    const isActuallySearching = LOOKUP_VERBS.some(v => norm.includes(v)) || norm.includes('cliente');
+    const isActuallySearching = LOOKUP_VERBS.some(v => norm.includes(v)) ||
+      norm.includes('cliente') ||
+      /\b(liente|clinte|ciente|cli|cadastro)\s+[a-z]/i.test(norm);
     if (!isActuallySearching) {
       return { type: 'closure' };
     }
@@ -290,9 +292,9 @@ export function detectIntent(query: string): DetectedIntent {
   if (cpfMatch) return { type: 'client_lookup', document: cpfMatch[1] };
 
   // ── 4. Nome textual após gatilho de busca ────────────────────────────────
-  // Ex: "cliente Empresa ABC" / "busca Empresa XYZ"
+  // Ex: "cliente Empresa ABC" / "liente Empresa XYZ" (typo aceito)
   const nameM = norm.match(
-    /\b(?:cliente|busca|procura|localiza|encontra|consulta)\s+([a-z][a-z\d\s]{2,30})/
+    /\b(?:cliente|cli|cadastro|liente|clinte|ciente|busca|procura|localiza|encontra|consulta)\s+([a-z][a-z\d\s]{2,30})/
   );
   if (nameM) {
     const candidate = nameM[1].trim();

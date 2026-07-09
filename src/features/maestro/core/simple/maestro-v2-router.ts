@@ -55,6 +55,8 @@ export type AllowedToolName =
   | 'cancelar_save_cotacao'
   | 'editar_antes_save'
   | 'proposta_ja_salva'
+  // Confirmação de cliente pendente
+  | 'confirmar_cliente_pendente'
   | 'consultar_fretes_cotacao';
 
 export interface RouterStep {
@@ -111,6 +113,8 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'cancelar_save_cotacao',
   'editar_antes_save',
   'proposta_ja_salva',
+  // Confirmação de cliente pendente
+  'confirmar_cliente_pendente',
 ];
 
 /**

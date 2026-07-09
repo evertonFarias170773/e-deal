@@ -271,6 +271,33 @@ export function presenterClienteMatchParcial(busca: string, candidate: any): Pre
   };
 }
 
+/**
+ * Apresenta cliente confirmado com itens de orçamento preservados.
+ * Usado após confirmar_cliente_pendente quando havia itens na mensagem original.
+ */
+export function presenterClienteConfirmadoComOrcamento(client: any, itens: Array<{ quantidade: number; termo: string }>): PresenterResult {
+  const nome = client.clientName || client.clientFantasia || `Cliente ${client.clientInternalId}`;
+  const listaItens = itens.map(i => `• ${i.quantidade}x ${i.termo}`).join('\n');
+  return {
+    message: {
+      id:          genId(),
+      role:        'maestro',
+      content:     `Certo! Trabalhando com **${nome}**. Retomando a cotação com os itens informados:\n\n${listaItens}\n\nPreciso do endereço de entrega para calcular o frete. Qual endereço devo usar?`,
+      contentType: 'text',
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'high',
+    },
+    activity: [
+      { id: 'step-1', label: 'Cliente confirmado', status: 'done', timestamp: nowTime() },
+      { id: 'step-2', label: 'Itens do orçamento preservados', status: 'done', timestamp: nowTime() },
+      { id: 'step-3', label: 'Aguardando endereço de entrega', status: 'pending', timestamp: nowTime() },
+    ],
+    lastAnswerUpdate: null,
+  };
+}
+
 export function presenterClienteErroAuth(): PresenterResult {
   return {
     message: {

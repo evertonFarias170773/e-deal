@@ -129,6 +129,28 @@ export interface MaestroV2Context {
   pendingAddressChoice?: PendingAddressChoice | null;
   /** Cotação completa aguardando confirmação do usuário para salvar */
   pendingSaveQuotation?: PendingSaveQuotation | null;
+
+  // ── Confirmação de cliente pendente ──────────────────────────────────────
+  /** Candidato único aguardando confirmação (partial_match) */
+  pendingClientCandidate?: {
+    id_cliente: number;
+    nome: string;
+    fantasia: string;
+    documento: string;
+    cidade_uf: string;
+  } | null;
+  /** Lista de 2–6 candidatos aguardando escolha do usuário (multiple) */
+  pendingClientCandidates?: Array<{
+    id_cliente: number;
+    nome: string;
+    fantasia: string;
+    documento: string;
+    cidade_uf: string;
+  }> | null;
+  /** Termo original da busca que gerou os candidatos */
+  pendingClientSearchTerm?: string | null;
+  /** Itens do orçamento pendentes para o candidato confirmado */
+  pendingBudgetForCandidate?: OrcamentoAvulsoItem[] | null;
 }
 
 const CONTEXT_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutos de validade
@@ -152,6 +174,10 @@ export function getEmptyV2Context(): MaestroV2Context {
     budgetAddressFull: undefined,
     pendingAddressChoice: null,
     pendingSaveQuotation: null,
+    pendingClientCandidate: null,
+    pendingClientCandidates: null,
+    pendingClientSearchTerm: null,
+    pendingBudgetForCandidate: null,
   };
 }
 
@@ -214,7 +240,79 @@ export function handleContextContinuation(
 ): { routed: boolean; plan: any } | null {
   const clean = normalizeText(query);
 
-  // ── 0. INTERCEPTAÇÃO DE CONFIRMAÇÃO DE SAVE (PRIORIDADE MÁXIMA)
+  // ── P1. CONFIRMAÇÃO DE CLIENTE CANDIDATO PENDENTE ──────────────────────
+  // PRIORIDADE MÁXIMA: se há candidato(s) pendente(s), "sim"/"esse"/código confirmam o
+  // cliente pendente ANTES de qualquer lógica de save ou Brain.
+  const hasPendingCandidate = !!(v2Ctx.pendingClientCandidate || v2Ctx.pendingClientCandidates?.length);
+  if (hasPendingCandidate) {
+    // Padrões de confirmação
+    const isConfirmCandidato =
+      /^(sim|isso|esse|esse mesmo|e esse|e isso|esta certo|correto|pode ser|ok|s|certo|quero esse|confirmo|confirmar)$/i.test(clean) ||
+      /\b(esse mesmo|e esse|isso mesmo|ta certo|ta bom|pode ser esse)\b/i.test(clean);
+
+    // Padrões de negação
+    const isDenyCandidato =
+      /^(nao|nao e esse|errado|outro|nao quero esse|outro cliente|diferente)$/i.test(clean) ||
+      /\b(nao e esse|nao e isso|nao quero|outro cliente)\b/i.test(clean);
+
+    // Código numérico: o usuário digitou um número (ex: "8469")
+    const numericCodeMatch = clean.match(/^(\d+)$/);
+    const numericCode = numericCodeMatch ? parseInt(numericCodeMatch[1], 10) : null;
+
+    if (numericCode !== null) {
+      // Tenta encontrar o candidato cujo id_cliente bate com o código informado
+      let matchedById =
+        (v2Ctx.pendingClientCandidate?.id_cliente === numericCode
+          ? v2Ctx.pendingClientCandidate
+          : null) ??
+        v2Ctx.pendingClientCandidates?.find(c => c.id_cliente === numericCode) ??
+        null;
+
+      if (matchedById) {
+        console.log(`[MaestroV2Context] Candidato confirmado por código ${numericCode}: ${matchedById.nome}`);
+        v2Ctx.pendingClientCandidate = null;
+        v2Ctx.pendingClientCandidates = null;
+        v2Ctx.pendingClientSearchTerm = null;
+        return {
+          routed: true,
+          plan: { steps: [{ tool: 'confirmar_cliente_pendente', params: { id_cliente: numericCode } }] }
+        };
+      }
+      // Código não bate com nenhum candidato → deixa passar (pode ser nova busca por código)
+    }
+
+    if (isConfirmCandidato) {
+      const candidato = v2Ctx.pendingClientCandidate ?? v2Ctx.pendingClientCandidates?.[0] ?? null;
+      if (candidato) {
+        console.log(`[MaestroV2Context] Candidato confirmado por afirmação: ${candidato.nome}`);
+        v2Ctx.pendingClientCandidate = null;
+        v2Ctx.pendingClientCandidates = null;
+        v2Ctx.pendingClientSearchTerm = null;
+        return {
+          routed: true,
+          plan: { steps: [{ tool: 'confirmar_cliente_pendente', params: { id_cliente: candidato.id_cliente } }] }
+        };
+      }
+    }
+
+    if (isDenyCandidato) {
+      console.log('[MaestroV2Context] Candidato negado pelo usuário. Limpando candidatos pendentes.');
+      v2Ctx.pendingClientCandidate = null;
+      v2Ctx.pendingClientCandidates = null;
+      v2Ctx.pendingClientSearchTerm = null;
+      v2Ctx.pendingBudgetForCandidate = null;
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'requisicao_nao_suportada', params: {} }] }
+      };
+    }
+
+    // Há candidato pendente mas a mensagem não é confirmação nem negação:
+    // bloquear Brain/fallback — delegar ao router que conhece os candidatos pendentes
+    // mas deixar passar se for nova busca explícita de cliente
+  }
+
+  // ── P0. INTERCEPTAÇÃO DE CONFIRMAÇÃO DE SAVE (após P1)
   if (v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt) {
     const isSalvar = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?|confirmar?\s+save|sim[,.]?\s*(salva|quero\s+salvar?))\b/i.test(clean)
       || /^(salvar?\s+cota[cç]a[oã]|salva(r)?|quero\s+salvar?|confirmar?)$/i.test(clean);
