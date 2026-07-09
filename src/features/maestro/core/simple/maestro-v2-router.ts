@@ -61,6 +61,7 @@ export type AllowedToolName =
   // Cotação ativa conversável
   | 'consultar_cotacao_ativa'
   | 'trocar_frete_cotacao_ativa'
+  | 'exibir_lista_fretes'
   | 'iniciar_troca_endereco_cotacao'
   | 'frete_nao_disponivel'
   // Escolha de transportadora numerada
@@ -134,6 +135,7 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   // Cotação ativa conversável
   'consultar_cotacao_ativa',
   'trocar_frete_cotacao_ativa',
+  'exibir_lista_fretes',
   'iniciar_troca_endereco_cotacao',
   'frete_nao_disponivel',
   // Escolha de transportadora numerada

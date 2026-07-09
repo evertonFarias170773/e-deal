@@ -691,7 +691,6 @@ export async function processSimpleQueryWithBrain(
                 specialist: 'comercial',
                 timestamp: new Date().toISOString(),
                 status: 'completed',
-                confidence: 'high',
               },
               activity: [],
               lastAnswerUpdate: null,
@@ -740,14 +739,46 @@ export async function processSimpleQueryWithBrain(
             } else {
               quote.freteSelecionado = novoFrete;
               quote.total = quote.subtotalProdutos + novoFrete.valor;
-              // Sincroniza pendingSaveQuotation se ainda não salvo
               if (v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt) {
-                v2Ctx.pendingSaveQuotation.freteEscolhido = { ...novoFrete };
+                v2Ctx.pendingSaveQuotation.freteEscolhido = { ...novoFrete } as any;
                 v2Ctx.pendingSaveQuotation.total = quote.total;
               }
-              const { presenterTrocaFreteCotacaoAtiva } = await import('./maestro-simple-presenter');
-              pr = presenterTrocaFreteCotacaoAtiva(quote);
+              // Mostra o card formatado com o novo frete
+              const { presenterFreteConfirmado } = await import('./maestro-simple-presenter');
+              pr = presenterFreteConfirmado(quote);
+              const { presenterPerguntarSalvarCotacao: perguntarSave3 } = await import('./maestro-simple-presenter');
+              if (v2Ctx.pendingSaveQuotation) {
+                const prSave3 = perguntarSave3(v2Ctx.pendingSaveQuotation);
+                pr.message.content = pr.message.content + '\n\n' + prSave3.message.content;
+              }
             }
+          }
+        }
+
+        else if ((step.tool as string) === 'exibir_lista_fretes') {
+          const quote = v2Ctx.activeQuote;
+          if (!quote || quote.fretes.length === 0) {
+            pr = {
+              message: { id: 'maestro-msg-' + Date.now(), role: 'maestro', content: 'Não há opções de frete na cotação ativa.', contentType: 'text', specialist: 'comercial', timestamp: new Date().toISOString(), status: 'completed', confidence: 'medium' },
+              activity: [],
+            };
+          } else {
+            // Re-ativa pendingFreightChoice e exibe lista numerada
+            v2Ctx.pendingFreightChoice = {
+              clientInternalId: quote.clientInternalId,
+              clientName: quote.clientName,
+              enderecoId: quote.enderecoId,
+              enderecoFull: quote.enderecoFull,
+              cep: quote.cep ?? '',
+              cidade: quote.cidade,
+              uf: quote.uf,
+              itens: quote.itens,
+              subtotal: quote.subtotalProdutos,
+              pesoTotalGramas: quote.pesoTotalGramas,
+              fretes: quote.fretes as any[],
+            };
+            const { presenterEscolhaTransportadora } = await import('./maestro-simple-presenter');
+            pr = presenterEscolhaTransportadora(quote.clientName, quote.enderecoFull, quote.itens, quote.subtotalProdutos, quote.fretes as any[]);
           }
         }
 

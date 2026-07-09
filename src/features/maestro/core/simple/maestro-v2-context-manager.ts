@@ -361,15 +361,30 @@ export function detectQuoteQuery(clean: string): QuoteQueryType | null {
 
 /**
  * Detecta intenção de trocar frete dentro da cotação ativa.
- * Retorna o objeto frete encontrado, { notFound: true, mentioned: string }, ou null.
+ * Retorna o objeto frete encontrado, { notFound: true, mentioned: string },
+ * { found: 'list' } para listar opções sem nome, ou null.
  */
 export function detectFreightSwitch(
   clean: string,
   fretes: ActiveQuoteSnapshot['fretes']
-): { found: true; frete: ActiveQuoteSnapshot['fretes'][0] } | { found: false; mentioned: string } | null {
+): { found: true; frete: ActiveQuoteSnapshot['fretes'][0] } | { found: false; mentioned: string } | { found: 'list' } | null {
   // Padrões de troca de frete
   const switchPhrases = /\b(muda(r)?\s+para|mude\s+para|usa(r)?\s+(a|o)|use\s+(a|o)|troca(r)?\s+para|troque\s+para|coloca(r)?\s+(a|o)|prefiro|quero|escolhe(r)?|escolha|vai\s+de|vai\s+com|refaz\s+com)\b/i;
-  if (!switchPhrases.test(clean) && !/\b(mais\s+barato|mais\s+bara|sedex|pac|unesul|sao\s+miguel|motoboy|azul|correios|transportad)\b/i.test(clean)) {
+  const hasSwitch = switchPhrases.test(clean);
+  const hasCarrierHint = /\b(mais\s+barato|mais\s+bara|sedex|pac|unesul|sao\s+miguel|motoboy|azul|correios|transportad)\b/i.test(clean);
+
+  // "troca a transportadora" / "trocar transportadora" / "mudar transportadora" SEM nome específico
+  // → retorna 'list' para mostrar seleção numerada novamente
+  const isTrocaSemNome = /\b(troca(r)?|mudar?|muda)\s+(a\s+)?(transportadora|frete|entrega)\b/i.test(clean)
+    && !hasCarrierHint
+    && !switchPhrases.test(clean.replace(/\b(troca(r)?|mudar?|muda)\s+(a\s+)?(transportadora|frete|entrega)\b/i, ''));
+  const isPedirOpcoes = /\b(trazer?|traga|mostrar?|mostre|listar?|liste|quero\s+(ver|as)\s+op).*(?:transportadora|frete|op[cç][aã]o)/i.test(clean)
+    || /\b(op[cç][oõ]es?|opcoes?)\s+(de\s+)?(frete|transport)/i.test(clean);
+  if (isTrocaSemNome || isPedirOpcoes) {
+    return { found: 'list' };
+  }
+
+  if (!hasSwitch && !hasCarrierHint) {
     return null;
   }
 
@@ -577,7 +592,14 @@ export function handleContextContinuation(
     if (v2Ctx.activeQuote.status === 'nao_salva') {
       const freightResult = detectFreightSwitch(clean, v2Ctx.activeQuote.fretes);
       if (freightResult !== null) {
-        if (freightResult.found) {
+        if (freightResult.found === 'list') {
+          // Usuário pediu troca sem especificar nome → re-mostra seleção numerada
+          console.log('[MaestroV2Context] P4: troca de frete sem nome — re-exibindo lista numerada.');
+          return {
+            routed: true,
+            plan: { steps: [{ tool: 'exibir_lista_fretes', params: {} }] }
+          };
+        } else if (freightResult.found === true) {
           console.log(`[MaestroV2Context] P4: troca de frete para ${freightResult.frete.transportadora}.`);
           return {
             routed: true,
@@ -605,11 +627,13 @@ export function handleContextContinuation(
       };
     }
 
-    // 4e. Fallback genérico: qualquer pergunta quando há cotação ativa vai ao Brain com contexto completo
-    // Não interceptar: nova cotação, busca de cliente, comandos de salvar já tratados acima
+    // 4e. Fallback genérico — NÃO intercepta se for mudança explícita de assunto ou busca de outro cliente
+    const isMudancaAssunto = /\b(mudei\s+de\s+assunto|outro\s+assunto|deixa\s+a\s+cota|esquece\s+a\s+cota|esquece\s+isso)\b/i.test(clean);
+    // Detecta "sobre o cliente [Nome]" ou "e o cliente [Nome]" com nome próprio (palavra com maiúscula ou só nome)
+    const isBuscaOutroCliente = /\b(sobre\s+o\s+cliente|e\s+o\s+cliente|e\s+cliente|buscar?\s+cliente|cliente\s+[a-záàâãéêíóôõúç]{3,}|cli\s+\d|cliente\s+\d{3,}|sobre\s+[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]{2,}|sobre\s+a\s+empresa)\b/.test(query);
     const isNewQuoteOrClient = /\b(cota[cç]ão\s+para|cot[ei]|fazer\s+or[cç]|buscar\s+cli|cli\s+\d|cpf|cnpj)\b/i.test(clean);
     const isSaveCommand = /\b(sim|salva|grava|confirma|pode\s+salvar|salvar\s+agora|save)\b/i.test(clean);
-    if (!isNewQuoteOrClient && !isSaveCommand && clean.length > 2) {
+    if (!isMudancaAssunto && !isBuscaOutroCliente && !isNewQuoteOrClient && !isSaveCommand && clean.length > 2) {
       console.log('[MaestroV2Context] P4: pergunta livre com cotação ativa — roteando para consulta com contexto completo.');
       return {
         routed: true,
