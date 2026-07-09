@@ -613,10 +613,26 @@ export async function processSimpleQueryWithBrain(
               v2Ctx.orcamentoItens = itensCompostos;
               v2Ctx.domain = 'orcamento_avulso';
               v2Ctx.lastExplicitBudgetItems = itensCompostos;
-              // Mostrar card + pedir endereço (se já tinha endereço, o router devia ter
-              // ido direto para simularOrcamentoAvulso — esse branch é fallback seguro)
-              const { presenterClienteConfirmadoComOrcamento } = require('./maestro-simple-presenter');
-              pr = presenterClienteConfirmadoComOrcamento(lookupResult.client, itensCompostos);
+              // Carregar endereços do cliente para mostrar lista de escolha
+              const idClienteCompostos = lookupResult.client.clientInternalId;
+              const { data: enderecosCompostos } = await supabase
+                .from('enderecos')
+                .select('id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf')
+                .eq('id_cliente', idClienteCompostos)
+                .limit(10);
+
+              if (enderecosCompostos && enderecosCompostos.length > 0) {
+                // Tem endereços cadastrados — mostrar lista para escolha
+                v2Ctx.pendingAddressChoice = {
+                  clientId: idClienteCompostos,
+                  addresses: enderecosCompostos,
+                };
+                pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
+              } else {
+                // Sem endereços cadastrados — pedir manual
+                const { presenterSolicitarEnderecoManual } = require('./maestro-simple-presenter');
+                pr = presenterSolicitarEnderecoManual(lookupResult.client);
+              }
             } else {
               pr = presenterClienteEncontrado(lookupResult.client);
             }
