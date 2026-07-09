@@ -750,6 +750,7 @@ export async function processSimpleQueryWithBrain(
               if (v2Ctx.pendingSaveQuotation) {
                 const prSave3 = perguntarSave3(v2Ctx.pendingSaveQuotation);
                 pr.message.content = pr.message.content + '\n\n' + prSave3.message.content;
+                pr.message.actions = prSave3.message.actions;
               }
             }
           }
@@ -1320,6 +1321,7 @@ export async function processSimpleQueryWithBrain(
                    const { presenterPerguntarSalvarCotacao: perguntarSave } = await import('./maestro-simple-presenter');
                    const prSave = perguntarSave(v2Ctx.pendingSaveQuotation!);
                    pr.message.content = pr.message.content + '\n\n' + prSave.message.content;
+                   pr.message.actions = prSave.message.actions;
                  }
                }
             }
@@ -1378,6 +1380,7 @@ export async function processSimpleQueryWithBrain(
             const { presenterPerguntarSalvarCotacao: perguntarSave2 } = await import('./maestro-simple-presenter');
             const prSave2 = perguntarSave2(v2Ctx.pendingSaveQuotation!);
             pr.message.content = pr.message.content + '\n\n' + prSave2.message.content;
+            pr.message.actions = prSave2.message.actions;
           }
         }
 
