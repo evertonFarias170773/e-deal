@@ -42,7 +42,7 @@ async function test() {
       assert.strictEqual(tool, expectedTool, `Context manager errou. Esperava ${expectedTool}, obteve ${tool}`);
     } else {
       console.log(`[ContextManager] Passou adiante. Chamando Router...`);
-      const routerResult = await routeToolSimple(query, activeClient as any, { type: 'other', label: '', value: '', reason: '', data: null }, ctx as any);
+      const routerResult = await routeToolSimple(query, activeClient as any, { type: 'other', label: '', value: '', reason: '', data: null } as any, ctx as any);
       const tool = routerResult.plan?.steps[0]?.tool;
       console.log(`[Router] Resolvido para: ${tool}`);
       assert.strictEqual(tool, expectedTool, `Router errou. Esperava ${expectedTool}, obteve ${tool}`);
