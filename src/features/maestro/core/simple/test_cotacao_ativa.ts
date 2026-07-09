@@ -1,4 +1,4 @@
-﻿/**
+/**
  * test_cotacao_ativa.ts
  * npx tsx src/features/maestro/core/simple/test_cotacao_ativa.ts
  */
@@ -47,15 +47,15 @@ assert(detectQuoteQuery('bom dia') === null, 'bom dia nao e cotacao');
 
 console.log('\n=== Suite 2: detectFreightSwitch ===');
 const r1 = detectFreightSwitch('mude para sao miguel', MOCK_FRETES);
-assert(r1 && r1.found && r1.frete.transportadora === 'Sao Miguel', 'mude para sao miguel');
+assert(Boolean(r1 && r1.found === true && (r1 as any).frete.transportadora === 'Sao Miguel'), 'mude para sao miguel');
 const r2 = detectFreightSwitch('use a unesul', MOCK_FRETES);
-assert(r2 && r2.found && r2.frete.transportadora === 'Unesul', 'use a unesul');
+assert(Boolean(r2 && r2.found === true && (r2 as any).frete.transportadora === 'Unesul'), 'use a unesul');
 const r3 = detectFreightSwitch('usa o sedex', MOCK_FRETES);
-assert(r3 && r3.found && r3.frete.transportadora === 'Correios SEDEX', 'usa o sedex');
+assert(Boolean(r3 && r3.found === true && (r3 as any).frete.transportadora === 'Correios SEDEX'), 'usa o sedex');
 const r4 = detectFreightSwitch('usa o mais barato', MOCK_FRETES);
-assert(r4 && r4.found && r4.frete.valor === 69.32, 'mais barato = unesul');
+assert(Boolean(r4 && r4.found === true && (r4 as any).frete.valor === 69.32), 'mais barato = unesul');
 const r5 = detectFreightSwitch('mude para braspress', MOCK_FRETES);
-assert(r5 && !r5.found && r5.mentioned === 'braspress', 'braspress nao disponivel');
+assert(Boolean(r5 && r5.found === false && (r5 as any).mentioned === 'braspress'), 'braspress nao disponivel');
 const r6 = detectFreightSwitch('qual subtotal', MOCK_FRETES);
 assert(r6 === null, 'subtotal nao e troca de frete');
 
