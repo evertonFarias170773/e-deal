@@ -19,11 +19,13 @@ import type { SimpleClientContext, EnderecoSimples, ContatoSimples, SocioSimples
 
 export interface MaestroClientLookupResult {
   found: boolean;
-  reason?: 'not_found' | 'auth_error' | 'multiple' | 'partial_match';
+  reason?: 'not_found' | 'auth_error' | 'multiple' | 'partial_match' | 'too_many';
   /** Nível de confiança do match */
   confidence?: 'exact' | 'high' | 'low';
   client?: SimpleClientContext | null;
   candidates?: Array<{ id_cliente: number; nome: string; fantasia: string; documento: string; cidade_uf: string }>;
+  /** Termo original usado na busca (para mensagem de refinamento) */
+  searchTerm?: string;
 }
 
 function toStr(val: any): string {
@@ -373,13 +375,18 @@ export async function buscarClientePorTexto(
     'cpf', 'cnpj', 'codigo', 'codigo', 'cadastro', 'e'
   ]);
 
-  // Função auxiliar: executa query com múltiplos ILIKEs em AND sobre busca_geral
+  // Função auxiliar: executa query com múltiplos ILIKEs em AND sobre busca_geral.
+  // Busca 7 registros para detectar overflow (>6 = too_many, cap visual em 6).
   async function queryAND(terms: string[]) {
     let q = supabase
       .from('vw_cadastros_clientes_lista')
       .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido');
     terms.forEach(w => { q = q.ilike('busca_geral', `%${w}%`); });
-    return q.order('id_cliente', { ascending: false }).limit(5);
+    return q.order('id_cliente', { ascending: false }).limit(7);
+  }
+
+  function toCandidates(rows: any[]) {
+    return rows.map(r => ({ id_cliente: r.id_cliente, nome: r.nome, fantasia: r.fantasia, documento: r.documento, cidade_uf: r.cidade_uf }));
   }
 
   try {
@@ -391,12 +398,13 @@ export async function buscarClientePorTexto(
         .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido')
         .ilike('busca_geral', `%${soDigitos}%`)
         .order('id_cliente', { ascending: false })
-        .limit(5);
+        .limit(7);  // 7 para detectar too_many
       if (error) {
         if (error.code === 'PGRST301' || error.message?.includes('JWT')) return { found: false, reason: 'auth_error' };
         return { found: false, reason: 'not_found' };
       }
       if (!rows || rows.length === 0) return { found: false, reason: 'not_found' };
+      if (rows.length > 6) return { found: false, reason: 'too_many', searchTerm: termo };
       if (rows.length === 1) {
         const detail = await buildDetailedClientContext(supabase, rows[0].id_cliente, rows[0].id_cliente_text, rows[0]);
         return { found: true, confidence: 'high', client: detail ?? buildFallbackClientContext(rows[0]) };
@@ -404,7 +412,7 @@ export async function buscarClientePorTexto(
       return {
         found: false,
         reason: 'multiple',
-        candidates: rows.map(r => ({ id_cliente: r.id_cliente, nome: r.nome, fantasia: r.fantasia, documento: r.documento, cidade_uf: r.cidade_uf }))
+        candidates: toCandidates(rows)
       };
     }
 
@@ -453,12 +461,17 @@ export async function buscarClientePorTexto(
       return { found: true, confidence: 'exact', client: detail ?? buildFallbackClientContext(exactMatch) };
     }
 
-    // Múltiplos candidatos → lista para o usuário escolher
+    // Muitos resultados (>6): pede refinamento sem listar
+    if (rows.length > 6) {
+      return { found: false, reason: 'too_many', searchTerm: termo };
+    }
+
+    // 2–6 candidatos → lista numerada para o usuário escolher
     if (rows.length > 1) {
       return {
         found: false,
         reason: 'multiple',
-        candidates: rows.map(r => ({ id_cliente: r.id_cliente, nome: r.nome, fantasia: r.fantasia, documento: r.documento, cidade_uf: r.cidade_uf }))
+        candidates: toCandidates(rows)
       };
     }
 

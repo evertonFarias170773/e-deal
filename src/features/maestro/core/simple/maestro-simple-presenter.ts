@@ -289,6 +289,30 @@ export function presenterClienteErroAuth(): PresenterResult {
   };
 }
 
+/**
+ * Presenter exibido quando a busca retorna mais de 6 resultados.
+ * O Maestro pede refinamento sem listar nem escolher automaticamente.
+ */
+export function presenterClienteBuscaAmpla(termo: string): PresenterResult {
+  return {
+    message: {
+      id:          genId(),
+      role:        'maestro',
+      content:     `Encontrei muitos cadastros relacionados a **"${termo}"**. Para evitar selecionar o cliente errado, me informe um dado mais específico:\n\n• **Nome completo** ou razão social\n• **CPF** ou **CNPJ**\n• **Código** do cliente\n• **Cidade** ou UF`,
+      contentType: 'text',
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'low',
+    },
+    activity: [
+      { id: 'step-1', label: 'Consultando cliente no ERP', status: 'done', timestamp: nowTime() },
+      { id: 'step-2', label: 'Muitos resultados — refinamento necessário', status: 'done', timestamp: nowTime() },
+    ],
+    lastAnswerUpdate: null,
+  };
+}
+
 // ─── Presenter: Resumo Geral ─────────────────────────────────────────────
 
 export function presenterClienteSummary(ctx: SimpleMaestroContext): PresenterResult {

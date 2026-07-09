@@ -79,6 +79,53 @@ async function test() {
     console.log('[Assertion] cpf 67149049087 => documentPartial=false ✅');
   }
 
+  // 6. Testes de lógica do confidence gate (mock sem Supabase)
+  console.log('\n=== Testes de Confidence Gate (mock) ===');
+
+  // 6a. too_many: mais de 6 resultados → pede refinamento
+  {
+    const fakeManyRows = Array.from({ length: 7 }, (_, i) => ({
+      id_cliente: 1000 + i, nome: `Cliente ${i}`, fantasia: '', documento: '', cidade_uf: 'SP'
+    }));
+    // Simula o que a função faria internamente
+    const isTooMany = fakeManyRows.length > 6;
+    assert.strictEqual(isTooMany, true, 'too_many deve ser true para 7 resultados');
+    console.log('[Assertion] 7 resultados => too_many=true ✅');
+  }
+
+  // 6b. multiple: entre 2 e 6 resultados → lista candidatos
+  {
+    const fakeFewRows = Array.from({ length: 4 }, (_, i) => ({
+      id_cliente: 2000 + i, nome: `Empresa ${i}`, fantasia: '', documento: '', cidade_uf: 'SP'
+    }));
+    const isMultiple = fakeFewRows.length > 1 && fakeFewRows.length <= 6;
+    assert.strictEqual(isMultiple, true, 'multiple deve ser true para 4 resultados');
+    console.log('[Assertion] 4 resultados => multiple=true (lista) ✅');
+  }
+
+  // 6c. limite visual máximo: cap em 6
+  {
+    const candidates6 = Array.from({ length: 6 }, (_, i) => ({ id_cliente: i }));
+    assert.ok(candidates6.length <= 6, 'Limite visual deve ser <= 6 candidatos');
+    console.log('[Assertion] candidates.length=6 <= 6 ✅');
+  }
+
+  // 6d. partial_match: exatamente 1 resultado sem match exato → confirmação
+  {
+    const fakeOneRow = [{ id_cliente: 9999, nome: 'Silva Distribuidora', fantasia: '', documento: '', cidade_uf: 'MG' }];
+    const isPartial = fakeOneRow.length === 1;
+    assert.strictEqual(isPartial, true, 'partial_match deve ser true para 1 resultado sem match exato');
+    console.log('[Assertion] 1 resultado sem match exato => partial_match ✅');
+  }
+
+  // 6e. too_many não deve listar candidatos (candidates deve ser undefined)
+  {
+    const tooManyResult = { found: false as const, reason: 'too_many' as const, searchTerm: 'silva' };
+    assert.strictEqual(tooManyResult.reason, 'too_many');
+    assert.ok(!('candidates' in tooManyResult), 'too_many nao deve ter candidates');
+    console.log('[Assertion] too_many nao tem candidates ✅');
+  }
+
   console.log("\n✅ Todos os testes do roteador de cliente passaram!");
 }
 

@@ -58,6 +58,7 @@ import {
   presenterClienteNaoEncontrado,
   presenterClienteMultiplosCandidatos,
   presenterClienteMatchParcial,
+  presenterClienteBuscaAmpla,
   presenterClienteErroAuth,
   presenterClienteSummary,
   presenterCampoContextual,
@@ -315,7 +316,11 @@ export async function processSimpleQuery(
         if (result.reason === 'auth_error') {
           return toResult(presenterClienteErroAuth());
         }
-        // Múltiplos candidatos: lista numerada para o usuário escolher
+        // Busca muito ampla: pede refinamento
+        if (result.reason === 'too_many') {
+          return toResult(presenterClienteBuscaAmpla(result.searchTerm ?? busca));
+        }
+        // Múltiplos candidatos (2–6): lista numerada para o usuário escolher
         if (result.reason === 'multiple' && result.candidates?.length) {
           return toResult(presenterClienteMultiplosCandidatos(busca, result.candidates));
         }
@@ -575,6 +580,8 @@ export async function processSimpleQueryWithBrain(
             clientForCtx = lookupResult.client;
           } else if (lookupResult.reason === 'auth_error') {
             pr = presenterClienteErroAuth();
+          } else if (lookupResult.reason === 'too_many') {
+            pr = presenterClienteBuscaAmpla(lookupResult.searchTerm ?? busca);
           } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
             pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
           } else if (lookupResult.reason === 'partial_match' && lookupResult.candidates?.length) {
