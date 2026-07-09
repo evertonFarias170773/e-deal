@@ -2065,7 +2065,7 @@ export function presenterPerguntarSalvarCotacao(pending: PendingSaveQuotation): 
   lines.push(`**Frete (${pending.freteEscolhido.transportadora}):** ${formatBRL(pending.freteEscolhido.valor)}`);
   lines.push(`**Total:** ${formatBRL(pending.total)}`);
   lines.push(``);
-  lines.push(`Digite **salvar**, **editar antes** ou **cancelar**:`);
+
 
   return {
     message: {

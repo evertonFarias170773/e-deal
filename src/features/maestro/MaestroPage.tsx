@@ -6,9 +6,10 @@ import { MaestroSuggestions } from './components/shared/MaestroSuggestions';
 import { MaestroInput } from './components/chat/MaestroInput';
 import { MaestroContextPanel } from './components/context/MaestroContextPanel';
 import { MaestroLoadingBubble } from './components/chat/MaestroLoadingBubble';
+import { MaestroSaveBar } from './components/chat/MaestroSaveBar';
 import { MOCK_SUGGESTIONS } from './mocks/maestro.mock';
 import { MaestroProvider } from './providers/maestro.provider';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 export type PanelMode = 'expanded' | 'compact' | 'hidden';
 
@@ -31,6 +32,43 @@ function MaestroLayout() {
   const [panelMode, setPanelMode] = useState<PanelMode>('expanded');
 
   const showSuggestions = messages.length <= 1 && !isLoading;
+
+  // ── Banner fixo de confirmação de salvar ─────────────────────────────────
+  // Encontra a última mensagem Maestro que tem actions.
+  // Se a mensagem mais recente do Maestro NÃO tem actions, o contexto mudou → banner some.
+  const pendingSaveActions = useMemo(() => {
+    // Procura do final para o início
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      // Mensagem do usuário = contexto potencialmente mudou (mas banner persiste até resposta do Maestro)
+      if (msg.role === 'user') continue;
+      // Mensagem do Maestro sem actions = contexto encerrado (proposta salva ou assunto mudou)
+      if (msg.role === 'maestro' && (!msg.actions || msg.actions.length === 0)) {
+        return null;
+      }
+      // Mensagem do Maestro com actions = banner ativo
+      if (msg.role === 'maestro' && msg.actions && msg.actions.length > 0) {
+        return msg.actions;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  // Extrai resumo da cotação (Cliente + Total) para exibir no banner
+  const saveBarSummary = useMemo(() => {
+    if (!pendingSaveActions) return undefined;
+    const lastActionMsg = [...messages].reverse().find(
+      m => m.role === 'maestro' && m.actions && m.actions.length > 0
+    );
+    if (!lastActionMsg) return undefined;
+    const content = lastActionMsg.content ?? '';
+    const clientMatch = content.match(/\*\*Cliente:\*\*\s*([^\n]+)/);
+    const totalMatch = content.match(/\*\*Total:\*\*\s*(R\$[^\n]+)/);
+    if (clientMatch && totalMatch) {
+      return `${clientMatch[1].trim()} — ${totalMatch[1].trim()}`;
+    }
+    return undefined;
+  }, [pendingSaveActions, messages]);
 
   return (
     <div className="flex overflow-hidden -m-4 lg:-m-6" style={{ height: 'calc(100vh - 65px)' }}>
@@ -55,14 +93,22 @@ function MaestroLayout() {
               {messages.map(msg => (
                 <MaestroMessage key={msg.id} message={msg} onSend={sendMessage} />
               ))}
-              {/* Optional fallback loading bubble if there's no thinking message */}
               {isLoading && !messages.some(m => m.status === 'thinking' || m.status === 'streaming') && (
-                 <MaestroLoadingBubble />
+                <MaestroLoadingBubble />
               )}
               <div ref={messagesEndRef} />
             </div>
           )}
         </div>
+
+        {/* ── Banner fixo de cotação pendente (acima do input) ─────────────── */}
+        {pendingSaveActions && !isLoading && (
+          <MaestroSaveBar
+            actions={pendingSaveActions}
+            summary={saveBarSummary}
+            onSend={sendMessage}
+          />
+        )}
 
         <MaestroInput
           value={inputValue}
