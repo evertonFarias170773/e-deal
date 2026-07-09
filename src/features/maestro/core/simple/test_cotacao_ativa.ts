@@ -65,7 +65,7 @@ function testP4(query: string, expectedTool: string) {
   ctx.activeQuote = { ...MOCK_QUOTE };
   const result = handleContextContinuation(query, ctx, null);
   const tool = result?.plan?.steps?.[0]?.tool;
-  assert(result?.routed && tool === expectedTool, '"' + query + '" -> ' + expectedTool, 'got: ' + tool);
+  assert(!!result?.routed && tool === expectedTool, '"' + query + '" -> ' + expectedTool, 'got: ' + tool);
 }
 testP4('qual subtotal dos produtos', 'consultar_cotacao_ativa');
 testP4('qual o total', 'consultar_cotacao_ativa');
@@ -81,7 +81,7 @@ function testFSwitch(query: string, expectedTool: string) {
   ctx.activeQuote = { ...MOCK_QUOTE };
   const result = handleContextContinuation(query, ctx, null);
   const tool = result?.plan?.steps?.[0]?.tool;
-  assert(result?.routed && tool === expectedTool, '"' + query + '" -> ' + expectedTool, 'got: ' + tool);
+  assert(!!result?.routed && tool === expectedTool, '"' + query + '" -> ' + expectedTool, 'got: ' + tool);
 }
 testFSwitch('mude para sao miguel', 'trocar_frete_cotacao_ativa');
 testFSwitch('use a unesul', 'trocar_frete_cotacao_ativa');
@@ -91,7 +91,7 @@ testFSwitch('mude para braspress', 'frete_nao_disponivel');
 console.log('\n=== Suite 5: troca endereco ===');
 { const ctx = getEmptyV2Context(); ctx.activeQuote = { ...MOCK_QUOTE };
   const r = handleContextContinuation('quero mudar o endereco', ctx, null);
-  assert(r?.routed && r?.plan?.steps?.[0]?.tool === 'iniciar_troca_endereco_cotacao', 'mudar endereco'); }
+  assert(!!r?.routed && r?.plan?.steps?.[0]?.tool === 'iniciar_troca_endereco_cotacao', 'mudar endereco'); }
 
 console.log('\n=== Suite 6: sem activeQuote nao ativa P4 ===');
 { const ctx = getEmptyV2Context();
