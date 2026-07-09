@@ -1342,8 +1342,8 @@ export async function processSimpleQueryWithBrain(
             v2Ctx.pendingFreightChoice = null;
             console.log('[MaestroEngine] confirmar_frete_cotacao:', freteEscolhido.transportadora, '| total:', total);
 
-            const { presenterConsultarCotacaoAtiva } = await import('./maestro-simple-presenter');
-            pr = presenterConsultarCotacaoAtiva(v2Ctx.activeQuote!, 'resumo');
+            const { presenterFreteConfirmado } = await import('./maestro-simple-presenter');
+            pr = presenterFreteConfirmado(v2Ctx.activeQuote!);
             const { presenterPerguntarSalvarCotacao: perguntarSave2 } = await import('./maestro-simple-presenter');
             const prSave2 = perguntarSave2(v2Ctx.pendingSaveQuotation!);
             pr.message.content = pr.message.content + '\n\n' + prSave2.message.content;

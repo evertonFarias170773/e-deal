@@ -2437,3 +2437,62 @@ export function presenterEscolhaTransportadora(
     lastAnswerUpdate: null,
   };
 }
+
+/**
+ * Exibe o card formatado da proposta após o usuário confirmar a transportadora.
+ * Mantém o mesmo visual do card original de orçamento (com emojis, separadores, etc).
+ */
+export function presenterFreteConfirmado(quote: ActiveQuoteSnapshot): PresenterResult {
+  const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const listaItens = quote.itens
+    .map(it => [
+      `🎟️ ${it.nome}`,
+      `📦 Quantidade: ${it.quantidade.toLocaleString('pt-BR')} unidades — ${fmtBRL(it.subtotal)}`,
+      `🏭 Prazo de produção: Prazo sob consulta`,
+    ].join('\n'))
+    .join('\n\n');
+
+  const prazoFrete = quote.freteSelecionado.prazo
+    ? `Prazo de entrega: ${quote.freteSelecionado.prazo}`
+    : '';
+
+  const lines = [
+    `📄 Orçamento para ${quote.clientName}`,
+    ``,
+    listaItens,
+    ``,
+    `-----------------------------`,
+    `📌 ${quote.enderecoFull}`,
+    `-----------------------------`,
+    ``,
+    `🚚 ${quote.freteSelecionado.transportadora}: ${fmtBRL(quote.freteSelecionado.valor)}`,
+  ];
+  if (prazoFrete) lines.push(prazoFrete);
+  lines.push(
+    ``,
+    `🧾 Subtotal produtos: ${fmtBRL(quote.subtotalProdutos)}`,
+    `Frete selecionado (${quote.freteSelecionado.transportadora}): ${fmtBRL(quote.freteSelecionado.valor)}`,
+    ``,
+    `💰 Total final: ${fmtBRL(quote.total)}`,
+  );
+
+  return {
+    message: {
+      id:          genId('frete-confirmed'),
+      role:        'maestro',
+      content:     lines.join('\n'),
+      contentType: 'text',
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'high',
+    },
+    activity: [
+      { id: 'step-1', label: 'Produtos calculados',      status: 'done', timestamp: nowTime() },
+      { id: 'step-2', label: 'Frete selecionado',        status: 'done', timestamp: nowTime() },
+      { id: 'step-3', label: 'Orçamento finalizado',     status: 'done', timestamp: nowTime() },
+    ],
+    lastAnswerUpdate: null,
+  };
+}
