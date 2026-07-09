@@ -249,6 +249,33 @@ export async function routeToolSimple(
       v2Ctx.lastExplicitBudgetRequestText = query;
       v2Ctx.domain = 'orcamento_avulso'; // mantém domínio para retomada posterior
 
+      // ── OTIMIZAÇÃO: cliente já ativo com mesmo ID → ir direto para cotação ──
+      // Se o cliente mencionado é um ID numérico E esse cliente já está ativo
+      // no contexto, podemos pular o buscarCliente e ir direto para a cotação.
+      const clienteJaAtivo = clienteNaQuery.tipo === 'id' && (
+        activeClient?.clientDisplayCode === clienteNaQuery.valor ||
+        String(v2Ctx.activeEntities?.clientInternalId) === clienteNaQuery.valor ||
+        // Aceita também o código display numérico
+        (activeClient && /^\d+$/.test(clienteNaQuery.valor) && 
+          activeClient.clientDisplayCode === clienteNaQuery.valor)
+      );
+
+      if (clienteJaAtivo) {
+        console.log('====== [MaestroV2Router] LOG DE DEV ======');
+        console.log(`- Decisão: intenção composta + cliente já ativo → simularOrcamentoAvulso direto`);
+        console.log(`- Cliente ativo: ${activeClient?.clientName} (${activeClient?.clientDisplayCode})`);
+        console.log(`- Itens: ${JSON.stringify(engineResult.items)}`);
+        console.log('==========================================');
+        return {
+          routed: true,
+          plan: {
+            steps: [
+              { tool: 'simularOrcamentoAvulso', params: { itens: engineResult.items } }
+            ]
+          }
+        };
+      }
+
       console.log('====== [MaestroV2Router] LOG DE DEV ======');
       console.log(`- Domínio ativo: "${v2Ctx.domain}"`);
       console.log(`- Mensagem recebida: "${query}"`);

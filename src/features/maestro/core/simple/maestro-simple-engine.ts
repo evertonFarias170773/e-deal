@@ -522,7 +522,12 @@ export async function processSimpleQueryWithBrain(
         if (['consultarBoletos', 'consultarRecebimentoClientePeriodo', 'compararRecebimentoClienteMeses'].includes(step.tool)) {
           v2Ctx.domain = 'financeiro';
         } else if (['buscarCliente', 'consultarCampoCadastro'].includes(step.tool)) {
-          v2Ctx.domain = 'cliente';
+          // Preserva 'orcamento_avulso' se há intenção composta (itens + cliente)
+          // para que o LLM seja pulado e o presenter de cotação seja exibido
+          const temItensCompostos = v2Ctx.lastExplicitBudgetItems && v2Ctx.lastExplicitBudgetItems.length > 0;
+          if (!(v2Ctx.domain === 'orcamento_avulso' && temItensCompostos)) {
+            v2Ctx.domain = 'cliente';
+          }
         } else if (['consultarPropostasCliente', 'consultarUltimoOrcamento'].includes(step.tool)) {
           v2Ctx.domain = 'proposta';
         }
@@ -598,8 +603,23 @@ export async function processSimpleQueryWithBrain(
               v2Ctx.pendingAddressChoice = null;
               v2Ctx.activeQuote = null; // limpa cotação ativa ao trocar cliente
             }
-            pr = presenterClienteEncontrado(lookupResult.client);
             clientForCtx = lookupResult.client;
+
+            // ── INTENÇÃO COMPOSTA: cliente + itens na mesma mensagem ──────────────
+            // Se há itens salvos da mensagem atual, prosseguir para cotação automaticamente.
+            const itensCompostos = itensDaMensagemAtual;
+            if (itensCompostos && itensCompostos.length > 0) {
+              console.log(`[MaestroEngine] buscarCliente: intenção composta detectada. Cliente ${lookupResult.client.clientName} + ${itensCompostos.length} itens. Prosseguindo para cotação.`);
+              v2Ctx.orcamentoItens = itensCompostos;
+              v2Ctx.domain = 'orcamento_avulso';
+              v2Ctx.lastExplicitBudgetItems = itensCompostos;
+              // Mostrar card + pedir endereço (se já tinha endereço, o router devia ter
+              // ido direto para simularOrcamentoAvulso — esse branch é fallback seguro)
+              const { presenterClienteConfirmadoComOrcamento } = require('./maestro-simple-presenter');
+              pr = presenterClienteConfirmadoComOrcamento(lookupResult.client, itensCompostos);
+            } else {
+              pr = presenterClienteEncontrado(lookupResult.client);
+            }
           } else if (lookupResult.reason === 'auth_error') {
             pr = presenterClienteErroAuth();
           } else if (lookupResult.reason === 'too_many') {

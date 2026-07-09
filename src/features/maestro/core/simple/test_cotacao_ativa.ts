@@ -25,11 +25,11 @@ const MOCK_QUOTE = {
   enderecoId: 'end-uuid-02', enderecoFull: 'Travessa Canoas, 39 - Centro, Santa Cruz do Sul/RS',
   cep: '96810-000', cidade: 'Santa Cruz do Sul', uf: 'RS',
   fretes: MOCK_FRETES, freteSelecionado: MOCK_FRETES[2],
-  subtotalProdutos: 6510, total: 7059.39, pesoTotalGramas: 1224, status: 'nao_salva',
+  subtotalProdutos: 6510, total: 7059.39, pesoTotalGramas: 1224, status: 'nao_salva' as const,
 };
 
 let passed = 0, failed = 0;
-function assert(ok, name, detail = '') {
+function assert(ok: boolean, name: string, detail = '') {
   if (ok) { console.log('OK  ' + name); passed++; }
   else { console.error('FAIL ' + name + (detail ? ' — ' + detail : '')); failed++; }
 }
@@ -60,7 +60,7 @@ const r6 = detectFreightSwitch('qual subtotal', MOCK_FRETES);
 assert(r6 === null, 'subtotal nao e troca de frete');
 
 console.log('\n=== Suite 3: P4 consulta ===');
-function testP4(query, expectedTool) {
+function testP4(query: string, expectedTool: string) {
   const ctx = getEmptyV2Context();
   ctx.activeQuote = { ...MOCK_QUOTE };
   const result = handleContextContinuation(query, ctx, null);
@@ -76,7 +76,7 @@ testP4('me resume essa cotacao', 'consultar_cotacao_ativa');
 testP4('qual peso total', 'consultar_cotacao_ativa');
 
 console.log('\n=== Suite 4: P4 troca frete ===');
-function testFSwitch(query, expectedTool) {
+function testFSwitch(query: string, expectedTool: string) {
   const ctx = getEmptyV2Context();
   ctx.activeQuote = { ...MOCK_QUOTE };
   const result = handleContextContinuation(query, ctx, null);
@@ -108,3 +108,5 @@ console.log('\n========================================');
 console.log('Resultado: ' + passed + ' passou, ' + failed + ' falhou.');
 if (failed === 0) { console.log('TODOS OS TESTES PASSARAM'); process.exit(0); }
 else { console.error('HA FALHAS'); process.exit(1); }
+
+
