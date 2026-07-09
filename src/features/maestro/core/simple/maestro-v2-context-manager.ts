@@ -301,7 +301,8 @@ export type QuoteQueryType =
   | 'endereco'
   | 'itens'
   | 'peso'
-  | 'resumo';
+  | 'resumo'
+  | 'livre';
 
 /**
  * Detecta pergunta sobre a cotação ativa.
@@ -309,17 +310,17 @@ export type QuoteQueryType =
  */
 export function detectQuoteQuery(clean: string): QuoteQueryType | null {
   // Resumo geral
-  if (/\b(me\s+resume|resumo\s+da\s+cota[cç]|resumo\s+do\s+or[cç]|o\s+que\s+tem\s+no\s+or[cç]|quais\s+itens)\b/i.test(clean)) return 'resumo';
-  // Peso
-  if (/\b(peso\s+total|peso\s+considerado|quantos\s+gramas|peso\s+do\s+or[cç]|peso\s+desse\s+or[cç])\b/i.test(clean)) return 'peso';
+  if (/\b(me\s+resume|resumo\s+da\s+cota[cç]|resumo\s+do\s+or[cç]|o\s+que\s+tem\s+no\s+or[cç]|quais\s+itens|toda\s+a\s+cota[cç]|resume\s+tudo|mostra\s+a\s+cota[cç])\b/i.test(clean)) return 'resumo';
+  // Peso — captura qualquer forma de pedir o peso
+  if (/\b(peso\s+total|peso\s+considerado|peso\s+calculado|peso\s+usado|quantos\s+gramas|qual\s+o\s+peso|qual\s+peso|quanto\s+pesa|peso\s+do\s+or[cç]|peso\s+desse\s+or[cç]|peso\s+da\s+cota[cç]|gramas\s+calculados|peso|gramas|kg)\b/i.test(clean)) return 'peso';
   // Subtotal de produtos
-  if (/\b(subtotal\s+dos\s+produtos|valor\s+dos\s+produtos|quanto\s+ficou\s+os\s+produtos|quanto\s+ficou\s+nos\s+produtos|pre[cç]o\s+dos\s+produtos|subtotal\s+or[cç]|subtotal\s+cota[cç])\b/i.test(clean)) return 'subtotal';
+  if (/\b(subtotal|valor\s+dos\s+produtos|quanto\s+ficou\s+(os\s+)?produtos|pre[cç]o\s+dos\s+produtos|valor\s+s[e\u00ea]m\s+frete)\b/i.test(clean)) return 'subtotal';
   // Total geral
-  if (/\b(total\s+final|valor\s+total|qual\s+o\s+total|total\s+da\s+cota[cç]|total\s+do\s+or[cç]|total\s+agora|quanto\s+ficou\s+no\s+total|quanto\s+da|qual.*total)\b/i.test(clean)) return 'total';
+  if (/\b(total\s+final|valor\s+total|qual\s+o\s+total|total\s+da\s+cota[cç]|total\s+do\s+or[cç]|total\s+agora|quanto\s+ficou|quanto\s+d[aá]|qual.*total)\b/i.test(clean)) return 'total';
   // Frete sugerido
-  if (/\b(frete\s+sugerido|frete\s+selecionado|frete\s+escolhido|qual\s+frete\s+foi|qual\s+o\s+frete|frete\s+da\s+cota[cç])\b/i.test(clean)) return 'frete_sugerido';
+  if (/\b(frete\s+sugerido|frete\s+selecionado|frete\s+escolhido|qual\s+frete\s+foi|qual\s+o\s+frete|frete\s+da\s+cota[cç]|frete\s+atual|qual\s+frete)\b/i.test(clean)) return 'frete_sugerido';
   // Transportadoras
-  if (/\b(quais\s+transportadoras|transportadoras\s+apareceram|op[cç][oõ]es\s+de\s+frete|quais\s+fretes|quais\s+op[cç][oõ]es|quais\s+as\s+op[cç][oõ]es)\b/i.test(clean)) return 'transportadoras';
+  if (/\b(quais\s+transportadoras|transportadoras\s+apareceram|op[cç][oõ]es\s+de\s+frete|quais\s+fretes|quais\s+op[cç][oõ]es|quais\s+as\s+op[cç][oõ]es|transportadoras)\b/i.test(clean)) return 'transportadoras';
   // Endereço
   if (/\b(endere[cç]o\s+usado|qual\s+endere[cç]o\s+foi|endere[cç]o\s+da\s+cota[cç]|endere[cç]o\s+do\s+or[cç])\b/i.test(clean)) return 'endereco';
   // Itens
@@ -556,6 +557,18 @@ export function handleContextContinuation(
       return {
         routed: true,
         plan: { steps: [{ tool: 'iniciar_troca_endereco_cotacao', params: {} }] }
+      };
+    }
+
+    // 4e. Fallback genérico: qualquer pergunta quando há cotação ativa vai ao Brain com contexto completo
+    // Não interceptar: nova cotação, busca de cliente, comandos de salvar já tratados acima
+    const isNewQuoteOrClient = /\b(cota[cç]ão\s+para|cot[ei]|fazer\s+or[cç]|buscar\s+cli|cli\s+\d|cpf|cnpj)\b/i.test(clean);
+    const isSaveCommand = /\b(sim|salva|grava|confirma|pode\s+salvar|salvar\s+agora|save)\b/i.test(clean);
+    if (!isNewQuoteOrClient && !isSaveCommand && clean.length > 2) {
+      console.log('[MaestroV2Context] P4: pergunta livre com cotação ativa — roteando para consulta com contexto completo.');
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'consultar_cotacao_ativa', params: { query: 'livre' } }] }
       };
     }
   }

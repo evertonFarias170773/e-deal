@@ -1568,8 +1568,9 @@ export async function processSimpleQueryWithBrain(
   // 3. Se LLM não está habilitado, ou se for domínio de orçamento avulso (para preservar a formatação comercial), retorna resposta determinística
   // E também ignorar LLM se for 'orcamento_avulso_desativado', pois ele já tem resposta pronta
   // Para tools do P4 (cotação ativa): NÃO bloquear LLM — passa activeQuote como contexto e deixa o Brain humanizar
+  // Exceção: 'simularOrcamentoAvulso' (o card formatado da cotação não deve ser reescrito pelo Brain)
   const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true'
-    || v2Ctx.domain === 'orcamento_avulso'
+    || (v2Ctx.domain === 'orcamento_avulso' && v2Ctx.lastTool === 'simularOrcamentoAvulso')
     || v2Ctx.lastTool === 'orcamento_avulso_desativado';
 
   if (skipLLM) {
