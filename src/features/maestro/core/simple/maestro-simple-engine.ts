@@ -57,6 +57,7 @@ import {
   presenterClienteEncontrado,
   presenterClienteNaoEncontrado,
   presenterClienteMultiplosCandidatos,
+  presenterClienteMatchParcial,
   presenterClienteErroAuth,
   presenterClienteSummary,
   presenterCampoContextual,
@@ -295,8 +296,11 @@ export async function processSimpleQuery(
         if (intent.code) {
           result = await buscarClientePorCodigo(supabase, intent.code);
         } else if (intent.document) {
-          // CPF/CNPJ: busca via busca_geral (field normalizado na view)
-          result = await buscarClientePorTexto(supabase, intent.document);
+          // CPF/CNPJ: busca via busca_geral — passa se é documento parcial
+          result = await buscarClientePorTexto(supabase, intent.document, {
+            documentPartial: intent.documentPartial,
+            documentType: intent.documentType
+          });
         } else if (intent.name) {
           result = await buscarClientePorTexto(supabase, intent.name);
         } else {
@@ -311,6 +315,15 @@ export async function processSimpleQuery(
         if (result.reason === 'auth_error') {
           return toResult(presenterClienteErroAuth());
         }
+        // Múltiplos candidatos: lista numerada para o usuário escolher
+        if (result.reason === 'multiple' && result.candidates?.length) {
+          return toResult(presenterClienteMultiplosCandidatos(busca, result.candidates));
+        }
+        // Match parcial único: pede confirmação sem abrir cliente
+        if (result.reason === 'partial_match' && result.candidates?.length) {
+          return toResult(presenterClienteMatchParcial(busca, result.candidates[0]));
+        }
+        // Não encontrado: resp sem activeClient para evitar contaminação
         return toResult(presenterClienteNaoEncontrado(busca));
       }
 
@@ -494,7 +507,7 @@ export async function processSimpleQueryWithBrain(
   if (process.env.MAESTRO_V2_ENABLED === 'true') {
     try {
       const routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
-      if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
+        if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
         const step = routeResult.plan.steps[0];
         let pr: PresenterResult | null = null;
         let clientForCtx = simpleCtx.activeClient;
@@ -534,10 +547,12 @@ export async function processSimpleQueryWithBrain(
 
         else if (step.tool === 'buscarCliente') {
           const busca = step.params.busca?.trim() ?? '';
+          const documentPartial = step.params.documentPartial ?? false;
+          const documentType = step.params.documentType as 'cpf' | 'cnpj' | undefined;
           let lookupResult = { found: false } as any;
 
           // Prioridade 1: Busca exata por ID Numérico
-          if (/^\d+$/.test(busca)) {
+          if (/^\d+$/.test(busca) && !documentPartial) {
             const numCode = parseInt(busca, 10);
             if (!isNaN(numCode)) {
               const resExato = await supabase.from('vw_cadastros_clientes_lista')
@@ -550,9 +565,9 @@ export async function processSimpleQueryWithBrain(
             }
           }
 
-          // Prioridade 2: Documento exato (CPF/CNPJ) ou Texto Livre
+          // Prioridade 2: Texto livre (nome, CPF/CNPJ parcial)
           if (!lookupResult.found) {
-            lookupResult = await buscarClientePorTexto(supabase, busca);
+            lookupResult = await buscarClientePorTexto(supabase, busca, { documentPartial, documentType });
           }
 
           if (lookupResult.found && lookupResult.client) {
@@ -562,6 +577,8 @@ export async function processSimpleQueryWithBrain(
             pr = presenterClienteErroAuth();
           } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
             pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
+          } else if (lookupResult.reason === 'partial_match' && lookupResult.candidates?.length) {
+            pr = presenterClienteMatchParcial(busca, lookupResult.candidates[0]);
           } else {
             pr = presenterClienteNaoEncontrado(busca);
           }

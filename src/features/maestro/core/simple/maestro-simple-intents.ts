@@ -57,6 +57,10 @@ export interface DetectedIntent {
   code?: string;
   /** Para client_lookup por doc: CPF/CNPJ no formato original */
   document?: string;
+  /** Tipo de documento detectado */
+  documentType?: 'cpf' | 'cnpj';
+  /** Se o documento é parcial (menos que o tamanho padrão) */
+  documentPartial?: boolean;
   /** Para client_lookup por nome: nome textual */
   name?: string;
   /** Para client_field_question: campo detectado */
@@ -149,6 +153,14 @@ const CLIENT_CODE_PATTERNS = [
 const CNPJ_RE = /\b(\d{2}\.?\d{3}\.?\d{3}\/?(?:\d{4})-?\d{2})\b/;
 // CPF: 000.000.000-00 ou variações sem pontuação (11 dígitos)
 const CPF_RE = /\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b/;
+
+/**
+ * Prefixo explícito de documento: captura CPF/CNPJ parcial ou completo.
+ * Ex: "cpf 671490" → { type: 'client_lookup', document: '671490', documentType: 'cpf' }
+ * Ex: "cnpj 93015006" → { type: 'client_lookup', document: '93015006', documentType: 'cnpj' }
+ */
+const CPF_PREFIX_RE = /\bcpf\s+(\d{3,11})\b/;
+const CNPJ_PREFIX_RE = /\bcnpj\s+(\d{4,14})\b/;
 
 // ─── Famílias de Gatilhos ──────────────────────────────────────────────────
 
@@ -255,6 +267,19 @@ export function detectIntent(query: string): DetectedIntent {
   if (LOOKUP_VERBS.some(v => norm.includes(v))) {
     const num = norm.match(/\b(\d{3,})\b/);
     if (num) return { type: 'client_lookup', code: num[1] };
+  }
+
+  // ── 2c. Prefixo explícito CPF/CNPJ (parcial ou completo) ─────────────────
+  // Capturado ANTES da regex pura para garantir que o prefixo seja reconhecido
+  const cpfPrefixMatch = norm.match(CPF_PREFIX_RE);
+  if (cpfPrefixMatch) {
+    const docDigits = cpfPrefixMatch[1].replace(/\D/g, '');
+    return { type: 'client_lookup', document: docDigits, documentType: 'cpf', documentPartial: docDigits.length < 11 };
+  }
+  const cnpjPrefixMatch = norm.match(CNPJ_PREFIX_RE);
+  if (cnpjPrefixMatch) {
+    const docDigits = cnpjPrefixMatch[1].replace(/\D/g, '');
+    return { type: 'client_lookup', document: docDigits, documentType: 'cnpj', documentPartial: docDigits.length < 14 };
   }
 
   // ── 3. CNPJ / CPF (no texto original para preservar pontuação) ───────────

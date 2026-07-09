@@ -70,6 +70,8 @@ export interface RouterStep {
     periodo?: RouterPeriodo;
     itens?: { quantidade: number; termo: string }[];
     addressIndex?: number;
+    documentPartial?: boolean;
+    documentType?: 'cpf' | 'cnpj';
   };
 }
 

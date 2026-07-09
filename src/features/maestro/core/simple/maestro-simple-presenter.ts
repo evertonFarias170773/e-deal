@@ -248,6 +248,29 @@ export function presenterClienteMultiplosCandidatos(busca: string, candidates: a
   };
 }
 
+export function presenterClienteMatchParcial(busca: string, candidate: any): PresenterResult {
+  const nome = candidate.nome || candidate.fantasia || 'cadastro';
+  const cidade = candidate.cidade_uf ? ` — ${candidate.cidade_uf}` : '';
+  const doc = candidate.documento ? ` | Doc: ${candidate.documento}` : '';
+  return {
+    message: {
+      id:          genId(),
+      role:        'maestro',
+      content:     `Não encontrei exatamente **"${busca}"**, mas encontrei um cadastro parecido:\n\n**${nome}** (Código: ${candidate.id_cliente}${cidade}${doc})\n\n*Este é o cliente que você quer consultar? Responda com o código para confirmar ou forneça mais detalhes.*`,
+      contentType: 'text',
+      specialist:  'comercial',
+      timestamp:   now(),
+      status:      'completed',
+      confidence:  'medium',
+    },
+    activity: [
+      { id: 'step-1', label: 'Consultando cliente no ERP', status: 'done',  timestamp: nowTime() },
+      { id: 'step-2', label: 'Match parcial encontrado — aguardando confirmação', status: 'done', timestamp: nowTime() },
+    ],
+    lastAnswerUpdate: null,
+  };
+}
+
 export function presenterClienteErroAuth(): PresenterResult {
   return {
     message: {

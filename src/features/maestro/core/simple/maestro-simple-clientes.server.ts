@@ -19,7 +19,9 @@ import type { SimpleClientContext, EnderecoSimples, ContatoSimples, SocioSimples
 
 export interface MaestroClientLookupResult {
   found: boolean;
-  reason?: 'not_found' | 'auth_error' | 'multiple';
+  reason?: 'not_found' | 'auth_error' | 'multiple' | 'partial_match';
+  /** Nível de confiança do match */
+  confidence?: 'exact' | 'high' | 'low';
   client?: SimpleClientContext | null;
   candidates?: Array<{ id_cliente: number; nome: string; fantasia: string; documento: string; cidade_uf: string }>;
 }
@@ -343,82 +345,132 @@ export async function buscarClientePorCodigo(
 }
 
 /**
- * Tenta localizar 1 cliente por texto (CNPJ, nome) usando a view, depois enriquece.
+ * Tenta localizar cliente(s) por texto (nome/documento) usando busca progressiva.
+ *
+ * Estratégia em 3 camadas:
+ * 1. AND todas as palavras relevantes (mais preciso)
+ * 2. Fallback: palavra mais longa isolada
+ * 3. Fallback: qualquer palavra com ≥5 chars
+ *
+ * Retorna:
+ * - `found: true, confidence: 'exact'`  — match por código/CPF/CNPJ completo
+ * - `found: true, confidence: 'high'`   — único resultado forte
+ * - `found: false, reason: 'multiple'`  — lista de candidatos para o usuário escolher
+ * - `found: false, reason: 'partial_match'` — 1 resultado de baixa confiança, pede confirmação
+ * - `found: false, reason: 'not_found'` — nenhum candidato
  */
 export async function buscarClientePorTexto(
   supabase: SupabaseClient,
-  termo: string
+  termo: string,
+  opts?: { documentPartial?: boolean; documentType?: 'cpf' | 'cnpj' }
 ): Promise<MaestroClientLookupResult> {
   const t = normalizeSearchTerm(termo);
-  if (!t || t.length < 3) return { found: false, reason: 'not_found' };
+  if (!t || t.length < 2) return { found: false, reason: 'not_found' };
 
-  const weakWords = ['tem', 'cliente', 'chamado', 'sobre', 'o', 'a', 'de', 'do', 'da', 'e'];
-  const words = t.split(' ').filter(w => w.length > 0 && !weakWords.includes(w));
-  if (words.length === 0) return { found: false, reason: 'not_found' };
+  // Palavras a ignorar na busca por nome
+  const weakWords = new Set([
+    'tem', 'cliente', 'chamado', 'sobre', 'o', 'a', 'de', 'do', 'da', 'e',
+    'cpf', 'cnpj', 'codigo', 'codigo', 'cadastro', 'e'
+  ]);
 
-  try {
-    let query = supabase
+  // Função auxiliar: executa query com múltiplos ILIKEs em AND sobre busca_geral
+  async function queryAND(terms: string[]) {
+    let q = supabase
       .from('vw_cadastros_clientes_lista')
       .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido');
-      
-    words.forEach(w => {
-      query = query.ilike('busca_geral', `%${w}%`);
-    });
+    terms.forEach(w => { q = q.ilike('busca_geral', `%${w}%`); });
+    return q.order('id_cliente', { ascending: false }).limit(5);
+  }
 
-    const { data: rows, error } = await query
-      .order('id_cliente', { ascending: false })
-      .limit(5);
-
-    if (error) {
-      if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
-        return { found: false, reason: 'auth_error' };
+  try {
+    // ── Busca por documento (CPF/CNPJ parcial ou completo com prefixo explícito) ──
+    if (opts?.documentPartial) {
+      const soDigitos = t.replace(/\D/g, '');
+      const { data: rows, error } = await supabase
+        .from('vw_cadastros_clientes_lista')
+        .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido')
+        .ilike('busca_geral', `%${soDigitos}%`)
+        .order('id_cliente', { ascending: false })
+        .limit(5);
+      if (error) {
+        if (error.code === 'PGRST301' || error.message?.includes('JWT')) return { found: false, reason: 'auth_error' };
+        return { found: false, reason: 'not_found' };
       }
-      return { found: false, reason: 'not_found' };
-    }
-
-    if (!rows || rows.length === 0) {
-      return { found: false, reason: 'not_found' };
-    }
-
-    let row = rows[0];
-    if (rows.length > 1) {
-      const rawT = termo.toLowerCase().trim();
-      const exactMatch = rows.find(r => 
-        r.id_cliente_text === t || 
-        r.documento.replace(/[^\d]/g, '') === t.replace(/[^\d]/g, '') ||
-        r.nome.toLowerCase() === rawT ||
-        (r.fantasia && r.fantasia.toLowerCase() === rawT)
-      );
-      
-      if (exactMatch) {
-        row = exactMatch;
-      } else {
-        return { 
-          found: false, 
-          reason: 'multiple', 
-          candidates: rows.map(r => ({
-            id_cliente: r.id_cliente,
-            nome: r.nome,
-            fantasia: r.fantasia,
-            documento: r.documento,
-            cidade_uf: r.cidade_uf
-          })) 
-        };
+      if (!rows || rows.length === 0) return { found: false, reason: 'not_found' };
+      if (rows.length === 1) {
+        const detail = await buildDetailedClientContext(supabase, rows[0].id_cliente, rows[0].id_cliente_text, rows[0]);
+        return { found: true, confidence: 'high', client: detail ?? buildFallbackClientContext(rows[0]) };
       }
-    }
-
-    // 2. Enriquece
-    const detailedClient = await buildDetailedClientContext(supabase, row.id_cliente, row.id_cliente_text, row);
-    
-    if (!detailedClient) {
-      console.warn('[MaestroSimpleServer] Enriquecimento falhou na busca por texto, retornando dados básicos da view', row.id_cliente);
       return {
-        found: true,
-        client: buildFallbackClientContext(row)
+        found: false,
+        reason: 'multiple',
+        candidates: rows.map(r => ({ id_cliente: r.id_cliente, nome: r.nome, fantasia: r.fantasia, documento: r.documento, cidade_uf: r.cidade_uf }))
       };
     }
 
-    return { found: true, client: detailedClient };
+    // ── Busca por nome: palavras relevantes ──────────────────────────────────
+    const words = t.toLowerCase().split(/\s+/).filter(w => w.length > 1 && !weakWords.has(w));
+    if (words.length === 0) return { found: false, reason: 'not_found' };
+
+    // Camada 1: AND todas as palavras
+    let { data: rows, error } = await queryAND(words);
+    if (error) {
+      if (error.code === 'PGRST301' || error.message?.includes('JWT')) return { found: false, reason: 'auth_error' };
+      return { found: false, reason: 'not_found' };
+    }
+
+    // Camada 2: fallback pela palavra mais longa (se AND falhou)
+    if (!rows || rows.length === 0) {
+      const longest = [...words].sort((a, b) => b.length - a.length)[0];
+      const res2 = await queryAND([longest]);
+      if (!res2.error && res2.data && res2.data.length > 0) rows = res2.data;
+    }
+
+    // Camada 3: fallback por qualquer palavra ≥5 chars (se ainda vazio)
+    if (!rows || rows.length === 0) {
+      const longWords = words.filter(w => w.length >= 5);
+      for (const w of longWords) {
+        const res3 = await queryAND([w]);
+        if (!res3.error && res3.data && res3.data.length > 0) { rows = res3.data; break; }
+      }
+    }
+
+    if (!rows || rows.length === 0) return { found: false, reason: 'not_found' };
+
+    // ── Avaliação de confiança ─────────────────────────────────────────────
+    const rawT = termo.toLowerCase().trim();
+
+    // Match exato por código / documento / nome completo → abre direto
+    const exactMatch = rows.find(r =>
+      r.id_cliente_text === t ||
+      r.documento.replace(/\D/g, '') === t.replace(/\D/g, '') ||
+      r.nome.toLowerCase() === rawT ||
+      (r.fantasia && r.fantasia.toLowerCase() === rawT)
+    );
+
+    if (exactMatch) {
+      const detail = await buildDetailedClientContext(supabase, exactMatch.id_cliente, exactMatch.id_cliente_text, exactMatch);
+      return { found: true, confidence: 'exact', client: detail ?? buildFallbackClientContext(exactMatch) };
+    }
+
+    // Múltiplos candidatos → lista para o usuário escolher
+    if (rows.length > 1) {
+      return {
+        found: false,
+        reason: 'multiple',
+        candidates: rows.map(r => ({ id_cliente: r.id_cliente, nome: r.nome, fantasia: r.fantasia, documento: r.documento, cidade_uf: r.cidade_uf }))
+      };
+    }
+
+    // Único resultado sem match exato → baixa confiança, pede confirmação
+    const row = rows[0];
+    return {
+      found: false,
+      reason: 'partial_match',
+      confidence: 'low',
+      candidates: [{ id_cliente: row.id_cliente, nome: row.nome, fantasia: row.fantasia, documento: row.documento, cidade_uf: row.cidade_uf }]
+    };
+
   } catch (err) {
     console.error('[MaestroSimpleServer] Erro em buscarClientePorTexto:', err);
     return { found: false, reason: 'not_found' };
