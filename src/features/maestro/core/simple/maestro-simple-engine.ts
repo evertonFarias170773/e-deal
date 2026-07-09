@@ -1260,6 +1260,50 @@ export async function processSimpleQueryWithBrain(
 
                  console.log('[MaestroEngine] pendingSaveQuotation preenchida:', v2Ctx.pendingSaveQuotation.clientName);
 
+                 // ── Grava activeQuote snapshot (cotação ativa conversável) ──────────
+                 // Este snapshot permite que o P4 responda perguntas sobre subtotal,
+                 // total, fretes, endereço, itens e peso sem precisar do Brain.
+                 v2Ctx.activeQuote = {
+                   createdAt: new Date().toISOString(),
+                   clientInternalId: clientForCtx.clientInternalId!,
+                   clientName: clientForCtx.clientName || clientForCtx.clientFantasia || 'Cliente',
+                   itens: itensSave.map((it: any) => ({
+                     id_produto: it.id_produto,
+                     nome: it.nome,
+                     quantidade: it.quantidade,
+                     valorUnitario: it.valorUnitario,
+                     valorFixo: it.valorFixo,
+                     subtotal: it.subtotal,
+                     pesoUnitario: it.pesoUnitario ?? 0,
+                   })),
+                   enderecoId: v2Ctx.budgetAddressId,
+                   enderecoFull: v2Ctx.budgetAddressFull || '',
+                   cep: v2Ctx.budgetAddressCep,
+                   cidade: v2Ctx.budgetAddressCidade || '',
+                   uf: v2Ctx.budgetAddressUf || '',
+                   fretes: fretesCalculados.map((f: any) => ({
+                     id: f.id ?? f.servico,
+                     servico: f.servico,
+                     transportadora: f.transportadora,
+                     valor: f.valor,
+                     prazo: f.prazo,
+                     pesoUsado: f.pesoUsado ?? pesoTotalGramas,
+                   })),
+                   freteSelecionado: {
+                     id: freteEscolhido.id ?? freteEscolhido.servico,
+                     servico: freteEscolhido.servico,
+                     transportadora: freteEscolhido.transportadora,
+                     valor: freteEscolhido.valor,
+                     prazo: freteEscolhido.prazo,
+                     pesoUsado: freteEscolhido.pesoUsado ?? pesoTotalGramas,
+                   },
+                   subtotalProdutos: subtotal,
+                   total,
+                   pesoTotalGramas,
+                   status: 'nao_salva',
+                 };
+                 console.log('[MaestroEngine] activeQuote gravado para cliente:', v2Ctx.activeQuote.clientName, '| total:', total);
+
                  // Adiciona a pergunta de save ao conteúdo do presenter
                  const { presenterPerguntarSalvarCotacao: perguntarSave } = await import('./maestro-simple-presenter');
                  const prSave = perguntarSave(v2Ctx.pendingSaveQuotation);
@@ -1523,9 +1567,12 @@ export async function processSimpleQueryWithBrain(
 
   // 3. Se LLM não está habilitado, ou se for domínio de orçamento avulso (para preservar a formatação comercial), retorna resposta determinística
   // E também ignorar LLM se for 'orcamento_avulso_desativado', pois ele já tem resposta pronta
-  const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true' 
+  // Ignorar LLM para todos os tools de cotação ativa (P4) — já têm resposta precisa e determinística
+  const ACTIVE_QUOTE_TOOLS = new Set(['consultar_cotacao_ativa', 'trocar_frete_cotacao_ativa', 'frete_nao_disponivel', 'iniciar_troca_endereco_cotacao']);
+  const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true'
     || v2Ctx.domain === 'orcamento_avulso'
-    || v2Ctx.lastTool === 'orcamento_avulso_desativado';
+    || v2Ctx.lastTool === 'orcamento_avulso_desativado'
+    || ACTIVE_QUOTE_TOOLS.has(v2Ctx.lastTool ?? '');
 
   if (skipLLM) {
     return deterministicResult;
