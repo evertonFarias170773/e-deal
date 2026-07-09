@@ -596,6 +596,7 @@ export async function processSimpleQueryWithBrain(
               v2Ctx.budgetAddressCidade = undefined;
               v2Ctx.budgetAddressUf = undefined;
               v2Ctx.pendingAddressChoice = null;
+              v2Ctx.activeQuote = null; // limpa cotação ativa ao trocar cliente
             }
             pr = presenterClienteEncontrado(lookupResult.client);
             clientForCtx = lookupResult.client;
@@ -639,6 +640,139 @@ export async function processSimpleQueryWithBrain(
             v2Ctx.pendingClientCandidates = null;
             v2Ctx.pendingClientSearchTerm = null;
             pr = presenterClienteNaoEncontrado(busca);
+          }
+        }
+
+        else if ((step.tool as string) === 'consultar_cotacao_ativa') {
+          const quote = v2Ctx.activeQuote;
+          if (!quote) {
+            pr = {
+              message: {
+                id: 'maestro-msg-' + Date.now(),
+                role: 'maestro',
+                content: 'Não há cotação ativa no momento. Gere uma cotação primeiro.',
+                contentType: 'text',
+                specialist: 'comercial',
+                timestamp: new Date().toISOString(),
+                status: 'completed',
+                confidence: 'high',
+              },
+              activity: [],
+              lastAnswerUpdate: null,
+            };
+          } else {
+            const { presenterConsultarCotacaoAtiva } = await import('./maestro-simple-presenter');
+            pr = presenterConsultarCotacaoAtiva(quote, step.params.query ?? 'resumo');
+          }
+        }
+
+        else if ((step.tool as string) === 'trocar_frete_cotacao_ativa') {
+          const quote = v2Ctx.activeQuote;
+          if (!quote || quote.status === 'salva') {
+            pr = {
+              message: {
+                id: 'maestro-msg-' + Date.now(),
+                role: 'maestro',
+                content: 'Não é possível trocar frete neste momento. A cotação já foi salva ou não existe.',
+                contentType: 'text',
+                specialist: 'comercial',
+                timestamp: new Date().toISOString(),
+                status: 'completed',
+                confidence: 'medium',
+              },
+              activity: [],
+              lastAnswerUpdate: null,
+            };
+          } else {
+            const freteId = step.params.freteId;
+            const novoFrete = quote.fretes.find(f => f.id === freteId);
+            if (!novoFrete) {
+              pr = {
+                message: {
+                  id: 'maestro-msg-' + Date.now(),
+                  role: 'maestro',
+                  content: 'Frete não encontrado. As opções disponíveis são: ' + quote.fretes.map(f => f.transportadora).join(', '),
+                  contentType: 'text',
+                  specialist: 'comercial',
+                  timestamp: new Date().toISOString(),
+                  status: 'completed',
+                  confidence: 'medium',
+                },
+                activity: [],
+                lastAnswerUpdate: null,
+              };
+            } else {
+              quote.freteSelecionado = novoFrete;
+              quote.total = quote.subtotalProdutos + novoFrete.valor;
+              // Sincroniza pendingSaveQuotation se ainda não salvo
+              if (v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt) {
+                v2Ctx.pendingSaveQuotation.freteEscolhido = { ...novoFrete };
+                v2Ctx.pendingSaveQuotation.total = quote.total;
+              }
+              const { presenterTrocaFreteCotacaoAtiva } = await import('./maestro-simple-presenter');
+              pr = presenterTrocaFreteCotacaoAtiva(quote);
+            }
+          }
+        }
+
+        else if ((step.tool as string) === 'frete_nao_disponivel') {
+          const quote = v2Ctx.activeQuote;
+          const mentioned = step.params.mentioned ?? '';
+          const { presenterFreteNaoDisponivel } = await import('./maestro-simple-presenter');
+          pr = presenterFreteNaoDisponivel(quote?.fretes ?? [], mentioned);
+        }
+
+        else if ((step.tool as string) === 'iniciar_troca_endereco_cotacao') {
+          const quote = v2Ctx.activeQuote;
+          if (!quote || !quote.clientInternalId) {
+            pr = {
+              message: {
+                id: 'maestro-msg-' + Date.now(),
+                role: 'maestro',
+                content: 'Não encontrei cotação ativa para trocar o endereço.',
+                contentType: 'text',
+                specialist: 'comercial',
+                timestamp: new Date().toISOString(),
+                status: 'completed',
+                confidence: 'medium',
+              },
+              activity: [],
+              lastAnswerUpdate: null,
+            };
+          } else {
+            const { data: enderecos } = await supabase
+              .from('enderecos')
+              .select('id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf')
+              .eq('id_cliente', quote.clientInternalId)
+              .limit(10);
+            if (enderecos && enderecos.length > 0) {
+              // Marca que a troca de endereço é dentro de uma cotação ativa
+              v2Ctx.pendingAddressChoice = {
+                clientId: quote.clientInternalId,
+                addresses: enderecos,
+              };
+              v2Ctx.lastExplicitBudgetItems = quote.itens.map(i => ({
+                quantidade: i.quantidade,
+                termo: i.nome,
+              }));
+              v2Ctx.domain = 'orcamento_avulso';
+              pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
+            } else {
+              pr = {
+                message: {
+                  id: 'maestro-msg-' + Date.now(),
+                  role: 'maestro',
+                  content: 'Não encontrei endereços cadastrados para este cliente.',
+                  contentType: 'text',
+                  specialist: 'comercial',
+                  timestamp: new Date().toISOString(),
+                  status: 'completed',
+                  confidence: 'medium',
+                },
+                activity: [],
+                lastAnswerUpdate: null,
+              };
+            }
           }
         }
 
@@ -1265,6 +1399,11 @@ export async function processSimpleQueryWithBrain(
                   // Grava idInt no contexto para impedir duplicação
                   v2Ctx.pendingSaveQuotation.savedIdInt = saveResult.idInt;
                   v2Ctx.pendingSaveQuotation.savedAt = new Date().toISOString();
+                  // Marca activeQuote como salva
+                  if (v2Ctx.activeQuote) {
+                    v2Ctx.activeQuote.status = 'salva';
+                    v2Ctx.activeQuote.savedIdInt = saveResult.idInt;
+                  }
                   pr = presenterSaveCotacaoSucesso(saveResult.idInt, v2Ctx.pendingSaveQuotation.clientName);
                 } else {
                   pr = presenterErroSaveCotacao(

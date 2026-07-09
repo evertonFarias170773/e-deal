@@ -57,7 +57,12 @@ export type AllowedToolName =
   | 'proposta_ja_salva'
   // Confirmação de cliente pendente
   | 'confirmar_cliente_pendente'
-  | 'consultar_fretes_cotacao';
+  | 'consultar_fretes_cotacao'
+  // Cotação ativa conversável
+  | 'consultar_cotacao_ativa'
+  | 'trocar_frete_cotacao_ativa'
+  | 'iniciar_troca_endereco_cotacao'
+  | 'frete_nao_disponivel';
 
 export interface RouterStep {
   tool: AllowedToolName;
@@ -74,6 +79,12 @@ export interface RouterStep {
     addressIndex?: number;
     documentPartial?: boolean;
     documentType?: 'cpf' | 'cnpj';
+    /** Para consultar_cotacao_ativa: tipo de consulta */
+    query?: string;
+    /** Para trocar_frete_cotacao_ativa: id do frete escolhido */
+    freteId?: string;
+    /** Para frete_nao_disponivel: transportadora mencionada */
+    mentioned?: string;
   };
 }
 
@@ -115,6 +126,12 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'proposta_ja_salva',
   // Confirmação de cliente pendente
   'confirmar_cliente_pendente',
+  'consultar_fretes_cotacao',
+  // Cotação ativa conversável
+  'consultar_cotacao_ativa',
+  'trocar_frete_cotacao_ativa',
+  'iniciar_troca_endereco_cotacao',
+  'frete_nao_disponivel',
 ];
 
 /**

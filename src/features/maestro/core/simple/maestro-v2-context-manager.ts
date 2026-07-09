@@ -44,6 +44,66 @@ export interface PendingAddressChoice {
   addresses: MaestroEndereco[];
 }
 
+// ─── Snapshot de Cotação Ativa (conversável) ─────────────────────────────
+
+/**
+ * Snapshot da cotação exibida no chat — usada para responder perguntas
+ * sem cair no Brain e para persistir alterações de frete/endereço antes do save.
+ */
+export interface ActiveQuoteSnapshot {
+  /** Timestamp de criação */
+  createdAt: string;
+  /** Cliente da cotação */
+  clientInternalId: number;
+  clientName: string;
+  /** Itens resolvidos — nome OFICIAL do produto, sem inferência */
+  itens: Array<{
+    id_produto: number;
+    nome: string;
+    quantidade: number;
+    valorUnitario: number;
+    valorFixo: number;
+    subtotal: number;
+    pesoUnitario: number;
+  }>;
+  /** Endereço usado */
+  enderecoId: string;
+  enderecoFull: string;
+  cep: string;
+  cidade: string;
+  uf: string;
+  /** Todas as opções de frete retornadas */
+  fretes: Array<{
+    id: string;
+    servico: string;
+    transportadora: string;
+    valor: number;
+    prazo: string;
+    pesoUsado: number;
+    id_cotacao?: number;
+  }>;
+  /** Frete atualmente selecionado */
+  freteSelecionado: {
+    id: string;
+    servico: string;
+    transportadora: string;
+    valor: number;
+    prazo: string;
+    pesoUsado: number;
+    id_cotacao?: number;
+  };
+  /** Subtotal dos produtos (sem frete) */
+  subtotalProdutos: number;
+  /** Total = subtotalProdutos + freteSelecionado.valor */
+  total: number;
+  /** Peso total em gramas (com margem 2%) */
+  pesoTotalGramas: number;
+  /** nao_salva enquanto não confirmado; salva após save */
+  status: 'nao_salva' | 'salva';
+  /** Preenchido após save */
+  savedIdInt?: number;
+}
+
 /** Cotação completa aguardando confirmação explícita do usuário para ser salva */
 export interface PendingSaveQuotation {
   /** ID interno do cliente (PK inteira) */
@@ -129,6 +189,8 @@ export interface MaestroV2Context {
   pendingAddressChoice?: PendingAddressChoice | null;
   /** Cotação completa aguardando confirmação do usuário para salvar */
   pendingSaveQuotation?: PendingSaveQuotation | null;
+  /** Snapshot conversável da cotação ativa exibida no chat */
+  activeQuote?: ActiveQuoteSnapshot | null;
 
   // ── Confirmação de cliente pendente ──────────────────────────────────────
   /** Candidato único aguardando confirmação (partial_match) */
@@ -174,6 +236,7 @@ export function getEmptyV2Context(): MaestroV2Context {
     budgetAddressFull: undefined,
     pendingAddressChoice: null,
     pendingSaveQuotation: null,
+    activeQuote: null,
     pendingClientCandidate: null,
     pendingClientCandidates: null,
     pendingClientSearchTerm: null,
@@ -226,6 +289,87 @@ export function normalizeText(text: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+// ─── Helpers P4: Detecção de Intenção sobre Cotação Ativa ──────────────────────────
+
+export type QuoteQueryType =
+  | 'subtotal'
+  | 'total'
+  | 'frete_sugerido'
+  | 'transportadoras'
+  | 'endereco'
+  | 'itens'
+  | 'peso'
+  | 'resumo';
+
+/**
+ * Detecta pergunta sobre a cotação ativa.
+ * Retorna o tipo da consulta ou null se não for sobre cotação.
+ */
+export function detectQuoteQuery(clean: string): QuoteQueryType | null {
+  // Resumo geral
+  if (/\b(me\s+resume|resumo\s+da\s+cota[cç]|resumo\s+do\s+or[cç]|o\s+que\s+tem\s+no\s+or[cç]|quais\s+itens)\b/i.test(clean)) return 'resumo';
+  // Peso
+  if (/\b(peso\s+total|peso\s+considerado|quantos\s+gramas|peso\s+do\s+or[cç]|peso\s+desse\s+or[cç])\b/i.test(clean)) return 'peso';
+  // Subtotal de produtos
+  if (/\b(subtotal\s+dos\s+produtos|valor\s+dos\s+produtos|quanto\s+ficou\s+os\s+produtos|quanto\s+ficou\s+nos\s+produtos|pre[cç]o\s+dos\s+produtos|subtotal\s+or[cç]|subtotal\s+cota[cç])\b/i.test(clean)) return 'subtotal';
+  // Total geral
+  if (/\b(total\s+final|valor\s+total|qual\s+o\s+total|total\s+da\s+cota[cç]|total\s+do\s+or[cç]|total\s+agora|quanto\s+ficou\s+no\s+total|quanto\s+da|qual.*total)\b/i.test(clean)) return 'total';
+  // Frete sugerido
+  if (/\b(frete\s+sugerido|frete\s+selecionado|frete\s+escolhido|qual\s+frete\s+foi|qual\s+o\s+frete|frete\s+da\s+cota[cç])\b/i.test(clean)) return 'frete_sugerido';
+  // Transportadoras
+  if (/\b(quais\s+transportadoras|transportadoras\s+apareceram|op[cç][oõ]es\s+de\s+frete|quais\s+fretes|quais\s+op[cç][oõ]es|quais\s+as\s+op[cç][oõ]es)\b/i.test(clean)) return 'transportadoras';
+  // Endereço
+  if (/\b(endere[cç]o\s+usado|qual\s+endere[cç]o\s+foi|endere[cç]o\s+da\s+cota[cç]|endere[cç]o\s+do\s+or[cç])\b/i.test(clean)) return 'endereco';
+  // Itens
+  if (/\b(quais\s+itens|itens\s+(da|do)\s+(cota[cç]|or[cç])|produtos\s+da\s+cota[cç]|o\s+que\s+foi\s+cotado)\b/i.test(clean)) return 'itens';
+  return null;
+}
+
+/**
+ * Detecta intenção de trocar frete dentro da cotação ativa.
+ * Retorna o objeto frete encontrado, { notFound: true, mentioned: string }, ou null.
+ */
+export function detectFreightSwitch(
+  clean: string,
+  fretes: ActiveQuoteSnapshot['fretes']
+): { found: true; frete: ActiveQuoteSnapshot['fretes'][0] } | { found: false; mentioned: string } | null {
+  // Padrões de troca de frete
+  const switchPhrases = /\b(muda(r)?\s+para|mude\s+para|usa(r)?\s+(a|o)|use\s+(a|o)|troca(r)?\s+para|troque\s+para|coloca(r)?\s+(a|o)|prefiro|quero|escolhe(r)?|escolha|vai\s+de|vai\s+com|refaz\s+com)\b/i;
+  if (!switchPhrases.test(clean) && !/\b(mais\s+barato|mais\s+bara|sedex|pac|unesul|sao\s+miguel|motoboy|azul|correios|transportad)\b/i.test(clean)) {
+    return null;
+  }
+
+  // "mais barato"
+  if (/\b(mais\s+barato|mais\s+bara|menor\s+valor|menor\s+pre[cç]o)\b/i.test(clean)) {
+    if (fretes.length === 0) return null;
+    const maisBarato = [...fretes].sort((a, b) => a.valor - b.valor)[0];
+    return { found: true, frete: maisBarato };
+  }
+
+  // Busca por nome da transportadora: lista conhecida primeiro, depois genérico após verbo de troca
+  const knownMatch = clean.match(/\b(unesul|sao\s*miguel|sedex|pac|motoboy|azul\s*cargo|azul|correios\s+sedex|correios\s+pac|correios|braspress|jamef|total\s+express|tnt|fedex|dhl|loggi)\b/i);
+  // Extração genérica: pega a palavra (ou expressão) logo após o verbo de troca
+  const genericMatch = clean.match(/\b(?:mude?\s+para|use?\s+(?:a|o)|troque?\s+para|vou?\s+(?:com|de)|refaz\s+com|coloque?\s+(?:a|o)|escolha?|prefiro)\s+([a-záàâãéêíóôõúç][a-záàâãéêíóôõúç\s]{2,25}?)(?:\s*$|\s+(?:e|para|por|que|se|o|a|os|as))/i)
+    ?? clean.match(/transportadora\s+([a-záàâãéêíóôõúç][a-záàâãéêíóôõúç\s]{2,30})/i);
+  
+  const mentionedRaw = knownMatch?.[0] ?? genericMatch?.[1] ?? '';
+  const mentioned = mentionedRaw.trim();
+
+  if (!mentioned) return null;
+
+  const mentionedNorm = mentioned.toLowerCase().replace(/\s+/g, ' ');
+  const frete = fretes.find(f => {
+    const t = (f.transportadora ?? '').toLowerCase();
+    const s = (f.servico ?? '').toLowerCase();
+    return t.includes(mentionedNorm) || s.includes(mentionedNorm) ||
+      mentionedNorm.includes(t.split(' ')[0]) || mentionedNorm.includes(s.split(' ')[0]);
+  });
+
+  if (frete) return { found: true, frete };
+  if (mentioned) return { found: false, mentioned };
+  return null;
 }
 
 /**
@@ -345,7 +489,7 @@ export function handleContextContinuation(
     }
   }
 
-  // Proposta já salva — retorna link sem duplicar
+  // Proposta já salva — retorna link sem duplicar (apenas para pedido explícito de save)
   if (v2Ctx.pendingSaveQuotation?.savedIdInt) {
     const isSalvarDuplicado = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?)\b/i.test(clean);
     if (isSalvarDuplicado) {
@@ -354,13 +498,64 @@ export function handleContextContinuation(
         plan: { steps: [{ tool: 'proposta_ja_salva', params: {} }] }
       };
     }
+    // Perguntas sobre frete pós-save são tratadas pelo P4 abaixo (activeQuote)
+  }
 
-    // Intercepta perguntas de frete pós-save
-    const isConsultaFrete = /\b(qual.*frete|tem.*sedex|quais.*op|opcoes.*frete|valor.*frete|frete)\b/i.test(clean);
-    if (isConsultaFrete) {
+  // ── P4. PERGUNTA OU ALTERAÇÃO SOBRE COTAÇÃO ATIVA ────────────────────────
+  // Ativa somente quando há snapshot de cotação (salva ou não).
+  // Não intercepta candidatos pendentes (já tratados em P1).
+  if (v2Ctx.activeQuote) {
+    // 4a. Consulta sobre dados da cotação
+    const quoteQueryType = detectQuoteQuery(clean);
+    if (quoteQueryType) {
+      console.log(`[MaestroV2Context] P4: consulta sobre cotação ativa (${quoteQueryType}).`);
       return {
         routed: true,
-        plan: { steps: [{ tool: 'consultar_fretes_cotacao', params: {} }] }
+        plan: { steps: [{ tool: 'consultar_cotacao_ativa', params: { query: quoteQueryType } }] }
+      };
+    }
+
+    // 4b. "e o orçamento?" / "o que tem no orçamento?" quando há cotação ativa não salva
+    if (
+      v2Ctx.activeQuote.status === 'nao_salva' &&
+      /\b(e\s+o\s+or[cç]amento|e\s+a\s+cota[cç]|o\s+or[cç]amento|sobre\s+(o|a)\s+cota[cç]|sobre\s+o\s+or[cç])\b/i.test(clean)
+    ) {
+      console.log('[MaestroV2Context] P4: consulta resumo da cotação ativa (não salva).');
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'consultar_cotacao_ativa', params: { query: 'resumo' } }] }
+      };
+    }
+
+    // 4c. Troca de frete
+    if (v2Ctx.activeQuote.status === 'nao_salva') {
+      const freightResult = detectFreightSwitch(clean, v2Ctx.activeQuote.fretes);
+      if (freightResult !== null) {
+        if (freightResult.found) {
+          console.log(`[MaestroV2Context] P4: troca de frete para ${freightResult.frete.transportadora}.`);
+          return {
+            routed: true,
+            plan: { steps: [{ tool: 'trocar_frete_cotacao_ativa', params: { freteId: freightResult.frete.id } }] }
+          };
+        } else {
+          console.log(`[MaestroV2Context] P4: frete mencionado não disponível: ${freightResult.mentioned}.`);
+          return {
+            routed: true,
+            plan: { steps: [{ tool: 'frete_nao_disponivel', params: { mentioned: freightResult.mentioned } }] }
+          };
+        }
+      }
+    }
+
+    // 4d. Pedido de troca de endereço na cotação ativa
+    if (
+      v2Ctx.activeQuote.status === 'nao_salva' &&
+      /\b(mudar?\s+endere[cç]o|outro\s+endere[cç]o|endere[cç]o\s+diferente|trocar?\s+endere[cç]o|mudar?\s+o\s+endere[cç]o)\b/i.test(clean)
+    ) {
+      console.log('[MaestroV2Context] P4: troca de endereço solicitada na cotação ativa.');
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'iniciar_troca_endereco_cotacao', params: {} }] }
       };
     }
   }

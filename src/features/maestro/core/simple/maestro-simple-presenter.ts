@@ -30,7 +30,7 @@ import type {
   ComparacaoItem,
 } from './maestro-simple-pagamentos.server';
 import type { OrcamentoAvulsoResult } from './maestro-simple-produtos.server';
-import type { OrcamentoAvulsoItem } from './maestro-v2-context-manager';
+import type { OrcamentoAvulsoItem, ActiveQuoteSnapshot } from './maestro-v2-context-manager';
 import type { OrcamentoAvulsoItemReq } from './maestro-simple-produtos.server';
 import type { PropostaFrete } from '@/features/orcamentos/types';
 import type { OrcamentoServiceResult } from './maestro-orcamento-service.server';
@@ -2287,3 +2287,85 @@ export function presenterConsultarFretesCotacao(pendingQuotation: any): Presente
   };
 }
 
+// ─── Cotação Ativa Conversável ───────────────────────────────────────────────────
+
+/**
+ * Responde perguntas sobre a cotação ativa usando somente dados do snapshot.
+ * NUNCA inventa características técnicas, materiais, acabamentos ou impressões.
+ */
+export function presenterConsultarCotacaoAtiva(
+  quote: ActiveQuoteSnapshot,
+  queryType: string
+): PresenterResult {
+  let content = '';
+  switch (queryType) {
+    case 'subtotal':
+      content = 'O subtotal dos produtos nessa cotação é **' + formatBRL(quote.subtotalProdutos) + '**.';
+      break;
+    case 'total':
+      content = 'O total final dessa cotação é **' + formatBRL(quote.total) + '** (produtos: ' + formatBRL(quote.subtotalProdutos) + ' + frete ' + quote.freteSelecionado.transportadora + ': ' + formatBRL(quote.freteSelecionado.valor) + ').';
+      break;
+    case 'frete_sugerido':
+      content = 'O frete sugerido foi **' + quote.freteSelecionado.transportadora + '** por **' + formatBRL(quote.freteSelecionado.valor) + '** (' + (quote.freteSelecionado.prazo || 'prazo não informado') + ').';
+      break;
+    case 'transportadoras': {
+      const lista = quote.fretes.map((f, i) => (i + 1) + '. **' + f.transportadora + '** — ' + formatBRL(f.valor) + ' (' + (f.prazo || 'prazo não informado') + ')').join('\n');
+      content = 'As transportadoras disponíveis nessa cotação foram:\n\n' + lista;
+      break;
+    }
+    case 'endereco':
+      content = 'O endereço usado nessa cotação foi: **' + quote.enderecoFull + '**' + (quote.cep ? ' (CEP: ' + quote.cep + ')' : '') + '.';
+      break;
+    case 'itens': {
+      const li = quote.itens.map((it, i) => (i + 1) + '. **' + it.nome + '** — ' + it.quantidade.toLocaleString('pt-BR') + ' un. — ' + formatBRL(it.subtotal)).join('\n');
+      content = 'Os itens dessa cotação foram:\n\n' + li;
+      break;
+    }
+    case 'peso':
+      content = quote.pesoTotalGramas > 0
+        ? 'O peso total considerado nessa cotação foi **' + quote.pesoTotalGramas.toLocaleString('pt-BR') + ' g** (inclui margem de 2%).'
+        : 'O peso não consta no snapshot dessa cotação.';
+      break;
+    case 'resumo':
+    default: {
+      const liR = quote.itens.map(it => '- ' + it.nome + ': ' + it.quantidade.toLocaleString('pt-BR') + ' un. — ' + formatBRL(it.subtotal)).join('\n');
+      const salvaSuffix = (quote.status === 'salva' && quote.savedIdInt)
+        ? 'Proposta #' + quote.savedIdInt + ' salva.'
+        : 'Ainda não salva. Deseja salvar como proposta?';
+      content = '**Cotação ativa para ' + quote.clientName + '**\n\nItens:\n' + liR + '\n\nSubtotal: **' + formatBRL(quote.subtotalProdutos) + '**\nFrete (' + quote.freteSelecionado.transportadora + '): **' + formatBRL(quote.freteSelecionado.valor) + '**\nTotal: **' + formatBRL(quote.total) + '**\n\nEndereço: ' + quote.enderecoFull + '\n\n' + salvaSuffix;
+      break;
+    }
+  }
+  return {
+    message: { id: genId('quote-query'), role: 'maestro', content, contentType: 'text', specialist: 'comercial', timestamp: now(), status: 'completed', confidence: 'high' },
+    activity: [{ id: 'q1', label: 'Consultando cotação ativa', status: 'done', timestamp: nowTime() }],
+    lastAnswerUpdate: null,
+  };
+}
+
+/** Confirma troca de frete e mostra total atualizado. */
+export function presenterTrocaFreteCotacaoAtiva(quote: ActiveQuoteSnapshot): PresenterResult {
+  return {
+    message: {
+      id: genId('frete-swap'), role: 'maestro',
+      content: 'Frete atualizado para **' + quote.freteSelecionado.transportadora + '**!\n\nFrete: **' + formatBRL(quote.freteSelecionado.valor) + '** (' + (quote.freteSelecionado.prazo || 'prazo não informado') + ')\nSubtotal produtos: **' + formatBRL(quote.subtotalProdutos) + '**\n**Total atualizado: ' + formatBRL(quote.total) + '**\n\nDeseja salvar essa cotação como proposta?',
+      contentType: 'text', specialist: 'comercial', timestamp: now(), status: 'completed', confidence: 'high',
+    },
+    activity: [{ id: 'f1', label: 'Frete atualizado', status: 'done', timestamp: nowTime() }],
+    lastAnswerUpdate: null,
+  };
+}
+
+/** Informa que transportadora não apareceu na cotação e lista opções reais. */
+export function presenterFreteNaoDisponivel(fretes: ActiveQuoteSnapshot['fretes'], mentioned: string): PresenterResult {
+  const opcoes = fretes.map((f, i) => (i + 1) + '. **' + f.transportadora + '** — ' + formatBRL(f.valor)).join('\n');
+  return {
+    message: {
+      id: genId('frete-nd'), role: 'maestro',
+      content: 'A transportadora **' + mentioned + '** não apareceu nesta cotação. ' + (opcoes ? 'As opções disponíveis são:\n\n' + opcoes : 'Não há opções de frete nesta cotação.'),
+      contentType: 'text', specialist: 'comercial', timestamp: now(), status: 'completed', confidence: 'high',
+    },
+    activity: [],
+    lastAnswerUpdate: null,
+  };
+}
