@@ -51,15 +51,13 @@ interface Props {
 }
 
 export function MaestroSessionList({ sessions, activeSessionId, onNewChat, onOpenSession }: Props) {
-  const { recent, today, yesterday, week } = groupSessions(sessions);
-
   return (
     <div className="flex flex-col h-full w-56 shrink-0 border-r border-[var(--border)]" style={{ background: '#F7F8FA' }}>
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-[var(--border)]">
         <div className="flex items-center gap-2 px-1">
-          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-teal-500 to-blue-600 flex items-center justify-center shadow-md">
-            <span className="text-white text-[10px] font-bold">M</span>
+          <div className="w-6 h-6 rounded-lg overflow-hidden flex items-center justify-center shadow-sm">
+            <img src="/agent_maestro_light_mode.png" alt="Maestro" className="w-full h-full object-contain" />
           </div>
           <span className="text-slate-800 font-bold text-[13px] tracking-tight">Maestro</span>
         </div>
@@ -70,34 +68,6 @@ export function MaestroSessionList({ sessions, activeSessionId, onNewChat, onOpe
         >
           <Plus size={16} />
         </button>
-      </div>
-
-      {/* Search */}
-      <div className="px-3 py-2 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-[var(--border)] focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 transition-all">
-          <Search size={11} className="text-slate-400 shrink-0" />
-          <input
-            type="text"
-            placeholder="Buscar conversas..."
-            className="bg-transparent text-slate-600 text-[11px] outline-none w-full placeholder-slate-400"
-          />
-        </div>
-      </div>
-
-      {/* Sessions list */}
-      <div className="flex-1 overflow-y-auto py-2 scrollbar-thin scrollbar-thumb-slate-200">
-        {recent.length > 0 && (
-          <SessionGroup label="Conversas Recentes" sessions={recent} activeId={activeSessionId} onOpen={onOpenSession} />
-        )}
-        {today.length > 0 && (
-          <SessionGroup label="Hoje" sessions={today} activeId={activeSessionId} onOpen={onOpenSession} />
-        )}
-        {yesterday.length > 0 && (
-          <SessionGroup label="Ontem" sessions={yesterday} activeId={activeSessionId} onOpen={onOpenSession} />
-        )}
-        {week.length > 0 && (
-          <SessionGroup label="Últimos 7 dias" sessions={week} activeId={activeSessionId} onOpen={onOpenSession} />
-        )}
       </div>
     </div>
   );

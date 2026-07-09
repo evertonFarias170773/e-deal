@@ -9,6 +9,7 @@ import {
   Receipt,
   BarChart3,
 } from 'lucide-react';
+import { useAuth } from '@/features/auth/AuthProvider';
 import type { MaestroSuggestion } from '../../types';
 
 const ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
@@ -73,6 +74,10 @@ interface Props {
 }
 
 export function MaestroSuggestions({ suggestions, onSelect }: Props) {
+  const { user } = useAuth();
+  const firstName = user?.name ? user.name.split(' ')[0] : '';
+  const greeting = firstName ? `Olá, ${firstName}.` : 'Olá!';
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] px-8">
       {/* Greeting */}
@@ -85,7 +90,7 @@ export function MaestroSuggestions({ suggestions, onSelect }: Props) {
           />
         </div>
         <h1 className="text-[28px] font-semibold text-[var(--foreground)] dark:text-white mb-3 tracking-tight">
-          Olá, Everton.
+          {greeting}
         </h1>
         <p className="text-[16px] text-[var(--muted)] dark:text-white/60">
           Em que posso ajudar hoje?

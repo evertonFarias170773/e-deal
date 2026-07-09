@@ -58,25 +58,11 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
-                className="p-1.5 rounded-lg text-[var(--muted)] dark:text-white/40 hover:bg-[var(--border)] dark:hover:bg-white/10 hover:text-[var(--foreground)] dark:hover:text-white transition-all"
-                title="Anexar"
-              >
-                <Plus size={14} />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 rounded-lg text-[var(--muted)] dark:text-white/40 hover:bg-[var(--border)] dark:hover:bg-white/10 hover:text-[var(--foreground)] dark:hover:text-white transition-all"
-                title="Ferramentas"
-              >
-                <Wrench size={14} />
-              </button>
-              <button
-                type="button"
                 disabled
-                className="p-1.5 rounded-lg text-[var(--muted)]/30 dark:text-white/15 cursor-not-allowed"
+                className="p-2 rounded-lg text-[var(--muted)] dark:text-white/40 hover:bg-[var(--border)] dark:hover:bg-white/10 hover:text-[var(--foreground)] dark:hover:text-white transition-all cursor-not-allowed opacity-80"
                 title="Microfone (em breve)"
               >
-                <Mic size={14} />
+                <Mic size={18} />
               </button>
             </div>
 
