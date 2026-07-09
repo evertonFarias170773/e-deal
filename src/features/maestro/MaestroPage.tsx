@@ -40,9 +40,12 @@ function MaestroLayout() {
     // Procura do final para o início
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      // Mensagem do usuário = contexto potencialmente mudou (mas banner persiste até resposta do Maestro)
+      // Mensagens de usuário: continua procurando
       if (msg.role === 'user') continue;
-      // Mensagem do Maestro sem actions = contexto encerrado (proposta salva ou assunto mudou)
+      // Mensagens com responseModel são respostas ricas antigas (não são o save prompt)
+      // → continua procurando abaixo delas
+      if (msg.role === 'maestro' && msg.responseModel) continue;
+      // Mensagem do Maestro sem actions e sem responseModel = contexto encerrado
       if (msg.role === 'maestro' && (!msg.actions || msg.actions.length === 0)) {
         return null;
       }
