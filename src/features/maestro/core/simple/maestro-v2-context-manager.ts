@@ -292,18 +292,32 @@ export function handleContextContinuation(
   // Aceita: cliente, cli, cadastro, liente, clinte, ciente + id_cliente NNN
   // Aceita: cpf/cnpj + número (parcial ou completo)
   // Aceita: "sobre o cliente", "e o cliente", "e cliente"
+  // Aceita: "sobre o <nome-próprio>" (quando não for campo contextual)
   // NÃO aceita: "id 8469" sozinho (sem prefixo explícito de cliente)
   const regexClientePrefixo = /\b(cliente|cli|cadastro|liente|clinte|ciente)\s*([a-z\d]+)/i;
   const regexSobreCliente   = /\b(sobre\s+o\s+cliente|e\s+o\s+cliente|e\s+cliente|no\s+cliente)\s+/i;
   const regexDocPrefixo     = /\b(cpf|cnpj)\s+\d{4,}/i;
   const regexIdCliente      = /\bid[_\s]cliente\s*:?\s*\d+/i;
   const regexCodigo         = /\bc\s*\d+/i;
+
+  // Detecta "sobre o <nome>" quando não for campo contextual
+  // Campos que indicam pergunta sobre o cliente ativo (devem passar para P3)
+  const CAMPOS_CONTEXTUAIS_SOBRE = [
+    'telefone', 'email', 'e-mail', 'endereco', 'enderecos', 'contato', 'contatos',
+    'socio', 'socios', 'boleto', 'boletos', 'bonus', 'limite', 'credito',
+    'vendedor', 'restricao', 'ativo', 'status', 'cnpj', 'cpf', 'pagamento'
+  ];
+  const sobreNomeMatch = clean.match(/\bsobre\s+(?:o|a|os|as)?\s*([a-z][a-z\s]{2,40})$/i);
+  const sobreEhBuscaCliente = sobreNomeMatch &&
+    !CAMPOS_CONTEXTUAIS_SOBRE.some(c => (sobreNomeMatch[1] ?? '').toLowerCase().includes(c));
+
   if (
     regexClientePrefixo.test(clean) ||
     regexSobreCliente.test(clean) ||
     regexDocPrefixo.test(clean) ||
     regexIdCliente.test(clean) ||
-    regexCodigo.test(clean)
+    regexCodigo.test(clean) ||
+    sobreEhBuscaCliente
   ) {
     console.log('[MaestroV2Context] Comando de cliente explícito detectado. Suspendendo orçamento avulso.');
     v2Ctx.domain = 'cliente';

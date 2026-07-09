@@ -448,25 +448,25 @@ export async function buscarClientePorTexto(
     // ── Avaliação de confiança ─────────────────────────────────────────────
     const rawT = termo.toLowerCase().trim();
 
-    // Match exato por código / documento / nome completo → abre direto
-    const exactMatch = rows.find(r =>
+    // ── MATCH FORTE (código ou documento exato) — válido com qualquer número de resultados
+    // Apenas código numérico ou CPF/CNPJ completo justificam abrir direto sem lista.
+    const strongExact = rows.find(r =>
       r.id_cliente_text === t ||
-      r.documento.replace(/\D/g, '') === t.replace(/\D/g, '') ||
-      r.nome.toLowerCase() === rawT ||
-      (r.fantasia && r.fantasia.toLowerCase() === rawT)
+      (t.replace(/\D/g, '').length >= 11 && r.documento.replace(/\D/g, '') === t.replace(/\D/g, ''))
     );
 
-    if (exactMatch) {
-      const detail = await buildDetailedClientContext(supabase, exactMatch.id_cliente, exactMatch.id_cliente_text, exactMatch);
-      return { found: true, confidence: 'exact', client: detail ?? buildFallbackClientContext(exactMatch) };
+    if (strongExact) {
+      const detail = await buildDetailedClientContext(supabase, strongExact.id_cliente, strongExact.id_cliente_text, strongExact);
+      return { found: true, confidence: 'exact', client: detail ?? buildFallbackClientContext(strongExact) };
     }
 
-    // Muitos resultados (>6): pede refinamento sem listar
+    // ── Muitos resultados (>6): pede refinamento ANTES de avaliar nome/fantasia
+    // Isso evita que uma fantasia curta como "ZAFFARI" faça abrir direto com candidatos ocultos.
     if (rows.length > 6) {
       return { found: false, reason: 'too_many', searchTerm: termo };
     }
 
-    // 2–6 candidatos → lista numerada para o usuário escolher
+    // ── 2–6 candidatos: lista numerada — nunca abre direto por nome
     if (rows.length > 1) {
       return {
         found: false,
@@ -475,8 +475,26 @@ export async function buscarClientePorTexto(
       };
     }
 
-    // Único resultado sem match exato → baixa confiança, pede confirmação
+    // ── Único resultado: avalia confiança pelo nome/fantasia
     const row = rows[0];
+    const rawNome    = (row.nome ?? '').toLowerCase();
+    const rawFantasia = (row.fantasia ?? '').toLowerCase();
+
+    // Nome completo exato (ex: "Cleiton Zaffari" == rawT)
+    const isNameExact = rawNome === rawT || rawFantasia === rawT;
+
+    // Termo é considerado "amplo/curto" se tiver apenas 1 palavra e <= 10 chars
+    // Ex: "Zaffari" → amplo (1 palavra, 7 chars); "Cleiton Zaffari" → composto → confiável
+    const termoWords  = rawT.trim().split(/\s+/);
+    const termoEhAmplo = termoWords.length === 1 && rawT.length <= 10;
+
+    if (isNameExact && !termoEhAmplo) {
+      // Nome composto ou longo exato com único resultado → abre com confiança alta
+      const detail = await buildDetailedClientContext(supabase, row.id_cliente, row.id_cliente_text, row);
+      return { found: true, confidence: 'high', client: detail ?? buildFallbackClientContext(row) };
+    }
+
+    // Termo amplo/curto ou nome não exato com 1 resultado → pede confirmação
     return {
       found: false,
       reason: 'partial_match',

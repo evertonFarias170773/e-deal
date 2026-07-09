@@ -303,6 +303,28 @@ export function detectIntent(query: string): DetectedIntent {
     }
   }
 
+  // ── 4b. "sobre o/a <nome>" como busca de cliente ────────────────────────
+  // Ex: "sobre o Zaffari", "sobre a Maria", "sobre Edison Santos"
+  // Detecta quando NÃO for campo contextual (telefone, e-mail etc.)
+  const sobreNomeM = norm.match(/\bsobre\s+(?:o|a|os|as)?\s*([a-z][a-z\u00e0-\u00ff\s]{2,40})$/);
+  if (sobreNomeM) {
+    const candidatoNome = sobreNomeM[1].trim();
+    // Campos contextuais: quando o usuário pergunta sobre dados do cliente ativo
+    const camposCtx = [
+      'telefone', 'email', 'e-mail', 'endereco', 'enderecos', 'contato', 'contatos',
+      'socio', 'socios', 'boleto', 'boletos', 'bonus', 'limite', 'credito',
+      'vendedor', 'restricao', 'ativo', 'status', 'cnpj', 'cpf'
+    ];
+    const ehCampoContextual = camposCtx.some(c => candidatoNome.includes(c));
+    // Pronomes de referência ao cliente ativo
+    const refWords = ['ele', 'ela', 'dele', 'dela', 'desse', 'deste', 'do cliente', 'essa empresa'];
+    const ehReferencia = refWords.some(r => candidatoNome.includes(r));
+
+    if (!ehCampoContextual && !ehReferencia && candidatoNome.length >= 3) {
+      return { type: 'client_lookup', name: candidatoNome };
+    }
+  }
+
   // ── 5. Confirmação ────────────────────────────────────────────────────────
   if (CONFIRMATION_TRIGGERS.some(t => norm.includes(t))) {
     return { type: 'client_confirmation' };
