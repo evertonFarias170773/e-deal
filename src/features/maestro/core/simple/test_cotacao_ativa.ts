@@ -98,15 +98,29 @@ console.log('\n=== Suite 6: sem activeQuote nao ativa P4 ===');
   const r = handleContextContinuation('qual subtotal dos produtos', ctx, null);
   assert(r?.plan?.steps?.[0]?.tool !== 'consultar_cotacao_ativa', 'sem activeQuote'); }
 
-console.log('\n=== Suite 7: P1 tem prioridade sobre P4 ===');
+console.log('\n=== Suite 7: P3.5 troca frete por nome ===');
+function testP3_5Switch(query: string, expectedTool: string) {
+  const ctx = getEmptyV2Context();
+  ctx.pendingFreightChoice = { ...MOCK_QUOTE, fretes: MOCK_FRETES } as any;
+  const result = handleContextContinuation(query, ctx, null);
+  const tool = result?.plan?.steps?.[0]?.tool;
+  assert(!!result?.routed && tool === expectedTool, '"' + query + '" -> ' + expectedTool, 'got: ' + tool);
+}
+testP3_5Switch('mude para sao miguel', 'confirmar_frete_cotacao');
+testP3_5Switch('sao miguel', 'confirmar_frete_cotacao');
+testP3_5Switch('transportadora sao miguel', 'confirmar_frete_cotacao');
+testP3_5Switch('mude para braspress', 'frete_nao_disponivel');
+
+console.log('\n=== Testes concluidos ===');
+
+console.log('\n=== Suite 8: P1 tem prioridade sobre P4 ===');
 { const ctx = getEmptyV2Context(); ctx.activeQuote = { ...MOCK_QUOTE };
   ctx.pendingClientCandidate = { id_cliente: 999, nome: 'Teste', fantasia: '', documento: '', cidade_uf: '' };
   const r = handleContextContinuation('sim', ctx, null);
-  assert(r?.plan?.steps?.[0]?.tool === 'confirmar_cliente_pendente', 'P1 > P4'); }
+  assert(!!r?.routed && r?.plan?.steps?.[0]?.tool === 'confirmar_cliente_pendente', 'P1 ganha do P4'); }
 
-console.log('\n========================================');
-console.log('Resultado: ' + passed + ' passou, ' + failed + ' falhou.');
+console.log('\n=== Resultado Final ===');
+console.log(`Passou: ${passed} | Falhou: ${failed}`);
+if (failed > 0) process.exit(1);
 if (failed === 0) { console.log('TODOS OS TESTES PASSARAM'); process.exit(0); }
 else { console.error('HA FALHAS'); process.exit(1); }
-
-

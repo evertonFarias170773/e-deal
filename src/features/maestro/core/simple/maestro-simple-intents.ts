@@ -33,6 +33,7 @@ export type SimpleIntent =
   | 'client_unknown_field'    // referência ao cliente mas campo não reconhecido
   | 'client_history_question' // histórico comercial — stub legado
   | 'client_switch'           // trocar cliente ativo
+  | 'repeat_quote'            // "esse mesmo, faça o orçamento"
   // ── Fase 2: Pedidos e Financeiro ──────────────────────────────────────────
   | 'client_recent_orders'    // últimos pedidos reais do cliente
   | 'client_revenue_period'   // faturamento/soma de pedidos por período
@@ -264,11 +265,18 @@ export function detectIntent(query: string): DetectedIntent {
 
   // ── 2. Encerramento / Agradecimento ─────────────────────────────────────
   // Deve ser checado antes de fields para evitar falsos positivos
-  if (CLOSURE_TRIGGERS.some(t => norm === t || norm.startsWith(t) || norm.endsWith(t) || norm.includes(t))) {
-    // Validação extra: não deve conter palavras de busca (para evitar conflito com "ok busca o cliente X")
+  const isClosure = CLOSURE_TRIGGERS.some(t => {
+    if (t.length <= 3) return new RegExp('\\b' + t + '\\b', 'i').test(norm);
+    return norm.includes(t);
+  });
+  
+  if (isClosure) {
+    // Validação extra: não deve conter palavras de busca ou operacionais de cotação
     const isActuallySearching = LOOKUP_VERBS.some(v => norm.includes(v)) ||
       norm.includes('cliente') ||
-      /\b(liente|clinte|ciente|cli|cadastro)\s+[a-z]/i.test(norm);
+      /\b(liente|clinte|ciente|cli|cadastro|cota[cç][aã]o|cotar|or[cç]amento)\s+([a-z\d])/i.test(norm) ||
+      /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|faz)\s+(a\s+|o\s+|esse\s+)?(cota[cç][aã]o|or[cç]amento|mesmo)\b/i.test(norm) ||
+      /\b(cota[cç][aã]o|or[cç]amento|pedido)\b/i.test(norm);
     if (!isActuallySearching) {
       return { type: 'closure' };
     }
@@ -359,6 +367,14 @@ export function detectIntent(query: string): DetectedIntent {
   // ── 5. Confirmação ────────────────────────────────────────────────────────
   if (CONFIRMATION_TRIGGERS.some(t => norm.includes(t))) {
     return { type: 'client_confirmation' };
+  }
+
+  // ── 5.5. Repetir Cotação (esse mesmo, pode fazer, faz pra ele) ──────────────
+  const isRepeatQuote = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|faz)\s+(a\s+|o\s+|esse\s+)?(cota[cç][aã]o|or[cç]amento|mesmo)\b/i.test(norm) ||
+    /\b(esse\s+mesmo(\s*,?\s*pode\s+fazer\s+o\s+orçamento)?)\b/i.test(norm) ||
+    /\b(pode\s+fazer|faz\s+pra\s+ele)\b/i.test(norm);
+  if (isRepeatQuote) {
+    return { type: 'repeat_quote' };
   }
 
   // ── 6. Ajuda ─────────────────────────────────────────────────────────────

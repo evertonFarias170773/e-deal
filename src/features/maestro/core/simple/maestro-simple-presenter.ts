@@ -513,17 +513,22 @@ export function presenterCampoContextual(
       } else {
         text += `\nAs informações de limite não estão disponíveis.`;
       }
+      
+      buildField('limite_credito', 'Crédito', hasCredito ? 'Disponível' : 'ND', text);
+      break;
+    }
 
+    case 'bonus': {
+      let text = `Informações de Bônus de **${c.clientName}**:`;
       if (c.isBonus != null) {
-        text += `\n\n• **Bônus Ativo:** ${c.isBonus ? 'Sim' : 'Não'}`;
+        text += `\n• **Bônus Ativo:** ${c.isBonus ? 'Sim' : 'Não'}`;
         if (c.isBonus && c.percentualBonus) {
           text += `\n• **Percentual:** ${formatPercent(c.percentualBonus)}`;
         }
       } else {
         text += `\n_Não há dado preenchido sobre bônus neste cadastro._`;
       }
-      
-      buildField('limite_credito / is_bonus', 'Crédito e Bônus', hasCredito ? 'Disponível' : 'ND', text);
+      buildField('is_bonus', 'Bônus', c.isBonus != null ? 'Disponível' : 'ND', text);
       break;
     }
 
@@ -2297,12 +2302,25 @@ export function presenterConsultarCotacaoAtiva(
   queryType: string
 ): PresenterResult {
   let content = '';
+  const formatName = (n: string) => {
+    const lower = n.toLowerCase();
+    if (lower.includes('mobi')) return 'Ingresso MOBI';
+    if (lower.includes('up') || lower.includes('up box')) return 'Ingresso UP BOX';
+    if (lower.includes('pulseira') && lower.includes('triband')) return 'Triband';
+    if (lower.includes('cordao') || lower.includes('jacare') || lower.includes('jacaré')) return 'Cordão Jacaré';
+    return n;
+  };
+
   switch (queryType) {
     case 'subtotal':
-      content = 'O subtotal dos produtos nessa cotação é **' + formatBRL(quote.subtotalProdutos) + '**.';
+      if (quote.percentualBonus && quote.descontoReais && quote.percentualBonus > 0) {
+        content = `O subtotal dos produtos nessa cotação é **${formatBRL(quote.subtotalProdutos)}**. Com o bônus de ${quote.percentualBonus}%, o subtotal líquido fica **${formatBRL(quote.subtotalLiquido || quote.subtotalProdutos)}**.`;
+      } else {
+        content = `O subtotal dos produtos nessa cotação é **${formatBRL(quote.subtotalProdutos)}**.`;
+      }
       break;
     case 'total':
-      content = 'O total final dessa cotação é **' + formatBRL(quote.total) + '** (produtos: ' + formatBRL(quote.subtotalProdutos) + ' + frete ' + quote.freteSelecionado.transportadora + ': ' + formatBRL(quote.freteSelecionado.valor) + ').';
+      content = 'O total final dessa cotação é **' + formatBRL(quote.total) + '** (produtos líquidos: ' + formatBRL(quote.subtotalLiquido || quote.subtotalProdutos) + ' + frete ' + quote.freteSelecionado.transportadora + ': ' + formatBRL(quote.freteSelecionado.valor) + ').';
       break;
     case 'frete_sugerido':
       content = 'O frete sugerido foi **' + quote.freteSelecionado.transportadora + '** por **' + formatBRL(quote.freteSelecionado.valor) + '** (' + (quote.freteSelecionado.prazo || 'prazo não informado') + ').';
@@ -2316,22 +2334,28 @@ export function presenterConsultarCotacaoAtiva(
       content = 'O endereço usado nessa cotação foi: **' + quote.enderecoFull + '**' + (quote.cep ? ' (CEP: ' + quote.cep + ')' : '') + '.';
       break;
     case 'itens': {
-      const li = quote.itens.map((it, i) => (i + 1) + '. **' + it.nome + '** — ' + it.quantidade.toLocaleString('pt-BR') + ' un. — ' + formatBRL(it.subtotal)).join('\n');
+      const li = quote.itens.map((it, i) => (i + 1) + '. **' + formatName(it.nome) + '** — ' + it.quantidade.toLocaleString('pt-BR') + ' un. — ' + formatBRL(it.subtotal)).join('\n');
       content = 'Os itens dessa cotação foram:\n\n' + li;
       break;
     }
     case 'peso':
       content = quote.pesoTotalGramas > 0
-        ? 'O peso total considerado nessa cotação foi **' + quote.pesoTotalGramas.toLocaleString('pt-BR') + ' g** (inclui margem de 2%).'
+        ? `Tenho apenas o peso total calculado da cotação: **${quote.pesoTotalGramas.toLocaleString('pt-BR')} g**. O peso por produto não está disponível no snapshot atual.`
         : 'O peso não consta no snapshot dessa cotação.';
       break;
     case 'resumo':
     default: {
-      const liR = quote.itens.map(it => '- ' + it.nome + ': ' + it.quantidade.toLocaleString('pt-BR') + ' un. — ' + formatBRL(it.subtotal)).join('\n');
+      const liR = quote.itens.map(it => '- ' + formatName(it.nome) + ': ' + it.quantidade.toLocaleString('pt-BR') + ' un. — ' + formatBRL(it.subtotal)).join('\n');
       const salvaSuffix = (quote.status === 'salva' && quote.savedIdInt)
         ? 'Proposta #' + quote.savedIdInt + ' salva.'
         : 'Ainda não salva. Deseja salvar como proposta?';
-      content = '**Cotação ativa para ' + quote.clientName + '**\n\nItens:\n' + liR + '\n\nSubtotal: **' + formatBRL(quote.subtotalProdutos) + '**\nFrete (' + quote.freteSelecionado.transportadora + '): **' + formatBRL(quote.freteSelecionado.valor) + '**\nTotal: **' + formatBRL(quote.total) + '**\n\nEndereço: ' + quote.enderecoFull + '\n\n' + salvaSuffix;
+        
+      let bonusText = '';
+      if (quote.percentualBonus && quote.descontoReais && quote.percentualBonus > 0) {
+        bonusText = `Bônus (${quote.percentualBonus}%): **-${formatBRL(quote.descontoReais)}**\nSubtotal com Bônus: **${formatBRL(quote.subtotalLiquido || quote.subtotalProdutos)}**\n`;
+      }
+      
+      content = '**Cotação ativa para ' + quote.clientName + '**\n\nItens:\n' + liR + '\n\nSubtotal: **' + formatBRL(quote.subtotalProdutos) + '**\n' + bonusText + 'Frete (' + quote.freteSelecionado.transportadora + '): **' + formatBRL(quote.freteSelecionado.valor) + '**\nTotal: **' + formatBRL(quote.total) + '**\n\nEndereço: ' + quote.enderecoFull + '\n\n' + salvaSuffix;
       break;
     }
   }
@@ -2347,7 +2371,7 @@ export function presenterTrocaFreteCotacaoAtiva(quote: ActiveQuoteSnapshot): Pre
   return {
     message: {
       id: genId('frete-swap'), role: 'maestro',
-      content: 'Frete atualizado para **' + quote.freteSelecionado.transportadora + '**!\n\nFrete: **' + formatBRL(quote.freteSelecionado.valor) + '** (' + (quote.freteSelecionado.prazo || 'prazo não informado') + ')\nSubtotal produtos: **' + formatBRL(quote.subtotalProdutos) + '**\n**Total atualizado: ' + formatBRL(quote.total) + '**\n\nDeseja salvar essa cotação como proposta?',
+      content: 'Frete atualizado para **' + quote.freteSelecionado.transportadora + '**!\n\nFrete: **' + formatBRL(quote.freteSelecionado.valor) + '** (' + (quote.freteSelecionado.prazo || 'prazo não informado') + ')\nSubtotal produtos: **' + formatBRL(quote.subtotalProdutos) + '**\n**Total atualizado: ' + formatBRL(quote.total) + '**',
       contentType: 'text', specialist: 'comercial', timestamp: now(), status: 'completed', confidence: 'high',
     },
     activity: [{ id: 'f1', label: 'Frete atualizado', status: 'done', timestamp: nowTime() }],
@@ -2378,13 +2402,25 @@ export function presenterEscolhaTransportadora(
   enderecoFull: string,
   itens: Array<{ nome: string; quantidade: number; subtotal: number }>,
   subtotal: number,
-  fretes: Array<{ transportadora: string; servico: string; valor: number; prazo?: string }>
+  fretes: Array<{ transportadora: string; servico: string; valor: number; prazo?: string }>,
+  percentualBonus?: number,
+  descontoReais?: number,
+  subtotalLiquido?: number
 ): PresenterResult {
   const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const menorValor = Math.min(...fretes.map(f => f.valor));
 
+  const formatName = (n: string) => {
+    const lower = n.toLowerCase();
+    if (lower.includes('mobi')) return 'Ingresso MOBI';
+    if (lower.includes('up') || lower.includes('up box')) return 'Ingresso UP BOX';
+    if (lower.includes('pulseira') && lower.includes('triband')) return 'Triband';
+    if (lower.includes('cordao') || lower.includes('jacare') || lower.includes('jacaré')) return 'Cordão Jacaré';
+    return n;
+  };
+
   const listaItens = itens
-    .map(it => `🎟️ ${it.nome}\n📦 Quantidade: ${it.quantidade.toLocaleString('pt-BR')} unidades — ${fmtBRL(it.subtotal)}`)
+    .map(it => `🎟️ ${formatName(it.nome)}\n📦 Quantidade: ${it.quantidade.toLocaleString('pt-BR')} unidades — ${fmtBRL(it.subtotal)}`)
     .join('\n\n');
 
   const listaOpcoes = fretes.length > 2
@@ -2399,7 +2435,7 @@ export function presenterEscolhaTransportadora(
     })
     .join('\n');
 
-  const content = [
+  const lines = [
     `📄 Orçamento para ${clientName}`,
     ``,
     listaItens,
@@ -2409,13 +2445,23 @@ export function presenterEscolhaTransportadora(
     `-----------------------------`,
     ``,
     `🧾 Subtotal produtos: ${fmtBRL(subtotal)}`,
+  ];
+
+  if (percentualBonus && descontoReais && percentualBonus > 0) {
+    lines.push(`🎁 Bônus (${percentualBonus}%): -${fmtBRL(descontoReais)}`);
+    lines.push(`💰 Subtotal com Bônus: ${fmtBRL(subtotalLiquido || subtotal)}`);
+  }
+
+  lines.push(
     ``,
     `🚚 Escolha a transportadora para entrega:`,
     ``,
     listaFretes,
     ``,
-    `Responda com ${listaOpcoes}:`,
-  ].join('\n');
+    `Responda com ${listaOpcoes}:`
+  );
+
+  const content = lines.join('\n');
 
   return {
     message: {
@@ -2443,10 +2489,18 @@ export function presenterEscolhaTransportadora(
  */
 export function presenterFreteConfirmado(quote: ActiveQuoteSnapshot): PresenterResult {
   const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatName = (n: string) => {
+    const lower = n.toLowerCase();
+    if (lower.includes('mobi')) return 'Ingresso MOBI';
+    if (lower.includes('up') || lower.includes('up box')) return 'Ingresso UP BOX';
+    if (lower.includes('pulseira') && lower.includes('triband')) return 'Triband';
+    if (lower.includes('cordao') || lower.includes('jacare') || lower.includes('jacaré')) return 'Cordão Jacaré';
+    return n;
+  };
 
   const listaItens = quote.itens
     .map(it => [
-      `🎟️ ${it.nome}`,
+      `🎟️ ${formatName(it.nome)}`,
       `📦 Quantidade: ${it.quantidade.toLocaleString('pt-BR')} unidades — ${fmtBRL(it.subtotal)}`,
       `🏭 Prazo de produção: Prazo sob consulta`,
     ].join('\n'))
@@ -2465,15 +2519,22 @@ export function presenterFreteConfirmado(quote: ActiveQuoteSnapshot): PresenterR
     `📌 ${quote.enderecoFull}`,
     `-----------------------------`,
     ``,
-    `🚚 ${quote.freteSelecionado.transportadora}: ${fmtBRL(quote.freteSelecionado.valor)}`,
+    `🧾 Subtotal produtos: ${fmtBRL(quote.subtotalProdutos)}`,
   ];
+
+  if (quote.percentualBonus && quote.descontoReais && quote.percentualBonus > 0) {
+    lines.push(`🎁 Bônus (${quote.percentualBonus}%): -${fmtBRL(quote.descontoReais)}`);
+    lines.push(`💰 Subtotal com Bônus: ${fmtBRL(quote.subtotalLiquido || quote.subtotalProdutos)}`);
+  }
+
+  lines.push(
+    `🚚 ${quote.freteSelecionado.transportadora}: ${fmtBRL(quote.freteSelecionado.valor)}`
+  );
   if (prazoFrete) lines.push(prazoFrete);
+  
   lines.push(
     ``,
-    `🧾 Subtotal produtos: ${fmtBRL(quote.subtotalProdutos)}`,
-    `Frete selecionado (${quote.freteSelecionado.transportadora}): ${fmtBRL(quote.freteSelecionado.valor)}`,
-    ``,
-    `💰 Total final: ${fmtBRL(quote.total)}`,
+    `💰 **Total da Proposta: ${fmtBRL(quote.total)}**`
   );
 
   return {
@@ -2499,14 +2560,14 @@ export function presenterFreteConfirmado(quote: ActiveQuoteSnapshot): PresenterR
 /**
  * Resposta curta para mensagens sociais durante cotação ativa ou pendência de save.
  */
-export function presenterRespostaSocialCotacao(clientName?: string | null): PresenterResult {
-  const nome = clientName ? clientName.split(' ')[0] : '';
-  const greeting = nome ? `Olá, ${nome}! 😊` : `Olá! 😊`;
+export function presenterRespostaSocialCotacao(userName?: string | null): PresenterResult {
+  const nome = userName ? userName.split(' ')[0] : '';
+  const greeting = nome ? `Por nada, ${nome}!` : `Por nada!`;
   return {
     message: {
       id: genId('social-cotacao'),
       role: 'maestro',
-      content: `${greeting} Estou por aqui. A cotação continua aberta se quiser retomar.`,
+      content: `${greeting} Estou por aqui. A cotação continua aberta se quiser salvar ou ajustar.`,
       contentType: 'text',
       specialist: 'comercial',
       timestamp: now(),

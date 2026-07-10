@@ -512,8 +512,78 @@ export async function processSimpleQueryWithBrain(
 
   if (process.env.MAESTRO_V2_ENABLED === 'true') {
     try {
-      const routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
-        if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
+      let routeResult: any = { routed: false };
+
+      // Helper para decidir se chama o External Agent
+      const shouldTryExternalIntent = (q: string, isStatic: boolean, ctx: any) => {
+        const compoundIntentRegex = /(?:mesm[oa]\s+(?:or[cç]amento|cota[cç][aã]o)|repete\s+(?:ess[ea]|o)|faz(?:er)?\s+(?:o|esse)?\s*mesmo|cota\s+esse\s+mesmo)/i;
+        const temComposta = compoundIntentRegex.test(q);
+
+        if (ctx.pendingAddressChoice) return false;
+        if (ctx.pendingFreightChoice) return false;
+        
+        // Se houver intenção composta explícita, ela vence o pendingSaveQuotation
+        if (ctx.pendingSaveQuotation && !temComposta) return false;
+
+        if (!isStatic) return true;
+        if (temComposta) return true;
+        
+        return false;
+      };
+
+      const tryExternal = shouldTryExternalIntent(query, isImmediateStatic, v2Ctx);
+
+      if (process.env.MAESTRO_EXTERNAL_INTENT_ENABLED === 'true' && tryExternal) {
+        try {
+          const { callExternalAgent } = await import('./maestro-external-intent.server');
+          const { mapExternalIntentToRouterResult } = await import('./maestro-external-intent.mapper');
+          
+          const payload = {
+            query,
+            currentDateIso: new Date().toISOString(),
+            activeClient: simpleCtx.activeClient ? {
+              clientInternalId: simpleCtx.activeClient.clientInternalId,
+              clientDisplayCode: simpleCtx.activeClient.clientDisplayCode,
+              clientName: simpleCtx.activeClient.clientName,
+              clientFantasia: simpleCtx.activeClient.clientFantasia,
+            } : null,
+            v2Context: {
+              domain: v2Ctx.domain,
+              lastTool: v2Ctx.lastTool ?? null,
+              hasPendingAddressChoice: !!v2Ctx.pendingAddressChoice,
+              hasPendingFreightChoice: !!v2Ctx.pendingFreightChoice,
+              hasPendingSaveQuotation: !!v2Ctx.pendingSaveQuotation,
+              hasActiveQuote: !!v2Ctx.activeQuote,
+              orcamentoItensCount: v2Ctx.orcamentoItens?.length ?? 0,
+              pendingClientCandidatesCount: v2Ctx.pendingClientCandidates?.length ?? 0
+            },
+            lastAnswer: simpleCtx.lastAnswer ? {
+              type: simpleCtx.lastAnswer.type,
+              label: simpleCtx.lastAnswer.label,
+              value: simpleCtx.lastAnswer.value
+            } : null,
+            recentTurns: [] // Mantenha simples para a POC, poderia injetar as últimas mensagens de legacyCtx
+          };
+
+          const externalResult = await callExternalAgent(payload);
+          if (externalResult) {
+            const mappedRoute = mapExternalIntentToRouterResult(externalResult, v2Ctx, simpleCtx.activeClient);
+            if (mappedRoute?.routed) {
+              routeResult = mappedRoute;
+            }
+          }
+        } catch (extErr) {
+          console.warn('[MaestroEngine] External intent layer falhou silenciosamente — usando router interno.', extErr);
+        }
+      }
+
+      // [FALLBACK] Se não roteado externamente, usa o router interno V2
+      if (!routeResult.routed) {
+        const { routeToolSimple } = await import('./maestro-v2-router');
+        routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
+      }
+
+      if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
         const step = routeResult.plan.steps[0];
         let pr: PresenterResult | null = null;
         let clientForCtx = simpleCtx.activeClient;
@@ -603,12 +673,14 @@ export async function processSimpleQueryWithBrain(
               v2Ctx.budgetAddressUf = undefined;
               v2Ctx.pendingAddressChoice = null;
               v2Ctx.activeQuote = null; // limpa cotação ativa ao trocar cliente
+              v2Ctx.pendingSaveQuotation = null; // limpa save pendente do cliente antigo
+              v2Ctx.pendingFreightChoice = null; // limpa frete pendente do cliente antigo
             }
             clientForCtx = lookupResult.client;
 
             // ── INTENÇÃO COMPOSTA: cliente + itens na mesma mensagem ──────────────
-            // Se há itens salvos da mensagem atual, prosseguir para cotação automaticamente.
-            const itensCompostos = itensDaMensagemAtual;
+            // Se há itens salvos da mensagem atual, ou itens preservados do 'mesmo orçamento', prosseguir para cotação automaticamente.
+            const itensCompostos = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
             if (itensCompostos && itensCompostos.length > 0) {
               console.log(`[MaestroEngine] buscarCliente: intenção composta detectada. Cliente ${lookupResult.client.clientName} + ${itensCompostos.length} itens. Prosseguindo para cotação.`);
               v2Ctx.orcamentoItens = itensCompostos;
@@ -655,7 +727,8 @@ export async function processSimpleQueryWithBrain(
             }));
             v2Ctx.pendingClientCandidate = null;
             v2Ctx.pendingClientSearchTerm = busca;
-            if (itensDaMensagemAtual) v2Ctx.pendingBudgetForCandidate = itensDaMensagemAtual;
+            const candItemsMulti = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+            if (candItemsMulti) v2Ctx.pendingBudgetForCandidate = candItemsMulti;
             pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
           } else if (lookupResult.reason === 'partial_match' && lookupResult.candidates?.length) {
             const cand = lookupResult.candidates[0];
@@ -669,7 +742,8 @@ export async function processSimpleQueryWithBrain(
             };
             v2Ctx.pendingClientCandidates = null;
             v2Ctx.pendingClientSearchTerm = busca;
-            if (itensDaMensagemAtual) v2Ctx.pendingBudgetForCandidate = itensDaMensagemAtual;
+            const candItemsPartial = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+            if (candItemsPartial) v2Ctx.pendingBudgetForCandidate = candItemsPartial;
             pr = presenterClienteMatchParcial(busca, cand);
           } else {
             // Não encontrado: limpa, não usa cliente ativo anterior
@@ -739,7 +813,8 @@ export async function processSimpleQueryWithBrain(
               };
             } else {
               quote.freteSelecionado = novoFrete;
-              quote.total = quote.subtotalProdutos + novoFrete.valor;
+              const baseParaTotal = quote.subtotalLiquido ?? quote.subtotalProdutos;
+              quote.total = baseParaTotal + novoFrete.valor;
               if (v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt) {
                 v2Ctx.pendingSaveQuotation.freteEscolhido = { ...novoFrete } as any;
                 v2Ctx.pendingSaveQuotation.total = quote.total;
@@ -874,8 +949,26 @@ export async function processSimpleQueryWithBrain(
                 v2Ctx.orcamentoItens = itensPendentes;
                 v2Ctx.domain = 'orcamento_avulso';
                 v2Ctx.lastExplicitBudgetItems = itensPendentes;
-                const { presenterClienteConfirmadoComOrcamento } = require('./maestro-simple-presenter');
-                pr = presenterClienteConfirmadoComOrcamento(novoCliente, itensPendentes);
+                
+                // Carregar endereços do cliente para mostrar lista de escolha
+                const idClienteCompostos = novoCliente.clientInternalId;
+                const { data: enderecosCompostos } = await supabase
+                  .from('enderecos')
+                  .select('id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf')
+                  .eq('id_cliente', idClienteCompostos)
+                  .limit(10);
+
+                if (enderecosCompostos && enderecosCompostos.length > 0) {
+                  v2Ctx.pendingAddressChoice = {
+                    clientId: idClienteCompostos || 0,
+                    addresses: enderecosCompostos,
+                  };
+                  const { presenterEscolhaEndereco } = require('./maestro-simple-presenter');
+                  pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
+                } else {
+                  const { presenterSolicitarEnderecoManual } = require('./maestro-simple-presenter');
+                  pr = presenterSolicitarEnderecoManual(novoCliente);
+                }
               } else {
                 pr = presenterClienteEncontrado(novoCliente);
               }
@@ -1137,7 +1230,26 @@ export async function processSimpleQueryWithBrain(
             let aguardandoEndereco = false;
             let solicitandoEnderecoManual = false;
 
-            if (v2Ctx.activeEntities?.clientInternalId && !v2Ctx.budgetAddressId && !v2Ctx.pendingAddressChoice) {
+            // Validação obrigatória de endereço por cliente
+            if (v2Ctx.budgetAddressId && clientForCtx?.clientInternalId) {
+              const { data: validAddr } = await supabase
+                .from('enderecos')
+                .select('id_cliente')
+                .eq('id', v2Ctx.budgetAddressId)
+                .single();
+
+              if (validAddr && validAddr.id_cliente !== clientForCtx.clientInternalId) {
+                console.log(`[MaestroEngine] INCONSISTÊNCIA DE ENDEREÇO DETECTADA: endereço ${v2Ctx.budgetAddressId} é de outro cliente. Limpando...`);
+                v2Ctx.budgetAddressId = undefined;
+                v2Ctx.budgetAddressFull = undefined;
+                v2Ctx.budgetAddressCep = undefined;
+                v2Ctx.budgetAddressCidade = undefined;
+                v2Ctx.budgetAddressUf = undefined;
+                v2Ctx.pendingFreightChoice = null;
+              }
+            }
+
+            if (clientForCtx?.clientInternalId && !v2Ctx.budgetAddressId && !v2Ctx.pendingAddressChoice) {
               const { data: enderecos } = await supabase
                 .from('enderecos')
                 .select('id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf')
@@ -1153,7 +1265,7 @@ export async function processSimpleQueryWithBrain(
                 v2Ctx.budgetAddressUf = end.uf;
               } else if (enderecos && enderecos.length > 1) {
                 v2Ctx.pendingAddressChoice = {
-                  clientId: v2Ctx.activeEntities.clientInternalId,
+                  clientId: v2Ctx.activeEntities.clientInternalId || 0,
                   addresses: enderecos
                 };
                 aguardandoEndereco = true;
@@ -1202,11 +1314,14 @@ export async function processSimpleQueryWithBrain(
                      }) : Promise.resolve([])
                    ]);
                    
-                   if (sedexReq.status === 'fulfilled') fretesCalculados.push(...sedexReq.value);
-                   if (azulReq.status === 'fulfilled') fretesCalculados.push(...azulReq.value);
-                   if (transpReq.status === 'fulfilled') fretesCalculados.push(...transpReq.value);
-                 }
-               }
+                  if (sedexReq.status === 'fulfilled') fretesCalculados.push(...sedexReq.value);
+                  if (azulReq.status === 'fulfilled') fretesCalculados.push(...azulReq.value);
+                  if (transpReq.status === 'fulfilled') fretesCalculados.push(...transpReq.value);
+                }
+              }
+
+              fretesCalculados.push({ id: 'retira_balcao', servico: 'Retirada no local', transportadora: 'Retira no balcão', valor: 0, prazo: 'A combinar', id_int: 0, observacao: '', escolhido: false, pesoUsado: 0 } as any);
+
                pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined);
 
                // ── FASE 3c: Se houve mutação em orçamento já salvo, desvincula e avisa
@@ -1247,6 +1362,10 @@ export async function processSimpleQueryWithBrain(
                    }));
 
                  const subtotal = serviceResult.totalGeral;
+                 const percentualBonus = clientForCtx.percentualBonus ?? 0;
+                 const descontoReais = percentualBonus > 0 ? Number((subtotal * percentualBonus / 100).toFixed(2)) : 0;
+                 const subtotalLiquido = Number((subtotal - descontoReais).toFixed(2));
+                 
                  const clientNameFase3 = clientForCtx.clientName || clientForCtx.clientFantasia || 'Cliente';
                  const enderecoFullFase3 = v2Ctx.budgetAddressFull || '';
 
@@ -1263,6 +1382,9 @@ export async function processSimpleQueryWithBrain(
                      itens: itensSave,
                      subtotal,
                      pesoTotalGramas,
+                     percentualBonus,
+                     descontoReais,
+                     subtotalLiquido,
                      fretes: fretesCalculados.map((f: any) => ({
                        id: f.id ?? f.servico,
                        servico: f.servico,
@@ -1275,12 +1397,12 @@ export async function processSimpleQueryWithBrain(
                    };
                    console.log('[MaestroEngine] pendingFreightChoice salvo - aguardando escolha de transportadora');
                    const { presenterEscolhaTransportadora } = await import('./maestro-simple-presenter');
-                   pr = presenterEscolhaTransportadora(clientNameFase3, enderecoFullFase3, itensSave, subtotal, fretesCalculados);
+                   pr = presenterEscolhaTransportadora(clientNameFase3, enderecoFullFase3, itensSave, subtotal, fretesCalculados, percentualBonus, descontoReais, subtotalLiquido);
 
                  } else {
                    // Apenas 1 frete: finaliza direto
                    const freteEscolhido = fretesCalculados[0];
-                   const total = subtotal + freteEscolhido.valor;
+                   const total = subtotalLiquido + freteEscolhido.valor;
 
                    v2Ctx.pendingSaveQuotation = {
                      clientInternalId: clientForCtx.clientInternalId!,
@@ -1294,6 +1416,9 @@ export async function processSimpleQueryWithBrain(
                      freteEscolhido: { id: freteEscolhido.id, servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo, pesoUsado: freteEscolhido.pesoUsado, id_cotacao: freteEscolhido.id_cotacao },
                      fretes: fretesCalculados,
                      subtotal,
+                     percentualBonus,
+                     descontoReais,
+                     subtotalLiquido,
                      total,
                      pesoTotalGramas,
                      timestamp: new Date().toISOString(),
@@ -1313,6 +1438,9 @@ export async function processSimpleQueryWithBrain(
                      fretes: fretesCalculados.map((f) => ({ id: f.id ?? f.servico, servico: f.servico, transportadora: f.transportadora, valor: f.valor, prazo: f.prazo, pesoUsado: f.pesoUsado ?? pesoTotalGramas })),
                      freteSelecionado: { id: freteEscolhido.id ?? freteEscolhido.servico, servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo, pesoUsado: freteEscolhido.pesoUsado ?? pesoTotalGramas },
                      subtotalProdutos: subtotal,
+                     percentualBonus,
+                     descontoReais,
+                     subtotalLiquido,
                      total,
                      pesoTotalGramas,
                      status: 'nao_salva',
@@ -1335,7 +1463,8 @@ export async function processSimpleQueryWithBrain(
           } else {
             const idx = Math.max(1, Math.min(step.params.freteIndex ?? 1, draft.fretes.length));
             const freteEscolhido = draft.fretes[idx - 1];
-            const total = draft.subtotal + freteEscolhido.valor;
+            const subtotalLiquido = draft.subtotalLiquido ?? draft.subtotal;
+            const total = subtotalLiquido + freteEscolhido.valor;
 
             v2Ctx.activeQuote = {
               createdAt: new Date().toISOString(),
@@ -1350,6 +1479,9 @@ export async function processSimpleQueryWithBrain(
               fretes: draft.fretes.map((f) => ({ id: f.id ?? f.servico, servico: f.servico, transportadora: f.transportadora, valor: f.valor, prazo: f.prazo ?? '', pesoUsado: f.pesoUsado ?? draft.pesoTotalGramas })),
               freteSelecionado: { id: freteEscolhido.id ?? freteEscolhido.servico, servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo ?? '', pesoUsado: freteEscolhido.pesoUsado ?? draft.pesoTotalGramas },
               subtotalProdutos: draft.subtotal,
+              percentualBonus: draft.percentualBonus,
+              descontoReais: draft.descontoReais,
+              subtotalLiquido: draft.subtotalLiquido,
               total,
               pesoTotalGramas: draft.pesoTotalGramas,
               status: 'nao_salva',
@@ -1367,6 +1499,9 @@ export async function processSimpleQueryWithBrain(
               freteEscolhido: { id: freteEscolhido.id ?? '', servico: freteEscolhido.servico, transportadora: freteEscolhido.transportadora, valor: freteEscolhido.valor, prazo: freteEscolhido.prazo ?? '', pesoUsado: freteEscolhido.pesoUsado ?? 0, id_cotacao: freteEscolhido.id_cotacao ? parseInt(freteEscolhido.id_cotacao, 10) || undefined : undefined },
               fretes: draft.fretes as any[],
               subtotal: draft.subtotal,
+              percentualBonus: draft.percentualBonus,
+              descontoReais: draft.descontoReais,
+              subtotalLiquido: draft.subtotalLiquido,
               total,
               pesoTotalGramas: draft.pesoTotalGramas,
               timestamp: new Date().toISOString(),
@@ -1518,7 +1653,25 @@ export async function processSimpleQueryWithBrain(
         }
 
         if (step.tool === 'resposta_social_cotacao') {
-          pr = presenterRespostaSocialCotacao(simpleCtx.activeClient?.clientName);
+          pr = presenterRespostaSocialCotacao(options.userName);
+        }
+
+        if (step.tool === 'resposta_frustracao_usuario') {
+          const nome = options.userName ? options.userName.split(' ')[0] : '';
+          const greeting = nome ? `Desculpa, ${nome}.` : `Desculpa.`;
+          pr = {
+            message: {
+              id: 'maestro-msg-' + Date.now(),
+              role: 'maestro',
+              content: `${greeting} Eu me perdi no contexto. Me diga o cliente e os itens que eu refaço limpo.`,
+              contentType: 'text',
+              specialist: 'comercial',
+              timestamp: new Date().toISOString(),
+              status: 'completed',
+              confidence: 'high'
+            },
+            activity: []
+          };
         }
 
         if (step.tool === 'salvar_cotacao_confirmada') {
@@ -1647,7 +1800,9 @@ export async function processSimpleQueryWithBrain(
   // Exceção: 'simularOrcamentoAvulso' (o card formatado da cotação não deve ser reescrito pelo Brain)
   const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true'
     || (v2Ctx.domain === 'orcamento_avulso' && v2Ctx.lastTool === 'simularOrcamentoAvulso')
-    || v2Ctx.lastTool === 'orcamento_avulso_desativado';
+    || v2Ctx.lastTool === 'orcamento_avulso_desativado'
+    || v2Ctx.lastTool === 'resposta_social_cotacao'
+    || v2Ctx.lastTool === 'resposta_frustracao_usuario';
 
   if (skipLLM) {
     return deterministicResult;

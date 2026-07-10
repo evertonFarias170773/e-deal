@@ -50,6 +50,8 @@ export type AllowedToolName =
   | 'cancelar_orcamento_avulso'
   | 'mostrar_itens_orcamento'
   | 'orcamento_avulso_desativado'
+  | 'resposta_social_cotacao'
+  | 'resposta_frustracao_usuario'
   // Fase 3a: Save confirmação
   | 'salvar_cotacao_confirmada'
   | 'cancelar_save_cotacao'
@@ -231,6 +233,30 @@ export async function routeToolSimple(
         plan: {
           steps: [{ tool: 'confirmar_frete_cotacao', params: { freteIndex: idx } }]
         }
+      };
+    }
+  }
+
+  // Interceptador para repetição de orçamento (quando o usuário acabou de buscar um cliente ou cita o cliente na mesma frase)
+  const isRepeatQuoteMsg = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|faz)\s+(a\s+|o\s+|esse\s+)?(cota[cç][aã]o|or[cç]amento|mesmo)\b/i.test(query) ||
+    /\b(esse\s+mesmo(\s*,?\s*pode\s+fazer\s+o\s+orçamento)?)\b/i.test(query) ||
+    /\b(pode\s+fazer|faz\s+pra\s+ele)\b/i.test(query);
+
+  if (isRepeatQuoteMsg && v2Ctx.lastExplicitBudgetItems && v2Ctx.lastExplicitBudgetItems.length > 0) {
+    const clienteNaQuery = extrairClienteDaQuery(query);
+    console.log(`[MaestroV2Router] Repetição de orçamento solicitada. Reaproveitando ${v2Ctx.lastExplicitBudgetItems.length} itens.`);
+    v2Ctx.orcamentoItens = [...v2Ctx.lastExplicitBudgetItems];
+    v2Ctx.domain = 'orcamento_avulso';
+    
+    if (clienteNaQuery) {
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'buscarCliente', params: { busca: clienteNaQuery.valor } }] }
+      };
+    } else {
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'simularOrcamentoAvulso', params: {} }] }
       };
     }
   }

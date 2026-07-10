@@ -92,9 +92,15 @@ export interface ActiveQuoteSnapshot {
     pesoUsado: number;
     id_cotacao?: number;
   };
-  /** Subtotal dos produtos (sem frete) */
+  /** Subtotal dos produtos (sem frete e bruto) */
   subtotalProdutos: number;
-  /** Total = subtotalProdutos + freteSelecionado.valor */
+  /** Percentual de bonus vindo do cadastro (se > 0) */
+  percentualBonus?: number;
+  /** Desconto real aplicado sobre o subtotalProdutos (em Reais) */
+  descontoReais?: number;
+  /** Subtotal liquido (produtos bruto - desconto) */
+  subtotalLiquido?: number;
+  /** Total = (subtotalLiquido ?? subtotalProdutos) + freteSelecionado.valor */
   total: number;
   /** Peso total em gramas (com margem 2%) */
   pesoTotalGramas: number;
@@ -144,12 +150,18 @@ export interface PendingSaveQuotation {
   };
   /** Opções de frete retornadas (para consulta posterior) */
   fretes?: any[];
-  /** Subtotal dos produtos */
+  /** Subtotal (bruto) dos produtos */
   subtotal: number;
-  /** Total geral (produtos + frete) */
-  total: number;
-  /** Peso total em gramas (com margem de 2%) */
+  /** Percentual de bonus vindo do cadastro (se > 0) */
+  percentualBonus?: number;
+  /** Desconto real aplicado sobre o subtotal (em Reais) */
+  descontoReais?: number;
+  /** Subtotal liquido (produtos bruto - desconto) */
+  subtotalLiquido?: number;
+  /** Peso total do pacote em gramas (2% margem) */
   pesoTotalGramas: number;
+  /** Total final (subtotalLiquido ?? subtotal) + frete */
+  total: number;
   /** Timestamp de criação da cotação */
   timestamp: string;
   /** Preenchido após save bem-sucedido — impede duplicação */
@@ -232,6 +244,9 @@ export interface MaestroV2Context {
       pesoUnitario: number;
     }>;
     subtotal: number;
+    percentualBonus?: number;
+    descontoReais?: number;
+    subtotalLiquido?: number;
     pesoTotalGramas: number;
     fretes: Array<{
       id?: string;
@@ -395,6 +410,12 @@ export function detectFreightSwitch(
     return { found: true, frete: maisBarato };
   }
 
+  // "retira o frete" / "retira no balcao"
+  if (/\b(retira\s+o\s+frete|tira\s+o\s+frete|sem\s+frete|retira(r)?\s+frete|tira(r)?\s+frete|frete\s+0|frete\s+zero|retira\s+no\s+balc[aã]o|retirar\s+no\s+balc[aã]o|tirar\s+o\s+frete|balc[aã]o)\b/i.test(clean)) {
+    const retiraBalcao = fretes.find(f => f.id === 'retira_balcao');
+    if (retiraBalcao) return { found: true, frete: retiraBalcao };
+  }
+
   // Busca por nome da transportadora: lista conhecida primeiro, depois genérico após verbo de troca
   const knownMatch = clean.match(/\b(unesul|sao\s*miguel|sedex|pac|motoboy|azul\s*cargo|azul|correios\s+sedex|correios\s+pac|correios|braspress|jamef|total\s+express|tnt|fedex|dhl|loggi)\b/i);
   // Extração genérica: pega a palavra (ou expressão) logo após o verbo de troca
@@ -505,7 +526,7 @@ export function handleContextContinuation(
 
   // ── P1.5 MENSAGENS SOCIAIS / CORTESIA
   if (v2Ctx.activeQuote || v2Ctx.pendingSaveQuotation) {
-    const isSocialMessage = /^(ok[,.]?\s*|beleza[,.]?\s*|show[,.]?\s*|valeu[,.]?\s*|joia[,.]?\s*)?(muito\s+)?(bom dia|boa tarde|boa noite|obrigado|valeu|beleza|show|combinado|tks|thanks|perfeito|maravilha|joia|certo)(\s+mesmo)?([,.!]?\s*(pra voc[eê]|tamb[eé]m|amigo|maestro|pra ti|obrigado))?[.!?]*$/i.test(clean.trim());
+    const isSocialMessage = /^(ok[,.]?\s*|beleza[,.]?\s*|show[,.]?\s*|valeu[,.]?\s*|joia[,.]?\s*)?(muito\s+)?(bom dia|boa tarde|boa noite|obrigado|valeu|beleza|show|combinado|tks|thanks|perfeito|maravilha|joia|certo)(\s+mesmo)?([,.!]?\s*(pra voc[eê]|tamb[eé]m|amigo|maestro|pra ti|obrigado|pela ajuda|ajudou))?[.!?]*$/i.test(clean.trim());
     const isOnlyOk = /^(ok|beleza|show|valeu|combinado|certo|joia|maravilha|perfeito|ta|tá)[.!?]*$/i.test(clean.trim());
 
     if (isSocialMessage || isOnlyOk) {
@@ -517,14 +538,59 @@ export function handleContextContinuation(
     }
   }
 
+  // ── P1.8 MENSAGENS DE FRUSTRAÇÃO / RECUPERAÇÃO DE CONTEXTO
+  const isFrustration = /\b(meu\s+deus|voc[eê]\s+n[ãa]o\s+consegue|voc[eê]\s+n[ãa]o\s+entende|voc[eê]\s+se\s+perdeu|est[áa]\s+errado|nada\s+a\s+ver|burro|n[ãa]o\s+[eé]\s+isso|para\s+com\s+isso)\b/i.test(clean);
+  if (isFrustration) {
+    console.log('[MaestroV2Context] Frustração detectada. Limpando contexto de cotação e pedindo desculpas.');
+    v2Ctx.activeQuote = null;
+    v2Ctx.pendingSaveQuotation = null;
+    v2Ctx.pendingAddressChoice = null;
+    v2Ctx.pendingFreightChoice = null;
+    v2Ctx.orcamentoItens = [];
+    return {
+      routed: true,
+      plan: { steps: [{ tool: 'resposta_frustracao_usuario', params: {} }] }
+    };
+  }
+
   // ── P0. INTERCEPTAÇÃO DE CONFIRMAÇÃO DE SAVE (após P1)
   if (v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt) {
-    const isSalvar = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?|confirmar?\s+save|sim[,.]?\s*(salva|quero\s+salvar?|pode\s+salvar?))\b/i.test(clean)
-      || /^(salvar?\s+cota[cç]a[oã]|salva(r)?|quero\s+salvar?|confirmar?|pode\s+salvar?|sim|s)$/i.test(clean);
-    const isCancelar = /\b(cancela(r)?|não\s+salva(r)?|não\s+quero|descarta(r)?|abort(a|ar)?)\b/i.test(clean)
-      || /^(cancela(r)?|não|nao|n)$/i.test(clean);
+    const isCancelar = /\b(cancela(r)?|n[ãa]o\s+(vou\s+|quero\s+)?(salva(r)?|valsa(r)?)(?:\s+agora)?|n[ãa]o\s+quero\s+salvar|descarta(r)?|abort(a|ar)?)\b/i.test(clean)
+      || /^(cancela(r)?|n[ãa]o|nao|n)$/i.test(clean);
+      
+    // Melhorar regex de salvar para não dar match em frases negadas se checado fora de ordem
+    const isSalvar = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?|valsa(r)?|confirmar?\s+save|sim[,.]?\s*(salva|quero\s+salvar?|pode\s+salvar?))\b/i.test(clean)
+      || /^(salvar?\s+cota[cç]a[oã]|salva(r)?|valsa(r)?|quero\s+salvar?|confirmar?|pode\s+salvar?|sim|s)$/i.test(clean);
+      
     const isEditarAntes = /\b(editar?\s+antes|quero\s+editar?|edita(r)?\s+primeiro|ajustar?\s+antes)\b/i.test(clean)
       || /^(editar?\s+antes|edita(r)?)$/i.test(clean);
+
+    if (isCancelar) {
+      console.log('[MaestroV2Context] Cancelamento de save detectado.');
+      if (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0) {
+        v2Ctx.lastExplicitBudgetItems = [...v2Ctx.orcamentoItens];
+      }
+      v2Ctx.pendingSaveQuotation = null;
+      v2Ctx.activeQuote = null;
+      v2Ctx.pendingFreightChoice = null;
+      v2Ctx.pendingAddressChoice = null;
+      v2Ctx.budgetAddressId = undefined;
+      v2Ctx.budgetAddressFull = undefined;
+      v2Ctx.budgetAddressCep = undefined;
+      v2Ctx.budgetAddressCidade = undefined;
+      v2Ctx.budgetAddressUf = undefined;
+      
+      const hasCompoundIntent = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|faz|cli\s+\d+|cliente|busca|outro\s+cli)\b/i.test(clean);
+      if (hasCompoundIntent) {
+         console.log('[MaestroV2Context] Cancelamento possui intenção composta, limpando contexto e seguindo o fluxo normal.');
+         return null; // Deixa o Router lidar com a repetição de cotação / troca de cliente
+      }
+      
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'cancelar_save_cotacao', params: {} }] }
+      };
+    }
 
     if (isSalvar) {
       console.log('[MaestroV2Context] Confirmação de save detectada.');
@@ -533,14 +599,7 @@ export function handleContextContinuation(
         plan: { steps: [{ tool: 'salvar_cotacao_confirmada', params: {} }] }
       };
     }
-    if (isCancelar) {
-      console.log('[MaestroV2Context] Cancelamento de save detectado.');
-      v2Ctx.pendingSaveQuotation = null;
-      return {
-        routed: true,
-        plan: { steps: [{ tool: 'cancelar_save_cotacao', params: {} }] }
-      };
-    }
+    
     if (isEditarAntes) {
       console.log('[MaestroV2Context] Editar antes detectado.');
       return {
@@ -562,6 +621,28 @@ export function handleContextContinuation(
     // Perguntas sobre frete pós-save são tratadas pelo P4 abaixo (activeQuote)
   }
 
+  // ── P3.4: TROCA DE ENDEREÇO DURANTE COTAÇÃO ────────────────────────────────
+  const isChangeAddress = /\b(outro\s+endere[cç]o|endere[cç]o\s+(n[aã]o|t[aá])\s+(est[aá]\s+)?(certo|errado)|mostr[ea]\s+(os\s+)?endere[cç]os|trocar?\s+endere[cç]o|mudar?\s+endere[cç]o)\b/i.test(clean);
+  if (isChangeAddress && (v2Ctx.activeQuote || v2Ctx.pendingFreightChoice || v2Ctx.pendingSaveQuotation || v2Ctx.budgetAddressId)) {
+    console.log(`[MaestroV2Context] P3.4: Mudança de endereço solicitada.`);
+    // Limpa a escolha de frete e cotação ativa para forçar recálculo e nova escolha
+    v2Ctx.pendingFreightChoice = null;
+    v2Ctx.activeQuote = null;
+    v2Ctx.pendingSaveQuotation = null;
+    v2Ctx.budgetAddressId = undefined;
+    v2Ctx.budgetAddressFull = undefined;
+    v2Ctx.budgetAddressCep = undefined;
+    v2Ctx.budgetAddressCidade = undefined;
+    v2Ctx.budgetAddressUf = undefined;
+    
+    // Retorna para simularOrcamentoAvulso que vai naturalmente detectar a falta de endereço
+    // e perguntar os endereços novamente.
+    return {
+      routed: true,
+      plan: { steps: [{ tool: 'simularOrcamentoAvulso', params: {} }] }
+    };
+  }
+
   // ── P3.5: ESCOLHA DE TRANSPORTADORA PENDENTE (análogo ao endereço) ─────────
   // Se há seleção de transportadora pendente e usuário digitou um número, confirmar
   if (v2Ctx.pendingFreightChoice) {
@@ -573,6 +654,25 @@ export function handleContextContinuation(
         routed: true,
         plan: { steps: [{ tool: 'confirmar_frete_cotacao', params: { freteIndex: idx } }] }
       };
+    }
+
+    // Tenta detectar escolha por nome
+    const freightResult = detectFreightSwitch(clean, v2Ctx.pendingFreightChoice.fretes as any);
+    if (freightResult !== null) {
+      if (freightResult.found === true) {
+        const idx = v2Ctx.pendingFreightChoice.fretes.findIndex((f: any) => f.id === freightResult.frete.id) + 1;
+        console.log(`[MaestroV2Context] P3.5: escolha de transportadora por nome (${freightResult.frete.transportadora}) -> índice ${idx}`);
+        return {
+          routed: true,
+          plan: { steps: [{ tool: 'confirmar_frete_cotacao', params: { freteIndex: idx } }] }
+        };
+      } else if (freightResult.found === false) {
+        console.log(`[MaestroV2Context] P3.5: frete mencionado não disponível: ${freightResult.mentioned}`);
+        return {
+          routed: true,
+          plan: { steps: [{ tool: 'frete_nao_disponivel', params: { mentioned: freightResult.mentioned } }] }
+        };
+      }
     }
   }
 
@@ -644,8 +744,8 @@ export function handleContextContinuation(
     // 4e. Fallback genérico — NÃO intercepta se for mudança explícita de assunto ou busca de outro cliente
     const isMudancaAssunto = /\b(mudei\s+de\s+assunto|outro\s+assunto|deixa\s+a\s+cota|esquece\s+a\s+cota|esquece\s+isso)\b/i.test(clean);
     // Detecta "sobre o cliente [Nome]" ou "e o cliente [Nome]" com nome próprio (palavra com maiúscula ou só nome)
-    const isBuscaOutroCliente = /\b(sobre\s+o\s+cliente|e\s+o\s+cliente|e\s+cliente|buscar?\s+cliente|cliente\s+[a-záàâãéêíóôõúç]{3,}|cli\s+\d|cliente\s+\d{3,}|sobre\s+[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]{2,}|sobre\s+a\s+empresa)\b/.test(query);
-    const isNewQuoteOrClient = /\b(cota[cç]ão\s+para|cot[ei]|fazer\s+or[cç]|buscar\s+cli|cli\s+\d|cpf|cnpj)\b/i.test(clean);
+    const isBuscaOutroCliente = /\b(sobre\s+o\s+cliente|e\s+o\s+cliente|e\s+cliente|buscar?\s+cliente|cliente\s+[a-záàâãéêíóôõúç]{3,}|cli\s+\d+|cliente\s+\d{3,}|sobre\s+[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]{2,}|sobre\s+a\s+empresa)\b/.test(query);
+    const isNewQuoteOrClient = /\b(cota[cç]ão\s+para|cot[ei]|fazer\s+or[cç]|buscar\s+cli|cli\s+\d+|cpf|cnpj|mesmo\s+or[cç]amento)\b/i.test(clean);
     const isSaveCommand = /\b(sim|salva|grava|confirma|pode\s+salvar|salvar\s+agora|save)\b/i.test(clean);
     if (!isMudancaAssunto && !isBuscaOutroCliente && !isNewQuoteOrClient && !isSaveCommand && clean.length > 2) {
       console.log('[MaestroV2Context] P4: pergunta livre com cotação ativa — roteando para consulta com contexto completo.');
@@ -660,9 +760,21 @@ export function handleContextContinuation(
   const isCancelOrcamento = /\b(nao\s*(quero|e)\s*orca(r|mento)|esquece\s*orca(r|mento))\b/i.test(clean);
   if (isCancelOrcamento) {
     console.log('[MaestroV2Context] Ação: Cancelamento de orçamento avulso solicitado.');
+    if (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0) {
+      v2Ctx.lastExplicitBudgetItems = [...v2Ctx.orcamentoItens];
+    }
     v2Ctx.orcamentoItens = [];
     v2Ctx.pendingProductResolution = null;
     v2Ctx.pendingAmbiguousItem = null;
+    v2Ctx.pendingSaveQuotation = null;
+    v2Ctx.activeQuote = null;
+    v2Ctx.pendingFreightChoice = null;
+    v2Ctx.pendingAddressChoice = null;
+    v2Ctx.budgetAddressId = undefined;
+    v2Ctx.budgetAddressFull = undefined;
+    v2Ctx.budgetAddressCep = undefined;
+    v2Ctx.budgetAddressCidade = undefined;
+    v2Ctx.budgetAddressUf = undefined;
     v2Ctx.domain = activeClient ? 'cliente' : 'desconhecido';
     return {
       routed: true,
@@ -710,6 +822,33 @@ export function handleContextContinuation(
   ) {
     console.log('[MaestroV2Context] Comando de cliente explícito detectado. Suspendendo orçamento avulso.');
     v2Ctx.domain = 'cliente';
+
+    // Se houver pedido para usar o mesmo orçamento, preserva itens mas limpa a cotação
+    const isMesmoOrcamento = /\b(mesmo\s+(or[cç]amento|pedido|cota[cç][aã]o)|mesma\s+cota[cç][aã]o|repete\s+(esse\s+)?or[cç]amento)\b/i.test(clean) || /\b(agora\s+fa[cç]a\s+o\s+mesmo\s+or[cç]amento)\b/i.test(clean);
+    
+    if (isMesmoOrcamento) {
+      console.log('[MaestroV2Context] Intenção "mesmo orçamento" detectada. Preservando itens e limpando cotação anterior.');
+      const sourceItens = v2Ctx.activeQuote?.itens || v2Ctx.pendingSaveQuotation?.itens || v2Ctx.orcamentoItens || [];
+      v2Ctx.orcamentoItens = sourceItens.map((it: any) => ({
+        id_produto: it.id_produto,
+        nome: it.nome,
+        quantidade: it.quantidade,
+        valorUnitario: it.valorUnitario,
+        valorFixo: it.valorFixo,
+        subtotal: it.subtotal,
+        pesoUnitario: it.pesoUnitario,
+        termo: it.termo || it.nome
+      }));
+    } else {
+      v2Ctx.orcamentoItens = [];
+    }
+
+    // Limpa estado operacional amarrado ao cliente anterior
+    v2Ctx.activeQuote = null;
+    v2Ctx.pendingSaveQuotation = null;
+    v2Ctx.pendingAddressChoice = null;
+    v2Ctx.pendingFreightChoice = null;
+
     return null;
   }
 
@@ -717,7 +856,7 @@ export function handleContextContinuation(
   // ── 3. PERGUNTAS CONTEXTUAIS DE CLIENTE ATIVO (PRIORIDADE ALTA)
   if (activeClient) {
     // Verifica se a mensagem contém palavras chave de relacionamento/dados cadastrais
-    const hasClientFieldKeyword = /\b(endereco|enderecos|contato|contatos|telefone|whats|whatsapp|email|e-mail|vinculo|vinculos|socio|socios|dele|desse cliente|dessa empresa|onde entrega|entrega)\b/i.test(clean);
+    const hasClientFieldKeyword = /\b(endereco|enderecos|contato|contatos|telefone|whats|whatsapp|email|e-mail|vinculo|vinculos|socio|socios|dele|desse cliente|dessa empresa|onde entrega|entrega|bonus|bônus|b[oô]nus)\b/i.test(clean);
     
     if (hasClientFieldKeyword) {
       let campo: string | null = null;
@@ -736,6 +875,8 @@ export function handleContextContinuation(
         campo = 'cidade';
       } else if (/\b(credito|limite)\b/i.test(clean)) {
         campo = 'credito';
+      } else if (/\b(bonus|bônus|b[oô]nus)\b/i.test(clean)) {
+        campo = 'bonus';
       } else if (/\b(vendedor)\b/i.test(clean)) {
         campo = 'vendedor';
       } else if (/\b(restricao)\b/i.test(clean)) {

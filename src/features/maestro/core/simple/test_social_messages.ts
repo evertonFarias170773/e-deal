@@ -159,8 +159,34 @@ async function runTestesSociais() {
   assert.strictEqual(r, null, 'NÃO deve ser roteado pelo contexto manager (deve cair pro router principal)');
   console.log('  ✓ T10: "valeu, consulta o cliente 8469" ignorado pelo social guard, fluxo operacional vence');
 
+  // Teste 11: pendingSaveQuotation + "ok, muito obrigado pela ajuda" -> resposta_social_cotacao
+  console.log('─── T11: "ok, muito obrigado pela ajuda" ──────────────────────');
+  ctx = createContext();
+  ctx.pendingSaveQuotation = { itens: [] } as any;
+  r = handleContextContinuation('ok, muito obrigado pela ajuda', ctx, null);
+  assert.ok(r?.routed, 'Deve ser roteado pelo social guard (P1.5)');
+  assert.strictEqual(r?.plan?.steps?.[0]?.tool, 'resposta_social_cotacao', 'Tool deve ser resposta_social_cotacao');
+  console.log('  ✓ T11: "ok, muito obrigado pela ajuda" interceptado corretamente');
+
+  // Teste 12: pendingSaveQuotation + "obrigado, mas faça o mesmo para o cli 8469"
+  console.log('─── T12: "obrigado, mas faça o mesmo para o cli 8469" ──────────────────────');
+  ctx = createContext();
+  ctx.pendingSaveQuotation = { itens: [] } as any;
+  r = handleContextContinuation('obrigado, mas faça o mesmo para o cli 8469', ctx, null);
+  assert.strictEqual(r, null, 'NÃO deve ser roteado pelo social guard (deve cair pro router principal)');
+  console.log('  ✓ T12: "obrigado, mas faça o mesmo para o cli 8469" cai pro router para comando operacional');
+
+  // Teste 13: Regressão de cancelamento com comando composto
+  console.log('─── T13: "muito bom obrigado, não vou salvar agora... mas faça o mesmo para o cli 8469" ──────────────────────');
+  ctx = createContext();
+  ctx.pendingSaveQuotation = { itens: [] } as any;
+  r = handleContextContinuation('muito bom obrigado, não vou salvar agora... mas faça o mesmo para o cli 8469', ctx, null);
+  assert.strictEqual(r, null, 'NÃO deve ser roteado pelo cancelar save (deve limpar o contexto inline e cair pro router)');
+  assert.strictEqual(ctx.pendingSaveQuotation, null, 'Deve limpar pendingSaveQuotation');
+  console.log('  ✓ T13: Cancela o save mas permite que comando composto avance pro router');
+
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  ✅ TESTES SOCIAIS OK — 10/10 testes passaram.                ║');
+  console.log('║  ✅ TESTES SOCIAIS OK — 13/13 testes passaram.                ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 }
 

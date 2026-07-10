@@ -30,7 +30,8 @@ export type AllowedToolName =
   | 'consultarUltimoPedido'
   | 'consultarRecebimentoClientePeriodo'
   | 'compararRecebimentoClienteMeses'
-  | 'analisarComparacaoAnterior';
+  | 'analisarComparacaoAnterior'
+  | 'resposta_frustracao_usuario';
 
 export interface RouterStep {
   tool: AllowedToolName;
