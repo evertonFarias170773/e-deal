@@ -403,7 +403,7 @@ ${input.userName ? `\nO nome do usuário logado é "${input.userName}". Use-o co
     const completion = await openai.chat.completions.create(
       {
         model: process.env.MAESTRO_OPENAI_MODEL || 'gpt-4o-mini',
-        temperature: 0.5,
+        temperature: 0.3,
         max_tokens: 500,
         messages: [
           { role: 'system', content: loadPromptBase() },

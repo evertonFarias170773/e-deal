@@ -503,12 +503,26 @@ export function handleContextContinuation(
     // mas deixar passar se for nova busca explícita de cliente
   }
 
+  // ── P1.5 MENSAGENS SOCIAIS / CORTESIA
+  if (v2Ctx.activeQuote || v2Ctx.pendingSaveQuotation) {
+    const isSocialMessage = /^(ok[,.]?\s*|beleza[,.]?\s*|show[,.]?\s*|valeu[,.]?\s*|joia[,.]?\s*)?(muito\s+)?(bom dia|boa tarde|boa noite|obrigado|valeu|beleza|show|combinado|tks|thanks|perfeito|maravilha|joia|certo)(\s+mesmo)?([,.!]?\s*(pra voc[eê]|tamb[eé]m|amigo|maestro|pra ti|obrigado))?[.!?]*$/i.test(clean.trim());
+    const isOnlyOk = /^(ok|beleza|show|valeu|combinado|certo|joia|maravilha|perfeito|ta|tá)[.!?]*$/i.test(clean.trim());
+
+    if (isSocialMessage || isOnlyOk) {
+      console.log('[MaestroV2Context] Mensagem social/cortesia detectada durante cotação/save pendente.');
+      return {
+        routed: true,
+        plan: { steps: [{ tool: 'resposta_social_cotacao', params: {} }] }
+      };
+    }
+  }
+
   // ── P0. INTERCEPTAÇÃO DE CONFIRMAÇÃO DE SAVE (após P1)
   if (v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt) {
-    const isSalvar = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?|confirmar?\s+save|sim[,.]?\s*(salva|quero\s+salvar?))\b/i.test(clean)
-      || /^(salvar?\s+cota[cç]a[oã]|salva(r)?|quero\s+salvar?|confirmar?)$/i.test(clean);
+    const isSalvar = /\b(salvar?\s+cota[cç]a[oã]|salva(r)?|confirmar?\s+save|sim[,.]?\s*(salva|quero\s+salvar?|pode\s+salvar?))\b/i.test(clean)
+      || /^(salvar?\s+cota[cç]a[oã]|salva(r)?|quero\s+salvar?|confirmar?|pode\s+salvar?|sim|s)$/i.test(clean);
     const isCancelar = /\b(cancela(r)?|não\s+salva(r)?|não\s+quero|descarta(r)?|abort(a|ar)?)\b/i.test(clean)
-      || /^(cancela(r)?|não|nao)$/i.test(clean);
+      || /^(cancela(r)?|não|nao|n)$/i.test(clean);
     const isEditarAntes = /\b(editar?\s+antes|quero\s+editar?|edita(r)?\s+primeiro|ajustar?\s+antes)\b/i.test(clean)
       || /^(editar?\s+antes|edita(r)?)$/i.test(clean);
 

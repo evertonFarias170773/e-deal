@@ -65,7 +65,9 @@ export type AllowedToolName =
   | 'iniciar_troca_endereco_cotacao'
   | 'frete_nao_disponivel'
   // Escolha de transportadora numerada
-  | 'confirmar_frete_cotacao';
+  | 'confirmar_frete_cotacao'
+  // Interceptação de mensagens sociais com cotação ativa
+  | 'resposta_social_cotacao';
 
 export interface RouterStep {
   tool: AllowedToolName;
@@ -140,6 +142,8 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
   'frete_nao_disponivel',
   // Escolha de transportadora numerada
   'confirmar_frete_cotacao',
+  // Interceptação de mensagens sociais com cotação ativa
+  'resposta_social_cotacao',
 ];
 
 /**

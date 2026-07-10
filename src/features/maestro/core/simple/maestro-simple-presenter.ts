@@ -2495,3 +2495,24 @@ export function presenterFreteConfirmado(quote: ActiveQuoteSnapshot): PresenterR
     lastAnswerUpdate: null,
   };
 }
+
+/**
+ * Resposta curta para mensagens sociais durante cotação ativa ou pendência de save.
+ */
+export function presenterRespostaSocialCotacao(clientName?: string | null): PresenterResult {
+  const nome = clientName ? clientName.split(' ')[0] : '';
+  const greeting = nome ? `Olá, ${nome}! 😊` : `Olá! 😊`;
+  return {
+    message: {
+      id: genId('social-cotacao'),
+      role: 'maestro',
+      content: `${greeting} Estou por aqui. A cotação continua aberta se quiser retomar.`,
+      contentType: 'text',
+      specialist: 'comercial',
+      timestamp: now(),
+      status: 'completed',
+      confidence: 'high'
+    },
+    activity: []
+  };
+}

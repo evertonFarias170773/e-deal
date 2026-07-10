@@ -105,6 +105,7 @@ import {
   presenterEditarAntesSave,
   presenterPropostaJaSalva,
   presenterErroSaveCotacao,
+  presenterRespostaSocialCotacao,
   type PresenterResult,
 } from './maestro-simple-presenter';
 import { routeToolSimple } from './maestro-v2-router';
@@ -1514,6 +1515,10 @@ export async function processSimpleQueryWithBrain(
               pr = presenterFallback(simpleCtx);
             }
           }
+        }
+
+        if (step.tool === 'resposta_social_cotacao') {
+          pr = presenterRespostaSocialCotacao(simpleCtx.activeClient?.clientName);
         }
 
         if (step.tool === 'salvar_cotacao_confirmada') {
