@@ -452,6 +452,15 @@ export function handleContextContinuation(
 ): { routed: boolean; plan: any } | null {
   const clean = normalizeText(query);
 
+  // ── P0. DELEGAÇÃO DE ESCOLHA NUMÉRICA PARA O ROUTER ──────────────────────
+  if (v2Ctx.pendingAddressChoice || v2Ctx.pendingFreightChoice) {
+    const isChoosing = /^(?:use|escolho|escolha|pode usar|quero)?\s*(?:o\s*|a\s*|endere[cç]o\s*|op[cç][aã]o\s*)?(\d+)\b/i.test(clean.trim());
+    if (isChoosing) {
+      console.log(`[MaestroV2Context] Escolha de endereço/frete detectada. Delegando ao router.`);
+      return null;
+    }
+  }
+
   // ── P1. CONFIRMAÇÃO DE CLIENTE CANDIDATO PENDENTE ──────────────────────
   // PRIORIDADE MÁXIMA: se há candidato(s) pendente(s), "sim"/"esse"/código confirmam o
   // cliente pendente ANTES de qualquer lógica de save ou Brain.

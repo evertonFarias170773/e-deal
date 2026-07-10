@@ -238,15 +238,25 @@ export async function routeToolSimple(
   }
 
   // Interceptador para repetição de orçamento (quando o usuário acabou de buscar um cliente ou cita o cliente na mesma frase)
-  const isRepeatQuoteMsg = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|faz)\s+(a\s+|o\s+|esse\s+)?(cota[cç][aã]o|or[cç]amento|mesmo)\b/i.test(query) ||
+  const isRepeatQuoteMsg = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|repita|faz)\s+(a\s+|o\s+|esse\s+|essa\s+|os\s+)?(cota[cç][aã]o|or[cç]amento|mesmo|igual|dados)\b/i.test(query) ||
     /\b(esse\s+mesmo(\s*,?\s*pode\s+fazer\s+o\s+orçamento)?)\b/i.test(query) ||
-    /\b(pode\s+fazer|faz\s+pra\s+ele)\b/i.test(query);
+    /\b(pode\s+fazer|faz\s+pra\s+ele)\b/i.test(query) ||
+    /\bmesmos\s+dados\b/i.test(query);
 
   if (isRepeatQuoteMsg && v2Ctx.lastExplicitBudgetItems && v2Ctx.lastExplicitBudgetItems.length > 0) {
     const clienteNaQuery = extrairClienteDaQuery(query);
     console.log(`[MaestroV2Router] Repetição de orçamento solicitada. Reaproveitando ${v2Ctx.lastExplicitBudgetItems.length} itens.`);
     v2Ctx.orcamentoItens = [...v2Ctx.lastExplicitBudgetItems];
     v2Ctx.domain = 'orcamento_avulso';
+    v2Ctx.activeQuote = null;
+    v2Ctx.pendingSaveQuotation = null;
+    v2Ctx.pendingFreightChoice = null;
+    v2Ctx.pendingAddressChoice = null;
+    v2Ctx.budgetAddressId = undefined;
+    v2Ctx.budgetAddressFull = undefined;
+    v2Ctx.budgetAddressCep = undefined;
+    v2Ctx.budgetAddressCidade = undefined;
+    v2Ctx.budgetAddressUf = undefined;
     
     if (clienteNaQuery) {
       return {
@@ -488,6 +498,7 @@ REGRAS DE DECISÃO RÍGIDAS E PERÍODOS:
 - Ano Ausente: Se o usuário citar apenas um mês (ex: "maio"), assuma obrigatoriamente o ano da DATA REFERÊNCIA (ex: 2026).
 - Edição de Comparação: Se o usuário pedir para alterar a comparação ("traga maio e tire agosto", "troca agosto por maio", "inclui maio", "remove agosto"), leia o JSON "Última resposta dados", modifique a lista de meses conforme solicitado (preenchendo anos ausentes com o ano atual), e chame "compararRecebimentoClienteMeses" emitindo a nova lista COMPLETA de meses.
 - Perguntas sobre "padrão de pagamento", "como ele paga", "ele é faturado?" usam "consultarCampoCadastro" com campo="padrao_pagamento".
+- Perguntas sobre "bônus", "ele tem bônus?", "qual o bônus dele?" usam obrigatoriamente "consultarCampoCadastro" com campo="bonus". NUNCA tente responder diretamente.
 - Perguntas contextuais sobre relacionamentos ou dados estruturados do cliente ativo como endereços (ex: "e os endereços?", "onde entrega?", "endereço de entrega", "endereços dele", "endereços desse cliente"), contatos (ex: "quem são os contatos?", "contatos dele", "quem são os contatos dele?", "e os contatos?") e sócios/vínculos (ex: "tem sócios?", "sócios dele", "quais os sócios?", "vínculos", "e os vínculos?") usam obrigatoriamente "consultarCampoCadastro" com campo="enderecos", campo="contatos" ou campo="socios". NUNCA use a tool "buscarCliente" ou tente pesquisar por "quem são os contatos" como se fosse o nome de um cliente.
 - NOMES PRÓPRIOS SOLTOS: Se o usuário digitar um nome próprio, mesmo curto (ex: "Edison Santos?", "Edison Jr?", "Lisiton?"), e NÃO contiver palavras de relação ("dele", "contato", "socio"), ISSO É UMA NOVA BUSCA DE CLIENTE. OBRIGATORIAMENTE use a tool "buscarCliente", independente de haver um cliente ativo. NUNCA assuma que um nome próprio solto é uma pergunta sobre contatos do cliente ativo.
 - A ferramenta "buscarCliente" não deve ser usada se o usuário já estiver se referindo ao cliente ativo usando pronomes ("ele", "dele", "desse cliente").
@@ -571,7 +582,7 @@ Pergunta do usuário: "${query}"
         const validFields = [
           'padrao_pagamento', 'telefone', 'cnpj', 'email', 'cidade', 'vendedor',
           'credito', 'restricao', 'ativo', 'risco_credito', 'nome', 'fundacao',
-          'enderecos', 'contatos', 'socios'
+          'enderecos', 'contatos', 'socios', 'bonus'
         ];
         if (!campo || !validFields.includes(campo)) {
           console.warn('[MaestroV2Router] Rejeitado: campo de cadastro inválido.');

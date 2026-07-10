@@ -275,7 +275,8 @@ export function detectIntent(query: string): DetectedIntent {
     const isActuallySearching = LOOKUP_VERBS.some(v => norm.includes(v)) ||
       norm.includes('cliente') ||
       /\b(liente|clinte|ciente|cli|cadastro|cota[cç][aã]o|cotar|or[cç]amento)\s+([a-z\d])/i.test(norm) ||
-      /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|faz)\s+(a\s+|o\s+|esse\s+)?(cota[cç][aã]o|or[cç]amento|mesmo)\b/i.test(norm) ||
+      /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|repita|faz)\s+(a\s+|o\s+|esse\s+|essa\s+|os\s+)?(cota[cç][aã]o|or[cç]amento|mesmo|igual|dados)\b/i.test(norm) ||
+      /\bmesmos\s+dados\b/i.test(norm) ||
       /\b(cota[cç][aã]o|or[cç]amento|pedido)\b/i.test(norm);
     if (!isActuallySearching) {
       return { type: 'closure' };
@@ -370,9 +371,10 @@ export function detectIntent(query: string): DetectedIntent {
   }
 
   // ── 5.5. Repetir Cotação (esse mesmo, pode fazer, faz pra ele) ──────────────
-  const isRepeatQuote = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|faz)\s+(a\s+|o\s+|esse\s+)?(cota[cç][aã]o|or[cç]amento|mesmo)\b/i.test(norm) ||
+  const isRepeatQuote = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|repita|faz)\s+(a\s+|o\s+|esse\s+|essa\s+|os\s+)?(cota[cç][aã]o|or[cç]amento|mesmo|igual|dados)\b/i.test(norm) ||
     /\b(esse\s+mesmo(\s*,?\s*pode\s+fazer\s+o\s+orçamento)?)\b/i.test(norm) ||
-    /\b(pode\s+fazer|faz\s+pra\s+ele)\b/i.test(norm);
+    /\b(pode\s+fazer|faz\s+pra\s+ele)\b/i.test(norm) ||
+    /\bmesmos\s+dados\b/i.test(norm);
   if (isRepeatQuote) {
     return { type: 'repeat_quote' };
   }

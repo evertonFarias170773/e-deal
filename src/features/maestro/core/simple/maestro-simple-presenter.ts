@@ -66,7 +66,11 @@ function selecionarFreteSugerido(fretes: PropostaFrete[]): PropostaFrete {
     return transp.includes('sedex') || servico.includes('sedex') || id.includes('sedex');
   });
   if (sedex) return sedex;
-  return [...fretes].sort((a, b) => a.valor - b.valor)[0];
+  const validFretes = fretes.filter(f => f.id !== 'retira_balcao');
+  if (validFretes.length > 0) {
+    return validFretes.sort((a, b) => a.valor - b.valor)[0];
+  }
+  return fretes[0];
 }
 
 
@@ -2408,7 +2412,8 @@ export function presenterEscolhaTransportadora(
   subtotalLiquido?: number
 ): PresenterResult {
   const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const menorValor = Math.min(...fretes.map(f => f.valor));
+  const validForMin = fretes.filter(f => (f as any).id !== 'retira_balcao' && f.transportadora !== 'Retira no balcão');
+  const menorValor = validForMin.length > 0 ? Math.min(...validForMin.map(f => f.valor)) : Math.min(...fretes.map(f => f.valor));
 
   const formatName = (n: string) => {
     const lower = n.toLowerCase();
