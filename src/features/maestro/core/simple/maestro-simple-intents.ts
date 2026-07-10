@@ -79,9 +79,12 @@ export interface DetectedIntent {
  * Não inclui números, CPFs ou IDs para garantir segurança.
  */
 const TYPO_DICTIONARY: Record<string, string> = {
+  // ── Saudações ──────────────────────────────────────────────────────────────
   'com dia': 'bom dia',
   'bon dia': 'bom dia',
   'bom fia': 'bom dia',
+
+  // ── Cadastro/contexto ──────────────────────────────────────────────────────
   'clite': 'cliente',
   'cliiente': 'cliente',
   'clinte': 'cliente',
@@ -95,7 +98,33 @@ const TYPO_DICTIONARY: Record<string, string> = {
   'boleo': 'boleto',
   'bolto': 'boleto',
   'faturameto': 'faturamento',
+
+  // ── Produtos — ingressos ───────────────────────────────────────────────────
+  'ingresssos': 'ingressos',
+  'ingresos': 'ingressos',
+  'ingresso mobi': 'ingresso mobi',   // mantém intacto (já é correto)
+  'moby': 'mobi',                     // typo aceito → mobi (ID 401)
+
+  // ── Produtos — pulseiras ───────────────────────────────────────────────────
+  'tribnd': 'triband',
+  'tribnda': 'triband',
+  'colorbnda': 'colorband',
+  'colorbnd': 'colorband',
+  'jetbnd': 'jetband',
+  'nilon': 'nylon',                   // nylon/nilon → JetBand (inativo, aviso)
+
+  // ── Produtos — ingressos ───────────────────────────────────────────────────
+  'vangogh': 'van gogh',
+  'van gog': 'van gogh',
+  'vangog': 'van gogh',
+  'mega4': 'mega 4',
+
+  // ── Produtos — cordão ─────────────────────────────────────────────────────
+  'jacare': 'jacaré',
+  'jacre': 'jacaré',
+  'jacará': 'jacaré',
 };
+
 
 // ─── Normalização ──────────────────────────────────────────────────────────
 
