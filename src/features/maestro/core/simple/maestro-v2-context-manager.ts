@@ -756,7 +756,13 @@ export function handleContextContinuation(
     const isBuscaOutroCliente = /\b(sobre\s+o\s+cliente|e\s+o\s+cliente|e\s+cliente|buscar?\s+cliente|cliente\s+[a-záàâãéêíóôõúç]{3,}|cli\s+\d+|cliente\s+\d{3,}|sobre\s+[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]{2,}|sobre\s+a\s+empresa)\b/.test(query);
     const isNewQuoteOrClient = /\b(cota[cç]ão\s+para|cot[ei]|fazer\s+or[cç]|buscar\s+cli|cli\s+\d+|cpf|cnpj|mesmo\s+or[cç]amento)\b/i.test(clean);
     const isSaveCommand = /\b(sim|salva|grava|confirma|pode\s+salvar|salvar\s+agora|save)\b/i.test(clean);
-    if (!isMudancaAssunto && !isBuscaOutroCliente && !isNewQuoteOrClient && !isSaveCommand && clean.length > 2) {
+    
+    // Detecta comandos de edição de itens: "900 mobi", "só 900 mobi", "1000 mobi e 900 tex", "muda mobi para 900"
+    const isItemEdit = /\b(muda|altera|troca|atualiza|recalcula|recalcule|sao|são|corrige|refazer\s+com|faz\s+com|troca\s+para|so|só|apenas)\b/i.test(clean)
+      || /^(?:só|so|apenas|são|sao)?\s*\d+(?:\.\d+)?k?\s+[a-z][a-z\d\s-]+/i.test(clean.trim())
+      || /\b\d+(?:\.\d+)?k?\s+[a-z][a-z\d\s-]+\s+(e|ou|mais|,|\+)\s+\d+(?:\.\d+)?k?\s+[a-z]/i.test(clean);
+
+    if (!isMudancaAssunto && !isBuscaOutroCliente && !isNewQuoteOrClient && !isSaveCommand && !isItemEdit && clean.length > 2) {
       console.log('[MaestroV2Context] P4: pergunta livre com cotação ativa — roteando para consulta com contexto completo.');
       return {
         routed: true,

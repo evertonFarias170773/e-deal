@@ -127,6 +127,10 @@ export interface ConversationContext {
   clientRestricao?: boolean | null;
   /** Indica se o cadastro está ativo */
   clientAtivo?: boolean | null;
+  /** Flag de bônus comercial do cliente */
+  clientIsBonus?: boolean | null;
+  /** Percentual de bônus comercial do cliente */
+  clientPercentualBonus?: number | null;
 
 
   // ── Contexto de proposta/pedido ativo ───────────────────────────────────────

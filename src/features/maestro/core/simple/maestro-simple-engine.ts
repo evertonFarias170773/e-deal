@@ -169,6 +169,8 @@ function legacyContextToSimple(ctx: ConversationContext): SimpleMaestroContext {
       ativo:             ctx.clientAtivo ?? undefined,
       padraoPagamento:   ctx.clientPadraoPagamento ?? undefined,
       categoria:         ctx.clientCategoria ?? undefined,
+      isBonus:           ctx.clientIsBonus ?? undefined,
+      percentualBonus:   ctx.clientPercentualBonus ?? undefined,
       enderecos:         [],
       contatos:          [],
       socios:            [],
@@ -215,6 +217,8 @@ function simpleClientToLegacyContext(
     clientRiscoCredito: client.riscoCredito ?? null,
     clientRestricao:   client.restricao ?? null,
     clientAtivo:       client.ativo ?? null,
+    clientIsBonus:     client.isBonus ?? null,
+    clientPercentualBonus: client.percentualBonus ?? null,
     // Última resposta (persiste entre turnos)
     clientLastAnswerJson: lastAnswer != null
       ? serializeLastAnswer(lastAnswer)
@@ -1324,16 +1328,20 @@ export async function processSimpleQueryWithBrain(
 
                pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined);
 
-               // ── FASE 3c: Se houve mutação em orçamento já salvo, desvincula e avisa
-               if (
-                 v2Ctx.pendingSaveQuotation?.savedIdInt &&
-                 ['ADD', 'UPDATE_QTD', 'REMOVE', 'REPLACE', 'RESTORE'].includes(serviceResult.action)
-               ) {
-                 const idAntigo = v2Ctx.pendingSaveQuotation.savedIdInt;
-                 v2Ctx.pendingSaveQuotation = null; // desvincula
-                 pr.message.content += `\n\n⚠️ **Nota:** Esta alteração não afeta a proposta #${idAntigo} já salva no ERP. Você está simulando um novo orçamento.`;
-               }
+               let priorFreteId: string | undefined;
 
+               // ── FASE 3c: Se houve mutação, desvincula saves antigos e cotações fechadas
+               if (['ADD', 'UPDATE_QTD', 'REMOVE', 'REPLACE', 'RESTORE'].includes(serviceResult.action)) {
+                 priorFreteId = v2Ctx.pendingSaveQuotation?.freteEscolhido?.id || (v2Ctx.activeQuote as any)?.freteEscolhido?.id;
+
+                 if (v2Ctx.pendingSaveQuotation?.savedIdInt) {
+                   const idAntigo = v2Ctx.pendingSaveQuotation.savedIdInt;
+                   pr.message.content += `\n\n⚠️ **Nota:** Esta alteração não afeta a proposta #${idAntigo} já salva no ERP. Você está simulando um novo orçamento.`;
+                 }
+                 v2Ctx.pendingSaveQuotation = null;
+                 v2Ctx.activeQuote = null;
+                 v2Ctx.pendingFreightChoice = null; // Limpa para garantir estado fresco
+               }
                // FASE 3a: calcula dados comuns e bifurca por numero de fretes
                if (
                  clientForCtx?.clientInternalId &&
@@ -1368,6 +1376,14 @@ export async function processSimpleQueryWithBrain(
                  
                  const clientNameFase3 = clientForCtx.clientName || clientForCtx.clientFantasia || 'Cliente';
                  const enderecoFullFase3 = v2Ctx.budgetAddressFull || '';
+
+                 // Se tínhamos um save pendente com "retira_balcao", podemos preservá-mo
+                 if (priorFreteId === 'retira_balcao' && fretesCalculados.length > 1) {
+                   const freteRetira = fretesCalculados.find((f: any) => f.id === 'retira_balcao');
+                   if (freteRetira) {
+                     fretesCalculados = [freteRetira];
+                   }
+                 }
 
                  if (fretesCalculados.length > 1) {
                    // Multiplas transportadoras: salva rascunho e pede escolha numerada

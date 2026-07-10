@@ -182,7 +182,11 @@ export async function resolverOrcamento(
           if (error) {
             console.error('[OrcamentoResolver] Erro ao buscar por ID do catálogo oficial:', error.message);
           } else if (data && data.length > 0) {
-            candidatos = data.map((p: any) => ({ ...p, pesoUnitario: p.peso })) as ProdutoDb[];
+            candidatos = data.map((p: any) => ({
+              ...p,
+              descricao: resolvido.nomeComercial || p.descricao,
+              pesoUnitario: p.peso
+            })) as ProdutoDb[];
           } else {
             // Catálogo resolveu mas produto não existe no banco — continua para busca textual
             console.warn(`[OrcamentoResolver] Catálogo oficial resolveu ID ${resolvido.id_produto} mas produto não existe no banco para termo "${termoOriginal}"`);

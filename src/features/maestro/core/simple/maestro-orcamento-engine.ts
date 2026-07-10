@@ -216,10 +216,13 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
   //   - "muda pra 200 tex"
   //   - "muda a quantidade do mobi para 10.000"
   //   - "altera tex pra 200"
-  const isBudgetChange = /\b(muda|altera|troca|atualiza|recalcula|recalcule)\b/i.test(clean);
+  const isBudgetChange = /\b(muda|altera|troca|atualiza|recalcula|recalcule|sao|são|corrige)\b/i.test(clean);
   // Também detecta padrão de quantificação direta sem "muda": "pra 200 tex" com estado ativo e produto identificável
   const isDirectQtyUpdate = state.itens.length > 0 && /\bpra\s+(\d+(?:\.\d+)?k?)\s+([a-z][a-z\d\s-]+)$/i.test(clean);
-  if ((isBudgetChange || isDirectQtyUpdate) && state.itens.length > 0) {
+  const hasMultipleQty = /\b\d+(?:\.\d+)?k?\s+[a-z][a-z\d\s-]*\s+(?:e|\+|mais|,)\s+\d+(?:\.\d+)?k?\s+[a-z]/i.test(clean) || (clean.match(/\b\d+(?:\.\d+)?k?\b/gi) || []).length > 1;
+  const isSingleItemUpdate = state.itens.length > 0 && !hasMultipleQty && /^(?:sao\s+|são\s+|)?(\d+(?:\.\d+)?k?)\s+([a-z][a-z\d\s-]+)$/i.test(clean);
+
+  if ((isBudgetChange || isDirectQtyUpdate || isSingleItemUpdate) && state.itens.length > 0 && !hasMultipleQty) {
     const numMatch = clean.match(/\b(\d+(?:\.\d+)?)\s*([k]?)\b/i);
     if (numMatch) {
       let qtd = parseFloat(numMatch[1].replace(/\./g, '')); // 10.000 -> 10000
@@ -280,16 +283,20 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
   }
 
   // 6. Parse genérico de itens (+, e, etc)
-  const items = parseOrcamento(clean);
+  // Pre-processamento: "1000 mobi 1 1000 tex" -> transforma número solto em vírgula para não quebrar o parse
+  const preProcessed = clean.replace(/\s+[1-9]\s+(?=\d{2,})/g, ' , ');
+
+  const items = parseOrcamento(preProcessed);
   if (items.length > 0) {
     const isExplicitAddition = /\b(add|inclui(r)?|adiciona(r)?)\b/i.test(clean);
     const hasPlusOrMais = clean.includes('+') || /\bmais\b/i.test(clean);
     
-    // Se a query tem a cara de um orçamento completo novo (ex: 10600 mobi + 1500 triband qual valor?)
-    const isFullReplace = /\b(qual valor|orcamento|custa|refaz|refazer|tudo|orco)\b/i.test(clean);
+    const isFullReplace = /\b(so|só|apenas|qual valor|orcamento|custa|refaz|refazer|tudo|orco|faz\s+com|troca\s+para)\b/i.test(clean);
 
-    if (state.itens.length > 0 && isFullReplace) {
-      // É replace puro mesmo se tiver +, pois está pedindo o valor de tudo
+    // Se temos >1 itens na query, ou uma flag explicita de replace, é REPLACE.
+    // O router só deixará cair aqui para >1 itens quando a intenção for clara de recriar a lista.
+    if (state.itens.length > 0 && (isFullReplace || items.length > 1 || /^(?:só|so|apenas)\s+/i.test(clean))) {
+      // É replace puro
       nextState.previousItens = JSON.parse(JSON.stringify(state.itens));
       nextState.itens = items;
       return {
