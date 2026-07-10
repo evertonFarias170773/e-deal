@@ -18,6 +18,7 @@ import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.ser
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
 import { buildPropostaInformalText, getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
+import { parseCurrencyBR } from "@/lib/formatters/currency";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
 import type { Produto } from "@/features/produtos/types";
 import type {
@@ -1138,8 +1139,8 @@ export async function saveProposta(
     }
     const chosenFrete = formState.isAvulso ? undefined : formState.fretes.find((f) => f.id === formState.freteEscolhidoId);
     if (formState.isAvulso) {
-      const valFrete = Number(String(formState.valorFreteManual || "").replace(",", "."));
-      if (isNaN(valFrete) || valFrete < 0 || String(formState.valorFreteManual || "").trim() === "") {
+      const valFrete = parseCurrencyBR(formState.valorFreteManual);
+      if (valFrete === null || valFrete < 0) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
       if (!isNonEmpty(formState.observacoesFreteManual)) {
@@ -1152,7 +1153,7 @@ export async function saveProposta(
     }
 
     const freteValor = formState.isAvulso
-      ? (Number(String(formState.valorFreteManual || "0").replace(",", ".")) || 0)
+      ? (parseCurrencyBR(formState.valorFreteManual) ?? 0)
       : (chosenFrete ? chosenFrete.valor : 0);
     
     // Map internal freight name
@@ -1173,7 +1174,7 @@ export async function saveProposta(
 
     // Calculo de valores resumo e totais
     const subtotalProdutosBase = formState.isAvulso
-      ? (Number(String(formState.valorProdutosManual || "0").replace(",", ".")) || 0)
+      ? (parseCurrencyBR(formState.valorProdutosManual) ?? 0)
       : (formState.itens.reduce((total, item) => total + item.subtotal, 0));
 
     const resumo = formState.isAvulso ? {

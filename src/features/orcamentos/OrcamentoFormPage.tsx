@@ -26,7 +26,7 @@ import type {
   PedidoModeloState
 } from "@/features/orcamentos/types";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
-import { formatCurrency } from "@/lib/formatters/currency";
+import { formatCurrency, parseCurrencyBR, formatCurrencyWithoutPrefix } from "@/lib/formatters/currency";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
 import {
@@ -510,8 +510,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   
   const resumo = useMemo(() => {
     if (form.isAvulso) {
-      const subtotalProdutos = Number(String(form.valorProdutosManual || "0").replace(",", ".")) || 0;
-      const frete = Number(String(form.valorFreteManual || "0").replace(",", ".")) || 0;
+      const subtotalProdutos = parseCurrencyBR(form.valorProdutosManual) ?? 0;
+      const frete = parseCurrencyBR(form.valorFreteManual) ?? 0;
       return {
         subtotalProdutos,
         subtotalBrutoProdutos: subtotalProdutos,
@@ -2201,8 +2201,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     if (form.isAvulso) {
       const valProdStr = form.valorProdutosManual || "";
-      const valProd = Number(valProdStr.replace(",", "."));
-      if (isNaN(valProd) || valProd <= 0 || !isNonEmpty(valProdStr)) {
+      const valProd = parseCurrencyBR(valProdStr);
+      if (valProd === null || valProd <= 0 || !isNonEmpty(valProdStr)) {
         showToast({
           type: "error",
           title: "Valor dos produtos inválido",
@@ -2211,8 +2211,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         return false;
       }
 
-      const valManual = Number(String(form.valorFreteManual || "").replace(",", "."));
-      if (isNaN(valManual) || valManual < 0 || !isNonEmpty(form.valorFreteManual)) {
+      const valManual = parseCurrencyBR(form.valorFreteManual);
+      if (valManual === null || valManual < 0 || !isNonEmpty(form.valorFreteManual)) {
         showToast({
           type: "error",
           title: "Frete obrigatório",
@@ -3032,8 +3032,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     updateField("isAvulso", checked);
                     if (checked) {
                       const originalResumo = calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
-                      updateField("valorProdutosManual", String(originalResumo.valorTotal));
-                      updateField("valorFreteManual", "0");
+                      updateField("valorProdutosManual", formatCurrencyWithoutPrefix(originalResumo.valorTotal));
+                      updateField("valorFreteManual", "0,00");
                       updateField("observacoesFreteManual", "Frete Incluso");
                       updateField("freteEscolhidoId", "frete_manual_unico");
                       updateField("fretes", [{
@@ -3079,6 +3079,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     type="text"
                     value={form.valorProdutosManual || ""}
                     onChange={(e) => updateField("valorProdutosManual", e.target.value)}
+                    onBlur={(e) => {
+                      const val = parseCurrencyBR(e.target.value);
+                      if (val !== null) {
+                        updateField("valorProdutosManual", formatCurrencyWithoutPrefix(val));
+                      }
+                    }}
                     className={inputClass}
                   />
                 </Field>
@@ -3184,8 +3190,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       onChange={(e) => {
                         const valStr = e.target.value;
                         updateField("valorFreteManual", valStr);
-                        const valNum = Number(valStr.replace(",", ".")) || 0;
+                        const valNum = parseCurrencyBR(valStr) ?? 0;
                         updateField("fretes", form.fretes.map(f => f.id === "frete_manual_unico" ? { ...f, valor: valNum } : f));
+                      }}
+                      onBlur={(e) => {
+                        const val = parseCurrencyBR(e.target.value);
+                        if (val !== null) {
+                          updateField("valorFreteManual", formatCurrencyWithoutPrefix(val));
+                        }
                       }}
                       placeholder="Ex: 150,00"
                       className={inputClass}
@@ -3791,6 +3803,18 @@ function ProductItemEditor({
         </div>
       </div>
 
+      <div className="pt-1">
+        <Field label="Descrição do produto">
+          <textarea
+            value={item.descricaoModelo || ""}
+            onChange={(event) => onUpdate((current) => ({ ...current, descricaoModelo: event.target.value }))}
+            className={`${inputClass} resize-y min-h-16`}
+            placeholder="Informe detalhes, modelo, acabamento ou condições específicas deste item"
+            rows={2}
+          />
+        </Field>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4 pt-1">
         <InfoBox label="Antes desconto" value={formatCurrency(item.subtotalBruto)} />
         <Field label="Tipo desconto">
@@ -4333,8 +4357,8 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     formaPagamento: proposta?.formaPagamento ?? "Pix a vista 3 dias",
     observacoes: proposta?.observacoes ?? "",
     isAvulso,
-    valorProdutosManual: isAvulso ? (proposta?.resumo.subtotalProdutos ?? 0).toString() : "",
-    valorFreteManual: isAvulso ? (proposta?.resumo.frete ?? 0).toString() : "",
+    valorProdutosManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.subtotalProdutos ?? 0) : "",
+    valorFreteManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.frete ?? 0) : "",
     observacoesFreteManual: isAvulso ? (chosenFrete?.transportadora ?? "Frete Manual") : "",
     clienteNaoCadastrado,
     nomeClienteLivre: clienteNaoCadastrado ? (cliente?.nome ?? "") : "",
