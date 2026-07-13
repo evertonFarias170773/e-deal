@@ -95,7 +95,8 @@ export async function processarOrcamentoService(
   if (
     engineResult.action === 'CLEAR' ||
     engineResult.action === 'NONE' ||
-    engineResult.action === 'ERROR'
+    engineResult.action === 'ERROR' ||
+    engineResult.action === 'UPDATE_QTD'
   ) {
     return {
       action: engineResult.action,

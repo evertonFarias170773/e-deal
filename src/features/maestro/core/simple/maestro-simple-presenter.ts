@@ -1702,7 +1702,7 @@ export function presenterOrcamentoAvulso(result: OrcamentoAvulsoResult): Present
  * Prefere nomeComercial do catálogo oficial quando o ID foi resolvido por ele.
  * Nunca exibe descrições longas do banco.
  */
-export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, cliente?: SimpleClientContext, budgetAddressFull?: string, fretes?: PropostaFrete[]): PresenterResult {
+export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, cliente?: SimpleClientContext, budgetAddressFull?: string, fretes?: PropostaFrete[], hasMissingWeight?: boolean): PresenterResult {
   const { resolucao, totalGeral, errors, temPendencia, nextState } = result;
 
   let allSuccess = !temPendencia && errors.length === 0;
@@ -1711,9 +1711,18 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
   if (temPendencia && nextState.pendingOptions && nextState.pendingOptions.length > 0) {
     const termo = nextState.pendingTerm || 'produto';
     contentText = `Encontrei ${nextState.pendingOptions.length} opções para "${termo}". Qual deles você quer usar?\n\n`;
-    nextState.pendingOptions.forEach(opt => {
-      contentText += `${opt.index}. ${opt.name}\n`;
+    
+    // Display up to 5 options with their IDs to differentiate identical names
+    const displayOptions = nextState.pendingOptions.slice(0, 5);
+    displayOptions.forEach(opt => {
+      contentText += `${opt.index}. ${opt.name} (Cód: ${opt.id})\n`;
     });
+    
+    if (nextState.pendingOptions.length > 5) {
+      const remaining = nextState.pendingOptions.length - 5;
+      contentText += `\n*E mais ${remaining} opções semelhantes. Refine a busca ou escolha uma das acima.*\n`;
+    }
+    
     contentText += `\nPode responder com o número ou com o nome.`;
     
     return {
@@ -1799,18 +1808,42 @@ export function presenterOrcamentoAvulsoService(result: OrcamentoServiceResult, 
         contentText += `Prazo de entrega: ${prazoStr}\n\n`;
       });
 
+      let subtotalFinal = totalGeral;
+      let percentualBonusStr = '';
+      if (cliente && cliente.percentualBonus && cliente.percentualBonus > 0) {
+        const desconto = Number((totalGeral * cliente.percentualBonus / 100).toFixed(2));
+        subtotalFinal = totalGeral - desconto;
+        percentualBonusStr = ` (bônus ${cliente.percentualBonus}%)`;
+      }
+
       const subtotalStr = fmtBRL(totalGeral);
-      const totalFinalStr = fmtBRL(totalGeral + fretePadrao.valor);
+      const totalFinalStr = fmtBRL(subtotalFinal + fretePadrao.valor);
 
       contentText += `🧾 Subtotal produtos: ${subtotalStr}\n`;
-      contentText += `Frete sugerido (${fretePadrao.transportadora}): ${fmtBRL(fretePadrao.valor)}\n\n`;
-
-      contentText += `💰 Total final: ${totalFinalStr}\n`;
+      if (percentualBonusStr) {
+        contentText += `💸 Subtotal líquido${percentualBonusStr}: ${fmtBRL(subtotalFinal)}\n`;
+      }
+      contentText += `Frete sugerido (${fretePadrao.transportadora}): ${fmtBRL(fretePadrao.valor)}\n`;
+      if (hasMissingWeight) {
+        contentText += `⚠️ *Aviso: Os itens orçados não possuem peso cadastrado. O cálculo de transportadoras (como Sedex e PAC) requer o peso total.* Opcionalmente, pode-se prosseguir com Retira no Balcão ou informar outro meio.\n`;
+      }
+      contentText += `\n💰 Total final: ${totalFinalStr}\n`;
     } else {
+      let subtotalFinal = totalGeral;
+      let percentualBonusStr = '';
+      if (cliente && cliente.percentualBonus && cliente.percentualBonus > 0) {
+        const desconto = Number((totalGeral * cliente.percentualBonus / 100).toFixed(2));
+        subtotalFinal = totalGeral - desconto;
+        percentualBonusStr = ` (bônus ${cliente.percentualBonus}%)`;
+      }
+
       // Sem cliente/endereço/CEP — sem frete real disponível
       contentText += `🧾 Subtotal produtos: ${fmtBRL(totalGeral)}\n`;
+      if (percentualBonusStr) {
+        contentText += `💸 Subtotal líquido${percentualBonusStr}: ${fmtBRL(subtotalFinal)}\n`;
+      }
       contentText += `🚚 Frete: a calcular após informar cliente/endereço\n\n`;
-      contentText += `💰 Total (sem frete): ${fmtBRL(totalGeral)}\n`;
+      contentText += `💰 Total (sem frete): ${fmtBRL(subtotalFinal)}\n`;
     }
   } else if (hasErrorsOrInactives) {
     contentText += `\n*Como houve itens não encontrados, inativos ou com dúvidas, o total geral não foi calculado.*\n`;
@@ -2436,7 +2469,8 @@ export function presenterEscolhaTransportadora(
     .map((f, i) => {
       const destaque = f.valor === menorValor ? ' 💚 menor preço' : '';
       const prazo = f.prazo ? ` — Prazo: ${f.prazo}` : '';
-      return `Opção ${i + 1}: ${f.transportadora} — ${fmtBRL(f.valor)}${prazo}${destaque}`;
+      const obs = (f as any).observacao ? `\n> ⚠️ ${(f as any).observacao}` : '';
+      return `Opção ${i + 1}: ${f.transportadora} — ${fmtBRL(f.valor)}${prazo}${destaque}${obs}`;
     })
     .join('\n');
 

@@ -40,10 +40,18 @@ export async function solicitarCotacaoSedex(input: {
 }): Promise<PropostaFrete[]> {
   const cleanCep = input.cep.replace(/\D/g, "");
   
+  let finalPeso = input.peso;
+  let finalVol = input.vol;
+  
+  if (input.peso > 25000) {
+    finalPeso = Math.round(input.peso / 2);
+    finalVol = 2;
+  }
+
   const payload = {
-    peso: String(input.peso),
+    peso: String(finalPeso),
     cep: cleanCep,
-    vol: Number(input.vol)
+    vol: Number(finalVol)
   };
 
   const response = await fetch("https://10074.hostoo.net.br/webhook/sedex_vibe", {
@@ -88,7 +96,8 @@ export async function solicitarCotacaoSedex(input: {
       prazo: prazoText,
       observacao: texto_entrega || "",
       escolhido: false,
-      pesoUsado: input.peso
+      pesoUsado: input.peso,
+      volumes: finalVol
     };
   });
 }

@@ -64,9 +64,10 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
     let resolvedId: number | null = null;
     let resolvedName: string | null = null;
 
-    // a) Escolha por número da opção (ex: "1" ou "2")
-    if (/^\d+$/.test(clean)) {
-      const idx = parseInt(clean, 10);
+    // a) Escolha por número da opção (ex: "1", "opcao 1", "quero a 2", "esse 19")
+    const optionMatch = /^(?:(?:use?|escolho|quero|pode|coloca|esse|essa|opcao)\s+(?:a\s+|o\s+|))?(?:opcao\s+)?(\d+)\b/i.exec(clean);
+    if (optionMatch) {
+      const idx = parseInt(optionMatch[1], 10);
       const option = state.pendingOptions.find(o => o.index === idx);
       if (option) {
         resolvedId = option.id;
@@ -75,12 +76,15 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
     }
 
     // b) Escolha por ID direto (ex: "101")
-    if (!resolvedId && /^\d+$/.test(clean)) {
-      const idStr = parseInt(clean, 10);
-      const option = state.pendingOptions.find(o => o.id === idStr);
-      if (option) {
-        resolvedId = option.id;
-        resolvedName = option.name;
+    if (!resolvedId) {
+      const idMatch = /^(?:(?:use?|escolho|quero|pode|coloca|esse|essa|id|codigo)\s+(?:a\s+|o\s+|))?(?:id\s+|codigo\s+)?(\d+)\b/i.exec(clean);
+      if (idMatch) {
+        const idStr = parseInt(idMatch[1], 10);
+        const option = state.pendingOptions.find(o => o.id === idStr);
+        if (option) {
+          resolvedId = option.id;
+          resolvedName = option.name;
+        }
       }
     }
 
@@ -119,7 +123,8 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
   }
 
   // 4. Tratar número solto quando houver pendência de produto (bloqueia o router)
-  if (/^\d+$/.test(clean) && (state.pendingAmbiguity || !!state.pendingTerm)) {
+  const isLooseNumber = /^(?:(?:use?|escolho|quero|pode|coloca|esse|essa|opcao)\s+(?:a\s+|o\s+|))?(?:opcao\s+)?(\d+)\s*$/i.test(clean);
+  if (isLooseNumber && (state.pendingAmbiguity || !!state.pendingTerm)) {
     return {
       action: 'NONE',
       items: state.itens,
@@ -127,6 +132,27 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
       errors: [],
       nextState: state,
       response: ''
+    };
+  }
+
+  // 4b. Tratar alteração de quantidade pendente
+  // Ex: "quantidade é 500", "qtd 200"
+  const qtyMatch = /\b(?:quant\w*|qtd|quantidade)(?:\s+(?:e|eh|é|de|para|pra|=))?\s+(\d+(?:\.\d+)?k?)\b/i.exec(clean);
+  if (qtyMatch && (state.pendingAmbiguity || !!state.pendingTerm)) {
+    let qtd = parseFloat(qtyMatch[1].replace(/\./g, ''));
+    if (qtyMatch[1].includes('.') && qtyMatch[1].split('.')[1].length !== 3) qtd = parseFloat(qtyMatch[1]);
+    if (qtyMatch[1].toLowerCase().endsWith('k')) qtd *= 1000;
+    
+    // Como a pendência fica isolada em nextState, vamos apenas atualizar.
+    // Retornamos UPDATE_QTD para o router manter o estado pendente.
+    nextState.pendingQuantidade = qtd;
+    return {
+      action: 'UPDATE_QTD',
+      items: state.itens,
+      pending: null,
+      errors: [],
+      nextState,
+      response: `Quantidade atualizada para ${qtd}.`
     };
   }
 

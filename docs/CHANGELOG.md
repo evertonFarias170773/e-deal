@@ -1,3 +1,14 @@
+## [Unreleased] - 2026-07-10
+
+### Fixed
+- **Maestro V2 (Cotações)**: Correção crítica na retenção do bônus do cliente durante a passagem de contexto transicional entre frontend e backend (`ConversationContext`).
+- **Maestro V2 (Edição de Cotações)**: Resolvido travamento em que o roteador bloqueava a edição de itens (quantidades e remoções) quando o fluxo já se encontrava na fase de confirmação (`pendingSaveQuotation`).
+- **Maestro V2 (Nomenclatura)**: Os produtos do catálogo oficial que antes exibiam descrições desnecessariamente longas agora adotam sua nomenclatura canônica curta (ex: "Pulseira TexBand" em vez da descrição bruta do banco).
+
+### Changed
+- **Maestro V2 (Retenção de Frete)**: A opção "Retira no balcão" agora sobrevive a recálculos automáticos quando a quantidade de um item da cotação é editada pelo usuário durante a confirmação, saltando uma re-escolha desnecessária.
+- **Documentação**: Criado arquivo `docs/STATUS-MAESTRO-V2.md` com um checkpoint resumido e claro do andamento do módulo Maestro V2.
+
 ## [Unreleased] - 2026-07-03
 
 ### Fixed

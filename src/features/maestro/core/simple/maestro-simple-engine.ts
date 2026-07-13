@@ -1326,7 +1326,10 @@ export async function processSimpleQueryWithBrain(
 
               fretesCalculados.push({ id: 'retira_balcao', servico: 'Retirada no local', transportadora: 'Retira no balcão', valor: 0, prazo: 'A combinar', id_int: 0, observacao: '', escolhido: false, pesoUsado: 0 } as any);
 
-               pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined);
+              // check if weight was 0 to display warning
+              const hasMissingWeight = !!(v2Ctx.budgetAddressCep && serviceResult.totalGeral !== null && (!serviceResult.items.some(i => i.pesoUnitario && i.pesoUnitario > 0)));
+
+               pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined, hasMissingWeight);
 
                let priorFreteId: string | undefined;
 

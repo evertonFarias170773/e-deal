@@ -390,9 +390,9 @@ export function detectFreightSwitch(
 
   // "troca a transportadora" / "trocar transportadora" / "mudar transportadora" SEM nome específico
   // → retorna 'list' para mostrar seleção numerada novamente
-  const isTrocaSemNome = /\b(troca(r)?|mudar?|muda)\s+(a\s+)?(transportadora|frete|entrega)\b/i.test(clean)
+  const isTrocaSemNome = /\b(troca(r)?|mudar?|muda)\s+([ao]\s+)?(transportadora|frete|entrega)\b/i.test(clean)
     && !hasCarrierHint
-    && !switchPhrases.test(clean.replace(/\b(troca(r)?|mudar?|muda)\s+(a\s+)?(transportadora|frete|entrega)\b/i, ''));
+    && !switchPhrases.test(clean.replace(/\b(troca(r)?|mudar?|muda)\s+([ao]\s+)?(transportadora|frete|entrega)\b/i, ''));
   const isPedirOpcoes = /\b(trazer?|traga|mostrar?|mostre|listar?|liste|quero\s+(ver|as)\s+op).*(?:transportadora|frete|op[cç][aã]o)/i.test(clean)
     || /\b(op[cç][oõ]es?|opcoes?)\s+(de\s+)?(frete|transport)/i.test(clean);
   if (isTrocaSemNome || isPedirOpcoes) {
@@ -839,20 +839,17 @@ export function handleContextContinuation(
     v2Ctx.domain = 'cliente';
 
     // Se houver pedido para usar o mesmo orçamento, preserva itens mas limpa a cotação
-    const isMesmoOrcamento = /\b(mesmo\s+(or[cç]amento|pedido|cota[cç][aã]o)|mesma\s+cota[cç][aã]o|repete\s+(esse\s+)?or[cç]amento)\b/i.test(clean) || /\b(agora\s+fa[cç]a\s+o\s+mesmo\s+or[cç]amento)\b/i.test(clean);
+    const isMesmoOrcamento = /\b(mesmo\s+(or[cç]amento|pedido|cota[cç][aã]o)|mesma\s+cota[cç][aã]o|repete\s+(esse\s+)?or[cç]amento|essa\s+cota[cç][aã]o|esse\s+or[cç]amento)\b/i.test(clean) || /\b(agora\s+fa[cç]a\s+o\s+mesmo\s+or[cç]amento)\b/i.test(clean);
     
     if (isMesmoOrcamento) {
       console.log('[MaestroV2Context] Intenção "mesmo orçamento" detectada. Preservando itens e limpando cotação anterior.');
       const sourceItens = v2Ctx.activeQuote?.itens || v2Ctx.pendingSaveQuotation?.itens || v2Ctx.orcamentoItens || [];
       v2Ctx.orcamentoItens = sourceItens.map((it: any) => ({
-        id_produto: it.id_produto,
-        nome: it.nome,
+        produtoId: it.produtoId || it.id_produto,
+        termo: it.termo || it.nome,
         quantidade: it.quantidade,
-        valorUnitario: it.valorUnitario,
-        valorFixo: it.valorFixo,
-        subtotal: it.subtotal,
-        pesoUnitario: it.pesoUnitario,
-        termo: it.termo || it.nome
+        precoUnitario: it.precoUnitario || it.valorUnitario || it.valorFixo,
+        pesoUnitario: it.pesoUnitario
       }));
     } else {
       v2Ctx.orcamentoItens = [];
@@ -956,6 +953,7 @@ export function handleContextContinuation(
       pendingAmbiguity: !!v2Ctx.pendingProductResolution || !!v2Ctx.pendingAmbiguousItem,
       pendingQuantidade: v2Ctx.pendingProductResolution?.lastRequestedQuantity || v2Ctx.pendingAmbiguousItem?.lastRequestedQuantity,
       pendingTerm: v2Ctx.pendingProductResolution?.lastRequestedTerm || v2Ctx.pendingAmbiguousItem?.lastRequestedTerm,
+      pendingOptions: v2Ctx.pendingAmbiguousItem?.options,
       // Passa histórico de itens para suportar RESTORE
       previousItens: v2Ctx.previousOrcamentoItens || [],
     });
@@ -985,6 +983,18 @@ export function handleContextContinuation(
         return {
           routed: true,
           plan: { steps: [{ tool: 'limpar_orcamento_avulso', params: {} }] }
+        };
+      } else if (engineResult.action === 'UPDATE_QTD' && (v2Ctx.pendingAmbiguousItem || v2Ctx.pendingProductResolution)) {
+        // Atualiza a quantidade da pendência em vez de limpar
+        if (v2Ctx.pendingAmbiguousItem && engineResult.nextState.pendingQuantidade) {
+          v2Ctx.pendingAmbiguousItem.lastRequestedQuantity = engineResult.nextState.pendingQuantidade;
+        }
+        if (v2Ctx.pendingProductResolution && engineResult.nextState.pendingQuantidade) {
+          v2Ctx.pendingProductResolution.lastRequestedQuantity = engineResult.nextState.pendingQuantidade;
+        }
+        return {
+          routed: true,
+          plan: { steps: [{ tool: 'simularOrcamentoAvulso', params: { itens: v2Ctx.orcamentoItens } }] }
         };
       } else {
         if (engineResult.items.length > 0) {
