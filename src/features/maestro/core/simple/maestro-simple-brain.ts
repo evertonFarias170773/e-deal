@@ -33,6 +33,8 @@
  *     Nunca importar em 'use client' ou hooks de browser.
  */
 
+import fs from 'fs';
+import path from 'path';
 import type { SimpleClientContext, SimpleMaestroContext } from './maestro-simple-context';
 
 // ─── Prompt Base — constante fallback (derivada de docs/MAESTRO-PROMPT-BASE.md) ─
@@ -96,15 +98,9 @@ let _promptCache: string | null = null;
 function loadPromptBase(): string {
   if (_promptCache !== null) return _promptCache;
 
-  // Tenta ler o arquivo .md a partir da raiz do projeto (process.cwd())
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs   = require('fs')   as typeof import('fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const path = require('path') as typeof import('path');
-
   const candidates = [
-    path.join(process.cwd(), 'docs', 'MAESTRO-PROMPT-BASE.md'),
-    path.join(process.cwd(), '..', 'docs', 'MAESTRO-PROMPT-BASE.md'),
+    path.join(/*turbopackIgnore: true*/ process.cwd(), 'docs', 'MAESTRO-PROMPT-BASE.md'),
+    path.join(/*turbopackIgnore: true*/ process.cwd(), '..', 'docs', 'MAESTRO-PROMPT-BASE.md'),
   ];
 
   for (const filePath of candidates) {

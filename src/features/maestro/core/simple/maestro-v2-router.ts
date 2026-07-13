@@ -10,11 +10,12 @@
  * - Sem caminhos de escrita.
  */
 
-import type { SimpleClientContext, LastAnswerRecord } from './maestro-simple-context';
-import type { MaestroV2Context } from './maestro-v2-context-manager';
+import type { LastAnswerRecord, SimpleClientContext } from './maestro-simple-context';
+import type { MaestroV2Context, OrchestrationPlan } from '../../types';
 import { handleContextContinuation } from './maestro-v2-context-manager';
-import { detectIntent } from './maestro-simple-intents';
 import { processarOrcamentoAvulso } from './maestro-orcamento-engine';
+import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
+import { detectIntent } from './maestro-simple-intents';
 
 export interface RouterPeriodoMeses {
   mes: number;
@@ -175,7 +176,6 @@ export function extrairClienteDaQuery(query: string): { tipo: 'id' | 'nome'; val
     nome = nome.replace(/\s+(de|do|da|para|pro|pra|a|o)$/i, '').trim();
     if (!/^\d+$/.test(nome) && nome.length >= 3) {
       // Validação preventiva contra termos de produto do catálogo
-      const { resolverTermoCatalogo } = require('./maestro-orcamento-catalogo-oficial');
       const resCatalogo = resolverTermoCatalogo(nome);
       if (resCatalogo && resCatalogo.tipoMatch !== 'nao_encontrado') {
         console.log(`[MaestroV2Router] extrairClienteDaQuery: descartado cliente "${nome}" porque coincide com termo de produto.`);

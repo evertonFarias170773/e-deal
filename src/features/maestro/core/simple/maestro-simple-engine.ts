@@ -43,6 +43,10 @@ import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTrans
 import type { PropostaFrete } from '@/features/orcamentos/types';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
+import { callExternalAgent } from './maestro-external-intent.server';
+import { mapExternalIntentToRouterResult } from './maestro-external-intent.mapper';
+import { extrairClienteDaQuery, routeToolSimple } from './maestro-v2-router';
+import { processarOrcamentoAvulso } from './maestro-orcamento-engine';
 import { detectIntent } from './maestro-simple-intents';
 import type {
   SimpleClientContext,
@@ -106,9 +110,10 @@ import {
   presenterPropostaJaSalva,
   presenterErroSaveCotacao,
   presenterRespostaSocialCotacao,
+  presenterCancelarOrcamentoAvulso,
+  presenterMostrarItensOrcamento,
   type PresenterResult,
 } from './maestro-simple-presenter';
-import { routeToolSimple } from './maestro-v2-router';
 import { deserializeV2Context, serializeV2Context, normalizeText } from './maestro-v2-context-manager';
 import { salvarCotacaoComoPropostaReal } from './maestro-save-proposta.server';
 
@@ -546,8 +551,6 @@ export async function processSimpleQueryWithBrain(
 
       if (process.env.MAESTRO_EXTERNAL_INTENT_ENABLED === 'true' && tryExternal) {
         try {
-          const { callExternalAgent } = await import('./maestro-external-intent.server');
-          const { mapExternalIntentToRouterResult } = await import('./maestro-external-intent.mapper');
           
           const payload = {
             query,
@@ -590,7 +593,6 @@ export async function processSimpleQueryWithBrain(
 
       // [FALLBACK] Se não roteado externamente, usa o router interno V2
       if (!routeResult.routed) {
-        const { routeToolSimple } = await import('./maestro-v2-router');
         routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
       }
 
@@ -600,7 +602,6 @@ export async function processSimpleQueryWithBrain(
         let clientForCtx = simpleCtx.activeClient;
 
         // Proteção centralizada contra cotação avulsa com cliente não resolvido na query mista
-        const { extrairClienteDaQuery } = require('./maestro-v2-router');
         const clienteNaQuery = extrairClienteDaQuery(query);
         const temClienteNaoResolvido = clienteNaQuery && (
           !simpleCtx.activeClient || (
@@ -610,7 +611,6 @@ export async function processSimpleQueryWithBrain(
 
         // Se há cliente indicado e não resolvido na query mista, garante que qualquer item de orçamento nela contido seja preservado
         if (temClienteNaoResolvido) {
-          const { processarOrcamentoAvulso } = require('./maestro-orcamento-engine');
           const engineResult = processarOrcamentoAvulso(query, { 
             itens: [], 
             pendingAmbiguity: false 
@@ -628,6 +628,14 @@ export async function processSimpleQueryWithBrain(
           console.warn(`[MaestroEngine] Interceptado roteamento incorreto para cotação avulsa com cliente indicado ("${clienteNaQuery.valor}"). Redirecionando para buscarCliente.`);
           step.tool = 'buscarCliente';
           step.params = { busca: clienteNaQuery.valor };
+        }
+
+        if (step.tool === 'cancelar_orcamento_avulso') {
+          pr = presenterCancelarOrcamentoAvulso(simpleCtx.activeClient);
+        }
+
+        if (step.tool === 'mostrar_itens_orcamento_avulso') {
+          pr = presenterMostrarItensOrcamento(v2Ctx.orcamentoItens || [], simpleCtx.activeClient);
         }
 
         // Atualizações do Gerenciador de Contexto Conversacional Geral
@@ -800,7 +808,6 @@ export async function processSimpleQueryWithBrain(
                   pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
                 } else {
                   // Sem endereços válidos cadastrados — pedir manual
-                  const { presenterSolicitarEnderecoManual } = require('./maestro-simple-presenter');
                   pr = presenterSolicitarEnderecoManual(lookupResult.client);
                 }
               } else {
@@ -1088,10 +1095,8 @@ export async function processSimpleQueryWithBrain(
                     clientId: idClienteCompostos || 0,
                     addresses: enderecosValidos,
                   };
-                  const { presenterEscolhaEndereco } = require('./maestro-simple-presenter');
                   pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
                 } else {
-                  const { presenterSolicitarEnderecoManual } = require('./maestro-simple-presenter');
                   pr = presenterSolicitarEnderecoManual(novoCliente);
                 }
               } else {

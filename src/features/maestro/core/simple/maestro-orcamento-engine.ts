@@ -35,6 +35,9 @@ export interface OrcamentoResult {
   response: string;
 }
 
+import { processarMedidas, processarValorMonetario } from './maestro-orcamento-medidas';
+import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
+
 export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoState): OrcamentoResult {
   let clean = query
     .toLowerCase()
@@ -48,14 +51,9 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
 
   // Defesa adicional: limpar menções naturais como "para [NomeCliente]" se não coincidir com termo de produto
   clean = clean.replace(/\b(para|pro|pra|ao)\s+(?:o\s+|a\s+)?([a-z][a-z\s]{2,30}?)(?=\s*[:,]|\s+com\b|\s+\d|\s*$)/gi, (match, prep, name) => {
-    try {
-      const { resolverTermoCatalogo } = require('./maestro-orcamento-catalogo-oficial');
-      const res = resolverTermoCatalogo(name.trim());
-      if (res && res.tipoMatch !== 'nao_encontrado') {
-        return match; // Preserva se for um produto (falso positivo)
-      }
-    } catch (e) {
-      // Ignora erro se falhar import e preserva string
+    const res = resolverTermoCatalogo(name.trim());
+    if (res && res.tipoMatch !== 'nao_encontrado') {
+      return match; // Preserva se for um produto (falso positivo)
     }
     return ' ';
   }).trim();
