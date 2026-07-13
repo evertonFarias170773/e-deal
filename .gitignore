@@ -24,3 +24,4 @@ BACKUPS_SUPABASE/
 # development scratch directories and build info
 scratch/
 *.tsbuildinfo
+test-router.ts
