@@ -167,7 +167,7 @@ export function extrairClienteDaQuery(query: string): { tipo: 'id' | 'nome'; val
   // cliente Lisiton / cli Lisiton (nome textual — mínimo 3 chars, sem dígitos)
   // Aceita também preposições inequívocas: para, para o, para a. Não aceita de/do/da.
   // Captura até vírgula, dois pontos, a palavra "com", número ou final do texto.
-  const regexNome = /\b(para\s+o|para\s+a|para|cliente|cli|cadastro|liente|clinte|ciente)\s+([a-z][a-z\s]{2,30}?)(?=\s*[:,]|\s+com\b|\s+\d|\s*$)/i;
+  const regexNome = /\b(para\s+o|para\s+a|para|pra\s+o|pra\s+a|pra|pro\s+o|pro\s+a|pro|cliente|cli|cadastro|liente|clinte|ciente)\s+([a-z][a-z\s]{2,30}?)(?=\s*[:,]|\s+com\b|\s+\d|\s*$)/i;
   const matchNome = regexNome.exec(norm);
   if (matchNome) {
     let nome = matchNome[2].trim();

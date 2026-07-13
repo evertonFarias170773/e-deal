@@ -608,24 +608,26 @@ export async function processSimpleQueryWithBrain(
           )
         );
 
+        // Se há cliente indicado e não resolvido na query mista, garante que qualquer item de orçamento nela contido seja preservado
+        if (temClienteNaoResolvido) {
+          const { processarOrcamentoAvulso } = require('./maestro-orcamento-engine');
+          const engineResult = processarOrcamentoAvulso(query, { 
+            itens: [], 
+            pendingAmbiguity: false 
+          });
+          if (engineResult.items && engineResult.items.length > 0) {
+            console.log(`[MaestroEngine] Preservando ${engineResult.items.length} itens de orçamento na query mista com cliente não resolvido.`);
+            v2Ctx.pendingBudgetForCandidate = engineResult.items;
+            v2Ctx.lastExplicitBudgetItems = engineResult.items;
+            v2Ctx.orcamentoItens = engineResult.items;
+            v2Ctx.domain = 'orcamento_avulso';
+          }
+        }
+
         if (temClienteNaoResolvido && ['simularOrcamentoAvulso', 'perguntar_tipo_orcamento'].includes(step.tool)) {
           console.warn(`[MaestroEngine] Interceptado roteamento incorreto para cotação avulsa com cliente indicado ("${clienteNaQuery.valor}"). Redirecionando para buscarCliente.`);
           step.tool = 'buscarCliente';
           step.params = { busca: clienteNaQuery.valor };
-          
-          // E garante que os itens sejam salvos no contexto para retomada posterior
-          const { processarOrcamentoAvulso } = require('./maestro-orcamento-engine');
-          const engineResult = processarOrcamentoAvulso(query, { 
-            itens: v2Ctx.domain === 'orcamento_avulso' ? (v2Ctx.orcamentoItens || []) : [], 
-            pendingAmbiguity: false 
-          });
-          if (engineResult.action === 'ADD' || engineResult.action === 'REPLACE') {
-            v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
-            v2Ctx.orcamentoItens = engineResult.items;
-            v2Ctx.lastExplicitBudgetItems = engineResult.items;
-            v2Ctx.lastExplicitBudgetRequestText = query;
-          }
-          v2Ctx.domain = 'orcamento_avulso';
         }
 
         // Atualizações do Gerenciador de Contexto Conversacional Geral
@@ -674,165 +676,181 @@ export async function processSimpleQueryWithBrain(
           const documentType = step.params.documentType as 'cpf' | 'cnpj' | undefined;
           let lookupResult = { found: false } as any;
 
-          // Limpa candidatos pendentes antigos ao iniciar uma nova busca de cliente
-          v2Ctx.pendingClientCandidate = null;
-          v2Ctx.pendingClientCandidates = null;
-          v2Ctx.pendingClientSearchTerm = null;
+          // Se a busca é pelo id_cliente de um candidato pendente, desvia para a confirmação
+          const numCodeBusca = /^\d+$/.test(busca) ? parseInt(busca, 10) : null;
+          const ehCandidatoPendente = numCodeBusca && (
+            (v2Ctx.pendingClientCandidate?.id_cliente === numCodeBusca) ||
+            (v2Ctx.pendingClientCandidates?.some((c: any) => c.id_cliente === numCodeBusca))
+          );
 
-          // Prioridade 1: Busca exata por ID Numérico
-          if (/^\d+$/.test(busca) && !documentPartial) {
-            const numCode = parseInt(busca, 10);
-            if (!isNaN(numCode)) {
-              const resExato = await supabase.from('vw_cadastros_clientes_lista')
-                .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido')
-                .eq('id_cliente', numCode).limit(1);
-              if (resExato.data && resExato.data.length > 0) {
-                lookupResult = await buscarClientePorCodigo(supabase, numCode.toString());
-              }
-            }
-          }
-
-          // Prioridade 2: Texto livre (nome, CPF/CNPJ parcial)
-          if (!lookupResult.found) {
-            lookupResult = await buscarClientePorTexto(supabase, busca, { documentPartial, documentType });
-          }
-
-          // Itens da mensagem atual (somente os gerados por esta interação)
-          const itensDaMensagemAtual =
-            (v2Ctx.lastExplicitBudgetItems && v2Ctx.lastExplicitBudgetItems.length > 0)
-              ? v2Ctx.lastExplicitBudgetItems
-              : null;
-
-          if (lookupResult.found && lookupResult.client) {
-            // Limpar candidatos pendentes ao encontrar com confiança
+          if (ehCandidatoPendente) {
+            console.log(`[MaestroEngine] buscarCliente interceptado: busca "${busca}" é o candidato pendente. Desviando para confirmar_cliente_pendente.`);
+            step.tool = 'confirmar_cliente_pendente';
+            step.params = { id_cliente: numCodeBusca };
+          } else {
+            // Limpa candidatos pendentes antigos ao iniciar uma nova busca de cliente
             v2Ctx.pendingClientCandidate = null;
             v2Ctx.pendingClientCandidates = null;
             v2Ctx.pendingClientSearchTerm = null;
-            v2Ctx.pendingBudgetForCandidate = null;
-            // Limpar endereço se o cliente mudou
-            const anteriorId = v2Ctx.activeEntities.clientInternalId;
-            if (anteriorId && anteriorId !== lookupResult.client.clientInternalId) {
-              console.log(`[MaestroEngine] buscarCliente: cliente mudou ${anteriorId} -> ${lookupResult.client.clientInternalId} — limpando endereço.`);
-              v2Ctx.budgetAddressId = undefined;
-              v2Ctx.budgetAddressFull = undefined;
-              v2Ctx.budgetAddressCep = undefined;
-              v2Ctx.budgetAddressCidade = undefined;
-              v2Ctx.budgetAddressUf = undefined;
-              v2Ctx.pendingAddressChoice = null;
-              v2Ctx.activeQuote = null; // limpa cotação ativa ao trocar cliente
-              v2Ctx.pendingSaveQuotation = null; // limpa save pendente do cliente antigo
-              v2Ctx.pendingFreightChoice = null; // limpa frete pendente do cliente antigo
+
+            // Prioridade 1: Busca exata por ID Numérico
+            if (/^\d+$/.test(busca) && !documentPartial) {
+              const numCode = parseInt(busca, 10);
+              if (!isNaN(numCode)) {
+                const resExato = await supabase.from('vw_cadastros_clientes_lista')
+                  .select('id_cliente, id_cliente_text, nome, fantasia, documento, cidade_uf, ativo, qtd_pedidos, data_ult_pedido')
+                  .eq('id_cliente', numCode).limit(1);
+                if (resExato.data && resExato.data.length > 0) {
+                  lookupResult = await buscarClientePorCodigo(supabase, numCode.toString());
+                }
+              }
             }
-            clientForCtx = lookupResult.client;
 
-            // ── INTENÇÃO COMPOSTA: cliente + itens na mesma mensagem ──────────────
-            // Se há itens salvos da mensagem atual, ou itens preservados do 'mesmo orçamento', ou itens pendentes salvos no contexto, prosseguir para cotação automaticamente.
-            const itensCompostos = itensDaMensagemAtual 
-              || v2Ctx.pendingBudgetForCandidate 
-              || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+            // Prioridade 2: Texto livre (nome, CPF/CNPJ parcial)
+            if (!lookupResult.found) {
+              lookupResult = await buscarClientePorTexto(supabase, busca, { documentPartial, documentType });
+            }
 
-            if (itensCompostos && itensCompostos.length > 0) {
-              console.log(`[MaestroEngine] buscarCliente: intenção composta detectada. Cliente ${lookupResult.client.clientName} + ${itensCompostos.length} itens. Prosseguindo para cotação.`);
-              v2Ctx.orcamentoItens = itensCompostos;
-              v2Ctx.domain = 'orcamento_avulso';
-              v2Ctx.lastExplicitBudgetItems = itensCompostos;
-              v2Ctx.pendingBudgetForCandidate = null; // limpa a pendência
+            // Itens de orçamento pendentes no contexto conversacional antes de qualquer limpeza
+            const itensDePreservacao = v2Ctx.pendingBudgetForCandidate;
+
+            // Itens da mensagem atual (somente os gerados por esta interação)
+            const itensDaMensagemAtual =
+              (v2Ctx.lastExplicitBudgetItems && v2Ctx.lastExplicitBudgetItems.length > 0)
+                ? v2Ctx.lastExplicitBudgetItems
+                : null;
+
+            if (lookupResult.found && lookupResult.client) {
+              // Limpar candidatos pendentes ao encontrar com confiança
               v2Ctx.pendingClientCandidate = null;
               v2Ctx.pendingClientCandidates = null;
               v2Ctx.pendingClientSearchTerm = null;
-
-              // Carregar endereços do cliente para mostrar lista de escolha
-              const idClienteCompostos = lookupResult.client.clientInternalId;
-              const { data: enderecosCompostos } = await supabase
-                .from('enderecos')
-                .select('id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf')
-                .eq('id_cliente', idClienteCompostos)
-                .limit(10);
-
-              const isEnderecoUtilizavel = (e: any) => {
-                return !!(e.cep && e.cep.trim().length >= 8 &&
-                       e.cidade && e.cidade.trim().length > 0 &&
-                       e.uf && e.uf.trim().length > 0);
-              };
-
-              const enderecosValidos = (enderecosCompostos || []).filter(isEnderecoUtilizavel);
-
-              if (enderecosValidos.length === 1) {
-                const end = enderecosValidos[0];
-                v2Ctx.budgetAddressId = end.id;
-                v2Ctx.budgetAddressFull = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
-                v2Ctx.budgetAddressCep = end.cep;
-                v2Ctx.budgetAddressCidade = end.cidade;
-                v2Ctx.budgetAddressUf = end.uf;
+              v2Ctx.pendingBudgetForCandidate = null;
+              // Limpar endereço se o cliente mudou
+              const anteriorId = v2Ctx.activeEntities.clientInternalId;
+              if (anteriorId && anteriorId !== lookupResult.client.clientInternalId) {
+                console.log(`[MaestroEngine] buscarCliente: cliente mudou ${anteriorId} -> ${lookupResult.client.clientInternalId} — limpando endereço.`);
+                v2Ctx.budgetAddressId = undefined;
+                v2Ctx.budgetAddressFull = undefined;
+                v2Ctx.budgetAddressCep = undefined;
+                v2Ctx.budgetAddressCidade = undefined;
+                v2Ctx.budgetAddressUf = undefined;
                 v2Ctx.pendingAddressChoice = null;
-
-                // Transiciona para a simulação do orçamento no mesmo turno
-                step.tool = 'simularOrcamentoAvulso';
-                step.params = {
-                  itens: v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0
-                    ? v2Ctx.orcamentoItens
-                    : (v2Ctx.pendingBudgetForCandidate || v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || [])
-                };
-                v2Ctx.pendingBudgetForCandidate = null;
-              } else if (enderecosValidos.length > 1) {
-                // Tem múltiplos endereços válidos — mostrar lista para escolha
-                v2Ctx.pendingAddressChoice = {
-                  clientId: idClienteCompostos,
-                  addresses: enderecosValidos,
-                };
-                pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
-              } else {
-                // Sem endereços válidos cadastrados — pedir manual
-                const { presenterSolicitarEnderecoManual } = require('./maestro-simple-presenter');
-                pr = presenterSolicitarEnderecoManual(lookupResult.client);
+                v2Ctx.activeQuote = null; // limpa cotação ativa ao trocar cliente
+                v2Ctx.pendingSaveQuotation = null; // limpa save pendente do cliente antigo
+                v2Ctx.pendingFreightChoice = null; // limpa frete pendente do cliente antigo
               }
+              clientForCtx = lookupResult.client;
+
+              // ── INTENÇÃO COMPOSTA: cliente + itens na mesma mensagem ──────────────
+              // Se há itens salvos da mensagem atual, ou itens preservados do 'mesmo orçamento', ou itens pendentes salvos no contexto, prosseguir para cotação automaticamente.
+              const itensCompostos = itensDaMensagemAtual 
+                || itensDePreservacao 
+                || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+
+              if (itensCompostos && itensCompostos.length > 0) {
+                console.log(`[MaestroEngine] buscarCliente: intenção composta detectada. Cliente ${lookupResult.client.clientName} + ${itensCompostos.length} itens. Prosseguindo para cotação.`);
+                v2Ctx.orcamentoItens = itensCompostos;
+                v2Ctx.domain = 'orcamento_avulso';
+                v2Ctx.lastExplicitBudgetItems = itensCompostos;
+                v2Ctx.pendingBudgetForCandidate = null; // limpa a pendência
+                v2Ctx.pendingClientCandidate = null;
+                v2Ctx.pendingClientCandidates = null;
+                v2Ctx.pendingClientSearchTerm = null;
+
+                // Carregar endereços do cliente para mostrar lista de escolha
+                const idClienteCompostos = lookupResult.client.clientInternalId;
+                const { data: enderecosCompostos } = await supabase
+                  .from('enderecos')
+                  .select('id,id_cliente,tipo_endereco,cep,endereco,numero,complemento,bairro,cidade,uf')
+                  .eq('id_cliente', idClienteCompostos)
+                  .limit(10);
+
+                const isEnderecoUtilizavel = (e: any) => {
+                  return !!(e.cep && e.cep.trim().length >= 8 &&
+                         e.cidade && e.cidade.trim().length > 0 &&
+                         e.uf && e.uf.trim().length > 0);
+                };
+
+                const enderecosValidos = (enderecosCompostos || []).filter(isEnderecoUtilizavel);
+
+                if (enderecosValidos.length === 1) {
+                  const end = enderecosValidos[0];
+                  v2Ctx.budgetAddressId = end.id;
+                  v2Ctx.budgetAddressFull = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
+                  v2Ctx.budgetAddressCep = end.cep;
+                  v2Ctx.budgetAddressCidade = end.cidade;
+                  v2Ctx.budgetAddressUf = end.uf;
+                  v2Ctx.pendingAddressChoice = null;
+
+                  // Transiciona para a simulação do orçamento no mesmo turno
+                  step.tool = 'simularOrcamentoAvulso';
+                  step.params = {
+                    itens: v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0
+                      ? v2Ctx.orcamentoItens
+                      : (v2Ctx.pendingBudgetForCandidate || v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || [])
+                  };
+                  v2Ctx.pendingBudgetForCandidate = null;
+                } else if (enderecosValidos.length > 1) {
+                  // Tem múltiplos endereços válidos — mostrar lista para escolha
+                  v2Ctx.pendingAddressChoice = {
+                    clientId: idClienteCompostos,
+                    addresses: enderecosValidos,
+                  };
+                  pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
+                } else {
+                  // Sem endereços válidos cadastrados — pedir manual
+                  const { presenterSolicitarEnderecoManual } = require('./maestro-simple-presenter');
+                  pr = presenterSolicitarEnderecoManual(lookupResult.client);
+                }
+              } else {
+                pr = presenterClienteEncontrado(lookupResult.client);
+              }
+            } else if (lookupResult.reason === 'auth_error') {
+              pr = presenterClienteErroAuth();
+            } else if (lookupResult.reason === 'too_many') {
+              v2Ctx.pendingClientCandidate = null;
+              v2Ctx.pendingClientCandidates = null;
+              v2Ctx.pendingClientSearchTerm = busca;
+              const candItemsTooMany = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+              if (candItemsTooMany) v2Ctx.pendingBudgetForCandidate = candItemsTooMany;
+              pr = presenterClienteBuscaAmpla(lookupResult.searchTerm ?? busca, candItemsTooMany);
+            } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
+              // 2-6 candidatos: grava lista para confirmação por código
+              v2Ctx.pendingClientCandidates = lookupResult.candidates.map((c: any) => ({
+                id_cliente: c.id_cliente,
+                nome: c.nome ?? '',
+                fantasia: c.fantasia ?? '',
+                documento: c.documento ?? '',
+                cidade_uf: c.cidade_uf ?? '',
+              }));
+              v2Ctx.pendingClientCandidate = null;
+              v2Ctx.pendingClientSearchTerm = busca;
+              const candItemsMulti = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+              if (candItemsMulti) v2Ctx.pendingBudgetForCandidate = candItemsMulti;
+              pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
+            } else if (lookupResult.reason === 'partial_match' && lookupResult.candidates?.length) {
+              const cand = lookupResult.candidates[0];
+              // Candidato único: grava para confirmação por 'sim'/'esse'/código
+              v2Ctx.pendingClientCandidate = {
+                id_cliente: cand.id_cliente,
+                nome: cand.nome ?? '',
+                fantasia: cand.fantasia ?? '',
+                documento: cand.documento ?? '',
+                cidade_uf: cand.cidade_uf ?? '',
+              };
+              v2Ctx.pendingClientCandidates = null;
+              v2Ctx.pendingClientSearchTerm = busca;
+              const candItemsPartial = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+              if (candItemsPartial) v2Ctx.pendingBudgetForCandidate = candItemsPartial;
+              pr = presenterClienteMatchParcial(busca, cand);
             } else {
-              pr = presenterClienteEncontrado(lookupResult.client);
+              // Não encontrado: limpa, não usa cliente ativo anterior
+              v2Ctx.pendingClientCandidate = null;
+              v2Ctx.pendingClientCandidates = null;
+              v2Ctx.pendingClientSearchTerm = null;
+              pr = presenterClienteNaoEncontrado(busca);
             }
-          } else if (lookupResult.reason === 'auth_error') {
-            pr = presenterClienteErroAuth();
-          } else if (lookupResult.reason === 'too_many') {
-            v2Ctx.pendingClientCandidate = null;
-            v2Ctx.pendingClientCandidates = null;
-            v2Ctx.pendingClientSearchTerm = busca;
-            const candItemsTooMany = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
-            if (candItemsTooMany) v2Ctx.pendingBudgetForCandidate = candItemsTooMany;
-            pr = presenterClienteBuscaAmpla(lookupResult.searchTerm ?? busca, candItemsTooMany);
-          } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
-            // 2-6 candidatos: grava lista para confirmação por código
-            v2Ctx.pendingClientCandidates = lookupResult.candidates.map((c: any) => ({
-              id_cliente: c.id_cliente,
-              nome: c.nome ?? '',
-              fantasia: c.fantasia ?? '',
-              documento: c.documento ?? '',
-              cidade_uf: c.cidade_uf ?? '',
-            }));
-            v2Ctx.pendingClientCandidate = null;
-            v2Ctx.pendingClientSearchTerm = busca;
-            const candItemsMulti = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
-            if (candItemsMulti) v2Ctx.pendingBudgetForCandidate = candItemsMulti;
-            pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
-          } else if (lookupResult.reason === 'partial_match' && lookupResult.candidates?.length) {
-            const cand = lookupResult.candidates[0];
-            // Candidato único: grava para confirmação por 'sim'/'esse'/código
-            v2Ctx.pendingClientCandidate = {
-              id_cliente: cand.id_cliente,
-              nome: cand.nome ?? '',
-              fantasia: cand.fantasia ?? '',
-              documento: cand.documento ?? '',
-              cidade_uf: cand.cidade_uf ?? '',
-            };
-            v2Ctx.pendingClientCandidates = null;
-            v2Ctx.pendingClientSearchTerm = busca;
-            const candItemsPartial = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
-            if (candItemsPartial) v2Ctx.pendingBudgetForCandidate = candItemsPartial;
-            pr = presenterClienteMatchParcial(busca, cand);
-          } else {
-            // Não encontrado: limpa, não usa cliente ativo anterior
-            v2Ctx.pendingClientCandidate = null;
-            v2Ctx.pendingClientCandidates = null;
-            v2Ctx.pendingClientSearchTerm = null;
-            pr = presenterClienteNaoEncontrado(busca);
           }
         }
 
@@ -1002,7 +1020,7 @@ export async function processSimpleQueryWithBrain(
           }
         }
 
-        else if ((step.tool as string) === 'confirmar_cliente_pendente') {
+        if ((step.tool as string) === 'confirmar_cliente_pendente') {
           const idCliente = step.params.id_cliente;
           if (!idCliente) {
             pr = presenterClienteNaoEncontrado('candidato pendente');

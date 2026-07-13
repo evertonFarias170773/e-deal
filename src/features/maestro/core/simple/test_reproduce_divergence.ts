@@ -1,104 +1,90 @@
 /**
  * test_reproduce_divergence.ts
  *
- * Teste integrado para simular a engine do Maestro processando a frase exata:
- * "Orçamento para Carlos Henrique de 1.000 Pulseira Triband"
+ * Teste integrado para reproduzir e validar a divergência do fluxo de orçamento com cliente:
+ * 1. "15000 triband pra Lisiton"
+ * 2. Maestro apresenta o candidato LISITON (8469)
+ * 3. Usuário responde "8469" ou "cliente 8469"
  *
- * Valida a barreira centralizada contra bypass do roteador e o comportamento em memória.
+ * O teste valida as duas variantes: com roteador externo ativo e inativo.
  *
  * Para rodar: npx tsx src/features/maestro/core/simple/test_reproduce_divergence.ts
  */
 
+import fs from 'fs';
+import path from 'path';
+
+// Carrega .env.local se existir
+try {
+  const envPath = path.resolve(process.cwd(), '.env.local');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    envContent.split('\n').forEach(line => {
+      const parts = line.split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const value = parts.slice(1).join('=').trim().replace(/^['"]|['"]$/g, '');
+        if (key && value) {
+          process.env[key] = value;
+        }
+      }
+    });
+  }
+} catch (e) {
+  console.warn('Falha ao ler .env.local:', e);
+}
+
+// Mocks de Roteador Externo via require.cache
+const extIntentServerPath = require.resolve('./maestro-external-intent.server');
+require.cache[extIntentServerPath] = {
+  id: extIntentServerPath,
+  filename: extIntentServerPath,
+  loaded: true,
+  exports: {
+    callExternalAgent: async (payload: any) => {
+      // Se a query for o código "8469", simula que o LLM externo decidiu buscar o cliente
+      if (payload.query === '8469' || payload.query === 'cliente 8469') {
+        return {
+          intent: 'client_lookup',
+          confidence: 'high',
+          entities: { clientCode: '8469' }
+        };
+      }
+      return null;
+    }
+  }
+} as any;
+
+const extMapperPath = require.resolve('./maestro-external-intent.mapper');
+require.cache[extMapperPath] = {
+  id: extMapperPath,
+  filename: extMapperPath,
+  loaded: true,
+  exports: {
+    mapExternalIntentToRouterResult: (externalResult: any, v2Ctx: any, activeClient: any) => {
+      if (externalResult && externalResult.intent === 'client_lookup') {
+        return {
+          routed: true,
+          plan: { steps: [{ tool: 'buscarCliente', params: { busca: '8469' } }] }
+        };
+      }
+      return { routed: false };
+    }
+  }
+} as any;
+
 import { processSimpleQueryWithBrain } from './maestro-simple-engine';
 import { getEmptyV2Context, serializeV2Context } from './maestro-v2-context-manager';
+import { createClient } from '@supabase/supabase-js';
 import type { ConversationContext } from '../../types';
 
 process.env.MAESTRO_V2_ENABLED = 'true';
 process.env.MAESTRO_AVULSO_ENABLED = 'true';
+process.env.MAESTRO_SIMPLE_LLM_ENABLED = 'false'; // Desliga humanização
 
-const mockCatalogo = [
-  {
-    id_produto: 101,
-    descricao: 'PULSEIRA TRIBAND ACESSO',
-    apelidos: 'triband, pulseira triband, tri',
-    valorUnt: 1.25,
-    valorFixo: 0,
-    ativo: true
-  }
-];
-
-// Fixture com exatamente 7 homônimos para disparar a busca ampla (too_many)
-const mockClientes = [
-  { id_cliente: 8001, id_cliente_text: 'CLI8001', nome: 'Carlos Henrique da Silva', fantasia: 'Carlos Silva', documento: '12345678901', cidade_uf: 'São Paulo/SP', busca_geral: 'carlos henrique da silva cli8001', ativo: true },
-  { id_cliente: 8002, id_cliente_text: 'CLI8002', nome: 'Carlos Henrique Santos', fantasia: 'Carlos Santos', documento: '12345678902', cidade_uf: 'Rio de Janeiro/RJ', busca_geral: 'carlos henrique santos cli8002', ativo: true },
-  { id_cliente: 8003, id_cliente_text: 'CLI8003', nome: 'Carlos Henrique Oliveira', fantasia: 'Carlos Oliveira', documento: '12345678903', cidade_uf: 'Belo Horizonte/MG', busca_geral: 'carlos henrique oliveira cli8003', ativo: true },
-  { id_cliente: 8004, id_cliente_text: 'CLI8004', nome: 'Carlos Henrique Souza', fantasia: 'Carlos Souza', documento: '12345678904', cidade_uf: 'Porto Alegre/RS', busca_geral: 'carlos henrique souza cli8004', ativo: true },
-  { id_cliente: 8005, id_cliente_text: 'CLI8005', nome: 'Carlos Henrique Pereira', fantasia: 'Carlos Pereira', documento: '12345678905', cidade_uf: 'Curitiba/PR', busca_geral: 'carlos henrique pereira cli8005', ativo: true },
-  { id_cliente: 8006, id_cliente_text: 'CLI8006', nome: 'Carlos Henrique Alves', fantasia: 'Carlos Alves', documento: '12345678906', cidade_uf: 'Salvador/BA', busca_geral: 'carlos henrique alves cli8006', ativo: true },
-  { id_cliente: 8007, id_cliente_text: 'CLI8007', nome: 'Carlos Henrique Costa', fantasia: 'Carlos Costa', documento: '12345678907', cidade_uf: 'Fortaleza/CE', busca_geral: 'carlos henrique costa cli8007', ativo: true }
-];
-
-const mockEnderecos = [
-  { id: 9901, id_cliente: 8001, tipo_endereco: 'ENTREGA', cep: '01000-000', endereco: 'Av Paulista', numero: '1000', complemento: '', bairro: 'Bela Vista', cidade: 'São Paulo', uf: 'SP' }
-];
-
-// Mock Supabase sob medida para o teste
-function criarSupabaseMockCompleto(catalogo: any[], clientes: any[], enderecos: any[]) {
-  return {
-    from: (tabela: string) => {
-      let filtros: Array<(x: any) => boolean> = [];
-      let limiteMax = 1000;
-      let isSingle = false;
-      let targetCollection = tabela === 'produtos' ? catalogo
-                           : tabela === 'vw_cadastros_clientes_lista' ? clientes
-                           : tabela === 'enderecos' ? enderecos
-                           : tabela === 'cadastros' ? clientes // buildDetailedClientContext consulta cadastros
-                           : [];
-
-      const chain: any = {
-        select: (_cols: string) => chain,
-        eq: (campo: string, valor: any) => {
-          filtros.push(x => (x as any)[campo] === valor || String((x as any)[campo]) === String(valor));
-          return chain;
-        },
-        ilike: (campo: string, padrao: string) => {
-          const termoLower = padrao.replace(/%/g, '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-          filtros.push(x => {
-            const val = String((x as any)[campo] ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-            return val.includes(termoLower);
-          });
-          return chain;
-        },
-        order: (campo: string, opts?: any) => chain,
-        limit: (n: number) => {
-          limiteMax = n;
-          return chain;
-        },
-        single: () => {
-          isSingle = true;
-          return chain;
-        },
-        then: (resolve: any, reject: any) => {
-          const filtrados = targetCollection.filter(x => filtros.every(f => f(x)));
-          const resultado = isSingle ? (filtrados[0] ?? null) : filtrados.slice(0, limiteMax);
-          const val = { data: resultado, error: null };
-          return Promise.resolve(val).then(resolve, reject);
-        }
-      };
-
-      chain.then = (resolve: any, reject: any) => {
-        const filtrados = targetCollection.filter(x => filtros.every(f => f(x)));
-        const resultado = isSingle ? (filtrados[0] ?? null) : filtrados.slice(0, limiteMax);
-        const val = { data: resultado, error: null };
-        return Promise.resolve(val).then(resolve, reject);
-      };
-      
-      return chain;
-    }
-  } as any;
-}
-
-const supabase = criarSupabaseMockCompleto(mockCatalogo, mockClientes, mockEnderecos);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 let passed = 0;
 let failed = 0;
@@ -116,61 +102,36 @@ function assert(label: string, ok: boolean, detalhe?: string) {
 
 async function run() {
   console.log('╔══════════════════════════════════════════════════════════════╗');
-  console.log('║   Teste Integrado — Barreira Centralizada de Segurança       ║');
-  console.log('╚══════════════════════════════════════════════════════════════╝');
-  console.log('');
+  console.log('║   Testes Maestro — Reprodução da Divergência (Turno 8469)    ║');
+  console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
-  // 1. Testa a frase relatada pelo front no motor principal
-  console.log('--- Testando frase do front: "Orçamento para Carlos Henrique de 1.000 Pulseira Triband" ---');
+  // Variante A: Roteador Externo DESABILITADO
+  console.log('--- Variante A: Roteador Externo Desabilitado (com query exata "8469") ---');
   {
+    process.env.MAESTRO_EXTERNAL_INTENT_ENABLED = 'false';
+
+    // Contexto simulando o final do Turno 1 ("15000 triband pra Lisiton")
+    const v2Ctx = getEmptyV2Context();
+    v2Ctx.pendingClientCandidate = {
+      id_cliente: 8469,
+      nome: 'LISITON DOCUMENTOS SEGUROS LTDA',
+      fantasia: 'Lisiton',
+      documento: '12345678901',
+      cidade_uf: 'Santa Cruz do Sul/RS'
+    };
+    v2Ctx.pendingBudgetForCandidate = [
+      { quantidade: 15000, termo: 'triband' }
+    ];
+
     const legacyCtx: ConversationContext = {
-      v2ContextJson: serializeV2Context(getEmptyV2Context()),
+      v2ContextJson: serializeV2Context(v2Ctx),
       activeClientJson: null,
       lastAnswerJson: null,
       lastUpdateJson: null
     };
 
     const result = await processSimpleQueryWithBrain(
-      'Orçamento para Carlos Henrique de 1.000 Pulseira Triband',
-      legacyCtx,
-      { supabase, userName: 'Everton', userId: 'usr-123' }
-    );
-
-    // O motor principal deve ter interceptado o fluxo e retornado buscarCliente
-    // com a busca por "carlos henrique de"
-    assert('Deve interceptar e direcionar a resposta', !!result.message);
-    assert('Não deve exibir preços, frete ou totais', !result.message.content.includes('R$') && !result.message.content.includes('Total'));
-    assert('Deve exibir aviso de orçamento em espera', result.message.content.includes('Orçamento em espera'));
-    
-    const v2CtxFinal = getEmptyV2Context();
-    Object.assign(v2CtxFinal, JSON.parse(result.context.v2ContextJson || '{}'));
-
-    assert('Deve manter o orçamento em espera em pendingBudgetForCandidate', 
-      v2CtxFinal.pendingBudgetForCandidate !== null && v2CtxFinal.pendingBudgetForCandidate.length > 0
-    );
-    
-    const itemGuardado = v2CtxFinal.pendingBudgetForCandidate?.[0];
-    assert('Quantidade em espera deve ser exatamente 1000', itemGuardado?.quantidade === 1000);
-    assert('Produto em espera deve ser "pulseira triband"', itemGuardado?.termo === 'pulseira triband');
-    assert('Deve guardar o termo de busca em pendingClientSearchTerm', v2CtxFinal.pendingClientSearchTerm === 'carlos henrique de');
-  }
-
-  // 2. Simula um bypass no Roteador (Roteador retornando simularOrcamentoAvulso incorretamente)
-  console.log('\n--- Simulando Bypass do Roteador (Forçando simularOrcamentoAvulso com cliente pendente) ---');
-  {
-    // A barreira de segurança centralizada no motor garante que se a query tiver cliente
-    // não resolvido, mas o step retornado pelo roteador for orçador avulso (como simularOrcamentoAvulso),
-    // o motor reescreve a tool para buscarCliente
-    const legacyCtx: ConversationContext = {
-      v2ContextJson: serializeV2Context(getEmptyV2Context()),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
-    };
-
-    // Aqui simulamos a query mista que a LLM externa erroneamente direcionaria para simularOrcamentoAvulso
-    const result = await processSimpleQueryWithBrain(
-      'Orçamento de 1000 pulseiras para o Carlos',
+      '8469',
       legacyCtx,
       { supabase, userName: 'Everton', userId: 'usr-123' }
     );
@@ -178,52 +139,54 @@ async function run() {
     const v2CtxFinal = getEmptyV2Context();
     Object.assign(v2CtxFinal, JSON.parse(result.context.v2ContextJson || '{}'));
 
-    // Verifica se a tool executada no motor final foi redirecionada para buscarCliente
-    assert('Deve ter redirecionado a tool do orçador para buscarCliente', v2CtxFinal.lastTool === 'buscarCliente');
-    assert('Deve ter retido os itens no pendingBudgetForCandidate', v2CtxFinal.pendingBudgetForCandidate !== null);
-    assert('Quantidade retida deve ser 1000', v2CtxFinal.pendingBudgetForCandidate?.[0]?.quantidade === 1000);
+    assert('Deve ativar o cliente 8469', result.simpleClient?.clientInternalId === 8469);
+    assert('Deve carregar e exibir a escolha dos 4 endereços', result.message.content.includes('Encontrei 4 endereços'));
+    assert('Não deve exibir a ficha cadastral completa isolada', !result.message.content.includes('Razão Social:') && !result.message.content.includes('Telefone:'));
   }
 
-  // 3. Valida retomada da cotação após informar código do cliente
-  console.log('\n--- Validando Retomada da Cotação após Identificação do Cliente ---');
+  // Variante B: Roteador Externo HABILITADO
+  console.log('\n--- Variante B: Roteador Externo Habilitado (Simula a Divergência com "cliente 8469") ---');
   {
-    // Turno 1: Envia query mista.
-    const legacyCtx1: ConversationContext = {
-      v2ContextJson: serializeV2Context(getEmptyV2Context()),
+    process.env.MAESTRO_EXTERNAL_INTENT_ENABLED = 'true';
+
+    // Contexto simulando o final do Turno 1 ("15000 triband pra Lisiton")
+    const v2Ctx = getEmptyV2Context();
+    v2Ctx.pendingClientCandidate = {
+      id_cliente: 8469,
+      nome: 'LISITON DOCUMENTOS SEGUROS LTDA',
+      fantasia: 'Lisiton',
+      documento: '12345678901',
+      cidade_uf: 'Santa Cruz do Sul/RS'
+    };
+    v2Ctx.pendingBudgetForCandidate = [
+      { quantidade: 15000, termo: 'triband' }
+    ];
+
+    const legacyCtx: ConversationContext = {
+      v2ContextJson: serializeV2Context(v2Ctx),
       activeClientJson: null,
       lastAnswerJson: null,
       lastUpdateJson: null
     };
-    const result1 = await processSimpleQueryWithBrain(
-      'Orçamento para Carlos Henrique de 1.000 Pulseira Triband',
-      legacyCtx1,
+
+    const result = await processSimpleQueryWithBrain(
+      'cliente 8469',
+      legacyCtx,
       { supabase, userName: 'Everton', userId: 'usr-123' }
     );
 
-    // Turno 2: Usuário informa o código específico (8001) para desambiguar
-    const result2 = await processSimpleQueryWithBrain(
-      '8001',
-      result1.context,
-      { supabase, userName: 'Everton', userId: 'usr-123' }
-    );
-
-    // Como o cliente foi resolvido (código 8001), o motor deve recuperar a cotação
-    // do context (pendingBudgetForCandidate) e transicionar para o fluxo padrão de orçamento (ex: endereços).
     const v2CtxFinal = getEmptyV2Context();
-    Object.assign(v2CtxFinal, JSON.parse(result2.context.v2ContextJson || '{}'));
+    Object.assign(v2CtxFinal, JSON.parse(result.context.v2ContextJson || '{}'));
 
-    assert('Deve ter resolvido o cliente', result2.simpleClient?.clientDisplayCode === 'CLI8001');
-    assert('Deve ter recuperado os itens de pendingBudgetForCandidate e colocado no orcamentoItens',
-      v2CtxFinal.orcamentoItens !== null && v2CtxFinal.orcamentoItens.length > 0 && v2CtxFinal.orcamentoItens[0].quantidade === 1000
-    );
-    assert('Deve ter limpo o pendingBudgetForCandidate', v2CtxFinal.pendingBudgetForCandidate === null);
-    assert('Deve carregar os endereços do cliente e exibir presenterEscolhaEndereco',
-      result2.message.content.includes('endereço') || result2.message.content.includes('Paulista')
-    );
+    console.log('DEBUG RESPOSTA VARIANTE B:', result.message.content);
+
+    assert('Deve ativar o cliente 8469 mesmo sob roteamento de busca externo', result.simpleClient?.clientInternalId === 8469);
+    assert('Deve carregar e exibir a escolha dos 4 endereços', result.message.content.includes('Encontrei 4 endereços'));
+    assert('Não deve exibir a ficha cadastral completa isolada', !result.message.content.includes('Razão Social:') && !result.message.content.includes('Telefone:'));
   }
 
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log(`║   Fim do teste integrado: ${passed} passados, ${failed} falhados.  ║`);
+  console.log(`║   Fim dos testes: ${passed} passados, ${failed} falhados.          ║`);
   console.log('╚══════════════════════════════════════════════════════════════╝');
 
   if (failed > 0) {
