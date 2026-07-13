@@ -74,12 +74,9 @@ async function run() {
   console.log('=== INICIANDO FLUXO CONVERSACIONAL REAL (SIMULAÇÃO FRONT-END) ===\n');
 
   // Inicializa contexto vazio
-  let legacyCtx: ConversationContext = {
-    v2ContextJson: serializeV2Context(getEmptyV2Context()),
-    activeClientJson: null,
-    lastAnswerJson: null,
-    lastUpdateJson: null
-  };
+  let legacyCtx = {
+    v2ContextJson: serializeV2Context(getEmptyV2Context())
+  } as any as ConversationContext;
 
   // ----------------------------------------------------
   // TURNO 1: "15000 triband pra Lisiton"

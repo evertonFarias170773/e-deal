@@ -383,20 +383,6 @@ export async function routeToolSimple(
       };
     }
 
-    if (temClienteNaoResolvido) {
-      console.log(`[MaestroV2Router] Roteando para buscarCliente por prioridade de cliente não resolvido.`);
-      return {
-        routed: true,
-        plan: {
-          steps: [
-            {
-              tool: 'buscarCliente',
-              params: { busca: clienteNaQuery!.valor }
-            }
-          ]
-        }
-      };
-    }
 
     // Sem sinal de cliente — orçamento avulso puro
     v2Ctx.domain = 'orcamento_avulso';
