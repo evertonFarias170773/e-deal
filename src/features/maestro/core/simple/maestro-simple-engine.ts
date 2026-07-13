@@ -591,7 +591,7 @@ export async function processSimpleQueryWithBrain(
       // [FALLBACK] Se não roteado externamente, usa o router interno V2
       if (!routeResult.routed) {
         const { routeToolSimple } = await import('./maestro-v2-router');
-        routeResult = await routeToolSimple(query, legacyCtx, simpleCtx.activeClient, v2Ctx);
+        routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
       }
 
       if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
