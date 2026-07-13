@@ -324,12 +324,19 @@ export function presenterClienteErroAuth(): PresenterResult {
  * Presenter exibido quando a busca retorna mais de 6 resultados.
  * O Maestro pede refinamento sem listar nem escolher automaticamente.
  */
-export function presenterClienteBuscaAmpla(termo: string): PresenterResult {
+export function presenterClienteBuscaAmpla(termo: string, itensPendentes?: any[] | null): PresenterResult {
+  let content = `Encontrei muitos cadastros relacionados a **"${termo}"**. Para evitar selecionar o cliente errado, me informe um dado mais específico:\n\n• **Nome completo** ou razão social\n• **CPF** ou **CNPJ**\n• **Código** do cliente\n• **Cidade** ou UF`;
+
+  if (itensPendentes && itensPendentes.length > 0) {
+    const listaItens = itensPendentes.map(i => `• ${i.quantidade.toLocaleString('pt-BR')}x ${i.termo}`).join('\n');
+    content = `⚠️ **Orçamento em espera:** Encontrei muitos cadastros relacionados a **"${termo}"**.\n\nPara prosseguir com a cotação dos seguintes itens:\n${listaItens}\n\nPor favor, me informe um dado de identificação do cliente:\n\n• **Código** do cliente ou **CNPJ/CPF**\n• **Nome completo** ou **Cidade/UF**`;
+  }
+
   return {
     message: {
       id:          genId(),
       role:        'maestro',
-      content:     `Encontrei muitos cadastros relacionados a **"${termo}"**. Para evitar selecionar o cliente errado, me informe um dado mais específico:\n\n• **Nome completo** ou razão social\n• **CPF** ou **CNPJ**\n• **Código** do cliente\n• **Cidade** ou UF`,
+      content,
       contentType: 'text',
       specialist:  'comercial',
       timestamp:   now(),
@@ -2033,11 +2040,14 @@ export function presenterEscolhaEndereco(pending: { clientId: number, addresses:
     return `**Opção ${idx + 1}**: ${end.tipo_endereco || 'ENTREGA'} - ${endFormatado} (CEP: ${end.cep})`;
   }).join('\n');
 
+  const count = pending.addresses.length;
+  const textoEnderecos = count === 1 ? '1 endereço' : `${count} endereços`;
+
   return {
     message: {
       id: 'maestro-msg-' + Date.now(),
       role: 'maestro',
-      content: `Encontrei ${pending.addresses.length} endereços para este cadastro. Qual deles uso para cotação do frete?\n\n${opcoesMd}\n\nResponda com "use o 1", "use o 2", etc.`,
+      content: `Encontrei ${textoEnderecos} para este cadastro. Qual deles uso para cotação do frete?\n\n${opcoesMd}\n\nResponda com "use o 1", "use o 2", etc.`,
       contentType: 'text',
       sources: [],
       specialist: 'comercial',

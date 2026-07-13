@@ -530,6 +530,9 @@ export async function processSimpleQueryWithBrain(
         if (ctx.pendingAddressChoice) return false;
         if (ctx.pendingFreightChoice) return false;
         
+        // Se há candidatos pendentes para confirmação, desliga roteamento externo
+        if (ctx.pendingClientCandidate || ctx.pendingClientCandidates?.length) return false;
+
         // Se houver intenção composta explícita, ela vence o pendingSaveQuotation
         if (ctx.pendingSaveQuotation && !temComposta) return false;
 
@@ -588,13 +591,42 @@ export async function processSimpleQueryWithBrain(
       // [FALLBACK] Se não roteado externamente, usa o router interno V2
       if (!routeResult.routed) {
         const { routeToolSimple } = await import('./maestro-v2-router');
-        routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
+        routeResult = await routeToolSimple(query, legacyCtx, simpleCtx.activeClient, v2Ctx);
       }
 
       if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
         const step = routeResult.plan.steps[0];
         let pr: PresenterResult | null = null;
         let clientForCtx = simpleCtx.activeClient;
+
+        // Proteção centralizada contra cotação avulsa com cliente não resolvido na query mista
+        const { extrairClienteDaQuery } = require('./maestro-v2-router');
+        const clienteNaQuery = extrairClienteDaQuery(query);
+        const temClienteNaoResolvido = clienteNaQuery && (
+          !simpleCtx.activeClient || (
+            clienteNaQuery.tipo === 'id' && simpleCtx.activeClient.clientDisplayCode !== clienteNaQuery.valor
+          )
+        );
+
+        if (temClienteNaoResolvido && ['simularOrcamentoAvulso', 'perguntar_tipo_orcamento'].includes(step.tool)) {
+          console.warn(`[MaestroEngine] Interceptado roteamento incorreto para cotação avulsa com cliente indicado ("${clienteNaQuery.valor}"). Redirecionando para buscarCliente.`);
+          step.tool = 'buscarCliente';
+          step.params = { busca: clienteNaQuery.valor };
+          
+          // E garante que os itens sejam salvos no contexto para retomada posterior
+          const { processarOrcamentoAvulso } = require('./maestro-orcamento-engine');
+          const engineResult = processarOrcamentoAvulso(query, { 
+            itens: v2Ctx.domain === 'orcamento_avulso' ? (v2Ctx.orcamentoItens || []) : [], 
+            pendingAmbiguity: false 
+          });
+          if (engineResult.action === 'ADD' || engineResult.action === 'REPLACE') {
+            v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
+            v2Ctx.orcamentoItens = engineResult.items;
+            v2Ctx.lastExplicitBudgetItems = engineResult.items;
+            v2Ctx.lastExplicitBudgetRequestText = query;
+          }
+          v2Ctx.domain = 'orcamento_avulso';
+        }
 
         // Atualizações do Gerenciador de Contexto Conversacional Geral
         v2Ctx.lastTool = step.tool;
@@ -641,6 +673,11 @@ export async function processSimpleQueryWithBrain(
           const documentPartial = step.params.documentPartial ?? false;
           const documentType = step.params.documentType as 'cpf' | 'cnpj' | undefined;
           let lookupResult = { found: false } as any;
+
+          // Limpa candidatos pendentes antigos ao iniciar uma nova busca de cliente
+          v2Ctx.pendingClientCandidate = null;
+          v2Ctx.pendingClientCandidates = null;
+          v2Ctx.pendingClientSearchTerm = null;
 
           // Prioridade 1: Busca exata por ID Numérico
           if (/^\d+$/.test(busca) && !documentPartial) {
@@ -689,13 +726,21 @@ export async function processSimpleQueryWithBrain(
             clientForCtx = lookupResult.client;
 
             // ── INTENÇÃO COMPOSTA: cliente + itens na mesma mensagem ──────────────
-            // Se há itens salvos da mensagem atual, ou itens preservados do 'mesmo orçamento', prosseguir para cotação automaticamente.
-            const itensCompostos = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+            // Se há itens salvos da mensagem atual, ou itens preservados do 'mesmo orçamento', ou itens pendentes salvos no contexto, prosseguir para cotação automaticamente.
+            const itensCompostos = itensDaMensagemAtual 
+              || v2Ctx.pendingBudgetForCandidate 
+              || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+
             if (itensCompostos && itensCompostos.length > 0) {
               console.log(`[MaestroEngine] buscarCliente: intenção composta detectada. Cliente ${lookupResult.client.clientName} + ${itensCompostos.length} itens. Prosseguindo para cotação.`);
               v2Ctx.orcamentoItens = itensCompostos;
               v2Ctx.domain = 'orcamento_avulso';
               v2Ctx.lastExplicitBudgetItems = itensCompostos;
+              v2Ctx.pendingBudgetForCandidate = null; // limpa a pendência
+              v2Ctx.pendingClientCandidate = null;
+              v2Ctx.pendingClientCandidates = null;
+              v2Ctx.pendingClientSearchTerm = null;
+
               // Carregar endereços do cliente para mostrar lista de escolha
               const idClienteCompostos = lookupResult.client.clientInternalId;
               const { data: enderecosCompostos } = await supabase
@@ -704,15 +749,40 @@ export async function processSimpleQueryWithBrain(
                 .eq('id_cliente', idClienteCompostos)
                 .limit(10);
 
-              if (enderecosCompostos && enderecosCompostos.length > 0) {
-                // Tem endereços cadastrados — mostrar lista para escolha
+              const isEnderecoUtilizavel = (e: any) => {
+                return !!(e.cep && e.cep.trim().length >= 8 &&
+                       e.cidade && e.cidade.trim().length > 0 &&
+                       e.uf && e.uf.trim().length > 0);
+              };
+
+              const enderecosValidos = (enderecosCompostos || []).filter(isEnderecoUtilizavel);
+
+              if (enderecosValidos.length === 1) {
+                const end = enderecosValidos[0];
+                v2Ctx.budgetAddressId = end.id;
+                v2Ctx.budgetAddressFull = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
+                v2Ctx.budgetAddressCep = end.cep;
+                v2Ctx.budgetAddressCidade = end.cidade;
+                v2Ctx.budgetAddressUf = end.uf;
+                v2Ctx.pendingAddressChoice = null;
+
+                // Transiciona para a simulação do orçamento no mesmo turno
+                step.tool = 'simularOrcamentoAvulso';
+                step.params = {
+                  itens: v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0
+                    ? v2Ctx.orcamentoItens
+                    : (v2Ctx.pendingBudgetForCandidate || v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || [])
+                };
+                v2Ctx.pendingBudgetForCandidate = null;
+              } else if (enderecosValidos.length > 1) {
+                // Tem múltiplos endereços válidos — mostrar lista para escolha
                 v2Ctx.pendingAddressChoice = {
                   clientId: idClienteCompostos,
-                  addresses: enderecosCompostos,
+                  addresses: enderecosValidos,
                 };
                 pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
               } else {
-                // Sem endereços cadastrados — pedir manual
+                // Sem endereços válidos cadastrados — pedir manual
                 const { presenterSolicitarEnderecoManual } = require('./maestro-simple-presenter');
                 pr = presenterSolicitarEnderecoManual(lookupResult.client);
               }
@@ -724,8 +794,10 @@ export async function processSimpleQueryWithBrain(
           } else if (lookupResult.reason === 'too_many') {
             v2Ctx.pendingClientCandidate = null;
             v2Ctx.pendingClientCandidates = null;
-            v2Ctx.pendingClientSearchTerm = null;
-            pr = presenterClienteBuscaAmpla(lookupResult.searchTerm ?? busca);
+            v2Ctx.pendingClientSearchTerm = busca;
+            const candItemsTooMany = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+            if (candItemsTooMany) v2Ctx.pendingBudgetForCandidate = candItemsTooMany;
+            pr = presenterClienteBuscaAmpla(lookupResult.searchTerm ?? busca, candItemsTooMany);
           } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
             // 2-6 candidatos: grava lista para confirmação por código
             v2Ctx.pendingClientCandidates = lookupResult.candidates.map((c: any) => ({
@@ -968,10 +1040,35 @@ export async function processSimpleQueryWithBrain(
                   .eq('id_cliente', idClienteCompostos)
                   .limit(10);
 
-                if (enderecosCompostos && enderecosCompostos.length > 0) {
+                const isEnderecoUtilizavel = (e: any) => {
+                  return !!(e.cep && e.cep.trim().length >= 8 &&
+                         e.cidade && e.cidade.trim().length > 0 &&
+                         e.uf && e.uf.trim().length > 0);
+                };
+
+                const enderecosValidos = (enderecosCompostos || []).filter(isEnderecoUtilizavel);
+
+                if (enderecosValidos.length === 1) {
+                  const end = enderecosValidos[0];
+                  v2Ctx.budgetAddressId = end.id;
+                  v2Ctx.budgetAddressFull = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
+                  v2Ctx.budgetAddressCep = end.cep;
+                  v2Ctx.budgetAddressCidade = end.cidade;
+                  v2Ctx.budgetAddressUf = end.uf;
+                  v2Ctx.pendingAddressChoice = null;
+
+                  // Transiciona para a simulação do orçamento no mesmo turno
+                  step.tool = 'simularOrcamentoAvulso';
+                  step.params = {
+                    itens: v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0
+                      ? v2Ctx.orcamentoItens
+                      : (v2Ctx.pendingBudgetForCandidate || v2Ctx.lastSuccessfulBudgetItems || v2Ctx.lastExplicitBudgetItems || [])
+                  };
+                  v2Ctx.pendingBudgetForCandidate = null;
+                } else if (enderecosValidos.length > 1) {
                   v2Ctx.pendingAddressChoice = {
                     clientId: idClienteCompostos || 0,
-                    addresses: enderecosCompostos,
+                    addresses: enderecosValidos,
                   };
                   const { presenterEscolhaEndereco } = require('./maestro-simple-presenter');
                   pr = presenterEscolhaEndereco(v2Ctx.pendingAddressChoice);
@@ -1090,7 +1187,8 @@ export async function processSimpleQueryWithBrain(
           }
         }
 
-        else if (step.tool === 'simularOrcamentoAvulso') {
+        // Permite transição contínua para simularOrcamentoAvulso no mesmo turno
+        if (step.tool === 'simularOrcamentoAvulso') {
           if (step.params.addressIndex && v2Ctx.pendingAddressChoice) {
             const chosenIndex = step.params.addressIndex - 1;
             const chosenAddress = v2Ctx.pendingAddressChoice.addresses[chosenIndex];
@@ -1269,21 +1367,29 @@ export async function processSimpleQueryWithBrain(
                 .eq('id_cliente', v2Ctx.activeEntities.clientInternalId)
                 .limit(10);
               
-              if (enderecos && enderecos.length === 1) {
-                const end = enderecos[0];
+              const isEnderecoUtilizavel = (e: any) => {
+                return !!(e.cep && e.cep.trim().length >= 8 &&
+                       e.cidade && e.cidade.trim().length > 0 &&
+                       e.uf && e.uf.trim().length > 0);
+              };
+
+              const enderecosValidos = (enderecos || []).filter(isEnderecoUtilizavel);
+
+              if (enderecosValidos.length === 1) {
+                const end = enderecosValidos[0];
                 v2Ctx.budgetAddressId = end.id;
                 v2Ctx.budgetAddressFull = `${end.endereco}, ${end.numero} - ${end.bairro}, ${end.cidade}/${end.uf}`;
                 v2Ctx.budgetAddressCep = end.cep;
                 v2Ctx.budgetAddressCidade = end.cidade;
                 v2Ctx.budgetAddressUf = end.uf;
-              } else if (enderecos && enderecos.length > 1) {
+              } else if (enderecosValidos.length > 1) {
                 v2Ctx.pendingAddressChoice = {
                   clientId: v2Ctx.activeEntities.clientInternalId || 0,
-                  addresses: enderecos
+                  addresses: enderecosValidos
                 };
                 aguardandoEndereco = true;
               } else {
-                // 0 endereços encontrados para este cliente no banco
+                // 0 endereços utilizáveis encontrados para este cliente no banco
                 solicitandoEnderecoManual = true;
               }
             }
@@ -1309,7 +1415,7 @@ export async function processSimpleQueryWithBrain(
                  
                  // Se tem peso válido, consulta APIs
                  if (pesoTotal > 0) {
-                   const [sedexReq, azulReq, transpReq] = await Promise.allSettled([
+                   const [sedexReq, azulReq, transpReq, veppoReq] = await Promise.allSettled([
                      solicitarCotacaoSedex({
                        peso: pesoTotal,
                        vol: volumesBase,
@@ -1324,12 +1430,19 @@ export async function processSimpleQueryWithBrain(
                        peso: pesoTotal,
                        cidade: v2Ctx.budgetAddressCidade,
                        uf: v2Ctx.budgetAddressUf
+                     }) : Promise.resolve([]),
+                     v2Ctx.budgetAddressCidade && v2Ctx.budgetAddressUf ? solicitarCotacaoVeppo({
+                       peso: pesoTotal,
+                       valor: serviceResult.totalGeral || 0,
+                       cidade: v2Ctx.budgetAddressCidade,
+                       uf: v2Ctx.budgetAddressUf
                      }) : Promise.resolve([])
                    ]);
                    
                   if (sedexReq.status === 'fulfilled') fretesCalculados.push(...sedexReq.value);
                   if (azulReq.status === 'fulfilled') fretesCalculados.push(...azulReq.value);
                   if (transpReq.status === 'fulfilled') fretesCalculados.push(...transpReq.value);
+                  if (veppoReq.status === 'fulfilled') fretesCalculados.push(...veppoReq.value);
                 }
               }
 

@@ -46,6 +46,20 @@ export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoSt
   // Ex: "5000 triband para o cli 8469" vira "5000 triband"
   clean = clean.replace(/\b(para|pro|pra|ao)?\s*(o\s+)?(cliente|cli|cadastro)\s+(\d+|[a-z]+)\b/gi, ' ').trim();
 
+  // Defesa adicional: limpar menções naturais como "para [NomeCliente]" se não coincidir com termo de produto
+  clean = clean.replace(/\b(para|pro|pra|ao)\s+(?:o\s+|a\s+)?([a-z][a-z\s]{2,30}?)(?=\s*[:,]|\s+com\b|\s+\d|\s*$)/gi, (match, prep, name) => {
+    try {
+      const { resolverTermoCatalogo } = require('./maestro-orcamento-catalogo-oficial');
+      const res = resolverTermoCatalogo(name.trim());
+      if (res && res.tipoMatch !== 'nao_encontrado') {
+        return match; // Preserva se for um produto (falso positivo)
+      }
+    } catch (e) {
+      // Ignora erro se falhar import e preserva string
+    }
+    return ' ';
+  }).trim();
+
   const nextState = { ...state, itens: [...state.itens] };
 
   // 1. Tratar "assim não dá", "cancela", "esquece"

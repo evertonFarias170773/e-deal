@@ -153,7 +153,7 @@ const ALLOWED_TOOLS: AllowedToolName[] = [
  * Aceita: id_cliente NNN, cliente NNN, cli NNN, cadastro NNN, liente NNN, clinte NNN, ciente NNN.
  * NÃO aceita: "id 8469" sozinho sem prefixo de cliente.
  */
-function extrairClienteDaQuery(query: string): { tipo: 'id' | 'nome'; valor: string } | null {
+export function extrairClienteDaQuery(query: string): { tipo: 'id' | 'nome'; valor: string } | null {
   const norm = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
   // id_cliente 8469 (com underscore ou espaço)
@@ -165,10 +165,24 @@ function extrairClienteDaQuery(query: string): { tipo: 'id' | 'nome'; valor: str
   if (matchPrefixo) return { tipo: 'id', valor: matchPrefixo[2] };
 
   // cliente Lisiton / cli Lisiton (nome textual — mínimo 3 chars, sem dígitos)
-  const matchNome = /\b(cliente|cli|cadastro|liente|clinte|ciente)\s+([a-z][a-z\s]{2,30})$/i.exec(norm);
+  // Aceita também preposições inequívocas: para, para o, para a. Não aceita de/do/da.
+  // Captura até vírgula, dois pontos, a palavra "com", número ou final do texto.
+  const regexNome = /\b(para\s+o|para\s+a|para|cliente|cli|cadastro|liente|clinte|ciente)\s+([a-z][a-z\s]{2,30}?)(?=\s*[:,]|\s+com\b|\s+\d|\s*$)/i;
+  const matchNome = regexNome.exec(norm);
   if (matchNome) {
-    const nome = matchNome[2].trim();
-    if (!/^\d+$/.test(nome) && nome.length >= 3) return { tipo: 'nome', valor: nome };
+    let nome = matchNome[2].trim();
+    nome = nome.replace(/^(cliente\s+|cli\s+|cadastro\s+)/i, '').trim();
+    nome = nome.replace(/\s+(de|do|da|para|pro|pra|a|o)$/i, '').trim();
+    if (!/^\d+$/.test(nome) && nome.length >= 3) {
+      // Validação preventiva contra termos de produto do catálogo
+      const { resolverTermoCatalogo } = require('./maestro-orcamento-catalogo-oficial');
+      const resCatalogo = resolverTermoCatalogo(nome);
+      if (resCatalogo && resCatalogo.tipoMatch !== 'nao_encontrado') {
+        console.log(`[MaestroV2Router] extrairClienteDaQuery: descartado cliente "${nome}" porque coincide com termo de produto.`);
+        return null;
+      }
+      return { tipo: 'nome', valor: nome };
+    }
   }
 
   return null;
@@ -277,7 +291,17 @@ export async function routeToolSimple(
     }
   }
 
-  // 1a. REGRA DETERMINÍSTICA DE ORÇAMENTO AVULSO
+  // 1a. VERIFICAÇÃO DE CLIENTE NA QUERY (PRIORIDADE MÁXIMA)
+  // Se a query contém indicação de cliente não resolvido e ativo na sessão,
+  // força a busca do cliente primeiro, impedindo a cotação avulsa direta.
+  const clienteNaQuery = extrairClienteDaQuery(query);
+  const temClienteNaoResolvido = clienteNaQuery && (
+    !activeClient || (
+      clienteNaQuery.tipo === 'id' && activeClient.clientDisplayCode !== clienteNaQuery.valor
+    )
+  );
+
+  // 1b. REGRA DETERMINÍSTICA DE ORÇAMENTO AVULSO
   const engineResult = processarOrcamentoAvulso(query, { 
     itens: v2Ctx.domain === 'orcamento_avulso' ? (v2Ctx.orcamentoItens || []) : [], 
     pendingAmbiguity: false 
@@ -306,10 +330,6 @@ export async function routeToolSimple(
       };
     }
 
-    // ── VERIFICAÇÃO DE CLIENTE NA QUERY (ANTES de avulso puro) ──────────────
-    // Se a query contém produto + sinal de cliente, busca o cliente primeiro.
-    // Nunca transforma em avulso puro quando há intenção clara de cliente.
-    const clienteNaQuery = extrairClienteDaQuery(query);
     if (clienteNaQuery) {
       // Salva os itens no contexto para uso após resolução do cliente
       v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
@@ -319,12 +339,9 @@ export async function routeToolSimple(
       v2Ctx.domain = 'orcamento_avulso'; // mantém domínio para retomada posterior
 
       // ── OTIMIZAÇÃO: cliente já ativo com mesmo ID → ir direto para cotação ──
-      // Se o cliente mencionado é um ID numérico E esse cliente já está ativo
-      // no contexto, podemos pular o buscarCliente e ir direto para a cotação.
       const clienteJaAtivo = clienteNaQuery.tipo === 'id' && (
         activeClient?.clientDisplayCode === clienteNaQuery.valor ||
         String(v2Ctx.activeEntities?.clientInternalId) === clienteNaQuery.valor ||
-        // Aceita também o código display numérico
         (activeClient && /^\d+$/.test(clienteNaQuery.valor) && 
           activeClient.clientDisplayCode === clienteNaQuery.valor)
       );
@@ -366,6 +383,21 @@ export async function routeToolSimple(
       };
     }
 
+    if (temClienteNaoResolvido) {
+      console.log(`[MaestroV2Router] Roteando para buscarCliente por prioridade de cliente não resolvido.`);
+      return {
+        routed: true,
+        plan: {
+          steps: [
+            {
+              tool: 'buscarCliente',
+              params: { busca: clienteNaQuery!.valor }
+            }
+          ]
+        }
+      };
+    }
+
     // Sem sinal de cliente — orçamento avulso puro
     v2Ctx.domain = 'orcamento_avulso';
     v2Ctx.previousOrcamentoItens = JSON.parse(JSON.stringify(v2Ctx.orcamentoItens || []));
@@ -389,6 +421,21 @@ export async function routeToolSimple(
           {
             tool: 'simularOrcamentoAvulso',
             params: { itens: engineResult.items }
+          }
+        ]
+      }
+    };
+  }
+
+  if (temClienteNaoResolvido) {
+    console.log(`[MaestroV2Router] Cliente indicado de forma isolada na query. Roteando para buscarCliente.`);
+    return {
+      routed: true,
+      plan: {
+        steps: [
+          {
+            tool: 'buscarCliente',
+            params: { busca: clienteNaQuery!.valor }
           }
         ]
       }

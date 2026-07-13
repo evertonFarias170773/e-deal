@@ -469,16 +469,29 @@ export function handleContextContinuation(
   // PRIORIDADE MÁXIMA: se há candidato(s) pendente(s), "sim"/"esse"/código confirmam o
   // cliente pendente ANTES de qualquer lógica de save ou Brain.
   const hasPendingCandidate = !!(v2Ctx.pendingClientCandidate || v2Ctx.pendingClientCandidates?.length);
-  if (hasPendingCandidate) {
-    // Padrões de confirmação
-    const isConfirmCandidato =
-      /^(sim|isso|esse|esse mesmo|e esse|e isso|esta certo|correto|pode ser|ok|s|certo|quero esse|confirmo|confirmar)$/i.test(clean) ||
-      /\b(esse mesmo|e esse|isso mesmo|ta certo|ta bom|pode ser esse)\b/i.test(clean);
+  
+  // Intercepta código numérico isolado inserido após busca ampla (too_many)
+  if (v2Ctx.pendingClientSearchTerm && /^\d+$/.test(clean.trim())) {
+    const code = parseInt(clean.trim(), 10);
+    console.log(`[MaestroV2Context] Código digitado durante desambiguação de busca ampla: ${code}`);
+    return {
+      routed: true,
+      plan: { steps: [{ tool: 'confirmar_cliente_pendente', params: { id_cliente: code } }] }
+    };
+  }
 
-    // Padrões de negação
+  if (hasPendingCandidate) {
+    // Padrões de negação robustos
     const isDenyCandidato =
       /^(nao|nao e esse|errado|outro|nao quero esse|outro cliente|diferente)$/i.test(clean) ||
-      /\b(nao e esse|nao e isso|nao quero|outro cliente)\b/i.test(clean);
+      /\b(nao e esse|nao e isso|nao quero|outro cliente|outro cadastro|cliente errado|ta errado|cadastro errado)\b/i.test(clean);
+
+    // Padrões de confirmação robustos
+    const isConfirmCandidato = !isDenyCandidato && (
+      /^(sim|isso|esse|esse mesmo|e esse|e isso|esta certo|correto|pode ser|ok|s|certo|quero esse|confirmo|confirmar|exato|exatamente|perfeito|fechado)$/i.test(clean) ||
+      /\b(esse mesmo|e esse|isso mesmo|ta certo|ta bom|pode ser esse|e esse mesmo|e esse ai|confirmar|pode usar esse|e o correto|pode ser|e o cliente correto|sim)\b/i.test(clean) ||
+      /^\s*e\s+esse\s*$/i.test(clean.trim())
+    );
 
     // Código numérico: o usuário digitou um número (ex: "8469")
     const numericCodeMatch = clean.match(/^(\d+)$/);
@@ -507,8 +520,10 @@ export function handleContextContinuation(
     }
 
     if (isConfirmCandidato) {
-      const candidato = v2Ctx.pendingClientCandidate ?? v2Ctx.pendingClientCandidates?.[0] ?? null;
-      if (candidato) {
+      // Restringe a confirmações genéricas ao estado de candidato único
+      const temUnicoCandidato = !!v2Ctx.pendingClientCandidate && (!v2Ctx.pendingClientCandidates || v2Ctx.pendingClientCandidates.length <= 1);
+      if (temUnicoCandidato) {
+        const candidato = v2Ctx.pendingClientCandidate!;
         console.log(`[MaestroV2Context] Candidato confirmado por afirmação: ${candidato.nome}`);
         v2Ctx.pendingClientCandidate = null;
         v2Ctx.pendingClientCandidates = null;
@@ -521,11 +536,11 @@ export function handleContextContinuation(
     }
 
     if (isDenyCandidato) {
-      console.log('[MaestroV2Context] Candidato negado pelo usuário. Limpando candidatos pendentes.');
+      console.log('[MaestroV2Context] Candidato negado pelo usuário. Limpando candidatos pendentes, preservando itens.');
       v2Ctx.pendingClientCandidate = null;
       v2Ctx.pendingClientCandidates = null;
       v2Ctx.pendingClientSearchTerm = null;
-      v2Ctx.pendingBudgetForCandidate = null;
+      // v2Ctx.pendingBudgetForCandidate é preservado propositalmente
       return {
         routed: true,
         plan: { steps: [{ tool: 'requisicao_nao_suportada', params: {} }] }
