@@ -5,8 +5,6 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Plus, Trash2 } from "lucide-react";
-import { ErrorBoundary } from "react-error-boundary";
-import { ErrorAlert } from "@/components/common/error-alert";
 import { PrecoFixoPanel } from "./components/PrecoFixoPanel";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
