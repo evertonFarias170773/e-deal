@@ -1,6 +1,6 @@
 'use client';
 import { Send, Plus, Wrench, Mic } from 'lucide-react';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 interface Props {
   value: string;
@@ -11,6 +11,126 @@ interface Props {
 
 export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  
+  // States para o Speech-to-Text
+  const [isListening, setIsListening] = useState(false);
+  const [isSupported, setIsSupported] = useState(true);
+  const recognitionRef = useRef<any>(null);
+  
+  // Controles de texto acumulado entre sessões automáticas
+  const originalValueRef = useRef<string>('');
+  const finalTranscriptRef = useRef<string>('');
+  const isManualStopRef = useRef<boolean>(false);
+  
+  // Guardamos a referência da prop onChange para não termos stale closure na instância do recognition
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // Setup da Web Speech API
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setIsSupported(false);
+        return;
+      }
+      
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'pt-BR';
+      
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+      
+      recognition.onend = () => {
+        // Se o usuário não parou manualmente, significa que o navegador encerrou por excesso de silêncio (pausa para pensar).
+        // Nesse caso, nós reiniciamos o motor sem limpar o texto acumulado.
+        if (isManualStopRef.current) {
+          setIsListening(false);
+        } else {
+          try {
+            recognition.start();
+          } catch (e) {
+            setIsListening(false); // Fallback caso não seja possível reiniciar
+          }
+        }
+      };
+      
+      recognition.onerror = (event: any) => {
+        console.error("Erro no reconhecimento de voz:", event.error);
+        if (event.error === 'not-allowed') {
+          setIsListening(false);
+          isManualStopRef.current = true;
+          alert('Permissão de microfone negada. Libere o acesso ao microfone no navegador e tente novamente.');
+        } else if (event.error === 'no-speech') {
+          // Ignora erro de "sem fala", o onend irá lidar com o reinício automático
+        } else {
+          setIsListening(false);
+          isManualStopRef.current = true;
+        }
+      };
+      
+      recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let sessionFinalTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+             sessionFinalTranscript += event.results[i][0].transcript;
+          } else {
+             interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        
+        // Se houve confirmação final da frase, acumulamos na nossa referência de longo prazo (permanente)
+        if (sessionFinalTranscript) {
+           finalTranscriptRef.current += sessionFinalTranscript;
+        }
+        
+        // A visualização do input na tela compõe:
+        // 1. O texto que estava lá antes de apertar o microfone
+        // 2. O acumulado das frases já finalizadas em sessões anteriores ou nesta rodada
+        // 3. A previsão atual do que está sendo falado agora (que pode mudar até virar isFinal)
+        onChangeRef.current(originalValueRef.current + finalTranscriptRef.current + interimTranscript);
+      };
+      
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!isSupported) {
+      alert("Seu navegador não possui suporte nativo para gravação de voz (Web Speech API). Tente utilizar o Google Chrome, Edge ou Safari mais recentes.");
+      return;
+    }
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+
+    if (isListening) {
+      // Encerra permanentemente a pedido do usuário
+      isManualStopRef.current = true;
+      recognition.stop();
+    } else {
+      // Inicia nova gravação a pedido do usuário
+      isManualStopRef.current = false;
+      finalTranscriptRef.current = '';
+      originalValueRef.current = value;
+      
+      // Garante espaço se já existir texto antes de anexar a fala
+      if (value && !value.endsWith(' ') && !value.endsWith('\n')) {
+        originalValueRef.current += ' ';
+      }
+      try {
+        recognition.start();
+      } catch (e) {
+        console.warn("SpeechRecognition falhou ao iniciar", e);
+      }
+    }
+  };
 
   // Auto-resize textarea
   useEffect(() => {
@@ -30,7 +150,25 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (value.trim() && !isLoading) onSend(value);
+      if (value.trim() && !isLoading) {
+        // Se estiver gravando ao enviar (por atalho), forçamos parada definitiva
+        if (isListening && recognitionRef.current) {
+          isManualStopRef.current = true;
+          recognitionRef.current.stop();
+        }
+        onSend(value);
+      }
+    }
+  };
+
+  const handleSendClick = () => {
+    if (value.trim() && !isLoading) {
+      // Força parada definitiva antes de enviar
+      if (isListening && recognitionRef.current) {
+        isManualStopRef.current = true;
+        recognitionRef.current.stop();
+      }
+      onSend(value);
     }
   };
 
@@ -58,17 +196,24 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
-                disabled
-                className="p-2 rounded-lg text-[var(--muted)] dark:text-white/40 hover:bg-[var(--border)] dark:hover:bg-white/10 hover:text-[var(--foreground)] dark:hover:text-white transition-all cursor-not-allowed opacity-80"
-                title="Microfone (em breve)"
+                disabled={isLoading || !isSupported}
+                onClick={toggleListening}
+                className={`p-2 rounded-lg transition-all ${
+                  isListening
+                    ? 'bg-red-500/10 text-red-500 dark:bg-red-500/20'
+                    : 'text-[var(--muted)] dark:text-white/40 hover:bg-[var(--border)] dark:hover:bg-white/10 hover:text-[var(--foreground)] dark:hover:text-white'
+                } ${(isLoading || !isSupported) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                title={!isSupported ? 'Microfone não suportado no navegador' : (isListening ? 'Parar gravação' : 'Gravar áudio (Fala para Texto)')}
               >
-                <Mic size={18} />
+                <div className={isListening ? 'animate-pulse' : ''}>
+                  <Mic size={18} />
+                </div>
               </button>
             </div>
 
             <button
               type="button"
-              onClick={() => value.trim() && !isLoading && onSend(value)}
+              onClick={handleSendClick}
               disabled={!value.trim() || isLoading}
               className="flex items-center justify-center w-8 h-8 rounded-full text-white disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95 transition-all shadow-md"
               style={{ background: 'var(--secondary)' }}
