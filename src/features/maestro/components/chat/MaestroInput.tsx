@@ -22,11 +22,30 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
   const finalTranscriptRef = useRef<string>('');
   const isManualStopRef = useRef<boolean>(false);
   
-  // Guardamos a referência da prop onChange para não termos stale closure na instância do recognition
+  // Timer de auto-envio por silêncio
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Guardamos a referência das props para não termos stale closure no timer e instância do recognition
   const onChangeRef = useRef(onChange);
+  const onSendRef = useRef(onSend);
+  const isLoadingRef = useRef(isLoading);
+  
   useEffect(() => {
     onChangeRef.current = onChange;
-  }, [onChange]);
+    onSendRef.current = onSend;
+    isLoadingRef.current = isLoading;
+  }, [onChange, onSend, isLoading]);
+
+  const clearSilenceTimer = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => clearSilenceTimer(); // Limpa timer se componente desmontar
+  }, []);
 
   // Setup da Web Speech API
   useEffect(() => {
@@ -63,12 +82,14 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
       recognition.onerror = (event: any) => {
         console.error("Erro no reconhecimento de voz:", event.error);
         if (event.error === 'not-allowed') {
+          clearSilenceTimer();
           setIsListening(false);
           isManualStopRef.current = true;
           alert('Permissão de microfone negada. Libere o acesso ao microfone no navegador e tente novamente.');
         } else if (event.error === 'no-speech') {
-          // Ignora erro de "sem fala", o onend irá lidar com o reinício automático
+          // Ignora erro de "sem fala", o onend irá lidar com o reinício automático (o timer continua contando até os 4s normais)
         } else {
+          clearSilenceTimer();
           setIsListening(false);
           isManualStopRef.current = true;
         }
@@ -91,11 +112,25 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
            finalTranscriptRef.current += sessionFinalTranscript;
         }
         
-        // A visualização do input na tela compõe:
-        // 1. O texto que estava lá antes de apertar o microfone
-        // 2. O acumulado das frases já finalizadas em sessões anteriores ou nesta rodada
-        // 3. A previsão atual do que está sendo falado agora (que pode mudar até virar isFinal)
-        onChangeRef.current(originalValueRef.current + finalTranscriptRef.current + interimTranscript);
+        const textComposto = originalValueRef.current + finalTranscriptRef.current + interimTranscript;
+        
+        // A visualização do input na tela compõe o texto consolidado com os resultados provisórios
+        onChangeRef.current(textComposto);
+        
+        // Trata o temporizador de auto-envio:
+        clearSilenceTimer();
+        
+        // Re-engatilha a bomba relógio para enviar após 4 segundos de inatividade da voz
+        silenceTimerRef.current = setTimeout(() => {
+          // Forçamos a parada permanente da gravação
+          isManualStopRef.current = true;
+          recognitionRef.current?.stop();
+          
+          // O envio automático ocorre apenas se tiver conteúdo e não estiver processando
+          if (textComposto.trim() && !isLoadingRef.current) {
+            onSendRef.current(textComposto);
+          }
+        }, 4000);
       };
       
       recognitionRef.current = recognition;
@@ -113,12 +148,14 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
     if (isListening) {
       // Encerra permanentemente a pedido do usuário
       isManualStopRef.current = true;
+      clearSilenceTimer();
       recognition.stop();
     } else {
       // Inicia nova gravação a pedido do usuário
       isManualStopRef.current = false;
       finalTranscriptRef.current = '';
       originalValueRef.current = value;
+      clearSilenceTimer();
       
       // Garante espaço se já existir texto antes de anexar a fala
       if (value && !value.endsWith(' ') && !value.endsWith('\n')) {
@@ -151,6 +188,7 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (value.trim() && !isLoading) {
+        clearSilenceTimer();
         // Se estiver gravando ao enviar (por atalho), forçamos parada definitiva
         if (isListening && recognitionRef.current) {
           isManualStopRef.current = true;
@@ -163,6 +201,7 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
 
   const handleSendClick = () => {
     if (value.trim() && !isLoading) {
+      clearSilenceTimer();
       // Força parada definitiva antes de enviar
       if (isListening && recognitionRef.current) {
         isManualStopRef.current = true;
