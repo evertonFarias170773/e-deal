@@ -5,6 +5,9 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { ErrorBoundary } from "react-error-boundary";
+import { ErrorAlert } from "@/components/common/error-alert";
+import { PrecoFixoPanel } from "./components/PrecoFixoPanel";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -919,6 +922,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       cpf_invalido: form.cpfInvalido,
       cpf_erro: normalizeOptionalText(form.cpfErro),
       is_bonus: form.bonusAtivo,
+      usa_preco_fixo: form.usaPrecoFixo,
       percentual_bunus: normalizeOptionalText(form.percentualBonus),
       id_modelo_cobranca: form.modeloCobrancaId || null
     };
@@ -1135,6 +1139,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       cpf_invalido: form.cpfInvalido,
       cpf_erro: normalizeOptionalText(form.cpfErro),
       is_bonus: form.bonusAtivo,
+      usa_preco_fixo: form.usaPrecoFixo,
       percentual_bunus: normalizeOptionalText(form.percentualBonus),
       id_modelo_cobranca: form.modeloCobrancaId || null
     };
@@ -2120,10 +2125,11 @@ function CompleteForm({
                 </select>
               </Field>
             )}
-            <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => canEditCredito && onUpdate("percentualBonus", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => canEditCredito && !form.usaPrecoFixo && onUpdate("percentualBonus", event.target.value)} readOnly={!canEditCredito || form.usaPrecoFixo} className={`${inputClassCredito} ${form.usaPrecoFixo ? "opacity-50" : ""}`} /></Field>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            <Toggle label="Bonus" checked={form.bonusAtivo} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("bonusAtivo", value)} />
+            <Toggle label="Usa Preço Fixo" checked={form.usaPrecoFixo} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("usaPrecoFixo", value)} />
+            <Toggle label="Bonus" checked={form.bonusAtivo} disabled={!canEditCredito || form.usaPrecoFixo} onChange={(value) => canEditCredito && onUpdate("bonusAtivo", value)} />
             <Toggle label="Nota" checked={form.nota} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("nota", value)} />
             <Toggle label="Restricao" checked={form.restricao} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("restricao", value)} />
             <Toggle label="Verificado" checked={form.verificado} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("verificado", value)} />
@@ -2132,6 +2138,11 @@ function CompleteForm({
             <Toggle label="Receber WhatsApp" checked={form.sendWhats} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("sendWhats", value)} />
           </div>
         </FormSection>
+      )}
+
+      {/* PAINEL DE PREÇOS FIXOS */}
+      {form.usaPrecoFixo && canEditCredito && (
+        <PrecoFixoPanel idCliente={form.idCliente} usaPrecoFixo={form.usaPrecoFixo} />
       )}
 
       <FormSection title="Observacoes" description="Informacoes internas importantes do cadastro. Limite visual de 500 caracteres.">
@@ -2301,6 +2312,7 @@ function createInitialState(cadastro?: Cadastro): CadastroFormState {
     riscoCredito: cadastro?.riscoCredito ?? "BAIXO",
     padraoPagamento: cadastro?.padraoPagamento ?? "PIX",
     modeloCobrancaId: cadastro?.modeloCobrancaId ?? undefined,
+    usaPrecoFixo: cadastro?.usaPrecoFixo ?? false,
     bonusAtivo: cadastro?.bonusAtivo ?? false,
     percentualBonus: cadastro?.percentualBonus?.toString() ?? "0",
     nota: cadastro?.nota ?? false,

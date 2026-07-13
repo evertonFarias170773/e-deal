@@ -45,6 +45,7 @@ export type SupabaseClienteRow = {
   cpf_erro?: SupabaseNullableValue;
   credito?: SupabaseNullableValue;
   is_bonus?: SupabaseNullableValue;
+  usa_preco_fixo?: SupabaseNullableValue;
   percentual_bunus?: SupabaseNullableValue;
   id_modelo_cobranca?: SupabaseNullableValue;
 };

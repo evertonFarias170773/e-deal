@@ -5,6 +5,7 @@ export interface OrcamentoAvulsoItem {
   precoUnitario?: number;
   unidadeMedida?: string;
   pesoUnitario?: number;
+  valorFixo?: number;
 }
 
 export interface PendingAmbiguousOption {

@@ -46,7 +46,7 @@ import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEndere
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
-import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from "@/features/orcamentos/services/frete.service";
+import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
@@ -392,6 +392,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [isQuotingSedex, setIsQuotingSedex] = useState(false);
   const [isQuotingAzul, setIsQuotingAzul] = useState(false);
   const [isQuotingTransp, setIsQuotingTransp] = useState(false);
+  const [isQuotingVeppo, setIsQuotingVeppo] = useState(false);
   const [compradorAddresses, setCompradorAddresses] = useState<CadastroEndereco[]>([]);
   const [loadingCompradorAddresses, setLoadingCompradorAddresses] = useState(false);
   const [lastDestinationKey, setLastDestinationKey] = useState<string>(() => {
@@ -981,6 +982,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const timer = setTimeout(async () => {
       setIsQuotingSedex(true);
       setIsQuotingAzul(true);
+      setIsQuotingVeppo(true);
 
       let transportadorasPromise = Promise.resolve([] as PropostaFrete[]);
       if (cidade && uf) {
@@ -1000,6 +1002,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       let sedexResults: PropostaFrete[] = [];
       let azulResults: PropostaFrete[] = [];
       let transpResults: PropostaFrete[] = [];
+      let veppoResults: PropostaFrete[] = [];
 
       await Promise.all([
         (async () => {
@@ -1034,10 +1037,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         })(),
         (async () => {
           transpResults = await transportadorasPromise;
+        })(),
+        (async () => {
+          if (!cidade || !uf) {
+            setIsQuotingVeppo(false);
+            return;
+          }
+          try {
+            veppoResults = await solicitarCotacaoVeppo({
+              peso: resumo.pesoTotal,
+              valor: resumo.subtotalProdutos,
+              cidade,
+              uf
+            });
+          } catch (err) {
+            console.error("Erro na cotação automática VEPPO:", err);
+          } finally {
+            setIsQuotingVeppo(false);
+          }
         })()
       ]);
 
-      const allResults = [...sedexResults, ...azulResults, ...transpResults];
+      const allResults = [...sedexResults, ...azulResults, ...transpResults, ...veppoResults];
       if (uf?.toUpperCase() === "RS") {
         allResults.push({
           id: "frete_retira_balcao",
@@ -1268,13 +1289,32 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
-  function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent) {
-    const totals = calculateItemSubtotal(item, nextBonusPercent);
+  function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent, nextClienteParam = cliente) {
+    let nextValorUnitario = item.valorUnitario;
+    let nextValorFixo = item.valorFixo;
+    const variationExtra = item.variacoesEscolhidas.reduce((tot, v) => tot + v.tipo.v_extra, 0);
+
+    if (nextClienteParam?.usaPrecoFixo && nextClienteParam.precosFixos) {
+      const pFixo = nextClienteParam.precosFixos.find(p => p.id_produto === item.id_produto);
+      if (pFixo) {
+        nextValorUnitario = pFixo.preco_fixo + variationExtra;
+        nextValorFixo = 0;
+      } else {
+        nextValorUnitario = item.produto.valorUnt + variationExtra;
+        nextValorFixo = item.produto.valorFixo;
+      }
+    } else {
+      nextValorUnitario = item.produto.valorUnt + variationExtra;
+      nextValorFixo = item.produto.valorFixo;
+    }
+
+    const updatedItem = { ...item, valorUnitario: nextValorUnitario, valorFixo: nextValorFixo };
+    const totals = calculateItemSubtotal(updatedItem, nextBonusPercent);
 
     return {
-      ...item,
+      ...updatedItem,
       ...totals,
-      pesoTotal: calculateItemWeight(item)
+      pesoTotal: calculateItemWeight(updatedItem)
     };
   }
   const handleClearCliente = useCallback((searchReset: string = "") => {
@@ -1307,7 +1347,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         || enderLista[0];
       const nextContacts = nextCliente.contatos || [];
       const nextBonus = getClienteBonusPercent(nextCliente);
-      const recalculatedItems = form.itens.map((item) => recalculateItem(item, nextBonus));
+      const recalculatedItems = form.itens.map((item) => recalculateItem(item, nextBonus, nextCliente));
 
       setCliente(nextCliente);
       setProposalContacts(nextContacts);
@@ -1514,19 +1554,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     const initialQty = produto.quantidade_minima_venda ?? 1000;
 
+    let precoFixoBase: number | undefined = undefined;
+    if (cliente?.usaPrecoFixo && cliente.precosFixos) {
+      const precoFixoData = cliente.precosFixos.find(p => p.id_produto === produto.id_produto);
+      if (precoFixoData) {
+        precoFixoBase = precoFixoData.preco_fixo;
+      }
+    }
+
     try {
       const vinculos = await listProdutoVariacaoVinculos(produto.id_produto);
       const enrichedProduto = {
         ...produto,
         variacoes: vinculos
       };
-      const item = createItemFromProduto(enrichedProduto, initialQty, bonusPercent, false);
+      const item = createItemFromProduto(enrichedProduto, initialQty, bonusPercent, false, precoFixoBase);
       updateField("itens", [...form.itens, item]);
       setOpenItemIds((current) => ({ ...current, [item.id]: true }));
       showToast({ type: "success", title: "Produto adicionado", description: `${produto.nomeReal} incluído no orçamento.` });
     } catch (err) {
       console.error("Erro ao carregar variações do produto:", err);
-      const item = createItemFromProduto(produto, initialQty, bonusPercent, false);
+      const item = createItemFromProduto(produto, initialQty, bonusPercent, false, precoFixoBase);
       updateField("itens", [...form.itens, item]);
       setOpenItemIds((current) => ({ ...current, [item.id]: true }));
       showToast({ type: "success", title: "Produto adicionado", description: `${produto.nomeReal} incluído no orçamento.` });
@@ -1816,10 +1864,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     let sedexResults: PropostaFrete[] = [];
     let azulResults: PropostaFrete[] = [];
     let transpResults: PropostaFrete[] = [];
+    let veppoResults: PropostaFrete[] = [];
 
     let sedexError = "";
     let azulError = "";
     let transpError = "";
+    let veppoError = "";
 
     let transportadorasPromise = Promise.resolve([] as PropostaFrete[]);
     if (!cidade || !uf) {
@@ -1874,6 +1924,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       })(),
       (async () => {
         transpResults = await transportadorasPromise;
+      })(),
+      (async () => {
+        setIsQuotingVeppo(true);
+        try {
+          veppoResults = await solicitarCotacaoVeppo({
+            peso: resumo.pesoTotal,
+            valor: resumo.subtotalProdutos,
+            cidade: cidade!,
+            uf: uf!
+          });
+        } catch (err) {
+          console.error("Erro ao cotar VEPPO manualmente:", err);
+          veppoError = err instanceof Error ? err.message : "Erro desconhecido";
+        } finally {
+          setIsQuotingVeppo(false);
+        }
       })()
     ]);
 
@@ -1895,7 +1961,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     let nextEscolhidoId = "";
     let foundMatch = false;
 
-    const allResults = [...sedexResults, ...azulResults, ...transpResults];
+    const allResults = [...sedexResults, ...azulResults, ...transpResults, ...veppoResults];
     if (uf?.toUpperCase() === "RS") {
       allResults.push({
         id: "frete_retira_balcao",
@@ -2425,7 +2491,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             >
               {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
             </button>
-            <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
+            <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
               {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}
             </button>
           </div>
@@ -3115,6 +3181,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       : undefined;
 
                     const isRemoveAllowed = form.status !== "APROVADO" && form.status !== "AGUARDANDO";
+                    const isPrecoFixoAplicado = !!(
+                      cliente?.usaPrecoFixo &&
+                      cliente.precosFixos?.some(p => p.id_produto === item.id_produto)
+                    );
 
                     if (isOpen) {
                       return (
@@ -3130,6 +3200,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           minQuantity={somaModelos}
                           isSuperAdmin={user?.isSuperAdmin || false}
                           isRemoveAllowed={isRemoveAllowed}
+                          isPrecoFixoAplicado={isPrecoFixoAplicado}
                         />
                       );
                     } else {
@@ -3227,6 +3298,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           isQuotingSedex ||
                           isQuotingAzul ||
                           isQuotingTransp ||
+                          isQuotingVeppo ||
                           (form.isAvulso
                             ? true
                             : (
@@ -3238,7 +3310,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         }
                         className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 text-sm font-semibold text-white shadow-md hover:bg-[#123f61] transition disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        {isQuotingSedex || isQuotingAzul || isQuotingTransp ? (
+                        {isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo ? (
                           <>
                             <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
                             Atualizando...
@@ -3460,7 +3532,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button type="button" onClick={() => handleNavigateRef.current(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
-              <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
+              <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
             </div>
           </div>
         </div>
@@ -3721,7 +3793,8 @@ function ProductItemEditor({
   onSave,
   minQuantity,
   isSuperAdmin,
-  isRemoveAllowed
+  isRemoveAllowed,
+  isPrecoFixoAplicado
 }: {
   item: PropostaItem;
   bonusPercent: number;
@@ -3733,6 +3806,7 @@ function ProductItemEditor({
   minQuantity?: number;
   isSuperAdmin?: boolean;
   isRemoveAllowed?: boolean;
+  isPrecoFixoAplicado?: boolean;
 }) {
   const { showToast } = useAppToast();
   return (
@@ -3792,11 +3866,11 @@ function ProductItemEditor({
             <input
               type="number"
               step="0.01"
-              value={item.valorFixo || ""}
+              value={isPrecoFixoAplicado ? "0" : (item.valorFixo || "")}
               onChange={(event) => onUpdate((current) => ({ ...current, valorFixo: Math.max(0, Number(event.target.value)) }))}
               className={inputClass}
               placeholder="0,00"
-              disabled={!isSuperAdmin}
+              disabled={isPrecoFixoAplicado || !isSuperAdmin}
             />
           </Field>
           <InfoBox label="Subtotal final" value={formatCurrency(item.subtotal)} />

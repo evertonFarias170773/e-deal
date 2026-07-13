@@ -473,7 +473,7 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
   try {
     const { data: mainRows, error: mainError } = await client
       .from("clientes")
-      .select("id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,percentual_bunus,id_modelo_cobranca")
+      .select("id,id_cliente,nome,apelido,contato,documento,ins_estadual,ins_municipal,data_fundacao,email_contato,email_financeiro,telefone_fixo,whatsapp_1,whatsapp_2,ativo,restricao,limite_credito,obs,data_criacao,fantasia,email,site,data_cadastro,recebe_email,recebe_whatsapp,tipo_pessoa,nome_vendedor,nota,categoria,risco_credito,ultima_compra,total_compras,verificado,data_verificacao,padrao_pagamento,empresa_padrao,tipo_contribuinte,motivo_erro,cidade_uf,cpf_invalido,cpf_erro,credito,is_bonus,usa_preco_fixo,percentual_bunus,id_modelo_cobranca")
       .eq("id_cliente", idCliente)
       .limit(1);
 
@@ -537,6 +537,20 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
       });
     }
 
+    let precosFixos: { id_produto: number; preco_fixo: number }[] | undefined;
+    if (cadastro.usaPrecoFixo) {
+      const { data: precosData } = await client
+        .from("clientes_precos_fixos")
+        .select("id_produto, preco_fixo")
+        .eq("id_cliente", idCliente);
+      if (precosData && precosData.length > 0) {
+        precosFixos = precosData.map(p => ({
+          id_produto: Number(p.id_produto),
+          preco_fixo: Number(p.preco_fixo)
+        }));
+      }
+    }
+
     const pagamentosData = propostasResult?.data || [];
     const totalCompras = pagamentosData.length;
     const valorTotalComprado = pagamentosData.reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
@@ -552,6 +566,7 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
             relatedCadastro: relatedLookup.get(normalizeIdCliente(row.id_cliente_socio) ?? -1) ?? null
           }))
         }),
+        precosFixos,
         totalCompras,
         valorTotalComprado
       }
@@ -759,6 +774,7 @@ export type CadastroInsertPayload = {
   cpf_invalido?: boolean;
   cpf_erro?: string | null;
   is_bonus?: boolean;
+  usa_preco_fixo?: boolean;
   percentual_bunus?: number | string | null;
   id_modelo_cobranca?: string | null;
 };
@@ -991,6 +1007,7 @@ function normalizeClienteWritePayload(payload: CadastroInsertPayload | CadastroU
     cpf_erro: toNullableText(payload.cpf_erro),
     credito: toNullableDecimal(payload.credito),
     is_bonus: toBoolean(payload.is_bonus, false),
+    usa_preco_fixo: toBoolean(payload.usa_preco_fixo, false),
     percentual_bunus: toNullableDecimal(payload.percentual_bunus),
     id_modelo_cobranca: payload.id_modelo_cobranca ?? null
   };

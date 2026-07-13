@@ -145,9 +145,13 @@ export function getClienteVendedorPadrao(cliente: Cadastro) {
   return cliente.vendedor_padrao ?? cliente.vendedor;
 }
 
-export function getClienteBonusPercent(cliente?: Cadastro | null) {
+export function getClienteBonusPercent(cliente: Cadastro | null | undefined): number {
   if (!cliente) {
     return 0;
+  }
+  
+  if (cliente.usaPrecoFixo) {
+    return 0; // Bônus é ignorado se usaPrecoFixo for true
   }
 
   return cliente.is_bonus || cliente.bonusAtivo ? cliente.percentualBonus ?? 0 : 0;
@@ -182,9 +186,18 @@ export function calculateItemWeight(item: Pick<PropostaItem, "quantidade" | "pes
   return item.quantidade * item.pesoUnitario + variationWeight;
 }
 
-export function createItemFromProduto(produto: Produto, quantidade = 1000, bonusPercent = 0, autoSelectVariations = true): PropostaItem {
+export function createItemFromProduto(
+  produto: Produto, 
+  quantidade = 1000, 
+  bonusPercent = 0, 
+  autoSelectVariations = true,
+  precoFixoBase?: number
+): PropostaItem {
   const variacoesEscolhidas = autoSelectVariations ? firstVariationChoices(produto) : [];
   const variationExtra = variacoesEscolhidas.reduce((total, escolha) => total + escolha.tipo.v_extra, 0);
+  
+  const precoBaseReal = precoFixoBase !== undefined ? precoFixoBase : produto.valorUnt;
+
   const baseItem = {
     id: `item_${produto.id_produto}_${Date.now()}`,
     id_produto: produto.id_produto,
@@ -193,8 +206,8 @@ export function createItemFromProduto(produto: Produto, quantidade = 1000, bonus
     formato: produto.formato,
     descricaoModelo: produto.descricao,
     quantidade,
-    valorUnitario: produto.valorUnt + variationExtra,
-    valorFixo: produto.valorFixo,
+    valorUnitario: precoBaseReal + variationExtra,
+    valorFixo: precoFixoBase !== undefined ? 0 : produto.valorFixo,
     descontoTipo: "VALOR" as TipoDescontoProposta,
     descontoValor: 0,
     prazo: produto.prazo,

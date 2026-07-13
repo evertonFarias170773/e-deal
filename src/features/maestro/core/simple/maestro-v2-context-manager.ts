@@ -6,6 +6,10 @@ export type MaestroV2Domain = 'cliente' | 'financeiro' | 'orcamento_avulso' | 'p
 export interface OrcamentoAvulsoItem {
   quantidade: number;
   termo: string;
+  produtoId?: number;
+  precoUnitario?: number;
+  pesoUnitario?: number;
+  valorFixo?: number;
 }
 
 export interface PendingProductResolution {

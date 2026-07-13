@@ -43,6 +43,7 @@ import {
   type ResolverItemResult,
   type ResolverResult,
 } from './maestro-orcamento-resolver.server';
+import type { SimpleClientContext } from './maestro-simple-context';
 
 // ─── Tipos públicos ────────────────────────────────────────────────────────────
 
@@ -51,6 +52,8 @@ export interface OrcamentoServiceInput {
   query: string;
   state: OrcamentoAvulsoState;
   supabase: SupabaseClient;
+  clientContext?: SimpleClientContext;
+  forceRecalculate?: boolean;
 }
 
 /** Resultado completo do serviço de orçamento */
@@ -86,18 +89,18 @@ export interface OrcamentoServiceResult {
 export async function processarOrcamentoService(
   input: OrcamentoServiceInput
 ): Promise<OrcamentoServiceResult> {
-  const { query, state, supabase } = input;
+  const { query, state, supabase, clientContext } = input;
 
   // ── Passo 1: Motor de parsing (puro, sem DB) ─────────────────────────────
   const engineResult = processarOrcamentoAvulso(query, state);
 
-  // ── Passo 2: Ações que não precisam do resolver ───────────────────────────
-  if (
+  const shouldSkipResolver =
     engineResult.action === 'CLEAR' ||
-    engineResult.action === 'NONE' ||
     engineResult.action === 'ERROR' ||
-    engineResult.action === 'UPDATE_QTD'
-  ) {
+    (!input.forceRecalculate && (engineResult.action === 'NONE' || engineResult.action === 'UPDATE_QTD'));
+
+  // ── Passo 2: Ações que não precisam do resolver ───────────────────────────
+  if (shouldSkipResolver) {
     return {
       action: engineResult.action,
       items: engineResult.items,
@@ -119,7 +122,7 @@ export async function processarOrcamentoService(
   // ── Passo 4: Consultar catálogo read-only ────────────────────────────────
   let resolucaoResult: ResolverResult;
   try {
-    resolucaoResult = await resolverOrcamento(supabase, itemsParaResolver);
+    resolucaoResult = await resolverOrcamento(supabase, itemsParaResolver, clientContext);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[OrcamentoService] Erro ao resolver catálogo:', msg);
@@ -168,7 +171,8 @@ export async function processarOrcamentoService(
     return {
       ...item,
       produtoId: res.produto?.id_produto,
-      precoUnitario: res.produto?.valorUnt ?? undefined,
+      precoUnitario: res.precoUnitario ?? res.produto?.valorUnt ?? undefined,
+      valorFixo: res.valorFixo ?? res.produto?.valorFixo ?? undefined,
       pesoUnitario: res.produto?.peso ?? undefined,
     };
   });

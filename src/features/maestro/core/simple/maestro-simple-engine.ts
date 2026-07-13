@@ -39,7 +39,7 @@ import {
 } from './maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb } from './maestro-simple-produtos.server';
 import { processarOrcamentoService } from './maestro-orcamento-service.server';
-import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras } from '@/features/orcamentos/services/frete.service';
+import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from '@/features/orcamentos/services/frete.service';
 import type { PropostaFrete } from '@/features/orcamentos/types';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
@@ -171,6 +171,8 @@ function legacyContextToSimple(ctx: ConversationContext): SimpleMaestroContext {
       categoria:         ctx.clientCategoria ?? undefined,
       isBonus:           ctx.clientIsBonus ?? undefined,
       percentualBonus:   ctx.clientPercentualBonus ?? undefined,
+      usaPrecoFixo:      ctx.clientUsaPrecoFixo ?? undefined,
+      precosFixos:       ctx.clientPrecosFixosJson ? JSON.parse(ctx.clientPrecosFixosJson) : undefined,
       enderecos:         [],
       contatos:          [],
       socios:            [],
@@ -219,6 +221,8 @@ function simpleClientToLegacyContext(
     clientAtivo:       client.ativo ?? null,
     clientIsBonus:     client.isBonus ?? null,
     clientPercentualBonus: client.percentualBonus ?? null,
+    clientUsaPrecoFixo: client.usaPrecoFixo ?? null,
+    clientPrecosFixosJson: client.precosFixos ? JSON.stringify(client.precosFixos) : null,
     // Última resposta (persiste entre turnos)
     clientLastAnswerJson: lastAnswer != null
       ? serializeLastAnswer(lastAnswer)
@@ -605,6 +609,8 @@ export async function processSimpleQueryWithBrain(
           }
         } else if (['consultarPropostasCliente', 'consultarUltimoOrcamento'].includes(step.tool)) {
           v2Ctx.domain = 'proposta';
+        } else if (['simularOrcamentoAvulso', 'confirmar_frete_cotacao', 'salvar_proposta_cotacao'].includes(step.tool)) {
+          v2Ctx.domain = 'orcamento_avulso';
         }
 
         if (simpleCtx.activeClient) {
@@ -1128,6 +1134,8 @@ export async function processSimpleQueryWithBrain(
                 : 'restaura',
               state: { ...orcamentoState, itens: itens.map((i: any) => ({ quantidade: i.quantidade, termo: i.termo })) },
               supabase,
+              clientContext: simpleCtx.activeClient || undefined,
+              forceRecalculate: true
             });
 
             // Atualiza contexto com o estado resolvido pelo service
@@ -1138,7 +1146,8 @@ export async function processSimpleQueryWithBrain(
                 termo: i.termo,
                 produtoId: i.produtoId,
                 precoUnitario: i.precoUnitario,
-                pesoUnitario: i.pesoUnitario
+                pesoUnitario: i.pesoUnitario,
+                valorFixo: i.valorFixo
               }));
               v2Ctx.lastSuccessfulBudgetItems = serviceResult.errors.length === 0
                 ? JSON.parse(JSON.stringify(v2Ctx.orcamentoItens))
@@ -1366,8 +1375,8 @@ export async function processSimpleQueryWithBrain(
                      id_produto: r.produto!.id_produto,
                      nome: r.produto!.descricao,
                      quantidade: r.quantidade,
-                     valorUnitario: r.produto!.valorUnt ?? 0,
-                     valorFixo: r.produto!.valorFixo ?? 0,
+                     valorUnitario: r.precoUnitario ?? r.produto!.valorUnt ?? 0,
+                     valorFixo: r.valorFixo ?? r.produto!.valorFixo ?? 0,
                      subtotal: r.subtotal ?? 0,
                      pesoUnitario: r.produto!.peso ?? 0,
                    }));
@@ -1818,7 +1827,7 @@ export async function processSimpleQueryWithBrain(
   // Para tools do P4 (cotação ativa): NÃO bloquear LLM — passa activeQuote como contexto e deixa o Brain humanizar
   // Exceção: 'simularOrcamentoAvulso' (o card formatado da cotação não deve ser reescrito pelo Brain)
   const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true'
-    || (v2Ctx.domain === 'orcamento_avulso' && v2Ctx.lastTool === 'simularOrcamentoAvulso')
+    || (v2Ctx.domain === 'orcamento_avulso' && ['simularOrcamentoAvulso', 'confirmar_frete_cotacao', 'salvar_proposta_cotacao'].includes(v2Ctx.lastTool ?? ''))
     || v2Ctx.lastTool === 'orcamento_avulso_desativado'
     || v2Ctx.lastTool === 'resposta_social_cotacao'
     || v2Ctx.lastTool === 'resposta_frustracao_usuario';

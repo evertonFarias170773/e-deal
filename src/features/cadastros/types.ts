@@ -87,6 +87,7 @@ export type Cadastro = {
   isentoInscricaoEstadual?: boolean;
   dataFundacao?: string;
   is_bonus?: boolean;
+  usaPrecoFixo?: boolean;
   bonusAtivo?: boolean;
   percentualBonus?: number;
   dataVerificacao?: string;
@@ -101,6 +102,7 @@ export type Cadastro = {
   enderecos: CadastroEndereco[];
   contatos: CadastroContato[];
   vinculosComerciais: CadastroVinculoComercial[];
+  precosFixos?: { id_produto: number; preco_fixo: number }[];
 };
 
 export type CadastroFormState = {
@@ -139,6 +141,7 @@ export type CadastroFormState = {
   padraoPagamento: string;
   modeloCobrancaId?: string;
   valorTotalComprado?: number;
+  usaPrecoFixo: boolean;
   bonusAtivo: boolean;
   percentualBonus: string;
   nota: boolean;

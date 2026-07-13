@@ -71,6 +71,8 @@ export interface ResolverItemResult {
    * null quando o cálculo não foi possível (ambiguo, nao_encontrado, inativo, preco_incompleto)
    */
   subtotal: number | null;
+  precoUnitario?: number;
+  valorFixo?: number;
 }
 
 /** Resultado agregado de uma resolução de múltiplos itens */
@@ -133,9 +135,12 @@ const SELECT_COLS = 'id_produto, descricao, apelidos, "valorUnt", "valorFixo", a
  * @param itens    - lista de itens com quantidade e termo de busca
  * @returns ResolverResult com cada item resolvido e total geral
  */
+import type { SimpleClientContext } from './maestro-simple-context';
+
 export async function resolverOrcamento(
   supabase: SupabaseClient,
-  itens: ResolverItemReq[]
+  itens: ResolverItemReq[],
+  clientContext?: SimpleClientContext
 ): Promise<ResolverResult> {
   const resultItens: ResolverItemResult[] = [];
   let totalGeral: number | null = 0;
@@ -272,10 +277,29 @@ export async function resolverOrcamento(
         itemResult.status = 'preco_incompleto';
         todosSuccesso = false;
       } else {
-        // valorFixo null é tratado como 0 (regra documentada no MAESTRO-V2-CONTRATO.md)
-        const vFixo = produto.valorFixo ?? 0;
+        // Aplica lógica de preço fixo se houver clientContext
+        let precoReal = produto.valorUnt;
+        let vFixo = produto.valorFixo ?? 0;
+        if (clientContext?.usaPrecoFixo && clientContext.precosFixos) {
+          const pFixo = clientContext.precosFixos.find(p => Number(p.id_produto) === Number(produto.id_produto));
+          if (pFixo) {
+            precoReal = pFixo.preco_fixo;
+            vFixo = 0;
+          }
+        }
+
+        // Aplica o bônus se não for preço fixo
+        let bonusDesconto = 0;
+        if (clientContext?.isBonus && clientContext.percentualBonus) {
+          bonusDesconto = precoReal * (clientContext.percentualBonus / 100);
+        }
+
+        const precoFinal = Math.max(0, precoReal - bonusDesconto);
+
         itemResult.status = 'sucesso';
-        itemResult.subtotal = req.quantidade * produto.valorUnt + vFixo;
+        itemResult.subtotal = req.quantidade * precoFinal + vFixo;
+        itemResult.precoUnitario = precoReal;
+        itemResult.valorFixo = vFixo;
         if (totalGeral !== null) {
           totalGeral += itemResult.subtotal;
         }

@@ -131,6 +131,10 @@ export interface ConversationContext {
   clientIsBonus?: boolean | null;
   /** Percentual de bônus comercial do cliente */
   clientPercentualBonus?: number | null;
+  /** Indica se o cliente usa preço fixo */
+  clientUsaPrecoFixo?: boolean | null;
+  /** JSON da lista de preços fixos do cliente */
+  clientPrecosFixosJson?: string | null;
 
 
   // ── Contexto de proposta/pedido ativo ───────────────────────────────────────

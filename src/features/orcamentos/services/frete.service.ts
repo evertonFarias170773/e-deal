@@ -401,3 +401,69 @@ export async function solicitarCotacaoTransportadoras(input: {
 
   return results;
 }
+
+/**
+ * Request VEPPO freight quote from the webhook.
+ * Webhook expects: { text: string, cidade: string, valor: number, peso: number }
+ */
+export async function solicitarCotacaoVeppo(input: {
+  peso: number;
+  valor: number;
+  cidade: string;
+  uf: string;
+  id_int?: number | string;
+}): Promise<PropostaFrete[]> {
+  const normalizedUf = input.uf?.trim().toUpperCase();
+  const normalizedCidade = normalizeCityName(input.cidade || "");
+
+  // Regra VEPPO: somente para RS e diferente de Porto Alegre
+  if (normalizedUf !== "RS" || normalizedCidade === "PORTO ALEGRE") {
+    return [];
+  }
+
+  const payload = {
+    text: `${input.cidade}, ${normalizedUf}, Brasil`,
+    cidade: input.cidade,
+    valor: input.valor,
+    peso: input.peso
+  };
+
+  try {
+    const response = await fetch("https://10074.hostoo.net.br/webhook/coordenadas", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    if (!response.ok) {
+      console.warn(`[FreteService] VEPPO retornou erro ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    if (!data || typeof data.valor_frete !== "number") {
+      return [];
+    }
+
+    const valorFrete = Number(data.valor_frete);
+    const idIntNum = typeof input.id_int === "number" ? input.id_int : (Number(input.id_int) || 0);
+
+    return [{
+      id: `frete_veppo_${Date.now()}`,
+      id_int: idIntNum,
+      transportadora: "VEPPO",
+      servico: "VEPPO",
+      valor: valorFrete,
+      prazo: "Sob consulta",
+      observacao: "Cotação via VEPPO",
+      escolhido: false,
+      pesoUsado: input.peso
+    }];
+  } catch (error) {
+    console.warn(`[FreteService] Erro ao consultar VEPPO:`, error);
+    return [];
+  }
+}

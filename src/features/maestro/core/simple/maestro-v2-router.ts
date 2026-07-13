@@ -205,16 +205,19 @@ export async function routeToolSimple(
 
   // Interceptador para escolha de endereço pendente
   if (v2Ctx.pendingAddressChoice) {
-    const isChoosing = /^(?:use|escolho|escolha|pode usar|quero)?\s*(?:o\s*|endere[cç]o\s*)?(\d+)\b/i.exec(query.trim());
-    if (isChoosing) {
-      console.log(`[MaestroV2Router] Escolha de endereço detectada: índice ${isChoosing[1]}`);
+    const isChoosing = /^(?:use|escolho|escolha|pode usar|quero|coloca|op[cç][aã]o)?\s*(?:a\s*|o\s*|endere[cç]o\s*)?(\d+)\b/i.exec(query.trim());
+    const isEsseMesmo = /^(?:esse\s*mesmo|essa\s*mesma|esse|essa|o\s*mesmo|a\s*mesma|o\s*primeiro|primeira op[cç][aã]o)\b/i.test(query.trim());
+    
+    if (isChoosing || isEsseMesmo) {
+      const idx = isChoosing ? parseInt(isChoosing[1], 10) : 1;
+      console.log(`[MaestroV2Router] Escolha de endereço detectada: índice ${idx}`);
       return {
         routed: true,
         plan: {
           steps: [
             {
               tool: 'simularOrcamentoAvulso',
-              params: { addressIndex: parseInt(isChoosing[1], 10) }
+              params: { addressIndex: idx }
             }
           ]
         }
@@ -225,8 +228,10 @@ export async function routeToolSimple(
   // Interceptador para escolha de transportadora pendente (análogo ao endereço)
   if (v2Ctx.pendingFreightChoice) {
     const isChoosing = /^(?:(?:use?|escolho|quero|pode|coloca|op[cç][aã]o)\s+(?:a\s+|o\s+|))?(?:op[cç][aã]o\s+)?(\d+)\b/i.exec(query.trim());
-    if (isChoosing) {
-      const idx = parseInt(isChoosing[1], 10);
+    const isEsseMesmo = /^(?:esse\s*mesmo|essa\s*mesma|esse|essa|o\s*mesmo|a\s*mesma|o\s*primeiro|primeira op[cç][aã]o)\b/i.test(query.trim());
+    
+    if (isChoosing || isEsseMesmo) {
+      const idx = isChoosing ? parseInt(isChoosing[1], 10) : 1;
       console.log(`[MaestroV2Router] Escolha de transportadora detectada: índice ${idx}`);
       return {
         routed: true,
@@ -238,7 +243,8 @@ export async function routeToolSimple(
   }
 
   // Interceptador para repetição de orçamento (quando o usuário acabou de buscar um cliente ou cita o cliente na mesma frase)
-  const isRepeatQuoteMsg = /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|repita|faz)\s+(a\s+|o\s+|esse\s+|essa\s+|os\s+)?(cota[cç][aã]o|or[cç]amento|mesmo|igual|dados)\b/i.test(query) ||
+  const isRepeatQuoteMsg = /^(?:mesm[oa]\s+(?:or[cç]amento|cota[cç][aã]o)|repete\s+(?:ess[ea]|o)|faz(?:er)?\s+(?:o|esse)?\s*mesmo|cota\s+esse\s+mesmo|refazer\s+(?:or[cç]amento|cota[cç][aã]o)|refa[cç]a)/i.test(query.trim()) ||
+    /\b(fazer|fa[cç]a|gerar|gera|simula|simular|repete|repetir|repita|faz)\s+(a\s+|o\s+|esse\s+|essa\s+|os\s+)?(cota[cç][aã]o|or[cç]amento|mesmo|igual|dados)\b/i.test(query) ||
     /\b(esse\s+mesmo(\s*,?\s*pode\s+fazer\s+o\s+orçamento)?)\b/i.test(query) ||
     /\b(pode\s+fazer|faz\s+pra\s+ele)\b/i.test(query) ||
     /\bmesmos\s+dados\b/i.test(query);

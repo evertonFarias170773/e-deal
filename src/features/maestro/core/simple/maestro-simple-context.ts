@@ -79,6 +79,8 @@ export interface SimpleClientContext {
   clientCreditLimit?: number;
   isBonus?: boolean;
   percentualBonus?: number;
+  usaPrecoFixo?: boolean;
+  precosFixos?: { id_produto: number; preco_fixo: number }[];
   riscoCredito?: string;
   restricao?: boolean;
   ativo?: boolean;

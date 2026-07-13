@@ -70,7 +70,7 @@ async function buildDetailedClientContext(
       is_bonus, percentual_bunus,
       data_fundacao, data_cadastro,
       tipo_pessoa, risco_credito, restricao, ativo, obs,
-      padrao_pagamento, categoria
+      padrao_pagamento, categoria, usa_preco_fixo
     `)
     .eq('id_cliente', idCliente)
     .single();
@@ -127,6 +127,21 @@ async function buildDetailedClientContext(
     }
   }
 
+  let precosFixosEnriquecidos: { id_produto: number; preco_fixo: number }[] | undefined = undefined;
+  if (clientRow.usa_preco_fixo) {
+    const { data: precosData } = await supabase
+      .from('clientes_precos_fixos')
+      .select('id_produto, preco_fixo')
+      .eq('id_cliente', idCliente);
+    
+    if (precosData && precosData.length > 0) {
+      precosFixosEnriquecidos = precosData.map(p => ({
+        id_produto: toNum(p.id_produto) ?? 0,
+        preco_fixo: toNum(p.preco_fixo) ?? 0
+      }));
+    }
+  }
+
   // 4. Mapear para o formato final
   const tel = toStr(clientRow.whatsapp_1) || toStr(clientRow.whatsapp_2) || toStr(clientRow.telefone_fixo);
   const mainEmail = toStr(clientRow.email) || toStr(clientRow.email_contato) || toStr(clientRow.email_financeiro);
@@ -154,8 +169,10 @@ async function buildDetailedClientContext(
     clientSeller:      toStr(clientRow.nome_vendedor) || undefined,
     clientCredit:      toNum(clientRow.credito),
     clientCreditLimit: toNum(clientRow.limite_credito),
-    isBonus:           clientRow.is_bonus ?? undefined,
-    percentualBonus:   toNum(clientRow.percentual_bunus),
+    isBonus:           clientRow.usa_preco_fixo ? false : (clientRow.is_bonus ?? undefined),
+    percentualBonus:   clientRow.usa_preco_fixo ? 0 : toNum(clientRow.percentual_bunus),
+    usaPrecoFixo:      clientRow.usa_preco_fixo ?? false,
+    precosFixos:       precosFixosEnriquecidos,
     riscoCredito:      toStr(clientRow.risco_credito) || undefined,
     restricao:         clientRow.restricao ?? undefined,
     ativo:             clientRow.ativo ?? undefined,
