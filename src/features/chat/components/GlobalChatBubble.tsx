@@ -294,6 +294,9 @@ export function GlobalChatBubble() {
 
   if (!user) return null;
 
+  // Oculta o botão flutuante na própria página do Maestro (já tem campo de mensagem dedicado)
+  if (pathname === '/maestro') return null;
+
   return (
     <div className="fixed bottom-6 right-6 z-[60] flex flex-col items-end">
       {/* Popover Panel */}
