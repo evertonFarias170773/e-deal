@@ -42,6 +42,7 @@ import { processarOrcamentoService } from './maestro-orcamento-service.server';
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from '@/features/orcamentos/services/frete.service';
 import type { PropostaFrete } from '@/features/orcamentos/types';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
+import { extrairCepDaQueryEstruturado } from './maestro-cep-resolver.server';
 
 import { callExternalAgent } from './maestro-external-intent.server';
 import { mapExternalIntentToRouterResult } from './maestro-external-intent.mapper';
@@ -489,6 +490,29 @@ export async function processSimpleQueryWithBrain(
   // Carrega o contexto V2 (controlado por código) do historico da conversa
   const v2Ctx = deserializeV2Context(legacyCtx.v2ContextJson);
 
+  // --- INTERCEPTAÇÃO E EXTRAÇÃO DO CEP ANTES DE QUALQUER OUTRA ANÁLISE ---
+  const cepMatch = extrairCepDaQueryEstruturado(query);
+  let queryOriginal = query;
+  if (cepMatch) {
+    // Corta cirurgicamente a menção de CEP/endereço da query original
+    query = (
+      query.substring(0, cepMatch.startIndex) +
+      ' ' +
+      query.substring(cepMatch.endIndex)
+    ).replace(/\s+/g, ' ').trim();
+    
+    // Atualiza o contexto se for um CEP novo ou alterado
+    if (v2Ctx.budgetAddressCep !== cepMatch.cep) {
+      v2Ctx.budgetAddressCep = cepMatch.cep;
+      // Limpa apenas o estado de destino manual anterior
+      v2Ctx.budgetAddressId = undefined;
+      v2Ctx.budgetAddressFull = undefined;
+      v2Ctx.budgetAddressCidade = undefined;
+      v2Ctx.budgetAddressUf = undefined;
+      v2Ctx.pendingFreightChoice = null;
+    }
+  }
+
   // Helper toResult idêntico para construir o resultado com novo contexto
   function toResult(
     pr: PresenterResult,
@@ -664,6 +688,15 @@ export async function processSimpleQueryWithBrain(
         if (step.tool === 'cancelar_orcamento_avulso') {
           const { presenterCancelarOrcamentoAvulso } = require('./maestro-simple-presenter');
           pr = presenterCancelarOrcamentoAvulso(simpleCtx.activeClient);
+          v2Ctx.orcamentoItens = [];
+          v2Ctx.lastExplicitBudgetItems = [];
+          v2Ctx.budgetAddressCep = undefined;
+          v2Ctx.budgetAddressCidade = undefined;
+          v2Ctx.budgetAddressUf = undefined;
+          v2Ctx.budgetAddressFull = undefined;
+          v2Ctx.budgetAddressId = undefined;
+          v2Ctx.pendingFreightChoice = null;
+          v2Ctx.pendingAddressChoice = null;
         }
 
         else if (step.tool === 'mostrar_itens_orcamento') {
@@ -1225,6 +1258,37 @@ export async function processSimpleQueryWithBrain(
             v2Ctx.pendingAddressChoice = null;
           }
 
+          // Resolução assíncrona do CEP manual se estiver presente mas faltarem dados de localidade
+          let erroCepMensagem: string | undefined;
+          if (v2Ctx.budgetAddressCep && (!v2Ctx.budgetAddressCidade || !v2Ctx.budgetAddressUf)) {
+            const { resolverCepViaCep } = require('./maestro-cep-resolver.server');
+            const resCep = await resolverCepViaCep(v2Ctx.budgetAddressCep);
+            if (resCep.valido) {
+              v2Ctx.budgetAddressCidade = resCep.cidade;
+              v2Ctx.budgetAddressUf = resCep.uf;
+              v2Ctx.budgetAddressFull = `CEP: ${v2Ctx.budgetAddressCep} - ${resCep.cidade}/${resCep.uf}`;
+            } else {
+              if (resCep.erroType === 'inexistente') {
+                pr = {
+                  message: {
+                    id: 'maestro-msg-' + Date.now(),
+                    role: 'maestro',
+                    content: `O CEP ${v2Ctx.budgetAddressCep} não foi localizado. Por favor, verifique se digitou o CEP correto e tente novamente.`,
+                    contentType: 'text',
+                    specialist: 'comercial',
+                    timestamp: new Date().toISOString(),
+                    status: 'completed',
+                    confidence: 'high'
+                  },
+                  activity: []
+                };
+                return toResult(pr);
+              } else {
+                erroCepMensagem = `⚠️ **Aviso:** Não foi possível consultar a localidade do CEP no ViaCEP (${resCep.mensagem || 'Serviço temporariamente indisponível'}). O cálculo de transportadoras locais foi pulado.`;
+              }
+            }
+          }
+
           const itens = step.params.itens || v2Ctx.orcamentoItens;
           if (!itens || itens.length === 0) {
             pr = {
@@ -1360,6 +1424,19 @@ export async function processSimpleQueryWithBrain(
               }
             }
 
+            // Se o cliente mudou em relação ao que estava ativo no início da sessão,
+            // limpa apenas os campos de CEP manual e frete anterior
+            if (clientForCtx && (!simpleCtx.activeClient || simpleCtx.activeClient.clientInternalId !== clientForCtx.clientInternalId)) {
+              console.log('[MaestroEngine] Cliente alterado na sessão. Limpando dados de frete manual anteriores.');
+              v2Ctx.budgetAddressCep = undefined;
+              v2Ctx.budgetAddressCidade = undefined;
+              v2Ctx.budgetAddressUf = undefined;
+              v2Ctx.budgetAddressFull = undefined;
+              v2Ctx.budgetAddressId = undefined;
+              v2Ctx.pendingFreightChoice = null;
+              v2Ctx.pendingAddressChoice = null;
+            }
+
             // Verifica necessidade de endereço
             let aguardandoEndereco = false;
             let solicitandoEnderecoManual = false;
@@ -1475,6 +1552,9 @@ export async function processSimpleQueryWithBrain(
               const hasMissingWeight = !!(v2Ctx.budgetAddressCep && serviceResult.totalGeral !== null && (!serviceResult.items.some(i => i.pesoUnitario && i.pesoUnitario > 0)));
 
                pr = presenterOrcamentoAvulsoService(serviceResult, clientForCtx ?? undefined, v2Ctx.budgetAddressFull, fretesCalculados.length > 0 ? fretesCalculados : undefined, hasMissingWeight);
+               if (erroCepMensagem) {
+                 pr.message.content += `\n\n${erroCepMensagem}`;
+               }
 
                let priorFreteId: string | undefined;
 
@@ -1857,8 +1937,12 @@ export async function processSimpleQueryWithBrain(
               v2Ctx.pendingSaveQuotation.clientName
             );
           } else {
-            // Valida userId
-            if (!options.userId) {
+            // Valida se possui cliente cadastrado
+            if (!v2Ctx.pendingSaveQuotation.clientInternalId || v2Ctx.pendingSaveQuotation.clientInternalId === 0) {
+              pr = presenterErroSaveCotacao(
+                'Não é possível salvar propostas avulsas sem um cliente associado. Por favor, identifique o cliente primeiro (ex: "buscar cliente X") e depois solicite o salvamento.'
+              );
+            } else if (!options.userId) {
               pr = presenterErroSaveCotacao('Sessão do usuário não identificada. Faça login novamente e tente outra vez.');
             } else {
               try {

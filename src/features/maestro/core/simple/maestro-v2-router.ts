@@ -16,6 +16,7 @@ import { handleContextContinuation } from './maestro-v2-context-manager';
 import { processarOrcamentoAvulso } from './maestro-orcamento-engine';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 import { detectIntent } from './maestro-simple-intents';
+import { extrairCepDaQueryEstruturado } from './maestro-cep-resolver.server';
 
 export interface RouterPeriodoMeses {
   mes: number;
@@ -201,6 +202,19 @@ export async function routeToolSimple(
   // 1. Feature Flag check
   if (process.env.MAESTRO_V2_ENABLED !== 'true') {
     return { routed: false };
+  }
+
+  // 1y. Se há um CEP manual pendente de resolução no domínio de orçamento avulso, força o recálculo do frete
+  if (v2Ctx.domain === 'orcamento_avulso' && v2Ctx.budgetAddressCep && !v2Ctx.budgetAddressCidade) {
+    console.log(`[MaestroV2Router] CEP manual pendente detectado sob o domínio de orçamento avulso. Forçando simularOrcamentoAvulso.`);
+    return {
+      routed: true,
+      plan: {
+        steps: [
+          { tool: 'simularOrcamentoAvulso', params: {} }
+        ]
+      }
+    };
   }
 
   // 1z. CONTINUAÇÃO DE CONTEXTO ATIVO
