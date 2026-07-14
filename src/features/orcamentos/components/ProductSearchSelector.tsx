@@ -45,24 +45,13 @@ const TAG_STYLES: Record<string, { active: string; inactive: string }> = {
 
 function getCorrectedCategoryNormalized(category?: string): string {
   if (!category) return "";
-  // Normalize strings to strip accents and lowercase
   const clean = (val: string) => val.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
   const cat = clean(category);
-  if (cat === "vartao pvc" || cat === "cartao pvc") {
-    return "cartao pvc";
-  }
-  if (cat === "ingressos de seguranca") {
-    return "ingressos de seguranca";
-  }
-  if (cat === "pulseiras") {
-    return "pulseiras";
-  }
-  if (cat === "cordao credencial") {
-    return "cordao credencial";
-  }
-  if (cat === "credencial") {
-    return "credencial";
-  }
+  if (cat === "vartao pvc" || cat === "cartao pvc") return "cartao pvc";
+  if (cat === "ingressos de seguranca") return "ingressos de seguranca";
+  if (cat === "pulseiras") return "pulseiras";
+  if (cat === "cordao credencial") return "cordao credencial";
+  if (cat === "credencial") return "credencial";
   return cat;
 }
 
@@ -84,10 +73,12 @@ export function ProductSearchSelector({
   itensAtuais
 }: ProductSearchSelectorProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  // activePreset armazena o botão de filtro rápido selecionado, separado da busca textual.
+  // "Credencial" usa regra exclusiva; demais presets operam via searchQuery normal.
+  const [activePreset, setActivePreset] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -98,8 +89,17 @@ export function ProductSearchSelector({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Filter products based on query
   const filteredProducts = useMemo(() => {
+    // Preset exclusivo "Credencial":
+    // filtra apenas produtos ativos cujo nomeReal começa com "credencial" (sem apelidos, sem categoria)
+    if (activePreset === "Credencial" && !searchQuery) {
+      return produtos.filter((p) => {
+        if (!p.ativo) return false;
+        return normalize(p.nomeReal).startsWith("credencial");
+      });
+    }
+
+    // Busca textual ampla (digitada pelo usuário ou vinda de outro preset)
     const q = normalize(searchQuery).trim();
     if (!q) {
       return produtos.filter((p) => p.ativo);
@@ -110,16 +110,13 @@ export function ProductSearchSelector({
       const matchesName = normalize(p.nomeReal).includes(q);
       const matchesCode = p.id_produto.toString().includes(q);
       const matchesApelidos = (p.apelidos || []).some((a) => normalize(a).includes(q));
-      
       const correctedCat = getCorrectedCategoryNormalized(p.categoria);
       const matchesCategory = correctedCat && (correctedCat.includes(q) || q.includes(correctedCat));
-
       return matchesName || matchesCode || matchesApelidos || matchesCategory;
     });
-  }, [produtos, searchQuery]);
+  }, [produtos, searchQuery, activePreset]);
 
   const handleSelectProduct = (product: Produto) => {
-    // Check duplicity
     const isDuplicate = itensAtuais.some((item) => item.id_produto === product.id_produto);
     if (isDuplicate) {
       showToast({
@@ -130,29 +127,53 @@ export function ProductSearchSelector({
       setIsOpen(false);
       return;
     }
-
     onAddProduct(product.id_produto.toString());
     setSearchQuery("");
+    setActivePreset(null);
     setIsOpen(false);
   };
 
   const handleTagClick = (tagLabel: string) => {
-    setSearchQuery(tagLabel);
+    if (tagLabel === "Credencial") {
+      // Preset com critério exclusivo: limpa o texto e ativa apenas o preset
+      setSearchQuery("");
+      setActivePreset("Credencial");
+    } else {
+      // Demais presets: comportamento original via busca textual
+      setActivePreset(null);
+      setSearchQuery(tagLabel);
+    }
     setIsOpen(true);
   };
+
+  const handleClearFilter = () => {
+    setSearchQuery("");
+    setActivePreset(null);
+    setIsOpen(false);
+  };
+
+  const hasFilter = searchQuery !== "" || activePreset !== null;
 
   return (
     <div className="space-y-4" ref={containerRef}>
       {/* Category Tags */}
       <div className="flex flex-wrap gap-2">
         {allowedCategories.map((cat) => {
-          const catNormalized = getCorrectedCategoryNormalized(cat);
-          const queryNormalized = getCorrectedCategoryNormalized(searchQuery);
-          const isTagActive = queryNormalized === catNormalized && searchQuery !== "";
+          let isTagActive = false;
+          if (cat === "Credencial") {
+            // Ativo apenas quando o preset exclusivo está selecionado
+            isTagActive = activePreset === "Credencial";
+          } else {
+            const catNormalized = getCorrectedCategoryNormalized(cat);
+            const queryNormalized = getCorrectedCategoryNormalized(searchQuery);
+            isTagActive = queryNormalized === catNormalized && searchQuery !== "" && activePreset !== "Credencial";
+          }
+
           const style = TAG_STYLES[cat] || {
             inactive: "border-[#d7e5e8] bg-white text-[#0b2f4a] hover:bg-[#f3f7f8] hover:border-slate-300",
             active: "border-teal-300 bg-teal-50 text-teal-800 shadow-sm ring-2 ring-teal-200/50"
           };
+
           return (
             <button
               key={cat}
@@ -166,13 +187,10 @@ export function ProductSearchSelector({
             </button>
           );
         })}
-        {searchQuery && (
+        {hasFilter && (
           <button
             type="button"
-            onClick={() => {
-              setSearchQuery("");
-              setIsOpen(false);
-            }}
+            onClick={handleClearFilter}
             className="shrink-0 rounded-full border border-rose-200 bg-rose-50 text-rose-700 px-3.5 py-1.5 text-xs font-bold hover:bg-rose-100 transition"
           >
             Limpar Filtro
@@ -189,6 +207,8 @@ export function ProductSearchSelector({
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
+              // Digitar texto manualmente cancela qualquer preset ativo
+              setActivePreset(null);
               setIsOpen(true);
             }}
             onFocus={() => setIsOpen(true)}
@@ -201,7 +221,7 @@ export function ProductSearchSelector({
             ) : searchQuery ? (
               <button
                 type="button"
-                onClick={() => setSearchQuery("")}
+                onClick={() => { setSearchQuery(""); setActivePreset(null); }}
                 className="hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100"
               >
                 <X className="h-3.5 w-3.5" />
