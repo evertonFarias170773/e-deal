@@ -9,6 +9,36 @@ interface Props {
   isLoading: boolean;
 }
 
+// Helper para compor fragmentos de texto garantindo o espaçamento correto entre palavras e pontuações
+function safeConcat(left: string, right: string): string {
+  if (!left) return right;
+  if (!right) return left;
+  
+  const lastCharLeft = left.slice(-1);
+  const firstCharRight = right.charAt(0);
+  
+  // Se o lado direito começar com pontuação, removemos espaços sobrando à esquerda
+  if (/^[.,!?;:]/.test(firstCharRight)) {
+     return left.replace(/\s+$/, '') + right;
+  }
+  
+  const hasSpaceLeft = /\s/.test(lastCharLeft);
+  const hasSpaceRight = /\s/.test(firstCharRight);
+  
+  // Evitar duplicação de espaço
+  if (hasSpaceLeft && hasSpaceRight) {
+     return left + right.replace(/^\s+/, '');
+  }
+  
+  // Se já há separador natural
+  if (hasSpaceLeft || hasSpaceRight) {
+     return left + right;
+  }
+  
+  // Se não tem separador de nenhum lado, inserimos um espaço em branco
+  return left + ' ' + right;
+}
+
 export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   
@@ -100,19 +130,21 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
         let sessionFinalTranscript = '';
         
         for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const chunk = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-             sessionFinalTranscript += event.results[i][0].transcript;
+             sessionFinalTranscript = safeConcat(sessionFinalTranscript, chunk);
           } else {
-             interimTranscript += event.results[i][0].transcript;
+             interimTranscript = safeConcat(interimTranscript, chunk);
           }
         }
         
         // Se houve confirmação final da frase, acumulamos na nossa referência de longo prazo (permanente)
         if (sessionFinalTranscript) {
-           finalTranscriptRef.current += sessionFinalTranscript;
+           finalTranscriptRef.current = safeConcat(finalTranscriptRef.current, sessionFinalTranscript);
         }
         
-        const textComposto = originalValueRef.current + finalTranscriptRef.current + interimTranscript;
+        let textComposto = safeConcat(originalValueRef.current, finalTranscriptRef.current);
+        textComposto = safeConcat(textComposto, interimTranscript);
         
         // A visualização do input na tela compõe o texto consolidado com os resultados provisórios
         onChangeRef.current(textComposto);
