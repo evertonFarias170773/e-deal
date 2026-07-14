@@ -16,7 +16,8 @@ const allowedCategories = [
   "Ingressos de segurança",
   "Pulseiras",
   "Cordão Credencial",
-  "Cartão PVC"
+  "Cartão PVC",
+  "Credencial"
 ];
 
 const TAG_STYLES: Record<string, { active: string; inactive: string }> = {
@@ -35,6 +36,10 @@ const TAG_STYLES: Record<string, { active: string; inactive: string }> = {
   "Cartão PVC": {
     inactive: "border-purple-100 bg-purple-50/60 text-purple-700 hover:bg-purple-100/80 hover:border-purple-200",
     active: "border-purple-400 bg-purple-100 text-purple-900 shadow-sm ring-2 ring-purple-200/50"
+  },
+  "Credencial": {
+    inactive: "border-cyan-100 bg-cyan-50/60 text-cyan-700 hover:bg-cyan-100/80 hover:border-cyan-200",
+    active: "border-cyan-400 bg-cyan-100 text-cyan-900 shadow-sm ring-2 ring-cyan-200/50"
   }
 };
 
@@ -54,6 +59,9 @@ function getCorrectedCategoryNormalized(category?: string): string {
   }
   if (cat === "cordao credencial") {
     return "cordao credencial";
+  }
+  if (cat === "credencial") {
+    return "credencial";
   }
   return cat;
 }
