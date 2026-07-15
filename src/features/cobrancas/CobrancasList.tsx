@@ -18,6 +18,7 @@ import {
   getEmpresaGrupoKey,
   getEmpresaRecebedoraFixaById,
   getLocalDateKey,
+  getLocalDateInSaoPaulo,
   getLocalMonthKey,
   getNumeroCobranca,
   getLiberacaoPedidoLabel,
@@ -90,8 +91,8 @@ function isConfirmadoDia(cobranca: Cobranca) {
   if (!dateVal) {
     return false;
   }
-  const todayKey = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
-  return new Date(dateVal).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }) === todayKey;
+  const todayKey = getLocalDateInSaoPaulo(new Date());
+  return getLocalDateInSaoPaulo(dateVal) === todayKey;
 }
 
 function getEmpresaLabelVisual(nome: string) {
@@ -168,6 +169,7 @@ export function CobrancasList() {
   const [search, setSearch] = useState("");
   const [tipo, setTipo] = useState<TipoFiltro>("TODOS");
   const [empresa, setEmpresa] = useState("TODAS");
+  const [vendedor, setVendedor] = useState("TODOS");
   const [statusFilter, setStatusFilter] = useState<"FILA" | "CONFIRMADOS">("FILA");
   
   const initialDates = useMemo(() => getInitialDates(), []);
@@ -208,6 +210,17 @@ export function CobrancasList() {
       .map(([value, label]) => ({ value, label }));
   }, [cobrancasStats]);
 
+  const vendedorOptions = useMemo(() => {
+    const entries = new Set<string>();
+    cobrancasStats.forEach((cobranca) => {
+      const v = cobranca.atendente?.trim();
+      if (v) {
+        entries.add(v);
+      }
+    });
+    return Array.from(entries).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [cobrancasStats]);
+
 
 
   // faturamentoPeriodo e faturamentoMes agora vêm de viewDashboard (view_pagamentos_pagos_v2)
@@ -234,11 +247,17 @@ export function CobrancasList() {
             ? true
             : matchesTipoFiltro(cobranca, tipo, existingBoletoIdInts, hasBoletoHistoryIdInts);
         const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
+        const matchesVendedor = vendedor === "TODOS" || cobranca.atendente === vendedor;
+        
+        const dateConfirmacaoStr = getLocalDateInSaoPaulo(cobranca.data_confirmacao);
+        const matchesPeriodo =
+          statusFilter !== "CONFIRMADOS" ||
+          ((!dataInicial || dateConfirmacaoStr >= dataInicial) && (!dataFinal || dateConfirmacaoStr <= dataFinal));
 
-        return matchesSearch && matchesTipo && matchesEmpresa;
+        return matchesSearch && matchesTipo && matchesEmpresa && matchesVendedor && matchesPeriodo;
       })
       .slice(0, 500);
-  }, [cobrancasStats, empresa, search, tipo, statusFilter, existingBoletoIdInts]);
+  }, [cobrancasStats, empresa, search, tipo, statusFilter, existingBoletoIdInts, vendedor, dataInicial, dataFinal]);
 
   const empresaDestinoSelecionada = empresaDestinoId ? getEmpresaRecebedoraFixaById(empresaDestinoId) ?? null : null;
 
@@ -494,14 +513,14 @@ export function CobrancasList() {
       </div>
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[1fr_220px_180px_180px_180px_auto]">
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="flex flex-wrap gap-3 items-stretch">
+          <label className="flex flex-1 min-w-[280px] items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <Search className="h-4 w-4 text-[#0f9f9a]" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               className="w-full bg-transparent text-sm text-slate-900 outline-none"
-              placeholder="Buscar por número, cliente, documento ou empresa"
+              placeholder="Buscar por número, cliente, ID, documento ou empresa"
             />
           </label>
 
@@ -534,12 +553,41 @@ export function CobrancasList() {
             ))}
           </select>
 
+          <select value={vendedor} onChange={(event) => setVendedor(event.target.value)} className={filterClass}>
+            <option value="TODOS">Todos os vendedores</option>
+            {vendedorOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+
+          {statusFilter === "CONFIRMADOS" && (
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2">
+              <span className="text-xs text-slate-500 font-medium">Período:</span>
+              <input
+                type="date"
+                value={dataInicial}
+                onChange={(e) => setDataInicial(e.target.value)}
+                className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
+              />
+              <span className="text-xs text-slate-400">a</span>
+              <input
+                type="date"
+                value={dataFinal}
+                onChange={(e) => setDataFinal(e.target.value)}
+                className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
+              />
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => {
               setSearch("");
               setTipo("TODOS");
               setEmpresa("TODAS");
+              setVendedor("TODOS");
               setStatusFilter("FILA");
               setMesSelecionado(getLocalMonthKey(new Date()));
               setDataInicial(initialDates.start);

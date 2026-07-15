@@ -255,6 +255,19 @@ export function getEmpresaGrupoKey(cobranca: Pick<Cobranca, "empresa" | "id_empr
   return empresaTexto || String(empresaId || "SEM_EMPRESA");
 }
 
+export function getLocalDateInSaoPaulo(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  try {
+    const dateObj = typeof value === "string" ? new Date(value) : value;
+    if (dateObj instanceof Date && !isNaN(dateObj.getTime())) {
+      return dateObj.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+    }
+  } catch (e) {
+    console.error("Erro ao converter data para fuso SP:", e);
+  }
+  return "";
+}
+
 export function cobrancaMatchesSearch(cobranca: Cobranca, search: string) {
   const normalizedSearch = normalize(search.trim());
 
@@ -266,6 +279,7 @@ export function cobrancaMatchesSearch(cobranca: Cobranca, search: string) {
     [
       cobranca.id_pagamento,
       cobranca.id_int,
+      cobranca.id_cliente,
       cobranca.os_ideal,
       cobranca.cliente,
       cobranca.documento,
