@@ -28,7 +28,7 @@ import {
 import type { Cobranca } from "@/features/cobrancas/types";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDateTime } from "@/lib/formatters/date";
-import { useDashboardFinanceiroSnapshot } from "@/features/cobrancas/hooks/useDashboardFinanceiroSnapshot";
+import { useViewPagamentosDashboard } from "@/features/cobrancas/hooks/useViewPagamentosDashboard";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
 
 type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO";
@@ -85,12 +85,13 @@ function isConfirmadoDia(cobranca: Cobranca) {
   if (!isBaseConfirmada(cobranca)) {
     return false;
   }
-  const dateVal = cobranca.paid_at || cobranca.data_confirmacao;
+  // Usar data_confirmacao alinhado com a regra oficial da view
+  const dateVal = cobranca.data_confirmacao;
   if (!dateVal) {
     return false;
   }
-  const todayKey = getLocalDateKey(new Date());
-  return getLocalDateKey(dateVal) === todayKey;
+  const todayKey = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+  return new Date(dateVal).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }) === todayKey;
 }
 
 function getEmpresaLabelVisual(nome: string) {
@@ -176,10 +177,17 @@ export function CobrancasList() {
   const [empresaEmEdicao, setEmpresaEmEdicao] = useState<Cobranca | null>(null);
   const [empresaDestinoId, setEmpresaDestinoId] = useState<number | null>(null);
   const [isSavingEmpresa, setIsSavingEmpresa] = useState(false);
-  const dashboardFinanceiro = useDashboardFinanceiroSnapshot({
-    cobrancasStats,
-    mesSelecionado
-  });
+  // Indicadores financeiros exclusivamente da view_pagamentos_pagos_v2
+  const viewDashboard = useViewPagamentosDashboard({ dataInicial, dataFinal, mesSelecionado });
+
+  // Pendentes de aprovação calculados do array in-memory (não cobertos pela view)
+  const pendentesResumo = useMemo(() => {
+    const pendentes = cobrancasStats.filter(isPendenteAprovacao);
+    return {
+      count: pendentes.length,
+      total: pendentes.reduce((s, c) => s + (c.valor ?? 0), 0),
+    };
+  }, [cobrancasStats]);
 
   const tipoOptions = useMemo(() => tipoFiltroOptions, []);
 
@@ -202,79 +210,7 @@ export function CobrancasList() {
 
 
 
-  const faturamentoPeriodoPorEmpresa = useMemo(() => {
-    const groups = new Map<number, { id_empresa: number; empresa: string; total: number }>();
-    
-    // Initialize the three fixed companies
-    groups.set(1, { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI", total: 0 });
-    groups.set(2, { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS", total: 0 });
-    groups.set(3, { id_empresa: 3, empresa: "E3 BRINDES LTDA", total: 0 });
-
-    cobrancasStats.forEach((c) => {
-      // Excluir: A_RECEBER, CANCELADO, confirmado = false
-      if (c.status === "A_RECEBER" || c.status === "CANCELADO" || !c.confirmado) {
-        return;
-      }
-
-      // Considerar apenas status in ('PAID', 'A_VENCER')
-      if (c.status !== "PAID" && c.status !== "A_VENCER") {
-        return;
-      }
-
-      // Preferência de data: paid_at ?? data_confirmacao ?? created_at
-      const dateVal = c.paid_at || c.data_confirmacao || c.created_at;
-      if (!dateVal) {
-        return;
-      }
-
-      const faturamentoLocalDateKey = getLocalDateKey(dateVal);
-      if (faturamentoLocalDateKey < dataInicial || faturamentoLocalDateKey > dataFinal) {
-        return;
-      }
-
-      let idEmpresa = Number(c.id_empresa);
-      let empresaNome = c.empresa?.trim() || "";
-
-      // Agrupar por empresa: usar id_empresa como fonte principal; se vazia/1/Definir empresa, mapear por id_empresa
-      if (!idEmpresa || idEmpresa <= 0) {
-        const lowerName = empresaNome.toLowerCase();
-        if (lowerName.includes("eireli") || lowerName.includes("grafica expressa") || lowerName.includes("grafica")) {
-          idEmpresa = 1;
-        } else if (lowerName.includes("biro")) {
-          idEmpresa = 2;
-        } else if (lowerName.includes("e3") || lowerName.includes("brindes")) {
-          idEmpresa = 3;
-        } else {
-          idEmpresa = 1;
-        }
-      }
-
-      // Padronizar por id_empresa
-      if (idEmpresa === 1) empresaNome = "IDEAL GRÁFICA EXPRESSA EIRELI";
-      else if (idEmpresa === 2) empresaNome = "IDEAL BIRÔ SERV. GRAFICOS";
-      else if (idEmpresa === 3) empresaNome = "E3 BRINDES LTDA";
-      else empresaNome = `Empresa ${idEmpresa}`;
-
-      const valorValido = c.valor ?? 0;
-
-      const current = groups.get(idEmpresa);
-      if (current) {
-        current.total += valorValido;
-      } else {
-        groups.set(idEmpresa, {
-          id_empresa: idEmpresa,
-          empresa: empresaNome,
-          total: valorValido
-        });
-      }
-    });
-
-    return Array.from(groups.values()).sort((a, b) => a.id_empresa - b.id_empresa);
-  }, [cobrancasStats, dataInicial, dataFinal]);
-
-  const faturamentoPeriodoTotal = useMemo(() => {
-    return faturamentoPeriodoPorEmpresa.reduce((sum, item) => sum + item.total, 0);
-  }, [faturamentoPeriodoPorEmpresa]);
+  // faturamentoPeriodo e faturamentoMes agora vêm de viewDashboard (view_pagamentos_pagos_v2)
 
   const visibleCobrancas = useMemo(() => {
     const base =
@@ -382,33 +318,29 @@ export function CobrancasList() {
       return;
     }
 
-    const totalReais = cobrancasStats.length;
-
     console.info("[ConferenciaPagamentos][Cards]", {
       source,
-      totalReais,
-      sourceFinanceiro: dashboardFinanceiro.source,
-      pendentesResumo: dashboardFinanceiro.pendentesResumo,
-      confirmadosDiaResumo: dashboardFinanceiro.confirmadosDiaResumo,
-      faturamentoDiaResumoTotal: dashboardFinanceiro.faturamentoDiaResumoTotal,
-      faturamentoMesPeriodo: dashboardFinanceiro.faturamentoMesPeriodo,
-      totalDiaPorEmpresa: Object.fromEntries(
-        dashboardFinanceiro.faturamentoDiaPorEmpresa.map((item) => [item.id_empresa, item.total])
-      ),
-      totalMesSelecionado: dashboardFinanceiro.faturamentoMesResumo.total,
+      totalRegistrosList: cobrancasStats.length,
+      viewIsLoading: viewDashboard.isLoading,
+      viewError: viewDashboard.error,
+      pendentesResumo,
+      confirmadosDia: viewDashboard.confirmadosDia,
+      faturamentoMes: viewDashboard.faturamentoMes,
+      faturamentoPeriodo: viewDashboard.faturamentoPeriodo,
+      faturamentoPorEmpresaMes: viewDashboard.faturamentoPorEmpresaMes,
       mesSelecionado
     });
   }, [
     cobrancasStats.length,
-    dashboardFinanceiro.confirmadosDiaResumo,
-    dashboardFinanceiro.faturamentoDiaPorEmpresa,
-    dashboardFinanceiro.faturamentoDiaResumoTotal,
-    dashboardFinanceiro.faturamentoMesResumo.total,
-    dashboardFinanceiro.pendentesResumo,
-    dashboardFinanceiro.source,
-    dashboardFinanceiro.faturamentoMesPeriodo,
     mesSelecionado,
-    source
+    pendentesResumo,
+    source,
+    viewDashboard.confirmadosDia,
+    viewDashboard.error,
+    viewDashboard.faturamentoMes,
+    viewDashboard.faturamentoPeriodo,
+    viewDashboard.faturamentoPorEmpresaMes,
+    viewDashboard.isLoading
   ]);
 
   return (
@@ -431,8 +363,8 @@ export function CobrancasList() {
       <section className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         <ConferenceStatCard
           title="Pendentes de aprovação"
-          count={dashboardFinanceiro.pendentesResumo.count}
-          total={dashboardFinanceiro.pendentesResumo.total}
+          count={pendentesResumo.count}
+          total={pendentesResumo.total}
           helper="E-Faturado aguardando validação financeira."
           tone="warning"
           isActive={tipo === "PENDENTES_APROVACAO"}
@@ -444,9 +376,9 @@ export function CobrancasList() {
 
         <ConferenceStatCard
           title="Confirmados do dia"
-          count={dashboardFinanceiro.confirmadosDiaResumo.count}
-          total={dashboardFinanceiro.confirmadosDiaResumo.total}
-          helper="Baseado na data atual em America/Sao_Paulo."
+          count={viewDashboard.confirmadosDia.count}
+          total={viewDashboard.confirmadosDia.total}
+          helper="data_confirmacao = hoje em America/Sao_Paulo."
           tone="success"
           isActive={tipo === "CONFIRMADOS_DIA"}
           onClick={() => {
@@ -458,18 +390,18 @@ export function CobrancasList() {
         <section className="rounded-2xl border border-slate-200/60 p-4 shadow-sm bg-white flex flex-col justify-between">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                {dashboardFinanceiro.source === "rpc" ? "Faturamento do período" : "Faturamento do dia"}
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Faturamento do período</p>
+              <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                {viewDashboard.isLoading ? "..." : formatCurrency(viewDashboard.faturamentoMes.total)}
               </p>
-              <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{formatCurrency(dashboardFinanceiro.faturamentoDiaResumoTotal)}</p>
             </div>
             <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 select-none">
-              {dashboardFinanceiro.source === "rpc" ? "Período" : "Hoje"}
+              {mesSelecionado}
             </span>
           </div>
 
           <div className="mt-2.5 space-y-1">
-            {dashboardFinanceiro.faturamentoDiaPorEmpresa.map((item) => {
+            {viewDashboard.faturamentoPorEmpresaMes.map((item) => {
               return (
                 <div key={item.id_empresa} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50/50 px-3 py-1">
                   <p className="truncate text-[11px] font-semibold text-slate-700">{getEmpresaLabelVisual(item.empresa)}</p>
@@ -484,7 +416,9 @@ export function CobrancasList() {
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Faturamento por Período</p>
-              <p className="text-base font-bold text-slate-900">{formatCurrency(faturamentoPeriodoTotal)}</p>
+              <p className="text-base font-bold text-slate-900">
+                {viewDashboard.isLoading ? "..." : formatCurrency(viewDashboard.faturamentoPeriodo.total)}
+              </p>
             </div>
             <div className="flex items-center gap-1.5">
               <input
@@ -504,7 +438,7 @@ export function CobrancasList() {
           </div>
 
           <div className="mt-2.5 space-y-1">
-            {faturamentoPeriodoPorEmpresa.map((item) => {
+            {viewDashboard.faturamentoPorEmpresaPeriodo.map((item) => {
               return (
                 <div key={item.id_empresa} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50/50 px-3 py-1">
                   <p className="truncate text-[11px] font-semibold text-slate-700">{getEmpresaLabelVisual(item.empresa)}</p>
@@ -516,12 +450,12 @@ export function CobrancasList() {
         </section>
       </section>
 
-      {dashboardFinanceiro.source === "fallback" ? (
+      {viewDashboard.error ? (
         <section className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Fonte financeira temporariamente em fallback</p>
+          <p className="font-semibold">Não foi possível carregar os indicadores financeiros</p>
           <p className="mt-1">
-            A RPC `get_dashboard_financeiro` ainda nao respondeu no ambiente. A tela esta usando o
-            calculo temporario em `pagamentos_v2` ate a funcao centralizada ficar disponivel.
+            Erro ao consultar <code>view_pagamentos_pagos_v2</code>: {viewDashboard.error}.
+            Os totais dos cards podem estar desatualizados.
           </p>
         </section>
       ) : null}
