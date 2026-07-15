@@ -8,14 +8,27 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { useCompany } from "@/features/companies/CompanyProvider";
 import { DashboardCharts } from "@/features/dashboard/DashboardCharts";
+import { useDashboardMetrics } from "@/features/dashboard/hooks/useDashboardMetrics";
 import { dashboardActivity, getDashboardMockData } from "@/lib/mocks/dashboard.mock";
+import type { LucideIcon } from "lucide-react";
+import type { DashboardCardKey } from "@/features/dashboard/services/dashboard.service";
 
-const metricIcons = [Banknote, WalletCards, ClipboardList, AlertTriangle, Factory];
+// Mapa de ícones por card key (mantém a ordem visual dos cards)
+const cardIcons: Record<DashboardCardKey, LucideIcon> = {
+  vendasMes: Banknote,
+  contasReceber: WalletCards,
+  propostasAguardando: ClipboardList,
+  notasErro: AlertTriangle,
+  producao: Factory,
+};
 
 type Activity = (typeof dashboardActivity)[number];
 
 export function DashboardPage() {
   const { activeCompany } = useCompany();
+  const { cards, isLoading: isCardsLoading } = useDashboardMetrics();
+
+  // Gráficos permanecem com dados mock até a Fase 2 (não alterados)
   const dashboardData = getDashboardMockData(activeCompany.id);
 
   return (
@@ -43,20 +56,32 @@ export function DashboardPage() {
         }
       />
 
+      {/* ── Cards de indicadores (dados reais) ─────────────────────────── */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        {dashboardData.metrics.map((metric, index) => (
-          <SummaryCard
-            key={metric.title}
-            title={metric.title}
-            value={metric.value}
-            description={metric.description}
-            trend={metric.trend}
-            tone={metric.tone}
-            icon={metricIcons[index]}
-          />
-        ))}
+        {isCardsLoading
+          ? Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-36 animate-pulse rounded-3xl border border-slate-200 bg-white dark:bg-slate-800/40 dark:border-slate-700"
+              />
+            ))
+          : cards.map((card) => {
+              const Icon = cardIcons[card.key];
+              return (
+                <SummaryCard
+                  key={card.key}
+                  title={card.title}
+                  value={card.value}
+                  description={card.description}
+                  trend={card.trend}
+                  tone={card.tone}
+                  icon={Icon}
+                />
+              );
+            })}
       </section>
 
+      {/* ── Gráficos (dados mock – Fase 2) ─────────────────────────────── */}
       <DashboardCharts
         salesByMonth={dashboardData.salesByMonth}
         receivablesByStatus={dashboardData.receivablesByStatus}
@@ -64,6 +89,7 @@ export function DashboardPage() {
         salesByCompany={dashboardData.salesByCompany}
       />
 
+      {/* ── Atividades recentes e próximas etapas (mock – Fase 2) ──────── */}
       <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
