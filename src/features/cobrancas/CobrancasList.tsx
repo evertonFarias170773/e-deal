@@ -31,6 +31,7 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDateTime } from "@/lib/formatters/date";
 import { useViewPagamentosDashboard } from "@/features/cobrancas/hooks/useViewPagamentosDashboard";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
+import { listVendedoresReais, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 
 type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO";
 
@@ -175,10 +176,27 @@ export function CobrancasList() {
   const initialDates = useMemo(() => getInitialDates(), []);
   const [dataInicial, setDataInicial] = useState(initialDates.start);
   const [dataFinal, setDataFinal] = useState(initialDates.end);
+  const [dataInicialTabela, setDataInicialTabela] = useState(initialDates.start);
+  const [dataFinalTabela, setDataFinalTabela] = useState(initialDates.end);
   const [mesSelecionado, setMesSelecionado] = useState(getLocalMonthKey(new Date()));
   const [empresaEmEdicao, setEmpresaEmEdicao] = useState<Cobranca | null>(null);
   const [empresaDestinoId, setEmpresaDestinoId] = useState<number | null>(null);
   const [isSavingEmpresa, setIsSavingEmpresa] = useState(false);
+  const [vendedores, setVendedores] = useState<UsuarioVendedor[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const list = await listVendedoresReais();
+      if (active) {
+        setVendedores(list);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Indicadores financeiros exclusivamente da view_pagamentos_pagos_v2
   const viewDashboard = useViewPagamentosDashboard({ dataInicial, dataFinal, mesSelecionado });
 
@@ -208,17 +226,6 @@ export function CobrancasList() {
     return Array.from(entries.entries())
       .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"))
       .map(([value, label]) => ({ value, label }));
-  }, [cobrancasStats]);
-
-  const vendedorOptions = useMemo(() => {
-    const entries = new Set<string>();
-    cobrancasStats.forEach((cobranca) => {
-      const v = cobranca.atendente?.trim();
-      if (v) {
-        entries.add(v);
-      }
-    });
-    return Array.from(entries).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [cobrancasStats]);
 
 
@@ -252,12 +259,12 @@ export function CobrancasList() {
         const dateConfirmacaoStr = getLocalDateInSaoPaulo(cobranca.data_confirmacao);
         const matchesPeriodo =
           statusFilter !== "CONFIRMADOS" ||
-          ((!dataInicial || dateConfirmacaoStr >= dataInicial) && (!dataFinal || dateConfirmacaoStr <= dataFinal));
+          ((!dataInicialTabela || dateConfirmacaoStr >= dataInicialTabela) && (!dataFinalTabela || dateConfirmacaoStr <= dataFinalTabela));
 
         return matchesSearch && matchesTipo && matchesEmpresa && matchesVendedor && matchesPeriodo;
       })
       .slice(0, 500);
-  }, [cobrancasStats, empresa, search, tipo, statusFilter, existingBoletoIdInts, vendedor, dataInicial, dataFinal]);
+  }, [cobrancasStats, empresa, search, tipo, statusFilter, existingBoletoIdInts, vendedor, dataInicialTabela, dataFinalTabela]);
 
   const empresaDestinoSelecionada = empresaDestinoId ? getEmpresaRecebedoraFixaById(empresaDestinoId) ?? null : null;
 
@@ -555,9 +562,9 @@ export function CobrancasList() {
 
           <select value={vendedor} onChange={(event) => setVendedor(event.target.value)} className={filterClass}>
             <option value="TODOS">Todos os vendedores</option>
-            {vendedorOptions.map((v) => (
-              <option key={v} value={v}>
-                {v}
+            {vendedores.map((v) => (
+              <option key={v.user_id} value={v.nome_usuario}>
+                {v.nome_usuario}
               </option>
             ))}
           </select>
@@ -567,15 +574,15 @@ export function CobrancasList() {
               <span className="text-xs text-slate-500 font-medium">Período:</span>
               <input
                 type="date"
-                value={dataInicial}
-                onChange={(e) => setDataInicial(e.target.value)}
+                value={dataInicialTabela}
+                onChange={(e) => setDataInicialTabela(e.target.value)}
                 className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
               />
               <span className="text-xs text-slate-400">a</span>
               <input
                 type="date"
-                value={dataFinal}
-                onChange={(e) => setDataFinal(e.target.value)}
+                value={dataFinalTabela}
+                onChange={(e) => setDataFinalTabela(e.target.value)}
                 className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
               />
             </div>
@@ -589,9 +596,8 @@ export function CobrancasList() {
               setEmpresa("TODAS");
               setVendedor("TODOS");
               setStatusFilter("FILA");
-              setMesSelecionado(getLocalMonthKey(new Date()));
-              setDataInicial(initialDates.start);
-              setDataFinal(initialDates.end);
+              setDataInicialTabela(initialDates.start);
+              setDataFinalTabela(initialDates.end);
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
