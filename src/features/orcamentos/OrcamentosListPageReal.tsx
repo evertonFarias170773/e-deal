@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip } from "lucide-react";
+import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -158,36 +158,7 @@ function getSelectedPeriodLabel(periodo: string, periodOptions: PeriodOption[]) 
 }
 
 function normalizeProposalStatus(status: string | null | undefined) {
-  // Retained for fallback but we shouldn't rely on it for logic.
-  // The mappers.ts now handles it correctly, so we'll just return the upper case.
   return String(status ?? "").trim().toUpperCase() || "SEM_STATUS";
-}
-
-function isEmAbertoStatus(status: string | null | undefined) {
-  const s = normalizeProposalStatus(status);
-  return ["NOVO", "NOVO / EM ARTE", "SEM_STATUS"].includes(s);
-}
-
-function isAguardandoStatus(status: string | null | undefined) {
-  const s = normalizeProposalStatus(status);
-  return ["AGUARDANDO", "AGUARDANDO / EM ARTE", "AGUARDANDO / PENDENTE"].includes(s);
-}
-
-function isAprovadaStatus(status: string | null | undefined) {
-  const s = normalizeProposalStatus(status);
-  // Reúne as aprovadas, liberadas e em revisão antes da fábrica rodar pesado
-  // Conservador: Inclui produção e expedição para que o valor total aprovado daquele mês
-  // não diminua quando a proposta entra na fábrica.
-  const isAprov = ["LIBERADO", "LIBERADO / EM ARTE", "REVISAO ATENDENTE", "REVISAO PRODUCAO"].includes(s);
-  return isAprov || isProducaoExpedicaoStatus(status);
-}
-
-function isProducaoExpedicaoStatus(status: string | null | undefined) {
-  const s = normalizeProposalStatus(status);
-  return [
-    "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO", 
-    "EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"
-  ].includes(s);
 }
 
 function sumPropostaTotal(items: OrcamentoListItem[]) {
@@ -211,8 +182,8 @@ export function OrcamentosListPageReal() {
   const canCancelarProposta = Boolean(
     user?.isSuperAdmin ||
     user?.isAdmin ||
-    hasPermissao(user, "propostas.cancelar") || // Legado V1
-    hasPermissao(user, "propostas.cancel")      // V2.1
+    hasPermissao(user, "propostas.cancelar") || 
+    hasPermissao(user, "propostas.cancel")      
   );
 
   useEffect(() => {
@@ -237,13 +208,12 @@ export function OrcamentosListPageReal() {
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
   const { propostas: rawPropostas, source, warnings, detectedColumns, loadedCount, isLoading, errorMessage, triggerRefresh } = useOrcamentosReadOnlyData(periodo);
 
-  // V2.1: Aplica Escopo de Dados Global (own vs all)
   const propostas = useMemo(() => {
     const escopo = getDataScope(user, "propostas");
     if (escopo === "all") return rawPropostas;
 
     const meuNome = getNomeParaEscopo(user).trim().toLowerCase();
-    if (!meuNome) return rawPropostas; // Fallback seguro (evita tela vazia se o nome não for carregado)
+    if (!meuNome) return rawPropostas; 
 
     return rawPropostas.filter((p) => {
       const vendedorProposta = (p.vendedor || "").trim().toLowerCase();
@@ -256,7 +226,7 @@ export function OrcamentosListPageReal() {
   const [modelo, setModelo] = useState("TODOS_MODELOS");
   const [vendedor, setVendedor] = useState("TODOS");
   const [filterTipoCobranca, setFilterTipoCobranca] = useState("TODOS");
-  const [filterAvulso, setFilterAvulso] = useState<"TODOS" | "PEDIDOS" | "ORCAMENTOS">("TODOS");
+  const [activeCard, setActiveCard] = useState<"ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null>(null);
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
   const { openChat } = useGlobalChat();
@@ -322,23 +292,55 @@ export function OrcamentosListPageReal() {
     []
   );
 
+  const searchIndex = useMemo(() => {
+    return propostas.map((item) => ({
+      text: getSearchableProposalText(item),
+      digits: getSearchableProposalDigits(item),
+      statusNorm: normalizeProposalStatus(item.statusInterno)
+    }));
+  }, [propostas]);
+
   const filteredPropostas = useMemo(() => {
     const normalizedSearch = normalize(search.trim());
     const digitsSearch = onlyDigits(search);
 
-    return propostas.filter((item) => {
-      const searchableText = getSearchableProposalText(item);
-      const searchableDigits = getSearchableProposalDigits(item);
+    const result: typeof propostas = [];
+    for (let i = 0; i < propostas.length; i++) {
+      const item = propostas[i];
+      const idx = searchIndex[i];
+
       const matchesSearch =
         !normalizedSearch && !digitsSearch
           ? true
-          : (normalizedSearch && searchableText.includes(normalizedSearch)) ||
-            (digitsSearch && searchableDigits.includes(digitsSearch));
-      const matchesStatus = status === "TODOS" || (status === "EM ARTE" ? item.status?.includes("EM ARTE") : item.status === status);
+          : (normalizedSearch && idx.text.includes(normalizedSearch)) ||
+            (digitsSearch && idx.digits.includes(digitsSearch));
+      if (!matchesSearch) continue;
+
+      let matchesStatus = true;
+      if (activeCard) {
+        const s = idx.statusNorm;
+        if (activeCard === "EM_ARTE") {
+          matchesStatus = ["NOVO / EM ARTE", "AGUARDANDO / EM ARTE", "LIBERADO / EM ARTE"].includes(s);
+        } else if (activeCard === "LIBERADAS") {
+          matchesStatus = ["LIBERADO", "LIBERADO / EM ARTE"].includes(s);
+        } else if (activeCard === "REVISAO_ATENDENTE") {
+          matchesStatus = s === "REVISAO ATENDENTE";
+        } else if (activeCard === "EM_PRODUCAO") {
+          matchesStatus = ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"].includes(s);
+        }
+      } else {
+        matchesStatus = status === "TODOS" || (status === "EM ARTE" ? item.status?.includes("EM ARTE") : item.status === status);
+      }
+      if (!matchesStatus) continue;
+
       const matchesModelo =
         modelo === "TODOS_MODELOS" ||
         (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
+      if (!matchesModelo) continue;
+
       const matchesVendedor = vendedor === "TODOS" || item.vendedor === vendedor;
+      if (!matchesVendedor) continue;
+
       const matchesPeriodo =
         periodo === "all" ||
         (() => {
@@ -346,44 +348,45 @@ export function OrcamentosListPageReal() {
           const [y, m] = periodo.split("-").map(Number);
           return target.getFullYear() === y && target.getMonth() + 1 === m;
         })();
+      if (!matchesPeriodo) continue;
 
-      let matchesAvulso = true;
-      if (filterAvulso === "PEDIDOS") matchesAvulso = !item.isAvulsoRaw;
-      if (filterAvulso === "ORCAMENTOS") matchesAvulso = !!item.isAvulsoRaw;
-
-      let matchesTipoCobranca = true;
       if (filterTipoCobranca !== "TODOS") {
         const hasCartao = filterTipoCobranca === "CARTAO";
-        matchesTipoCobranca = item.tiposCobranca.some(t => {
+        const ok = item.tiposCobranca.some(t => {
           const upper = t.trim().toUpperCase();
-          if (hasCartao) {
-            return upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO");
-          }
-          return upper === filterTipoCobranca;
+          return hasCartao
+            ? upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO")
+            : upper === filterTipoCobranca;
         });
+        if (!ok) continue;
       }
 
-      return matchesSearch && matchesStatus && matchesModelo && matchesVendedor && matchesPeriodo && matchesAvulso && matchesTipoCobranca;
-    }).sort((a, b) => {
+      result.push(item);
+    }
+
+    return result.sort((a, b) => {
       const dateA = new Date(a.updatedAt || a.createdAt).getTime();
       const dateB = new Date(b.updatedAt || b.createdAt).getTime();
       return dateB - dateA;
     });
-  }, [modelo, periodo, propostas, search, status, vendedor, filterAvulso, filterTipoCobranca]);
+  }, [modelo, periodo, propostas, searchIndex, search, status, vendedor, activeCard, filterTipoCobranca]);
 
-  // Identify visible/rendered proposal IDs (up to 100) to batch query summaries
   const visibleIdInts = useMemo(() => {
     return filteredPropostas.slice(0, 100).map((p) => p.id_int);
   }, [filteredPropostas]);
 
+  const fetchedChatIdsRef = useRef<Set<number>>(new Set());
+
   useEffect(() => {
-    if (visibleIdInts.length === 0) return;
+    const uncachedIds = visibleIdInts.filter((id) => !fetchedChatIdsRef.current.has(id));
+    if (uncachedIds.length === 0) return;
     let active = true;
     void (async () => {
       try {
         const freshReadInfo = loadChatReadInfo(user);
-        const resMap = await getPropostaChatResumos(visibleIdInts, user?.id, freshReadInfo);
+        const resMap = await getPropostaChatResumos(uncachedIds, user?.id, freshReadInfo);
         if (!active) return;
+        uncachedIds.forEach((id) => fetchedChatIdsRef.current.add(id));
         setChatResumos((prev) => ({ ...prev, ...resMap }));
       } catch (err) {
         console.error("[OrcamentosListPageReal] Erro ao buscar resumos do chat em lote:", err);
@@ -395,61 +398,61 @@ export function OrcamentosListPageReal() {
   }, [visibleIdInts, user]);
 
   const periodoSelecionadoLabel = useMemo(() => getSelectedPeriodLabel(periodo, periodOptions), [periodOptions, periodo]);
-  const emAbertoItens = useMemo(
-    () => propostas.filter((item) => isEmAbertoStatus(item.statusInterno)),
-    [propostas]
-  );
-  const aprovadasItens = useMemo(
-    () => propostas.filter((item) => isAprovadaStatus(item.statusInterno)),
-    [propostas]
-  );
-  const aguardandoItens = useMemo(
-    () => propostas.filter((item) => isAguardandoStatus(item.statusInterno)),
-    [propostas]
-  );
-  const emAbertoResumo = useMemo(
-    () => ({
-      quantidade: emAbertoItens.length,
-      total: sumPropostaTotal(emAbertoItens)
-    }),
-    [emAbertoItens]
-  );
-  const pedidosItens = useMemo(
-    () => propostas.filter((item) => !item.isAvulsoRaw),
-    [propostas]
-  );
-  const orcamentosItens = useMemo(
-    () => propostas.filter((item) => item.isAvulsoRaw),
-    [propostas]
-  );
-  const pedidosResumo = useMemo(
-    () => ({
-      quantidade: pedidosItens.length,
-      total: sumPropostaTotal(pedidosItens)
-    }),
-    [pedidosItens]
-  );
-  const orcamentosResumo = useMemo(
-    () => ({
-      quantidade: orcamentosItens.length,
-      total: sumPropostaTotal(orcamentosItens)
-    }),
-    [orcamentosItens]
-  );
-  const aprovadasResumo = useMemo(
-    () => ({
-      quantidade: aprovadasItens.length,
-      total: sumPropostaTotal(aprovadasItens)
-    }),
-    [aprovadasItens]
-  );
-  const aguardandoResumo = useMemo(
-    () => ({
-      quantidade: aguardandoItens.length,
-      total: sumPropostaTotal(aguardandoItens)
-    }),
-    [aguardandoItens]
-  );
+
+  const cardsSummary = useMemo(() => {
+    let orcCnt = 0, orcTotal = 0;
+    let emArteCnt = 0, emArteTotal = 0;
+    let liberadasCnt = 0, liberadasTotal = 0;
+    let revisaoCnt = 0, revisaoTotal = 0;
+    let producaoCnt = 0, producaoTotal = 0;
+
+    for (const item of propostas) {
+      const matchesModelo =
+        modelo === "TODOS_MODELOS" ||
+        (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
+      if (!matchesModelo) continue;
+
+      const matchesVendedor = vendedor === "TODOS" || item.vendedor === vendedor;
+      if (!matchesVendedor) continue;
+
+      if (filterTipoCobranca !== "TODOS") {
+        const hasCartao = filterTipoCobranca === "CARTAO";
+        const ok = item.tiposCobranca.some(t => {
+          const upper = t.trim().toUpperCase();
+          return hasCartao
+            ? upper.includes("CARD") || upper.includes("CARTAO") || upper.includes("CARTÃO")
+            : upper === filterTipoCobranca;
+        });
+        if (!ok) continue;
+      }
+
+      const v = Number(item.total) || 0;
+      orcCnt++;
+      orcTotal += v;
+
+      const s = normalizeProposalStatus(item.statusInterno);
+      if (["NOVO / EM ARTE", "AGUARDANDO / EM ARTE", "LIBERADO / EM ARTE"].includes(s)) {
+        emArteCnt++; emArteTotal += v;
+      }
+      if (["LIBERADO", "LIBERADO / EM ARTE"].includes(s)) {
+        liberadasCnt++; liberadasTotal += v;
+      }
+      if (s === "REVISAO ATENDENTE") {
+        revisaoCnt++; revisaoTotal += v;
+      }
+      if (["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"].includes(s)) {
+        producaoCnt++; producaoTotal += v;
+      }
+    }
+
+    return {
+      orcamentos: { count: orcCnt,        total: orcTotal        },
+      emArte:     { count: emArteCnt,      total: emArteTotal     },
+      liberadas:  { count: liberadasCnt,   total: liberadasTotal  },
+      revisao:    { count: revisaoCnt,     total: revisaoTotal    },
+      producao:   { count: producaoCnt,    total: producaoTotal   }
+    };
+  }, [propostas, modelo, vendedor, filterTipoCobranca]);
 
   useEffect(() => {
     console.info("[Orcamentos][ReadOnly]", {
@@ -575,7 +578,6 @@ export function OrcamentosListPageReal() {
     try {
       const data = await getPropostaDetailById(item.id_int);
       if (data) {
-        // Calculate saldoRestante using the exact same rule as PropostaCobrancaPanel:
         const cobrancasDaProposta = getCobrancasByProposta(item.id_int);
         const cobrancasAtivas = cobrancasDaProposta.filter((c) => c.status !== "CANCELADO");
         const totalCobradoReal = cobrancasAtivas.reduce((total, c) => total + (c.cartao_valor_final ?? c.valor), 0);
@@ -774,76 +776,82 @@ export function OrcamentosListPageReal() {
 
       {isLoading ? (
         <section className="grid gap-4 md:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, index) => (
+          {Array.from({ length: 5 }).map((_, index) => (
             <div key={index} className="h-36 animate-pulse rounded-3xl border border-slate-200 bg-white dark:bg-slate-800/40 dark:border-slate-700" />
           ))}
         </section>
       ) : (
         <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-          <div onClick={() => setFilterAvulso(prev => prev === "PEDIDOS" ? "TODOS" : "PEDIDOS")} className={`cursor-pointer transition rounded-3xl ${filterAvulso === "PEDIDOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
-            <SummaryCard
-              title="Pedidos"
-              value={pedidosResumo.quantidade.toString()}
-              description={
-                <span>
-                  Soma em {periodoSelecionadoLabel}:{" "}
-                  <strong className="text-base font-bold text-slate-900">{formatCurrency(pedidosResumo.total)}</strong>
-                </span>
-              }
-              tone={filterAvulso === "PEDIDOS" ? "success" : "info"}
-              icon={FileText}
-            />
-          </div>
-          <div onClick={() => setFilterAvulso(prev => prev === "ORCAMENTOS" ? "TODOS" : "ORCAMENTOS")} className={`cursor-pointer transition rounded-3xl ${filterAvulso === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => { setActiveCard(prev => prev === "ORCAMENTOS" ? null : "ORCAMENTOS"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Orçamentos"
-              value={orcamentosResumo.quantidade.toString()}
+              value={cardsSummary.orcamentos.count.toString()}
               description={
                 <span>
                   Soma em {periodoSelecionadoLabel}:{" "}
-                  <strong className="text-base font-bold text-slate-900">{formatCurrency(orcamentosResumo.total)}</strong>
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(cardsSummary.orcamentos.total)}</strong>
                 </span>
               }
-              tone={filterAvulso === "ORCAMENTOS" ? "success" : "info"}
+              tone={activeCard === "ORCAMENTOS" ? "info" : "neutral"}
               icon={FileText}
             />
           </div>
-          <SummaryCard
-            title="Em aberto"
-            value={emAbertoResumo.quantidade.toString()}
-            description={
-              <span>
-                Soma em {periodoSelecionadoLabel}:{" "}
-                <strong className="text-base font-bold text-slate-900">{formatCurrency(emAbertoResumo.total)}</strong>
-              </span>
-            }
-            tone="info"
-            icon={FileText}
-          />
-          <SummaryCard
-            title="Liberadas"
-            value={aprovadasResumo.quantidade.toString()}
-            description={
-              <span>
-                Soma em {periodoSelecionadoLabel}:{" "}
-                <strong className="text-base font-bold text-slate-900">{formatCurrency(aprovadasResumo.total)}</strong>
-              </span>
-            }
-            tone="success"
-            icon={WalletCards}
-          />
-          <SummaryCard
-            title="Aguardando"
-            value={aguardandoResumo.quantidade.toString()}
-            description={
-              <span>
-                Soma em {periodoSelecionadoLabel}:{" "}
-                <strong className="text-base font-bold text-slate-900">{formatCurrency(aguardandoResumo.total)}</strong>
-              </span>
-            }
-            tone="warning"
-            icon={CreditCard}
-          />
+          <div onClick={() => { setActiveCard(prev => prev === "EM_ARTE" ? null : "EM_ARTE"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_ARTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+            <SummaryCard
+              title="Em arte"
+              value={cardsSummary.emArte.count.toString()}
+              description={
+                <span>
+                  Soma em {periodoSelecionadoLabel}:{" "}
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(cardsSummary.emArte.total)}</strong>
+                </span>
+              }
+              tone={activeCard === "EM_ARTE" ? "info" : "neutral"}
+              icon={Palette}
+            />
+          </div>
+          <div onClick={() => { setActiveCard(prev => prev === "LIBERADAS" ? null : "LIBERADAS"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "LIBERADAS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+            <SummaryCard
+              title="Liberadas"
+              value={cardsSummary.liberadas.count.toString()}
+              description={
+                <span>
+                  Soma em {periodoSelecionadoLabel}:{" "}
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(cardsSummary.liberadas.total)}</strong>
+                </span>
+              }
+              tone={activeCard === "LIBERADAS" ? "success" : "neutral"}
+              icon={WalletCards}
+            />
+          </div>
+          <div onClick={() => { setActiveCard(prev => prev === "REVISAO_ATENDENTE" ? null : "REVISAO_ATENDENTE"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "REVISAO_ATENDENTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+            <SummaryCard
+              title="Revisão atendente"
+              value={cardsSummary.revisao.count.toString()}
+              description={
+                <span>
+                  Soma em {periodoSelecionadoLabel}:{" "}
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(cardsSummary.revisao.total)}</strong>
+                </span>
+              }
+              tone={activeCard === "REVISAO_ATENDENTE" ? "warning" : "neutral"}
+              icon={CalendarDays}
+            />
+          </div>
+          <div onClick={() => { setActiveCard(prev => prev === "EM_PRODUCAO" ? null : "EM_PRODUCAO"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_PRODUCAO" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+            <SummaryCard
+              title="Em produção"
+              value={cardsSummary.producao.count.toString()}
+              description={
+                <span>
+                  Soma em {periodoSelecionadoLabel}:{" "}
+                  <strong className="text-base font-bold text-slate-900">{formatCurrency(cardsSummary.producao.total)}</strong>
+                </span>
+              }
+              tone={activeCard === "EM_PRODUCAO" ? "success" : "neutral"}
+              icon={Printer}
+            />
+          </div>
         </section>
       )}
 
@@ -859,7 +867,14 @@ export function OrcamentosListPageReal() {
             />
           </label>
 
-          <select value={status} onChange={(event) => setStatus(event.target.value)} className={filterClass}>
+          <select
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setActiveCard(null);
+            }}
+            className={filterClass}
+          >
             <option value="TODOS">Todos status</option>
             {statusOptions.filter((item) => item !== "TODOS").map((option) => (
               <option key={option} value={option}>
@@ -909,7 +924,7 @@ export function OrcamentosListPageReal() {
               setModelo("TODOS_MODELOS");
               setVendedor("TODOS");
               setFilterTipoCobranca("TODOS");
-              setFilterAvulso("TODOS");
+              setActiveCard(null);
               setPeriodo(periodOptions[0]?.value ?? getPeriodValue(new Date()));
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"

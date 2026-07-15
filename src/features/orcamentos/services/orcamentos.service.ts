@@ -522,6 +522,39 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
     return buildEmptyRealResult(rows, periodo, fetched as { diagnostics: Partial<OrcamentosDiagnostics> });
   }
 
+  try {
+    const client = getSupabaseClient();
+    if (client) {
+      const idsToFetch = rows
+        .filter((r) => {
+          const avulso = r.is_avulso;
+          return avulso !== true && avulso !== "true" && avulso !== "1" && avulso !== 1;
+        })
+        .map((r) => r.id_int)
+        .filter((id) => typeof id === "number") as number[];
+
+      if (idsToFetch.length > 0) {
+        const { data: viewData, error } = await client
+          .from("vw_proposta_completa")
+          .select("id_int, valor_total_calculado")
+          .in("id_int", idsToFetch);
+
+        if (!error && viewData && viewData.length > 0) {
+          const viewMap = new Map();
+          viewData.forEach((v) => viewMap.set(v.id_int, v.valor_total_calculado));
+
+          for (const row of rows) {
+            if (viewMap.has(row.id_int)) {
+              (row as any)._valor_total_calculado_view = viewMap.get(row.id_int);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[OrcamentosService] Falha ao buscar valor_total_calculado da view", err);
+  }
+
   const real = buildRealResult(rows);
   if (!real) {
     return {

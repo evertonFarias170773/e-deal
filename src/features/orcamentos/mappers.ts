@@ -291,11 +291,21 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
   const statusInterno = pickText(row, ["status_interno"]);
   let statusRaw = statusInterno || pickText(row, ["status"]);
   statusRaw = composeStatusEmArte(statusRaw || "", emArte);
+  const valorTotalView = pickNumber((row as any), ["_valor_total_calculado_view"]);
   const valorTotalDb = pickNumber(row, ["valor_total"]);
   const valorDb = pickNumber(row, ["valor"]) ?? 0;
   const valorFreteDb = pickNumber(row, ["valor_frete"]) ?? 0;
-  let total = (valorTotalDb !== null && valorTotalDb !== undefined) ? valorTotalDb : (valorDb + valorFreteDb);
-  if (total === valorFreteDb && valorDb > 0) {
+  
+  let total: number;
+  if (valorTotalView !== null && valorTotalView !== undefined) {
+    total = valorTotalView;
+  } else if (valorTotalDb !== null && valorTotalDb !== undefined) {
+    total = valorTotalDb;
+  } else {
+    total = valorDb + valorFreteDb;
+  }
+
+  if (total === valorFreteDb && valorDb > 0 && (valorTotalView === null || valorTotalView === undefined)) {
     total = valorDb + valorFreteDb;
   }
   const isAvulsoRaw = parseBooleanLike(row.is_avulso);
