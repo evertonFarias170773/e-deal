@@ -1,7 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { PROPOSTA_STATUS_GROUP_ATIVO_CLIENTE } from "@/features/orcamentos/constants";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { calculateResumo } from "@/features/orcamentos/orcamento-utils";
+import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
 import type {
   SupabasePagamentoTipoCobrancaRow,
   SupabasePropostaRow,
@@ -849,6 +849,24 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       });
     }
 
+    // ─── Recalcular bônus do cliente em todos os itens carregados ─────────────
+    // A tabela produtos_proposta não possui coluna para acrescimo_bonus.
+    // O valor_sub_total gravado pode ser o bruto (sem bônus) em propostas antigas.
+    // Recalculamos aqui usando o cadastro já carregado para restaurar os campos:
+    //   acrescimoBonus, descontoValorCalculado e subtotal corretos na UI.
+    // Isso também protege contra dupla aplicação: se o valor_sub_total já estava
+    // correto (líquido com bônus), o recalculo garante consistência via valorUnitario + qtd.
+    const bonusPercentLoad = clientObj ? getClienteBonusPercent(clientObj as Cadastro) : 0;
+    if (bonusPercentLoad > 0) {
+      for (const mappedItem of mappedItens) {
+        const totals = calculateItemSubtotal(mappedItem, bonusPercentLoad);
+        mappedItem.subtotalBruto = totals.subtotalBruto;
+        mappedItem.descontoValorCalculado = totals.descontoValorCalculado;
+        mappedItem.acrescimoBonus = totals.acrescimoBonus;
+        mappedItem.subtotal = totals.subtotal;
+      }
+    }
+
     // Determine status mapping
     const status = (proposalRow.status_interno || "NOVO") as PropostaStatus;
 
@@ -1440,7 +1458,10 @@ export async function saveProposta(
           valor_unt: item.valorUnitario,
           qtd: item.quantidade,
           fixo: item.valorFixo,
-          valor_sub_total: (item.valorUnitario * item.quantidade) + item.valorFixo,
+          // valor_sub_total = subtotal líquido do item (já inclui desconto manual e bônus do cliente).
+          // item.subtotal é o valor calculado por calculateItemSubtotal() na UI — não recalcular aqui
+          // para evitar aplicação dupla do bônus (o save deve persistir o que o usuário confirmou).
+          valor_sub_total: item.subtotal,
           peso_uni: pesoUni,
           peso_base: pesoBase,
           peso_extra: pesoExtra,

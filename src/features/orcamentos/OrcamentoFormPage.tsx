@@ -4421,7 +4421,20 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
       );
       return vinculo?.id ?? clienteSelfId;
     })(),
-    itens: proposta?.itens ?? [],
+    // Recalcular b\u00f4nus do cliente em cada item ao inicializar o formul\u00e1rio de edi\u00e7\u00e3o.
+    // Garante que acrescimoBonus, descontoValorCalculado e subtotal est\u00e3o corretos
+    // mesmo que o banco tenha gravado o valor_sub_total bruto (sem b\u00f4nus) em propostas antigas.
+    // O recalculo \u00e9 idempotente: se o service j\u00e1 recalculou na carga, o resultado \u00e9 id\u00eantico.
+    itens: (() => {
+      const rawItens = proposta?.itens ?? [];
+      if (!cliente || rawItens.length === 0) return rawItens;
+      const bp = getClienteBonusPercent(cliente);
+      if (bp <= 0) return rawItens;
+      return rawItens.map((item) => {
+        const totals = calculateItemSubtotal(item, bp);
+        return { ...item, ...totals };
+      });
+    })(),
     deletedProdutoPropostaIds: [],
     pedidosModelos: [],
     fretes,
