@@ -93,9 +93,7 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(v2Ctx),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
     };
 
     const result = await processSimpleQueryWithBrain(
@@ -134,9 +132,7 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(v2Ctx),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
     };
 
     const result = await processSimpleQueryWithBrain(
@@ -150,7 +146,7 @@ async function run() {
 
     assert('Deve limpar o candidato pendente', v2CtxFinal.pendingClientCandidate === null);
     assert('Deve preservar os itens pendentes do orçamento', 
-      v2CtxFinal.pendingBudgetForCandidate !== null && v2CtxFinal.pendingBudgetForCandidate.length === 1 && v2CtxFinal.pendingBudgetForCandidate[0].quantidade === 20000
+      v2CtxFinal.pendingBudgetForCandidate != null && v2CtxFinal.pendingBudgetForCandidate.length === 1 && v2CtxFinal.pendingBudgetForCandidate[0].quantidade === 20000
     );
   }
 
@@ -166,15 +162,13 @@ async function run() {
       cidade_uf: 'Santa Cruz do Sul/RS'
     };
     v2Ctx.pendingClientCandidates = [
-      { id_cliente: 8469, nome: 'LISITON' },
-      { id_cliente: 9999, nome: 'LISITON OUTRO' }
+      { id_cliente: 8469, nome: 'LISITON', fantasia: '', documento: '', cidade_uf: '' },
+      { id_cliente: 9999, nome: 'LISITON OUTRO', fantasia: '', documento: '', cidade_uf: '' }
     ];
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(v2Ctx),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
     };
 
     const result = await processSimpleQueryWithBrain(

@@ -35,7 +35,7 @@ export interface OrcamentoResult {
   response: string;
 }
 
-import { processarMedidas, processarValorMonetario } from './maestro-orcamento-medidas';
+
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 
 export function processarOrcamentoAvulso(query: string, state: OrcamentoAvulsoState): OrcamentoResult {

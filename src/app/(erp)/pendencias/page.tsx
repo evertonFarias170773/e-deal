@@ -849,8 +849,20 @@ export default function PendenciasPage() {
                               </button>
                             )}
 
+                            {/* Resolver Diferença Financeira (Fluxo Oficial) */}
+                            {(item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && item.origem === "REVISAO_PROPOSTA_PAGA" && (
+                              <Link
+                                href={`/orcamentos/${item.id_int}?resolver-pendencia=true`}
+                                className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-400 px-2 py-1.5 text-xs font-bold hover:bg-amber-100 transition"
+                                title="Resolver Diferença Comercial"
+                              >
+                                <SlidersHorizontal className="h-3.5 w-3.5" />
+                                Resolver
+                              </Link>
+                            )}
+
                             {/* Concluir */}
-                            {(item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && (
+                            {(item.status === "ABERTA" || item.status === "EM_ANDAMENTO") && item.origem !== "REVISAO_PROPOSTA_PAGA" && (
                               <button
                                 type="button"
                                 disabled={actionLoadingId !== null}
@@ -1022,13 +1034,23 @@ export default function PendenciasPage() {
                               Assumir
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStatus(item.id, item.id_int, item.id_cliente, "CONCLUIDA", item.titulo)}
-                            className="rounded-xl bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-900 dark:text-green-400 px-3 py-2 text-xs font-bold transition"
-                          >
-                            Concluir
-                          </button>
+                          {item.origem === "REVISAO_PROPOSTA_PAGA" ? (
+                            <Link
+                              href={`/orcamentos/${item.id_int}?resolver-pendencia=true`}
+                              className="rounded-xl bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-400 px-3 py-2 text-xs font-bold transition text-center flex items-center justify-center gap-1"
+                            >
+                              <SlidersHorizontal className="h-3.5 w-3.5" />
+                              Resolver
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus(item.id, item.id_int, item.id_cliente, "CONCLUIDA", item.titulo)}
+                              className="rounded-xl bg-green-50 border border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-900 dark:text-green-400 px-3 py-2 text-xs font-bold transition"
+                            >
+                              Concluir
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

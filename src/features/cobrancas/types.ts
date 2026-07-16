@@ -2,7 +2,57 @@ import type { Proposta } from "@/features/orcamentos/types";
 
 export type CobrancaStatus = "A_RECEBER" | "A_VENCER" | "PAID" | "CANCELADO";
 
-export type CobrancaTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" | "E-FATURADO" | "E-RETRABALHO" | "E-PERMUTA" | "E-AMOSTRA";
+export type CobrancaTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" | "E-FATURADO" | "E-RETRABALHO" | "E-PERMUTA" | "E-AMOSTRA" | "E-CREDITO";
+
+// ---------------------------------------------------------------------------
+// movimento_credito — estrutura real (12 colunas, confirmada em 2026-07-16)
+// ---------------------------------------------------------------------------
+
+export type MovimentoCreditoTipo =
+  | "CREDITO"      // diferença negativa: novo total < valor pago
+  | "DEBITO"       // débito futuro registrado (novo total > valor pago)
+  | "CONSUMO"      // uso de crédito disponível como pagamento (E-CREDITO)
+  | "BONIFICACAO"  // absorção comercial de diferença — não afeta saldo
+  | "DEVOLUCAO";   // devolução física de valor ao cliente
+
+export type MovimentoCredito = {
+  id: number;
+  id_cliente: number;
+  id_int: number | null;     // ✅ existe — FK para propostas.id_int
+  valor: number;             // sempre positivo; tipo determina sinal semântico
+  tipo: MovimentoCreditoTipo;
+  origem: string;            // ex: "PROPOSTA_ALTERADA", "MANUAL", "CONSUMO_CREDITO"
+  observacao: string | null; // texto livre com contexto da operação
+  created_at: string;        // timestamptz
+  created_by: string | null; // user email ou id — preencher sempre a partir de agora
+  cancelado: boolean;
+  cancelado_em: string | null;
+  cancelado_por: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Tipos para o Modal de Diferença Financeira
+// ---------------------------------------------------------------------------
+
+export type AcaoCreditoTipo =
+  | "MANTER_CREDITO"         // registra CREDITO em movimento_credito
+  | "DEVOLVER"               // solicita DEVOLUCAO (dois estágios — Financeiro confirma)
+  | "ABATER_DEBITO";         // registra CONSUMO contra um débito existente selecionado
+
+export type AcaoDebitoTipo =
+  | "DEBITO_PENDENTE_COBRANCA" // registra DEBITO + pendência; usuário gera cobrança depois
+  | "BONIFICAR"               // registra BONIFICACAO em movimento_credito
+  | "DEBITO_FUTURO";          // registra DEBITO em movimento_credito para cobrança futura
+
+/**
+ * Payload de confirmação da ação financeira.
+ * - Para ABATER_DEBITO: obrigatório informar idDebitoAlvo e valorAbatimento
+ * - Para demais: obs é opcional
+ */
+export type AcaoFinanceiraDiferenca =
+  | { tipo: Exclude<AcaoCreditoTipo, "ABATER_DEBITO">; obs?: string }
+  | { tipo: "ABATER_DEBITO"; obs?: string; idDebitoAlvo: number; valorAbatimento: number }
+  | { tipo: AcaoDebitoTipo; obs?: string };
 
 export type EmpresaRecebedoraOption = {
   id: number;

@@ -42,7 +42,7 @@ import {
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
@@ -51,6 +51,20 @@ import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { normalizeDocumentDigits } from "@/features/cadastros/utils/documento";
+import { DiferencaFinanceiraModal } from "@/features/orcamentos/components/DiferencaFinanceiraModal";
+import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
+import {
+  calcularValorPagoConfirmado,
+  calcularDiferencaFinanceira
+} from "@/features/cobrancas/cobrancas-utils";
+import {
+  registrarCredito,
+  registrarConsumo,
+  registrarDevolucao,
+  registrarBonificacao,
+  registrarDebitoFuturo,
+  getSaldoCredito
+} from "@/features/cobrancas/services/movimento-credito.service";
 
 const removeAccents = (str: string): string => {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -207,6 +221,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const searchParams = useSearchParams();
   const { showToast } = useAppToast();
   const { user } = useAuth();
+  const { getCobrancasByProposta } = useCobrancas();
 
   const canAlterarVendedor = Boolean(
     user?.isSuperAdmin ||
@@ -222,6 +237,34 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     user?.isGerente ||
     hasPermissao(user, "propostas.desconto_geral")
   );
+
+  // — Permissões do fluxo de edição de proposta paga —
+  const canEditarPropostaPaga = Boolean(
+    user?.isSuperAdmin ||
+    hasPermissao(user, "propostas.editar_paga")
+  );
+  const canBonificar = Boolean(
+    user?.isSuperAdmin ||
+    hasPermissao(user, "financeiro.bonificar")
+  );
+  const canDevolver = Boolean(
+    user?.isSuperAdmin ||
+    hasPermissao(user, "financeiro.devolver")
+  );
+  const canDebitoFuturo = Boolean(
+    user?.isSuperAdmin ||
+    hasPermissao(user, "financeiro.debito_futuro")
+  );
+  const canResolverCredito = Boolean(
+    user?.isSuperAdmin ||
+    hasPermissao(user, "financeiro.resolver_credito")
+  );
+  const canUsarCredito = Boolean(
+    user?.isSuperAdmin ||
+    hasPermissao(user, "credito.usar")
+  );
+  void canResolverCredito; // usado indiretamente pelo modal
+  void canUsarCredito;     // reservado para fluxo de nova proposta
 
   useEffect(() => {
     if (user) {
@@ -356,6 +399,123 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   });
   const [cliente, setCliente] = useState<Cadastro | null>(() => proposta?.cliente ?? null);
   const shouldShowRest = mode !== "new" || cliente !== null || form.clienteNaoCadastrado;
+
+  // — Estado do modal de diferença financeira (obrigatório) —
+  type DiferencaModalState = {
+    isOpen: boolean;
+    idInt: number;
+    idCliente: number;
+    idPendencia: number | null; // criado pela API editar-paga
+    nomeCliente: string;
+    valorPagoConfirmado: number;
+    novoTotal: number;
+    diferenca: number;
+    /** Callback de conclusão após resolver a diferença */
+    onResolve: () => void;
+  };
+  const [diferencaModal, setDiferencaModal] = useState<DiferencaModalState | null>(null);
+
+  // — Pendência de revisão financeira aberta (detectada ao carregar a proposta) —
+  const [pendenciaRevisaoAberta, setPendenciaRevisaoAberta] = useState<{
+    id: number;
+    descricao: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (mode !== "edit" || !proposta?.id_int || !hasActiveCobranca || !canEditarPropostaPaga) return;
+    // Verificar pendência ABERTA de revisão financeira
+    import("@/features/orcamentos/services/propostas-pendencias.service")
+      .then(({ listPropostasPendencias }) => listPropostasPendencias(proposta.id_int))
+      .then(({ data }) => {
+        const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
+        if (aberta) {
+          setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
+        } else {
+          setPendenciaRevisaoAberta(null);
+        }
+      })
+      .catch(() => setPendenciaRevisaoAberta(null));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposta?.id_int, mode]);
+
+  // Reabertura automática do modal de resolução via query string (retomada da listagem)
+  useEffect(() => {
+    if (
+      searchParams?.get("resolver-pendencia") === "true" &&
+      pendenciaRevisaoAberta &&
+      proposta?.id_int &&
+      proposta.resumo
+    ) {
+      const cobrs = getCobrancasByProposta(proposta.id_int) || [];
+      if (cobrs.length > 0) {
+        const valorPago = calcularValorPagoConfirmado(cobrs);
+        const novoTotal = proposta.resumo.valorTotal;
+        const diff = calcularDiferencaFinanceira(novoTotal, valorPago);
+
+        setDiferencaModal({
+          isOpen: true,
+          idInt: proposta.id_int,
+          idCliente: proposta.cliente?.idCliente ?? 0,
+          idPendencia: pendenciaRevisaoAberta.id,
+          nomeCliente: proposta.cliente?.nome ?? "Cliente",
+          valorPagoConfirmado: valorPago,
+          novoTotal,
+          diferenca: diff,
+          onResolve: () => setPendenciaRevisaoAberta(null),
+        });
+
+        // Limpar a query string de forma segura e silenciosa
+        const url = new URL(window.location.href);
+        url.searchParams.delete("resolver-pendencia");
+        window.history.replaceState({}, "", url.toString());
+      }
+    }
+  }, [searchParams, pendenciaRevisaoAberta, proposta, getCobrancasByProposta]);
+
+  // — Histórico de movimentos financeiros da proposta —
+  const [historicoMovimentos, setHistoricoMovimentos] = useState<any[]>([]);
+  const [loadingHistorico, setLoadingHistorico] = useState(false);
+
+  useEffect(() => {
+    if (activeFormTab === "historico" && proposta?.id_int && form.id_int !== "NOVO") {
+      setLoadingHistorico(true);
+      const client = getSupabaseClient();
+      if (client) {
+        (async () => {
+          try {
+            const { data, error } = await client
+              .from("movimento_credito")
+              .select("*")
+              .eq("id_int", proposta.id_int)
+              .order("created_at", { ascending: true }); // Ordenação cronológica linear ascendente
+            if (!error && data) {
+              setHistoricoMovimentos(data);
+            }
+          } catch (e) {
+            console.error("Erro ao obter historico de movimentos:", e);
+          } finally {
+            setLoadingHistorico(false);
+          }
+        })();
+      } else {
+        setLoadingHistorico(false);
+      }
+    }
+  }, [activeFormTab, proposta?.id_int, form.id_int]);
+
+  // — Saldo de crédito do cliente selecionado (para nova proposta) —
+  const [saldoCredito, setSaldoCredito] = useState<number>(0);
+
+  useEffect(() => {
+    if (mode === "new" && cliente?.idCliente && canUsarCredito) {
+      Promise.resolve(getSaldoCredito(cliente.idCliente))
+        .then(setSaldoCredito)
+        .catch(() => setSaldoCredito(0));
+    } else {
+      setSaldoCredito(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliente?.idCliente, mode]);
 
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
   const [clientSearch, setClientSearch] = useState(() => proposta?.cliente ? `${proposta.cliente.idCliente} - ${proposta.cliente.nome}` : (mode === "new" ? "#" : ""));
@@ -2341,6 +2501,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     return true;
   }
 
+  // ------------------------------------------------------------------
+  // handleSave — fluxo completo
+  // - Proposta normal: chama saveProposta() client-side
+  // - Proposta paga (canEditarPropostaPaga + hasActiveCobranca):
+  //   chama /api/orcamentos/editar-paga com JWT, que valida permissão
+  //   server-side e cria pendência financeira se houver diferença
+  // ------------------------------------------------------------------
   async function handleSave() {
     const vendedorParaSalvar = cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor;
 
@@ -2358,9 +2525,104 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     setIsSaving(true);
     try {
+      // — Capturar valor pago ANTES de salvar (para cálculo de diferença) —
+      const valorPagoAntes = calcularValorPagoConfirmado(cobrancasVinculadas);
+      const novoTotalCalculado = resumo.valorTotal;
+      const idClienteNum = proposta?.cliente?.idCliente ?? (cliente?.idCliente ?? 0);
+
+      // — Fluxo para proposta paga (usa API route server-side) —
+      if (canEditarPropostaPaga && hasActiveCobranca) {
+        // Obter JWT da sessão atual
+        const { getSupabaseClient } = await import("@/lib/supabase/client");
+        const supabase = getSupabaseClient();
+        const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+        const token = session?.access_token ?? "";
+
+        if (!token) {
+          showToast({ type: "error", title: "Sessão expirada", description: "Faça login novamente para editar propostas pagas." });
+          setIsSaving(false);
+          return;
+        }
+
+        const apiResponse = await fetch("/api/orcamentos/editar-paga", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            formState: formToSave,
+            idInt: Number(formToSave.id_int) || 0,
+            idCliente: idClienteNum,
+            valorPagoConfirmado: valorPagoAntes,
+            novoTotal: novoTotalCalculado,
+            userEmail: user?.email,
+            userName: user?.name,
+          }),
+        });
+
+        const apiResult = await apiResponse.json();
+
+        if (!apiResponse.ok || !apiResult.success) {
+          showToast({
+            type: apiResponse.status === 403 ? "error" : "error",
+            title: apiResponse.status === 403 ? "Sem permissão" : "Falha ao salvar",
+            description: apiResult.error ?? "Erro ao salvar proposta paga.",
+          });
+          setIsSaving(false);
+          return;
+        }
+
+        // — Pendência retornada? (diferença ≠ 0 → modal obrigatório) —
+        const { diferenca, idPendencia } = apiResult;
+        const finalIdInt = apiResult.idInt || Number(formToSave.id_int);
+
+        // Atualizar snapshot e URL
+        const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [] };
+        initialFormSnapshot.current = JSON.stringify(savedSnap);
+        setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
+
+        if (Math.abs(diferenca ?? 0) >= 0.01) {
+          // Diferença financeira — abrir modal obrigatório
+          setDiferencaModal({
+            isOpen: true,
+            idInt: finalIdInt,
+            idCliente: idClienteNum,
+            idPendencia: idPendencia ?? null,
+            nomeCliente: cliente?.nome ?? formToSave.nomeClienteLivre ?? "Cliente",
+            valorPagoConfirmado: apiResult.valorPagoConfirmado ?? valorPagoAntes,
+            novoTotal: apiResult.novoTotal ?? novoTotalCalculado,
+            diferenca: diferenca,
+            onResolve: () => {
+              if (formToSave.briefingArtesDraft) {
+                salvarBriefingArtes(finalIdInt, { ...formToSave.briefingArtesDraft, status: "AGUARDANDO" })
+                  .catch(err => console.error("[handleSave] Falha ao salvar artes:", err));
+              }
+              setSaveSuccessModal({ isOpen: true, finalIdInt });
+            },
+          });
+          return; // Não conclui até modal ser resolvido
+        }
+
+        // Sem diferença — concluir normalmente
+        showToast({ type: "success", title: "Proposta atualizada com sucesso." });
+
+        if (formToSave.briefingArtesDraft) {
+          try {
+            await salvarBriefingArtes(finalIdInt, { ...formToSave.briefingArtesDraft, status: "AGUARDANDO" });
+          } catch (arteErr) {
+            console.error("[handleSave] Falha ao salvar artes:", arteErr);
+          }
+        }
+
+        setSaveSuccessModal({ isOpen: true, finalIdInt });
+        return;
+      }
+
+      // — Fluxo normal (proposta não paga) — client-side
       const res = await saveProposta(formToSave);
+
       if (res.success) {
-        // Limpa lista de deleções após salvar com sucesso
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [] };
         initialFormSnapshot.current = JSON.stringify(savedSnap);
@@ -2369,12 +2631,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           console.log("[DEV] handleSave — sucesso. deletedProdutoPropostaIds limpo.");
         }
 
-        showToast({
-          type: res.errorMessage ? "info" : "success",
-          title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
-          description: res.errorMessage || "Aguardando sua escolha..."
-        });
-
         const finalIdInt = res.id_int || formToSave.id_int;
         if (formToSave.id_int === "NOVO") {
           window.history.replaceState(null, "", `/orcamentos/${finalIdInt}/editar`);
@@ -2382,7 +2638,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         } else {
           setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
         }
-        
+
+        showToast({
+          type: res.errorMessage ? "info" : "success",
+          title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
+          description: res.errorMessage || undefined
+        });
+
         if (formToSave.briefingArtesDraft) {
           try {
             await salvarBriefingArtes(Number(finalIdInt), {
@@ -2398,7 +2660,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             });
           }
         }
-        
+
         setSaveSuccessModal({ isOpen: true, finalIdInt });
       } else {
         showToast({
@@ -2417,6 +2679,62 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     } finally {
       setIsSaving(false);
     }
+  }
+
+  // ------------------------------------------------------------------
+  // handleDiferencaConfirm — delega para /api/orcamentos/resolver-diferenca
+  // - Valida permissão server-side por ação
+  // - Idempotência de dois níveis (pendência + janela 5min)
+  // - Mensagem na timeline via registrarMensagemSistemaProposta
+  // ------------------------------------------------------------------
+  async function handleDiferencaConfirm(acao: AcaoFinanceiraDiferenca) {
+    if (!diferencaModal) return;
+
+    const { idInt, idCliente, idPendencia, valorPagoConfirmado, novoTotal, diferenca, onResolve } = diferencaModal;
+    const absDiff = Math.abs(diferenca);
+
+    // Obter JWT
+    const { getSupabaseClient } = await import("@/lib/supabase/client");
+    const supabase = getSupabaseClient();
+    const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+    const token = session?.access_token ?? "";
+
+    if (!token) {
+      throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    // Montar payload (com campos de abatimento se necessário)
+    const payload: Record<string, unknown> = {
+      idPendencia,
+      idInt,
+      idCliente,
+      acao: acao.tipo,
+      valor: absDiff,
+      observacao: acao.obs,
+    };
+
+    if (acao.tipo === "ABATER_DEBITO") {
+      payload.idDebitoAlvo = acao.idDebitoAlvo;
+      payload.valorAbatimento = acao.valorAbatimento;
+    }
+
+    const apiResponse = await fetch("/api/orcamentos/resolver-diferenca", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const apiResult = await apiResponse.json();
+
+    if (!apiResponse.ok || !apiResult.success) {
+      throw new Error(apiResult.error ?? "Erro ao registrar resolução financeira.");
+    }
+
+    setDiferencaModal(null);
+    onResolve();
   }
 
   async function handleSaveForCobranca(): Promise<boolean> {
@@ -2471,10 +2789,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const hasPreservedFreight = form.fretes.some(
     (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
   );
-  const { getCobrancasByProposta } = useCobrancas();
   const cobrancasVinculadas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int) : [];
   const hasCobrancas = cobrancasVinculadas.length > 0;
   const hasActiveCobranca = cobrancasVinculadas.some(c => c.status !== "CANCELADO");
+
+  // Desbloqueado quando usuário tem permissão E há cobrança ativa
+  const isFormBloqueadoPorCobranca = hasActiveCobranca && !canEditarPropostaPaga;
 
   return (
     <div className="space-y-6">
@@ -2499,14 +2819,88 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       />
 
       {hasCobrancas && (
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+        <div className={`rounded-3xl border p-4 shadow-sm flex items-start gap-3 ${
+          canEditarPropostaPaga
+            ? "border-orange-300/50 bg-orange-950/20"
+            : "border-amber-200 bg-amber-50"
+        }`}>
+          <AlertTriangle className={`h-5 w-5 shrink-0 mt-0.5 ${
+            canEditarPropostaPaga ? "text-orange-400" : "text-amber-600"
+          }`} />
           <div>
-            <p className="text-sm font-bold text-amber-800">Atenção: Cobranças Geradas</p>
-            <p className="text-sm text-amber-700 mt-1">
-              Esta proposta possui cobranças geradas. Revise os pagamentos antes de reenviar ou alterar valores finais.
+            {canEditarPropostaPaga ? (
+              <>
+                <p className="text-sm font-bold text-orange-300">Modo Edição Autorizada — Proposta com Pagamento Confirmado</p>
+                <p className="text-sm text-orange-200/80 mt-1">
+                  Você tem permissão para editar esta proposta mesmo com cobrança ativa.
+                  Se houver diferença financeira, você precisará escolher uma ação antes de concluir a alteração.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-bold text-amber-800">Atenção: Cobranças Geradas</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  Esta proposta possui cobranças geradas. Revise os pagamentos antes de reenviar ou alterar valores finais.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Banner de crédito disponível (nova proposta) */}
+      {mode === "new" && saldoCredito > 0 && canUsarCredito && (
+        <div className="rounded-3xl border border-emerald-300/40 bg-emerald-950/20 p-4 shadow-sm flex items-start gap-3">
+          <span className="text-emerald-400 text-lg shrink-0">💰</span>
+          <div>
+            <p className="text-sm font-bold text-emerald-300">Crédito disponível para este cliente</p>
+            <p className="text-sm text-emerald-200/70 mt-1">
+              {cliente?.nome ?? "O cliente"} possui <strong className="text-emerald-300">{formatCurrency(saldoCredito)}</strong> em crédito disponível.
+              Você poderá aplicar como forma de pagamento ao gerar a cobrança.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Banner de revisão financeira pendente (proposta paga com diferença não resolvida) */}
+      {pendenciaRevisaoAberta && (
+        <div className="rounded-3xl border border-red-400/40 bg-red-950/25 p-4 shadow-sm flex items-start gap-3">
+          <span className="text-red-400 text-lg shrink-0">⚠️</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-red-300">Revisão financeira pendente</p>
+            <p className="text-xs text-red-300/70 mt-1">
+              Esta proposta foi alterada após pagamento e possui uma diferença financeira não resolvida.
+              Resolva antes de fazer novas alterações.
+            </p>
+            {pendenciaRevisaoAberta.descricao && (
+              <p className="text-xs text-white/40 mt-1 line-clamp-2">{pendenciaRevisaoAberta.descricao}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            id="btn-resolver-pendencia-financeira"
+            onClick={() => {
+              if (!proposta?.id_int || !proposta.resumo) return;
+              const valorPago = calcularValorPagoConfirmado(cobrancasVinculadas);
+              const novoTotal = proposta.resumo.valorTotal;
+              const diff = calcularDiferencaFinanceira(novoTotal, valorPago);
+              
+              setDiferencaModal({
+                isOpen: true,
+                idInt: proposta.id_int,
+                idCliente: proposta.cliente?.idCliente ?? 0,
+                idPendencia: pendenciaRevisaoAberta.id,
+                nomeCliente: proposta.cliente?.nome ?? "Cliente",
+                valorPagoConfirmado: valorPago,
+                novoTotal,
+                diferenca: diff,
+                onResolve: () => setPendenciaRevisaoAberta(null),
+              });
+            }}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600/80 hover:bg-red-500 text-white transition-colors flex-shrink-0"
+          >
+            Resolver agora
+          </button>
         </div>
       )}
 
@@ -2605,10 +2999,130 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
                 <p className="text-sm font-semibold text-amber-700">Salve a proposta para visualizar o histórico.</p>
               </div>
+            ) : loadingHistorico ? (
+              <div className="flex flex-col items-center justify-center p-20 gap-3 rounded-3xl border bg-slate-50 border-slate-200">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                <span className="text-sm font-semibold text-slate-400">Carregando histórico financeiro da proposta...</span>
+              </div>
+            ) : historicoMovimentos.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-16 text-center">
+                <p className="text-sm font-semibold text-slate-600">Nenhum movimento financeiro registrado</p>
+                <p className="mt-1 text-xs text-slate-400">Esta proposta não possui registros de créditos gerados ou consumidos até o momento.</p>
+              </div>
             ) : (
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-                <p className="text-sm font-semibold text-slate-600">Histórico operacional</p>
-                <p className="mt-1 text-xs text-slate-400">Em desenvolvimento</p>
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900 mb-4">Auditoria e Movimentos de Crédito</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-left text-sm">
+                      <thead>
+                        <tr className="border-b text-xs font-bold uppercase tracking-wider text-slate-500 border-slate-100 bg-slate-50/50">
+                          <th className="px-4 py-3">Data</th>
+                          <th className="px-4 py-3">Tipo do Fluxo</th>
+                          <th className="px-4 py-3">Valor</th>
+                          <th className="px-4 py-3">Origem</th>
+                          <th className="px-4 py-3">Observação / Justificativa</th>
+                          <th className="px-4 py-3">Status / Auditoria</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {historicoMovimentos.map((mov) => {
+                          const isCreditoGerado = mov.tipo === "CREDITO";
+                          const isCreditoUtilizado = mov.tipo === "DEBITO" || mov.tipo === "CONSUMO";
+                          const isDevolucao = mov.tipo === "DEVOLUCAO";
+                          const isBonificacao = mov.tipo === "BONIFICACAO";
+                          const isCancelado = mov.cancelado === true;
+
+                          let badgeColor = "bg-slate-100 text-slate-800";
+                          let badgeText = mov.tipo;
+                          let descRelacao = "Movimento financeiro geral.";
+
+                          if (isCreditoGerado) {
+                            badgeColor = "bg-teal-50 text-teal-700 border border-teal-200";
+                            badgeText = "Crédito Gerado";
+                            descRelacao = "Diferença comercial a favor do cliente gerada por esta proposta.";
+                          } else if (isCreditoUtilizado) {
+                            badgeColor = "bg-sky-50 text-sky-700 border border-sky-200";
+                            badgeText = "Crédito Utilizado";
+                            descRelacao = "Crédito acumulado do cliente consumido para pagar esta proposta.";
+                          } else if (isDevolucao) {
+                            badgeColor = "bg-amber-50 text-amber-700 border border-amber-200";
+                            badgeText = "Devolução";
+                            descRelacao = "Solicitação de devolução física de valor pago a maior.";
+                          } else if (isBonificacao) {
+                            badgeColor = "bg-purple-50 text-purple-700 border border-purple-200";
+                            badgeText = "Bonificação";
+                            descRelacao = "Diferença financeira abonada comercialmente.";
+                          }
+
+                          return (
+                            <tr
+                              key={mov.id}
+                              className={`hover:bg-slate-50/50 transition duration-150 ${isCancelado ? "opacity-50 line-through text-slate-400 bg-red-50/10" : "text-slate-700"}`}
+                            >
+                              {/* Data */}
+                              <td className="px-4 py-3 text-xs font-semibold whitespace-nowrap">
+                                {new Date(mov.created_at).toLocaleString()}
+                              </td>
+
+                              {/* Tipo do Fluxo */}
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className={`inline-flex rounded-lg px-2 py-1 text-xs font-bold ${badgeColor}`}>
+                                  {badgeText}
+                                </span>
+                                <p className="text-[10px] text-slate-400 mt-1 max-w-[200px] leading-tight">
+                                  {descRelacao}
+                                </p>
+                              </td>
+
+                              {/* Valor */}
+                              <td className="px-4 py-3 font-bold whitespace-nowrap">
+                                <span className={isCreditoGerado ? "text-teal-600" : isCreditoUtilizado ? "text-sky-600" : "text-slate-800"}>
+                                  {isCreditoGerado ? "+" : "-"} {formatCurrency(mov.valor)}
+                                </span>
+                              </td>
+
+                              {/* Origem */}
+                              <td className="px-4 py-3 text-xs font-semibold uppercase whitespace-nowrap">
+                                <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">
+                                  {mov.origem}
+                                </span>
+                              </td>
+
+                              {/* Observação */}
+                              <td className="px-4 py-3 text-xs max-w-[300px] break-words">
+                                {mov.observacao}
+                              </td>
+
+                              {/* Status / Auditoria */}
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {isCancelado ? (
+                                  <div>
+                                    <span className="inline-flex rounded-lg bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 text-[10px] font-bold">
+                                      CANCELADO
+                                    </span>
+                                    <p className="text-[9px] text-red-400 mt-1">
+                                      Por: {mov.cancelado_por || "Sistema"}
+                                    </p>
+                                    {mov.cancelado_em && (
+                                      <p className="text-[9px] text-red-400">
+                                        Em: {new Date(mov.cancelado_em).toLocaleDateString()}
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="inline-flex rounded-lg bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 text-[10px] font-bold">
+                                    ATIVO
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )
           )}
@@ -3082,7 +3596,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               )}
 
               {activeFormTab === "produtos" && (
-                <fieldset disabled={hasActiveCobranca} className="group space-y-6">
+                <fieldset disabled={isFormBloqueadoPorCobranca} className="group space-y-6">
                   <FormSection
                     title="6. Produtos"
             description={form.isAvulso ? "Configure o valor total dos produtos no modo avulso." : "Escolha do catálogo e configure quantidades, descontos e variações."}
@@ -3233,7 +3747,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       )}
 
       {activeFormTab === "fretes" && (
-        <fieldset disabled={hasActiveCobranca} className="group space-y-6">
+        <fieldset disabled={isFormBloqueadoPorCobranca} className="group space-y-6">
           <FormSection 
             title="7. Fretes e Entrega" 
             description={form.isAvulso ? "Configure o frete manual para a proposta avulsa." : "Integração em tempo real com cotações de SEDEX e cadastro de frete manual."}
@@ -3473,7 +3987,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
               <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
-              <fieldset disabled={hasActiveCobranca} className="group mt-4">
+              <fieldset disabled={isFormBloqueadoPorCobranca} className="group mt-4">
                 <div className="grid gap-3 grid-cols-[75px_1fr] items-start">
                   <Field label="Tipo">
                     <select
@@ -3717,6 +4231,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           </div>
         </div>
       )}
+
+
+      {/* Modal obrigatório de diferença financeira — não pode ser fechado sem escolher ação */}
+      {diferencaModal && (
+        <DiferencaFinanceiraModal
+          isOpen={diferencaModal.isOpen}
+          onConfirm={handleDiferencaConfirm}
+          idInt={diferencaModal.idInt}
+          idCliente={diferencaModal.idCliente}
+          nomeCliente={diferencaModal.nomeCliente}
+          valorPagoConfirmado={diferencaModal.valorPagoConfirmado}
+          novoTotal={diferencaModal.novoTotal}
+          diferenca={diferencaModal.diferenca}
+          canBonificar={canBonificar}
+          canDevolver={canDevolver}
+          canDebitoFuturo={canDebitoFuturo}
+        />
+      )}
+
 
     </div>
   );

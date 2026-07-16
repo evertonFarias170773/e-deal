@@ -370,6 +370,7 @@ export function getTipoCobrancaLabel(tipo: string) {
   if (normalized === "E-RETRABALHO") return "E-Retrabalho";
   if (normalized === "E-PERMUTA") return "E-Permuta";
   if (normalized === "E-AMOSTRA" || normalized === "E-AMOSTRAS") return "E-Amostra";
+  if (normalized === "E-CREDITO") return "E-Crédito";
 
   return titleCase(
     normalized
@@ -382,6 +383,46 @@ export function getTipoCobrancaLabel(tipo: string) {
 
 export function isPagamentoAprovado(cobranca: Cobranca) {
   return cobranca.status === "PAID" || (cobranca.status === "A_VENCER" && cobranca.confirmado);
+}
+
+/**
+ * Retorna true se a cobrança é do tipo E-CREDITO (uso de crédito do cliente como pagamento).
+ *
+ * Regra de faturamento:
+ * - E-CREDITO como PAGAMENTO → ENTRA no faturamento (compõe a receita da venda)
+ * - Geração de crédito → vai APENAS para movimento_credito, nunca para pagamentos_v2
+ *
+ * A função é usada para garantir que o E-CREDITO:
+ *   1. Apareça apenas quando o cliente tiver saldo disponível
+ *   2. Seja contabilizado corretamente no faturamento (sem dupla contagem)
+ */
+export function isCobrancaECredito(cobranca: Pick<Cobranca, "tipo_cobranca">): boolean {
+  return (cobranca.tipo_cobranca || "").trim().toUpperCase() === "E-CREDITO";
+}
+
+/**
+ * Calcula o valor efetivamente pago e confirmado em uma lista de cobranças.
+ * Utiliza o critério oficial de isPagamentoAprovado.
+ * Ignora cobranças canceladas.
+ */
+export function calcularValorPagoConfirmado(cobrancas: Cobranca[]): number {
+  return cobrancas
+    .filter((c) => c.status !== "CANCELADO" && isPagamentoAprovado(c))
+    .reduce((sum, c) => sum + (Number(c.valor) || 0), 0);
+}
+
+/**
+ * Calcula a diferença financeira entre o novo total e o valor já pago.
+ * Retorna:
+ *   < 0  → crédito para o cliente (proposta ficou mais barata)
+ *   > 0  → débito (proposta ficou mais cara)
+ *   = 0  → sem diferença financeira
+ */
+export function calcularDiferencaFinanceira(
+  novoTotal: number,
+  valorPagoConfirmado: number
+): number {
+  return Math.round((novoTotal - valorPagoConfirmado) * 100) / 100;
 }
 
 export function isCreditoPendente(cobranca: Cobranca) {

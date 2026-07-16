@@ -66,8 +66,14 @@ const PERMISSOES_SUPER_ADMIN: string[] = ["*"];
 // placeholder para o módulo de produção/OS existente.
 const PERMISSOES_ADMIN: string[] = [
   "propostas.view", "propostas.create", "propostas.edit", "propostas.aprovar",
+  "propostas.editar_paga",                        // ✅ editar proposta com cobrança ativa
   "cobrancas.view", "cobrancas.aprovar", "cobrancas.emitir_boleto",
   "financeiro.view", "financeiro.aprovar",
+  "financeiro.resolver_credito",                  // ✅ registrar crédito/consumo/devolução
+  "financeiro.bonificar",                         // ✅ absorver diferença como bonificação
+  "financeiro.devolver",                          // ✅ registrar devolução ao cliente
+  "financeiro.debito_futuro",                     // ✅ registrar débito futuro
+  "credito.usar",                                 // ✅ usar crédito do cliente em proposta
   "pedidos.view", "pedidos.create", "pedidos.edit", // TODO: alinhar com OS real
   "cadastros.view", "cadastros.edit",
   "fiscal.view", "fiscal.emitir",
@@ -84,6 +90,10 @@ const PERMISSOES_VENDEDOR: string[] = [
 const PERMISSOES_FINANCEIRO: string[] = [
   "cobrancas.view", "cobrancas.aprovar", "cobrancas.emitir_boleto",
   "financeiro.view", "financeiro.aprovar",
+  "financeiro.resolver_credito",  // ✅ registrar crédito/consumo
+  "financeiro.devolver",          // ✅ registrar devolução ao cliente
+  "financeiro.debito_futuro",     // ✅ registrar débito futuro
+  "credito.usar",                 // ✅ usar crédito do cliente em proposta
   "propostas.view", "pedidos.view", "cadastros.view"
 ];
 
@@ -115,6 +125,9 @@ const PERMISSOES_ATENDENTE: string[] = [
 const PERMISSOES_GERENTE_COMERCIAL: string[] = [
   "propostas.view", "propostas.view_all", "propostas.create", "propostas.edit",
   "propostas.desconto_geral", "propostas.edit_vendedor", "propostas.cancel",
+  "propostas.editar_paga",    // ✅ gerente pode editar proposta paga
+  "financeiro.bonificar",     // ✅ gerente pode bonificar diferença comercialmente
+  "credito.usar",             // ✅ gerente pode usar crédito em proposta
   "pedidos.view", "pedidos.edit_data", "pedidos.edit_obs", "pedidos.admin",
   "cadastros.view", "cadastros.edit",
   "cobrancas.view",

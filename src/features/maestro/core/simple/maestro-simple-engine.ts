@@ -659,7 +659,7 @@ export async function processSimpleQueryWithBrain(
         }
 
         if (step.tool === 'mostrar_itens_orcamento_avulso') {
-          pr = presenterMostrarItensOrcamento(v2Ctx.orcamentoItens || [], simpleCtx.activeClient);
+          pr = presenterMostrarItensOrcamento(v2Ctx.orcamentoItens || []);
         }
 
         // Atualizações do Gerenciador de Contexto Conversacional Geral

@@ -11,7 +11,7 @@
  */
 
 import type { LastAnswerRecord, SimpleClientContext } from './maestro-simple-context';
-import type { MaestroV2Context, OrchestrationPlan } from '../../types';
+import type { MaestroV2Context } from './maestro-v2-context-manager';
 import { handleContextContinuation } from './maestro-v2-context-manager';
 import { processarOrcamentoAvulso } from './maestro-orcamento-engine';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';

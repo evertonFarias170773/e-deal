@@ -184,9 +184,8 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(getEmptyV2Context()),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
+
     };
 
     const result = await processSimpleQueryWithBrain(
@@ -219,9 +218,8 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(getEmptyV2Context()),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
+
     };
 
     const result = await processSimpleQueryWithBrain(
@@ -235,7 +233,7 @@ async function run() {
     Object.assign(v2CtxFinal, JSON.parse(result.context.v2ContextJson || '{}'));
     console.log('DEBUG CTX C2:', JSON.stringify(v2CtxFinal, null, 2));
 
-    assert('Deve selecionar automaticamente o endereço id no contexto', v2CtxFinal.budgetAddressId === 902);
+    assert('Deve selecionar automaticamente o endereço id no contexto', v2CtxFinal.budgetAddressId === '902');
     assert('Deve calcular o frete e apresentar a cotação na mesma resposta', 
       result.message.content.includes('Cotação de Frete') || result.message.content.includes('VEPPO') || result.message.content.includes('Correios') || result.message.content.includes('Proposta de Orçamento') || result.message.content.includes('R$')
     );
@@ -254,9 +252,8 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(getEmptyV2Context()),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
+
     };
 
     const result = await processSimpleQueryWithBrain(
@@ -289,9 +286,8 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(getEmptyV2Context()),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
+
     };
 
     const result = await processSimpleQueryWithBrain(
@@ -305,7 +301,7 @@ async function run() {
     Object.assign(v2CtxFinal, JSON.parse(result.context.v2ContextJson || '{}'));
     console.log('DEBUG CTX C4:', JSON.stringify(v2CtxFinal, null, 2));
 
-    assert('Deve selecionar automaticamente o único endereço utilizável (id 905)', v2CtxFinal.budgetAddressId === 905);
+    assert('Deve selecionar automaticamente o único endereço utilizável (id 905)', v2CtxFinal.budgetAddressId === '905');
     assert('Deve apresentar a cotação final diretamente', result.message.content.includes('Cotação de Frete') || result.message.content.includes('proposta') || result.message.content.includes('VEPPO') || result.message.content.includes('R$'));
   }
 

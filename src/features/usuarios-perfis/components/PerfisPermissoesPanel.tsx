@@ -79,6 +79,7 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "propostas.release_producao", label: "Liberar para Produção",           desc: "Permite aprovar a proposta para produção (campo is_prd_aprovado).",                  critica: true  },
     { key: "propostas.release_nf",       label: "Liberar para Nota Fiscal",        desc: "Permite marcar a proposta para faturamento (campo libera_nf).",                      critica: true  },
     { key: "propostas.devolver_revisao", label: "Devolver para Revisão",           desc: "Permite devolver a proposta para a etapa de revisão de atendente.",                  critica: true  },
+    { key: "propostas.editar_paga",      label: "Editar Proposta Paga",            desc: "Permite alterar itens e valores de propostas comerciais com pagamentos confirmados.",critica: true  },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
     { key: "propostas.alterar_vendedor", label: "Alterar Vendedor",    desc: "Sera substituida por propostas.edit_vendedor na Fase 4.",     critica: true  },
     { key: "propostas.cancelar",         label: "Cancelar Propostas",  desc: "Sera substituida por propostas.cancel na Fase 4.",            critica: true  }
@@ -86,7 +87,7 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
 
   // ── Chat Interno ──────────────────────────────────────────────────────────
   "Chat Interno": [
-    { key: "chat.view",      label: "Visualizar Chat",              desc: "Permite acessar e ler conversas do chat interno das propostas.",                       critica: false },
+    { key: "chat.view",      label: "Visualizar Chat",              desc: "Permite acessar e read conversas do chat interno das propostas.",                       critica: false },
     { key: "chat.send",      label: "Enviar Mensagens",             desc: "Permite enviar mensagens no chat interno.",                                            critica: false },
     { key: "chat.mention",   label: "Mencionar Usuários",           desc: "Permite mencionar outros usuários em mensagens do chat.",                              critica: false },
     { key: "chat.view_all",  label: "Ver Chat de Todas as Propostas", desc: "Permite visualizar conversas de propostas de outros atendentes (escopo amplo).",  critica: false }
@@ -100,6 +101,11 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "cobrancas.confirm",    label: "Confirmar Recebimento",        desc: "Permite confirmar manualmente o recebimento de uma cobrança.",                     critica: true  },
     { key: "cobrancas.cancel",     label: "Cancelar / Estornar Cobranças", desc: "Permite cancelar ou estornar cobranças emitidas.",                               critica: true  },
     { key: "cobrancas.view_token", label: "Ver Link e Token da Cobrança", desc: "Permite visualizar o link público e o token de acesso da cobrança.",              critica: false },
+    { key: "financeiro.resolver_credito", label: "Resolver Crédito / Diferença", desc: "Permite decidir o destino financeiro (manter crédito, abater débito etc.) para diferenças comerciais.", critica: true },
+    { key: "financeiro.bonificar", label: "Bonificar Comercial",          desc: "Permite conceder bonificação comercial para diferenças financeiras a maior.",       critica: true },
+    { key: "financeiro.devolver", label: "Solicitar Devolução",           desc: "Permite registrar solicitações de devolução física de valores pagos ao cliente.",     critica: true },
+    { key: "financeiro.debito_futuro", label: "Registrar Débito Futuro",   desc: "Permite registrar débitos futuros para diferenças financeiras a menor.",             critica: true },
+    { key: "credito.usar", label: "Usar Crédito Acumulado",               desc: "Permite aplicar o saldo de crédito do cliente como pagamento de propostas.",        critica: true },
     // Permissões V1 mantidas para compatibilidade retroativa durante migração
     { key: "cobrancas.aprovar",        label: "Liberar OS / Confirmar", desc: "Sera substituido por cobrancas.confirm na Fase 4.",         critica: true  },
     { key: "cobrancas.emitir_boleto",  label: "Emitir Boleto",          desc: "Sera substituido por cobrancas.emit na Fase 4.",             critica: false }

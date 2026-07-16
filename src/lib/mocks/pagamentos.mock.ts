@@ -48,7 +48,8 @@ const tipoDisponibilidadePorEmpresa: Record<string, Record<CobrancaTipo, boolean
     "E-FATURADO": true,
     "E-RETRABALHO": true,
     "E-PERMUTA": true,
-    "E-AMOSTRA": true
+    "E-AMOSTRA": true,
+    "E-CREDITO": true
   },
   "Ideal Biro": {
     PIX: true,
@@ -58,7 +59,8 @@ const tipoDisponibilidadePorEmpresa: Record<string, Record<CobrancaTipo, boolean
     "E-FATURADO": true,
     "E-RETRABALHO": true,
     "E-PERMUTA": true,
-    "E-AMOSTRA": true
+    "E-AMOSTRA": true,
+    "E-CREDITO": true
   },
   "E3 Brindes": {
     PIX: true,
@@ -68,7 +70,8 @@ const tipoDisponibilidadePorEmpresa: Record<string, Record<CobrancaTipo, boolean
     "E-FATURADO": true,
     "E-RETRABALHO": true,
     "E-PERMUTA": true,
-    "E-AMOSTRA": true
+    "E-AMOSTRA": true,
+    "E-CREDITO": true
   }
 };
 

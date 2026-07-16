@@ -76,9 +76,8 @@ const mockSupabase = {
 } as any;
 
 const initialContext: ConversationContext = {
-  id: 'conversa-teste',
-  messages: [],
-  activeSpecialist: 'comercial',
+
+
   v2ContextJson: '{}'
 };
 

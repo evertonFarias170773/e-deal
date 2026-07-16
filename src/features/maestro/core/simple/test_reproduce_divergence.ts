@@ -125,9 +125,8 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(v2Ctx),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
+
     };
 
     const result = await processSimpleQueryWithBrain(
@@ -164,9 +163,8 @@ async function run() {
 
     const legacyCtx: ConversationContext = {
       v2ContextJson: serializeV2Context(v2Ctx),
-      activeClientJson: null,
-      lastAnswerJson: null,
-      lastUpdateJson: null
+
+
     };
 
     const result = await processSimpleQueryWithBrain(
