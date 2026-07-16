@@ -10,15 +10,21 @@
  *       Status PAID no mês corrente; filtro por id_empresa.
  *       Service reutilizado de: @/features/cobrancas/services/view-pagamentos-pagos.service
  *
- *  2. Contas a receber    → public.vw_boletos_controle
- *       Saldo em aberto = situacao IN ('AVENCER', 'VENCIDO')
+ *  2. Contas a receber    → public.vw_boletos_controle (Todas) / public.boletos (por empresa)
+ *       Saldo em aberto = situacao IN ('AVENCER', 'VENCIDO') na view /
+ *                         status IN ('A_VENCER', 'A_RECEBER') em boletos.
  *       PAGO não entra no total pendente.
- *       ⚠️  A view não possui id_empresa nem campo de empresa.
- *       O único vínculo possível seria: vw_boletos_controle.id_int → propostas.id_int → propostas.empresa
- *       Isso exigiria dois passos de consulta (buscar id_ints da empresa e depois filtrar a view),
- *       o que não é seguro por volume e não existe como RPC ou join nativo.
- *       DECISÃO: card exibe total consolidado (todas as empresas) independentemente do seletor.
- *       O seletor de empresa não afeta este card até que haja RPC ou campo id_empresa na view.
+ *
+ *       Vínculo investigado:
+ *         - vw_boletos_controle não possui id_empresa nem campo de empresa.
+ *         - A view não tem DDL local; origem desconhecida no código.
+ *         - Não existe FK PostgREST configurada entre a view e boletos.
+ *         - A tabela boletos possui id_empresa (número) nativo e confirmado.
+ *
+ *       DECISÃO:
+ *         companyId = 0 (Todas): paginação completa na view sem limite arbitrário.
+ *         companyId ≠ 0 (empresa): consulta direta em boletos com id_empresa.
+ *           status A_VENCER ≅ situacao AVENCER, status A_RECEBER ≅ situacao VENCIDO.
  *
  *  3. Propostas aguardando → public.propostas
  *       status_interno IN ['AGUARDANDO', 'AGUARDANDO / EM ARTE', 'AGUARDANDO / PENDENTE']
@@ -162,43 +168,102 @@ async function fetchVendasMes(companyId: number): Promise<{ valor: number; quant
   return { valor, quantidade };
 }
 
-// ─── 2. Contas a receber — public.vw_boletos_controle ─────────────────────────────
+// ─── 2. Contas a receber — vw_boletos_controle (Todas) / boletos (por empresa) ─────────
 //
-// Saldo em aberto = situacao IN ('AVENCER', 'VENCIDO')
-// PAGO não entra no total pendente.
-// Campos da view: id, id_int, parcela, total_parcelas, valor, vencimento,
-//                 nome_cliente, status, paid_at, situacao
+// Estratégia de total sem truncamento:
+//   companyId = 0 (Todas) → paginação completa em vw_boletos_controle.
+//     Cada página tem PAGE_SIZE registros. Continua enquanto a página vier cheia.
+//     Isso garante que um volume > 20.000 não produz total parcial silencioso.
 //
-// ⚠️  FILTRO DE EMPRESA: a view não possui id_empresa nem campo de empresa.
-//     O único vínculo existente é: vw_boletos_controle.id_int → propostas.id_int → propostas.empresa
-//     Para aplicar o filtro seria necessário:
-//       1. Buscar todos os id_int de propostas.empresa = X (poderia ser milhares de registros)
-//       2. Filtrar a view pelo array de id_int retornado
-//     Isso não é seguro por volume e não existe RPC ou join nativo disponível.
-//     DECISÃO: o card exibe o total consolidado (todas as empresas).
-//     O argumento companyId é recebido mas ignorado até que haja id_empresa na view ou RPC dedicada.
+//   companyId ≠ 0 (empresa) → consulta direta em public.boletos.
+//     boletos.id_empresa é numérico e nativo — filtro direto e confiável.
+//     status A_VENCER corresponde a situacao AVENCER na view.
+//     status A_RECEBER corresponde a situacao VENCIDO na view.
+//     PAGO (status PAID / confirmado) não entra em nenhum dos dois status.
+//     A paginação também se aplica aqui para cobrir volumes altos por empresa.
+//
+// PostgREST embedding (vw_boletos_controle → boletos) NÃO está disponível:
+//   Views não têm FK constraint; nenhum COMMENT ON VIEW de override foi encontrado.
+
+const PAGE_SIZE_CONTAS = 1000;
 
 async function fetchContasReceber(
-  // companyId recebido para compatibilidade de assinatura, mas não aplicado — ver comentário acima.
-  _companyId: number
+  companyId: number
 ): Promise<{ valor: number; quantidade: number }> {
   const client = getSupabaseClient();
   if (!client) return { valor: 0, quantidade: 0 };
 
-  // Selecionar apenas os campos necessários para o cálculo
-  const { data, error } = await client
-    .from("vw_boletos_controle")
-    .select("valor, situacao")
-    .in("situacao", ["AVENCER", "VENCIDO"])
-    .limit(20000);
+  // ─ Caminho A: companyId = 0 (Todas empresas) – paginação sobre vw_boletos_controle ──────────
+  if (companyId === 0) {
+    let totalValor = 0;
+    let totalQtd = 0;
+    let page = 0;
 
-  if (error || !Array.isArray(data)) {
-    console.warn("[Dashboard] Erro ao buscar contas a receber (vw_boletos_controle):", error?.message);
-    return { valor: 0, quantidade: 0 };
+    while (true) {
+      const from = page * PAGE_SIZE_CONTAS;
+      const to = from + PAGE_SIZE_CONTAS - 1;
+
+      const { data, error } = await client
+        .from("vw_boletos_controle")
+        .select("valor")
+        .in("situacao", ["AVENCER", "VENCIDO"])
+        .range(from, to);
+
+      if (error) {
+        console.warn("[Dashboard] Erro ao paginar vw_boletos_controle:", error.message);
+        break;
+      }
+
+      if (!Array.isArray(data) || data.length === 0) break;
+
+      for (const row of data) totalValor += toNumber(row.valor);
+      totalQtd += data.length;
+
+      // Se a página veio incompleta, chegamos ao fim
+      if (data.length < PAGE_SIZE_CONTAS) break;
+      page++;
+    }
+
+    return { valor: totalValor, quantidade: totalQtd };
   }
 
-  const valor = data.reduce((acc, row) => acc + toNumber(row.valor), 0);
-  return { valor, quantidade: data.length };
+  // ─ Caminho B: empresa específica – paginação sobre public.boletos com id_empresa ──────────
+  // boletos.id_empresa é um campo numérico nativo confirmado.
+  // status A_VENCER ≡ situacao AVENCER (título futuro não pago).
+  // status A_RECEBER ≡ situacao VENCIDO (título em cobrança, possivelmente vencido).
+  // PAID/CANCELADO não entram em nenhum dos dois.
+  {
+    let totalValor = 0;
+    let totalQtd = 0;
+    let page = 0;
+
+    while (true) {
+      const from = page * PAGE_SIZE_CONTAS;
+      const to = from + PAGE_SIZE_CONTAS - 1;
+
+      const { data, error } = await client
+        .from("boletos")
+        .select("valor")
+        .eq("id_empresa", companyId)
+        .in("status", ["A_VENCER", "A_RECEBER"])
+        .range(from, to);
+
+      if (error) {
+        console.warn("[Dashboard] Erro ao paginar boletos por empresa:", error.message);
+        break;
+      }
+
+      if (!Array.isArray(data) || data.length === 0) break;
+
+      for (const row of data) totalValor += toNumber(row.valor);
+      totalQtd += data.length;
+
+      if (data.length < PAGE_SIZE_CONTAS) break;
+      page++;
+    }
+
+    return { valor: totalValor, quantidade: totalQtd };
+  }
 }
 
 // ─── 3. Propostas aguardando — public.propostas ───────────────────────────────
@@ -323,8 +388,10 @@ export async function getDashboardMetrics(companyId: number): Promise<DashboardM
         key: "contasReceber",
         title: "Contas a receber",
         value: formatCurrency(contasReceber.valor),
-        // A vw_boletos_controle não tem id_empresa: exibe total consolidado independente do seletor.
-        description: `${contasReceber.quantidade} título(s) em aberto · total consolidado`,
+        // companyId = 0: view paginada (total consolidado). companyId != 0: boletos por id_empresa.
+        description: companyId === 0
+          ? `${contasReceber.quantidade} título(s) em aberto · todas as empresas`
+          : `${contasReceber.quantidade} título(s) em aberto`,
         tone: "info",
         isLoading: false,
       },
