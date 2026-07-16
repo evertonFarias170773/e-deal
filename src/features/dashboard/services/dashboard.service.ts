@@ -2,21 +2,41 @@
  * dashboard.service.ts
  *
  * Camada de acesso a dados do Dashboard — somente leitura (SELECT).
- * Nenhuma escrita, migration ou alteração de schema.
+ * Nenhuma escrita, migration ou alteração de schema, views, triggers, RPCs ou Edge Functions.
  *
- * Cards implementados:
- *   1. Vendas do mês        → public.propostas     (is_prd_aprovado=true AND is_reproved=false, mês atual, filtro empresa)
- *   2. Contas a receber     → public.boletos       (status aberto, filtro id_empresa)
- *   3. Propostas aguardando → public.propostas     (status grupo AGUARDANDO, is_reproved=false, filtro empresa)
- *   4. Notas com erro       → public.notas_fiscais + public.notas_servico (filtro id_empresa)
- *   5. Produção             → placeholder: módulo de OS consolidado ainda não existe
+ * ─── Fontes oficiais por card ────────────────────────────────────────────────
  *
- * ⚠️  public.propostas NÃO possui `id_empresa` — empresa é identificada pelo campo TEXT `empresa`.
- *     public.boletos, notas_fiscais e notas_servico possuem `id_empresa` numérico.
+ *  1. Vendas do mês       → view_pagamentos_pagos_v2
+ *       Status PAID no mês corrente; filtro por id_empresa.
+ *       Service reutilizado de: @/features/cobrancas/services/view-pagamentos-pagos.service
+ *
+ *  2. Contas a receber    → pagamentos_v2
+ *       Saldo em aberto = status IN ('A_VENCER', 'A_RECEBER')
+ *       Nota: a view "vw_boletos_controle" não existe no código do projeto.
+ *       Os valores reais de status são: A_VENCER, A_RECEBER, PAID, CANCELADO.
+ *       Filtro de empresa por campo id_empresa (numérico).
+ *
+ *  3. Propostas aguardando → public.propostas
+ *       status_interno IN ['AGUARDANDO', 'AGUARDANDO / EM ARTE', 'AGUARDANDO / PENDENTE']
+ *       is_reproved = false
+ *       Filtro de empresa via campo texto `empresa` (propostas não tem id_empresa).
+ *
+ *  4. Notas a liberar     → PLACEHOLDER EXPLÍCITO
+ *       Integração fiscal adiada. Retorna 0 sem consultar banco.
+ *       TODO: integrar com notas_fiscais + notas_servico quando definido pelo produto.
+ *
+ *  5. OS em produção      → public.propostas
+ *       status_interno = 'EM PRODUCAO' (grafia exata confirmada no banco)
+ *       Filtro de empresa via campo texto `empresa`.
+ *
+ * ─── Regra de empresa em `propostas` ────────────────────────────────────────
+ *  A tabela `propostas` NÃO possui `id_empresa`. O campo `empresa` é texto.
+ *  O filtro é aplicado no JavaScript após a busca, usando exclusão explícita.
  */
 
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { fetchViewPagamentosPagos } from "@/features/cobrancas/services/view-pagamentos-pagos.service";
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -24,8 +44,8 @@ export type DashboardCardKey =
   | "vendasMes"
   | "contasReceber"
   | "propostasAguardando"
-  | "notasErro"
-  | "producao";
+  | "notasLiberar"
+  | "emProducao";
 
 export type DashboardCardData = {
   key: DashboardCardKey;
@@ -44,34 +64,40 @@ export type DashboardMetricsResult = {
   errorMessage?: string;
 };
 
-// ─── Mapeamento empresa ID → padrão de texto em `propostas.empresa` ───────────
-// Empresa id=0 significa "Todas" — sem filtro.
-// As demais correspondem aos padrões utilizados pelo ERP ao gravar o campo `empresa`.
+// ─── Filtro de empresa em `propostas` (campo texto) ───────────────────────────
+// Padrões específicos listados antes dos genéricos para evitar falso-positivo.
+// Empresa 1 usa lógica de exclusão: exclui padrões de 2 e 3, depois aceita "ideal".
 
-// Padrões ordenados do mais específico para o mais genérico.
-// A correspondência é feita por includes() sobre o texto em lowercase;
-// padrões específicos ("ideal biro") devem vir ANTES dos genéricos ("ideal")
-// para evitar falso positivo ao verificar empresa 1 vs 2.
-// A função empresaTextMatchesCompany() resolve o ID correto via exclusão:
-//   - empresa 1: exclui explicitamente padrões de empresa 2 e 3.
-const EMPRESA_TEXT_PATTERNS: Record<number, string[]> = {
-  // Ideal Gráfica — registros SEM "biro" e SEM "e3" que contenham "ideal"
-  // (tratados por exclusão na função)
+const EMPRESA_INCLUDE_PATTERNS: Record<number, string[]> = {
   1: ["ideal grafica", "ideal gráfica", "ingresso ideal"],
-  // Ideal Biro
   2: ["ideal biro", "biro grafica", "biro gráfica", "birô", "biro"],
-  // E3 Brindes
   3: ["e3 brindes", "e3"],
 };
 
-// Padrões que pertencem EXCLUSIVAMENTE a outra empresa
-// (usados para excluir registros ao filtrar empresa 1)
 const EMPRESA_EXCLUDE_PATTERNS: Record<number, string[]> = {
-  // Ao filtrar empresa 1, excluir registros que contenham padrões de empresa 2 ou 3
-  1: [...([] as string[]), ...EMPRESA_TEXT_PATTERNS[2], ...EMPRESA_TEXT_PATTERNS[3]],
+  // Para empresa 1, rejeitar qualquer texto que contenha padrões de empresa 2 ou 3
+  1: [...EMPRESA_INCLUDE_PATTERNS[2], ...EMPRESA_INCLUDE_PATTERNS[3]],
   2: [],
   3: [],
 };
+
+function empresaTextMatchesCompany(
+  empresaText: string | null | undefined,
+  companyId: number
+): boolean {
+  if (companyId === 0) return true; // "Todas" — sem filtro
+  const lower = String(empresaText ?? "").toLowerCase();
+
+  // Verificar exclusões primeiro
+  const exclusions = EMPRESA_EXCLUDE_PATTERNS[companyId] ?? [];
+  if (exclusions.some((p) => lower.includes(p))) return false;
+
+  // Empresa 1: aceitar o genérico "ideal" após exclusão de biro/e3
+  if (companyId === 1 && lower.includes("ideal")) return true;
+
+  const includes = EMPRESA_INCLUDE_PATTERNS[companyId] ?? [];
+  return includes.some((p) => lower.includes(p));
+}
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
@@ -81,99 +107,75 @@ function toNumber(value: unknown, fallback = 0): number {
 }
 
 /**
- * Retorna o intervalo [start, end) do mês corrente em ISO,
- * ajustado para UTC considerando fuso de São Paulo (UTC-3).
+ * Retorna o primeiro e último dia do mês corrente no formato "YYYY-MM-DD"
+ * em horário de São Paulo (America/Sao_Paulo).
  */
-function getCurrentMonthRange(): { start: string; end: string } {
+function getCurrentMonthRangeSP(): { inicio: string; fim: string } {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-indexed
-  // Mês inicia à meia-noite em SP = 03:00 UTC
-  const start = new Date(Date.UTC(year, month, 1, 3, 0, 0)).toISOString();
-  const end = new Date(Date.UTC(year, month + 1, 1, 3, 0, 0)).toISOString();
-  return { start, end };
+  const spDateStr = now.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+  const [year, month] = spDateStr.split("-").map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  const inicio = `${year}-${String(month).padStart(2, "0")}-01`;
+  const fim = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { inicio, fim };
 }
 
-/**
- * Verifica se o texto do campo `empresa` em propostas pertence a uma empresa específica.
- * Retorna true se companyId === 0 (Todas).
- */
-function empresaTextMatchesCompany(empresaText: string | null | undefined, companyId: number): boolean {
-  if (companyId === 0) return true;
-  const patterns = EMPRESA_TEXT_PATTERNS[companyId];
-  if (!patterns) return false;
-  const lower = String(empresaText ?? "").toLowerCase();
+// Status de "Aguardando" conforme business-rules.ts (PROPOSTA_STATUS_GRUPOS.orcamento)
+const AGUARDANDO_STATUSES = [
+  "AGUARDANDO",
+  "AGUARDANDO / EM ARTE",
+  "AGUARDANDO / PENDENTE",
+] as const;
 
-  // Verificar exclusões primeiro — evita que "Ideal Gráfica" case com empresa 2 ou 3
-  const exclusions = EMPRESA_EXCLUDE_PATTERNS[companyId] ?? [];
-  if (exclusions.some((p) => lower.includes(p))) return false;
-
-  // Para empresa 1, aceitar também o genérico "ideal" (após garantir que não é Biro/E3)
-  if (companyId === 1 && lower.includes("ideal")) return true;
-
-  return patterns.some((p) => lower.includes(p));
-}
-
-// Statuses fiscais que representam erro/problema e devem aparecer no card "Notas com erro"
-const NFE_ERROR_STATUSES = ["ERRO_AUTORIZACAO", "ERRO_ENVIO", "NAO_ENCONTRADA_FOCUS", "DENEGADA"];
-const NFSE_ERROR_STATUSES = ["ERRO_ENVIO", "REJEITADA"];
-
-// ─── 1. Vendas do mês ─────────────────────────────────────────────────────────
+// ─── 1. Vendas do mês — view_pagamentos_pagos_v2 ─────────────────────────────
 //
-// REGRA OFICIAL (business-rules.ts / maestro-simple-propostas.server.ts):
-//   Pedido real = is_prd_aprovado = true AND is_reproved = false
-//   ⚠️  status_interno = 'APROVADO' NÃO equivale a pedido real.
-//       Registros com status APROVADO podem ter is_prd_aprovado = false.
-//
-// Campo de valor: coalesce(valor_total, valor) — padrão do maestro.
-// Campo de data : created_at — campo oficial de período; não existe data_liberacao separada.
+// A view já possui service próprio em cobrancas/services/view-pagamentos-pagos.service.ts.
+// Reutilizamos fetchViewPagamentosPagos() que faz fetch via PostgREST.
+// Campos da view: data (YYYY-MM-DD), id_empresa (number), status, quantidade, total.
+// Filtramos status = 'PAID' (pagamentos confirmados) no mês corrente.
+// O filtro de empresa é feito no JS sobre id_empresa.
 
 async function fetchVendasMes(companyId: number): Promise<{ valor: number; quantidade: number }> {
-  const client = getSupabaseClient();
-  if (!client) return { valor: 0, quantidade: 0 };
+  const { inicio, fim } = getCurrentMonthRangeSP();
 
-  const { start, end } = getCurrentMonthRange();
+  const result = await fetchViewPagamentosPagos(inicio, fim);
 
-  // propostas não tem id_empresa → buscamos todos pedidos reais do mês e filtramos empresa no JS
-  const { data, error } = await client
-    .from("propostas")
-    .select("valor_total, valor, empresa")
-    .eq("is_prd_aprovado", true)
-    .eq("is_reproved", false)
-    .gte("created_at", start)
-    .lt("created_at", end)
-    .limit(5000);
-
-  if (error || !Array.isArray(data)) {
-    console.warn("[Dashboard] Erro ao buscar vendas do mês:", error?.message);
+  if (result.error || !result.rows.length) {
+    if (result.error) console.warn("[Dashboard] Erro ao buscar vendas do mês:", result.error);
     return { valor: 0, quantidade: 0 };
   }
 
-  const filtered = companyId === 0
-    ? data
-    : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId));
+  // Filtrar somente PAID (pagamentos efetivados) + empresa
+  const rows = result.rows.filter((r) => {
+    if (r.status !== "PAID") return false;
+    if (companyId === 0) return true;
+    return Number(r.id_empresa) === companyId;
+  });
 
-  const valor = filtered.reduce((acc, row) => {
-    // coalesce: valor_total ?? valor (padrão oficial do maestro)
-    const vt = toNumber(row.valor_total);
-    const v  = toNumber(row.valor);
-    return acc + (vt > 0 ? vt : v);
-  }, 0);
+  const valor = rows.reduce((acc, r) => acc + toNumber(r.total), 0);
+  const quantidade = rows.reduce((acc, r) => acc + toNumber(r.quantidade), 0);
 
-  return { valor, quantidade: filtered.length };
+  return { valor, quantidade };
 }
 
-// ─── 2. Contas a receber ──────────────────────────────────────────────────────
+// ─── 2. Contas a receber — pagamentos_v2 ─────────────────────────────────────
+//
+// Saldo em aberto = status IN ('A_VENCER', 'A_RECEBER')
+// PAID = pago, não entra no saldo pendente.
+// CANCELADO = excluído.
+// A tabela possui id_empresa numérico → filtro direto no banco.
+// Campos selecionados: apenas valor e id_empresa (mínimo necessário).
 
-async function fetchContasReceber(companyId: number): Promise<{ valor: number; quantidade: number }> {
+async function fetchContasReceber(
+  companyId: number
+): Promise<{ valor: number; quantidade: number }> {
   const client = getSupabaseClient();
   if (!client) return { valor: 0, quantidade: 0 };
 
-  // boletos possui id_empresa → podemos filtrar no banco diretamente
   let query = client
-    .from("boletos")
-    .select("valor, valor_atualizado")
-    .not("status", "in", "(PAID,PAGO,CANCELADO)");
+    .from("pagamentos_v2")
+    .select("valor")
+    .in("status", ["A_VENCER", "A_RECEBER"]);
 
   if (companyId !== 0) {
     query = query.eq("id_empresa", companyId);
@@ -186,30 +188,21 @@ async function fetchContasReceber(companyId: number): Promise<{ valor: number; q
     return { valor: 0, quantidade: 0 };
   }
 
-  const valor = data.reduce((acc, row) => {
-    const va = toNumber(row.valor_atualizado);
-    const v = toNumber(row.valor);
-    return acc + (va > 0 ? va : v);
-  }, 0);
-
+  const valor = data.reduce((acc, row) => acc + toNumber(row.valor), 0);
   return { valor, quantidade: data.length };
 }
 
-// ─── 3. Propostas aguardando ──────────────────────────────────────────────────
+// ─── 3. Propostas aguardando — public.propostas ───────────────────────────────
 //
-// REGRA OFICIAL (business-rules.ts PROPOSTA_STATUS_GRUPOS.orcamento):
-//   Grupo "orcamento" = NOVO, NOVO / EM ARTE, AGUARDANDO, AGUARDANDO / EM ARTE, AGUARDANDO / PENDENTE
-//   "Propostas aguardando" = subconjunto com "AGUARDANDO" no status — fase comercial aguardando retorno.
-//   Excluir is_reproved=true (propostas reprovadas não estão "aguardando").
-
-// Status do grupo AGUARDANDO conforme business-rules.ts
-const AGUARDANDO_STATUSES = ["AGUARDANDO", "AGUARDANDO / EM ARTE", "AGUARDANDO / PENDENTE"];
+// Contagem de propostas no grupo "aguardando" da fase comercial.
+// Status: AGUARDANDO | AGUARDANDO / EM ARTE | AGUARDANDO / PENDENTE
+// Excluir reprovadas: is_reproved = false
+// propostas não tem id_empresa → filtro de empresa no JS via campo texto `empresa`.
 
 async function fetchPropostasAguardando(companyId: number): Promise<{ quantidade: number }> {
   const client = getSupabaseClient();
   if (!client) return { quantidade: 0 };
 
-  // propostas não tem id_empresa → buscamos todos e filtramos empresa no JS quando necessário
   const { data, error } = await client
     .from("propostas")
     .select("empresa")
@@ -222,74 +215,98 @@ async function fetchPropostasAguardando(companyId: number): Promise<{ quantidade
     return { quantidade: 0 };
   }
 
-  const quantidade = companyId === 0
-    ? data.length
-    : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
+  const quantidade =
+    companyId === 0
+      ? data.length
+      : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
 
   return { quantidade };
 }
 
-// ─── 4. Notas com erro ────────────────────────────────────────────────────────
+// ─── 4. Notas a liberar — PLACEHOLDER ────────────────────────────────────────
+//
+// TODO: integrar com public.notas_fiscais e public.notas_servico.
+//       A integração real será implementada em fase posterior.
+//       Não consulta nenhuma tabela fiscal nesta etapa.
+//       Retorna valor fixo sem dados fictícios (zero, não um número inventado).
 
-async function fetchNotasErro(companyId: number): Promise<{ quantidade: number }> {
+function getNotasLiberarPlaceholder(): { quantidade: number } {
+  return { quantidade: 0 };
+}
+
+// ─── 5. OS em produção — public.propostas ────────────────────────────────────
+//
+// Status: 'EM PRODUCAO' — grafia exata confirmada em:
+//   - src/features/orcamentos/types.ts
+//   - src/lib/constants/proposta-status.ts
+//   - src/features/maestro/core/knowledge/business-rules.ts
+// Sem acento, sem cedilha, tudo maiúsculo, espaço simples.
+// propostas não tem id_empresa → filtro de empresa no JS via campo texto `empresa`.
+
+async function fetchEmProducao(companyId: number): Promise<{ quantidade: number }> {
   const client = getSupabaseClient();
   if (!client) return { quantidade: 0 };
 
-  // NF-e (notas_fiscais) com id_empresa
-  let nfeQuery = client
-    .from("notas_fiscais")
-    .select("id", { count: "exact", head: true })
-    .in("status", NFE_ERROR_STATUSES);
+  const { data, error } = await client
+    .from("propostas")
+    .select("empresa")
+    .eq("status_interno", "EM PRODUCAO")
+    .limit(5000);
 
-  if (companyId !== 0) {
-    nfeQuery = nfeQuery.eq("id_empresa", companyId);
+  if (error || !Array.isArray(data)) {
+    console.warn("[Dashboard] Erro ao buscar OS em produção:", error?.message);
+    return { quantidade: 0 };
   }
 
-  // NFS-e (notas_servico) com id_empresa
-  let nfseQuery = client
-    .from("notas_servico")
-    .select("id", { count: "exact", head: true })
-    .in("status", NFSE_ERROR_STATUSES);
+  const quantidade =
+    companyId === 0
+      ? data.length
+      : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
 
-  if (companyId !== 0) {
-    nfseQuery = nfseQuery.eq("id_empresa", companyId);
-  }
-
-  const [nfeResult, nfseResult] = await Promise.all([nfeQuery, nfseQuery]);
-
-  if (nfeResult.error) console.warn("[Dashboard] Erro ao buscar NF-e com erro:", nfeResult.error?.message);
-  if (nfseResult.error) console.warn("[Dashboard] Erro ao buscar NFS-e com erro:", nfseResult.error?.message);
-
-  const quantidade = (nfeResult.count ?? 0) + (nfseResult.count ?? 0);
   return { quantidade };
 }
 
 // ─── Agregador principal ──────────────────────────────────────────────────────
 
 export async function getDashboardMetrics(companyId: number): Promise<DashboardMetricsResult> {
+  // Verificação de conexão Supabase (pagamentos_v2 usa fetch direto, mas propostas usa client)
   const client = getSupabaseClient();
-  if (!client) {
-    return {
-      cards: buildFallbackCards(),
-      source: "fallback",
-      errorMessage: "Conexão com o banco indisponível.",
-    };
+  const supabaseDisponivel = Boolean(client);
+
+  if (!supabaseDisponivel) {
+    // A view_pagamentos_pagos_v2 usa fetch direto (não precisa de client), mas propostas sim
+    // Tentamos as consultas de view mesmo sem client para propostas
   }
 
   try {
-    const [vendas, contasReceber, propostasAguardando, notasErro] = await Promise.all([
-      fetchVendasMes(companyId),
-      fetchContasReceber(companyId),
-      fetchPropostasAguardando(companyId),
-      fetchNotasErro(companyId),
+    // Todas as consultas independentes em paralelo
+    const [vendas, contasReceber, propostasAguardando, emProducao] = await Promise.all([
+      fetchVendasMes(companyId).catch((err) => {
+        console.error("[Dashboard] fetchVendasMes falhou:", err);
+        return { valor: 0, quantidade: 0 };
+      }),
+      fetchContasReceber(companyId).catch((err) => {
+        console.error("[Dashboard] fetchContasReceber falhou:", err);
+        return { valor: 0, quantidade: 0 };
+      }),
+      fetchPropostasAguardando(companyId).catch((err) => {
+        console.error("[Dashboard] fetchPropostasAguardando falhou:", err);
+        return { quantidade: 0 };
+      }),
+      fetchEmProducao(companyId).catch((err) => {
+        console.error("[Dashboard] fetchEmProducao falhou:", err);
+        return { quantidade: 0 };
+      }),
     ]);
+
+    const notasLiberar = getNotasLiberarPlaceholder();
 
     const cards: DashboardCardData[] = [
       {
         key: "vendasMes",
         title: "Vendas do mês",
         value: formatCurrency(vendas.valor),
-        description: `${vendas.quantidade} proposta(s) aprovada(s) no mês`,
+        description: `${vendas.quantidade} pagamento(s) confirmado(s) no mês`,
         tone: "success",
         isLoading: false,
       },
@@ -310,22 +327,23 @@ export async function getDashboardMetrics(companyId: number): Promise<DashboardM
         isLoading: false,
       },
       {
-        key: "notasErro",
-        title: "Notas com erro",
-        value: String(notasErro.quantidade),
-        description: "Pendências fiscais (NF-e + NFS-e)",
-        tone: notasErro.quantidade > 0 ? "danger" : "neutral",
-        isLoading: false,
-      },
-      {
-        key: "producao",
-        title: "OS em produção",
+        key: "notasLiberar",
+        title: "Notas a liberar",
+        // TODO: substituir por dados reais de notas_fiscais + notas_servico
         value: "—",
-        description: "Módulo de Produção em preparação",
-        trend: "Integração futura",
-        tone: "special",
+        description: "Integração fiscal em preparação",
+        trend: "Em breve",
+        tone: "neutral",
         isLoading: false,
         isPlaceholder: true,
+      },
+      {
+        key: "emProducao",
+        title: "OS em produção",
+        value: String(emProducao.quantidade),
+        description: "Pedidos com status EM PRODUCAO",
+        tone: "special",
+        isLoading: false,
       },
     ];
 
@@ -341,14 +359,14 @@ export async function getDashboardMetrics(companyId: number): Promise<DashboardM
   }
 }
 
-/** Cards de fallback exibidos quando o banco está indisponível. */
+/** Cards exibidos quando o banco está indisponível — sem números fictícios. */
 function buildFallbackCards(): DashboardCardData[] {
   const defs: Array<{ key: DashboardCardKey; title: string; tone: DashboardCardData["tone"] }> = [
     { key: "vendasMes", title: "Vendas do mês", tone: "success" },
     { key: "contasReceber", title: "Contas a receber", tone: "info" },
     { key: "propostasAguardando", title: "Propostas aguardando", tone: "warning" },
-    { key: "notasErro", title: "Notas com erro", tone: "danger" },
-    { key: "producao", title: "OS em produção", tone: "special" },
+    { key: "notasLiberar", title: "Notas a liberar", tone: "neutral" },
+    { key: "emProducao", title: "OS em produção", tone: "special" },
   ];
 
   return defs.map(({ key, title, tone }) => ({

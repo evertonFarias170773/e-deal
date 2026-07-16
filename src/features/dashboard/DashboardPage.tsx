@@ -18,8 +18,8 @@ const cardIcons: Record<DashboardCardKey, LucideIcon> = {
   vendasMes: Banknote,
   contasReceber: WalletCards,
   propostasAguardando: ClipboardList,
-  notasErro: AlertTriangle,
-  producao: Factory,
+  notasLiberar: AlertTriangle,
+  emProducao: Factory,
 };
 
 type Activity = (typeof dashboardActivity)[number];

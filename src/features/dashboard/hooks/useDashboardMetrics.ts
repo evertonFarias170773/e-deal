@@ -22,6 +22,7 @@ export function useDashboardMetrics(): UseDashboardMetricsResult {
   useEffect(() => {
     let active = true;
 
+    // Exibe cards de loading enquanto aguarda os dados
     setState({ cards: buildLoadingCards(), isLoading: true, source: null });
 
     void getDashboardMetrics(activeCompany.id).then((result) => {
@@ -42,13 +43,14 @@ export function useDashboardMetrics(): UseDashboardMetricsResult {
   return state;
 }
 
+/** Cards de loading exibidos enquanto os dados são buscados. */
 function buildLoadingCards(): DashboardCardData[] {
   const defs: Array<{ key: DashboardCardData["key"]; title: string; tone: DashboardCardData["tone"] }> = [
     { key: "vendasMes", title: "Vendas do mês", tone: "success" },
     { key: "contasReceber", title: "Contas a receber", tone: "info" },
     { key: "propostasAguardando", title: "Propostas aguardando", tone: "warning" },
-    { key: "notasErro", title: "Notas com erro", tone: "danger" },
-    { key: "producao", title: "OS em produção", tone: "special" },
+    { key: "notasLiberar", title: "Notas a liberar", tone: "neutral" },
+    { key: "emProducao", title: "OS em produção", tone: "special" },
   ];
 
   return defs.map(({ key, title, tone }) => ({
