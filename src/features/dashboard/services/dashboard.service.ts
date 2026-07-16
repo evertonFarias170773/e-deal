@@ -10,11 +10,15 @@
  *       Status PAID no mês corrente; filtro por id_empresa.
  *       Service reutilizado de: @/features/cobrancas/services/view-pagamentos-pagos.service
  *
- *  2. Contas a receber    → pagamentos_v2
- *       Saldo em aberto = status IN ('A_VENCER', 'A_RECEBER')
- *       Nota: a view "vw_boletos_controle" não existe no código do projeto.
- *       Os valores reais de status são: A_VENCER, A_RECEBER, PAID, CANCELADO.
- *       Filtro de empresa por campo id_empresa (numérico).
+ *  2. Contas a receber    → public.vw_boletos_controle
+ *       Saldo em aberto = situacao IN ('AVENCER', 'VENCIDO')
+ *       PAGO não entra no total pendente.
+ *       ⚠️  A view não possui id_empresa nem campo de empresa.
+ *       O único vínculo possível seria: vw_boletos_controle.id_int → propostas.id_int → propostas.empresa
+ *       Isso exigiria dois passos de consulta (buscar id_ints da empresa e depois filtrar a view),
+ *       o que não é seguro por volume e não existe como RPC ou join nativo.
+ *       DECISÃO: card exibe total consolidado (todas as empresas) independentemente do seletor.
+ *       O seletor de empresa não afeta este card até que haja RPC ou campo id_empresa na view.
  *
  *  3. Propostas aguardando → public.propostas
  *       status_interno IN ['AGUARDANDO', 'AGUARDANDO / EM ARTE', 'AGUARDANDO / PENDENTE']
@@ -158,33 +162,38 @@ async function fetchVendasMes(companyId: number): Promise<{ valor: number; quant
   return { valor, quantidade };
 }
 
-// ─── 2. Contas a receber — pagamentos_v2 ─────────────────────────────────────
+// ─── 2. Contas a receber — public.vw_boletos_controle ─────────────────────────────
 //
-// Saldo em aberto = status IN ('A_VENCER', 'A_RECEBER')
-// PAID = pago, não entra no saldo pendente.
-// CANCELADO = excluído.
-// A tabela possui id_empresa numérico → filtro direto no banco.
-// Campos selecionados: apenas valor e id_empresa (mínimo necessário).
+// Saldo em aberto = situacao IN ('AVENCER', 'VENCIDO')
+// PAGO não entra no total pendente.
+// Campos da view: id, id_int, parcela, total_parcelas, valor, vencimento,
+//                 nome_cliente, status, paid_at, situacao
+//
+// ⚠️  FILTRO DE EMPRESA: a view não possui id_empresa nem campo de empresa.
+//     O único vínculo existente é: vw_boletos_controle.id_int → propostas.id_int → propostas.empresa
+//     Para aplicar o filtro seria necessário:
+//       1. Buscar todos os id_int de propostas.empresa = X (poderia ser milhares de registros)
+//       2. Filtrar a view pelo array de id_int retornado
+//     Isso não é seguro por volume e não existe RPC ou join nativo disponível.
+//     DECISÃO: o card exibe o total consolidado (todas as empresas).
+//     O argumento companyId é recebido mas ignorado até que haja id_empresa na view ou RPC dedicada.
 
 async function fetchContasReceber(
-  companyId: number
+  // companyId recebido para compatibilidade de assinatura, mas não aplicado — ver comentário acima.
+  _companyId: number
 ): Promise<{ valor: number; quantidade: number }> {
   const client = getSupabaseClient();
   if (!client) return { valor: 0, quantidade: 0 };
 
-  let query = client
-    .from("pagamentos_v2")
-    .select("valor")
-    .in("status", ["A_VENCER", "A_RECEBER"]);
-
-  if (companyId !== 0) {
-    query = query.eq("id_empresa", companyId);
-  }
-
-  const { data, error } = await query.limit(10000);
+  // Selecionar apenas os campos necessários para o cálculo
+  const { data, error } = await client
+    .from("vw_boletos_controle")
+    .select("valor, situacao")
+    .in("situacao", ["AVENCER", "VENCIDO"])
+    .limit(20000);
 
   if (error || !Array.isArray(data)) {
-    console.warn("[Dashboard] Erro ao buscar contas a receber:", error?.message);
+    console.warn("[Dashboard] Erro ao buscar contas a receber (vw_boletos_controle):", error?.message);
     return { valor: 0, quantidade: 0 };
   }
 
@@ -314,7 +323,8 @@ export async function getDashboardMetrics(companyId: number): Promise<DashboardM
         key: "contasReceber",
         title: "Contas a receber",
         value: formatCurrency(contasReceber.valor),
-        description: `${contasReceber.quantidade} título(s) em aberto`,
+        // A vw_boletos_controle não tem id_empresa: exibe total consolidado independente do seletor.
+        description: `${contasReceber.quantidade} título(s) em aberto · total consolidado`,
         tone: "info",
         isLoading: false,
       },
