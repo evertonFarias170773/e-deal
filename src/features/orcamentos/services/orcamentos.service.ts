@@ -504,6 +504,10 @@ function buildEmptyRealResult(
 export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<OrcamentosReadResult> {
   const fetched = await fetchPropostaRows(periodo);
   const rows = fetched.rows;
+  const toNumber = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
 
   if (!rows) {
     return {
@@ -526,33 +530,118 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
     const client = getSupabaseClient();
     if (client) {
       const idsToFetch = rows
-        .filter((r) => {
-          const avulso = r.is_avulso;
-          return avulso !== true && avulso !== "true" && avulso !== "1" && avulso !== 1;
-        })
         .map((r) => r.id_int)
+        .filter((id) => typeof id === "number") as number[];
+      
+      const clientIds = rows
+        .map((r) => r.id_cliente)
         .filter((id) => typeof id === "number") as number[];
 
       if (idsToFetch.length > 0) {
-        const { data: viewData, error } = await client
-          .from("vw_proposta_completa")
-          .select("id_int, valor_total_calculado")
-          .in("id_int", idsToFetch);
+        // Consultas em lote paralelas para evitar N+1 queries
+        const [discountsRes, clientsRes, itemsRes] = await Promise.all([
+          client
+            .from("desconto_proposta")
+            .select("id_int, valor_percentual, valor_nominal")
+            .in("id_int", idsToFetch)
+            .eq("tipo_desconto", "DESCONTO_GERAL"),
+          client
+            .from("clientes")
+            .select("id_cliente, is_bonus, percentual_bunus, usa_preco_fixo")
+            .in("id_cliente", clientIds),
+          client
+            .from("produtos_proposta")
+            .select("id_int, valor_unt, qtd, fixo")
+            .in("id_int", idsToFetch)
+        ]);
 
-        if (!error && viewData && viewData.length > 0) {
-          const viewMap = new Map();
-          viewData.forEach((v) => viewMap.set(v.id_int, v.valor_total_calculado));
+        const discountMap = new Map();
+        if (discountsRes.data) {
+          discountsRes.data.forEach((d) => discountMap.set(d.id_int, d));
+        }
 
-          for (const row of rows) {
-            if (viewMap.has(row.id_int)) {
-              (row as any)._valor_total_calculado_view = viewMap.get(row.id_int);
+        const clientBonusMap = new Map();
+        if (clientsRes.data) {
+          clientsRes.data.forEach((c) => {
+            const bp = getClienteBonusPercent({
+              usaPrecoFixo: c.usa_preco_fixo === true,
+              is_bonus: c.is_bonus === true,
+              bonusAtivo: c.is_bonus === true,
+              percentualBonus: Number(c.percentual_bunus ?? 0)
+            } as any);
+            clientBonusMap.set(Number(c.id_cliente), bp);
+          });
+        }
+
+        const itemsMap = new Map();
+        if (itemsRes.data) {
+          itemsRes.data.forEach((item) => {
+            if (!itemsMap.has(item.id_int)) {
+              itemsMap.set(item.id_int, []);
+            }
+            itemsMap.get(item.id_int).push(item);
+          });
+        }
+
+        for (const row of rows) {
+          const isAvulso = row.is_avulso === true || row.is_avulso === "true" || row.is_avulso === "1" || row.is_avulso === 1;
+          const freteValor = toNumber(row.valor_frete);
+
+          if (isAvulso) {
+            const total = toNumber(row.valor_total ?? (toNumber(row.valor) + freteValor));
+            row.valor_total = total;
+            (row as any)._valor_total_calculado_view = total;
+          } else {
+            const items = itemsMap.get(row.id_int) || [];
+            if (items.length === 0) {
+              // Fallback se não há itens carregados (ex. propostas importadas/deletadas)
+              const total = toNumber(row.valor_total ?? (toNumber(row.valor) + freteValor));
+              row.valor_total = total;
+              (row as any)._valor_total_calculado_view = total;
+            } else {
+              const bonusPercent = clientBonusMap.get(Number(row.id_cliente)) || 0;
+
+              let subtotalProdutos = 0;
+              for (const item of items) {
+                const itemObj = {
+                  quantidade: item.qtd || 0,
+                  valorUnitario: item.valor_unt || 0,
+                  valorFixo: item.fixo || 0,
+                  descontoTipo: "VALOR" as const,
+                  descontoValor: 0,
+                  variacoesEscolhidas: []
+                };
+                const itemSubtotal = calculateItemSubtotal(itemObj, bonusPercent).subtotal;
+                subtotalProdutos += itemSubtotal;
+              }
+
+              let descontoGeralCalculado = 0;
+              const discount = discountMap.get(row.id_int);
+              if (discount) {
+                const valorPercentual = Number(discount.valor_percentual ?? 0);
+                const valorNominal = Number(discount.valor_nominal ?? 0);
+                if (valorPercentual > 0) {
+                  descontoGeralCalculado = (subtotalProdutos * valorPercentual) / 100;
+                } else {
+                  descontoGeralCalculado = valorNominal;
+                }
+              }
+
+              let totalCalculado = subtotalProdutos + freteValor - descontoGeralCalculado;
+              if (totalCalculado === freteValor && subtotalProdutos > 0) {
+                totalCalculado = subtotalProdutos + freteValor - descontoGeralCalculado;
+              }
+              totalCalculado = Math.max(0, totalCalculado);
+
+              row.valor_total = totalCalculado;
+              (row as any)._valor_total_calculado_view = totalCalculado;
             }
           }
         }
       }
     }
   } catch (err) {
-    console.warn("[OrcamentosService] Falha ao buscar valor_total_calculado da view", err);
+    console.warn("[OrcamentosService] Falha ao recalcular valor_total_calculado em lote", err);
   }
 
   const real = buildRealResult(rows);
@@ -1037,7 +1126,15 @@ function isNonEmpty(value: unknown): boolean {
 export async function saveProposta(
   formState: PropostaFormState,
   injectedClient?: import('@supabase/supabase-js').SupabaseClient,
-  injectedUserId?: string
+  injectedUserId?: string,
+  options?: {
+    /**
+     * Quando true, ignora o bloqueio de salvamento parcial para propostas com
+     * cobrança ativa. Use apenas quando o usuário tem permissão "propostas.editar_paga".
+     * O chamador é responsável por verificar a permissão antes de passar force=true.
+     */
+    force?: boolean;
+  }
 ): Promise<{
   success: boolean;
   id_int?: number;
@@ -1066,32 +1163,41 @@ export async function saveProposta(
       hasActiveCharge = billings.some(b => b.status !== "CANCELADO" && b.status !== "CANCELADA" && b.status !== "EXTORNADO" && b.status !== "RECUSADO");
       
       if (hasActiveCharge) {
-        if (process.env.NODE_ENV === "development") {
-          console.log("[DEV][saveProposta] hasActiveCharge=true para id_int:", id_int, "→ return early, nenhum DELETE de produto será feito.");
-        }
-        // Salvamento Parcial Seguro
-        const { error: partialUpdateError } = await client
-          .from("propostas")
-          .update({
-            obs_proposta: formState.observacoes
-          })
-          .eq("id_int", id_int);
+        // Se force=true, o usuário tem permissão propostas.editar_paga — salva completo
+        if (options?.force) {
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] force=true: ignorando lock de cobrança para id_int:", id_int, "— salvamento completo autorizado.");
+          }
+          // Continua para o fluxo normal de salvamento abaixo
+        } else {
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] hasActiveCharge=true para id_int:", id_int, "→ return early, nenhum DELETE de produto será feito.");
+          }
+          // Salvamento Parcial Seguro (comportamento padrão sem permissão)
+          const { error: partialUpdateError } = await client
+            .from("propostas")
+            .update({
+              obs_proposta: formState.observacoes
+            })
+            .eq("id_int", id_int);
 
-        if (partialUpdateError) {
+          if (partialUpdateError) {
+            return {
+              success: false,
+              errorMessage: "Erro ao salvar observações da proposta: " + partialUpdateError.message
+            };
+          }
+
           return {
-            success: false,
-            errorMessage: "Erro ao salvar observações da proposta: " + partialUpdateError.message
+            success: true,
+            id_int: id_int,
+            errorMessage: "Campos operacionais salvos. Produtos, valores, descontos e frete permanecem bloqueados porque existe cobrança gerada."
           };
         }
-
-        return {
-          success: true,
-          id_int: id_int,
-          errorMessage: "Campos operacionais salvos. Produtos, valores, descontos e frete permanecem bloqueados porque existe cobrança gerada."
-        };
       }
     }
   }
+
 
   try {
     let clienteNome = "";
