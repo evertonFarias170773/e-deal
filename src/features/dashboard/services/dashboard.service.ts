@@ -5,9 +5,9 @@
  * Nenhuma escrita, migration ou alteração de schema.
  *
  * Cards implementados:
- *   1. Vendas do mês        → public.propostas     (status_interno = 'APROVADO', mês atual, filtro empresa)
+ *   1. Vendas do mês        → public.propostas     (is_prd_aprovado=true AND is_reproved=false, mês atual, filtro empresa)
  *   2. Contas a receber     → public.boletos       (status aberto, filtro id_empresa)
- *   3. Propostas aguardando → public.propostas     (status_interno = 'AGUARDANDO', filtro empresa texto)
+ *   3. Propostas aguardando → public.propostas     (status grupo AGUARDANDO, is_reproved=false, filtro empresa)
  *   4. Notas com erro       → public.notas_fiscais + public.notas_servico (filtro id_empresa)
  *   5. Produção             → placeholder: módulo de OS consolidado ainda não existe
  *
@@ -48,10 +48,29 @@ export type DashboardMetricsResult = {
 // Empresa id=0 significa "Todas" — sem filtro.
 // As demais correspondem aos padrões utilizados pelo ERP ao gravar o campo `empresa`.
 
+// Padrões ordenados do mais específico para o mais genérico.
+// A correspondência é feita por includes() sobre o texto em lowercase;
+// padrões específicos ("ideal biro") devem vir ANTES dos genéricos ("ideal")
+// para evitar falso positivo ao verificar empresa 1 vs 2.
+// A função empresaTextMatchesCompany() resolve o ID correto via exclusão:
+//   - empresa 1: exclui explicitamente padrões de empresa 2 e 3.
 const EMPRESA_TEXT_PATTERNS: Record<number, string[]> = {
-  1: ["ideal grafica", "ideal gráfica", "ingresso ideal", "ideal"],
+  // Ideal Gráfica — registros SEM "biro" e SEM "e3" que contenham "ideal"
+  // (tratados por exclusão na função)
+  1: ["ideal grafica", "ideal gráfica", "ingresso ideal"],
+  // Ideal Biro
   2: ["ideal biro", "biro grafica", "biro gráfica", "birô", "biro"],
+  // E3 Brindes
   3: ["e3 brindes", "e3"],
+};
+
+// Padrões que pertencem EXCLUSIVAMENTE a outra empresa
+// (usados para excluir registros ao filtrar empresa 1)
+const EMPRESA_EXCLUDE_PATTERNS: Record<number, string[]> = {
+  // Ao filtrar empresa 1, excluir registros que contenham padrões de empresa 2 ou 3
+  1: [...([] as string[]), ...EMPRESA_TEXT_PATTERNS[2], ...EMPRESA_TEXT_PATTERNS[3]],
+  2: [],
+  3: [],
 };
 
 // ─── Helpers internos ─────────────────────────────────────────────────────────
@@ -84,6 +103,14 @@ function empresaTextMatchesCompany(empresaText: string | null | undefined, compa
   const patterns = EMPRESA_TEXT_PATTERNS[companyId];
   if (!patterns) return false;
   const lower = String(empresaText ?? "").toLowerCase();
+
+  // Verificar exclusões primeiro — evita que "Ideal Gráfica" case com empresa 2 ou 3
+  const exclusions = EMPRESA_EXCLUDE_PATTERNS[companyId] ?? [];
+  if (exclusions.some((p) => lower.includes(p))) return false;
+
+  // Para empresa 1, aceitar também o genérico "ideal" (após garantir que não é Biro/E3)
+  if (companyId === 1 && lower.includes("ideal")) return true;
+
   return patterns.some((p) => lower.includes(p));
 }
 
@@ -92,6 +119,14 @@ const NFE_ERROR_STATUSES = ["ERRO_AUTORIZACAO", "ERRO_ENVIO", "NAO_ENCONTRADA_FO
 const NFSE_ERROR_STATUSES = ["ERRO_ENVIO", "REJEITADA"];
 
 // ─── 1. Vendas do mês ─────────────────────────────────────────────────────────
+//
+// REGRA OFICIAL (business-rules.ts / maestro-simple-propostas.server.ts):
+//   Pedido real = is_prd_aprovado = true AND is_reproved = false
+//   ⚠️  status_interno = 'APROVADO' NÃO equivale a pedido real.
+//       Registros com status APROVADO podem ter is_prd_aprovado = false.
+//
+// Campo de valor: coalesce(valor_total, valor) — padrão do maestro.
+// Campo de data : created_at — campo oficial de período; não existe data_liberacao separada.
 
 async function fetchVendasMes(companyId: number): Promise<{ valor: number; quantidade: number }> {
   const client = getSupabaseClient();
@@ -99,11 +134,12 @@ async function fetchVendasMes(companyId: number): Promise<{ valor: number; quant
 
   const { start, end } = getCurrentMonthRange();
 
-  // Propostas não têm id_empresa: buscamos todas aprovadas do mês e filtramos por empresa no JS
+  // propostas não tem id_empresa → buscamos todos pedidos reais do mês e filtramos empresa no JS
   const { data, error } = await client
     .from("propostas")
-    .select("valor, valor_total, valor_frete, empresa")
-    .eq("status_interno", "APROVADO")
+    .select("valor_total, valor, empresa")
+    .eq("is_prd_aprovado", true)
+    .eq("is_reproved", false)
     .gte("created_at", start)
     .lt("created_at", end)
     .limit(5000);
@@ -113,14 +149,15 @@ async function fetchVendasMes(companyId: number): Promise<{ valor: number; quant
     return { valor: 0, quantidade: 0 };
   }
 
-  const filtered = companyId === 0 ? data : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId));
+  const filtered = companyId === 0
+    ? data
+    : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId));
 
   const valor = filtered.reduce((acc, row) => {
-    // valor_total quando disponível; fallback seguro: valor + valor_frete
+    // coalesce: valor_total ?? valor (padrão oficial do maestro)
     const vt = toNumber(row.valor_total);
-    const v = toNumber(row.valor);
-    const frete = toNumber(row.valor_frete);
-    return acc + (vt > 0 ? vt : v + frete);
+    const v  = toNumber(row.valor);
+    return acc + (vt > 0 ? vt : v);
   }, 0);
 
   return { valor, quantidade: filtered.length };
@@ -159,30 +196,25 @@ async function fetchContasReceber(companyId: number): Promise<{ valor: number; q
 }
 
 // ─── 3. Propostas aguardando ──────────────────────────────────────────────────
+//
+// REGRA OFICIAL (business-rules.ts PROPOSTA_STATUS_GRUPOS.orcamento):
+//   Grupo "orcamento" = NOVO, NOVO / EM ARTE, AGUARDANDO, AGUARDANDO / EM ARTE, AGUARDANDO / PENDENTE
+//   "Propostas aguardando" = subconjunto com "AGUARDANDO" no status — fase comercial aguardando retorno.
+//   Excluir is_reproved=true (propostas reprovadas não estão "aguardando").
+
+// Status do grupo AGUARDANDO conforme business-rules.ts
+const AGUARDANDO_STATUSES = ["AGUARDANDO", "AGUARDANDO / EM ARTE", "AGUARDANDO / PENDENTE"];
 
 async function fetchPropostasAguardando(companyId: number): Promise<{ quantidade: number }> {
   const client = getSupabaseClient();
   if (!client) return { quantidade: 0 };
 
-  // propostas não tem id_empresa; se "Todas" usamos count direto; senão filtramos no JS
-  if (companyId === 0) {
-    const { count, error } = await client
-      .from("propostas")
-      .select("id", { count: "exact", head: true })
-      .eq("status_interno", "AGUARDANDO");
-
-    if (error) {
-      console.warn("[Dashboard] Erro ao buscar propostas aguardando:", error?.message);
-      return { quantidade: 0 };
-    }
-    return { quantidade: count ?? 0 };
-  }
-
-  // Para empresa específica: buscar com campo `empresa` e filtrar no JS
+  // propostas não tem id_empresa → buscamos todos e filtramos empresa no JS quando necessário
   const { data, error } = await client
     .from("propostas")
     .select("empresa")
-    .eq("status_interno", "AGUARDANDO")
+    .in("status_interno", AGUARDANDO_STATUSES)
+    .eq("is_reproved", false)
     .limit(5000);
 
   if (error || !Array.isArray(data)) {
@@ -190,7 +222,10 @@ async function fetchPropostasAguardando(companyId: number): Promise<{ quantidade
     return { quantidade: 0 };
   }
 
-  const quantidade = data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
+  const quantidade = companyId === 0
+    ? data.length
+    : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
+
   return { quantidade };
 }
 
