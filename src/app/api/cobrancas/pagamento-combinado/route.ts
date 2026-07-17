@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
 
 export async function POST(request: NextRequest) {
   const isTest = request.headers.get("x-integration-test") === "TEST_SECRET_2026";
@@ -102,12 +103,17 @@ export async function POST(request: NextRequest) {
     // A. Consultar Proposta
     const { data: proposta, error: propostaErr } = await supabaseUser
       .from("propostas")
-      .select("id_int, id_cliente, nome_cliente")
+      .select("id_int, id_cliente, nome_cliente, empresa")
       .eq("id_int", idInt)
       .maybeSingle();
 
     if (propostaErr || !proposta) {
       return NextResponse.json({ success: false, error: "Proposta não encontrada." }, { status: 404 });
+    }
+
+    const idEmpresaReal = resolveEmpresaIdFromTexto(proposta.empresa);
+    if (!idEmpresaReal) {
+      return NextResponse.json({ success: false, error: "Empresa inválida ou não identificada na proposta." }, { status: 400 });
     }
 
     // B. Consultar Saldo E-Crédito
@@ -187,7 +193,7 @@ export async function POST(request: NextRequest) {
       paid_at: new Date().toISOString(),
       descricao: `Uso parcial de crédito via pagamento combinado`,
       empresa: empresa || "IDEAL",
-      id_empresa: idEmpresa || 1,
+      id_empresa: idEmpresaReal,
       atendente: atendente || user.nome,
       vencimento: vencimento || new Date().toISOString().split("T")[0],
       token_publico: crypto.randomBytes(16).toString("hex")
@@ -212,7 +218,7 @@ export async function POST(request: NextRequest) {
       confirmado: false,
       descricao: `Pagamento combinado (Restante)`,
       empresa: empresa || "IDEAL",
-      id_empresa: idEmpresa || 1,
+      id_empresa: idEmpresaReal,
       atendente: atendente || user.nome,
       vencimento: vencimento || new Date().toISOString().split("T")[0],
       token_publico: crypto.randomBytes(16).toString("hex"),
@@ -250,7 +256,7 @@ export async function POST(request: NextRequest) {
         origem: "SISTEMA",
         criado_por_user_id: user.id,
         criado_por_nome: user.nome,
-        id_empresa: idEmpresa || 1,
+        id_empresa: idEmpresaReal,
       }]);
 
       return NextResponse.json({ success: false, isCombinadoFalho: true, error: msgFalha }, { status: 500 });
