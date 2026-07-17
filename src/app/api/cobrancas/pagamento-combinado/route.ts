@@ -9,14 +9,18 @@ export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    console.error("[pagamento-combinado] ENV AUSENTE:", { hasUrl: Boolean(url), hasAnonKey: Boolean(anonKey) });
+    return NextResponse.json(
+      { success: false, error: "Configuração de ambiente incompleta." },
+      { status: 500 }
+    );
+  }
 
   let supabaseUser;
-  let supabaseAdmin = createSupabaseClient(url, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
 
   let user = { id: "61101127-3883-4347-b1c4-45a8b36975d1", email: "test_homologacao@ai-ideal.com.br", nome: "Sistema" };
 
@@ -189,7 +193,7 @@ export async function POST(request: NextRequest) {
       token_publico: crypto.randomBytes(16).toString("hex")
     };
 
-    const { error: errPagV2Credito } = await supabaseAdmin
+    const { error: errPagV2Credito } = await supabaseUser
       .from("pagamentos_v2")
       .insert([payloadCobrancaCredito]);
 
@@ -216,7 +220,7 @@ export async function POST(request: NextRequest) {
       forma_fatu: forma_fatu
     };
 
-    const { error: errPagSecundaria } = await supabaseAdmin
+    const { error: errPagSecundaria } = await supabaseUser
       .from("pagamentos_v2")
       .insert([payloadSecundaria]);
 
@@ -224,7 +228,7 @@ export async function POST(request: NextRequest) {
       // FALHA NA SEGUNDA COBRANÇA
       const msgFalha = `ATENÇÃO: Crédito de R$ ${valorCredito} utilizado, mas a geração da cobrança do restante (${tipoSecundario} de R$ ${valorSecundario}) FALHOU. Favor regularizar a proposta. Motivo: ${errPagSecundaria.message}`;
       
-      await supabaseAdmin.from("propostas_chat").insert([{
+      await supabaseUser.from("propostas_chat").insert([{
         id_int: idInt,
         id_cliente: idCliente,
         mensagem: msgFalha,
@@ -234,13 +238,19 @@ export async function POST(request: NextRequest) {
         visivel_externo: false
       }]);
 
-      await supabaseAdmin.from("propostas_pendencias").insert([{
+      await supabaseUser.from("propostas_pendencias").insert([{
         id_int: idInt,
         id_cliente: idCliente,
-        tipo: "ERRO_SISTEMA",
-        setor_responsavel: "FINANCEIRO",
+        titulo: "Erro no pagamento combinado",
         descricao: msgFalha,
-        status: "PENDENTE"
+        categoria: "CREDITO",
+        status: "ABERTA",
+        prioridade: "ALTA",
+        responsavel_setor: "FINANCEIRO",
+        origem: "SISTEMA",
+        criado_por_user_id: user.id,
+        criado_por_nome: user.nome,
+        id_empresa: idEmpresa || 1,
       }]);
 
       return NextResponse.json({ success: false, isCombinadoFalho: true, error: msgFalha }, { status: 500 });
@@ -248,7 +258,7 @@ export async function POST(request: NextRequest) {
 
     // SUCESSO
     const msgSucesso = `Pagamento combinado definido: E-Crédito (R$ ${valorCredito}) + ${tipoSecundario} (R$ ${valorSecundario}).`;
-    await supabaseAdmin.from("propostas_chat").insert([{
+    await supabaseUser.from("propostas_chat").insert([{
       id_int: idInt,
       id_cliente: idCliente,
       mensagem: msgSucesso,
