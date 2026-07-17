@@ -105,17 +105,22 @@ export async function POST(request: NextRequest) {
 
   let user = { id: "61101127-3883-4347-b1c4-45a8b36975d1", email: "test_homologacao@ai-ideal.com.br" };
 
-  const url     = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  // ── Validar variáveis de ambiente ────────────────────────────────────────
+  const url     = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    console.error("[editar-paga] ENV AUSENTE:", {
+      hasUrl: Boolean(url),
+      hasAnonKey: Boolean(anonKey),
+    });
+    return NextResponse.json(
+      { success: false, error: "Configuração de ambiente incompleta. Contate o administrador." },
+      { status: 500 }
+    );
+  }
 
   let supabase: SupabaseClient<any, any, any>;
-
-  // Cliente com service role — exclusivo para operações em propostas_pendencias
-  // (RLS dessa tabela bloqueia INSERT de tokens de usuário; padrão idêntico ao de pagamento-combinado)
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
-  const supabaseAdmin = createSupabaseClient(url, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 
   if (isTest) {
     supabase = createSupabaseClient(url, anonKey, {
@@ -135,6 +140,13 @@ export async function POST(request: NextRequest) {
     });
 
     const { data: authData, error: authError } = await supabase.auth.getUser();
+
+    console.info("[editar-paga] Auth:", {
+      bearerPresent: Boolean(token),
+      authOk: Boolean(authData?.user),
+      authErrorCode: authError?.message ?? null,
+      userId: authData?.user?.id ?? null,
+    });
 
     if (authError || !authData.user) {
       return NextResponse.json(
@@ -259,8 +271,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 7. Verificar pendência existente (idempotência nível 1) ───────────────
-  // Usa supabaseAdmin para SELECT em propostas_pendencias (RLS pode bloquear leitura pelo user client)
-  const { data: pendenciaExistente, error: pendExistErr } = await supabaseAdmin
+  const { data: pendenciaExistente, error: pendExistErr } = await supabase
     .from("propostas_pendencias")
     .select("id, titulo, descricao, status, created_at, origem, id_cliente, id_empresa")
     .eq("id_int", idInt)
@@ -280,8 +291,7 @@ export async function POST(request: NextRequest) {
     console.info(`[editar-paga] Pendência ABERTA já existe para proposta #${idInt} (id: ${pendenciaExistente.id}). Será reutilizada.`);
   } else if (ehPropostaPaga) {
     // ── 7.5. Estratégia Segura: Criar pendência ANTES de salvar a proposta ──
-    // Usa supabaseAdmin (service role) — mesmo padrão de pagamento-combinado.
-    // A autorização do usuário já foi validada por verificarPermissaoEditarPaga().
+    // Usa o client autenticado do usuário, respeitando RLS.
     
     const diferencaSimulada = Math.round(((novoTotal ?? 0) - valorPagoRealArredondado) * 100) / 100;
     
@@ -308,7 +318,7 @@ export async function POST(request: NextRequest) {
       console.info(`[editar-paga] Diferença simulada de R$ ${diferencaSimulada}. Criando pendência preventivamente...`);
       console.info(`[editar-paga] Payload da pendência: id_int=${idInt}, id_cliente=${idCliente}, id_empresa=${idEmpresaProposta}, user=${user.id}`);
 
-      const { data: prePendencia, error: preError } = await supabaseAdmin
+      const { data: prePendencia, error: preError } = await supabase
         .from("propostas_pendencias")
         .insert([pendenciaPayload])
         .select("id")
@@ -321,10 +331,20 @@ export async function POST(request: NextRequest) {
           message: preError?.message,
           details: preError?.details,
           hint: preError?.hint,
-          payload: { id_int: idInt, id_cliente: idCliente, id_empresa: idEmpresaProposta, categoria: "CREDITO", status: "ABERTA" }
+          userId: user.id,
+          id_empresa: idEmpresaProposta,
+          payload: { id_int: idInt, id_cliente: idCliente, id_empresa: idEmpresaProposta, categoria: "CREDITO", status: "ABERTA", origem: "SISTEMA" }
         }, null, 2));
         return NextResponse.json(
-          { success: false, error: "Falha de segurança: Não foi possível criar a pendência financeira obrigatória. A alteração da proposta foi abortada para evitar inconsistências." },
+          {
+            success: false,
+            error: "Falha ao criar pendência financeira obrigatória. A alteração foi abortada.",
+            debug: {
+              code: preError?.code,
+              message: preError?.message,
+              hint: preError?.hint,
+            }
+          },
           { status: 500 }
         );
       }
@@ -345,7 +365,7 @@ export async function POST(request: NextRequest) {
     if (preemptivePendenciaId) {
       // Rollback lógico da pendência preventiva
       console.warn(`[editar-paga] saveProposta falhou. Cancelando logicamente a pendência preventiva ${preemptivePendenciaId}...`);
-      await supabaseAdmin.from("propostas_pendencias").update({
+      await supabase.from("propostas_pendencias").update({
         status: "CANCELADA",
         descricao: "Pendência cancelada automaticamente: Falha ao salvar a proposta associada.",
         cancelado_por_user_id: user.id,
@@ -395,7 +415,7 @@ export async function POST(request: NextRequest) {
           `Data: ${new Date().toISOString()}`,
         ].join(" ");
 
-        await supabaseAdmin
+        await supabase
           .from("propostas_pendencias")
           .update({ descricao: finalDescricao })
           .eq("id", idPendencia);
@@ -403,7 +423,7 @@ export async function POST(request: NextRequest) {
     } else {
       // A diferença real acabou sendo zero. Cancelamos logicamente a pendência preventiva, se existir.
       if (preemptivePendenciaId) {
-        await supabaseAdmin.from("propostas_pendencias").update({
+        await supabase.from("propostas_pendencias").update({
           status: "CANCELADA",
           descricao: "Pendência cancelada automaticamente: Nenhuma diferença financeira encontrada após recálculo real.",
           cancelado_por_user_id: user.id,
