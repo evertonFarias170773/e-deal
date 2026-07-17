@@ -70,6 +70,7 @@ const PERMISSOES_ADMIN: string[] = [
   "cobrancas.view", "cobrancas.aprovar", "cobrancas.emitir_boleto",
   "financeiro.view", "financeiro.aprovar",
   "financeiro.resolver_credito",                  // ✅ registrar crédito/consumo/devolução
+  "financeiro.ajuste_credito",                    // ✅ ajuste manual e estorno de crédito
   "financeiro.bonificar",                         // ✅ absorver diferença como bonificação
   "financeiro.devolver",                          // ✅ registrar devolução ao cliente
   "financeiro.debito_futuro",                     // ✅ registrar débito futuro
@@ -91,6 +92,7 @@ const PERMISSOES_FINANCEIRO: string[] = [
   "cobrancas.view", "cobrancas.aprovar", "cobrancas.emitir_boleto",
   "financeiro.view", "financeiro.aprovar",
   "financeiro.resolver_credito",  // ✅ registrar crédito/consumo
+  "financeiro.ajuste_credito",    // ✅ ajuste manual e estorno
   "financeiro.devolver",          // ✅ registrar devolução ao cliente
   "financeiro.debito_futuro",     // ✅ registrar débito futuro
   "credito.usar",                 // ✅ usar crédito do cliente em proposta

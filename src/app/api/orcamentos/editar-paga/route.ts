@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { saveProposta } from "@/features/orcamentos/services/orcamentos.service";
 import type { PropostaFormState } from "@/features/orcamentos/types";
+import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
@@ -109,6 +110,13 @@ export async function POST(request: NextRequest) {
 
   let supabase: SupabaseClient<any, any, any>;
 
+  // Cliente com service role — exclusivo para operações em propostas_pendencias
+  // (RLS dessa tabela bloqueia INSERT de tokens de usuário; padrão idêntico ao de pagamento-combinado)
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || anonKey;
+  const supabaseAdmin = createSupabaseClient(url, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
   if (isTest) {
     supabase = createSupabaseClient(url, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -166,14 +174,33 @@ export async function POST(request: NextRequest) {
   // ── 4. Validação Server-Side da Proposta no Banco ────────────────────────
   const { data: propostaBanco, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, valor_total")
+    .select("id_int, id_cliente, valor_total, empresa")
     .eq("id_int", idInt)
     .maybeSingle();
 
-  if (propostaError || !propostaBanco) {
+  if (propostaError) {
     return NextResponse.json(
-      { success: false, error: propostaError ? propostaError.message : `Proposta #${idInt} não encontrada.` },
+      { success: false, error: `Falha interna ao buscar proposta #${idInt}. Detalhe: ${propostaError.message}` },
+      { status: 500 }
+    );
+  }
+
+  if (!propostaBanco) {
+    return NextResponse.json(
+      { success: false, error: `Proposta #${idInt} não encontrada no banco de dados.` },
       { status: 404 }
+    );
+  }
+
+  // ── 4a. Resolver id_empresa da proposta (helper oficial compartilhado) ───
+  const idEmpresaProposta = resolveEmpresaIdFromTexto(propostaBanco.empresa);
+
+  console.info(`[editar-paga] Proposta #${idInt} — empresa bruta: '${propostaBanco.empresa}' → id_empresa resolvido: ${idEmpresaProposta}`);
+
+  if (!idEmpresaProposta) {
+    return NextResponse.json(
+      { success: false, error: `A proposta #${idInt} possui uma empresa inválida ou não reconhecida ('${propostaBanco.empresa}'). Não é possível determinar o id_empresa financeiro com segurança.` },
+      { status: 422 }
     );
   }
 
@@ -232,28 +259,81 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 7. Verificar pendência existente (idempotência nível 1) ───────────────
-  const { data: pendenciaExistente } = await supabase
+  // Usa supabaseAdmin para SELECT em propostas_pendencias (RLS pode bloquear leitura pelo user client)
+  const { data: pendenciaExistente, error: pendExistErr } = await supabaseAdmin
     .from("propostas_pendencias")
-    .select("id, titulo, descricao, status, created_at, origem")
+    .select("id, titulo, descricao, status, created_at, origem, id_cliente, id_empresa")
     .eq("id_int", idInt)
     .eq("status", "ABERTA")
-    .eq("origem", "REVISAO_PROPOSTA_PAGA")
+    .eq("origem", "SISTEMA")
+    .like("titulo", "Revisão financeira pendente%")
+    .eq("id_cliente", idCliente)
+    .eq("id_empresa", idEmpresaProposta)
     .maybeSingle();
 
+  if (pendExistErr) {
+    console.warn(`[editar-paga] Erro ao buscar pendência existente: ${pendExistErr.message}`);
+  }
+
+  let preemptivePendenciaId: number | null = null;
   if (pendenciaExistente) {
-    console.info(`[editar-paga] Pendência ABERTA já existe para proposta #${idInt} (id: ${pendenciaExistente.id}).`);
-    return NextResponse.json({
-      success: true,
-      idInt,
-      pendenciaExistente: true,
-      idPendencia: pendenciaExistente.id,
-      descricaoPendencia: pendenciaExistente.descricao,
-      valorPagoConfirmado: valorPagoRealArredondado,
-    });
+    console.info(`[editar-paga] Pendência ABERTA já existe para proposta #${idInt} (id: ${pendenciaExistente.id}). Será reutilizada.`);
+  } else if (ehPropostaPaga) {
+    // ── 7.5. Estratégia Segura: Criar pendência ANTES de salvar a proposta ──
+    // Usa supabaseAdmin (service role) — mesmo padrão de pagamento-combinado.
+    // A autorização do usuário já foi validada por verificarPermissaoEditarPaga().
+    
+    const diferencaSimulada = Math.round(((novoTotal ?? 0) - valorPagoRealArredondado) * 100) / 100;
+    
+    if (Math.abs(diferencaSimulada) >= 0.01) {
+      const pendenciaPayload = {
+        id_int: idInt,
+        id_cliente: idCliente,
+        titulo: `Revisão financeira pendente — Proposta #${idInt}`,
+        descricao: "Gerando revisão financeira...",
+        categoria: "CREDITO",
+        status: "ABERTA",
+        prioridade: "ALTA",
+        responsavel_setor: "FINANCEIRO",
+        responsavel_user_id: null,
+        criado_por_user_id: user.id,
+        criado_por_nome: userName ?? user.email ?? "Sistema",
+        origem: "SISTEMA",
+        data_limite: null,
+        chat_id: null,
+        pagamento_id: null,
+        id_empresa: idEmpresaProposta,
+      };
+
+      console.info(`[editar-paga] Diferença simulada de R$ ${diferencaSimulada}. Criando pendência preventivamente...`);
+      console.info(`[editar-paga] Payload da pendência: id_int=${idInt}, id_cliente=${idCliente}, id_empresa=${idEmpresaProposta}, user=${user.id}`);
+
+      const { data: prePendencia, error: preError } = await supabaseAdmin
+        .from("propostas_pendencias")
+        .insert([pendenciaPayload])
+        .select("id")
+        .single();
+
+      if (preError || !prePendencia) {
+        console.error("[editar-paga] FALHA NO INSERT DE PENDÊNCIA:");
+        console.error(JSON.stringify({
+          code: preError?.code,
+          message: preError?.message,
+          details: preError?.details,
+          hint: preError?.hint,
+          payload: { id_int: idInt, id_cliente: idCliente, id_empresa: idEmpresaProposta, categoria: "CREDITO", status: "ABERTA" }
+        }, null, 2));
+        return NextResponse.json(
+          { success: false, error: "Falha de segurança: Não foi possível criar a pendência financeira obrigatória. A alteração da proposta foi abortada para evitar inconsistências." },
+          { status: 500 }
+        );
+      }
+      preemptivePendenciaId = prePendencia.id;
+      console.info(`[editar-paga] Pendência preventiva criada com sucesso (id: ${preemptivePendenciaId}). Prosseguindo com saveProposta.`);
+    }
   }
 
   // ── 8. Salvar proposta ────────────────────────────────────────────────────
-  // Cast estrutural para resolver incompatibilidade de assinaturas genéricas do SupabaseClient
   const saveResult = await saveProposta(
     formState,
     supabase as unknown as import("@supabase/supabase-js").SupabaseClient,
@@ -262,6 +342,17 @@ export async function POST(request: NextRequest) {
   );
 
   if (!saveResult.success) {
+    if (preemptivePendenciaId) {
+      // Rollback lógico da pendência preventiva
+      console.warn(`[editar-paga] saveProposta falhou. Cancelando logicamente a pendência preventiva ${preemptivePendenciaId}...`);
+      await supabaseAdmin.from("propostas_pendencias").update({
+        status: "CANCELADA",
+        descricao: "Pendência cancelada automaticamente: Falha ao salvar a proposta associada.",
+        cancelado_por_user_id: user.id,
+        cancelado_por_nome: userName ?? user.email ?? "Sistema",
+        cancelado_at: new Date().toISOString()
+      }).eq("id", preemptivePendenciaId);
+    }
     return NextResponse.json(
       { success: false, error: saveResult.errorMessage ?? "Erro ao salvar proposta." },
       { status: 500 }
@@ -271,69 +362,56 @@ export async function POST(request: NextRequest) {
   // ── 9. Buscar o total atualizado no servidor após a gravação ──────────────
   const { data: propostaAtualizada } = await supabase
     .from("propostas")
-    .select("valor_total")
+    .select("valor_total, valor, valor_frete")
     .eq("id_int", idInt)
     .single();
 
-  const novoTotalReal = propostaAtualizada?.valor_total ?? (novoTotal ?? 0);
-  const novoTotalRealArredondado = Math.round(Number(novoTotalReal) * 100) / 100;
+  // Fallback oficial ERP: valor_total ?? (valor + valor_frete)
+  const novoTotalReal = propostaAtualizada?.valor_total != null
+    ? Number(propostaAtualizada.valor_total)
+    : (Number(propostaAtualizada?.valor ?? 0) + Number(propostaAtualizada?.valor_frete ?? 0));
+  const novoTotalRealArredondado = Math.round(novoTotalReal * 100) / 100;
 
-  // ── 10. Se proposta for paga, calcular diferença e criar pendência se ≠ 0 ──
+  console.info(`[editar-paga] Pós-save: valor_total=${propostaAtualizada?.valor_total}, valor=${propostaAtualizada?.valor}, valor_frete=${propostaAtualizada?.valor_frete} → total=${novoTotalRealArredondado}`);
+
+  // ── 10. Atualizar a pendência com o valor real ou remover se não houver diferença ──
   let diferenca = 0;
-  let idPendencia: number | null = null;
+  let idPendencia: number | null = pendenciaExistente ? pendenciaExistente.id : preemptivePendenciaId;
 
   if (ehPropostaPaga) {
     diferenca = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
 
     if (Math.abs(diferenca) >= 0.01) {
-      const sinal = diferenca < 0 ? "crédito" : "débito";
-      const valorAbs = Math.abs(diferenca).toFixed(2).replace(".", ",");
-      const pago = valorPagoRealArredondado.toFixed(2).replace(".", ",");
-      const novo = novoTotalRealArredondado.toFixed(2).replace(".", ",");
+      if (idPendencia && !pendenciaExistente) {
+        const sinal = diferenca < 0 ? "crédito" : "débito";
+        const valorAbs = Math.abs(diferenca).toFixed(2).replace(".", ",");
+        const pago = valorPagoRealArredondado.toFixed(2).replace(".", ",");
+        const novo = novoTotalRealArredondado.toFixed(2).replace(".", ",");
 
-      const descricao = [
-        `Proposta #${idInt} foi alterada após pagamento confirmado.`,
-        `Valor pago: R$ ${pago} | Novo total: R$ ${novo} | Diferença: R$ ${valorAbs} (${sinal}).`,
-        `Operador: ${userEmail ?? user.email} | User ID: ${user.id}`,
-        `Data: ${new Date().toISOString()}`,
-      ].join(" ");
+        const finalDescricao = [
+          `Proposta #${idInt} foi alterada após pagamento confirmado.`,
+          `Valor pago: R$ ${pago} | Novo total: R$ ${novo} | Diferença: R$ ${valorAbs} (${sinal}).`,
+          `Operador: ${userEmail ?? user.email} | User ID: ${user.id}`,
+          `Data: ${new Date().toISOString()}`,
+        ].join(" ");
 
-      const { data: novaPendencia, error: pendenciaError } = await supabase
-        .from("propostas_pendencias")
-        .insert([{
-          id_int: idInt,
-          id_cliente: idCliente,
-          titulo: `Revisão financeira pendente — Proposta #${idInt}`,
-          descricao,
-          categoria: "CREDITO",
-          status: "ABERTA",
-          prioridade: "ALTA",
-          responsavel_setor: "FINANCEIRO",
-          responsavel_user_id: null,
-          criado_por_user_id: user.id,
-          criado_por_nome: userName ?? user.email ?? "Sistema",
-          origem: "REVISAO_PROPOSTA_PAGA",
-          data_limite: null,
-          chat_id: null,
-          pagamento_id: null,
-          id_empresa: null,
-        }])
-        .select("id")
-        .single();
-
-      if (pendenciaError) {
-        console.error("[editar-paga] Erro ao criar pendência:", pendenciaError.message);
-        return NextResponse.json({
-          success: true,
-          idInt,
-          diferenca,
-          idPendencia: null,
-          aviso: "Proposta salva, mas falha ao criar pendência de revisão financeira.",
-        });
+        await supabaseAdmin
+          .from("propostas_pendencias")
+          .update({ descricao: finalDescricao })
+          .eq("id", idPendencia);
       }
-
-      idPendencia = novaPendencia?.id ?? null;
-      console.info(`[editar-paga] Pendência criada id=${idPendencia} para proposta #${idInt}`);
+    } else {
+      // A diferença real acabou sendo zero. Cancelamos logicamente a pendência preventiva, se existir.
+      if (preemptivePendenciaId) {
+        await supabaseAdmin.from("propostas_pendencias").update({
+          status: "CANCELADA",
+          descricao: "Pendência cancelada automaticamente: Nenhuma diferença financeira encontrada após recálculo real.",
+          cancelado_por_user_id: user.id,
+          cancelado_por_nome: userName ?? user.email ?? "Sistema",
+          cancelado_at: new Date().toISOString()
+        }).eq("id", preemptivePendenciaId);
+        idPendencia = null;
+      }
     }
   }
 

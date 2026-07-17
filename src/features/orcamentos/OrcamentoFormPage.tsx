@@ -503,11 +503,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }, [activeFormTab, proposta?.id_int, form.id_int]);
 
-  // — Saldo de crédito do cliente selecionado (para nova proposta) —
+  // — Saldo de crédito do cliente selecionado —
   const [saldoCredito, setSaldoCredito] = useState<number>(0);
 
   useEffect(() => {
-    if (mode === "new" && cliente?.idCliente && canUsarCredito) {
+    if (cliente?.idCliente && canUsarCredito) {
       Promise.resolve(getSaldoCredito(cliente.idCliente))
         .then(setSaldoCredito)
         .catch(() => setSaldoCredito(0));
@@ -515,7 +515,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       setSaldoCredito(0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cliente?.idCliente, mode]);
+  }, [cliente?.idCliente, form.clienteId]);
 
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
   const [clientSearch, setClientSearch] = useState(() => proposta?.cliente ? `${proposta.cliente.idCliente} - ${proposta.cliente.nome}` : (mode === "new" ? "#" : ""));
@@ -2583,12 +2583,32 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
 
         if (Math.abs(diferenca ?? 0) >= 0.01) {
+          if (!idPendencia || !finalIdInt || !idClienteNum) {
+            showToast({
+              type: "error",
+              title: "Erro de sistema",
+              description: "A pendência de revisão não foi criada corretamente. Por favor, verifique a aba de Pendências.",
+            });
+            // We do NOT open the modal with partial data. We just fetch pendencies to show the banner if it exists.
+            try {
+              const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
+              const { data } = await listPropostasPendencias(finalIdInt);
+              const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
+              if (aberta) {
+                setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
+              }
+            } catch (e) {
+               // silent
+            }
+            setIsSaving(false);
+            return;
+          }
           // Diferença financeira — abrir modal obrigatório
           setDiferencaModal({
             isOpen: true,
             idInt: finalIdInt,
             idCliente: idClienteNum,
-            idPendencia: idPendencia ?? null,
+            idPendencia: idPendencia, // guaranteed now
             nomeCliente: cliente?.nome ?? formToSave.nomeClienteLivre ?? "Cliente",
             valorPagoConfirmado: apiResult.valorPagoConfirmado ?? valorPagoAntes,
             novoTotal: apiResult.novoTotal ?? novoTotalCalculado,
@@ -2821,17 +2841,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       {hasCobrancas && (
         <div className={`rounded-3xl border p-4 shadow-sm flex items-start gap-3 ${
           canEditarPropostaPaga
-            ? "border-orange-300/50 bg-orange-950/20"
+            ? "border-amber-300 bg-amber-50 dark:border-amber-600/50 dark:bg-amber-900/30"
             : "border-amber-200 bg-amber-50"
         }`}>
           <AlertTriangle className={`h-5 w-5 shrink-0 mt-0.5 ${
-            canEditarPropostaPaga ? "text-orange-400" : "text-amber-600"
+            canEditarPropostaPaga ? "text-amber-600 dark:text-amber-400" : "text-amber-600"
           }`} />
           <div>
             {canEditarPropostaPaga ? (
               <>
-                <p className="text-sm font-bold text-orange-300">Modo Edição Autorizada — Proposta com Pagamento Confirmado</p>
-                <p className="text-sm text-orange-200/80 mt-1">
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Modo Edição Autorizada — Proposta com Pagamento Confirmado</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
                   Você tem permissão para editar esta proposta mesmo com cobrança ativa.
                   Se houver diferença financeira, você precisará escolher uma ação antes de concluir a alteração.
                 </p>
@@ -2848,14 +2868,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         </div>
       )}
 
-      {/* Banner de crédito disponível (nova proposta) */}
-      {mode === "new" && saldoCredito > 0 && canUsarCredito && (
-        <div className="rounded-3xl border border-emerald-300/40 bg-emerald-950/20 p-4 shadow-sm flex items-start gap-3">
-          <span className="text-emerald-400 text-lg shrink-0">💰</span>
+      {/* Banner de Saldo na Conta Corrente */}
+      {saldoCredito > 0 && canUsarCredito && (
+        <div className="rounded-3xl border border-emerald-200 dark:border-emerald-300/40 bg-emerald-50 dark:bg-emerald-950/20 p-4 shadow-sm flex items-start gap-3">
+          <span className="text-emerald-500 dark:text-emerald-400 text-lg shrink-0">💰</span>
           <div>
-            <p className="text-sm font-bold text-emerald-300">Crédito disponível para este cliente</p>
-            <p className="text-sm text-emerald-200/70 mt-1">
-              {cliente?.nome ?? "O cliente"} possui <strong className="text-emerald-300">{formatCurrency(saldoCredito)}</strong> em crédito disponível.
+            <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">Saldo na Conta Corrente</p>
+            <p className="text-sm text-emerald-700/80 dark:text-emerald-200/70 mt-1">
+              {cliente?.nome ?? "O cliente"} possui <strong className="text-emerald-800 dark:text-emerald-300">{formatCurrency(saldoCredito)}</strong> em crédito disponível.
               Você poderá aplicar como forma de pagamento ao gerar a cobrança.
             </p>
           </div>
@@ -2879,23 +2899,40 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           <button
             type="button"
             id="btn-resolver-pendencia-financeira"
-            onClick={() => {
+            onClick={async () => {
               if (!proposta?.id_int || !proposta.resumo) return;
-              const valorPago = calcularValorPagoConfirmado(cobrancasVinculadas);
-              const novoTotal = proposta.resumo.valorTotal;
-              const diff = calcularDiferencaFinanceira(novoTotal, valorPago);
               
-              setDiferencaModal({
-                isOpen: true,
-                idInt: proposta.id_int,
-                idCliente: proposta.cliente?.idCliente ?? 0,
-                idPendencia: pendenciaRevisaoAberta.id,
-                nomeCliente: proposta.cliente?.nome ?? "Cliente",
-                valorPagoConfirmado: valorPago,
-                novoTotal,
-                diferenca: diff,
-                onResolve: () => setPendenciaRevisaoAberta(null),
-              });
+              try {
+                // Ensure we have the latest pendency ID from DB
+                const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
+                const { data } = await listPropostasPendencias(proposta.id_int);
+                const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
+                
+                if (!aberta) {
+                  showToast({ type: "error", title: "Erro", description: "Pendência não encontrada no banco de dados. Recarregue a página." });
+                  setPendenciaRevisaoAberta(null);
+                  return;
+                }
+
+                const valorPago = calcularValorPagoConfirmado(cobrancasVinculadas);
+                const novoTotal = proposta.resumo.valorTotal;
+                const diff = calcularDiferencaFinanceira(novoTotal, valorPago);
+                
+                setDiferencaModal({
+                  isOpen: true,
+                  idInt: proposta.id_int,
+                  idCliente: proposta.cliente?.idCliente ?? 0,
+                  idPendencia: aberta.id, // using the real ID from DB
+                  nomeCliente: proposta.cliente?.nome ?? "Cliente",
+                  valorPagoConfirmado: valorPago,
+                  novoTotal,
+                  diferenca: diff,
+                  onResolve: () => setPendenciaRevisaoAberta(null),
+                });
+              } catch (err) {
+                console.error(err);
+                showToast({ type: "error", title: "Erro", description: "Falha ao consultar pendência no servidor." });
+              }
             }}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600/80 hover:bg-red-500 text-white transition-colors flex-shrink-0"
           >
@@ -3279,7 +3316,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             {!form.clienteNaoCadastrado && cliente ? (
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <InfoBox label="Cliente" value={`${cliente.nome} (#${cliente.idCliente})`} />
-                <InfoBox label="Crédito / risco" value={`${formatCurrency(cliente.creditoDisponivel)} - risco ${cliente.riscoCredito}`} />
+                <InfoBox label="Limite Faturado / Risco" value={`${formatCurrency(cliente.creditoDisponivel)} - risco ${cliente.riscoCredito}`} />
                 <InfoBox label="Tabela especial" value={bonusPercent > 0 ? `+${bonusPercent}% applied nos produtos` : "Sem acréscimo especial"} />
               </div>
             ) : null}
@@ -4238,8 +4275,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         <DiferencaFinanceiraModal
           isOpen={diferencaModal.isOpen}
           onConfirm={handleDiferencaConfirm}
+          onClose={async () => {
+            setDiferencaModal(null);
+            // Re-fetch pendencias to ensure the UI shows the real pendency from DB
+            try {
+              const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
+              const { data } = await listPropostasPendencias(Number(form.id_int));
+              const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
+              if (aberta) {
+                setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
+              } else {
+                setPendenciaRevisaoAberta(null);
+              }
+            } catch (err) {
+              console.error("Falha ao recarregar pendências:", err);
+            }
+          }}
           idInt={diferencaModal.idInt}
           idCliente={diferencaModal.idCliente}
+          idPendencia={diferencaModal.idPendencia}
           nomeCliente={diferencaModal.nomeCliente}
           valorPagoConfirmado={diferencaModal.valorPagoConfirmado}
           novoTotal={diferencaModal.novoTotal}

@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
   // ── 4. Validar proposta e cliente no banco ────────────────────────────────
   const { data: propostaBanco, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, valor_total")
+    .select("id_int, id_cliente, valor_total, valor, valor_frete")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -259,7 +259,15 @@ export async function POST(request: NextRequest) {
     .reduce((sum, c) => sum + (Number(c.valor) || 0), 0);
 
   const valorPagoRealArredondado = Math.round(valorPagoReal * 100) / 100;
-  const novoTotalRealArredondado = Math.round(Number(propostaBanco.valor_total) * 100) / 100;
+
+  // Fallback oficial ERP: valor_total ?? (valor + valor_frete)
+  // propostas.valor_total pode ser NULL em propostas antigas ou quando o UPDATE não o persiste
+  const totalBruto = propostaBanco.valor_total != null
+    ? Number(propostaBanco.valor_total)
+    : (Number(propostaBanco.valor ?? 0) + Number(propostaBanco.valor_frete ?? 0));
+  const novoTotalRealArredondado = Math.round(totalBruto * 100) / 100;
+
+  console.info(`[resolver-diferenca] Proposta #${idInt}: valor_total=${propostaBanco.valor_total}, valor=${propostaBanco.valor}, valor_frete=${propostaBanco.valor_frete} → total resolvido=${novoTotalRealArredondado}, pago=${valorPagoRealArredondado}`);
   const diferencaCalculada = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
   const diferencaCalculadaAbs = Math.abs(diferencaCalculada);
 

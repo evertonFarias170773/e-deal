@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check } from "lucide-react";
+import { CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSaldoCredito } from "@/features/cobrancas/services/movimento-credito.service";
@@ -100,10 +100,6 @@ export function PropostaCobrancaPanel({
   const [saldoCredito, setSaldoCredito] = useState<number>(0);
   const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
   const [refreshingSaldo, setRefreshingSaldo] = useState(false);
-  const [showUsarCreditoModal, setShowUsarCreditoModal] = useState(false);
-  const [valorCreditoAplicar, setValorCreditoAplicar] = useState<string>("");
-  const [observacaoCredito, setObservacaoCredito] = useState("Uso de crédito acumulado pelo painel financeiro");
-  const [isAplicandoCredito, setIsAplicandoCredito] = useState(false);
 
   // Permissão
   const canUsarCredito = Boolean(
@@ -130,96 +126,12 @@ export function PropostaCobrancaPanel({
     fetchSaldo();
   }, [fetchSaldo]);
 
-  const handleUsarCreditoConfirm = async () => {
-    const val = Number(valorCreditoAplicar) || 0;
-    if (val <= 0) {
-      showToast({ type: "error", title: "Erro", description: "O valor informado deve ser maior que zero." });
-      return;
-    }
-    if (val > roundMoney(saldoCredito)) {
-      showToast({ type: "error", title: "Erro", description: `Valor não pode exceder o saldo de crédito do cliente (${formatCurrency(saldoCredito)}).` });
-      return;
-    }
-    if (val > roundMoney(saldoRestante)) {
-      showToast({ type: "error", title: "Erro", description: `Valor não pode exceder o saldo restante da proposta (${formatCurrency(saldoRestante)}).` });
-      return;
-    }
-
-    // Impedir novos cliques
-    setIsAplicandoCredito(true);
-    setRefreshingSaldo(true);
-
-    try {
-      const client = getSupabaseClient();
-      const session = (await client?.auth.getSession())?.data.session;
-      const token = session?.access_token;
-
-      if (!token) {
-        throw new Error("Sessão expirada. Autentique-se novamente.");
-      }
-
-      const res = await fetch("/api/cobrancas/usar-credito", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          idInt: proposta.id_int,
-          idCliente: proposta.cliente?.idCliente,
-          valor: val,
-          observacao: observacaoCredito,
-          clienteNome: proposta.cliente?.nome || "Cliente",
-          empresa: proposta.empresa || "Ideal Grafica",
-          idEmpresa: form.id_empresa || 1,
-          vencimento: getDefaultVencimento(0) // vence hoje
-        })
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || "Erro desconhecido ao aplicar crédito.");
-      }
-
-      showToast({
-        type: "success",
-        title: "Crédito Aplicado com Sucesso!",
-        description: `O valor de ${formatCurrency(val)} foi debitado do saldo e registrado como pagamento.`
-      });
-
-      // Fechar modal
-      setShowUsarCreditoModal(false);
-
-      // ── RESSALVA OPERACIONAL ──
-      // 1. Atualizar imediatamente o saldo do cliente
-      // 2. Atualizar a lista de cobranças
-      // 3. Atualizar o resumo da proposta
-      if (onRefreshProposta) {
-        onRefreshProposta(); // Sincroniza a proposta e as cobranças da aba geral!
-      }
-      
-      // Sincronizar localmente as cobranças do provider para atualizar a lista do painel!
-      window.dispatchEvent(new Event("cobrancas-updated")); 
-      
-      // Buscar o novo saldo no servidor
-      await fetchSaldo();
-
-    } catch (err: any) {
-      showToast({
-        type: "error",
-        title: "Falha ao aplicar crédito",
-        description: err.message
-      });
-    } finally {
-      setIsAplicandoCredito(false);
-      setRefreshingSaldo(false);
-    }
-  };
-
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [selectedCobrancaId, setSelectedCobrancaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isUserEditingValor, setIsUserEditingValor] = useState(false);
+  const [tipoSecundario, setTipoSecundario] = useState<CobrancaTipo>("PIX");
+  const [condicaoSecundaria, setCondicaoSecundaria] = useState<string>("");
   const cobrancasDaProposta = getCobrancasByProposta(proposta.id_int);
   const cobrancasAtivas = cobrancasDaProposta.filter((item) => item.status !== "CANCELADO");
   const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
@@ -269,12 +181,12 @@ export function PropostaCobrancaPanel({
   const [form, setForm] = useState<CriarCobrancaFormValues>(buildInitialFormState);
 
   useEffect(() => {
-    if (modalOpen) {
-      setIsUserEditingValor(false);
-      setForm(buildInitialFormState());
-    }
+    setIsUserEditingValor(false);
+    setForm(buildInitialFormState());
+    setTipoSecundario("PIX");
+    setCondicaoSecundaria("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen]);
+  }, [proposta.id_int]);
 
   useEffect(() => {
     if (!isUserEditingValor) {
@@ -385,7 +297,7 @@ export function PropostaCobrancaPanel({
     else if (pp === "CARTAO" || pp === "CARTÃO") tipo = "CARD_PARCELADO";
     else if (pp === "FATURADO") tipo = "E-FATURADO";
     if (tipo) setForm((current) => ({ ...current, tipoCobranca: tipo as CobrancaTipo }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [pagador?.padraoPagamento]);
 
   // Pré-seleciona Modelo de Cobrança baseado em clientes.id_modelo_cobranca do pagador
@@ -436,7 +348,9 @@ export function PropostaCobrancaPanel({
   }, [isFaturado, proposta.cliente.idCliente, source]);
 
   const tipoDisponivel = source === "supabase"
-    ? (form.tipoCobranca === "PIX"
+    ? (form.tipoCobranca === "E-CREDITO"
+        ? true
+        : form.tipoCobranca === "PIX"
         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
         : form.tipoCobranca === "BOLETO"
           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
@@ -468,7 +382,6 @@ export function PropostaCobrancaPanel({
       const limite = realCreditAnalysis.limite_credito;
       const disponivel = realCreditAnalysis.limite_disponivel;
       const utilizado = realCreditAnalysis.utilizado;
-      const saldoCarteira = realCreditAnalysis.saldo_carteira;
       const qtdAtrasados = realCreditAnalysis.qtd_pagamentos_atrasados;
       
       const aprovado = disponivel >= form.valor && qtdAtrasados === 0;
@@ -476,7 +389,6 @@ export function PropostaCobrancaPanel({
       return {
         limite,
         utilizado,
-        saldoCarteira,
         disponivel,
         valorSolicitado: form.valor,
         risco: realCreditAnalysis.risco_credito,
@@ -506,7 +418,6 @@ export function PropostaCobrancaPanel({
     return {
       limite,
       utilizado,
-      saldoCarteira: 0,
       disponivel,
       valorSolicitado: form.valor,
       risco: proposta.cliente.riscoCredito,
@@ -537,9 +448,7 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    // Reset do formulário apenas ao abrir o modal para evitar sobrescrever edição em andamento.
-    setIsUserEditingValor(false);
-    setForm(buildInitialFormState());
+    // Mantém o estado atual para preservar o rascunho.
 
     if (!isControlled) {
       setInternalModalOpen(true);
@@ -629,8 +538,95 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO" && form.tipoCobranca !== "CARD_PARCELADO" && form.tipoCobranca !== "E-FATURADO") {
-      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX, Boleto ou Cartão para testes reais." });
+    if (source === "supabase" && form.tipoCobranca !== "PIX" && form.tipoCobranca !== "BOLETO" && form.tipoCobranca !== "CARD_PARCELADO" && form.tipoCobranca !== "E-FATURADO" && form.tipoCobranca !== "E-CREDITO") {
+      showToast({ type: "warning", title: "Forma de pagamento em preparação. Selecione PIX, Boleto, Cartão ou E-Crédito para testes reais." });
+      return;
+    }
+
+    if (form.tipoCobranca === "E-CREDITO") {
+      setIsSaving(true);
+      setRefreshingSaldo(true);
+      try {
+        const client = getSupabaseClient();
+        const session = (await client?.auth.getSession())?.data.session;
+        const token = session?.access_token;
+  
+        if (!token) throw new Error("Sessão expirada. Autentique-se novamente.");
+  
+        const isCombined = roundedValor < roundedSaldoRestante;
+        
+        let endpoint = "/api/cobrancas/usar-credito";
+        let payload: any = {
+            idInt: proposta.id_int,
+            idCliente: proposta.cliente?.idCliente,
+            valor: roundedValor,
+            observacao: form.observacao || `Uso de crédito aplicado na proposta #${proposta.id_int}`,
+            clienteNome: pagador?.nome || proposta.cliente?.nome || "Cliente",
+            empresa: proposta.empresa || "Ideal Grafica",
+            idEmpresa: form.id_empresa || 1,
+            vencimento: getDefaultVencimento(0)
+        };
+
+        if (isCombined) {
+            endpoint = "/api/cobrancas/pagamento-combinado";
+            const valorSecundario = Math.round((roundedSaldoRestante - roundedValor) * 100) / 100;
+            payload = {
+                idInt: proposta.id_int,
+                idCliente: proposta.cliente?.idCliente,
+                valorCredito: roundedValor,
+                valorSecundario: valorSecundario,
+                tipoSecundario: tipoSecundario,
+                observacao: form.observacao || `Pagamento combinado aplicado na proposta #${proposta.id_int}`,
+                clienteNome: pagador?.nome || proposta.cliente?.nome || "Cliente",
+                empresa: proposta.empresa || "Ideal Grafica",
+                idEmpresa: form.id_empresa || 1,
+                vencimento: getDefaultVencimento(0),
+                forma_pgto: tipoSecundario === "E-FATURADO" ? null : condicaoSecundaria,
+                forma_fatu: tipoSecundario === "E-FATURADO" ? condicaoSecundaria : null
+            };
+        }
+  
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+  
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          throw new Error(json.error || "Erro desconhecido ao aplicar crédito.");
+        }
+  
+        if (json.isCombinadoFalho) {
+            showToast({
+                type: "warning",
+                title: "Cobrança Parcial Gerada",
+                description: json.error // Mensagem descrevendo que o E-Credito foi mas a segunda falhou
+            });
+        } else {
+            showToast({
+                type: "success",
+                title: isCombined ? "Pagamento Combinado Gerado" : "Crédito Aplicado com Sucesso!",
+                description: isCombined ? "Cobranças criadas com sucesso." : `O valor de ${formatCurrency(roundedValor)} foi debitado do saldo e registrado.`
+            });
+        }
+  
+        if (onRefreshProposta) onRefreshProposta();
+        window.dispatchEvent(new Event("cobrancas-updated")); 
+        await fetchSaldo();
+        
+        setForm(buildInitialFormState());
+        closeModal();
+      } catch (err: any) {
+        showToast({ type: "error", title: "Falha ao aplicar crédito", description: err.message });
+        await fetchSaldo();
+      } finally {
+        setIsSaving(false);
+        setRefreshingSaldo(false);
+      }
       return;
     }
 
@@ -803,6 +799,9 @@ export function PropostaCobrancaPanel({
     { id: "CARD_PARCELADO", label: "Cartão de crédito", icon: CreditCard },
     { id: "E-FATURADO", label: "Faturado", icon: Landmark }
   ];
+  if (saldoCredito > 0 && canUsarCredito && saldoRestante > 0) {
+    opcoesPagamento.push({ id: "E-CREDITO", label: "E-Crédito", icon: Wallet as any });
+  }
 
   const hasCobrancas = cobrancasAtivas.length > 0;
 
@@ -898,7 +897,9 @@ export function PropostaCobrancaPanel({
                     </p>
                   )}
                 </Field>
-                {isFaturado ? (
+                
+
+            {isFaturado ? (
                   <Field label="Condição de pagamento *">
                     <select
                       value={modeloSelecionadoId}
@@ -1000,6 +1001,8 @@ export function PropostaCobrancaPanel({
               ) : null}
             </PanelCard>
 
+            
+
             {isFaturado ? (
               <PanelCard
                 title="Campos mínimos do faturado"
@@ -1027,9 +1030,7 @@ export function PropostaCobrancaPanel({
                       <InfoBox label="Limite de crédito" value={formatCurrency(analiseCredito.limite)} />
                       <InfoBox label="Utilizado" value={formatCurrency(analiseCredito.utilizado)} />
                       <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel - form.valor)} />
-                      {source === "supabase" && (
-                        <InfoBox label="Saldo de carteira" value={formatCurrency(analiseCredito.saldoCarteira || 0)} />
-                      )}
+
                       <InfoBox label="Valor solicitado" value={formatCurrency(analiseCredito.valorSolicitado)} />
                       <InfoBox 
                         label="Faturamentos vencidos" 
@@ -1074,7 +1075,12 @@ export function PropostaCobrancaPanel({
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={isSaving || !tipoDisponivel}
+                  disabled={
+                      isSaving ||
+                      !tipoDisponivel ||
+                      (form.tipoCobranca === "E-CREDITO" && (form.valor <= 0 || form.valor > saldoCredito || form.valor > saldoRestante)) ||
+                      (form.tipoCobranca === "E-CREDITO" && form.valor < saldoRestante && tipoSecundario === "E-FATURADO" && !condicaoSecundaria)
+                    }
                   className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
                 >
                   {isSaving ? "Gerando cobrança..." : "Gerar cobrança"}
@@ -1188,37 +1194,7 @@ export function PropostaCobrancaPanel({
                   </div>
                 </div>
 
-                {saldoCredito > 0 && saldoRestante > 0 && (
-                  <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50/40 p-4 text-teal-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">💳</span>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wider text-teal-700">Saldo de Crédito Disponível</p>
-                        <p className="text-sm font-semibold text-teal-950 mt-0.5">
-                          O cliente possui <strong className="font-bold text-teal-600">{formatCurrency(saldoCredito)}</strong> em carteira.
-                        </p>
-                      </div>
-                    </div>
-                    {canUsarCredito && (
-                      <button
-                        type="button"
-                        disabled={refreshingSaldo || isAplicandoCredito}
-                        onClick={() => {
-                          const defaultVal = Math.min(roundMoney(saldoRestante), roundMoney(saldoCredito));
-                          setValorCreditoAplicar(defaultVal.toFixed(2));
-                          setObservacaoCredito(`Uso de crédito de R$ ${defaultVal.toFixed(2).replace(".", ",")} aplicado na proposta #${proposta.id_int}`);
-                          setShowUsarCreditoModal(true);
-                        }}
-                        className="rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-4 py-2.5 shadow-sm transition whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed shrink-0 flex items-center gap-1.5"
-                      >
-                        {refreshingSaldo && (
-                          <div className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white" />
-                        )}
-                        Aplicar Crédito
-                      </button>
-                    )}
-                  </div>
-                )}
+
               </div>
 
               <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
@@ -1239,7 +1215,7 @@ export function PropostaCobrancaPanel({
                           }
                           openModal();
                         }}
-                        disabled={isSaving || refreshingSaldo || isAplicandoCredito}
+                        disabled={isSaving || refreshingSaldo}
                         className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         {isSaving ? (
@@ -1357,7 +1333,64 @@ export function PropostaCobrancaPanel({
                       </p>
                     )}
                   </Field>
-                  {isFaturado ? (
+                  {form.tipoCobranca === "E-CREDITO" ? (
+              <PanelCard
+                title="Campos do E-Crédito"
+                description="Utilize o saldo na conta corrente do cliente para abater o valor da proposta."
+              >
+                <div className="space-y-4">
+                  <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+                    <InfoBox label="Saldo de Crédito" value={formatCurrency(saldoCredito)} />
+                    <InfoBox label="Saldo Restante OS" value={formatCurrency(saldoRestante)} />
+                  </div>
+                  {form.valor > 0 && form.valor < saldoRestante && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 md:col-span-4 mt-2">
+                      <p className="font-semibold text-sm mb-2">Cobrança Parcial (Pagamento Combinado)</p>
+                      <p className="text-xs leading-5 mb-4">
+                        Restará <strong>{formatCurrency(saldoRestante - form.valor)}</strong> a ser cobrado.
+                        Selecione a forma de pagamento secundária que será gerada automaticamente.
+                      </p>
+                      
+                      <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[13px] font-semibold text-amber-900">Forma de Pagamento Secundária *</label>
+                          <select
+                            value={tipoSecundario}
+                            onChange={(e) => setTipoSecundario(e.target.value as any)}
+                            className="w-full rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                          >
+                            <option value="PIX">PIX</option>
+                            <option value="BOLETO">Boleto</option>
+                            <option value="CARD_PARCELADO">Cartão de Crédito</option>
+                            <option value="E-FATURADO">E-Faturado</option>
+                          </select>
+                        </div>
+                        
+                        {tipoSecundario === "E-FATURADO" && (
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[13px] font-semibold text-amber-900">Condição Secundária *</label>
+                            <select
+                              value={condicaoSecundaria}
+                              onChange={(e) => setCondicaoSecundaria(e.target.value)}
+                              className="w-full rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                            >
+                              <option value="">Selecione...</option>
+                              {modelosCobranca.map((m) => (
+                                <option key={m.id} value={m.resultado}>
+                                  {m.resultado}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </PanelCard>
+            ) : null}
+
+            {isFaturado ? (
                     <Field label="Condição de pagamento *">
                       <select
                         value={modeloSelecionadoId}
@@ -1456,7 +1489,64 @@ export function PropostaCobrancaPanel({
 
               {/* Painel de parcelas removido por solicitação */}
 
-              {isFaturado ? (
+              {form.tipoCobranca === "E-CREDITO" ? (
+              <PanelCard
+                title="Campos do E-Crédito"
+                description="Utilize o saldo na conta corrente do cliente para abater o valor da proposta."
+              >
+                <div className="space-y-4">
+                  <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+                    <InfoBox label="Saldo de Crédito" value={formatCurrency(saldoCredito)} />
+                    <InfoBox label="Saldo Restante OS" value={formatCurrency(saldoRestante)} />
+                  </div>
+                  {form.valor > 0 && form.valor < saldoRestante && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 md:col-span-4 mt-2">
+                      <p className="font-semibold text-sm mb-2">Cobrança Parcial (Pagamento Combinado)</p>
+                      <p className="text-xs leading-5 mb-4">
+                        Restará <strong>{formatCurrency(saldoRestante - form.valor)}</strong> a ser cobrado.
+                        Selecione a forma de pagamento secundária que será gerada automaticamente.
+                      </p>
+                      
+                      <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[13px] font-semibold text-amber-900">Forma de Pagamento Secundária *</label>
+                          <select
+                            value={tipoSecundario}
+                            onChange={(e) => setTipoSecundario(e.target.value as any)}
+                            className="w-full rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                          >
+                            <option value="PIX">PIX</option>
+                            <option value="BOLETO">Boleto</option>
+                            <option value="CARD_PARCELADO">Cartão de Crédito</option>
+                            <option value="E-FATURADO">E-Faturado</option>
+                          </select>
+                        </div>
+                        
+                        {tipoSecundario === "E-FATURADO" && (
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[13px] font-semibold text-amber-900">Condição Secundária *</label>
+                            <select
+                              value={condicaoSecundaria}
+                              onChange={(e) => setCondicaoSecundaria(e.target.value)}
+                              className="w-full rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                            >
+                              <option value="">Selecione...</option>
+                              {modelosCobranca.map((m) => (
+                                <option key={m.id} value={m.resultado}>
+                                  {m.resultado}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </PanelCard>
+            ) : null}
+
+            {isFaturado ? (
                 <PanelCard
                   title="Campos mínimos do faturado"
                   description="Condição comercial e aviso resumido de crédito."
@@ -1483,9 +1573,6 @@ export function PropostaCobrancaPanel({
                         <InfoBox label="Limite de crédito" value={formatCurrency(analiseCredito.limite)} />
                         <InfoBox label="Utilizado" value={formatCurrency(analiseCredito.utilizado)} />
                         <InfoBox label="Disponível" value={formatCurrency(analiseCredito.disponivel - form.valor)} />
-                        {source === "supabase" && (
-                          <InfoBox label="Saldo de carteira" value={formatCurrency(analiseCredito.saldoCarteira || 0)} />
-                        )}
                         <InfoBox label="Valor solicitado" value={formatCurrency(analiseCredito.valorSolicitado)} />
                         <InfoBox 
                           label="Faturamentos vencidos" 
@@ -1530,7 +1617,12 @@ export function PropostaCobrancaPanel({
                   <button
                     type="button"
                     onClick={handleSubmit}
-                    disabled={isSaving || !tipoDisponivel}
+                    disabled={
+                      isSaving ||
+                      !tipoDisponivel ||
+                      (form.tipoCobranca === "E-CREDITO" && (form.valor <= 0 || form.valor > saldoCredito || form.valor > saldoRestante)) ||
+                      (form.tipoCobranca === "E-CREDITO" && form.valor < saldoRestante && tipoSecundario === "E-FATURADO" && !condicaoSecundaria)
+                    }
                     className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
                   >
                     {isSaving ? "Gerando cobrança..." : "Gerar cobrança"}
@@ -1573,88 +1665,6 @@ export function PropostaCobrancaPanel({
           </div>
         </div>
       ) : null}
-
-      {/* Modal de Uso de Crédito */}
-      {showUsarCreditoModal && (
-        <div className="fixed inset-0 z-[80] bg-slate-950/60 p-4 flex items-center justify-center animate-fade-in" role="dialog" aria-modal="true">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-950 flex items-center gap-2">
-                  <span>💳</span> Aplicar Crédito como Pagamento
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Abata o saldo restante da proposta utilizando os créditos acumulados do cliente.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowUsarCreditoModal(false)}
-                className="rounded-xl bg-slate-100 p-1.5 text-slate-600 hover:bg-slate-200 transition"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                <InfoBox label="Saldo de Crédito" value={formatCurrency(saldoCredito)} />
-                <InfoBox label="Saldo Restante OS" value={formatCurrency(saldoRestante)} />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="input_valor_credito" className="text-xs font-bold text-slate-500 uppercase tracking-wide">Valor a aplicar (R$)</label>
-                <input
-                  id="input_valor_credito"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max={Math.min(saldoCredito, saldoRestante)}
-                  disabled={isAplicandoCredito}
-                  value={valorCreditoAplicar}
-                  onChange={(e) => setValorCreditoAplicar(e.target.value)}
-                  className={inputClass}
-                  placeholder="0,00"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="input_obs_credito" className="text-xs font-bold text-slate-500 uppercase tracking-wide">Observação / Justificativa</label>
-                <textarea
-                  id="input_obs_credito"
-                  disabled={isAplicandoCredito}
-                  value={observacaoCredito}
-                  onChange={(e) => setObservacaoCredito(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 p-3 text-sm outline-none resize-none bg-white min-h-[80px]"
-                  placeholder="Justificativa do uso do crédito..."
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end border-t border-slate-100 pt-4">
-              <button
-                type="button"
-                disabled={isAplicandoCredito}
-                onClick={() => setShowUsarCreditoModal(false)}
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
-              >
-                Voltar
-              </button>
-              <button
-                type="button"
-                disabled={isAplicandoCredito}
-                onClick={handleUsarCreditoConfirm}
-                className="rounded-2xl bg-teal-600 hover:bg-teal-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition flex items-center justify-center gap-2"
-              >
-                {isAplicandoCredito && (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/25 border-t-white" />
-                )}
-                {isAplicandoCredito ? "Aplicando..." : "Confirmar e Aplicar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -967,55 +967,52 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     return true;
   }, [cobrancasStats, source]);
 
-  const liberarCobrancaReal = useCallback(async (id: string, confirmadoPor: string, status?: string, confirmado = true, acao?: string): Promise<boolean> => {
-    // confirmado=true em pagamentos_v2 representa liberação operacional da cobrança para os próximos fluxos. Não significa criação de pedido de produção nem geração de OS física.
+    const liberarCobrancaReal = useCallback(async (id: string, confirmadoPor: string, status?: string, confirmado = true, acao?: string): Promise<boolean> => {
+    // confirmado=true em pagamentos_v2 representa liberação operacional da cobrança para os próximos fluxos. 
     if (!id) {
       throw new Error("ID de cobranca invalido.");
     }
 
     const isAutorizacao = acao === "autorizar_faturamento";
-    const finalConfirmado = isAutorizacao ? false : confirmado;
-    const finalConfirmadoPor = finalConfirmado ? confirmadoPor : null;
-    const finalDataConfirmacao = finalConfirmado ? new Date().toISOString() : null;
 
     if (source === "supabase") {
-      const result = await updatePagamentoV2StatusConfirmacao(id, {
-        confirmado: finalConfirmado,
-        confirmado_por: finalConfirmadoPor,
-        data_confirmacao: finalDataConfirmacao,
-        status,
-        ...(isAutorizacao ? { aprovado_por: confirmadoPor } : {})
+      // Chama a nova API Server-Side para validar regras de quitação de proposta
+      const response = await fetch("/api/cobrancas/confirmar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idCobranca: id,
+          confirmadoPor,
+          acao
+        })
       });
 
-      if (!result.success || !result.updated) {
-        throw new Error(result.errorMessage || "Falha ao liberar cobranca no Supabase.");
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 422 && data.isConferenciaBloqueada) {
+          // Lançar um erro estruturado para o modal capturar
+          throw { 
+            name: "ConferenciaBloqueadaError", 
+            message: data.error || "Confirmação bloqueada", 
+            situacao: data.situacao 
+          };
+        }
+        throw new Error(data.error || "Falha ao confirmar cobrança via API.");
       }
 
-      const updated = result.updated;
-      const updateList = (list: Cobranca[]) => list.map((item) => (item.id === id ? updated : item));
-      setCobrancas(updateList);
-      setCobrancasStats(updateList);
+      if (!data.success) {
+        throw new Error(data.error || "Falha lógica na confirmação da API.");
+      }
+
+      // Atualiza os dados localmente para refletir a mudança imediata na interface
+      await refreshCobrancas();
       return true;
     }
 
-    // Mock fallback
-    const mockConfirmadoAt = new Date().toISOString();
-    const updateList = (list: Cobranca[]) =>
-      list.map((item) =>
-        item.id === id
-          ? ({
-              ...item,
-              confirmado: finalConfirmado,
-              confirmado_por: finalConfirmado ? confirmadoPor : (isAutorizacao ? confirmadoPor : undefined),
-              data_confirmacao: finalConfirmado ? mockConfirmadoAt : undefined,
-              status: status || item.status
-            } as Cobranca)
-          : item
-      );
-    setCobrancas(updateList);
-    setCobrancasStats(updateList);
+    // Mock fallback (não mais usado na real, mas mantido)
     return true;
-  }, [source]);
+  }, [source, refreshCobrancas]);
 
   const voltarCobrancaFilaReal = useCallback(async (id: string): Promise<boolean> => {
     if (!id) {

@@ -32,6 +32,46 @@ export function getEmpresaRecebedoraFixaById(idEmpresa: number) {
   return EMPRESAS_RECEBEDORAS_FIXAS.find((item) => item.id === idEmpresa);
 }
 
+/**
+ * Converte o campo textual `propostas.empresa` no id numérico usado em
+ * `pagamentos_v2.id_empresa` e `propostas_pendencias.id_empresa`.
+ *
+ * Segue a mesma lógica de resolução já usada em:
+ *   - getEmpresaGrupoKey()
+ *   - getEmpresaExibicao()
+ *   - orcamentos/mappers.ts → getEmpresaLabel()
+ *
+ * Retorna `null` se não for possível determinar com segurança.
+ */
+export function resolveEmpresaIdFromTexto(empresaRaw: string | null | undefined): number | null {
+  if (!empresaRaw) return null;
+
+  const texto = normalize(empresaRaw.trim());
+
+  // 1. Valor numérico puro (ex: "1", "2", "3")
+  const parsed = Number(empresaRaw.trim());
+  if (!isNaN(parsed) && parsed > 0 && Number.isInteger(parsed)) {
+    // Só aceita se for uma empresa conhecida ou plausível
+    if (EMPRESAS_RECEBEDORAS_FIXAS.some(e => e.id === parsed)) {
+      return parsed;
+    }
+    return parsed; // empresa futura — aceitar valor inteiro positivo
+  }
+
+  // 2. Match por texto normalizado (mesma lógica de getEmpresaGrupoKey)
+  if (texto.includes("ideal grafica") || texto.includes("ingresso ideal")) {
+    return 1;
+  }
+  if (texto.includes("ideal biro") || texto.includes("biro grafica")) {
+    return 2;
+  }
+  if (texto.includes("e3")) {
+    return 3;
+  }
+
+  return null;
+}
+
 export function normalize(value: string) {
   return value
     .toLowerCase()

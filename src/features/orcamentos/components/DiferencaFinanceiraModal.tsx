@@ -38,8 +38,10 @@ export type DiferencaFinanceiraModalProps = {
   isOpen: boolean;
   /** Chamado após executar a ação financeira com sucesso — fecha o modal */
   onConfirm: (acao: AcaoFinanceiraDiferenca) => Promise<void>;
+  onClose: () => void;
   idInt: number;
   idCliente: number;
+  idPendencia: number | null;
   nomeCliente: string;
   valorPagoConfirmado: number;
   novoTotal: number;
@@ -54,11 +56,15 @@ export type DiferencaFinanceiraModalProps = {
 // Componente principal
 // ---------------------------------------------------------------------------
 
+import { X } from "lucide-react";
+
 export function DiferencaFinanceiraModal({
   isOpen,
   onConfirm,
+  onClose,
   idInt,
   idCliente,
+  idPendencia,
   nomeCliente,
   valorPagoConfirmado,
   novoTotal,
@@ -136,6 +142,11 @@ export function DiferencaFinanceiraModal({
       return;
     }
 
+    if (!idPendencia || !idInt || !idCliente || absDiff <= 0) {
+      setError(`Erro de sistema: Dados obrigatórios ausentes (idPendencia=${idPendencia}, idInt=${idInt}, idCliente=${idCliente}, valor=${absDiff}). Por favor, recarregue a página.`);
+      return;
+    }
+
     if (selectedAcao === "ABATER_DEBITO") {
       const validErr = validarAbatimento();
       if (validErr) { setError(validErr); return; }
@@ -188,7 +199,7 @@ export function DiferencaFinanceiraModal({
           <div className={`mt-0.5 text-2xl ${isCredito ? "text-emerald-400" : "text-amber-400"}`}>
             {isCredito ? "💰" : "⚠️"}
           </div>
-          <div>
+          <div className="flex-1">
             <h2 className="text-base font-semibold text-white leading-tight">
               Diferença Financeira —{" "}
               <span className={isCredito ? "text-emerald-400" : "text-amber-400"}>
@@ -199,6 +210,14 @@ export function DiferencaFinanceiraModal({
               Proposta #{idInt} · {nomeCliente}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-xl hover:bg-white/10 text-white/70 hover:text-white transition-colors self-center"
+            title="Voltar para proposta"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Resumo financeiro */}
