@@ -51,12 +51,9 @@ export type RegistrarMovimentoResult = {
 /**
  * Calcula o saldo de crédito disponível de um cliente diretamente em movimento_credito.
  *
- * Semântica dos tipos:
- *   CREDITO    → soma positiva (cliente ganhou crédito)
- *   CONSUMO    → subtrai (cliente usou crédito)
- *   DEVOLUCAO  → subtrai (empresa devolveu em dinheiro)
- *   DEBITO     → NÃO afeta saldo de crédito
- *   BONIFICACAO → NÃO afeta saldo de crédito
+ * Semântica real (constraint aceita somente CREDITO e DEBITO):
+ *   CREDITO → soma positiva (cliente ganhou crédito)
+ *   DEBITO  → subtrai (cliente consumiu/devolveu crédito ou débito administrativo)
  *
  * Retorna 0 em caso de erro para não bloquear a UI.
  */
@@ -78,15 +75,10 @@ export async function getSaldoCredito(idCliente: number): Promise<number> {
   let saldo = 0;
   for (const row of data || []) {
     const v = Number(row.valor) || 0;
-    switch (row.tipo as MovimentoCreditoTipo) {
-      case "CREDITO":
-        saldo += v;
-        break;
-      case "CONSUMO":
-      case "DEVOLUCAO":
-        saldo -= v;
-        break;
-      // DEBITO e BONIFICACAO não afetam saldo de crédito
+    if (row.tipo === "CREDITO") {
+      saldo += v;
+    } else if (row.tipo === "DEBITO") {
+      saldo -= v;
     }
   }
 
@@ -106,9 +98,10 @@ export async function getSaldoCredito(idCliente: number): Promise<number> {
  * - created_by obrigatório
  */
 export async function registrarMovimento(
-  params: RegistrarMovimentoParams
+  params: RegistrarMovimentoParams,
+  supabaseClient?: ReturnType<typeof getSupabaseClient>
 ): Promise<RegistrarMovimentoResult> {
-  const client = getSupabaseClient();
+  const client = supabaseClient || getSupabaseClient();
   if (!client) {
     return { success: false, errorMessage: "Cliente Supabase não configurado." };
   }
@@ -204,14 +197,14 @@ export async function registrarConsumo(
     id_cliente: idCliente,
     id_int: idInt,
     valor,
-    tipo: "CONSUMO",
-    origem: "CONSUMO_CREDITO",
+    tipo: "DEBITO",
+    origem: "SISTEMA",
     observacao: obs ?? `Crédito consumido como pagamento${idInt ? ` da proposta #${idInt}` : ""}`,
     created_by: createdBy,
   });
 }
 
-/** Registra devolução ao cliente (sem efeito financeiro direto, apenas registro). */
+/** Registra devolução ao cliente. */
 export async function registrarDevolucao(
   idCliente: number,
   idInt: number,
@@ -223,14 +216,14 @@ export async function registrarDevolucao(
     id_cliente: idCliente,
     id_int: idInt,
     valor,
-    tipo: "DEVOLUCAO",
-    origem: "PROPOSTA_ALTERADA",
+    tipo: "DEBITO",
+    origem: "SISTEMA",
     observacao: obs ?? `Devolução ao cliente referente à proposta #${idInt}`,
     created_by: createdBy,
   });
 }
 
-/** Registra bonificação (absorção comercial — não afeta saldo). */
+/** Registra bonificação (absorção comercial — registrada como crédito). */
 export async function registrarBonificacao(
   idCliente: number,
   idInt: number,
@@ -242,8 +235,8 @@ export async function registrarBonificacao(
     id_cliente: idCliente,
     id_int: idInt,
     valor,
-    tipo: "BONIFICACAO",
-    origem: "PROPOSTA_ALTERADA",
+    tipo: "CREDITO",
+    origem: "SISTEMA",
     observacao: obs ?? `Bonificação comercial referente à proposta #${idInt}`,
     created_by: createdBy,
   });
@@ -262,7 +255,7 @@ export async function registrarDebitoFuturo(
     id_int: idInt,
     valor,
     tipo: "DEBITO",
-    origem: "PROPOSTA_ALTERADA",
+    origem: "SISTEMA",
     observacao: obs ?? `Débito futuro referente à proposta #${idInt}`,
     created_by: createdBy,
   });
@@ -313,4 +306,89 @@ export async function getMovimentosByProposta(
   }
 
   return (data || []) as MovimentoCredito[];
+}
+
+export async function listarHistoricoCredito(
+  idCliente: number,
+  supabaseClient?: ReturnType<typeof getSupabaseClient>
+): Promise<MovimentoCredito[]> {
+  const client = supabaseClient || getSupabaseClient();
+  if (!client || !idCliente) return [];
+
+  const { data, error } = await client
+    .from("movimento_credito")
+    .select("*")
+    .eq("id_cliente", idCliente)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[MovimentoCreditoService] Erro listarHistoricoCredito:", error.message);
+    return [];
+  }
+  return (data || []) as MovimentoCredito[];
+}
+
+export async function estornarMovimentoCredito(
+  idMovimento: number,
+  idUsuario: string,
+  supabaseClient?: ReturnType<typeof getSupabaseClient>
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = supabaseClient || getSupabaseClient();
+  if (!client) return { success: false, errorMessage: "Sem cliente Supabase" };
+
+  // Verifica existência e se já não está cancelado
+  const { data: mov, error: errFetch } = await client
+    .from("movimento_credito")
+    .select("*")
+    .eq("id", idMovimento)
+    .single();
+
+  if (errFetch || !mov) {
+    return { success: false, errorMessage: "Movimento não encontrado." };
+  }
+  if (mov.cancelado) {
+    return { success: false, errorMessage: "Movimento já está cancelado." };
+  }
+
+  // Verifica regra de saldo se for CREDITO
+  if (mov.tipo === "CREDITO") {
+    // Calculamos o saldo atual
+    const { data: todosM } = await client
+      .from("movimento_credito")
+      .select("valor, tipo")
+      .eq("id_cliente", mov.id_cliente)
+      .eq("cancelado", false);
+    
+    let saldo = 0;
+    for (const row of todosM || []) {
+      const v = Number(row.valor) || 0;
+      if (row.tipo === "CREDITO") saldo += v;
+      else if (row.tipo === "DEBITO") saldo -= v;
+    }
+    saldo = Math.max(0, Math.round(saldo * 100) / 100);
+
+    const v = Number(mov.valor) || 0;
+    if (saldo - v < 0) {
+      return { 
+        success: false, 
+        errorMessage: "Saldo atual insuficiente para estorno. Um débito manual pode ser necessário pois o crédito já foi utilizado." 
+      };
+    }
+  }
+
+  // Realiza o estorno (UPDATE lógico)
+  const { error: errUpdate } = await client
+    .from("movimento_credito")
+    .update({
+      cancelado: true,
+      cancelado_em: new Date().toISOString(),
+      cancelado_por: idUsuario
+    })
+    .eq("id", idMovimento);
+
+  if (errUpdate) {
+    return { success: false, errorMessage: "Falha ao estornar: " + errUpdate.message };
+  }
+
+  return { success: true };
 }

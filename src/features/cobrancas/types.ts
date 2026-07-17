@@ -9,11 +9,8 @@ export type CobrancaTipo = "PIX" | "BOLETO" | "CREDIT_CARD" | "CARD_PARCELADO" |
 // ---------------------------------------------------------------------------
 
 export type MovimentoCreditoTipo =
-  | "CREDITO"      // diferença negativa: novo total < valor pago
-  | "DEBITO"       // débito futuro registrado (novo total > valor pago)
-  | "CONSUMO"      // uso de crédito disponível como pagamento (E-CREDITO)
-  | "BONIFICACAO"  // absorção comercial de diferença — não afeta saldo
-  | "DEVOLUCAO";   // devolução física de valor ao cliente
+  | "CREDITO"      // crédito: saldo aumenta
+  | "DEBITO";      // débito: saldo diminui
 
 export type MovimentoCredito = {
   id: number;

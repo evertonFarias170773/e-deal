@@ -17,6 +17,9 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { formatDocument } from "@/lib/formatters/document";
 import type { Cadastro, CadastroCategoria, CadastroPropostaListItem } from "@/features/cadastros/types";
+import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 const categoriaLabel: Record<CadastroCategoria, string> = {
   CLIENTE: "Cliente",
@@ -39,6 +42,8 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
   const { showToast } = useAppToast();
   const [propostas, setPropostas] = useState<CadastroPropostaListItem[]>([]);
   const [isLoadingPropostas, setIsLoadingPropostas] = useState(false);
+  const [ajusteModalOpen, setAjusteModalOpen] = useState(false);
+  const { user } = useAuth();
   const [propostasPageIndex, setPropostasPageIndex] = useState(0);
   const [propostasTotalCount, setPropostasTotalCount] = useState(0);
   const [propostasHasNextPage, setPropostasHasNextPage] = useState(false);
@@ -195,7 +200,7 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
               items={[
                 { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
                 { label: "Criar proposta", onClick: () => showMockActionToast("Criar proposta") },
-                { label: "Consultar credito", onClick: () => showMockActionToast("Consulta de credito") },
+                ...(hasPermissao(user, "financeiro.ajuste_credito") ? [{ label: "Ajustar Conta Corrente", onClick: () => setAjusteModalOpen(true) }] : []),
                 { label: "Abrir WhatsApp", onClick: () => showMockActionToast("Abrir WhatsApp") },
                 { label: "Ver financeiro", onClick: () => showMockActionToast("Ver financeiro") },
                 { label: "Ver notas fiscais", onClick: () => showMockActionToast("Ver notas fiscais") },
@@ -550,6 +555,18 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
           </DetailCard>
         </div>
       </section>
+
+      {ajusteModalOpen && (
+        <AjusteContaCorrenteModal
+          isOpen={ajusteModalOpen}
+          onClose={() => setAjusteModalOpen(false)}
+          idCliente={cadastro.idCliente}
+          nomeCliente={cadastro.nome}
+          onSuccess={() => {
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
