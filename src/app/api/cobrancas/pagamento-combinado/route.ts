@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 
 export async function POST(request: NextRequest) {
   const isTest = request.headers.get("x-integration-test") === "TEST_SECRET_2026";
@@ -44,6 +45,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
     }
     user = { id: authData.user.id, email: authData.user.email ?? "", nome: authData.user.user_metadata?.name || "Usuário" };
+
+    const temPermissao = await verificarPermissaoServerSide(
+      supabaseUser,
+      user.id,
+      "financeiro.resolver_credito"
+    );
+    
+    if (!temPermissao) {
+      return NextResponse.json(
+        { success: false, error: "Você não tem permissão para usar E-Crédito (financeiro.resolver_credito)." },
+        { status: 403 }
+      );
+    }
   }
 
   // 3. Payload
