@@ -51,10 +51,10 @@ export async function GET(request: Request) {
           return NextResponse.redirect(`${origin}/atualizar-senha?error=link_expirado`);
         }
         return NextResponse.redirect(
-          `${origin}/atualizar-senha?error=falha_autenticacao&desc=${encodeURIComponent(error.message)}`
+          `${origin}/atualizar-senha?error=falha_autenticacao`
         );
       }
-      return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
+      return NextResponse.redirect(`${origin}/login?error=falha_autenticacao`);
     }
 
     return NextResponse.redirect(`${origin}${next}`);

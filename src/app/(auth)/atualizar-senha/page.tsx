@@ -27,17 +27,14 @@ export default function AtualizarSenhaPage() {
     const search = window.location.search;
     const urlParams = new URLSearchParams(search);
     const callbackError = urlParams.get("error");
-    const errorDesc = urlParams.get("desc");
 
     if (callbackError) {
       if (callbackError === "link_expirado") {
         setError("O link de redefinição de senha expirou ou já foi utilizado. Por favor, solicite a recuperação de senha novamente.");
       } else if (callbackError === "link_ausente") {
         setError("Sessão ou código de autenticação ausente. Solicite a recuperação de senha.");
-      } else if (errorDesc) {
-        setError(decodeURIComponent(errorDesc));
       } else {
-        setError("Ocorreu um erro ao processar seu link de recuperação de senha.");
+        setError("Ocorreu um erro de autenticação ao processar seu link. Solicite a redefinição de senha novamente.");
       }
       setHasSession(false);
       return;
