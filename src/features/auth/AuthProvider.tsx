@@ -6,6 +6,7 @@ import type { Session } from "@supabase/supabase-js";
 import type { MockUser } from "@/lib/types";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fetchUsuarioEnriquecido } from "@/features/auth/usuarios.service";
+import { usePathname } from "next/navigation";
 
 function mapSessionToUser(session: Session | null): MockUser | null {
   const email = session?.user?.email;
@@ -73,6 +74,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [authState, setAuthState] = useState<{ user: MockUser | null; isLoading: boolean; isBlocked: boolean }>(() => ({
     user: null,
     isLoading: Boolean(getSupabaseClient()),
@@ -80,6 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }));
 
   useEffect(() => {
+    // Se a rota atual for a de redefinição de senha, evitamos inicializar a sessão concorrentemente
+    if (pathname === "/atualizar-senha") {
+      setAuthState({ user: null, isLoading: false, isBlocked: false });
+      return;
+    }
+
     const client = getSupabaseClient();
     if (!client) {
       return;
@@ -142,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isMounted = false;
       subscription.subscription.unsubscribe();
     };
-  }, []);
+  }, [pathname]);
 
   const login = useCallback(async (email: string, password: string) => {
     if (!email || !password) {
