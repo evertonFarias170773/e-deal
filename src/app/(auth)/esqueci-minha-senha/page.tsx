@@ -25,7 +25,7 @@ export default function EsqueciMinhaSenhaPage() {
       }
 
       const { error: resetError } = await client.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: `${window.location.origin}/atualizar-senha`,
+        redirectTo: `${window.location.origin}/auth/callback?next=/atualizar-senha`,
       });
 
       if (resetError) {

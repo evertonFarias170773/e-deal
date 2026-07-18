@@ -2,6 +2,7 @@
 
 import { FormEvent, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { LockKeyhole } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
@@ -12,23 +13,69 @@ export default function AtualizarSenhaPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  
-  // Supabase automatically parses the hash/code in the URL and establishes a session for password recovery.
-  // We just need to check if there is an error in the URL (e.g., link expired).
+  const [hasSession, setHasSession] = useState<boolean | null>(null); // null = carregando, false = bloqueado
+
   useEffect(() => {
-    const hash = window.location.hash;
-    const search = window.location.search;
-    const urlParams = new URLSearchParams(search || hash.replace("#", "?"));
-    const errorDescription = urlParams.get("error_description");
-    
-    if (errorDescription) {
-      setError(decodeURIComponent(errorDescription));
+    const client = getSupabaseClient();
+    if (!client) {
+      setError("Cliente Supabase não inicializado.");
+      setHasSession(false);
+      return;
     }
+
+    // 1. Verificar se fomos redirecionados do callback com algum erro específico
+    const search = window.location.search;
+    const urlParams = new URLSearchParams(search);
+    const callbackError = urlParams.get("error");
+    const errorDesc = urlParams.get("desc");
+
+    if (callbackError) {
+      if (callbackError === "link_expirado") {
+        setError("O link de redefinição de senha expirou ou já foi utilizado. Por favor, solicite a recuperação de senha novamente.");
+      } else if (callbackError === "link_ausente") {
+        setError("Sessão ou código de autenticação ausente. Solicite a recuperação de senha.");
+      } else if (errorDesc) {
+        setError(decodeURIComponent(errorDesc));
+      } else {
+        setError("Ocorreu um erro ao processar seu link de recuperação de senha.");
+      }
+      setHasSession(false);
+      return;
+    }
+
+    // 2. Verificar o hash para erros vindos do Supabase (Implicit flow fallback)
+    const hash = window.location.hash;
+    const hashParams = new URLSearchParams(hash.replace("#", "?"));
+    const hashErrorDesc = hashParams.get("error_description");
+    
+    if (hashErrorDesc) {
+      setError(decodeURIComponent(hashErrorDesc.replace(/\+/g, " ")));
+      setHasSession(false);
+      return;
+    }
+
+    // 3. Verificar ativamente se existe uma sessão válida (com o token estabelecido pelo callback)
+    void client.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+      if (sessionError) {
+        setError(sessionError.message);
+        setHasSession(false);
+      } else if (!session) {
+        setError("Sessão de redefinição de senha ausente ou expirada. Solicite a redefinição novamente.");
+        setHasSession(false);
+      } else {
+        setHasSession(true);
+      }
+    });
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (!hasSession) {
+      setError("Não há sessão de redefinição ativa. Bloqueado.");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("As senhas não coincidem.");
@@ -57,7 +104,10 @@ export default function AtualizarSenhaPage() {
       }
 
       setSuccess(true);
-      // Aguarda uns segundos e redireciona para login (ou dashboard)
+      
+      // Encerra apenas a sessão ativa local do navegador para que o usuário faça o login
+      await client.auth.signOut();
+
       setTimeout(() => {
         router.replace("/login");
       }, 3000);
@@ -95,7 +145,7 @@ export default function AtualizarSenhaPage() {
               Segurança
             </p>
             <h2 className="mt-3 text-3xl font-bold text-slate-950">Criar nova senha</h2>
-            {!success && (
+            {!success && hasSession !== false && (
               <p className="mt-2 text-sm text-slate-500">
                 Por favor, insira sua nova senha abaixo.
               </p>
@@ -106,6 +156,31 @@ export default function AtualizarSenhaPage() {
             <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-4 text-sm text-green-800 text-center">
               <p className="font-semibold mb-2">Senha atualizada com sucesso!</p>
               <p>Você será redirecionado para o login em instantes...</p>
+            </div>
+          ) : hasSession === null ? (
+            <div className="flex flex-col items-center justify-center py-8 space-y-3">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600" />
+              <p className="text-sm text-slate-500">Verificando sessão de recuperação...</p>
+            </div>
+          ) : hasSession === false ? (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800 text-center">
+                <p className="font-semibold mb-2">Não foi possível prosseguir</p>
+                <p className="text-xs text-red-600 mb-4 leading-relaxed">
+                  {error || "Sessão inválida ou link expirado."}
+                </p>
+                <Link
+                  href="/esqueci-minha-senha"
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+                >
+                  Solicitar novo link
+                </Link>
+              </div>
+              <div className="text-center">
+                <Link href="/login" className="text-sm font-medium text-slate-500 hover:text-slate-700 transition">
+                  Voltar ao Login
+                </Link>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
