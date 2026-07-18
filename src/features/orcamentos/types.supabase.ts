@@ -56,6 +56,7 @@ export type SupabaseProdutoPropostaRow = {
   valor_extra?: number | null;
   ncm?: string | null;
   cfop?: string | null;
+  status_item?: string | null;
 };
 
 export type SupabaseProdutoPropostaVariacaoRow = {

@@ -9,14 +9,14 @@ export function useOrcamentoDetail(idInt: number) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDetail = useCallback(async () => {
+  const fetchDetail = useCallback(async (silent = false) => {
     if (!idInt || isNaN(idInt)) {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setError("ID de proposta inválido.");
       return;
     }
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const data = await getPropostaDetailById(idInt);
@@ -28,7 +28,7 @@ export function useOrcamentoDetail(idInt: number) {
       const msg = err instanceof Error ? err.message : "Erro ao carregar os detalhes do orçamento.";
       setError(msg);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [idInt]);
 

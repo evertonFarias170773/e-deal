@@ -5,6 +5,7 @@ import path from "path";
 import crypto from "crypto";
 import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 
 export async function POST(request: NextRequest) {
   const isTest = request.headers.get("x-integration-test") === "TEST_SECRET_2026";
@@ -75,12 +76,13 @@ export async function POST(request: NextRequest) {
     valorSecundario, 
     tipoSecundario, 
     empresa, 
-    idEmpresa, 
-    atendente, 
+    idEmpresa,
+    atendente,
     vencimento,
     forma_pgto,
     forma_fatu,
-    observacao
+    observacao,
+    clienteNome
   } = body;
 
   if (!idInt || !idCliente || !valorCredito || !valorSecundario || !tipoSecundario) {
@@ -117,7 +119,7 @@ export async function POST(request: NextRequest) {
     // A. Consultar Proposta
     const { data: proposta, error: propostaErr } = await supabaseUser
       .from("propostas")
-      .select("id_int, id_cliente, nome_cliente, empresa")
+      .select("id_int, id_cliente, empresa")
       .eq("id_int", idInt)
       .maybeSingle();
 
@@ -130,7 +132,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Empresa inválida ou não identificada na proposta." }, { status: 400 });
     }
 
-    // B. Consultar Saldo E-Crédito
+    // B. Consultar Cliente Oficial
+    const { data: clienteData, error: clienteErr } = await supabaseUser
+      .from("clientes")
+      .select("nome")
+      .eq("id_cliente", idCliente)
+      .maybeSingle();
+
+    if (clienteErr || !clienteData) {
+      return NextResponse.json({ success: false, error: "Cliente não encontrado no sistema." }, { status: 404 });
+    }
+    const nomeClienteReal = clienteData.nome;
+
+    // C. Consultar Saldo E-Crédito
     const { data: creditos, error: creditosErr } = await supabaseUser
       .from("movimento_credito")
       .select("tipo, valor, validade")
@@ -197,7 +211,7 @@ export async function POST(request: NextRequest) {
     const payloadCobrancaCredito = {
       id_int: idInt,
       id_cliente: idCliente,
-      cliente: proposta.nome_cliente,
+      cliente: nomeClienteReal,
       valor: valorCredito,
       status: "PAID",
       tipo_cobranca: "E-CREDITO",
@@ -225,7 +239,7 @@ export async function POST(request: NextRequest) {
     const payloadSecundaria = {
       id_int: idInt,
       id_cliente: idCliente,
-      cliente: proposta.nome_cliente,
+      cliente: nomeClienteReal,
       valor: valorSecundario,
       status: tipoSecundario === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
       tipo_cobranca: tipoSecundario,
@@ -288,7 +302,18 @@ export async function POST(request: NextRequest) {
       visivel_externo: false
     }]);
 
-    return NextResponse.json({ success: true, message: "Pagamento combinado gerado com sucesso." });
+    // F. Calcular quitação oficial
+    const situacao = await calcularSituacaoQuitacaoProposta(supabaseUser, idInt);
+    const quitada = situacao.novoValorQuitado >= (situacao.valorTotalProposta - 0.02) && situacao.valorTotalProposta > 0;
+    
+    return NextResponse.json({ 
+      success: true, 
+      message: "Pagamento combinado gerado com sucesso.",
+      totalPagoAtivo: situacao.novoValorQuitado,
+      totalProposta: situacao.valorTotalProposta,
+      quitada,
+      possuiPagamentoPendente: situacao.saldoPendente > 0.02
+    });
 
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

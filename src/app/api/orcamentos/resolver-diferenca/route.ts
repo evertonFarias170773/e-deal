@@ -260,11 +260,13 @@ export async function POST(request: NextRequest) {
 
   const valorPagoRealArredondado = Math.round(valorPagoReal * 100) / 100;
 
-  // Fallback oficial ERP: valor_total ?? (valor + valor_frete)
-  // propostas.valor_total pode ser NULL em propostas antigas ou quando o UPDATE não o persiste
-  const totalBruto = propostaBanco.valor_total != null
-    ? Number(propostaBanco.valor_total)
-    : (Number(propostaBanco.valor ?? 0) + Number(propostaBanco.valor_frete ?? 0));
+  if (propostaBanco.valor_total == null) {
+    return NextResponse.json(
+      { success: false, error: "Valor total financeiro não consolidado. Salve a proposta corretamente antes de resolver a pendência." },
+      { status: 422 }
+    );
+  }
+  const totalBruto = Number(propostaBanco.valor_total);
   const novoTotalRealArredondado = Math.round(totalBruto * 100) / 100;
 
   console.info(`[resolver-diferenca] Proposta #${idInt}: valor_total=${propostaBanco.valor_total}, valor=${propostaBanco.valor}, valor_frete=${propostaBanco.valor_frete} → total resolvido=${novoTotalRealArredondado}, pago=${valorPagoRealArredondado}`);

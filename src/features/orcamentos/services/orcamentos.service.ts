@@ -668,8 +668,8 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
   };
 }
 
-export async function getPropostaDetailById(idInt: number): Promise<Proposta | null> {
-  const client = getSupabaseClient();
+export async function getPropostaDetailById(idInt: number, overrideClient?: SupabaseClient): Promise<Proposta | null> {
+  const client = overrideClient || getSupabaseClient();
   if (!client) {
     console.warn("[OrcamentosService] Supabase client não inicializado.");
     return null;
@@ -911,6 +911,10 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
         };
       });
 
+      const variationExtraForLegacy = variacoesEscolhidas.reduce((tot, v) => tot + (v.tipo?.v_extra || 0), 0);
+      const derivedBase = (item.valor_unt || 0) - variationExtraForLegacy;
+      const finalBase = item.valor_base != null ? Number(item.valor_base) : Math.max(0, derivedBase);
+
       mappedItens.push({
         id: `item_${item.id}`,
         id_produto_proposta_origem: Number(item.id),
@@ -923,18 +927,19 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
         descricaoModelo: item.modelo_descri || "",
         quantidade: item.qtd || 0,
         qtd: item.qtd || 0,
-        valorUnitario: item.valor_unt || 0,
+        valorUnitario: finalBase,
         valorFixo: item.fixo || 0,
         descontoTipo: "VALOR",
         descontoValor: 0,
-        subtotalBruto: (item.valor_unt || 0) * (item.qtd || 0) + (item.fixo || 0),
+        subtotalBruto: finalBase * (item.qtd || 0) + (item.fixo || 0) + (variationExtraForLegacy * (item.qtd || 0)),
         descontoValorCalculado: 0,
         acrescimoBonus: 0,
         subtotal: item.valor_sub_total || 0,
         prazo: finalProduct.prazo || "7 dias",
         pesoUnitario: item.peso_uni || 0,
         pesoTotal: item.peso_total || 0,
-        variacoesEscolhidas
+        variacoesEscolhidas,
+        statusItem: item.status_item || "PENDENTE"
       });
     }
 
@@ -1027,10 +1032,12 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
     const freteEscolhidoId = chosenFrete ? chosenFrete.id : "";
     const freteValor = chosenFrete ? chosenFrete.valor : 0;
 
+    const activeItens = mappedItens.filter((it) => it.statusItem !== "CANCELADO");
+
     // Calculate totals
     const subtotalProdutos = proposalRow.is_avulso
       ? Number(proposalRow.valor ?? 0)
-      : mappedItens.reduce((sum, it) => sum + it.subtotal, 0);
+      : activeItens.reduce((sum, it) => sum + it.subtotal, 0);
 
     // Fetch discount
     let descontoGeralTipo: "VALOR" | "PERCENTUAL" = "VALOR";
@@ -1063,7 +1070,7 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
 
     const pesoTotal = proposalRow.is_avulso
       ? 0
-      : mappedItens.reduce((sum, it) => sum + it.pesoTotal, 0);
+      : activeItens.reduce((sum, it) => sum + it.pesoTotal, 0);
 
     let valorTotal = proposalRow.is_avulso
       ? Number(proposalRow.valor_total ?? (subtotalProdutos + freteValor - descontoGeralCalculado))
@@ -1110,6 +1117,8 @@ export async function getPropostaDetailById(idInt: number): Promise<Proposta | n
       is_avulso: proposalRow.is_avulso === true,
       clienteNaoCadastrado: isClienteNaoCadastrado,
       id_faturado: proposalRow.id_faturado ?? null,
+      status_interno: proposalRow.status_interno,
+      dbValorTotal: proposalRow.valor_total != null ? Number(proposalRow.valor_total) : null,
     };
 
     return proposta;
@@ -1138,6 +1147,7 @@ export async function saveProposta(
 ): Promise<{
   success: boolean;
   id_int?: number;
+  valor_total?: number;
   errorMessage?: string;
 }> {
   const client = injectedClient ?? getSupabaseClient();
@@ -1330,9 +1340,11 @@ export async function saveProposta(
     }
 
     // Calculo de valores resumo e totais
+    const activeItens = formState.itens.filter((item) => item.statusItem !== "CANCELADO");
+
     const subtotalProdutosBase = formState.isAvulso
       ? (parseCurrencyBR(formState.valorProdutosManual) ?? 0)
-      : (formState.itens.reduce((total, item) => total + item.subtotal, 0));
+      : (activeItens.reduce((total, item) => total + item.subtotal, 0));
 
     const resumo = formState.isAvulso ? {
       subtotalProdutos: subtotalProdutosBase,
@@ -1348,9 +1360,9 @@ export async function saveProposta(
       prazoProducao: "A combinar",
       prazoEntrega: "A combinar"
     } : calculateResumo(
-      formState.itens,
+      activeItens,
       formState.fretes,
-      Number(formState.descontoGeralValor) || 0,
+      Number.isFinite(Number(formState.descontoGeralValor)) ? Number(formState.descontoGeralValor) : 0,
       formState.descontoGeralTipo
     );
 
@@ -1365,8 +1377,8 @@ export async function saveProposta(
           : "O subtotal dos produtos deve ser maior que R$ 0,00."
       };
     }
-    if (valorTotal <= 0) {
-      return { success: false, errorMessage: "O valor total da proposta deve ser maior que R$ 0,00." };
+    if (!Number.isFinite(valorTotal) || valorTotal <= 0) {
+      return { success: false, errorMessage: "O valor total financeiro da proposta é inválido ou nulo. Verifique os valores informados." };
     }
 
     const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && isNonEmpty(cepText);
@@ -1378,7 +1390,7 @@ export async function saveProposta(
     const informalText = buildPropostaInformalText({
       id_int: formState.id_int || "NOVO",
       clienteNome,
-      itens: formState.itens,
+      itens: activeItens,
       frete: formState.isAvulso ? {
         id: "frete_manual",
         id_int: Number(formState.id_int) || 0,
@@ -1445,15 +1457,22 @@ export async function saveProposta(
       is_avulso: formState.isAvulso || false
     };
 
+    let persistedValorTotal = valorTotal;
+
     if (isUpdate) {
       // 2a. UPDATE PROPOSTA
-      const { error: updateError } = await client
+      const { data: updatedProp, error: updateError } = await client
         .from("propostas")
         .update(propostaData)
-        .eq("id_int", id_int!);
+        .eq("id_int", id_int!)
+        .select("valor_total")
+        .single();
 
       if (updateError) {
         throw new Error(`Erro ao atualizar proposta no banco: ${updateError.message}`);
+      }
+      if (updatedProp?.valor_total != null) {
+        persistedValorTotal = Number(updatedProp.valor_total);
       }
     } else {
       // 2b. INSERT PROPOSTA
@@ -1462,7 +1481,7 @@ export async function saveProposta(
       const { data: newProp, error: insertError } = await client
         .from("propostas")
         .insert(propostaData)
-        .select("id_int")
+        .select("id_int, valor_total")
         .single();
 
       if (insertError || !newProp) {
@@ -1470,6 +1489,9 @@ export async function saveProposta(
       }
 
       id_int = Number(newProp.id_int);
+      if (newProp?.valor_total != null) {
+        persistedValorTotal = Number(newProp.valor_total);
+      }
     }
 
     // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
@@ -1574,7 +1596,8 @@ export async function saveProposta(
           valor_base: item.valorUnitario - valorExtra,
           valor_extra: valorExtra,
           ncm: item.produto.ncm || null,
-          cfop: item.produto.cfop_interno || null
+          cfop: item.produto.cfop_interno || null,
+          status_item: item.statusItem || "PENDENTE"
         };
 
         let dbItemId: number;
@@ -1692,40 +1715,51 @@ export async function saveProposta(
       }
 
       if (explicitDeleteIds.length > 0) {
-        // Primeiro limpar variações (boa prática, mesmo com cascade)
-        const { error: deleteExplicitVarsError } = await client
-          .from("produtos_proposta_variacao")
-          .delete()
-          .in("id_produto_proposta", explicitDeleteIds);
+        const isPaidEdit = !!options?.force;
+        
+        if (isPaidEdit) {
+          // Inativação lógica para proposta paga (preserva vínculos financeiros/fiscais)
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] Executando INATIVAÇÃO LÓGICA (CANCELADO) em produtos_proposta para IDs:", explicitDeleteIds);
+          }
+          
+          const { error: logicalDeleteError } = await client
+            .from("produtos_proposta")
+            .update({ status_item: "CANCELADO" })
+            .in("id", explicitDeleteIds);
+            
+          if (logicalDeleteError) {
+            throw new Error("Não foi possível inativar os produtos da proposta paga. Recarregue e tente novamente.");
+          }
+        } else {
+          // Deleção física para propostas comuns
+          // Primeiro limpar variações (boa prática, mesmo com cascade)
+          const { error: deleteExplicitVarsError } = await client
+            .from("produtos_proposta_variacao")
+            .delete()
+            .in("id_produto_proposta", explicitDeleteIds);
 
-        if (deleteExplicitVarsError) {
-          console.error("[OrcamentosService] Erro ao deletar variações dos itens explicitamente removidos:", deleteExplicitVarsError);
-        }
+          if (deleteExplicitVarsError) {
+            console.error("[OrcamentosService] Erro ao deletar variações dos itens explicitamente removidos:", deleteExplicitVarsError);
+          }
 
-        if (process.env.NODE_ENV === "development") {
-          console.log("[DEV][saveProposta] Executando DELETE em produtos_proposta para IDs:", explicitDeleteIds);
-        }
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] Executando DELETE físico em produtos_proposta para IDs:", explicitDeleteIds);
+          }
 
-        const { data: explicitDeletedRows, error: explicitDeleteError } = await client
-          .from("produtos_proposta")
-          .delete()
-          .in("id", explicitDeleteIds)
-          .select("id");
+          const { data: explicitDeletedRows, error: explicitDeleteError } = await client
+            .from("produtos_proposta")
+            .delete()
+            .in("id", explicitDeleteIds)
+            .select("id");
 
-        if (process.env.NODE_ENV === "development") {
-          console.log("[DEV][saveProposta] Retorno do DELETE explícito:", { explicitDeletedRows, explicitDeleteError });
-        }
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] Retorno do DELETE explícito:", { explicitDeletedRows, explicitDeleteError });
+          }
 
-        if (explicitDeleteError) {
-          throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
-        }
-
-        if (!explicitDeletedRows || explicitDeletedRows.length < explicitDeleteIds.length) {
-          console.warn(
-            "[OrcamentosService] DELETE explícito retornou menos linhas que o esperado.",
-            { esperado: explicitDeleteIds.length, retornado: explicitDeletedRows?.length ?? 0 }
-          );
-          // Não abortar por isso — pode ser que alguns IDs já foram deletados antes (idempotência)
+          if (explicitDeleteError) {
+            throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
+          }
         }
       }
 
@@ -1735,37 +1769,53 @@ export async function saveProposta(
         (id) => !incomingItemIds.includes(id) && !explicitDeleteIds.includes(id)
       );
       if (deletedItemIds.length > 0) {
-        if (process.env.NODE_ENV === "development") {
-          console.log("[DEV][saveProposta] DELETE por diff (secundário) para IDs:", deletedItemIds);
-        }
+        const isPaidEdit = !!options?.force;
+        
+        if (isPaidEdit) {
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] INATIVAÇÃO LÓGICA por diff (secundário) para IDs:", deletedItemIds);
+          }
+          const { error: logicalDeleteDiffError } = await client
+            .from("produtos_proposta")
+            .update({ status_item: "CANCELADO" })
+            .in("id", deletedItemIds);
+            
+          if (logicalDeleteDiffError) {
+            throw new Error("Não foi possível inativar os produtos ausentes da proposta paga.");
+          }
+        } else {
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] DELETE físico por diff (secundário) para IDs:", deletedItemIds);
+          }
 
-        const { error: deleteRemovedVarsError } = await client
-          .from("produtos_proposta_variacao")
-          .delete()
-          .in("id_produto_proposta", deletedItemIds);
+          const { error: deleteRemovedVarsError } = await client
+            .from("produtos_proposta_variacao")
+            .delete()
+            .in("id_produto_proposta", deletedItemIds);
 
-        if (deleteRemovedVarsError) {
-          console.error("[OrcamentosService] Erro ao deletar variações dos itens excluídos (diff):", deleteRemovedVarsError);
-        }
+          if (deleteRemovedVarsError) {
+            console.error("[OrcamentosService] Erro ao deletar variações dos itens excluídos (diff):", deleteRemovedVarsError);
+          }
 
-        const { data: diffDeletedRows, error: deleteRemovedItemsError } = await client
-          .from("produtos_proposta")
-          .delete()
-          .in("id", deletedItemIds)
-          .select("id");
+          const { data: diffDeletedRows, error: deleteRemovedItemsError } = await client
+            .from("produtos_proposta")
+            .delete()
+            .in("id", deletedItemIds)
+            .select("id");
 
-        if (process.env.NODE_ENV === "development") {
-          console.log("[DEV][saveProposta] Retorno do DELETE por diff:", { diffDeletedRows, deleteRemovedItemsError });
-        }
+          if (process.env.NODE_ENV === "development") {
+            console.log("[DEV][saveProposta] Retorno do DELETE por diff:", { diffDeletedRows, deleteRemovedItemsError });
+          }
 
-        if (deleteRemovedItemsError) {
-          throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
+          if (deleteRemovedItemsError) {
+            throw new Error("Não foi possível excluir um ou mais produtos da proposta. Recarregue a página e tente novamente.");
+          }
         }
       }
     }
 
     if (formState.isAvulso) {
-      const { error: finalUpdateError } = await client
+      const { data: finalUpdated, error: finalUpdateError } = await client
         .from("propostas")
         .update({
           is_avulso: true,
@@ -1773,11 +1823,16 @@ export async function saveProposta(
           valor_frete: freteValor,
           valor_total: valorTotal
         })
-        .eq("id_int", id_int!);
+        .eq("id_int", id_int!)
+        .select("valor_total")
+        .single();
 
       if (finalUpdateError) {
         console.error("[OrcamentosService] Erro no update final da proposta avulsa:", finalUpdateError);
         throw new Error(`Erro ao finalizar gravação da proposta avulsa: ${finalUpdateError.message}`);
+      }
+      if (finalUpdated?.valor_total != null) {
+        persistedValorTotal = Number(finalUpdated.valor_total);
       }
     }
 
@@ -1833,7 +1888,25 @@ export async function saveProposta(
       }
     }
 
-    return { success: true, id_int: id_int! };
+    // --- CONSOLIDAÇÃO FINAL DO VALOR TOTAL ---
+    // Força o update do valor total calculado para garantir a persistência
+    // caso alguma trigger de itens tenha sobrescrito como null.
+    if (!formState.isAvulso) {
+      const { data: finalProp, error: finalError } = await client
+        .from("propostas")
+        .update({ valor_total: valorTotal })
+        .eq("id_int", id_int!)
+        .select("valor_total")
+        .single();
+        
+      if (finalError) {
+        console.error("[OrcamentosService] Erro ao consolidar valor_total final:", finalError);
+      } else if (finalProp?.valor_total != null) {
+        persistedValorTotal = Number(finalProp.valor_total);
+      }
+    }
+
+    return { success: true, id_int: id_int!, valor_total: persistedValorTotal };
   } catch (err) {
     console.error("[OrcamentosService] Falha ao salvar proposta:", err);
     if (!isUpdate && id_int) {

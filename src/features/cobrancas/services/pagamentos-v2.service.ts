@@ -105,7 +105,13 @@ function buildRestUrl(table: string, params: Record<string, string>) {
   return url;
 }
 
-async function fetchPagamentosV2Rows(limit = 10000) {
+async function fetchPagamentosV2Rows(filters?: {
+  fetchInicio?: string;
+  fetchFim?: string;
+  idEmpresa?: number;
+  atendente?: string;
+  tipo?: string;
+}, limit = 10000) {
   const client = getSupabaseClient();
 
   if (!client) {
@@ -117,9 +123,38 @@ async function fetchPagamentosV2Rows(limit = 10000) {
 
   for (let from = 0; from < limit; from += pageSize) {
     const to = from + pageSize - 1;
-    const query = client
+    let query = client
       .from("pagamentos_v2")
-      .select(PAGAMENTOS_V2_SELECT)
+      .select(PAGAMENTOS_V2_SELECT);
+
+    // Aplicar filtros de banco
+    if (filters?.fetchInicio) {
+      query = query.or(`created_at.gte.${filters.fetchInicio},data_confirmacao.gte.${filters.fetchInicio}`);
+    }
+    if (filters?.fetchFim) {
+      query = query.or(`created_at.lte.${filters.fetchFim}T23:59:59,data_confirmacao.lte.${filters.fetchFim}T23:59:59`);
+    }
+    if (filters?.idEmpresa && filters.idEmpresa > 0) {
+      query = query.eq("id_empresa", filters.idEmpresa);
+    }
+    if (filters?.atendente && filters.atendente !== "TODOS") {
+      query = query.eq("atendente", filters.atendente);
+    }
+    if (filters?.tipo && filters.tipo !== "TODOS") {
+      if (filters.tipo === "E-CREDITO") {
+        query = query.eq("tipo_cobranca", "E-CREDITO");
+      } else if (filters.tipo === "PIX") {
+        query = query.eq("tipo_cobranca", "PIX");
+      } else if (filters.tipo === "BOLETO") {
+        query = query.eq("tipo_cobranca", "BOLETO");
+      } else if (filters.tipo === "FATURADO") {
+        query = query.in("tipo_cobranca", ["E-FATURADO", "EFATURADO", "FATURADO"]);
+      } else if (filters.tipo === "CARTAO") {
+        query = query.in("tipo_cobranca", ["CREDIT_CARD", "CARD_PARCELADO"]);
+      }
+    }
+
+    query = query
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -266,8 +301,14 @@ async function fetchBoletosPDFs(idsPagamento: string[]) {
   return mapping;
 }
 
-export async function getCobrancasReadOnlyData(): Promise<CobrancasReadResult> {
-  const rows = await fetchPagamentosV2Rows();
+export async function getCobrancasReadOnlyData(filters?: {
+  fetchInicio?: string;
+  fetchFim?: string;
+  idEmpresa?: number;
+  atendente?: string;
+  tipo?: string;
+}): Promise<CobrancasReadResult> {
+  const rows = await fetchPagamentosV2Rows(filters);
 
   if (!rows) {
     return {

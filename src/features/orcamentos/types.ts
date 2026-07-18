@@ -76,6 +76,7 @@ export type PropostaItem = {
   pesoUnitario: number;
   pesoTotal: number;
   variacoesEscolhidas: PropostaVariacaoEscolhida[];
+  statusItem?: string;
 };
 
 export type PropostaFrete = {
@@ -135,6 +136,7 @@ export type Proposta = {
   clienteNaoCadastrado?: boolean;
   id_faturado?: number | null;
   status_interno?: string;
+  dbValorTotal?: number | null;
 };
 
 export type PropostaFormState = {

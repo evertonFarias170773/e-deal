@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import fs from "fs";
 import path from "path";
 
@@ -189,6 +190,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 4.5. Buscar nome do cliente
+  const { data: clienteData, error: clienteErr } = await supabase
+    .from("clientes")
+    .select("nome")
+    .eq("id_cliente", idCliente)
+    .maybeSingle();
+
+  if (clienteErr || !clienteData) {
+    return NextResponse.json({ success: false, error: "Cliente não encontrado no sistema." }, { status: 404 });
+  }
+  const nomeClienteReal = clienteData.nome;
+
   // ── 5. Idempotência: verificar CONSUMO recente para este id_int ───────────
   const cincoMinAtras = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
@@ -284,7 +297,7 @@ export async function POST(request: NextRequest) {
     .insert({
       id_int: idInt,
       id_cliente: idCliente,
-      cliente: clienteNome ?? "",
+      cliente: nomeClienteReal,
       valor,
       status: "PAID",
       tipo_cobranca: "E-CREDITO",
@@ -339,11 +352,19 @@ export async function POST(request: NextRequest) {
 
   console.info(`[usar-credito] Concluído: proposta=#${idInt}, consumo=${novoConsumo?.id}, pagamento=${novoPagamento?.id}`);
 
+  // 10. Calcular quitação oficial
+  const situacao = await calcularSituacaoQuitacaoProposta(supabase, idInt);
+  const quitada = situacao.novoValorQuitado >= (situacao.valorTotalProposta - 0.02) && situacao.valorTotalProposta > 0;
+
   return NextResponse.json({
     success: true,
     movimentoId: novoConsumo?.id,
     pagamentoId: novoPagamento?.id,
     saldoRestante,
+    totalPagoAtivo: situacao.novoValorQuitado,
+    totalProposta: situacao.valorTotalProposta,
+    quitada,
+    possuiPagamentoPendente: situacao.saldoPendente > 0.02
   });
   } finally {
     if (lockAdquirido) {

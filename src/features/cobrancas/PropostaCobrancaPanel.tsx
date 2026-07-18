@@ -42,6 +42,7 @@ type PropostaCobrancaPanelProps = {
   onlyModal?: boolean;
   onSavePropostaRequest?: () => Promise<boolean>;
   onRefreshProposta?: () => void;
+  onPagamentoIntegralConcluido?: () => void;
 };
 
 function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number; empresa: string } {
@@ -91,7 +92,8 @@ export function PropostaCobrancaPanel({
   defaultModalOpen = false,
   onlyModal = false,
   onSavePropostaRequest,
-  onRefreshProposta
+  onRefreshProposta,
+  onPagamentoIntegralConcluido
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
   const { createCobranca, getCobrancasByProposta, source, cobrancas } = useCobrancas();
@@ -612,6 +614,9 @@ export function PropostaCobrancaPanel({
                 title: isCombined ? "Pagamento Combinado Gerado" : "Crédito Aplicado com Sucesso!",
                 description: isCombined ? "Cobranças criadas com sucesso." : `O valor de ${formatCurrency(roundedValor)} foi debitado do saldo e registrado.`
             });
+            if (json.quitada && onPagamentoIntegralConcluido) {
+                onPagamentoIntegralConcluido();
+            }
         }
   
         if (onRefreshProposta) onRefreshProposta();

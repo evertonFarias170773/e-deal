@@ -24,7 +24,7 @@
  *   - Registrar débito futuro                   → DEBITO
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
 import type { MovimentoCredito } from "@/features/cobrancas/types";
@@ -84,6 +84,7 @@ export function DiferencaFinanceiraModal({
   const [selectedAcao, setSelectedAcao] = useState<AcaoId | null>(null);
   const [obs, setObs] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   // Sub-modal de abatimento
@@ -137,6 +138,8 @@ export function DiferencaFinanceiraModal({
 
   // ── Confirmar ────────────────────────────────────────────────────────────
   async function handleConfirm() {
+    if (isSubmitting || isSubmittingRef.current) return;
+
     if (!selectedAcao) {
       setError("Selecione uma ação antes de continuar.");
       return;
@@ -154,6 +157,7 @@ export function DiferencaFinanceiraModal({
 
     setError(null);
     setIsSubmitting(true);
+    isSubmittingRef.current = true;
 
     try {
       let acao: AcaoFinanceiraDiferenca;
@@ -177,6 +181,7 @@ export function DiferencaFinanceiraModal({
       const msg = e instanceof Error ? e.message : "Erro ao executar ação financeira.";
       setError(msg);
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
     // Não faz setIsSubmitting(false) em caso de sucesso — o modal é fechado externamente
   }

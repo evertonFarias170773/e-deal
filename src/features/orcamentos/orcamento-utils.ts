@@ -169,7 +169,10 @@ export function calculateItemSubtotal(
   item: Pick<PropostaItem, "quantidade" | "valorUnitario" | "valorFixo" | "variacoesEscolhidas" | "descontoTipo" | "descontoValor">,
   bonusPercent = 0
 ) {
-  const subtotalBruto = item.quantidade * item.valorUnitario + item.valorFixo;
+  const variationExtra = (item.variacoesEscolhidas || []).reduce((total, escolha) => total + (escolha.tipo?.v_extra || 0), 0);
+  const valorUnitarioTotal = item.valorUnitario + variationExtra;
+  
+  const subtotalBruto = item.quantidade * valorUnitarioTotal + item.valorFixo;
   const descontoValorCalculado = Math.min(subtotalBruto, calculateDiscountValue(subtotalBruto, item.descontoTipo, item.descontoValor));
   const acrescimoBonus = (subtotalBruto - descontoValorCalculado) * (bonusPercent / 100);
 
@@ -194,7 +197,6 @@ export function createItemFromProduto(
   precoFixoBase?: number
 ): PropostaItem {
   const variacoesEscolhidas = autoSelectVariations ? firstVariationChoices(produto) : [];
-  const variationExtra = variacoesEscolhidas.reduce((total, escolha) => total + escolha.tipo.v_extra, 0);
   
   const precoBaseReal = precoFixoBase !== undefined ? precoFixoBase : produto.valorUnt;
 
@@ -206,7 +208,7 @@ export function createItemFromProduto(
     formato: produto.formato,
     descricaoModelo: produto.descricao,
     quantidade,
-    valorUnitario: precoBaseReal + variationExtra,
+    valorUnitario: precoBaseReal,
     valorFixo: precoFixoBase !== undefined ? 0 : produto.valorFixo,
     descontoTipo: "VALOR" as TipoDescontoProposta,
     descontoValor: 0,
@@ -297,15 +299,17 @@ export function calculateResumo(
   descontoGeralValor = 0,
   descontoGeralTipo: TipoDescontoProposta = "VALOR"
 ): PropostaResumo {
-  const subtotalBrutoProdutos = itens.reduce((total, item) => total + item.subtotalBruto, 0);
-  const descontosIndividuais = itens.reduce((total, item) => total + item.descontoValorCalculado, 0);
-  const acrescimoBonus = itens.reduce((total, item) => total + item.acrescimoBonus, 0);
-  const subtotalProdutos = itens.reduce((total, item) => total + item.subtotal, 0);
+  const activeItens = itens.filter(item => item.statusItem !== "CANCELADO");
+
+  const subtotalBrutoProdutos = activeItens.reduce((total, item) => total + item.subtotalBruto, 0);
+  const descontosIndividuais = activeItens.reduce((total, item) => total + item.descontoValorCalculado, 0);
+  const acrescimoBonus = activeItens.reduce((total, item) => total + item.acrescimoBonus, 0);
+  const subtotalProdutos = activeItens.reduce((total, item) => total + item.subtotal, 0);
   const descontoGeral = Math.min(subtotalProdutos, calculateDiscountValue(subtotalProdutos, descontoGeralTipo, descontoGeralValor));
   const freteEscolhido = fretes.find((frete) => frete.escolhido);
   const frete = freteEscolhido?.valor ?? 0;
-  const pesoTotal = itens.reduce((total, item) => total + item.pesoTotal, 0);
-  const prazoProducao = itens[0]?.prazo ?? "Nao definido";
+  const pesoTotal = activeItens.reduce((total, item) => total + item.pesoTotal, 0);
+  const prazoProducao = activeItens[0]?.prazo ?? "Nao definido";
   const prazoEntrega = freteEscolhido?.prazo ?? "Nao definido";
 
   return {

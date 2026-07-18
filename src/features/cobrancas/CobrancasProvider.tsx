@@ -26,7 +26,7 @@ type CobrancasContextValue = {
   cancelarExterno: (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string) => Promise<{ success: boolean; errorMessage?: string }>;
   
   liberarParaPedido: (idInt: number) => boolean;
-  refreshCobrancas: () => Promise<CobrancasReadResult>;
+  refreshCobrancas: (filters?: any) => Promise<CobrancasReadResult>;
   getCobrancaById: (id: string) => Cobranca | undefined;
   getCobrancaByToken: (token: string) => Cobranca | undefined;
   getCobrancasByProposta: (idInt: number) => Cobranca[];
@@ -75,9 +75,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [hasBoletoHistoryIdInts, setHasBoletoHistoryIdInts] = useState<Set<number>>(new Set());
   const isMountedRef = useRef(true);
 
-  const loadData = useCallback(async (): Promise<CobrancasReadResult> => {
+  const loadData = useCallback(async (filters?: any): Promise<CobrancasReadResult> => {
     const stored = readStoredCobrancas();
-    const result = await getCobrancasReadOnlyData();
+    const result = await getCobrancasReadOnlyData(filters);
 
     if (!isMountedRef.current) {
       return result;
@@ -214,8 +214,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshCobrancas = useCallback(async () => {
-    return loadData();
+  const refreshCobrancas = useCallback(async (filters?: any) => {
+    return loadData(filters);
   }, [loadData]);
 
   useEffect(() => {

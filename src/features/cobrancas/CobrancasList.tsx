@@ -29,11 +29,10 @@ import {
 import type { Cobranca } from "@/features/cobrancas/types";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDateTime } from "@/lib/formatters/date";
-import { useViewPagamentosDashboard } from "@/features/cobrancas/hooks/useViewPagamentosDashboard";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
 import { listVendedoresReais, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 
-type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO";
+type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO" | "E-CREDITO";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
@@ -44,6 +43,7 @@ const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
   { value: "FATURADO", label: "Faturado" },
   { value: "CARTAO", label: "Cartão" },
   { value: "CANCELADO", label: "Cancelados" },
+  { value: "E-CREDITO", label: "E-Crédito" },
   { value: "TODOS", label: "Todos os tipos" }
 ];
 
@@ -140,7 +140,15 @@ if (tipo === "TODOS") {
     return cobranca.status === "CANCELADO";
   }
 
-  return cobranca.tipo_cobranca === "CREDIT_CARD" || cobranca.tipo_cobranca === "CARD_PARCELADO";
+  if (tipo === "E-CREDITO") {
+    return cobranca.tipo_cobranca === "E-CREDITO";
+  }
+
+  if (tipo === "CARTAO") {
+    return cobranca.tipo_cobranca === "CREDIT_CARD" || cobranca.tipo_cobranca === "CARD_PARCELADO";
+  }
+
+  return false;
 }
 
 function getInitialDates() {
@@ -176,8 +184,6 @@ export function CobrancasList() {
   const initialDates = useMemo(() => getInitialDates(), []);
   const [dataInicial, setDataInicial] = useState(initialDates.start);
   const [dataFinal, setDataFinal] = useState(initialDates.end);
-  const [dataInicialTabela, setDataInicialTabela] = useState(initialDates.start);
-  const [dataFinalTabela, setDataFinalTabela] = useState(initialDates.end);
   const [mesSelecionado, setMesSelecionado] = useState(getLocalMonthKey(new Date()));
   const [empresaEmEdicao, setEmpresaEmEdicao] = useState<Cobranca | null>(null);
   const [empresaDestinoId, setEmpresaDestinoId] = useState<number | null>(null);
@@ -197,8 +203,137 @@ export function CobrancasList() {
     };
   }, []);
 
-  // Indicadores financeiros exclusivamente da view_pagamentos_pagos_v2
-  const viewDashboard = useViewPagamentosDashboard({ dataInicial, dataFinal, mesSelecionado });
+  // Recarregar cobranças com filtros aplicados no backend
+  useEffect(() => {
+    const getMesRangeLocal = (mes: string) => {
+      const [y, m] = mes.split("-").map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      return {
+        inicio: `${mes}-01`,
+        fim: `${mes}-${String(lastDay).padStart(2, "0")}`,
+      };
+    };
+    const getTodaySPLocal = () => new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+
+    const fetchInicio = [dataInicial, getMesRangeLocal(mesSelecionado).inicio, getTodaySPLocal()].sort()[0];
+    const fetchFim = [dataFinal, getMesRangeLocal(mesSelecionado).fim, getTodaySPLocal()].sort().reverse()[0];
+    const idEmpresa = empresa === "TODAS" ? undefined : Number(empresa);
+
+    void refreshCobrancas({
+      fetchInicio,
+      fetchFim,
+      idEmpresa,
+      atendente: vendedor,
+      tipo
+    });
+  }, [dataInicial, dataFinal, mesSelecionado, empresa, vendedor, tipo, refreshCobrancas]);
+
+  // Base filtrada em memória apenas pela busca por texto
+  const filteredBase = useMemo(() => {
+    return cobrancasStats.filter((cobranca) => {
+      return cobrancaMatchesSearch(cobranca, search);
+    });
+  }, [cobrancasStats, search]);
+
+  // 1. Confirmados do Dia (Card 2)
+  const confirmadosDia = useMemo(() => {
+    const todayKey = getLocalDateInSaoPaulo(new Date());
+    const list = filteredBase.filter((c) => {
+      if (!isBaseConfirmada(c)) return false;
+      const dateVal = c.data_confirmacao;
+      return dateVal && getLocalDateInSaoPaulo(dateVal) === todayKey;
+    });
+    return {
+      count: list.length,
+      total: list.reduce((sum, c) => sum + (c.valor ?? 0), 0)
+    };
+  }, [filteredBase]);
+
+  // 2. Faturamento do Mês (Card 3)
+  const faturamentoMes = useMemo(() => {
+    const [y, m] = mesSelecionado.split("-").map(Number);
+    const list = filteredBase.filter((c) => {
+      if (!isBaseConfirmada(c)) return false;
+      const dateVal = c.data_confirmacao;
+      if (!dateVal) return false;
+      const dateConfirmacaoStr = getLocalDateInSaoPaulo(dateVal);
+      const [cy, cm] = dateConfirmacaoStr.split("-").map(Number);
+      return cy === y && cm === m;
+    });
+
+    const groups = new Map<number, { id_empresa: number; empresa: string; total: number; quantidade: number }>([
+      [1, { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI", total: 0, quantidade: 0 }],
+      [2, { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS", total: 0, quantidade: 0 }],
+      [3, { id_empresa: 3, empresa: "E3 BRINDES LTDA", total: 0, quantidade: 0 }],
+    ]);
+    list.forEach((c) => {
+      const idEmpresa = Number(c.id_empresa);
+      const current = groups.get(idEmpresa) ?? {
+        id_empresa: idEmpresa,
+        empresa: c.empresa || `Empresa ${idEmpresa}`,
+        total: 0,
+        quantidade: 0
+      };
+      current.total += c.valor ?? 0;
+      current.quantidade += 1;
+      groups.set(idEmpresa, current);
+    });
+
+    return {
+      count: list.length,
+      total: list.reduce((sum, c) => sum + (c.valor ?? 0), 0),
+      porEmpresa: Array.from(groups.values()).sort((a, b) => a.id_empresa - b.id_empresa)
+    };
+  }, [filteredBase, mesSelecionado]);
+
+  // 3. Faturamento do Período (Card 4)
+  const faturamentoPeriodo = useMemo(() => {
+    const list = filteredBase.filter((c) => {
+      if (!isBaseConfirmada(c)) return false;
+      const dateVal = c.data_confirmacao;
+      if (!dateVal) return false;
+      const dateConfirmacaoStr = getLocalDateInSaoPaulo(dateVal);
+      return (
+        (!dataInicial || dateConfirmacaoStr >= dataInicial) &&
+        (!dataFinal || dateConfirmacaoStr <= dataFinal)
+      );
+    });
+
+    const groups = new Map<number, { id_empresa: number; empresa: string; total: number; quantidade: number }>([
+      [1, { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI", total: 0, quantidade: 0 }],
+      [2, { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS", total: 0, quantidade: 0 }],
+      [3, { id_empresa: 3, empresa: "E3 BRINDES LTDA", total: 0, quantidade: 0 }],
+    ]);
+    list.forEach((c) => {
+      const idEmpresa = Number(c.id_empresa);
+      const current = groups.get(idEmpresa) ?? {
+        id_empresa: idEmpresa,
+        empresa: c.empresa || `Empresa ${idEmpresa}`,
+        total: 0,
+        quantidade: 0
+      };
+      current.total += c.valor ?? 0;
+      current.quantidade += 1;
+      groups.set(idEmpresa, current);
+    });
+
+    return {
+      count: list.length,
+      total: list.reduce((sum, c) => sum + (c.valor ?? 0), 0),
+      porEmpresa: Array.from(groups.values()).sort((a, b) => a.id_empresa - b.id_empresa)
+    };
+  }, [filteredBase, dataInicial, dataFinal]);
+
+  // Unifica viewDashboard usando os cálculos em memória
+  const viewDashboard = {
+    isLoading: false,
+    error: null,
+    confirmadosDia,
+    faturamentoMes: { count: faturamentoMes.count, total: faturamentoMes.total },
+    faturamentoPorEmpresaMes: faturamentoMes.porEmpresa,
+    faturamentoPeriodo: { count: faturamentoPeriodo.count, total: faturamentoPeriodo.total },
+    faturamentoPorEmpresaPeriodo: faturamentoPeriodo.porEmpresa
+  };
 
   // Pendentes de aprovação calculados do array in-memory (não cobertos pela view)
   const pendentesResumo = useMemo(() => {
@@ -230,41 +365,36 @@ export function CobrancasList() {
 
 
 
-  // faturamentoPeriodo e faturamentoMes agora vêm de viewDashboard (view_pagamentos_pagos_v2)
-
   const visibleCobrancas = useMemo(() => {
     const base =
       tipo === "PENDENTES_APROVACAO"
-        ? cobrancasStats.filter((c) => isPendenteAprovacao(c))
+        ? filteredBase.filter((c) => isPendenteAprovacao(c))
         : tipo === "CONFIRMADOS_DIA"
-          ? cobrancasStats.filter(isConfirmadoDia)
+          ? filteredBase.filter(isConfirmadoDia)
             : tipo === "CANCELADO"
-              ? cobrancasStats.filter((c) => c.status === "CANCELADO")
+              ? filteredBase.filter((c) => c.status === "CANCELADO")
               : statusFilter === "CONFIRMADOS"
-                ? cobrancasStats.filter(isBaseConfirmada)
+                ? filteredBase.filter(isBaseConfirmada)
                 : tipo === "TODOS"
-                  ? cobrancasStats.filter(isFilaPadrao)
-                  : cobrancasStats.filter(isBaseConfirmada);
+                  ? filteredBase.filter(isFilaPadrao)
+                  : filteredBase.filter(isBaseConfirmada);
 
     return base
       .filter((cobranca) => {
-        const matchesSearch = cobrancaMatchesSearch(cobranca, search);
         const matchesTipo =
           tipo === "TODOS" || tipo === "PENDENTES_APROVACAO" || tipo === "CONFIRMADOS_DIA" || tipo === "CANCELADO"
             ? true
             : matchesTipoFiltro(cobranca, tipo, existingBoletoIdInts, hasBoletoHistoryIdInts);
-        const matchesEmpresa = empresa === "TODAS" || getEmpresaGrupoKey(cobranca) === empresa;
-        const matchesVendedor = vendedor === "TODOS" || cobranca.atendente === vendedor;
         
         const dateConfirmacaoStr = getLocalDateInSaoPaulo(cobranca.data_confirmacao);
         const matchesPeriodo =
           statusFilter !== "CONFIRMADOS" ||
-          ((!dataInicialTabela || dateConfirmacaoStr >= dataInicialTabela) && (!dataFinalTabela || dateConfirmacaoStr <= dataFinalTabela));
+          ((!dataInicial || dateConfirmacaoStr >= dataInicial) && (!dataFinal || dateConfirmacaoStr <= dataFinal));
 
-        return matchesSearch && matchesTipo && matchesEmpresa && matchesVendedor && matchesPeriodo;
+        return matchesTipo && matchesPeriodo;
       })
       .slice(0, 500);
-  }, [cobrancasStats, empresa, search, tipo, statusFilter, existingBoletoIdInts, vendedor, dataInicialTabela, dataFinalTabela]);
+  }, [filteredBase, tipo, statusFilter, existingBoletoIdInts, hasBoletoHistoryIdInts, dataInicial, dataFinal]);
 
   const empresaDestinoSelecionada = empresaDestinoId ? getEmpresaRecebedoraFixaById(empresaDestinoId) ?? null : null;
 
@@ -574,15 +704,15 @@ export function CobrancasList() {
               <span className="text-xs text-slate-500 font-medium">Período:</span>
               <input
                 type="date"
-                value={dataInicialTabela}
-                onChange={(e) => setDataInicialTabela(e.target.value)}
+                value={dataInicial}
+                onChange={(e) => setDataInicial(e.target.value)}
                 className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
               />
               <span className="text-xs text-slate-400">a</span>
               <input
                 type="date"
-                value={dataFinalTabela}
-                onChange={(e) => setDataFinalTabela(e.target.value)}
+                value={dataFinal}
+                onChange={(e) => setDataFinal(e.target.value)}
                 className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
               />
             </div>
@@ -596,8 +726,8 @@ export function CobrancasList() {
               setEmpresa("TODAS");
               setVendedor("TODOS");
               setStatusFilter("FILA");
-              setDataInicialTabela(initialDates.start);
-              setDataFinalTabela(initialDates.end);
+              setDataInicial(initialDates.start);
+              setDataFinal(initialDates.end);
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >

@@ -216,7 +216,7 @@ function OrcamentoFormLoader({ idInt }: { idInt: number }) {
   return <OrcamentoFormInner mode="edit" proposta={proposta} onReload={reload} />;
 }
 
-function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"; proposta?: Proposta; onReload?: () => void }) {
+function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"; proposta?: Proposta; onReload?: (silent?: boolean) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useAppToast();
@@ -282,6 +282,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loadingProdutos, setLoadingProdutos] = useState(true);
   const [deleteProductConfirmOpen, setDeleteProductConfirmOpen] = useState(false);
+  const [consolidarConfirmOpen, setConsolidarConfirmOpen] = useState(false);
+  const [isConsolidating, setIsConsolidating] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
   const [isDeletingProduct, setIsDeletingProduct] = useState(false);
   type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "boletim" | "historico";
@@ -411,7 +413,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     novoTotal: number;
     diferenca: number;
     /** Callback de conclusão após resolver a diferença */
-    onResolve: () => void;
+    onResolve: (tipoAcao?: string) => void;
   };
   const [diferencaModal, setDiferencaModal] = useState<DiferencaModalState | null>(null);
 
@@ -427,7 +429,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     import("@/features/orcamentos/services/propostas-pendencias.service")
       .then(({ listPropostasPendencias }) => listPropostasPendencias(proposta.id_int))
       .then(({ data }) => {
-        const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
+        const aberta = data.find(p => p.status === "ABERTA" && (p.origem === "REVISAO_PROPOSTA_PAGA" || (p.origem === "SISTEMA" && String(p.titulo).startsWith("Revisão financeira pendente"))));
         if (aberta) {
           setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
         } else {
@@ -506,14 +508,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // — Saldo de crédito do cliente selecionado —
   const [saldoCredito, setSaldoCredito] = useState<number>(0);
 
-  useEffect(() => {
+  const fetchSaldoCredito = useCallback(async () => {
     if (cliente?.idCliente && canUsarCredito) {
-      Promise.resolve(getSaldoCredito(cliente.idCliente))
-        .then(setSaldoCredito)
-        .catch(() => setSaldoCredito(0));
+      try {
+        const saldo = await getSaldoCredito(cliente.idCliente);
+        setSaldoCredito(saldo);
+      } catch (e) {
+        setSaldoCredito(0);
+      }
     } else {
       setSaldoCredito(0);
     }
+  }, [cliente?.idCliente, canUsarCredito]);
+
+  useEffect(() => {
+    fetchSaldoCredito();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cliente?.idCliente, form.clienteId]);
 
@@ -606,6 +615,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }, [mode, cliente]);
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+  const [unsavedModalMode, setUnsavedModalMode] = useState<"default" | "pagamentos">("default");
   const [carteiraWarning, setCarteiraWarning] = useState<string | null>(null);
   const [pendingNavigation,  setPendingNavigation]  = useState<string | null>(null);
   // ─────────────────────────────────────────────────────────────────────────
@@ -1452,19 +1462,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent, nextClienteParam = cliente) {
     let nextValorUnitario = item.valorUnitario;
     let nextValorFixo = item.valorFixo;
-    const variationExtra = item.variacoesEscolhidas.reduce((tot, v) => tot + v.tipo.v_extra, 0);
 
     if (nextClienteParam?.usaPrecoFixo && nextClienteParam.precosFixos) {
       const pFixo = nextClienteParam.precosFixos.find(p => p.id_produto === item.id_produto);
       if (pFixo) {
-        nextValorUnitario = pFixo.preco_fixo + variationExtra;
+        nextValorUnitario = pFixo.preco_fixo;
         nextValorFixo = 0;
       } else {
-        nextValorUnitario = item.produto.valorUnt + variationExtra;
+        nextValorUnitario = item.produto.valorUnt;
         nextValorFixo = item.produto.valorFixo;
       }
     } else {
-      nextValorUnitario = item.produto.valorUnt + variationExtra;
+      nextValorUnitario = item.produto.valorUnt;
       nextValorFixo = item.produto.valorFixo;
     }
 
@@ -1795,6 +1804,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       });
     }
 
+    const isPaidProposal = canEditarPropostaPaga && hasActiveCobranca;
+
+    if (isPaidProposal) {
+      // Inativação lógica para proposta paga (não adiciona em deletedProdutoPropostaIds)
+      setForm(prev => ({
+        ...prev,
+        itens: prev.itens.map(it => it.id === deletingProductId ? { ...it, statusItem: "CANCELADO" } : it),
+      }));
+      setDeleteProductConfirmOpen(false);
+      setDeletingProductId(null);
+      showToast({ type: "success", title: "Produto inativado", description: "O produto foi marcado como cancelado/inativo localmente. Salve para persistir." });
+      return;
+    }
+
     // Se item existe no banco: DELETE imediatamente (cascade remove pedidos_modelos)
     if (isRealDbItem) {
       setIsDeletingProduct(true);
@@ -1884,11 +1907,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const vinculo = item.produto.variacoes.find((variacao) => variacao.id_variacao === id_variacao);
       const tipo = vinculo?.tipos.find((tipoVariacao) => tipoVariacao.id === tipoId);
 
-      const oldChoice = item.variacoesEscolhidas.find((c) => c.id_variacao === id_variacao);
-      const oldExtra = oldChoice?.tipo.v_extra || 0;
-
       let nextVariacoes = item.variacoesEscolhidas;
-      let newExtra = 0;
 
       if (!vinculo || !tipo) {
         // If deselected or not found, remove the choice
@@ -1901,16 +1920,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           tipo
         };
         nextVariacoes = [...item.variacoesEscolhidas.filter((c) => c.id_variacao !== id_variacao), newChoice];
-        newExtra = tipo.v_extra;
       }
-
-      const priceDiff = newExtra - oldExtra;
-      const nextValorUnitario = Math.max(0, item.valorUnitario + priceDiff);
 
       return {
         ...item,
-        variacoesEscolhidas: nextVariacoes,
-        valorUnitario: nextValorUnitario
+        variacoesEscolhidas: nextVariacoes
       };
     });
   }
@@ -2565,22 +2579,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
         if (!apiResponse.ok || !apiResult.success) {
           showToast({
-            type: apiResponse.status === 403 ? "error" : "error",
-            title: apiResponse.status === 403 ? "Sem permissão" : "Falha ao salvar",
+            type: apiResponse.status === 403 ? "error" : (apiResponse.status === 409 ? "warning" : "error"),
+            title: apiResponse.status === 403 ? "Sem permissão" : (apiResponse.status === 409 ? "Atenção" : "Falha ao salvar"),
             description: apiResult.error ?? "Erro ao salvar proposta paga.",
           });
+          if (apiResponse.status === 409 && apiResult.pendenciaAtiva) {
+            setPendenciaRevisaoAberta(apiResult.pendenciaAtiva);
+          }
           setIsSaving(false);
           return;
         }
 
         // — Pendência retornada? (diferença ≠ 0 → modal obrigatório) —
-        const { diferenca, idPendencia } = apiResult;
-        const finalIdInt = apiResult.idInt || Number(formToSave.id_int);
+        const { diferenca, pendenciaAtiva } = apiResult;
+        const idPendencia = pendenciaAtiva?.id;
+        const finalIdInt = Number(formToSave.id_int);
 
-        // Atualizar snapshot e URL
-        const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [] };
-        initialFormSnapshot.current = JSON.stringify(savedSnap);
-        setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
+        // Atualizar snapshot e URL (adiado se houver diferença)
+        const updateSnapshotAndUrl = () => {
+          const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [] };
+          initialFormSnapshot.current = JSON.stringify(savedSnap);
+          setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
+        };
 
         if (Math.abs(diferenca ?? 0) >= 0.01) {
           if (!idPendencia || !finalIdInt || !idClienteNum) {
@@ -2593,13 +2613,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             try {
               const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
               const { data } = await listPropostasPendencias(finalIdInt);
-              const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
+              const aberta = data.find(p => p.status === "ABERTA" && (p.origem === "REVISAO_PROPOSTA_PAGA" || (p.origem === "SISTEMA" && String(p.titulo).startsWith("Revisão financeira pendente"))));
               if (aberta) {
                 setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
               }
             } catch (e) {
                // silent
             }
+            updateSnapshotAndUrl();
             setIsSaving(false);
             return;
           }
@@ -2613,19 +2634,43 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             valorPagoConfirmado: apiResult.valorPagoConfirmado ?? valorPagoAntes,
             novoTotal: apiResult.novoTotal ?? novoTotalCalculado,
             diferenca: diferenca,
-            onResolve: () => {
+            onResolve: (tipoAcao?: string) => {
+              updateSnapshotAndUrl();
+              if (onReload) onReload(true);
+              fetchSaldoCredito();
+              setPendenciaRevisaoAberta(null);
               if (formToSave.briefingArtesDraft) {
                 salvarBriefingArtes(finalIdInt, { ...formToSave.briefingArtesDraft, status: "AGUARDANDO" })
                   .catch(err => console.error("[handleSave] Falha ao salvar artes:", err));
               }
-              setSaveSuccessModal({ isOpen: true, finalIdInt });
+              
+              if (tipoAcao === "DEBITO_PENDENTE_COBRANCA") {
+                setActiveFormTab("pagamentos");
+                setPendingNavigation(null);
+                showToast({ type: "success", title: "Diferença resolvida", description: "O débito foi registrado. Redirecionado para Pagamentos para gerar a cobrança complementar." });
+              } else if (pendingNavigation === "?tab=pagamentos") {
+                if (diferenca < 0) {
+                  setActiveFormTab("produtos");
+                  setPendingNavigation(null);
+                  showToast({ type: "success", title: "Diferença resolvida", description: "Crédito registrado com sucesso." });
+                } else {
+                  setActiveFormTab("pagamentos");
+                  setPendingNavigation(null);
+                }
+              } else if (pendingNavigation && pendingNavigation.startsWith("/")) {
+                router.push(pendingNavigation);
+                setPendingNavigation(null);
+              } else {
+                setSaveSuccessModal({ isOpen: true, finalIdInt });
+              }
             },
           });
           return; // Não conclui até modal ser resolvido
         }
 
         // Sem diferença — concluir normalmente
-        showToast({ type: "success", title: "Proposta atualizada com sucesso." });
+        updateSnapshotAndUrl();
+        if (onReload) onReload(true);
 
         if (formToSave.briefingArtesDraft) {
           try {
@@ -2635,7 +2680,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }
         }
 
-        setSaveSuccessModal({ isOpen: true, finalIdInt });
+        if (pendingNavigation === "?tab=pagamentos") {
+          setActiveFormTab("pagamentos");
+          setPendingNavigation(null);
+          showToast({ type: "success", title: "Proposta atualizada", description: "Redirecionado para Pagamentos." });
+        } else if (pendingNavigation && pendingNavigation.startsWith("/")) {
+          router.push(pendingNavigation);
+          setPendingNavigation(null);
+        } else {
+          showToast({ type: "success", title: "Proposta atualizada com sucesso." });
+          setSaveSuccessModal({ isOpen: true, finalIdInt });
+        }
         return;
       }
 
@@ -2754,7 +2809,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
 
     setDiferencaModal(null);
-    onResolve();
+    onResolve(acao.tipo);
   }
 
   async function handleSaveForCobranca(): Promise<boolean> {
@@ -2813,8 +2868,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const hasCobrancas = cobrancasVinculadas.length > 0;
   const hasActiveCobranca = cobrancasVinculadas.some(c => c.status !== "CANCELADO");
 
-  // Desbloqueado quando usuário tem permissão E há cobrança ativa
-  const isFormBloqueadoPorCobranca = hasActiveCobranca && !canEditarPropostaPaga;
+  // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
+  const isFormBloqueadoPorCobranca = (hasActiveCobranca && !canEditarPropostaPaga) || pendenciaRevisaoAberta !== null;
 
   return (
     <div className="space-y-6">
@@ -2884,61 +2939,82 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
       {/* Banner de revisão financeira pendente (proposta paga com diferença não resolvida) */}
       {pendenciaRevisaoAberta && (
-        <div className="rounded-3xl border border-red-400/40 bg-red-950/25 p-4 shadow-sm flex items-start gap-3">
-          <span className="text-red-400 text-lg shrink-0">⚠️</span>
+        <div className="rounded-3xl border border-red-200 bg-red-50 p-4 shadow-sm flex items-start gap-3">
+          <span className="text-red-600 text-lg shrink-0">⚠️</span>
           <div className="flex-1">
-            <p className="text-sm font-bold text-red-300">Revisão financeira pendente</p>
-            <p className="text-xs text-red-300/70 mt-1">
+            <p className="text-sm font-bold text-red-900">Revisão financeira pendente</p>
+            <p className="text-xs text-red-700 mt-1">
               Esta proposta foi alterada após pagamento e possui uma diferença financeira não resolvida.
               Resolva antes de fazer novas alterações.
             </p>
             {pendenciaRevisaoAberta.descricao && (
-              <p className="text-xs text-white/40 mt-1 line-clamp-2">{pendenciaRevisaoAberta.descricao}</p>
+              <p className="text-xs text-red-500 mt-1 line-clamp-2">{pendenciaRevisaoAberta.descricao}</p>
             )}
           </div>
-          <button
-            type="button"
-            id="btn-resolver-pendencia-financeira"
-            onClick={async () => {
-              if (!proposta?.id_int || !proposta.resumo) return;
-              
-              try {
-                // Ensure we have the latest pendency ID from DB
-                const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
-                const { data } = await listPropostasPendencias(proposta.id_int);
-                const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
-                
-                if (!aberta) {
-                  showToast({ type: "error", title: "Erro", description: "Pendência não encontrada no banco de dados. Recarregue a página." });
-                  setPendenciaRevisaoAberta(null);
-                  return;
-                }
+            {proposta?.dbValorTotal == null ? (
+              <button
+                type="button"
+                id="btn-consolidar-total-financeiro"
+                onClick={() => setConsolidarConfirmOpen(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600/80 hover:bg-amber-500 text-white transition-colors flex-shrink-0"
+              >
+                Consolidar Total Oficial
+              </button>
+            ) : (
+              <button
+                type="button"
+                id="btn-resolver-pendencia-financeira"
+                onClick={async () => {
+                  if (!proposta?.id_int || !proposta.resumo) return;
+                  
+                  try {
+                    // Tenta usar a pendência do state (ID retornado pela API), senão busca a pendência oficial ABERTA da proposta
+                    const id_pendencia = pendenciaRevisaoAberta.id;
+                    let aberta = null;
+                    
+                    const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
+                    const { data } = await listPropostasPendencias(proposta.id_int);
+                    
+                    if (id_pendencia) {
+                      aberta = data.find(p => p.id === id_pendencia);
+                    }
+                    
+                    if (!aberta) {
+                      aberta = data.find(p => p.status === "ABERTA" && (p.origem === "REVISAO_PROPOSTA_PAGA" || (p.origem === "SISTEMA" && String(p.titulo).startsWith("Revisão financeira pendente"))));
+                    }
+                    
+                    if (!aberta) {
+                      showToast({ type: "error", title: "Erro", description: "Pendência não encontrada no banco de dados. Recarregue a página." });
+                      setPendenciaRevisaoAberta(null);
+                      return;
+                    }
 
-                const valorPago = calcularValorPagoConfirmado(cobrancasVinculadas);
-                const novoTotal = proposta.resumo.valorTotal;
-                const diff = calcularDiferencaFinanceira(novoTotal, valorPago);
-                
-                setDiferencaModal({
-                  isOpen: true,
-                  idInt: proposta.id_int,
-                  idCliente: proposta.cliente?.idCliente ?? 0,
-                  idPendencia: aberta.id, // using the real ID from DB
-                  nomeCliente: proposta.cliente?.nome ?? "Cliente",
-                  valorPagoConfirmado: valorPago,
-                  novoTotal,
-                  diferenca: diff,
-                  onResolve: () => setPendenciaRevisaoAberta(null),
-                });
-              } catch (err) {
-                console.error(err);
-                showToast({ type: "error", title: "Erro", description: "Falha ao consultar pendência no servidor." });
-              }
-            }}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600/80 hover:bg-red-500 text-white transition-colors flex-shrink-0"
-          >
-            Resolver agora
-          </button>
-        </div>
+                    const valorPago = calcularValorPagoConfirmado(cobrancasVinculadas);
+                    const novoTotal = proposta.resumo.valorTotal;
+                    const diff = calcularDiferencaFinanceira(novoTotal, valorPago);
+                    
+                    setDiferencaModal({
+                      isOpen: true,
+                      idInt: proposta.id_int,
+                      idCliente: proposta.cliente?.idCliente ?? 0,
+                      idPendencia: aberta.id, // using the real ID from DB
+                      nomeCliente: proposta.cliente?.nome ?? "Cliente",
+                      valorPagoConfirmado: valorPago,
+                      novoTotal,
+                      diferenca: diff,
+                      onResolve: () => setPendenciaRevisaoAberta(null),
+                    });
+                  } catch (err) {
+                    console.error(err);
+                    showToast({ type: "error", title: "Erro", description: "Falha ao consultar pendência no servidor." });
+                  }
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600/80 hover:bg-red-500 text-white transition-colors flex-shrink-0"
+              >
+                Resolver agora
+              </button>
+            )}
+          </div>
       )}
 
       <div className="sticky top-4 z-[45] mb-6 flex w-full justify-start gap-3 overflow-x-auto rounded-3xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur hide-scrollbar">
@@ -2993,6 +3069,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
                   if (errorList.length > 0) {
                     setShowArtesBlockModal(errorList);
+                    return;
+                  }
+                }
+                if (tab.id === "pagamentos") {
+                  if (diferencaModal?.isOpen || pendenciaRevisaoAberta) {
+                    showToast({ type: "warning", title: "Atenção", description: "Resolva a diferença financeira pendente antes de acessar Pagamentos." });
+                    return;
+                  }
+                  if (isDirty) {
+                    setPendingNavigation("?tab=pagamentos");
+                    setUnsavedModalMode("pagamentos");
+                    setIsUnsavedModalOpen(true);
                     return;
                   }
                 }
@@ -3720,6 +3808,41 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 {/* Lista de itens da proposta */}
                 <div className="space-y-4">
                   {form.itens.map((item) => {
+                    const isCancelled = item.statusItem === "CANCELADO";
+                    
+                    if (isCancelled) {
+                      return (
+                        <div key={item.id} className="rounded-3xl border border-red-200/50 bg-red-50/20 p-5 shadow-sm opacity-60 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-baseline gap-x-2 text-lg text-slate-500 line-through">
+                              <span>#{item.id_produto}</span>
+                              <h4 className="font-extrabold">{item.nome}</h4>
+                              <span>- Qtd:</span>
+                              <span className="font-extrabold">{item.quantidade.toLocaleString("pt-BR")}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-semibold text-red-500">
+                              <span>Removido (Inativo)</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-6 sm:justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForm(prev => ({
+                                  ...prev,
+                                  itens: prev.itens.map(it => it.id === item.id ? { ...it, statusItem: "PENDENTE" } : it)
+                                }));
+                                showToast({ type: "success", title: "Produto restaurado", description: "O produto foi reativado." });
+                              }}
+                              className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition-all"
+                            >
+                              Restaurar
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const isOpen = openItemIds[item.id] ?? false;
                     
                     const modelosDoItem = form.pedidosModelos.filter(
@@ -4011,7 +4134,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     <PropostaCobrancaPanel 
                       proposta={proposta} 
                       onSavePropostaRequest={handleSaveForCobranca}
-                      onRefreshProposta={onReload}
+                      onRefreshProposta={() => {
+                        if (onReload) onReload(true);
+                      }}
+                      onPagamentoIntegralConcluido={() => {
+                        setSaveSuccessModal({ isOpen: true, finalIdInt: form.id_int });
+                      }}
                     />
                   )}
                 </div>
@@ -4131,8 +4259,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         {isUnsavedModalOpen && (
           <UnsavedChangesModal
           isSaving={isSaving}
+          hideExitWithoutSaving={unsavedModalMode === "pagamentos"}
+          title={unsavedModalMode === "pagamentos" ? "Salvar alterações" : "Existem alterações não salvas"}
+          description={unsavedModalMode === "pagamentos" ? "Você deve salvar as alterações antes de acessar a aba Pagamentos." : "Você fez alterações nesta proposta. Deseja salvar antes de sair?"}
+          saveLabel={unsavedModalMode === "pagamentos" ? "Salvar e continuar" : "Salvar e sair"}
           onContinueEditing={() => {
             setIsUnsavedModalOpen(false);
+            setUnsavedModalMode("default");
             setPendingNavigation(null);
           }}
           onExitWithoutSaving={() => {
@@ -4142,11 +4275,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             const { fretes: _f, ...curr } = form;
             initialFormSnapshot.current = JSON.stringify(curr);
             setIsUnsavedModalOpen(false);
+            setUnsavedModalMode("default");
             setPendingNavigation(null);
             router.push(dest);
           }}
           onSaveAndExit={() => {
             setIsUnsavedModalOpen(false);
+            setUnsavedModalMode("default");
             void handleSave();
           }}
         />
@@ -4221,6 +4356,55 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       )}
       
       {/* MODAL DE SUCESSO DE SALVAMENTO */}
+      {consolidarConfirmOpen && (
+        <Modal
+          title="Consolidar Total Oficial"
+          onClose={() => !isConsolidating && setConsolidarConfirmOpen(false)}
+          onSave={async () => {
+            if (!proposta?.id_int) return;
+            setIsConsolidating(true);
+            try {
+              const supabase = (await import("@/lib/supabase/client")).getSupabaseClient();
+              const sessionRes = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+              const token = sessionRes.data.session?.access_token ?? "";
+
+              const response = await fetch("/api/orcamentos/consolidar-total-paga", {
+                method: "POST",
+                headers: { 
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ idInt: proposta.id_int })
+              });
+              
+              const data = await response.json();
+              if (!response.ok) {
+                throw new Error(data.error || "Falha ao consolidar total financeiro.");
+              }
+              
+              showToast({ type: "success", title: "Sucesso", description: data.message || "Total financeiro consolidado." });
+              window.location.reload();
+            } catch (err: any) {
+              console.error(err);
+              showToast({ type: "error", title: "Erro", description: err.message || "Falha ao consolidar." });
+            } finally {
+              setIsConsolidating(false);
+              setConsolidarConfirmOpen(false);
+            }
+          }}
+          saveLabel={isConsolidating ? "Consolidando..." : "Confirmar Consolidação"}
+        >
+          <div className="flex items-start gap-3 mt-2">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+            </div>
+            <p className="text-sm text-slate-600 pt-2">
+              Esta proposta possui itens inconsistentes no financeiro. Deseja consolidar o total usando os itens ativos atuais?
+            </p>
+          </div>
+        </Modal>
+      )}
+
       {saveSuccessModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
@@ -4281,7 +4465,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             try {
               const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
               const { data } = await listPropostasPendencias(Number(form.id_int));
-              const aberta = data.find(p => p.status === "ABERTA" && p.origem === "REVISAO_PROPOSTA_PAGA");
+              const aberta = data.find(p => p.status === "ABERTA" && (p.origem === "REVISAO_PROPOSTA_PAGA" || (p.origem === "SISTEMA" && String(p.titulo).startsWith("Revisão financeira pendente"))));
               if (aberta) {
                 setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
               } else {
@@ -4884,12 +5068,20 @@ function UnsavedChangesModal({
   onSaveAndExit,
   onExitWithoutSaving,
   onContinueEditing,
-  isSaving
+  isSaving,
+  hideExitWithoutSaving,
+  title = "Existem alterações não salvas",
+  description = "Você fez alterações nesta proposta. Deseja salvar antes de sair?",
+  saveLabel = "Salvar e sair"
 }: {
   onSaveAndExit: () => void;
   onExitWithoutSaving: () => void;
   onContinueEditing: () => void;
   isSaving: boolean;
+  hideExitWithoutSaving?: boolean;
+  title?: string;
+  description?: string;
+  saveLabel?: string;
 }) {
   return (
     <div
@@ -4901,10 +5093,10 @@ function UnsavedChangesModal({
       <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl">
         <div className="p-6">
           <h2 id="unsaved-modal-title" className="text-lg font-semibold text-slate-950">
-            Existem alterações não salvas
+            {title}
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            Você fez alterações nesta proposta. Deseja salvar antes de sair?
+            {description}
           </p>
         </div>
         <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end">
@@ -4915,20 +5107,22 @@ function UnsavedChangesModal({
           >
             Continuar editando
           </button>
-          <button
-            type="button"
-            onClick={onExitWithoutSaving}
-            className="rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
-          >
-            Sair sem salvar
-          </button>
+          {!hideExitWithoutSaving && (
+            <button
+              type="button"
+              onClick={onExitWithoutSaving}
+              className="rounded-2xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+            >
+              Sair sem salvar
+            </button>
+          )}
           <button
             type="button"
             onClick={onSaveAndExit}
             disabled={isSaving}
             className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#123f61] disabled:opacity-60"
           >
-            {isSaving ? "Salvando..." : "Salvar e sair"}
+            {isSaving ? "Salvando..." : saveLabel}
           </button>
         </div>
       </div>
