@@ -99,11 +99,8 @@ async function verificarPermissaoEditarPaga(
 
 export async function POST(request: NextRequest) {
   // ── 1. Extrair e validar JWT ──────────────────────────────────────────────
-  const isTest = request.headers.get("x-integration-test") === "TEST_SECRET_2026";
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-
-  let user = { id: "61101127-3883-4347-b1c4-45a8b36975d1", email: "test_homologacao@ai-ideal.com.br" };
 
   // ── Validar variáveis de ambiente ────────────────────────────────────────
   const url     = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -120,42 +117,34 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let supabase: SupabaseClient<any, any, any>;
-
-  if (isTest) {
-    supabase = createSupabaseClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  } else {
-    if (!token) {
-      return NextResponse.json(
-        { success: false, error: "Sessão não encontrada. Faça login para continuar." },
-        { status: 401 }
-      );
-    }
-
-    supabase = createSupabaseClient(url, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth:   { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-
-    console.info("[editar-paga] Auth:", {
-      bearerPresent: Boolean(token),
-      authOk: Boolean(authData?.user),
-      authErrorCode: authError?.message ?? null,
-      userId: authData?.user?.id ?? null,
-    });
-
-    if (authError || !authData.user) {
-      return NextResponse.json(
-        { success: false, error: "Sessão inválida ou expirada. Faça login novamente." },
-        { status: 401 }
-      );
-    }
-    user = { id: authData.user.id, email: authData.user.email ?? "" };
+  if (!token) {
+    return NextResponse.json(
+      { success: false, error: "Sessão não encontrada. Faça login para continuar." },
+      { status: 401 }
+    );
   }
+
+  const supabase: SupabaseClient<any, any, any> = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth:   { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  console.info("[editar-paga] Auth:", {
+    bearerPresent: Boolean(token),
+    authOk: Boolean(authData?.user),
+    authErrorCode: authError?.message ?? null,
+    userId: authData?.user?.id ?? null,
+  });
+
+  if (authError || !authData.user) {
+    return NextResponse.json(
+      { success: false, error: "Sessão inválida ou expirada. Faça login novamente." },
+      { status: 401 }
+    );
+  }
+  const user = { id: authData.user.id, email: authData.user.email ?? "" };
 
   // ── 3. Ler payload ────────────────────────────────────────────────────────
   let body: {
@@ -259,7 +248,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 6. Verificar permissão de edição se for proposta paga ────────────────
-  if (ehPropostaPaga && !isTest) {
+  if (ehPropostaPaga) {
     const { autorizado, motivo } = await verificarPermissaoEditarPaga(supabase, user.id);
     if (!autorizado) {
       console.warn(`[editar-paga] Acesso negado para user ${user.id}: ${motivo}`);

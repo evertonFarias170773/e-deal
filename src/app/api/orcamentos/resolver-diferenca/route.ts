@@ -24,9 +24,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { MovimentoCreditoTipo } from "@/features/cobrancas/types";
 
-// Cache em memória para simulação de pendências de teste locais (ID negativo)
-const PENDENCIAS_TESTE_RESOLVIDAS = new Set<number>();
-
 // ---------------------------------------------------------------------------
 // Mapeamento de ação → tipo de movimento + permissão necessária
 // ---------------------------------------------------------------------------
@@ -143,38 +140,27 @@ async function verificarPermissao(
 
 export async function POST(request: NextRequest) {
   // ── 1. JWT ────────────────────────────────────────────────────────────────
-  const isTest = request.headers.get("x-integration-test") === "TEST_SECRET_2026";
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-
-  let user = { id: "61101127-3883-4347-b1c4-45a8b36975d1", email: "test_homologacao@ai-ideal.com.br" };
 
   const url     = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  let supabase: SupabaseClient<any, any, any>;
-
-  if (isTest) {
-    supabase = createSupabaseClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  } else {
-    if (!token) {
-      return NextResponse.json({ success: false, error: "Sessão não encontrada." }, { status: 401 });
-    }
-
-    supabase = createSupabaseClient(url, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth:   { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !authData.user) {
-      return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
-    }
-    user = { id: authData.user.id, email: authData.user.email ?? "" };
+  if (!token) {
+    return NextResponse.json({ success: false, error: "Sessão não encontrada." }, { status: 401 });
   }
+
+  const supabase: SupabaseClient<any, any, any> = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth:   { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !authData.user) {
+    return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
+  }
+  const user = { id: authData.user.id, email: authData.user.email ?? "" };
 
   // ── 2. Payload ────────────────────────────────────────────────────────────
   let body: {
@@ -209,14 +195,12 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 3. Verificar permissão da ação específica ─────────────────────────────
-  if (!isTest) {
-    const temPermissao = await verificarPermissao(supabase, user.id, config.permissao);
-    if (!temPermissao) {
-      return NextResponse.json(
-        { success: false, error: `Sem permissão para a ação: ${acao} (requer ${config.permissao})` },
-        { status: 403 }
-      );
-    }
+  const temPermissao = await verificarPermissao(supabase, user.id, config.permissao);
+  if (!temPermissao) {
+    return NextResponse.json(
+      { success: false, error: `Sem permissão para a ação: ${acao} (requer ${config.permissao})` },
+      { status: 403 }
+    );
   }
 
   // ── 4. Validar proposta e cliente no banco ────────────────────────────────
@@ -284,17 +268,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 6. Verificar pendência ABERTA (idempotência nível 2 / Simulação de Teste em Memória) ──
-  if (isTest && idPendencia < 0) {
-    if (PENDENCIAS_TESTE_RESOLVIDAS.has(idPendencia)) {
-      console.info(`[resolver-diferenca] Pendência de teste ${idPendencia} já resolvida (memória). Resposta idempotente.`);
-      return NextResponse.json({ success: true, idempotente: true, idPendencia });
-    }
-  }
-
+  // ── 6. Verificar pendência ABERTA (idempotência nível 2) ──────────────────
   let pendencia = null;
 
-  if (!isTest || idPendencia >= 0) {
+  {
     const { data, error: pendenciaError } = await supabase
       .from("propostas_pendencias")
       .select("id, status, titulo, id_cliente, id_int")
@@ -349,19 +326,17 @@ export async function POST(request: NextRequest) {
 
   if (movimentoExistente) {
     console.info(`[resolver-diferenca] Movimento duplicado detectado (id=${movimentoExistente.id}). Respondendo de forma idempotente.`);
-    if (!isTest || idPendencia >= 0) {
-      // Apenas garante que a pendência seja concluída caso ainda esteja aberta no banco
-      await supabase
-        .from("propostas_pendencias")
-        .update({
-          status: "CONCLUIDA",
-          concluido_por_user_id: user.id,
-          concluido_por_nome: user.email,
-          concluido_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", idPendencia);
-    }
+    // Apenas garante que a pendência seja concluída caso ainda esteja aberta no banco
+    await supabase
+      .from("propostas_pendencias")
+      .update({
+        status: "CONCLUIDA",
+        concluido_por_user_id: user.id,
+        concluido_por_nome: user.email,
+        concluido_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", idPendencia);
 
     return NextResponse.json({ success: true, idempotente: true, movimentoId: movimentoExistente.id });
   }
@@ -399,7 +374,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 9. Se DEVOLVER: criar pendência secundária para o financeiro confirmar a devolução ──
-  if (acao === "DEVOLVER" && (!isTest || idPendencia >= 0)) {
+  if (acao === "DEVOLVER") {
     await supabase
       .from("propostas_pendencias")
       .insert([{
@@ -423,7 +398,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 10. Se DEBITO_PENDENTE_COBRANCA: criar pendência de cobrança ───────────
-  if (acao === "DEBITO_PENDENTE_COBRANCA" && (!isTest || idPendencia >= 0)) {
+  if (acao === "DEBITO_PENDENTE_COBRANCA") {
     await supabase
       .from("propostas_pendencias")
       .insert([{
@@ -447,20 +422,16 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 11. Concluir pendência principal ──────────────────────────────────────
-  if (isTest && idPendencia < 0) {
-    PENDENCIAS_TESTE_RESOLVIDAS.add(idPendencia);
-  } else {
-    await supabase
-      .from("propostas_pendencias")
-      .update({
-        status: "CONCLUIDA",
-        concluido_por_user_id: user.id,
-        concluido_por_nome: user.email,
-        concluido_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", idPendencia);
-  }
+  await supabase
+    .from("propostas_pendencias")
+    .update({
+      status: "CONCLUIDA",
+      concluido_por_user_id: user.id,
+      concluido_por_nome: user.email,
+      concluido_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", idPendencia);
 
   // ── 12. Registrar mensagem na timeline ────────────────────────────────────
   const valorFormatado = valor.toFixed(2).replace(".", ",");

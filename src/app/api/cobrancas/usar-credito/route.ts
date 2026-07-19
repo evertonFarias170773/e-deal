@@ -44,41 +44,30 @@ type PerfilMinRow = {
 
 export async function POST(request: NextRequest) {
   // ── 1. JWT ────────────────────────────────────────────────────────────────
-  const isTest = request.headers.get("x-integration-test") === "TEST_SECRET_2026";
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-
-  let user = { id: "61101127-3883-4347-b1c4-45a8b36975d1", email: "test_homologacao@ai-ideal.com.br" };
 
   const url     = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  let supabase: SupabaseClient<any, any, any>;
-
-  if (isTest) {
-    supabase = createSupabaseClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  } else {
-    if (!token) {
-      return NextResponse.json({ success: false, error: "Sessão não encontrada." }, { status: 401 });
-    }
-
-    supabase = createSupabaseClient(url, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth:   { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
-      return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
-    }
-    user = { id: authData.user.id, email: authData.user.email ?? "" };
+  if (!token) {
+    return NextResponse.json({ success: false, error: "Sessão não encontrada." }, { status: 401 });
   }
 
+  const supabase: SupabaseClient<any, any, any> = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth:   { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
+  }
+  const user = { id: authData.user.id, email: authData.user.email ?? "" };
+
   // ── 2. Verificar permissão credito.usar ───────────────────────────────────
-  let temPermissao = isTest;
-  if (!isTest) {
+  let temPermissao = false;
+  {
     const { data: usuarioData } = await supabase
       .from("usuarios")
       .select("id_perfil, is_super_adm, is_admin")

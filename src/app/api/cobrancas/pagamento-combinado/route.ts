@@ -8,7 +8,6 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 
 export async function POST(request: NextRequest) {
-  const isTest = request.headers.get("x-integration-test") === "TEST_SECRET_2026";
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
 
@@ -23,42 +22,32 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let supabaseUser;
+  if (!token) {
+    return NextResponse.json({ success: false, error: "Sessão não encontrada." }, { status: 401 });
+  }
 
-  let user = { id: "61101127-3883-4347-b1c4-45a8b36975d1", email: "test_homologacao@ai-ideal.com.br", nome: "Sistema" };
+  const supabaseUser = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
-  if (isTest) {
-    supabaseUser = createSupabaseClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  } else {
-    if (!token) {
-      return NextResponse.json({ success: false, error: "Sessão não encontrada." }, { status: 401 });
-    }
+  const { data: authData, error: authError } = await supabaseUser.auth.getUser();
+  if (authError || !authData.user) {
+    return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
+  }
+  const user = { id: authData.user.id, email: authData.user.email ?? "", nome: authData.user.user_metadata?.name || "Usuário" };
 
-    supabaseUser = createSupabaseClient(url, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+  const temPermissao = await verificarPermissaoServerSide(
+    supabaseUser,
+    user.id,
+    "financeiro.resolver_credito"
+  );
 
-    const { data: authData, error: authError } = await supabaseUser.auth.getUser();
-    if (authError || !authData.user) {
-      return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
-    }
-    user = { id: authData.user.id, email: authData.user.email ?? "", nome: authData.user.user_metadata?.name || "Usuário" };
-
-    const temPermissao = await verificarPermissaoServerSide(
-      supabaseUser,
-      user.id,
-      "financeiro.resolver_credito"
+  if (!temPermissao) {
+    return NextResponse.json(
+      { success: false, error: "Você não tem permissão para usar E-Crédito (financeiro.resolver_credito)." },
+      { status: 403 }
     );
-    
-    if (!temPermissao) {
-      return NextResponse.json(
-        { success: false, error: "Você não tem permissão para usar E-Crédito (financeiro.resolver_credito)." },
-        { status: 403 }
-      );
-    }
   }
 
   // 3. Payload
