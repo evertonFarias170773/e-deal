@@ -1,3 +1,25 @@
+<!--
+STATUS DOCUMENTAL: HISTÓRICO / LEGADO
+ORIGEM: Matriz de intents do Maestro Simple v1
+NÃO USAR COMO FONTE OFICIAL ATUAL.
+
+Fontes vigentes relacionadas:
+- ../../maestro/MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md
+- ../../maestro/MAESTRO-PROMPT-BASE.md
+- ../../maestro/MAESTRO-KNOWLEDGE-BASE.md
+- ../../maestro/STATUS-MAESTRO-V2.md
+
+As frases deste documento podem servir como referência para testes de regressão,
+mas a implementação atual não deve ser inferida a partir das regras antigas de
+keywords, regex ou famílias fixas de intenção.
+-->
+
+> **Status:** Histórico — catálogo de perguntas do Maestro Simple v1  
+> **Uso permitido:** referência de casos antigos e possível base de testes.  
+> **Não utilizar para configurar o Router Semântico ou declarar capacidades atuais.**
+
+---
+
 # MAESTRO — Matriz de Perguntas: Cliente 100%
 
 > **Fase 1 do Maestro Simple v1.**

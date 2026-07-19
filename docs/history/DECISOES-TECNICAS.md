@@ -1,4 +1,36 @@
-# Decisões Técnicas
+# DECISOES-TECNICAS.md
+
+Versão: 2.0  
+Status: Histórico — Registro de decisões  
+Última atualização documental: 18/07/2026  
+Projeto: ERP Ideal
+
+---
+
+# Decisões Técnicas do ERP Ideal
+
+Este documento preserva decisões tomadas durante diferentes fases do desenvolvimento do ERP Ideal.
+
+Ele possui valor histórico e ajuda a compreender a origem de padrões, limitações, transições e débitos técnicos.
+
+## Regra de uso
+
+Este arquivo não deve ser utilizado sozinho para autorizar uma implementação.
+
+Algumas decisões abaixo pertencem às fases mockadas ou já foram ampliadas, substituídas ou restringidas por documentos mais recentes.
+
+Antes de aplicar qualquer decisão, confirmar:
+
+1. o código atual;
+2. `SECURITY.md`;
+3. `BUSINESS_RULES.md`;
+4. `architecture/ARQUITETURA-MODULAR-ERP-IDEAL.md`;
+5. `technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`;
+6. o documento oficial do módulo.
+
+Quando houver divergência, prevalece a fonte oficial atual do domínio. A decisão antiga permanece aqui apenas para rastreabilidade.
+
+---
 
 ## Iniciar sem Supabase
 
@@ -238,7 +270,7 @@ Motivo:
 
 ## Matriz viva de segurança de escrita
 
-Decisão: manter uma matriz permanente em `docs/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md` para registrar o estado de leitura, escrita, bloqueio e futura liberação por módulo, tabela e campo.
+Decisão: manter uma matriz permanente em `docs/technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md` para registrar o estado de leitura, escrita, bloqueio e futura liberação por módulo, tabela e campo.
 
 Motivo:
 
@@ -481,23 +513,69 @@ Regras:
 **Decisão:** Obrigatório confirmar a existência de arquivos e exports reais antes de importar novos componentes/services, e executar `npm run build` após alterações críticas.
 **Motivo:** Erros de importação em componentes centrais (ex: `PedidosListPage.tsx`) quebram rotas inteiras e módulos dependentes (como Fiscal e Notas Fiscais). Validações exclusivas de TypeScript (`tsc`) não garantem a integridade do empacotamento Next.js para produção.
 
-## Listagem de Or�amentos: Mapeamento de Data / Hora (2026-07-01)
-**Decis�o:** O frontend da lista de Or�amentos (/orcamentos) mant�m a exibi��o fiel do timestamp recebido do Supabase (updated_at ou created_at), preservando horas e minutos. N�o h� ajustes de timezone (truncamento para meia-noite UTC) mascarando os dados.
-**Motivo e Contexto:** A visualiza��o de datas e hor�rios repetidos na lista (ex: v�rios registros em \28/06/2026, 21:38\ ao filtrar por tipo de cobran�a, especialmente BOLETO) � um reflexo direto de dados armazenados no banco. Investiga��es confirmaram que 776 propostas sofreram atualiza��o em lote nesse exato minuto (2026-06-29T00:38Z). O filtro visual no frontend apenas agrupa essas propostas, tornando a repeti��o percept�vel. Propostas novas possuem hor�rios org�nicos e normais. Qualquer corre��o artificial na tela falsificaria o hist�rico real do banco.
+## Listagem de Orçamentos: Mapeamento de Data e Hora (01/07/2026)
 
+**Decisão:** O frontend da lista de Orçamentos (`/orcamentos`) mantém a exibição fiel do timestamp recebido do Supabase (`updated_at` ou `created_at`), preservando horas e minutos. Não há ajuste artificial de timezone ou truncamento para meia-noite UTC para mascarar os dados.
 
-## 6. Evolu��o da Matriz de Permiss�es V2.1 e RPC Segura
-**Decis�o:** O sistema adotou a Matriz V2.1, migrando de verifica��es generalistas (ex. `isAdmin`) para permiss�es granulares organizadas por m�dulo. Para mitigar bloqueios de RLS e falsos positivos de sucesso no frontend, adotou-se a estrat�gia de gravar permiss�es via **RPC segura** em vez de UPDATE direto em `public.perfis`.
-**Impacto:** Seguran�a ampliada contra auto-eleva��o de privil�gios. A UI foi aprimorada (sticky button, a��es em lote), mantendo a compatibilidade tempor�ria com as roles V1 (Double Support). Os indicativos "(Legado V1)" foram retirados do front para uma apresenta��o mais limpa, mas o sistema preserva as chaves internamente at� a remo��o completa da Fase 4.
+**Motivo e contexto:** A visualização de datas e horários repetidos na lista, como vários registros em `28/06/2026, 21:38` ao filtrar por tipo de cobrança, especialmente boleto, reflete os dados armazenados no banco. A investigação registrada indicou que 776 propostas receberam atualização em lote no mesmo minuto (`2026-06-29T00:38Z`). O filtro apenas tornou a repetição mais visível. Corrigir artificialmente a tela falsificaria o histórico real.
 
-## 7. Infraestrutura Unificada de Escopo de Dados
-**Decis�o:** Em vez de helpers engessados por m�dulo (ex. `getEscopoPropostas`), adotou-se uma infraestrutura gen�rica de Escopo de Dados (`getDataScope`), que retorna os n�veis padronizados: `own`, `team`, `company` ou `all`.
-**Impacto:** A funda��o j� suporta a expans�o org�nica de escopos. O m�dulo de Or�amentos � o primeiro piloto a utilizar escopo por vendedor (`own`).
+## Evolução da Matriz de Permissões V2.1 e RPC Segura
 
-### Novos Usu�rios e Seguran�a Auth
-Decidido que novos cadastros via Auth Google ou Email n�o dar�o acesso imediato. Uma trigger `AFTER INSERT` no `auth.users` ir� criar a linha correspondente em `public.usuarios` assinalada ao perfil `pendente_aprovacao` (sem permiss�es). O `AuthGuard` intercepta contas ativas no Supabase com esse perfil e exibe a mensagem de "Acesso Pendente".
+**Decisão:** O sistema adotou a Matriz V2.1, migrando de verificações generalistas, como `isAdmin`, para permissões granulares organizadas por módulo. Para evitar bloqueios de RLS e falsos positivos de sucesso no frontend, foi adotada uma RPC segura para gravar permissões, em vez de `UPDATE` direto em `public.perfis`.
 
+**Impacto:** Maior proteção contra autoelevação de privilégios. A interface recebeu melhorias como botão fixo e ações em lote, mantendo compatibilidade temporária com as roles V1. Os indicativos visuais de legado foram retirados, mas as chaves internas permanecem até a remoção completa da compatibilidade.
 
-## 8. Maestro V2 e Router Semântico
-**Decisão:** O núcleo de inteligência migrou do modelo Simple (Regex/Intents) para o **Maestro V2**, com **Router Semântico e Tools Seguras**.
-**Impacto:** Intents baseados em regex viraram legado. Consultas financeiras (faturamento/recebido) leem exclusivamente de pagamentos_v2. Propostas focam apenas na intenção comercial/orçamento. A tag is_prd_aprovado foi mantida como regra provisória até a definição final do status de produção. A próxima fronteira de desenvolvimento será a integração real com Orçamentos.
+> A disponibilidade e a autorização atuais da RPC devem ser confirmadas no código, em `PERFIS-PERMISSOES.md` e na Matriz de Segurança antes de qualquer alteração.
+
+## Infraestrutura Unificada de Escopo de Dados
+
+**Decisão:** Em vez de helpers rígidos por módulo, como `getEscopoPropostas`, foi adotada uma infraestrutura genérica de escopo de dados por meio de `getDataScope`.
+
+Níveis padronizados:
+
+```text
+own
+team
+company
+all
+```
+
+**Impacto:** A fundação permite expandir escopos de forma uniforme. O módulo de Orçamentos foi registrado como primeiro piloto do escopo por vendedor (`own`).
+
+## Novos Usuários e Segurança de Auth
+
+**Decisão registrada:** Novos cadastros por Google ou e-mail não devem receber acesso operacional imediato. O desenho prevê criação do registro correspondente em `public.usuarios` com perfil `pendente_aprovacao`, sem permissões, e bloqueio pelo `AuthGuard` até aprovação.
+
+> Trigger, perfil, RLS e comportamento atual devem ser confirmados antes de qualquer mudança. Este registro histórico não autoriza criação ou alteração estrutural no Auth ou no banco.
+
+## Maestro V2 e Router Semântico
+
+**Decisão:** O núcleo de inteligência evoluiu do modelo Simple baseado principalmente em regex e intents para o Maestro V2, com Router Semântico e tools controladas.
+
+**Impacto:** Consultas financeiras de recebimentos utilizam `public.pagamentos_v2`. Propostas permanecem no domínio comercial. A flag `is_prd_aprovado` continua sendo a referência operacional documentada para liberação na Produção. A evolução seguinte é orientada pela integração real com Orçamentos e pela homologação das tools.
+
+---
+
+# Documentação Relacionada
+
+- `../PROJECT_CONTEXT.md`
+- `../SECURITY.md`
+- `../BUSINESS_RULES.md`
+- `../DEVELOPMENT.md`
+- `../architecture/ARQUITETURA-MODULAR-ERP-IDEAL.md`
+- `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
+- `../technical/PERFIS-PERMISSOES.md`
+- `../business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md`
+- `../business/CHECKOUT-PAGAMENTOS.md`
+- `../maestro/STATUS-MAESTRO-V2.md`
+- `./CHANGELOG.md`
+
+---
+
+# Fonte da Verdade
+
+Este arquivo é um registro histórico de decisões.
+
+Ele explica por que determinadas soluções foram escolhidas, mas não substitui a documentação oficial vigente nem o comportamento confirmado no código.
+
+Nenhuma decisão histórica autoriza alteração de schema, migration, trigger, RPC, view, RLS, Auth, integração financeira ou escrita em produção sem validação e autorização atuais.

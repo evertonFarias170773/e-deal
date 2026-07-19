@@ -1,4 +1,34 @@
-# Chat Interno (Timeline Operacional) - Documentação Oficial
+# CHAT-INTERNO.md
+
+Versão: 2.0  
+Status: Oficial  
+Última atualização: 18/07/2026  
+Projeto: ERP Ideal
+
+---
+
+# Chat Interno — Timeline Operacional
+
+Este documento descreve a arquitetura, a estrutura de dados, os fluxos de integração, as regras de negócio e o estado atual do módulo de Chat Interno do ERP Ideal.
+
+O Chat Interno é uma timeline operacional vinculada às propostas por `id_int`. Ele centraliza comunicação interna, mensagens automáticas, anexos, menções e pendências entre setores.
+
+O módulo não substitui regras comerciais, financeiras, produtivas ou fiscais. Ele registra e distribui informações geradas pelos fluxos oficiais desses domínios.
+
+---
+
+# Objetivos
+
+- manter uma timeline única por proposta;
+- preservar o isolamento por `id_int`;
+- centralizar comunicação entre setores;
+- registrar eventos automáticos relevantes;
+- oferecer anexos, menções e notificações;
+- apoiar a gestão de pendências;
+- evitar que falhas auxiliares bloqueiem os fluxos principais;
+- preservar segurança, RLS e rastreabilidade.
+
+---
 
 Esta documentação descreve a arquitetura, estrutura de dados, fluxos de integração e regras de negócio do módulo **Chat Interno** (Timeline Operacional) do ERP Ideal.
 
@@ -11,7 +41,7 @@ O **Chat Interno** funciona como uma timeline operacional e de comunicação adm
 - **Escopo**: É uma ferramenta de uso estritamente interno para comunicação entre colaboradores de diferentes setores (Comercial, Financeiro, Produção, etc.) e para o registro de eventos automáticos do sistema.
 - **Isolamento**: Todo o histórico do chat é isolado por proposta usando a chave operacional `id_int`. Mensagens e anexos nunca são misturados entre propostas diferentes.
 - **Público Externo**: O chat **não** é acessível pelo cliente nesta fase. Toda a comunicação gravada permanece oculta no painel administrativo interno (`visivel_externo = false`).
-- **Resiliência**: Qualquer falha na timeline (como erro de conexão ao Supabase) é tratada silenciosamente e não bloqueia a listagem ou as ações principais do ERP.
+- **Resiliência**: Falhas em consultas auxiliares, resumos e eventos automáticos da timeline não bloqueiam os fluxos principais do ERP. Falhas em ações iniciadas pelo usuário, como envio de mensagem ou upload de anexo, devem ser informadas claramente e não podem ser apresentadas como sucesso.
 
 ---
 
@@ -164,7 +194,7 @@ O controle de visualizações de mensagens baseia-se em armazenamento local para
    - Mensagens manuais escritas por colaboradores de qualquer setor usam `tipo = MENSAGEM`.
    - Mensagens de registro de eventos automáticos do ERP usam `tipo = SISTEMA`.
 3. **Isolamento Completo**: Nunca faça queries de mensagens sem filtrar pelo `id_int` da proposta correspondente.
-4. **Não Bloqueante**: A criação de mensagens de sistema ou o fetch de resumos do chat na listagem não podem, em hipótese alguma, impedir o fluxo normal do ERP. Se uma query falhar, a tela deve continuar funcionando (com fallbacks vazios ou ícones padrão).
+4. **Não Bloqueante**: A criação de mensagens automáticas de sistema e o fetch de resumos do chat na listagem não podem impedir o fluxo principal do ERP. Se uma consulta auxiliar falhar, a tela deve continuar funcionando com fallback seguro. Envios manuais e uploads, porém, devem exibir erro ao usuário quando não forem persistidos.
 5. **Gravação Resiliente de Menções**: A inserção de menções no banco ocorre em segundo plano (fire-and-forget). Se falhar por qualquer motivo, a mensagem de texto principal é gravada normalmente e o erro é registrado apenas no console do front-end.
 6. **Segurança de Dados do Localhost**: Se o usuário logado ou mencionado possuir ID mockado que não corresponde a um UUID válido, o sistema intercepta e loga a operação localmente em desenvolvimento, ignorando a gravação física no banco para evitar violações de chave estrangeira UUID no Supabase.
 
@@ -348,7 +378,7 @@ Esta seção consolida a arquitetura técnica, regras operacionais e o escopo fu
   - `URGENTE`: Itens marcados como urgente são destacados com borda lateral esquerda vermelha de aviso e ping pulsante de alerta na Central de Pendências e no Drawer de Chat.
 - **Atrasos**: Pendências cuja data limite (`prazo_limite`) foi ultrapassada exibem badge dinâmico de "ATRASADA" com pulsação visual e borda âmbar no card.
 
-### E. Políticas de Segurança (Row-Level Security) Conceitual
+### E. Políticas de Segurança (Row-Level Security)
 
 1. **Controle de Mensagens**: Mensagens e menções são filtradas de acordo com as permissões das propostas associadas.
 2. **Controle de Pendências (`propostas_pendencias`)**:
@@ -379,5 +409,26 @@ Esta seção consolida a arquitetura técnica, regras operacionais e o escopo fu
 5. **Integração Móvel Nativa**:
    - Preparar a infraestrutura de notificações para suporte a Push Notifications no celular quando o aplicativo móvel do ERP for desenvolvido.
 
+---
 
+# Documentação Relacionada
 
+- `../PROJECT_CONTEXT.md`
+- `../SECURITY.md`
+- `../BUSINESS_RULES.md`
+- `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
+- `./PEDIDOS-PRODUCAO.md`
+- `./CHECKOUT-PAGAMENTOS.md`
+- `../maestro/MAESTRO-KNOWLEDGE-BASE.md`
+
+---
+
+# Fonte da Verdade
+
+Este documento representa a referência oficial do módulo de Chat Interno, Menções e Pendências do ERP Ideal.
+
+As tabelas `public.propostas_chat`, `public.propostas_chat_mentions` e `public.propostas_pendencias` devem continuar isoladas pelo contexto oficial da proposta e protegidas pelas políticas de acesso vigentes.
+
+Mensagens automáticas podem ser não bloqueantes, mas ações manuais nunca devem informar sucesso quando a persistência ou o upload falharem.
+
+Nenhum módulo deve criar timeline paralela para a mesma proposta sem decisão arquitetural explícita.

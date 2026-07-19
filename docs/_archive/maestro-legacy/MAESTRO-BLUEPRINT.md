@@ -1,3 +1,26 @@
+<!--
+STATUS DOCUMENTAL: HISTÓRICO / LEGADO
+ORIGEM: Blueprint técnico inicial de 03/07/2026
+NÃO USAR COMO ARQUITETURA IMPLEMENTADA ATUAL.
+
+Fontes vigentes relacionadas:
+- ../../maestro/MAESTRO-VISAO-PRODUTO.md
+- ../../maestro/MAESTRO-KNOWLEDGE-BASE.md
+- ../../maestro/MAESTRO-SEGURANCA-E-GOVERNANCA.md
+- ../../maestro/STATUS-MAESTRO-V2.md
+- ../../architecture/ARQUITETURA-MODULAR-ERP-IDEAL.md
+
+O documento preserva a proposta arquitetural inicial. Nomes de arquivos,
+fases, componentes, agentes, tabelas e camadas descritos abaixo precisam ser
+confirmados no código antes de qualquer uso.
+-->
+
+> **Status:** Histórico — blueprint inicial substituído pelo estado real do Maestro V2  
+> **Uso permitido:** compreender decisões e alternativas consideradas.  
+> **Não utilizar como mapa do código, roadmap vigente ou autorização de implementação.**
+
+---
+
 # MAESTRO — Blueprint Técnico
 > ERP Ideal · Branch: `erp-ideal-preview` · Versão: 0.2-blueprint · Data: 2026-07-03
 
@@ -746,7 +769,7 @@ Para iniciar: solicite explicitamente **"Iniciar Fase 1 do Maestro — UI Mockad
 
 ---
 
-> **Governança:** Todas as decisions arquiteturais deste documento estão sujeitas às regras definidas em [MAESTRO-SEGURANCA-E-GOVERNANCA.md](./MAESTRO-SEGURANCA-E-GOVERNANCA.md), que atua como Constituição de Segurança do Maestro.
+> **Governança:** Todas as decisions arquiteturais deste documento estão sujeitas às regras definidas em [MAESTRO-SEGURANCA-E-GOVERNANCA.md](../../maestro/MAESTRO-SEGURANCA-E-GOVERNANCA.md), que atua como Constituição de Segurança do Maestro.
 
 *Documento atualizado por Antigravity · ERP Ideal · 2026-07-03 · Versão 0.2*
 *Nenhuma alteração de banco de dados foi realizada nesta etapa.*

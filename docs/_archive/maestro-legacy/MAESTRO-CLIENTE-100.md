@@ -1,3 +1,23 @@
+<!--
+STATUS DOCUMENTAL: HISTÓRICO / LEGADO
+ORIGEM: Maestro Simple v1 — fase Cliente 100%
+NÃO USAR COMO FONTE OFICIAL ATUAL.
+
+Fontes vigentes relacionadas:
+- ../../maestro/MAESTRO-KNOWLEDGE-BASE.md
+- ../../maestro/MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md
+- ../../maestro/MAESTRO-FASE-2-PEDIDOS-FINANCEIRO.md
+- ../../maestro/STATUS-MAESTRO-V2.md
+
+Este arquivo é preservado apenas para rastreabilidade da evolução do Maestro.
+-->
+
+> **Status:** Histórico — Maestro Simple v1  
+> **Uso permitido:** consulta de contexto antigo e decisões já superadas.  
+> **Não utilizar para definir capacidades, arquitetura ou fase atual do Maestro.**
+
+---
+
 # MAESTRO — Arquitetura de Dados: Fase Cliente 100%
 
 > **Fase 1 do Maestro Simple v1.**

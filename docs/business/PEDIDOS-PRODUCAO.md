@@ -1,0 +1,950 @@
+# PEDIDOS-PRODUCAO.md
+
+Versão: 2.0  
+Status: Oficial — Implementação parcial e evolução controlada  
+Última atualização: 18/07/2026  
+Projeto: ERP Ideal
+
+---
+
+# Pedidos e Produção
+
+Este documento define o funcionamento atual, os limites e a evolução planejada do módulo de Pedidos e Produção do ERP Ideal.
+
+Ele substitui a antiga classificação de “modelagem sem tabelas”, porque o projeto já possui estruturas reais para Boletim/OS, modelos e artes.
+
+As capacidades futuras continuam claramente separadas do que já está implementado.
+
+---
+
+# 1. Objetivo do Módulo
+
+O módulo de Produção transforma uma proposta comercial em trabalho operacional de fábrica.
+
+Ele deve permitir que a equipe acompanhe:
+
+- briefing;
+- modelos ou lotes;
+- arte;
+- numeração;
+- Ordem de Serviço;
+- impressão;
+- acabamento;
+- revisão;
+- pesagem;
+- expedição;
+- pendências entre setores.
+
+O módulo não substitui:
+
+- Comercial;
+- Financeiro;
+- Contas a Receber;
+- Fiscal;
+- Expedição;
+- regras de permissão;
+- Matriz de Segurança.
+
+---
+
+# 2. Entidade Central e Chave Operacional
+
+A origem do fluxo é:
+
+```text
+public.propostas
+```
+
+Chave operacional:
+
+```text
+public.propostas.id_int
+```
+
+Todo registro produtivo deve permanecer rastreável ao mesmo `id_int`.
+
+Relações atuais relevantes:
+
+```text
+public.propostas.id_int
+├── public.produtos_proposta.id_int
+├── public.pagamentos_v2.id_int
+├── public.boletos.id_int
+├── public.cotacao_frete.id_int
+├── public.propostas_chat.id_int
+├── public.propostas_pendencias.id_int
+├── public.pedidos.id_int
+├── public.pedidos_modelos.id_int
+└── public.pedidos_artes.id_int
+```
+
+Não criar uma segunda chave operacional para representar o mesmo pedido.
+
+---
+
+# 3. Diferença entre Proposta, Pedido e OS
+
+## Proposta
+
+É a entidade comercial.
+
+Fonte:
+
+```text
+public.propostas
+```
+
+Contém cliente, vendedor, empresa, valores, itens, frete e estado comercial.
+
+## Pedido liberado para Produção
+
+É uma proposta incluída oficialmente na fila produtiva.
+
+Regra vigente:
+
+```text
+public.propostas.is_prd_aprovado = true
+```
+
+A liberação é manual e deve ocorrer pelo fluxo oficial.
+
+`status_interno = APROVADO` sozinho não comprova entrada na Produção.
+
+## Boletim ou OS
+
+É o registro operacional usado para organizar briefing, modelos e instruções de fábrica.
+
+Estrutura atual:
+
+```text
+public.pedidos
+```
+
+`public.pedidos` não substitui a proposta como origem comercial.
+
+---
+
+# 4. Regra Fundamental: Arte e Produção Não São a Mesma Etapa
+
+O trabalho de arte pode começar antes da confirmação financeira.
+
+Isso permite:
+
+- receber referências;
+- montar briefing;
+- designar designer;
+- criar arte;
+- revisar internamente;
+- preparar modelos.
+
+Esse início antecipado não significa que o pedido esteja liberado para fabricação.
+
+A entrada oficial na fila produtiva depende da liberação manual:
+
+```text
+is_prd_aprovado = true
+```
+
+Portanto:
+
+```text
+Arte pode começar antes do pagamento.
+↓
+Impressão e execução produtiva dependem da liberação oficial.
+```
+
+O sistema pode exibir alerta financeiro sem bloquear o trabalho preliminar de arte.
+
+Ele não deve iniciar fabricação automaticamente.
+
+---
+
+# 5. Estruturas Atuais
+
+## `public.pedidos`
+
+Função atual:
+
+- registro pai do Boletim/OS;
+- vínculo com a proposta por `id_int`;
+- armazenamento de informações operacionais;
+- armazenamento controlado de observações.
+
+Operações autorizadas atualmente:
+
+- `INSERT` controlado na abertura do Boletim/OS;
+- `UPDATE` somente do campo `obs`;
+- `DELETE` bloqueado.
+
+Não ampliar o payload sem atualização prévia da Matriz de Segurança.
+
+---
+
+## `public.pedidos_modelos`
+
+Função atual:
+
+- subdividir os itens da proposta em modelos ou lotes;
+- registrar quantidade;
+- registrar numeração;
+- registrar instruções de impressão;
+- manter vínculo com o item original da proposta.
+
+Campo de origem atual:
+
+```text
+id_produto_proposta_origem
+```
+
+Operações autorizadas:
+
+- `INSERT` controlado em lote;
+- `UPDATE` bloqueado;
+- `DELETE` bloqueado.
+
+Uma alteração futura de modelos salvos exige fluxo específico e nova autorização.
+
+---
+
+## `public.pedidos_artes`
+
+Função atual:
+
+- registrar a arte vinculada a um modelo;
+- armazenar identificação do arquivo;
+- manter vínculo com Storage;
+- registrar autor do envio;
+- preservar rastreabilidade por `id_int`.
+
+Operação atual autorizada:
+
+- `INSERT` da versão 1;
+- bloqueio de novo upload quando já existir arte para o modelo;
+- `UPDATE` bloqueado;
+- `DELETE` bloqueado.
+
+Versionamento completo, reprovação, substituição e múltiplas versões ainda não estão autorizados apenas por este documento.
+
+---
+
+## `public.propostas_chat`
+
+É a timeline operacional compartilhada da proposta.
+
+O módulo de Produção deve reutilizá-la.
+
+Tipos relevantes:
+
+```text
+SISTEMA
+PRODUCAO
+MENSAGEM
+```
+
+Não criar tabela paralela de histórico para o pedido.
+
+---
+
+## `public.propostas_pendencias`
+
+É a estrutura oficial para pendências operacionais entre setores.
+
+Pode registrar situações como:
+
+- arte aguardando ajuste;
+- falta de material;
+- dúvida comercial;
+- prazo em risco;
+- divergência de produção;
+- necessidade de ação da Expedição.
+
+A criação e a atualização devem respeitar as políticas vigentes.
+
+---
+
+# 6. Estruturas Não Confirmadas ou Futuras
+
+As estruturas abaixo permanecem conceituais até diagnóstico e aprovação:
+
+```text
+public.pedidos_itens
+public.ordens_servico
+public.pedidos_artes_aprovacoes
+public.pedidos_modelos_config_impressao
+public.pedidos_kanban_status
+public.pedidos_pacotes
+public.pedidos_pesagem
+```
+
+Este documento não autoriza:
+
+- criação de tabelas;
+- migrations;
+- triggers;
+- RPCs;
+- views;
+- policies;
+- novos buckets;
+- alteração das tabelas existentes.
+
+---
+
+# 7. Fluxo Operacional
+
+## Etapa 1 — Proposta e contexto comercial
+
+O Comercial registra a proposta e os itens.
+
+Fonte:
+
+```text
+public.propostas
+public.produtos_proposta
+```
+
+## Etapa 2 — Briefing e referências
+
+O atendente reúne:
+
+- nome do evento;
+- quantidades;
+- modelos;
+- cores;
+- logos;
+- referências;
+- instruções;
+- dados variáveis;
+- prazo esperado.
+
+Informações técnicas não devem ser inventadas a partir do catálogo.
+
+## Etapa 3 — Modelos ou lotes
+
+Os itens podem ser subdivididos em modelos.
+
+Exemplo:
+
+```text
+Item: 3.000 unidades
+├── Modelo Azul: 750
+├── Modelo Vermelho: 750
+├── Modelo Verde: 1.000
+└── Modelo Amarelo: 500
+```
+
+Regra:
+
+```text
+SUM(modelos.quantidade) <= quantidade do item original
+```
+
+Se a soma ultrapassar a quantidade do item, o salvamento deve ser bloqueado.
+
+Se houver saldo não distribuído, a interface deve alertar claramente.
+
+## Etapa 4 — Arte
+
+A arte pode ser preparada antes da liberação financeira.
+
+O fluxo atual permite o primeiro registro controlado.
+
+Fluxos de revisão, nova versão e aprovação externa permanecem como evolução futura.
+
+## Etapa 5 — Liberação para Produção
+
+A proposta entra na fila produtiva somente após a ação oficial que define:
+
+```text
+is_prd_aprovado = true
+```
+
+A ação deve validar o contexto vigente, permissões e condições obrigatórias.
+
+## Etapa 6 — Boletim ou OS
+
+O registro pai é criado em `public.pedidos`.
+
+Os modelos são registrados em `public.pedidos_modelos`.
+
+As observações devem permanecer dentro do formato usado pelo serviço oficial.
+
+## Etapa 7 — Impressão
+
+A impressão é o núcleo da execução fabril.
+
+Ela deve receber:
+
+- modelo correto;
+- quantidade;
+- arte correta;
+- numeração;
+- instruções;
+- prioridade;
+- responsável;
+- rastreabilidade por `id_int`.
+
+## Etapa 8 — Acabamento e revisão
+
+Após a impressão:
+
+- corte;
+- serrilha;
+- dobra;
+- laminação;
+- conferência;
+- embalagem;
+- separação por volumes.
+
+## Etapa 9 — Expedição
+
+A Produção entrega o pedido concluído ao fluxo de Expedição.
+
+Ela não deve marcar recebimento financeiro nem emitir nota fiscal.
+
+---
+
+# 8. Status Global da Proposta
+
+O estado global deve seguir o fluxo oficial de `status_interno`.
+
+Estados produtivos documentados:
+
+```text
+REVISAO ATENDENTE
+REVISAO PRODUCAO
+EM PRODUCAO
+EM IMPRESSAO
+EM ACABAMENTO
+EXPEDICAO
+A RETIRAR
+EM TRANSITO
+ENTREGUE
+```
+
+As transições devem usar a matriz central do projeto.
+
+Não espalhar comparações com strings em componentes.
+
+Status desconhecido nunca deve virar `NOVO` automaticamente.
+
+A liberação da fila produtiva continua separada e depende de `is_prd_aprovado`.
+
+---
+
+# 9. Status de Modelos e Artes
+
+Os campos de status existentes devem ser tratados conforme o código atual.
+
+Este documento não cria uma enumeração nova.
+
+Possíveis estados futuros de arte, ainda conceituais:
+
+```text
+PENDENTE
+EM CRIACAO
+EM REVISAO INTERNA
+AGUARDANDO CLIENTE
+REPROVADA CLIENTE
+APROVADA CLIENTE
+LIBERADA
+IMPRESSA
+NAO NECESSARIA
+```
+
+Antes de implementar esses valores:
+
+- confirmar os valores atuais;
+- definir transições;
+- definir responsáveis;
+- definir auditoria;
+- validar compatibilidade com dados existentes;
+- atualizar a Matriz de Segurança.
+
+---
+
+# 10. Numeração
+
+A numeração pode ser:
+
+- sequencial por modelo;
+- sequencial global;
+- fixa;
+- sem numeração;
+- QR Code;
+- código de barras;
+- dados variáveis;
+- combinação de formatos.
+
+A implementação atual deve usar somente os campos já disponíveis em `public.pedidos_modelos`.
+
+Configurações avançadas, como posição, fonte, rotação, QR e CSV, continuam futuras.
+
+## Continuidade
+
+Para numeração sequencial global:
+
+```text
+fim = início + quantidade - 1
+```
+
+O modelo seguinte inicia depois do fim anterior.
+
+A aplicação deve impedir:
+
+- intervalos sobrepostos;
+- quantidade negativa;
+- fim menor que início;
+- duplicidade não autorizada.
+
+---
+
+# 11. Arte e Storage
+
+O upload deve ocorrer pelo serviço oficial da Ficha de OS.
+
+Antes de aceitar um arquivo, validar:
+
+- modelo correto;
+- usuário autenticado;
+- permissão;
+- tamanho;
+- MIME;
+- extensão;
+- resposta real do Storage;
+- vínculo com `id_int`;
+- ausência de arte anterior quando a regra permitir somente versão 1.
+
+Não afirmar que um tipo de arquivo é aceito apenas pela extensão.
+
+A política do bucket, MIME permitido e tamanho máximo devem ser confirmados na implementação atual.
+
+Falha de upload deve ser exibida ao usuário.
+
+Nenhuma mensagem de sucesso pode aparecer antes da confirmação do Storage e do banco.
+
+---
+
+# 12. Chat como Timeline Operacional
+
+O Chat Interno acompanha o mesmo `id_int`.
+
+Eventos produtivos relevantes podem gerar mensagens como:
+
+- Boletim aberto;
+- modelo registrado;
+- arte enviada;
+- produção iniciada;
+- impressão concluída;
+- pedido encaminhado à Expedição;
+- pendência criada ou concluída.
+
+Regras:
+
+- usar `visivel_externo = false`;
+- não executar regras de negócio pelo texto da mensagem;
+- não usar o chat como fonte do status;
+- não gravar eventos em trigger SQL apenas para alimentar a timeline;
+- evitar duplicidade;
+- registrar origem e responsável.
+
+Falha na mensagem automática não deve falsificar a operação principal.
+
+A ação oficial permanece a fonte da verdade.
+
+---
+
+# 13. Menções e Pendências
+
+Menções servem para comunicação.
+
+Elas não concedem permissão e não executam transições.
+
+Exemplos:
+
+```text
+@Comercial
+@Producao
+@Expedicao
+```
+
+Menção de setor só deve existir quando estiver implementada e homologada.
+
+Enquanto isso, utilizar usuários reais resolvidos pelo autocomplete.
+
+Pendências devem registrar:
+
+- título;
+- categoria;
+- prioridade;
+- responsável ou setor;
+- prazo quando aplicável;
+- origem;
+- vínculo por `id_int`.
+
+Não excluir pendências fisicamente.
+
+---
+
+# 14. Papéis Operacionais
+
+## Atendente ou vendedor
+
+Responsabilidades:
+
+- reunir briefing;
+- confirmar modelos;
+- orientar numeração;
+- designar designer quando o fluxo permitir;
+- revisar arte;
+- comunicar o cliente;
+- registrar decisões;
+- liberar arte conforme permissão.
+
+## Designer
+
+Responsabilidades:
+
+- produzir a arte;
+- usar o briefing;
+- enviar o arquivo pelo fluxo oficial;
+- registrar observações;
+- responder ajustes.
+
+O designer não libera Produção por conta própria.
+
+## Gerente de Produção
+
+Responsabilidades:
+
+- analisar os pedidos liberados;
+- organizar prioridade;
+- revisar OS;
+- iniciar execução;
+- acompanhar impressão e acabamento;
+- tratar produção parcial;
+- encaminhar para Expedição.
+
+## Financeiro
+
+Responsabilidades:
+
+- confirmar pagamentos;
+- controlar cobranças;
+- informar situação financeira.
+
+O Financeiro não deve editar modelos ou artes apenas por confirmar pagamento.
+
+## Administrador
+
+Pode possuir permissões ampliadas, mas continua sujeito:
+
+- às regras de negócio;
+- à Matriz de Segurança;
+- à auditoria;
+- aos bloqueios estruturais.
+
+---
+
+# 15. Permissões
+
+A interface deve usar permissões granulares.
+
+Uma matriz visual de papéis neste documento não substitui `PERFIS-PERMISSOES.md`.
+
+Antes de exibir ou executar uma ação, validar:
+
+- sessão;
+- perfil;
+- permissão;
+- empresa;
+- setor;
+- vendedor;
+- estado atual;
+- operação autorizada na Matriz.
+
+Ocultar botão não substitui validação no backend ou RLS.
+
+---
+
+# 16. Kanban de Produção
+
+O Kanban permanece como evolução planejada, salvo componentes já confirmados no código.
+
+Colunas conceituais:
+
+```text
+ARTE
+APROVACAO
+AGUARDANDO OS
+IMPRESSAO
+ACABAMENTO
+REVISAO
+EXPEDICAO
+```
+
+Cada card pode apresentar:
+
+- `id_int`;
+- cliente;
+- produto principal;
+- quantidade;
+- modelos;
+- prazo;
+- prioridade;
+- estado de arte;
+- responsável;
+- alerta financeiro.
+
+Antes de implementar reordenação:
+
+- definir fonte de posição;
+- definir permissão;
+- definir persistência;
+- definir conflito concorrente;
+- definir auditoria;
+- atualizar Matriz de Segurança.
+
+Não criar `pedidos_kanban_status` sem necessidade confirmada.
+
+---
+
+# 17. Decisões Operacionais
+
+## Falta de material
+
+O sistema deve criar uma pendência e registrar a decisão.
+
+Ele não deve substituir material automaticamente.
+
+## Mudança de arte após liberação
+
+A alteração exige:
+
+- confirmação de que ainda não foi impressa;
+- autorização do responsável;
+- nova versão;
+- rastreabilidade;
+- avaliação de custo quando aplicável.
+
+O fluxo atual de versão 1 não autoriza substituição direta.
+
+## Produção parcial
+
+A produção parcial precisa de regra específica por modelo.
+
+Enquanto atualizações de `public.pedidos_modelos` estiverem bloqueadas, esse fluxo não pode ser simulado como persistência real.
+
+## Urgência
+
+Urgência deve ser registrada em campo oficial ou pendência.
+
+Não inferir urgência apenas por texto no chat.
+
+## Prazo inviável
+
+O sistema deve dar visibilidade da fila.
+
+Ele não deve prometer automaticamente uma nova data ao cliente.
+
+## Financeiro pendente
+
+Pode permitir trabalho de arte.
+
+A impressão e a fabricação dependem da liberação oficial e das regras atuais.
+
+---
+
+# 18. Aprovação do Cliente
+
+Não existe autorização neste documento para criar portal público de aprovação de arte.
+
+Uma implementação futura exige definição de:
+
+- rota;
+- autenticação ou token;
+- validade;
+- uso único;
+- versão da arte;
+- armazenamento da decisão;
+- proteção contra enumeração;
+- campos públicos;
+- auditoria;
+- IP e privacidade;
+- revogação;
+- RLS;
+- integração com o status;
+- confirmação do atendente.
+
+O cliente não deve acessar o Chat Interno.
+
+A aprovação externa não substitui a liberação final interna.
+
+---
+
+# 19. Pesagem e Volumes
+
+Pesagem e pacotes continuam como evolução futura.
+
+O fluxo esperado deve permitir:
+
+- peso previsto;
+- peso aferido;
+- diferença;
+- responsável;
+- data;
+- quantidade de volumes;
+- observação;
+- tolerância.
+
+Uma divergência não deve alterar automaticamente quantidade, financeiro ou frete.
+
+A regra de bloqueio e a tolerância precisam ser definidas antes da implementação.
+
+---
+
+# 20. Riscos Principais
+
+| Risco | Controle obrigatório |
+|---|---|
+| Produção sem liberação | Validar `is_prd_aprovado` |
+| Quantidade dos modelos acima do item | Bloquear salvamento |
+| Arte vinculada ao modelo errado | Validar `id_int`, modelo e item de origem |
+| Upload sem persistência | Confirmar Storage e banco |
+| Sobrescrita de arte | Manter bloqueios atuais |
+| Alteração indevida de modelo | Respeitar bloqueio de `UPDATE` e `DELETE` |
+| Mistura entre Comercial e Produção | Preservar responsabilidades |
+| Confusão entre pagamento e pedido | Consultar fontes separadas |
+| Status paralelo | Usar fluxo oficial |
+| Timeline duplicada | Reutilizar `propostas_chat` |
+| Permissão só no frontend | Validar backend e RLS |
+| Portal público inseguro | Não implementar sem projeto específico |
+| Migration prematura | Exigir diagnóstico e autorização |
+| Produção parcial sem modelo de dados | Manter como pendência até homologação |
+
+---
+
+# 21. Validação do Fluxo Atual
+
+## Abertura de Boletim ou OS
+
+Validar:
+
+- proposta correta;
+- `id_int`;
+- elegibilidade;
+- ausência de pedido pai duplicado;
+- payload permitido;
+- retorno real do Supabase;
+- modelos vinculados;
+- mensagem correta ao usuário.
+
+## Modelos
+
+Validar:
+
+- vínculo com o item da proposta;
+- quantidade total;
+- numeração;
+- ordem;
+- ausência de duplicidade;
+- bloqueio de edição após salvar;
+- bloqueio de exclusão.
+
+## Arte
+
+Validar:
+
+- modelo correto;
+- versão 1;
+- ausência de upload anterior;
+- MIME;
+- tamanho;
+- Storage;
+- INSERT;
+- bloqueio de atualização;
+- bloqueio de exclusão.
+
+## Produção
+
+Validar:
+
+- `is_prd_aprovado = true`;
+- status oficial;
+- permissão;
+- ausência de escrita financeira;
+- ausência de liberação automática;
+- registro de auditoria quando aplicável.
+
+## Chat e pendências
+
+Validar:
+
+- mesmo `id_int`;
+- isolamento entre propostas;
+- `visivel_externo = false`;
+- menção correta;
+- nenhuma ação executada apenas pela mensagem;
+- nenhuma timeline paralela.
+
+---
+
+# 22. Evolução Recomendada
+
+A próxima evolução deve começar por diagnóstico do código e do banco.
+
+Ordem segura:
+
+1. confirmar estrutura e uso atual de `public.pedidos`;
+2. confirmar services do Boletim/OS;
+3. confirmar status e transições atuais;
+4. homologar o fluxo atual de modelos;
+5. homologar o upload da versão 1;
+6. definir edição ou versionamento de artes;
+7. definir aprovação do cliente;
+8. definir Kanban;
+9. definir pesagem e pacotes;
+10. definir integração com Expedição.
+
+Nenhuma etapa exige automaticamente nova tabela.
+
+A IDE deve primeiro investigar se a arquitetura existente já suporta a necessidade.
+
+---
+
+# 23. Documentação Relacionada
+
+- `./FLUXO-OFICIAL-STATUS-PROPOSTAS.md`
+- `./CHAT-INTERNO.md`
+- `./CHECKOUT-PAGAMENTOS.md`
+- `./CANCELAMENTO-COBRANCAS.md`
+- `../BUSINESS_RULES.md`
+- `../SECURITY.md`
+- `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
+- `../technical/PERFIS-PERMISSOES.md`
+- `../technical/PADROES-UX-UI.md`
+- `../history/STATUS-INTERNO-PROPOSTAS.md`
+
+---
+
+# Fonte da Verdade
+
+Este documento define o fluxo atual e os limites do módulo de Pedidos e Produção.
+
+As fontes principais são:
+
+```text
+public.propostas
+public.pedidos
+public.pedidos_modelos
+public.pedidos_artes
+public.propostas_chat
+public.propostas_pendencias
+```
+
+A proposta permanece como origem comercial.
+
+A entrada oficial na fila produtiva depende de `is_prd_aprovado`.
+
+A Matriz de Segurança define quais escritas são autorizadas.
+
+Capacidades futuras deste documento não autorizam migration, nova tabela, atualização de modelos, substituição de artes, portal público ou automação de status.

@@ -1,0 +1,592 @@
+# CHECKOUT-PAGAMENTOS.md
+
+Versão: 2.0  
+Status: Oficial  
+Última atualização: 18/07/2026  
+Projeto: ERP Ideal
+
+---
+
+# Checkout, Cobranças e Pagamentos
+
+Este documento define o fluxo oficial de criação, geração, acompanhamento e confirmação de cobranças no ERP Ideal.
+
+Seu objetivo é separar claramente as responsabilidades entre proposta, cobrança, boleto, pagamento, frontend, backend, n8n, Edge Functions e integrações externas.
+
+---
+
+# Escopo
+
+Este documento descreve:
+
+- a origem operacional das cobranças;
+- a responsabilidade de `public.pagamentos_v2`;
+- a responsabilidade de `public.boletos`;
+- os fluxos por forma de pagamento;
+- os status financeiros principais;
+- a liberação financeira da proposta;
+- a separação entre frontend e integrações;
+- as regras gerais de segurança.
+
+O cancelamento detalhado de cobranças é tratado em:
+
+- `CANCELAMENTO-COBRANCAS.md`
+
+---
+
+# Princípios Fundamentais
+
+## Proposta não é cobrança
+
+A proposta representa o processo comercial.
+
+A cobrança representa o processo financeiro originado a partir da proposta.
+
+Uma proposta pode possuir uma ou mais cobranças.
+
+---
+
+## Boleto não é pagamento
+
+`public.boletos` e `public.pagamentos_v2` possuem responsabilidades diferentes.
+
+- `public.pagamentos_v2`: fonte principal da geração, conferência e acompanhamento das cobranças do ERP;
+- `public.boletos`: fonte específica dos títulos bancários e da carteira de Contas a Receber.
+
+Nunca substituir uma tabela pela outra.
+
+---
+
+## O frontend não gera instrumentos financeiros
+
+O frontend ERP solicita a operação e apresenta o retorno.
+
+A geração real de PIX, boleto ou checkout deve ocorrer no backend oficial, em Edge Function, rota de API, n8n ou integração homologada.
+
+Credenciais e segredos nunca devem ser expostos no cliente.
+
+---
+
+# Origem de Toda Cobrança
+
+Toda cobrança nasce de uma proposta identificada pela chave operacional:
+
+```text
+id_int
+```
+
+Regras:
+
+- uma proposta pode gerar uma ou mais cobranças;
+- todas as cobranças da mesma proposta compartilham o mesmo `id_int`;
+- o cliente deve estar identificado por `id_cliente`;
+- a empresa recebedora deve respeitar a empresa definida no fluxo da proposta;
+- a criação ocorre prioritariamente na área de cobranças da própria proposta;
+- o módulo de Cobranças funciona como fila de conferência financeira, não como fluxo comercial paralelo.
+
+---
+
+# Fontes Oficiais de Dados
+
+## `public.pagamentos_v2`
+
+Fonte principal para:
+
+- cobranças;
+- pagamentos;
+- recebimentos;
+- PIX;
+- cartão;
+- faturado;
+- confirmação financeira;
+- acompanhamento do status financeiro.
+
+---
+
+## `public.boletos`
+
+Fonte específica para:
+
+- títulos bancários;
+- carteira de Contas a Receber;
+- vencimentos;
+- dias de atraso;
+- multa;
+- juros;
+- identificação bancária do boleto.
+
+---
+
+# Tabela Principal: `public.pagamentos_v2`
+
+## Campos Operacionais Relevantes
+
+| Campo | Responsabilidade |
+|---|---|
+| `id` | Identificador interno da cobrança |
+| `id_int` | Proposta de origem |
+| `id_cliente` | Cliente vinculado |
+| `id_empresa` | Empresa recebedora |
+| `cliente` | Nome ou referência do cliente |
+| `empresa` | Empresa recebedora |
+| `valor` | Valor principal da cobrança |
+| `status` | Status financeiro principal |
+| `tipo_cobranca` | PIX, BOLETO, cartão, faturado ou outro tipo homologado |
+| `created_at` | Data de criação |
+| `paid_at` | Data de confirmação do pagamento |
+| `vencimento` | Data de vencimento |
+| `confirmado` | Confirmação manual ou operacional |
+| `confirmado_por` | Usuário responsável pela confirmação |
+| `data_confirmacao` | Data da confirmação |
+| `descricao` | Descrição da cobrança |
+| `documento` | CPF ou CNPJ do pagador |
+| `atendente` | Vendedor ou responsável |
+| `os_ideal` | Referência operacional do sistema legado durante a transição |
+| `id_pagamento` | Referência externa ou sequencial |
+| `token_publico` | Token da página pública |
+| `url_cobranca` | URL pública da cobrança |
+| `pix_copia_cola` | Código PIX retornado pela integração |
+| `linha_digitavel` | Linha digitável do boleto |
+| `url_pdf` | PDF do boleto ou documento associado |
+| `erro_pagamento` | Erro retornado pela integração |
+| `is_parcial` | Indica recebimento parcial |
+| `saldo_pendente` | Saldo restante |
+| `valor_frete` | Frete incluído na cobrança |
+| `forma_pgto` | Condição de pagamento selecionada |
+
+## Campos de Cartão
+
+| Campo | Responsabilidade |
+|---|---|
+| `cartao_parcelas` | Quantidade de parcelas |
+| `cartao_taxa_percentual` | Percentual da taxa |
+| `cartao_valor_taxa` | Valor da taxa |
+| `cartao_valor_final` | Valor final cobrado |
+| `cartao_checkout_id` | Identificador do checkout |
+| `cartao_checkout_url` | URL do checkout |
+| `cartao_status` | Status específico do fluxo de cartão |
+
+## Campos de Parcelamento ou Faturado
+
+| Campo | Responsabilidade |
+|---|---|
+| `p_valor_entrada` | Valor da entrada |
+| `p_qtd_parcelas` | Quantidade de parcelas programadas |
+| `p_dias_pra_inicio` | Dias até o primeiro vencimento |
+| `p_intervalo` | Intervalo entre parcelas |
+
+---
+
+# Estado Atual das Integrações
+
+A disponibilidade de cada fluxo deve ser confirmada na implementação e na Matriz de Segurança antes de qualquer alteração.
+
+| Fluxo | Estado documentado |
+|---|---|
+| PIX real | Disponível somente quando a integração e o backend financeiro oficial estiverem ativos para a empresa selecionada; confirmar o escopo atual no código |
+| Boleto bancário | Possui integração externa e regras específicas de sincronização e cancelamento |
+| Faturado | Condição persistida em `pagamentos_v2.forma_pgto` e registrada na timeline da proposta |
+| Cartão | Depende da integração oficial disponível no fluxo atual |
+| Cartão parcelado | Deve ser tratado como tipo de cobrança, não como status financeiro principal |
+
+Não ampliar integrações para outras empresas ou provedores apenas por semelhança de fluxo.
+
+---
+
+# Fluxo Geral
+
+```text
+1. Proposta é criada.
+2. Cliente aprova a condição comercial e informa a forma de pagamento.
+3. Vendedor acessa a proposta.
+4. Vendedor abre a área "Criar e ver cobranças".
+5. Sistema valida proposta, cliente, empresa, valor e campos obrigatórios.
+6. Sistema cria ou solicita a criação da cobrança em pagamentos_v2.
+7. Backend oficial aciona a integração correspondente.
+8. Retorno externo é persistido no fluxo oficial.
+9. Cliente acessa a página pública ou checkout quando aplicável.
+10. Webhook ou confirmação financeira atualiza pagamentos_v2.
+11. O status financeiro da proposta é recalculado.
+12. A entrada na Produção continua dependendo da liberação operacional manual.
+```
+
+---
+
+# Experiência de Criação na Proposta
+
+O modal de criação deve permanecer simples e operacional.
+
+Deve permitir:
+
+- conferir proposta;
+- conferir cliente;
+- conferir empresa recebedora;
+- informar `os_ideal` quando exigido;
+- informar valor;
+- escolher a forma de pagamento;
+- informar vencimento ou parcelas quando aplicável;
+- informar observação;
+- confirmar a geração.
+
+Não deve expor:
+
+- payloads de integração;
+- credenciais;
+- tokens secretos;
+- configurações internas do provedor;
+- detalhes técnicos desnecessários ao vendedor.
+
+---
+
+# Empresas Recebedoras
+
+Empresas conhecidas do ERP:
+
+- Ideal Gráfica;
+- Ideal Birô;
+- E3 Brindes.
+
+Cada empresa pode possuir:
+
+- conta bancária própria;
+- credenciais próprias;
+- configuração própria;
+- fluxo n8n próprio;
+- disponibilidade diferente por forma de pagamento.
+
+A empresa recebedora deve ser herdada do contexto oficial da proposta.
+
+Qualquer troca manual deve depender de fluxo administrativo e permissão específica.
+
+---
+
+# Fluxos por Forma de Pagamento
+
+## PIX
+
+Fluxo oficial:
+
+1. Vendedor seleciona PIX na proposta.
+2. Sistema valida empresa, cliente, documento e valor.
+3. A cobrança é registrada em `public.pagamentos_v2`.
+4. O backend oficial gera o PIX.
+5. O retorno pode preencher:
+   - `pix_copia_cola`;
+   - `token_publico`;
+   - `url_cobranca`;
+   - referência externa.
+6. O cliente realiza o pagamento.
+7. Webhook ou confirmação oficial atualiza o registro para `PAID`.
+
+A disponibilidade real depende da empresa, da integração ativa e do backend financeiro oficial. O escopo deve ser confirmado no código antes de qualquer alteração.
+
+---
+
+## Boleto
+
+Fluxo oficial:
+
+1. Vendedor seleciona boleto na proposta.
+2. Sistema valida empresa, cliente, documento, valor e vencimento.
+3. A cobrança principal é registrada em `public.pagamentos_v2`.
+4. O backend oficial gera o boleto no provedor homologado.
+5. O fluxo pode criar ou atualizar o registro correspondente em `public.boletos`.
+6. O retorno pode preencher:
+   - linha digitável;
+   - código bancário;
+   - PDF;
+   - vencimento;
+   - identificador externo.
+7. Alterações e cancelamentos devem manter o ERP e o provedor externo sincronizados.
+
+As regras detalhadas de cancelamento ficam em `CANCELAMENTO-COBRANCAS.md`.
+
+---
+
+## Cartão de Crédito
+
+Fluxo esperado:
+
+1. Vendedor seleciona cartão.
+2. Sistema registra a cobrança em `public.pagamentos_v2`.
+3. O backend oficial gera o checkout quando a integração estiver disponível.
+4. O retorno pode preencher:
+   - `cartao_checkout_id`;
+   - `cartao_checkout_url`;
+   - `cartao_status`.
+5. O cliente conclui o pagamento fora do ERP.
+6. O webhook atualiza o status financeiro.
+
+Não considerar a integração ativa sem confirmação no código e na Matriz de Segurança.
+
+---
+
+## Cartão Parcelado
+
+`CARD_PARCELADO` representa um tipo ou etapa do fluxo de cartão.
+
+Não é status financeiro principal.
+
+O fluxo pode envolver:
+
+- número de parcelas;
+- taxa percentual;
+- valor da taxa;
+- valor final;
+- checkout externo;
+- atualização por webhook.
+
+O cálculo definitivo deve ocorrer no backend oficial ou integração homologada.
+
+---
+
+## Faturado
+
+Fluxo oficial:
+
+1. Cliente solicita pagamento a prazo.
+2. Sistema consulta as regras de crédito e autorização.
+3. Se aprovado:
+   - `status = A_VENCER`;
+   - `confirmado = true`;
+   - a condição é persistida em `forma_pgto`;
+   - a decisão é registrada na timeline da proposta.
+4. Se depender de análise:
+   - permanece sem confirmação financeira;
+   - deve gerar encaminhamento ao Financeiro;
+   - pode gerar registro no Chat Interno ou pendência operacional.
+
+A aprovação de faturado não representa pagamento recebido.
+
+Ela representa recebimento futuro autorizado.
+
+---
+
+# Status Financeiros Principais
+
+| Status | Significado |
+|---|---|
+| `A_RECEBER` | Cobrança criada, ainda pendente |
+| `A_VENCER` | Recebimento futuro aprovado |
+| `PAID` | Pagamento recebido ou confirmado |
+| `CANCELADO` | Cobrança cancelada |
+
+Status adicionais de integração não devem substituir os status financeiros oficiais sem regra documentada.
+
+---
+
+# Regras de Classificação Financeira
+
+## Aprovado
+
+Um pagamento é considerado financeiramente aprovado quando:
+
+```text
+status = PAID
+```
+
+ou:
+
+```text
+status = A_VENCER
+AND confirmado = true
+```
+
+---
+
+## Pendente
+
+Uma cobrança permanece pendente quando:
+
+- não está paga;
+- não está cancelada;
+- não possui confirmação válida;
+- não possui `paid_at`.
+
+---
+
+## Cancelado
+
+Cobranças com status cancelado, estornado ou recusado não devem participar dos cálculos de recebimento ativo.
+
+A lista exata de status excluídos deve seguir o fluxo financeiro oficial.
+
+---
+
+# Liberação Financeira e Entrada na Produção
+
+A aprovação financeira pode promover a proposta ao estado financeiro liberado.
+
+Entretanto, a entrada oficial na lista de Produção/Pedidos não é automática.
+
+Ela depende da flag operacional:
+
+```text
+public.propostas.is_prd_aprovado = true
+```
+
+Regras:
+
+- a liberação para Produção é manual;
+- deve ocorrer pela ação oficial da interface;
+- deve validar pagamentos, artes e contexto operacional;
+- `status_interno` não deve ser usado isoladamente como substituto dessa flag;
+- pagamento aprovado não significa, sozinho, pedido já inserido na fila de Produção.
+
+---
+
+# Página Pública de Pagamento
+
+A página pública pode ser acessada por `token_publico`.
+
+Ela pode exibir, conforme a cobrança:
+
+- identificação resumida;
+- valor;
+- vencimento;
+- status;
+- PIX;
+- checkout;
+- boleto;
+- confirmação de pagamento.
+
+A página pública nunca deve expor:
+
+- credenciais;
+- payloads internos;
+- chaves privadas;
+- informações administrativas;
+- dados de outras cobranças.
+
+---
+
+# Responsabilidades
+
+## Frontend ERP
+
+Responsável por:
+
+- coletar os dados operacionais;
+- solicitar a geração;
+- apresentar status e retorno;
+- validar campos obrigatórios;
+- aplicar permissões visuais;
+- tratar erros de forma clara;
+- atualizar a interface após confirmação real.
+
+Não é responsável por:
+
+- armazenar credenciais;
+- gerar PIX diretamente;
+- gerar boleto diretamente;
+- criar checkout diretamente;
+- decidir sozinho o resultado de um webhook.
+
+---
+
+## Backend, Edge Functions e Rotas de API
+
+Responsáveis por:
+
+- validar o payload;
+- confirmar contexto e permissões;
+- acionar integrações;
+- persistir retornos;
+- proteger credenciais;
+- tratar erros;
+- manter idempotência;
+- sincronizar o estado local.
+
+---
+
+## n8n e Integrações Externas
+
+Responsáveis apenas pelos fluxos oficialmente conectados.
+
+Devem preservar:
+
+- contratos;
+- identificadores;
+- rastreabilidade;
+- respostas de erro;
+- compatibilidade com o ERP.
+
+---
+
+# Cancelamento e Exclusão
+
+Cobranças integradas externamente devem ser canceladas primeiro no provedor oficial.
+
+A alteração local só pode ocorrer após sucesso da operação externa.
+
+Cobranças liquidadas ou faturadas aprovadas não podem ser excluídas ou canceladas fora das regras homologadas.
+
+O comportamento completo está documentado em:
+
+- `CANCELAMENTO-COBRANCAS.md`
+
+---
+
+# Segurança
+
+Nunca:
+
+- expor credenciais no frontend;
+- registrar segredos em logs;
+- alterar status por conveniência visual;
+- confirmar pagamento sem evidência;
+- atualizar simultaneamente tabelas financeiras sem o fluxo oficial;
+- criar integração paralela;
+- escrever em produção por tentativa e erro.
+
+Toda escrita deve respeitar:
+
+- `SECURITY.md`;
+- `MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`;
+- permissões do usuário;
+- contratos das integrações.
+
+---
+
+# Validação Obrigatória
+
+Antes de concluir uma alteração valide:
+
+- criação da cobrança;
+- associação correta por `id_int`;
+- associação correta por `id_cliente`;
+- empresa recebedora;
+- status inicial;
+- retorno da integração;
+- tratamento de falha;
+- atualização por webhook;
+- ausência de duplicidade;
+- comportamento de cancelamento;
+- ausência de regressão em Contas a Receber;
+- ausência de regressão na liberação da proposta.
+
+---
+
+# Documentação Relacionada
+
+- `../PROJECT_CONTEXT.md`
+- `../SECURITY.md`
+- `../BUSINESS_RULES.md`
+- `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
+- `./CANCELAMENTO-COBRANCAS.md`
+- `./FLUXO-OFICIAL-STATUS-PROPOSTAS.md`
+- `../maestro/MAESTRO-KNOWLEDGE-BASE.md`
+
+---
+
+# Fonte da Verdade
+
+Este documento representa a referência oficial do fluxo de checkout, cobranças e pagamentos do ERP Ideal.
+
+A Matriz de Segurança define quais operações de escrita estão liberadas.
+
+O documento de Cancelamento define como interromper cobranças.
+
+O Fluxo Oficial de Status define como o resultado financeiro influencia a proposta.
+
+Nenhuma implementação deve criar um fluxo financeiro paralelo.

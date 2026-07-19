@@ -1,3 +1,23 @@
+<!--
+STATUS DOCUMENTAL: HISTÓRICO / LEGADO
+ORIGEM: Roadmap do Maestro Simple
+NÃO USAR COMO ROADMAP ATUAL.
+
+Fontes vigentes relacionadas:
+- ../../maestro/MAESTRO-VISAO-PRODUTO.md
+- ../../maestro/STATUS-MAESTRO-V2.md
+- ../../maestro/MAESTRO-FASE-2-PEDIDOS-FINANCEIRO.md
+- ../../maestro/MAESTRO-KNOWLEDGE-BASE.md
+
+Os estados de fase registrados abaixo refletem uma etapa anterior do projeto.
+-->
+
+> **Status:** Histórico — roadmap substituído  
+> **Uso permitido:** rastrear a evolução incremental do Maestro Simple.  
+> **Não utilizar para decidir prioridades ou disponibilidade atual.**
+
+---
+
 # Maestro — Roadmap Operacional Simples
 
 > **Filosofia:** Antes de expandir arquitetura, fazer o básico funcionar muito bem.

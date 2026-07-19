@@ -1,4 +1,41 @@
-# Matriz de Segurança de Escrita no Supabase
+# MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md
+
+Versão: 3.0  
+Status: Oficial  
+Última atualização: 18/07/2026  
+Projeto: ERP Ideal
+
+---
+
+# Matriz Oficial de Segurança de Escrita no Supabase
+
+Este documento define quais operações de leitura e escrita no Supabase estão autorizadas, bloqueadas, planejadas ou em validação no ERP Ideal.
+
+Ele é a referência oficial para qualquer alteração envolvendo `READ`, `INSERT`, `UPDATE` ou `DELETE`.
+
+Nenhuma nova operação de escrita deve ser implementada sem respeitar esta matriz e sem atualizar seu status quando houver mudança de fase.
+
+---
+
+# Objetivo
+
+Garantir que toda operação realizada no Supabase preserve:
+
+- integridade dos dados;
+- segurança;
+- rastreabilidade;
+- regras de negócio;
+- compatibilidade entre módulos;
+- possibilidade de validação antes e depois da gravação.
+
+Este documento complementa:
+
+- `SECURITY.md`;
+- `BUSINESS_RULES.md`;
+- `DEVELOPMENT.md`;
+- `technical/PERFIS-PERMISSOES.md`.
+
+---
 
 Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `EM TESTE` no caminho de escrita real do ERP Ideal.
 
@@ -59,19 +96,28 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
 
 | Tabela | Campo | Operações | Status | Motivo da decisão | Risco | Validação pós-gravação | Data/fase da liberação | Observações técnicas |
 |---|---|---|---|---|---|---|---|---|
-| `public.propostas` | `id_cliente`, `cliente`, `empresa`, `vendedor`, `status_interno`, `valor`, `valor_total`, `obs_proposta`, `texto_whatsapp`, `frete_escolhido`, `valor_frete`, `contato`, `cep`, `is_avulso` | `READ`, `INSERT`, `UPDATE` | `LIBERADO` | Liberação do módulo de orçamentos integrado ao Supabase para leitura, criação e edição de propostas. | Alto | `select id_int, cliente, valor_total, status_interno, frete_escolhido from public.propostas where id_int = :id_int;` | `2026-05-28` / Fase 6 | A gravação em lote concilia itens e variações dinamicamente. RLS herdada da sessão. |
+| `public.propostas` | `id_cliente`, `cliente`, `empresa`, `vendedor`, `valor`, `valor_total`, `obs_proposta`, `texto_whatsapp`, `frete_escolhido`, `valor_frete`, `contato`, `cep`, `is_avulso` | `READ`, `INSERT`, `UPDATE` | `LIBERADO` | Criação e edição de propostas pelo fluxo oficial, com whitelist e validações comerciais. | Alto | `select id_int, cliente, valor_total, status_interno, frete_escolhido from public.propostas where id_int = :id_int;` | `2026-05-28` / Fase 6 | A gravação em lote concilia itens e variações. Não autoriza escrita genérica fora do service oficial. |
+| `public.propostas` | `status_interno` | `UPDATE` | `EM TESTE` | Transição manual controlada, com matriz central, permissão, feature flag e auditoria. | Crítico | Conferir status anterior e posterior por `id_int` e o registro de auditoria. | Fase 4A / homologação controlada | Não autoriza automação, escrita em massa nem transição fora da matriz oficial. |
+| `public.propostas` | `is_prd_aprovado` | `UPDATE` | `LIBERADO` | Liberação e retirada manual da fila de Produção pelo fluxo oficial. | Crítico | `select id_int, is_prd_aprovado, status_interno from public.propostas where id_int = :id_int;` | Fluxo de Produção vigente | Exige permissão, confirmação, validação operacional e auditoria. Não altera `status_interno` automaticamente. |
 | `public.propostas` | Qualquer campo | `DELETE` | `BLOQUEADO` | Proposta é registro crítico de histórico comercial e financeiro. | Crítico | Não aplicável. | Permanente | Mantido bloqueado. |
 | `public.produtos_proposta` | `id_int`, `id_produto`, `nome_produto`, `modelo_descri`, `valor_unt`, `qtd`, `fixo`, `valor_sub_total`, `peso_uni`, `peso_total`, `peso_base`, `peso_extra`, `valor_base`, `valor_extra`, `ncm` | `READ`, `INSERT`, `UPDATE` | `LIBERADO` | Persistência dos itens da proposta com recálculos comerciais e de peso base + extra de variações. | Alto | `select * from public.produtos_proposta where id_int = :id_int;` | `2026-05-28` / Fase 6 | Peso unitário e peso total calculados em gramas no backend/client. |
 | `public.produtos_proposta` | Vínculos de itens na proposta | `DELETE` | `LIBERADO` | Permitida a remoção física apenas para fins de conciliação em lote dos itens ao atualizar a proposta. | Alto | Conferência visual na tela de edição do orçamento. | `2026-05-28` / Fase 6 | Restrito aos itens que foram desassociados no formulário. |
 | `public.produtos_proposta_variacao` | `id_produto_proposta`, `id_variacao`, `id_tipo_variacao`, `nome_variacao`, `v_extra`, `peso_uni` | `READ`, `INSERT` | `LIBERADO` | Snapshot estático/histórico da escolha de variações do produto na proposta (preservando valores e pesos extras). | Médio | `select * from public.produtos_proposta_variacao where id_produto_proposta = :id_item;` | `2026-05-28` / Fase 6 | Gravado sempre após o item correspondente. Não há atualização direta (apenas inserção no fluxo). |
 | `public.produtos_proposta_variacao` | Escolha de variação | `DELETE` | `LIBERADO` | Permitida a remoção física exclusiva para conciliação em lote ao atualizar ou remover o item da proposta. | Médio | Conferência visual na proposta. | `2026-05-28` / Fase 6 | Deleta todas as variações do item antes de reinserir as opções selecionadas atuais. |
-| `public.produtos_proposta_variacao` | Qualquer campo | `DELETE` | `BLOQUEADO` | Impede exclusão direta fora do fluxo de gravação estruturado. | Alto | Não aplicável. | Permanente | Bloqueio para integridade das tabelas relacionadas. |
+| `public.produtos_proposta_variacao` | Qualquer exclusão direta fora da conciliação oficial | `DELETE` | `BLOQUEADO` | Impede remoção isolada fora do fluxo de gravação estruturado. | Alto | Não aplicável. | Permanente | O `DELETE` liberado acima vale exclusivamente para a conciliação oficial do item da proposta. |
 | `public.cotacao_frete` | Seleção e observação de frete | `READ`, `UPDATE`, `INSERT` | `LIBERADO` | Escrita controlada liberada para o cálculo de frete e consolidação nas propostas. | Alto | `select * from public.cotacao_frete where id_int = :id_int order by id;` | `2026-05-30` / Fase 6 | Tabela com triggers de recálculo; o frete escolhido atualiza o total final. |
 | `public.cotacao_frete` | Qualquer campo | `DELETE` | `BLOQUEADO` | Excluir frete diretamente pode desestruturar o cálculo total da proposta. | Crítico | Não aplicável. | Permanente | Bloqueio por padrão. |
 | `public.desconto_proposta` | Desconto comercial | `READ`, `UPDATE`, `INSERT` | `LIBERADO` | Escrita de descontos comerciais da proposta liberada sob validação de perfil (admin/gerente para desconto geral). | Alto | `select * from public.desconto_proposta where id_int = :id_int;` | `2026-05-30` / Fase 7 | Deve respeitar as regras e perfis comerciais para aplicação de descontos. |
 | `public.desconto_proposta` | Qualquer campo | `DELETE` | `BLOQUEADO` | Remover desconto altera total e histórico comercial. | Alto | Não aplicável. | Permanente | Manter bloqueado. |
-| `public.pagamentos_v2` | Qualquer campo de cobrança | `READ`, `UPDATE`, `INSERT` | `LIBERADO` | Escrita controlada liberada inicialmente para PIX real da empresa 1, integrado ao fluxo de cobrança real reutilizando o backend financeiro existente. | Crítico | `select * from public.pagamentos_v2 where id_int = :id_int;` | `2026-05-30` / Fase Financeira | Integração com o fluxo real de cobrança PIX ativo. |
+| `public.pagamentos_v2` | Campos retornados pelas consultas financeiras autorizadas | `READ` | `LIBERADO` | Leitura usada por cobranças, conferência e Maestro conforme sessão, perfil e RLS. | Alto | `select * from public.pagamentos_v2 where id_int = :id_int;` | Fase Financeira | Não expor tokens, payloads sensíveis ou dados de pagamento fora do fluxo autorizado. |
+| `public.pagamentos_v2` | Payload estrito definido pelos services oficiais de criação e confirmação de cobrança | `INSERT`, `UPDATE` | `LIBERADO` | Escrita permitida somente por fluxos financeiros homologados, com validação, permissão, confirmação e retorno real da operação. | Crítico | Conferir o registro por `id_int` e o estado financeiro após a operação. | Fase Financeira | Não significa liberação de qualquer campo. Escrita direta ou genérica pelo frontend permanece proibida. |
+| `public.pagamentos_v2` | Qualquer escrita fora dos services financeiros oficiais | `INSERT`, `UPDATE` | `BLOQUEADO` | Evita alteração genérica de cobrança, confirmação ou recebimento. | Crítico | Não aplicável. | Permanente | Nova modalidade exige diagnóstico, whitelist, integração e atualização desta matriz. |
 | `public.pagamentos_v2` | Qualquer campo | `DELETE` | `BLOQUEADO` | Remoção de registros de cobrança e pagamentos é estritamente proibida por conformidade fiscal e financeira. | Crítico | Não aplicável. | Permanente | Bloqueado. |
+| `public.boletos` | Campos de consulta de títulos, vencimentos e liquidação | `READ` | `LIBERADO` | Fonte oficial de Contas a Receber e boletos. | Alto | Consultar pelo identificador do título, `id_int` e cliente. | Financeiro | Não expor linha digitável, código de barras ou URL fora do fluxo autorizado. |
+| `public.boletos` | Atualização de status ou cancelamento pelo backend financeiro oficial | `UPDATE` | `LIBERADO` | Permitido somente quando a integração oficial confirmar a operação externa ou financeira. | Crítico | Reconsultar o título e validar estado, liquidação e motivo. | Financeiro | Frontend não atualiza diretamente quando houver integração externa. |
+| `public.boletos` | Escrita direta ou genérica fora do backend oficial | `INSERT`, `UPDATE` | `BLOQUEADO` | Evita criação ou alteração de títulos sem integração, validação e auditoria. | Crítico | Não aplicável. | Permanente | Nova operação exige whitelist e atualização desta matriz. |
+| `public.boletos` | Qualquer campo | `DELETE` | `BLOQUEADO` | Títulos financeiros exigem preservação histórica. | Crítico | Não aplicável. | Permanente | Preferir cancelamento lógico. |
+
 
 ## Pedidos / Produção
 
@@ -85,14 +131,29 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
 | `public.pedidos_artes` | `id_int`, `id_modelo`, `versao`, `nome_arquivo`, `storage_bucket`, `storage_path`, `url_arquivo`, `tipo_arquivo`, `mime_type`, `tamanho_bytes`, `status`, `enviado_por`, `enviado_por_uid` | `INSERT` | `LIBERADO` | Upload controlado de artes da Versão 1 a partir da Ficha de OS (Aba Artes/Aprovação), associado ao modelo correspondente. | Médio/Alto | `select * from public.pedidos_artes where id_int = :id_int;` | `2026-06-15` / Ficha OS Artes | Restrição estrita a versao = 1 e bloqueio de novos uploads se já houver arte no modelo. |
 | `public.pedidos_artes` | Qualquer campo | `UPDATE`, `DELETE` | `BLOQUEADO` | Alteração e exclusão de artes não são permitidas nesta etapa. | Crítico | Não aplicável. | Permanente nesta etapa | Mantido bloqueado por segurança. |
 
+
+## Chat Interno e Pendências
+
+| Tabela ou recurso | Campo ou escopo | Operações | Status | Motivo da decisão | Risco | Validação pós-gravação | Data/fase da liberação | Observações técnicas |
+|---|---|---|---|---|---|---|---|---|
+| `public.propostas_chat` | Mensagem, tipo, setor, autor, `id_int`, anexos e visibilidade conforme o service oficial | `READ`, `INSERT` | `LIBERADO` | Timeline operacional compartilhada da proposta. | Médio | Consultar mensagens pelo mesmo `id_int` e validar autor, tipo e anexos. | Chat Interno | Mensagens são registros históricos. Não executar regra de negócio a partir do texto. |
+| `public.propostas_chat` | Qualquer campo persistido | `UPDATE`, `DELETE` | `BLOQUEADO` | Evita reescrita ou remoção do histórico operacional. | Alto | Não aplicável. | Permanente | Correções devem usar novo evento ou fluxo específico, não edição silenciosa. |
+| `public.propostas_chat_mentions` | Menções estruturadas e marcação de leitura | `READ`, `INSERT`, `UPDATE` | `LIBERADO` | Notificações por usuário e controle de leitura. | Médio | Validar `chat_id`, usuário mencionado, `id_int` e `read_at`. | Chat Interno | `UPDATE` limitado à marcação de leitura pelo fluxo oficial. |
+| `public.propostas_chat_mentions` | Exclusão direta | `DELETE` | `BLOQUEADO` | Preserva rastreabilidade e evita remoção isolada. | Alto | Não aplicável. | Permanente | `ON DELETE CASCADE` da FK não autoriza deleção direta via cliente. |
+| `public.propostas_pendencias` | Campos operacionais autorizados pelo service e RLS | `READ`, `INSERT`, `UPDATE` | `LIBERADO` | Gestão de pendências por criador, responsável, setor e empresa. | Alto | Consultar por `id_int`, responsável, status, empresa e setor após a operação. | Fase 6D | Atualização deve respeitar transições, escopo e auditoria. |
+| `public.propostas_pendencias` | Qualquer campo | `DELETE` | `BLOQUEADO` | Pendências são encerradas ou canceladas, não excluídas. | Crítico | Não aplicável. | Permanente | RLS sem política de `DELETE`. |
+| Storage `chat-ideal` | Upload de anexos pelo fluxo oficial | `READ`, `INSERT` | `LIBERADO` | Anexos do Chat Interno e fluxos operacionais autorizados. | Alto | Confirmar upload, MIME, tamanho, path e vínculo antes de gravar a mensagem. | Chat Interno | Não assumir extensões ou limites sem confirmar a implementação. |
+| Storage `chat-ideal` | Alteração ou remoção direta | `UPDATE`, `DELETE` | `BLOQUEADO` | Evita quebra de histórico e links de anexos. | Alto | Não aplicável. | Permanente | Nova política de retenção exige decisão específica. |
+
+
 ## Perfis e Permissões
 
 | Tabela | Campo | Operações | Status | Motivo da decisão | Risco | Validação pós-gravação | Data/fase da liberação | Observações técnicas |
 |---|---|---|---|---|---|---|---|---|
 | `public.perfis` | Todos os campos (`id`, `slug`, `nome`, `descricao`, `permissoes`, `ativo`, `created_at`, `updated_at`) | `READ` | `LIBERADO` | Catálogo de perfis oficial lido pelo `AuthProvider` para enriquecimento dinâmico de privilégios de acesso e permissões ativas. | Baixo | `select * from public.perfis order by slug;` | `2026-06-10` / Fase 1 | Apenas leitura liberada. |
-| `public.perfis` | Qualquer campo | `UPDATE`, `INSERT`, `DELETE` | `BLOQUEADO` | Escrita e deleção de perfis na UI ainda não foram planejadas ou implementadas nesta fase. Catálogo é gerenciado via script/migration SQL. | Crítico | Não aplicável. | Permanente nesta fase | Tabela de sistema crítica de segurança. Alterações via código ou formulários são proibidas. |
+| `public.perfis` | Qualquer campo | `UPDATE`, `INSERT`, `DELETE` | `BLOQUEADO` | A existência do editor visual não autoriza persistência no catálogo de segurança. | Crítico | Não aplicável. | Permanente nesta fase | Tabela crítica. RPC, formulário ou script só podem ser liberados após diagnóstico e atualização explícita desta matriz. |
 | `public.usuarios` | `id_perfil` | `READ` | `LIBERADO` | Utilizado para cruzamento e enriquecimento do perfil do usuário autenticado no app. | Baixo | `select id_perfil from public.usuarios where id = :auth_id;` | `2026-06-10` / Fase 1 | Coluna FK nullable para suportar fallback de dados legados. |
-| `public.usuarios` | `id_perfil` | `UPDATE`, `INSERT` | `BLOQUEADO` | A alteração de perfil do usuário não possui fluxo visual na UI e está travada na aplicação nesta etapa. | Alto | Não aplicável. | Permanente nesta fase | A vinculação de perfis será habilitada na interface de gestão de usuários em fases futuras. |
+| `public.usuarios` | `id_perfil` | `UPDATE`, `INSERT` | `BLOQUEADO` | A atribuição de perfil ainda não possui autorização de escrita nesta matriz. | Alto | Não aplicável. | Permanente nesta fase | A UI pode existir, mas deve permanecer sem persistência real até nova decisão e validação de RLS. |
 
 ## Observações de uso
 
@@ -109,3 +170,12 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
   - validação pós-gravação;
   - observações técnicas.
 
+---
+
+# Fonte da Verdade
+
+Esta matriz representa a autorização oficial de leitura e escrita do ERP Ideal no Supabase.
+
+Sempre que uma nova operação de `INSERT`, `UPDATE` ou `DELETE` for liberada, bloqueada, colocada em teste ou transferida para fase futura, este documento deve ser atualizado junto com a implementação correspondente.
+
+Nenhuma documentação secundária substitui esta matriz para decisões de escrita real no banco de dados.

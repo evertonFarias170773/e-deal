@@ -1,10 +1,35 @@
+# MODULOS-IMPLEMENTADOS.md
+
+Versão documental: 2.0  
+Status: Histórico — Inventário acumulado  
+Última revisão documental: 18/07/2026  
+Projeto: ERP Ideal
+
+---
+
+# Módulos Implementados — Registro Histórico
+
+Este arquivo preserva descrições acumuladas de módulos, fases, mocks, integrações e pendências registradas ao longo do projeto.
+
+Ele não deve ser usado sozinho para concluir que uma funcionalidade continua ativa, homologada ou autorizada.
+
+Antes de implementar ou alterar qualquer módulo:
+
+- confirmar o código atual;
+- consultar o documento oficial do domínio;
+- consultar a Matriz de Segurança;
+- verificar permissões;
+- separar estado atual de histórico;
+- validar se mocks, fallbacks e rotas ainda existem.
+
+Registros abaixo podem conter fases já substituídas.
+
+---
 
 ### [Contas a Receber] - Refatoração de Mock, Permissões e Segurança N8N
 - Status: Implementado
 - Ações: Proteção de botões sensíveis com N8N para apenas Administradores, alteração dos tipos (`RecebimentoOperacional`), fallback editável de emails sem banco de dados associado a modais transacionais.
 - Base afetada: `public.boletos` e componentes react de `src/features/contas-a-receber`.
-# Módulos Implementados
-
 ## Login
 
 Status: integrado e funcional com Supabase Auth.
@@ -710,3 +735,24 @@ Módulos no menu:
 - Rota de Callback App Router SSR
 - Tela de Cadastro com `supabase.auth.signUp()`
 - Bloqueio dinâmico no `AuthGuard` para acessos pendentes.
+
+---
+
+# Documentação Relacionada
+
+- `../DOCUMENTATION_INDEX.md`
+- `../PROJECT_CONTEXT.md`
+- `../DEVELOPMENT.md`
+- `../SECURITY.md`
+- `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
+- `./CHANGELOG.md`
+- `./DECISOES-TECNICAS.md`
+- `./PROXIMOS-PASSOS.md`
+
+---
+
+# Fonte da Verdade
+
+Este documento é histórico.
+
+O estado vigente deve ser confirmado no código e nos documentos oficiais de cada domínio.
