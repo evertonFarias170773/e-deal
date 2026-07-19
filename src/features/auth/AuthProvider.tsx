@@ -122,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: subscription } = client.auth.onAuthStateChange((_event, session) => {
+    const { data: subscription } = client.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
 
       const baseUser = mapSessionToUser(session);
