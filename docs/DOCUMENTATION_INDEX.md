@@ -1,8 +1,8 @@
 # DOCUMENTATION_INDEX.md
 
-Versão: 3.0  
+Versão: 3.1  
 Status: Oficial  
-Última atualização: 18/07/2026  
+Última atualização: 19/07/2026  
 Projeto: ERP Ideal
 
 ---
@@ -78,6 +78,10 @@ Status global, transições e separação de `status_interno` e `is_prd_aprovado
 ## [`business/CHECKOUT-PAGAMENTOS.md`](./business/CHECKOUT-PAGAMENTOS.md)
 
 Criação e acompanhamento de cobranças e pagamentos.
+
+## [`business/CONTA-CORRENTE-CREDITO.md`](./business/CONTA-CORRENTE-CREDITO.md)
+
+Conta Corrente do cliente e pagamento por E-Crédito: regras oficiais, implementações confirmadas, pendências de homologação e falhas abertas.
 
 ## [`business/CANCELAMENTO-COBRANCAS.md`](./business/CANCELAMENTO-COBRANCAS.md)
 
@@ -167,6 +171,10 @@ Backlog acumulado que precisa ser reconfirmado antes de execução.
 
 Inventário acumulado de fases e módulos.
 
+## [`history/IMPLEMENTACAO-PROPOSTAS-PAGAS.md`](./history/IMPLEMENTACAO-PROPOSTAS-PAGAS.md)
+
+Notas de desenvolvimento da edição de proposta paga. Autodeclara homologação não confirmada por auditoria posterior; consulte `business/CONTA-CORRENTE-CREDITO.md` para o estado vigente.
+
 ---
 
 # 8. Migrations
@@ -194,6 +202,7 @@ A presença de um script não comprova aplicação nem constitui autorização d
 | Interface | `PADROES-UX-UI.md` |
 | Status de proposta | `FLUXO-OFICIAL-STATUS-PROPOSTAS.md` |
 | Cobrança e pagamento | `CHECKOUT-PAGAMENTOS.md` |
+| Conta Corrente e E-Crédito | `CONTA-CORRENTE-CREDITO.md` |
 | Cancelamento financeiro | `CANCELAMENTO-COBRANCAS.md` |
 | Produção | `PEDIDOS-PRODUCAO.md` |
 | Chat e pendências | `CHAT-INTERNO.md` |
