@@ -26,12 +26,12 @@ import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDeta
 import {
   gerarPDFProposta,
   duplicarProposta,
-  registrarMensagemSistemaProposta,
   getPropostaChatResumos,
   loadChatReadInfo,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
+import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
 
 type OrcamentoDetailPageProps = {
   idInt: number;
@@ -43,14 +43,14 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
   const { user } = useAuth();
   const { getCobrancasByProposta } = useCobrancas();
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
+  const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
   const { openChat } = useGlobalChat();
-  const { proposta, loading, error } = useOrcamentoDetail(idInt);
+  const { proposta, loading, error, reload } = useOrcamentoDetail(idInt);
   const [chatResumo, setChatResumo] = useState<PropostaChatResumo | null>(null);
 
   const canCancelarProposta = Boolean(
     user?.isSuperAdmin ||
-    user?.isAdmin ||
-    hasPermissao(user, "propostas.cancelar")
+    hasPermissao(user, "propostas.cancel")
   );
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
       console.log("[Auditoria Homologação Fase 4.1] Detalhe de Proposta:", {
         usuario: user.email || user.name || `ID: ${user.id}`,
         acao: "visualizar_botao_cancelamento",
-        permissaoAvaliada: "propostas.cancelar",
+        permissaoAvaliada: "propostas.cancel",
         resultado: canCancelarProposta
       });
     }
@@ -327,22 +327,10 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
                 { label: "Copiar proposta informal", onClick: () => void copyInformal() },
                 { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDF() },
                 ...(saldoRestante > 0 && !isClienteNaoCadastrado ? [{ label: "Gerar cobranca", onClick: () => setIsCobrancaModalOpen(true) }] : []),
-                ...(canCancelarProposta ? [{
+                ...(canCancelarProposta && proposta.status !== "CANCELADO" ? [{
                   label: "Cancelar proposta",
                   destructive: true,
-                  onClick: () => {
-                    showToast({
-                      type: "warning",
-                      title: "Cancelamento da proposta",
-                      description: "O cancelamento da proposta foi solicitado."
-                    });
-                    void registrarMensagemSistemaProposta({
-                      idInt: proposta.id_int,
-                      idCliente: proposta.cliente?.idCliente,
-                      mensagem: "Proposta cancelada.",
-                      setor: "Comercial"
-                    }).catch((err) => console.warn("[Cancel Proposta Timeline Error]", err));
-                  }
+                  onClick: () => setIsCancelPropostaModalOpen(true)
                 }] : [])
               ]}
             />
@@ -522,6 +510,13 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
         isModalOpen={isCobrancaModalOpen}
         onOpenModal={() => setIsCobrancaModalOpen(true)}
         onCloseModal={() => setIsCobrancaModalOpen(false)}
+      />
+
+      <CancelPropostaModal
+        isOpen={isCancelPropostaModalOpen}
+        onClose={() => setIsCancelPropostaModalOpen(false)}
+        idInt={proposta.id_int}
+        onSuccess={() => void reload()}
       />
     </div>
   );

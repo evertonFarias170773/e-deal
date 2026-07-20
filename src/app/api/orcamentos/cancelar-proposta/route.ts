@@ -1,0 +1,227 @@
+import { NextResponse } from "next/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
+
+// Status de pagamentos_v2 já inativos: nunca reprocessados.
+const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
+
+type PagamentoRow = { id: string; status: string | null; confirmado: boolean | null };
+type BoletoRow = { id: string; status: string | null; paid_at: string | null };
+type MovimentoRow = { id: string; tipo: string | null; cancelado: boolean | null };
+
+export async function POST(request: Request) {
+  let body: { id_int?: number; motivo?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ success: false, message: "Corpo da requisição inválido." }, { status: 400 });
+  }
+
+  const idInt = Number(body.id_int);
+  const motivo = String(body.motivo || "").trim();
+
+  if (!body.id_int || Number.isNaN(idInt)) {
+    return NextResponse.json({ success: false, message: "id_int é obrigatório." }, { status: 400 });
+  }
+  if (!motivo) {
+    return NextResponse.json({ success: false, message: "Motivo do cancelamento é obrigatório." }, { status: 400 });
+  }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    console.error("[API][CancelarProposta] ENV AUSENTE");
+    return NextResponse.json({ success: false, message: "Erro interno no servidor de banco de dados." }, { status: 500 });
+  }
+
+  const authHeader = request.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) {
+    return NextResponse.json({ success: false, message: "Sessão não encontrada." }, { status: 401 });
+  }
+
+  const supabase = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+  }
+
+  // Permissão única, sem fallback para "propostas.cancelar".
+  const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "propostas.cancel");
+  if (!temPermissao) {
+    return NextResponse.json({ success: false, message: "Sem permissão para cancelar proposta (propostas.cancel)." }, { status: 403 });
+  }
+
+  const { data: proposta, error: propostaErr } = await supabase
+    .from("propostas")
+    .select("id_int, status_interno, empresa, vendedor, id_cliente")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  if (propostaErr || !proposta) {
+    return NextResponse.json({ success: false, message: "Proposta não encontrada." }, { status: 404 });
+  }
+
+  const escopoOk = await verificarEscopoPropostaServerSide(supabase, authData.user.id, {
+    empresa: proposta.empresa,
+    vendedor: proposta.vendedor
+  });
+  if (!escopoOk) {
+    return NextResponse.json({ success: false, message: "Acesso negado a esta proposta." }, { status: 403 });
+  }
+
+  const statusOriginal = String(proposta.status_interno || "").trim().toUpperCase();
+
+  // Idempotência: proposta já cancelada não reprocessa nada (sem duplicar chat).
+  if (statusOriginal === "CANCELADO") {
+    return NextResponse.json({ success: true, alreadyCancelled: true, message: "Proposta já estava cancelada." });
+  }
+
+  // 1) Reconsulta proposta (já feita acima), pagamentos, boletos e movimentos de crédito.
+  const [pagamentosRes, boletosRes, movimentosRes] = await Promise.all([
+    supabase.from("pagamentos_v2").select("id, status, confirmado").eq("id_int", idInt),
+    supabase.from("boletos").select("id, status, paid_at").eq("id_int", idInt),
+    supabase.from("movimento_credito").select("id, tipo, cancelado").eq("id_int", idInt).eq("tipo", "DEBITO").eq("cancelado", false)
+  ]);
+
+  const pagamentos = (pagamentosRes.data || []) as PagamentoRow[];
+  const boletos = (boletosRes.data || []) as BoletoRow[];
+  const movimentosDebitoAtivos = (movimentosRes.data || []) as MovimentoRow[];
+
+  const pagamentoEfetivado = pagamentos.some((p) => {
+    const s = String(p.status || "").trim().toUpperCase();
+    return s === "PAID" || (s === "A_VENCER" && p.confirmado === true) || p.confirmado === true;
+  });
+  const boletoLiquidado = boletos.some((b) => !!b.paid_at);
+
+  if (pagamentoEfetivado || boletoLiquidado) {
+    return NextResponse.json(
+      { success: false, code: "PAGAMENTO_EFETIVADO", message: "Proposta possui pagamento efetivado (pago, confirmado ou boleto liquidado). Cancelamento não permitido." },
+      { status: 409 }
+    );
+  }
+
+  if (movimentosDebitoAtivos.length > 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "CREDITO_CONSUMIDO",
+        message: "Proposta possui E-Crédito consumido e não estornado. Utilize o fluxo financeiro de estorno de crédito antes de cancelar esta proposta."
+      },
+      { status: 409 }
+    );
+  }
+
+  // 2) Identifica exatamente as cobranças locais pendentes e não confirmadas
+  // (garantido pelo bloqueio acima: nenhuma está PAID/A_VENCER-confirmada/confirmada).
+  const pagamentoIdsParaCancelar = pagamentos
+    .filter((p) => !STATUS_INATIVOS.includes(String(p.status || "").trim().toUpperCase()))
+    .map((p) => p.id);
+
+  const boletoIdsParaCancelar = boletos
+    .filter((b) => !b.paid_at && String(b.status || "").trim().toUpperCase() !== "CANCELADO")
+    .map((b) => b.id);
+
+  // 3) Atualiza pagamentos_v2 pendentes para CANCELADO. Se falhar, a proposta
+  // NÃO é cancelada.
+  if (pagamentoIdsParaCancelar.length > 0) {
+    const { error: errPagamentos } = await supabase
+      .from("pagamentos_v2")
+      .update({ status: "CANCELADO", motivo_cancela: motivo })
+      .in("id", pagamentoIdsParaCancelar);
+
+    if (errPagamentos) {
+      console.error("[API][CancelarProposta] Falha ao cancelar pagamentos_v2 pendentes:", errPagamentos);
+      return NextResponse.json(
+        { success: false, code: "FALHA_CANCELAMENTO_COBRANCAS", message: "Não foi possível cancelar as cobranças pendentes vinculadas. A proposta NÃO foi cancelada." },
+        { status: 500 }
+      );
+    }
+  }
+
+  // 4) Atualiza boletos pendentes do mesmo id_int para CANCELADO. Se falhar,
+  // a proposta NÃO é cancelada.
+  if (boletoIdsParaCancelar.length > 0) {
+    const { error: errBoletos } = await supabase
+      .from("boletos")
+      .update({ status: "CANCELADO" })
+      .in("id", boletoIdsParaCancelar);
+
+    if (errBoletos) {
+      console.error("[API][CancelarProposta] Falha ao cancelar boletos pendentes:", errBoletos);
+      return NextResponse.json(
+        { success: false, code: "FALHA_CANCELAMENTO_COBRANCAS", message: "Não foi possível cancelar os boletos pendentes vinculados. A proposta NÃO foi cancelada." },
+        { status: 500 }
+      );
+    }
+  }
+
+  // 6) Somente após sucesso das cobranças, cancela a proposta (optimistic lock).
+  const { data: updatedProposta, error: updateErr } = await supabase
+    .from("propostas")
+    .update({ status_interno: "CANCELADO" })
+    .eq("id_int", idInt)
+    .eq("status_interno", proposta.status_interno)
+    .select("id_int")
+    .maybeSingle();
+
+  if (updateErr) {
+    console.error("[API][CancelarProposta] Falha ao atualizar status_interno:", updateErr);
+    return NextResponse.json(
+      { success: false, code: "FALHA_CANCELAMENTO_PROPOSTA", message: "Cobranças pendentes foram canceladas, mas houve falha ao cancelar a proposta. Verifique manualmente." },
+      { status: 500 }
+    );
+  }
+
+  if (!updatedProposta) {
+    // O UPDATE não bateu no lock otimista: reconsulta antes de decidir se é
+    // conflito real ou se um trigger (reagindo ao cancelamento das cobranças
+    // acima) já levou a proposta a CANCELADO.
+    const { data: propostaAtual } = await supabase
+      .from("propostas")
+      .select("status_interno")
+      .eq("id_int", idInt)
+      .maybeSingle();
+
+    const statusAtual = String(propostaAtual?.status_interno || "").trim().toUpperCase();
+    if (statusAtual !== "CANCELADO") {
+      return NextResponse.json(
+        { success: false, code: "CONFLITO_CONCORRENCIA", message: "O status da proposta mudou durante o cancelamento. Recarregue e tente novamente." },
+        { status: 409 }
+      );
+    }
+    // Já está CANCELADO (trigger ou chamada concorrente idêntica) — segue como sucesso.
+  }
+
+  // 7) Registra justificativa e autor em propostas_chat (best-effort).
+  const autor = authData.user.email || authData.user.id;
+  const { error: chatErr } = await supabase.from("propostas_chat").insert([
+    {
+      id_int: idInt,
+      id_cliente: proposta.id_cliente,
+      mensagem: `Proposta cancelada. Motivo: ${motivo}`,
+      tipo: "SISTEMA",
+      autor_nome: autor,
+      setor: "Comercial",
+      visivel_externo: false,
+      anexos: null
+    }
+  ]);
+
+  if (chatErr) {
+    console.error("[API][CancelarProposta] Falha ao registrar auditoria em propostas_chat:", chatErr);
+  }
+
+  return NextResponse.json({
+    success: true,
+    alreadyCancelled: false,
+    cobrancasCanceladas: pagamentoIdsParaCancelar.length,
+    boletosCancelados: boletoIdsParaCancelar.length,
+    partial: !!chatErr
+  });
+}

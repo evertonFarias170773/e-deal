@@ -31,6 +31,7 @@ import { hasPermissao, getDataScope, getNomeParaEscopo } from "@/features/auth/u
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
+import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
 import type { Proposta } from "@/features/orcamentos/types";
 
 
@@ -181,9 +182,7 @@ export function OrcamentosListPageReal() {
 
   const canCancelarProposta = Boolean(
     user?.isSuperAdmin ||
-    user?.isAdmin ||
-    hasPermissao(user, "propostas.cancelar") || 
-    hasPermissao(user, "propostas.cancel")      
+    hasPermissao(user, "propostas.cancel")
   );
 
   useEffect(() => {
@@ -191,7 +190,7 @@ export function OrcamentosListPageReal() {
       console.log("[Auditoria Homologação Fase 4.1] Listagem de Propostas:", {
         usuario: user.email || user.name || `ID: ${user.id}`,
         acao: "visualizar_botao_cancelamento_listagem",
-        permissaoAvaliada: "propostas.cancelar",
+        permissaoAvaliada: "propostas.cancel",
         resultado: canCancelarProposta
       });
     }
@@ -203,6 +202,9 @@ export function OrcamentosListPageReal() {
   const [isLiberarModalOpen, setIsLiberarModalOpen] = useState(false);
   const [selectedPropostaForLiberar, setSelectedPropostaForLiberar] = useState<OrcamentoListItem | null>(null);
   const [isLiberarSubmitting, setIsLiberarSubmitting] = useState(false);
+
+  const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
+  const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
 
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
@@ -329,7 +331,9 @@ export function OrcamentosListPageReal() {
           matchesStatus = ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"].includes(s);
         }
       } else {
-        matchesStatus = status === "TODOS" || (status === "EM ARTE" ? item.status?.includes("EM ARTE") : item.status === status);
+        matchesStatus = status === "TODOS"
+          ? item.status !== "CANCELADO"
+          : (status === "EM ARTE" ? item.status?.includes("EM ARTE") : item.status === status);
       }
       if (!matchesStatus) continue;
 
@@ -751,7 +755,14 @@ export function OrcamentosListPageReal() {
       },
       { label: "Gerar PDF da proposta", onClick: () => void handleGerarPDFForListItem(item) },
       ...(!isClienteNaoCadastrado ? [{ label: "Gerar cobrança", onClick: () => void handleOpenCobrancaModal(item) }] : []),
-      ...(canCancelarProposta ? [{ label: "Cancelar proposta", destructive: true, onClick: () => showToast({ type: "warning", title: "Cancelamento ainda nao conectado." }) }] : []),
+      ...(canCancelarProposta && item.status !== "CANCELADO" ? [{
+        label: "Cancelar proposta",
+        destructive: true,
+        onClick: () => {
+          setSelectedPropostaForCancel(item);
+          setIsCancelPropostaModalOpen(true);
+        }
+      }] : []),
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
       ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
     ];
@@ -1162,6 +1173,21 @@ export function OrcamentosListPageReal() {
           isSubmitting={isLiberarSubmitting}
           onClose={() => setIsLiberarModalOpen(false)}
           onConfirm={() => void confirmLiberarProducao()}
+        />
+      )}
+
+      {selectedPropostaForCancel && (
+        <CancelPropostaModal
+          isOpen={isCancelPropostaModalOpen}
+          idInt={selectedPropostaForCancel.id_int}
+          onClose={() => {
+            setIsCancelPropostaModalOpen(false);
+            setSelectedPropostaForCancel(null);
+          }}
+          onSuccess={() => {
+            setSelectedPropostaForCancel(null);
+            triggerRefresh();
+          }}
         />
       )}
     </div>

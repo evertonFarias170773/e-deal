@@ -2997,6 +2997,46 @@ export async function updatePropostaStatusInterno(
   return { success: true, data };
 }
 
+export type CancelarPropostaResult = {
+  success: boolean;
+  alreadyCancelled?: boolean;
+  code?: string;
+  errorMessage?: string;
+};
+
+export async function cancelarProposta(idInt: number, motivo: string): Promise<CancelarPropostaResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponível." };
+  }
+
+  const sessionResponse = await client.auth.getSession();
+  const token = sessionResponse.data.session?.access_token || "";
+  if (!token) {
+    return { success: false, errorMessage: "Sessão não encontrada. Faça login novamente." };
+  }
+
+  try {
+    const response = await fetch("/api/orcamentos/cancelar-proposta", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ id_int: idInt, motivo })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return { success: false, code: data.code, errorMessage: data.message || "Erro ao cancelar a proposta." };
+    }
+
+    return { success: true, alreadyCancelled: !!data.alreadyCancelled };
+  } catch (err) {
+    return { success: false, errorMessage: err instanceof Error ? err.message : "Falha na comunicação com a API." };
+  }
+}
+
 export async function liberarPropostaParaProducao(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
