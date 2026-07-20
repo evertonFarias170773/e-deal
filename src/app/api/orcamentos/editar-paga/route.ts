@@ -24,6 +24,7 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { saveProposta } from "@/features/orcamentos/services/orcamentos.service";
 import type { PropostaFormState } from "@/features/orcamentos/types";
 import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
+import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest) {
   // ── 5. Buscar cobranças e re-calcular valor pago confirmado (servidor) ───
   const { data: cobrancasBanco, error: cobrancasError } = await supabase
     .from("pagamentos_v2")
-    .select("status, confirmado, valor")
+    .select("status, confirmado, valor, obs_v2")
     .eq("id_int", idInt)
     .neq("status", "CANCELADO");
 
@@ -230,10 +231,17 @@ export async function POST(request: NextRequest) {
   const cobrancas = cobrancasBanco || [];
   const temCobrancasAtivas = cobrancas.length > 0;
 
-  // Regra oficial de pagamento confirmado
+  // Regra oficial de pagamento confirmado. Cobranças que incluem abatimento de
+  // débito da conta corrente (marcador [ABATIMENTO_DEBITO:x] em obs_v2) têm essa
+  // parcela descontada — aquele valor não é pagamento da PROPOSTA, é quitação de
+  // débito antigo do cliente, e não deve virar "crédito" se a proposta for editada.
   const valorPagoReal = cobrancas
     .filter(c => c.status === "PAID" || (c.status === "A_VENCER" && c.confirmado))
-    .reduce((sum, c) => sum + (Number(c.valor) || 0), 0);
+    .reduce((sum, c) => {
+      const marcador = String(c.obs_v2 || "").match(/\[ABATIMENTO_DEBITO:(\d+(?:\.\d{1,2})?)\]/);
+      const abatimento = marcador ? Number(marcador[1]) || 0 : 0;
+      return sum + Math.max(0, (Number(c.valor) || 0) - abatimento);
+    }, 0);
 
   const valorPagoRealArredondado = Math.round(valorPagoReal * 100) / 100;
 
@@ -313,7 +321,33 @@ export async function POST(request: NextRequest) {
   let pendenciaCriada = null;
 
   if (ehPropostaPaga) {
-    diferenca = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
+    const diferencaBruta = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
+
+    // ── Reconciliação: descontar o que já foi resolvido em movimento_credito ──
+    // Sem isto, cada novo save recalcula a MESMA diferença bruta e recria a
+    // pendência "Revisão financeira pendente", prendendo o usuário num loop —
+    // o débito/crédito já registrado para a proposta nunca era abatido.
+    // Usamos o valor absoluto movimentado (cobre todas as ações do modal, tanto
+    // débito quanto crédito, incluindo devolução e abatimento).
+    const { data: movimentosBanco, error: movimentosError } = await supabase
+      .from("movimento_credito")
+      .select("valor")
+      .eq("id_int", idInt)
+      .eq("cancelado", false);
+
+    if (movimentosError) {
+      console.warn(`[editar-paga] Erro ao buscar movimento_credito para reconciliação: ${movimentosError.message}`);
+    }
+
+    const totalReconciliado = Math.round(
+      (movimentosBanco || []).reduce((sum, m) => sum + Math.abs(Number(m.valor) || 0), 0) * 100
+    ) / 100;
+
+    const pendenteAbs = Math.round((Math.abs(diferencaBruta) - totalReconciliado) * 100) / 100;
+    // Mantém o sinal da diferença atual (débito positivo / crédito negativo)
+    diferenca = pendenteAbs <= 0 ? 0 : Math.round(Math.sign(diferencaBruta) * pendenteAbs * 100) / 100;
+
+    console.info(`[editar-paga] Reconciliação #${idInt}: bruta=${diferencaBruta}, jaReconciliado=${totalReconciliado}, pendente=${diferenca}`);
 
     if (Math.abs(diferenca) >= 0.01) {
       const sinal = diferenca < 0 ? "crédito" : "débito";
@@ -358,6 +392,23 @@ export async function POST(request: NextRequest) {
       } else {
         pendenciaCriada = createdPend;
       }
+    }
+
+    // ── Reconciliar status_interno pelo fluxo oficial ────────────────────────
+    // Evento: alteração do total de uma proposta paga. Esta é a causa raiz do
+    // status ficar "congelado": status_interno nunca era recalculado ao salvar,
+    // e formState.status (vindo do cliente) era persistido às cegas. Nunca
+    // confiar nesse valor para decidir a situação financeira — sempre reavaliar
+    // aqui, server-side, contra o valor_total recém-persistido. Best-effort:
+    // nunca falha o salvamento da proposta em si.
+    const reconciliacao = await aplicarStatusRecomendadoProposta(
+      idInt,
+      { uid: user.id, nome: userName ?? user.email ?? "Sistema", email: user.email ?? "" },
+      supabase,
+      "AUTO_FINANCEIRO"
+    );
+    if (!reconciliacao.success) {
+      console.warn(`[editar-paga] Reconciliação de status sem efeito para proposta #${idInt}: ${reconciliacao.errorMessage}`);
     }
   }
 

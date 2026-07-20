@@ -11,9 +11,19 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { Save, Send } from "lucide-react";
 
+export interface BriefingArtesDraft {
+  nome_evento: string;
+  data_evento: string | null;
+  local_evento: string;
+  observacoes: Record<string, string>;
+  designer_uid: string | null;
+  designer_nome: string | null;
+  arquivos: any[];
+}
+
 interface ArtesTabProps {
   form: PropostaFormState;
-  onBriefingChange?: (draft: any) => void;
+  onBriefingChange?: (draft: BriefingArtesDraft) => void;
 }
 
 export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
@@ -32,6 +42,7 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
 
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const prevIdIntRef = useRef<string | number>(form.id_int);
+  const isInitialSyncRef = useRef(true);
 
   const loadData = async (mounted: boolean) => {
     if (form.id_int === "NOVO") {
@@ -71,6 +82,7 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
       setSelectedDesignerNome(form.briefingArtesDraft?.designer_nome || null);
       setArquivos(form.briefingArtesDraft?.arquivos || []);
       prevIdIntRef.current = form.id_int;
+      isInitialSyncRef.current = true;
       setIsInitialLoad(true);
       loadData(isMounted);
     } else if (isInitialLoad && form.briefingArtesDraft) {
@@ -96,6 +108,10 @@ export function ArtesTab({ form, onBriefingChange }: ArtesTabProps) {
   // Sincroniza estado local da aba com o estado global do Form
   useEffect(() => {
     if (!isInitialLoad && onBriefingChange) {
+      if (isInitialSyncRef.current) {
+        isInitialSyncRef.current = false;
+        return;
+      }
       onBriefingChange({
         nome_evento: nomeEvento,
         data_evento: dataEvento ? `${dataEvento}T00:00:00` : null,

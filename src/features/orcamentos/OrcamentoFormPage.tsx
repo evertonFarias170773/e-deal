@@ -8,7 +8,7 @@ import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon } from "luc
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
-import { ArtesTab } from "@/features/orcamentos/components/ArtesTab";
+import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -63,7 +63,7 @@ import {
   registrarDevolucao,
   registrarBonificacao,
   registrarDebitoFuturo,
-  getSaldoCredito
+  getSaldoContaCorrente
 } from "@/features/cobrancas/services/movimento-credito.service";
 
 const removeAccents = (str: string): string => {
@@ -255,15 +255,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     user?.isSuperAdmin ||
     hasPermissao(user, "financeiro.debito_futuro")
   );
-  const canResolverCredito = Boolean(
-    user?.isSuperAdmin ||
-    hasPermissao(user, "financeiro.resolver_credito")
-  );
   const canUsarCredito = Boolean(
     user?.isSuperAdmin ||
     hasPermissao(user, "credito.usar")
   );
-  void canResolverCredito; // usado indiretamente pelo modal
   void canUsarCredito;     // reservado para fluxo de nova proposta
 
   useEffect(() => {
@@ -417,6 +412,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   };
   const [diferencaModal, setDiferencaModal] = useState<DiferencaModalState | null>(null);
 
+  // Abre automaticamente o modal de criação de cobrança ao entrar na aba Pagamentos
+  // logo após registrar um débito complementar ("Registrar débito e gerar a cobrança").
+  const [autoAbrirCobranca, setAutoAbrirCobranca] = useState(false);
+  useEffect(() => {
+    if (autoAbrirCobranca && activeFormTab === "pagamentos") {
+      // O painel já leu defaultModalOpen no mount; zeramos o flag para não reabrir
+      // em visitas futuras à aba.
+      const t = setTimeout(() => setAutoAbrirCobranca(false), 0);
+      return () => clearTimeout(t);
+    }
+  }, [autoAbrirCobranca, activeFormTab]);
+
   // — Pendência de revisão financeira aberta (detectada ao carregar a proposta) —
   const [pendenciaRevisaoAberta, setPendenciaRevisaoAberta] = useState<{
     id: number;
@@ -463,7 +470,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           valorPagoConfirmado: valorPago,
           novoTotal,
           diferenca: diff,
-          onResolve: () => setPendenciaRevisaoAberta(null),
+          onResolve: (tipoAcao?: string) => {
+            setPendenciaRevisaoAberta(null);
+            if (tipoAcao === "DEBITO_PENDENTE_COBRANCA") {
+              setActiveFormTab("pagamentos");
+              setAutoAbrirCobranca(true);
+            }
+          },
         });
 
         // Limpar a query string de forma segura e silenciosa
@@ -505,19 +518,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }, [activeFormTab, proposta?.id_int, form.id_int]);
 
-  // — Saldo de crédito do cliente selecionado —
+  // — Saldo de conta corrente do cliente selecionado (com sinal) —
+  // saldoCredito (>=0): crédito disponível para aplicar em pagamento (banner existente).
+  // saldoDevedor (>=0): valor em aberto quando o cliente está devedor (novo lembrete).
   const [saldoCredito, setSaldoCredito] = useState<number>(0);
+  const [saldoDevedor, setSaldoDevedor] = useState<number>(0);
 
+  // Lembrete de débito é informativo — visível a quem edita a proposta, sem gate
+  // de permissão de crédito (o objetivo é lembrar o vendedor, não liberar consumo).
   const fetchSaldoCredito = useCallback(async () => {
-    if (cliente?.idCliente && canUsarCredito) {
-      try {
-        const saldo = await getSaldoCredito(cliente.idCliente);
-        setSaldoCredito(saldo);
-      } catch (e) {
-        setSaldoCredito(0);
-      }
-    } else {
+    if (!cliente?.idCliente) {
       setSaldoCredito(0);
+      setSaldoDevedor(0);
+      return;
+    }
+    try {
+      const saldoReal = await getSaldoContaCorrente(cliente.idCliente);
+      setSaldoCredito(canUsarCredito ? Math.max(0, saldoReal) : 0);
+      setSaldoDevedor(saldoReal < 0 ? Math.round(Math.abs(saldoReal) * 100) / 100 : 0);
+    } catch (e) {
+      setSaldoCredito(0);
+      setSaldoDevedor(0);
     }
   }, [cliente?.idCliente, canUsarCredito]);
 
@@ -1371,6 +1392,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
 
 
+  const handleBriefingChange = useCallback((draft: BriefingArtesDraft) => {
+    setForm((current) => {
+      if (JSON.stringify(current.briefingArtesDraft) === JSON.stringify(draft)) {
+        return current;
+      }
+      return { ...current, briefingArtesDraft: draft };
+    });
+  }, []);
+
   function updateField<K extends keyof PropostaFormState>(field: K, value: PropostaFormState[K]) {
     if (field === "vendedor" && !canAlterarVendedor && !form.clienteNaoCadastrado) {
       return;
@@ -1763,12 +1793,32 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         (c) => c.status !== "CANCELADO"
       );
       if (cobrancaAtiva) {
-        showToast({
-          type: "error",
-          title: "Remoção bloqueada",
-          description: "Não é possível remover produtos pois existe uma cobrança ativa. Cancele ou exclua a cobrança pendente antes."
-        });
-        return; // Produto NÃO some da tela
+        // Sem permissão de editar proposta paga → bloqueio total (comportamento anterior).
+        if (!canEditarPropostaPaga) {
+          showToast({
+            type: "error",
+            title: "Remoção bloqueada",
+            description: "Não é possível remover produtos pois existe uma cobrança ativa. Cancele ou exclua a cobrança pendente antes."
+          });
+          return; // Produto NÃO some da tela
+        }
+        // Com permissão: permitir inativação lógica reversível, EXCETO se o item já tem
+        // vínculo de pedido/arte/produção — nesse caso a produção/NF precisa ser tratada antes.
+        const temVinculoProducao = form.pedidosModelos.some(
+          (m) =>
+            (((m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
+              (m.item_temp_id && m.item_temp_id === item.id))) &&
+            (m.isPersisted || (!!m.status_producao && m.status_producao.trim() !== "") || (!!m.status_arte && m.status_arte.trim() !== ""))
+        );
+        if (temVinculoProducao) {
+          showToast({
+            type: "error",
+            title: "Inativação bloqueada",
+            description: "Este produto já possui pedido/arte/produção vinculada. Cancele ou conclua a produção (e a NF, se houver) antes de inativá-lo."
+          });
+          return; // Produto NÃO some da tela
+        }
+        // Autorizado e sem vínculo → segue para o confirm (inativação lógica reversível).
       }
     }
 
@@ -2646,8 +2696,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               
               if (tipoAcao === "DEBITO_PENDENTE_COBRANCA") {
                 setActiveFormTab("pagamentos");
+                setAutoAbrirCobranca(true);
                 setPendingNavigation(null);
-                showToast({ type: "success", title: "Diferença resolvida", description: "O débito foi registrado. Redirecionado para Pagamentos para gerar a cobrança complementar." });
+                showToast({ type: "success", title: "Diferença resolvida", description: "O débito foi registrado. Abrindo a criação da cobrança complementar." });
               } else if (pendingNavigation === "?tab=pagamentos") {
                 if (diferenca < 0) {
                   setActiveFormTab("produtos");
@@ -2865,8 +2916,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     (f) => f.id === form.freteEscolhidoId && f.observacao && (f.observacao.includes("(Preservado)") || f.observacao.includes("Frete preservado"))
   );
   const cobrancasVinculadas = proposta?.id_int ? getCobrancasByProposta(proposta.id_int) : [];
-  const hasCobrancas = cobrancasVinculadas.length > 0;
   const hasActiveCobranca = cobrancasVinculadas.some(c => c.status !== "CANCELADO");
+  // Sinal oficial de "proposta paga" (mesmo critério usado em editar-paga no servidor):
+  // cobrança cancelada/pendente não conta — só valor efetivamente pago/confirmado.
+  const valorPagoConfirmadoAtual = calcularValorPagoConfirmado(cobrancasVinculadas);
+  const isPropostaPagaAtual = valorPagoConfirmadoAtual > 0;
 
   // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
   const isFormBloqueadoPorCobranca = (hasActiveCobranca && !canEditarPropostaPaga) || pendenciaRevisaoAberta !== null;
@@ -2893,7 +2947,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         }
       />
 
-      {hasCobrancas && (
+      {/* Só considera cobrança CANCELADA como "sem cobrança" — nada aparece p/ proposta nova
+          ou cuja única cobrança foi cancelada (ex.: teste/PIX cancelado). */}
+      {hasActiveCobranca && (
         <div className={`rounded-3xl border p-4 shadow-sm flex items-start gap-3 ${
           canEditarPropostaPaga
             ? "border-amber-300 bg-amber-50 dark:border-amber-600/50 dark:bg-amber-900/30"
@@ -2903,12 +2959,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             canEditarPropostaPaga ? "text-amber-600 dark:text-amber-400" : "text-amber-600"
           }`} />
           <div>
-            {canEditarPropostaPaga ? (
+            {canEditarPropostaPaga && isPropostaPagaAtual ? (
               <>
                 <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Modo Edição Autorizada — Proposta com Pagamento Confirmado</p>
                 <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
                   Você tem permissão para editar esta proposta mesmo com cobrança ativa.
                   Se houver diferença financeira, você precisará escolher uma ação antes de concluir a alteração.
+                </p>
+              </>
+            ) : canEditarPropostaPaga && !isPropostaPagaAtual ? (
+              <>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Cobrança Ativa — Pagamento Ainda Não Confirmado</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
+                  Esta proposta possui uma cobrança em aberto que ainda não foi paga/confirmada. Revise antes de alterar valores para não gerar inconsistência com a cobrança emitida.
                 </p>
               </>
             ) : (
@@ -2932,6 +2995,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             <p className="text-sm text-emerald-700/80 dark:text-emerald-200/70 mt-1">
               {cliente?.nome ?? "O cliente"} possui <strong className="text-emerald-800 dark:text-emerald-300">{formatCurrency(saldoCredito)}</strong> em crédito disponível.
               Você poderá aplicar como forma de pagamento ao gerar a cobrança.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Lembrete de saldo devedor na Conta Corrente (informativo — não bloqueia salvar/cobrar) */}
+      {saldoDevedor > 0 && (
+        <div className="rounded-3xl border border-amber-200 dark:border-amber-300/40 bg-amber-50 dark:bg-amber-950/20 p-4 shadow-sm flex items-start gap-3">
+          <span className="text-amber-500 dark:text-amber-400 text-lg shrink-0">💳</span>
+          <div>
+            <p className="text-sm font-bold text-amber-800 dark:text-amber-300">Cliente com débito em aberto</p>
+            <p className="text-sm text-amber-700/80 dark:text-amber-200/70 mt-1">
+              {cliente?.nome ?? "Este cliente"} possui <strong className="text-amber-800 dark:text-amber-300">{formatCurrency(saldoDevedor)}</strong> em débito na conta corrente.
+              Não é obrigatório cobrar o valor integral nesta proposta, mas considere incluir uma cobrança complementar ou negociar parte deste débito ao gerar a cobrança.
             </p>
           </div>
         </div>
@@ -3002,7 +3079,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       valorPagoConfirmado: valorPago,
                       novoTotal,
                       diferenca: diff,
-                      onResolve: () => setPendenciaRevisaoAberta(null),
+                      onResolve: (tipoAcao?: string) => {
+                        setPendenciaRevisaoAberta(null);
+                        if (tipoAcao === "DEBITO_PENDENTE_COBRANCA") {
+                          setActiveFormTab("pagamentos");
+                          setAutoAbrirCobranca(true);
+                        }
+                      },
                     });
                   } catch (err) {
                     console.error(err);
@@ -3111,7 +3194,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (
-            <ArtesTab form={form} onBriefingChange={(draft) => updateField("briefingArtesDraft", draft)} />
+            <ArtesTab form={form} onBriefingChange={handleBriefingChange} />
           )}
           {activeFormTab === "boletim" && shouldShowRest && (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -3854,7 +3937,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       ? modelosDoItem.reduce((acc, curr) => acc + curr.quantidade, 0) 
                       : undefined;
 
-                    const isRemoveAllowed = form.status !== "APROVADO" && form.status !== "AGUARDANDO";
+                    // Autorizado a editar proposta paga também pode inativar (reversível)
+                    // itens em propostas APROVADO/AGUARDANDO.
+                    const isRemoveAllowed = (form.status !== "APROVADO" && form.status !== "AGUARDANDO") || canEditarPropostaPaga;
                     const isPrecoFixoAplicado = !!(
                       cliente?.usaPrecoFixo &&
                       cliente.precosFixos?.some(p => p.id_produto === item.id_produto)
@@ -4131,11 +4216,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       </button>
                     </div>
                   ) : (
-                    <PropostaCobrancaPanel 
-                      proposta={proposta} 
+                    <PropostaCobrancaPanel
+                      proposta={proposta}
+                      defaultModalOpen={autoAbrirCobranca}
                       onSavePropostaRequest={handleSaveForCobranca}
                       onRefreshProposta={() => {
                         if (onReload) onReload(true);
+                        fetchSaldoCredito();
                       }}
                       onPagamentoIntegralConcluido={() => {
                         setSaveSuccessModal({ isOpen: true, finalIdInt: form.id_int });
@@ -4280,9 +4367,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             router.push(dest);
           }}
           onSaveAndExit={() => {
+            const mode = unsavedModalMode;
             setIsUnsavedModalOpen(false);
             setUnsavedModalMode("default");
-            void handleSave();
+            // No gate da aba Pagamentos com proposta ainda nova, usar o fluxo
+            // que redireciona para /editar?tab=pagamentos (handleSaveForCobranca).
+            // handleSave genérico salva mas não leva à aba Pagamentos.
+            if (mode === "pagamentos" && form.id_int === "NOVO") {
+              void handleSaveForCobranca();
+            } else {
+              void handleSave();
+            }
           }}
         />
       )}
@@ -4315,19 +4410,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100">
                 <AlertOctagon className="h-6 w-6" />
               </div>
-              <h3 className="text-xl font-bold">Excluir produto?</h3>
+              <h3 className="text-xl font-bold">{canEditarPropostaPaga && hasActiveCobranca ? "Inativar produto?" : "Excluir produto?"}</h3>
             </div>
             <p className="mb-6 text-sm text-slate-600">
               {(() => {
                 const item = form.itens.find(i => i.id === deletingProductId);
+                if (canEditarPropostaPaga && hasActiveCobranca) {
+                  return "Este produto será inativado (marcado como Removido/Inativo) e o total da proposta será recalculado. A ação é reversível — você pode restaurá-lo antes de salvar. Se gerar diferença de valor, você a resolverá em seguida.";
+                }
                 if (!item) return "Tem certeza que deseja excluir este produto do orçamento?";
                 const hasModels = form.pedidosModelos.some(
-                  (m) => 
+                  (m) =>
                     (m.id_produto_proposta_origem && item.id_produto_proposta_origem && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
                     (m.item_temp_id && m.item_temp_id === item.id)
                 );
-                return hasModels 
-                  ? "Este produto possui modelos/lotes vinculados. Ao excluir o produto, os modelos deste produto também serão removidos. Deseja continuar?" 
+                return hasModels
+                  ? "Este produto possui modelos/lotes vinculados. Ao excluir o produto, os modelos deste produto também serão removidos. Deseja continuar?"
                   : "Tem certeza que deseja excluir este produto do orçamento?";
               })()}
             </p>
@@ -4347,8 +4445,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 className="flex-1 rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
               >
                 {isDeletingProduct ? (
-                  <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Excluindo...</>
-                ) : "Sim, excluir"}
+                  <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />{canEditarPropostaPaga && hasActiveCobranca ? "Inativando..." : "Excluindo..."}</>
+                ) : (canEditarPropostaPaga && hasActiveCobranca ? "Sim, inativar" : "Sim, excluir")}
               </button>
             </div>
           </div>

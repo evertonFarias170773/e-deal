@@ -353,8 +353,8 @@ export function DiferencaFinanceiraModal({
             <>
               <RadioOption
                 id="debito_pendente_cobranca"
-                label="Registrar débito e gerar cobrança depois"
-                description={`O débito de ${formatCurrency(absDiff)} é registrado agora. Após fechar, acesse a aba Pagamentos e emita a cobrança complementar (PIX, Boleto ou Cartão) conforme combinado com o cliente.`}
+                label="Registrar débito e gerar a cobrança"
+                description={`O débito de ${formatCurrency(absDiff)} é registrado e a criação da cobrança complementar (PIX, Boleto ou Cartão) abre em seguida, já com o valor a cobrar.`}
                 selected={selectedAcao === "DEBITO_PENDENTE_COBRANCA"}
                 onSelect={() => setSelectedAcao("DEBITO_PENDENTE_COBRANCA")}
                 accent="amber"

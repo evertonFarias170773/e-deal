@@ -23,6 +23,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { MovimentoCreditoTipo } from "@/features/cobrancas/types";
+import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
+import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 
 // ---------------------------------------------------------------------------
 // Mapeamento de ação → tipo de movimento + permissão necessária
@@ -206,7 +208,7 @@ export async function POST(request: NextRequest) {
   // ── 4. Validar proposta e cliente no banco ────────────────────────────────
   const { data: propostaBanco, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, valor_total, valor, valor_frete")
+    .select("id_int, id_cliente, valor_total, valor, valor_frete, empresa")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -224,10 +226,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Resolver o id_empresa a partir da proposta (mesmo padrão de editar-paga).
+  // Pendências secundárias criadas abaixo precisam de id_empresa válido; sem ele
+  // o INSERT falhava silenciosamente e a pendência não era criada.
+  const idEmpresaPendencia = resolveEmpresaIdFromTexto(propostaBanco.empresa) ?? null;
+
   // ── 5. Re-calcular soberanamente a diferença financeira ───────────────────
   const { data: cobrancasBanco, error: cobrancasError } = await supabase
     .from("pagamentos_v2")
-    .select("status, confirmado, valor")
+    .select("status, confirmado, valor, obs_v2")
     .eq("id_int", idInt)
     .neq("status", "CANCELADO");
 
@@ -238,9 +245,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Mesma exclusão de editar-paga: valor de abatimento de débito não é pagamento
+  // da proposta, não deve entrar na diferença financeira desta proposta.
   const valorPagoReal = (cobrancasBanco || [])
     .filter(c => c.status === "PAID" || (c.status === "A_VENCER" && c.confirmado))
-    .reduce((sum, c) => sum + (Number(c.valor) || 0), 0);
+    .reduce((sum, c) => {
+      const marcador = String(c.obs_v2 || "").match(/\[ABATIMENTO_DEBITO:(\d+(?:\.\d{1,2})?)\]/);
+      const abatimento = marcador ? Number(marcador[1]) || 0 : 0;
+      return sum + Math.max(0, (Number(c.valor) || 0) - abatimento);
+    }, 0);
 
   const valorPagoRealArredondado = Math.round(valorPagoReal * 100) / 100;
 
@@ -255,14 +268,40 @@ export async function POST(request: NextRequest) {
 
   console.info(`[resolver-diferenca] Proposta #${idInt}: valor_total=${propostaBanco.valor_total}, valor=${propostaBanco.valor}, valor_frete=${propostaBanco.valor_frete} → total resolvido=${novoTotalRealArredondado}, pago=${valorPagoRealArredondado}`);
   const diferencaCalculada = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
-  const diferencaCalculadaAbs = Math.abs(diferencaCalculada);
 
-  // Validar se o valor recebido bate com a diferença real (tolerância de R$ 0.02)
-  if (Math.abs(valor - diferencaCalculadaAbs) > 0.02) {
+  // Reconciliação consistente com editar-paga: descontar o que já foi movimentado
+  // para esta proposta (resoluções anteriores). Excluímos a janela de 5 min para
+  // não subtrair um movimento recém-criado por duplo-clique — esse caso é tratado
+  // pela idempotência da seção 7 mais abaixo.
+  const cincoMinAtrasReconc = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: movimentosAnteriores } = await supabase
+    .from("movimento_credito")
+    .select("valor")
+    .eq("id_int", idInt)
+    .eq("cancelado", false)
+    .lt("created_at", cincoMinAtrasReconc);
+  const totalReconciliadoAnterior = Math.round(
+    (movimentosAnteriores || []).reduce((sum, m) => sum + Math.abs(Number(m.valor) || 0), 0) * 100
+  ) / 100;
+  const diferencaBrutaAbs = Math.abs(diferencaCalculada);
+  const diferencaReconciliadaAbs = Math.max(
+    0,
+    Math.round((diferencaBrutaAbs - totalReconciliadoAnterior) * 100) / 100
+  );
+
+  // Validação tolerante: aceita o valor tanto contra a diferença bruta (fluxo do
+  // botão "Resolver agora" e recuperação de pendências travadas) quanto contra a
+  // diferença já reconciliada com movimentos anteriores (edições incrementais).
+  // Assim o loop antigo continua quebrado sem impedir a resolução de estados presos.
+  const valorConfere =
+    Math.abs(valor - diferencaBrutaAbs) <= 0.02 ||
+    Math.abs(valor - diferencaReconciliadaAbs) <= 0.02;
+
+  if (!valorConfere) {
     return NextResponse.json(
       {
         success: false,
-        error: `Inconsistência de valores: o valor informado (R$ ${valor.toFixed(2)}) difere da diferença real calculada no servidor (R$ ${diferencaCalculadaAbs.toFixed(2)}). Pago: R$ ${valorPagoRealArredondado.toFixed(2)}, Novo total: R$ ${novoTotalRealArredondado.toFixed(2)}.`
+        error: `Inconsistência de valores: o valor informado (R$ ${valor.toFixed(2)}) difere da diferença calculada no servidor (bruta R$ ${diferencaBrutaAbs.toFixed(2)} / reconciliada R$ ${diferencaReconciliadaAbs.toFixed(2)}). Pago: R$ ${valorPagoRealArredondado.toFixed(2)}, Novo total: R$ ${novoTotalRealArredondado.toFixed(2)}.`
       },
       { status: 400 }
     );
@@ -375,7 +414,7 @@ export async function POST(request: NextRequest) {
 
   // ── 9. Se DEVOLVER: criar pendência secundária para o financeiro confirmar a devolução ──
   if (acao === "DEVOLVER") {
-    await supabase
+    const { error: pendDevErr } = await supabase
       .from("propostas_pendencias")
       .insert([{
         id_int: idInt,
@@ -389,17 +428,21 @@ export async function POST(request: NextRequest) {
         responsavel_user_id: null,
         criado_por_user_id: user.id,
         criado_por_nome: user.email ?? "Sistema",
-        origem: "CONFIRMACAO_DEVOLUCAO",
+        // A CHECK constraint chk_propostas_pendencias_origem só aceita SISTEMA/MANUAL;
+        // "CONFIRMACAO_DEVOLUCAO" fazia o INSERT falhar (23514). A semântica fica no
+        // título/categoria da pendência.
+        origem: "SISTEMA",
         data_limite: null,
         chat_id: null,
         pagamento_id: null,
-        id_empresa: null,
+        id_empresa: idEmpresaPendencia,
       }]);
+    if (pendDevErr) console.error("[resolver-diferenca] Falha ao criar pendência de devolução:", pendDevErr.message);
   }
 
   // ── 10. Se DEBITO_PENDENTE_COBRANCA: criar pendência de cobrança ───────────
   if (acao === "DEBITO_PENDENTE_COBRANCA") {
-    await supabase
+    const { error: pendCobErr } = await supabase
       .from("propostas_pendencias")
       .insert([{
         id_int: idInt,
@@ -413,12 +456,16 @@ export async function POST(request: NextRequest) {
         responsavel_user_id: null,
         criado_por_user_id: user.id,
         criado_por_nome: user.email ?? "Sistema",
-        origem: "DEBITO_COMPLEMENTAR",
+        // A CHECK constraint chk_propostas_pendencias_origem só aceita SISTEMA/MANUAL;
+        // "DEBITO_COMPLEMENTAR" fazia o INSERT falhar (23514), então a pendência de
+        // cobrança complementar nunca era criada. A semântica fica no título/categoria.
+        origem: "SISTEMA",
         data_limite: null,
         chat_id: null,
         pagamento_id: null,
-        id_empresa: null,
+        id_empresa: idEmpresaPendencia,
       }]);
+    if (pendCobErr) console.error("[resolver-diferenca] Falha ao criar pendência de cobrança complementar:", pendCobErr.message);
   }
 
   // ── 11. Concluir pendência principal ──────────────────────────────────────
@@ -434,8 +481,9 @@ export async function POST(request: NextRequest) {
     .eq("id", idPendencia);
 
   // ── 12. Registrar mensagem na timeline ────────────────────────────────────
+  // As mensagens de timeline já prefixam "R$ "; passar só o número evita "R$ R$".
   const valorFormatado = valor.toFixed(2).replace(".", ",");
-  const mensagem = config.mensagemTimeline(`R$ ${valorFormatado}`, observacao);
+  const mensagem = config.mensagemTimeline(valorFormatado, observacao);
 
   await supabase
     .from("propostas_chat")
@@ -451,6 +499,19 @@ export async function POST(request: NextRequest) {
     }]);
 
   console.info(`[resolver-diferenca] Concluído: acao=${acao}, proposta=#${idInt}, movimento=${novoMovimento?.id}, pendencia=${idPendencia}`);
+
+  // ── 13. Reconciliar status_interno pelo fluxo oficial ─────────────────────
+  // Evento: resolução de diferença financeira de proposta paga. Best-effort:
+  // nunca falha a resolução da diferença em si.
+  const reconciliacao = await aplicarStatusRecomendadoProposta(
+    idInt,
+    { uid: user.id, nome: user.email ?? "Sistema", email: user.email ?? "" },
+    supabase,
+    "AUTO_FINANCEIRO"
+  );
+  if (!reconciliacao.success) {
+    console.warn(`[resolver-diferenca] Reconciliação de status sem efeito para proposta #${idInt}: ${reconciliacao.errorMessage}`);
+  }
 
   return NextResponse.json({
     success: true,

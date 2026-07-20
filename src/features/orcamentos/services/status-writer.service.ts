@@ -36,7 +36,10 @@ export async function aplicarStatusRecomendadoProposta(
   const isAvulso = propData.is_avulso || false;
 
   // 2. Calcular o status via Engine Oficial
-  const diagnostic = await validarStatusProposta(idInt, isAvulso, statusAtual);
+  // Repassa o client recebido (autenticado server-side quando chamado de uma rota
+  // Route Handler) — sem isso, validarStatusProposta cairia no client de navegador
+  // (getSupabaseClient()), que não existe em contexto de servidor.
+  const diagnostic = await validarStatusProposta(idInt, isAvulso, statusAtual, client);
 
   if (!diagnostic) {
     return { success: false, errorMessage: "Falha ao calcular o diagnóstico na engine." };

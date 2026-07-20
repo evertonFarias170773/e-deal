@@ -1,18 +1,32 @@
 /**
  * Engine Pura de Cálculo de Status Interno de Propostas.
- * Esta engine NÃO possui efeitos colaterais. Ela não consulta o Supabase 
- * e não realiza escritas. Ela recebe evidências (estado atual de pagamentos, 
+ * Esta engine NÃO possui efeitos colaterais. Ela não consulta o Supabase
+ * e não realiza escritas. Ela recebe evidências (estado atual de pagamentos,
  * artes, modelos, propostas) e retorna uma recomendação do status.
  *
- * Utilizada para a Fase 1 (Shadow Mode) da transição de arquitetura.
+ * Regra financeira oficial (LIBERADO só com cobertura integral):
+ * a soma de pagamentos válidos (`PAID`, ou `A_VENCER` com `confirmado=true`)
+ * precisa cobrir `propostas.valor_total` dentro da tolerância monetária oficial
+ * (R$ 0,02 — mesma constante usada em conferencia-financeira.service.ts).
+ * Pagamento parcial nunca produz LIBERADO.
  */
+
+// Tolerância monetária oficial (mesma usada em calcularSituacaoQuitacaoProposta).
+export const TOLERANCIA_MONETARIA = 0.02;
+
+// Novos estados devem sempre gravar "LIBERADO" — "APROVADO" é mantido apenas
+// como valor legado de leitura (propostas antigas), nunca mais escrito por esta engine.
+const FAMILIA_FINANCEIRA = ["NOVO", "AGUARDANDO", "APROVADO", "LIBERADO"];
 
 export interface EvidenciaStatus {
   statusInternoAtual: string;
-  pagamentosAtivos: {
-    status: string; // 'PAID', 'A_RECEBER', 'A_VENCER', etc
-    confirmado: boolean;
-  }[];
+  /** propostas.valor_total — fonte da verdade do total financeiro da proposta. */
+  valorTotalProposta: number;
+  /** Soma já filtrada pela regra oficial de quitação (calcularSituacaoQuitacaoProposta):
+   *  PAID, ou A_VENCER+confirmado=true; CANCELADO/CANCELADA/EXTORNADO/RECUSADO excluídos. */
+  valorPagoConfirmado: number;
+  /** Existe ao menos uma cobrança ativa (não cancelada/extornada) vinculada à proposta. */
+  temCobrancaAtiva: boolean;
   modelos: {
     status_arte: string;
     status_producao: string;
@@ -32,9 +46,13 @@ export interface EngineStatusResult {
   emArte: boolean;
 }
 
+function baseStatus(status: string): string {
+  return (status || "NOVO").toUpperCase().replace(" / EM ARTE", "").trim();
+}
+
 export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineStatusResult {
-  const { statusInternoAtual, pagamentosAtivos, modelos, isAvulso } = evidencias;
-  
+  const { statusInternoAtual, valorTotalProposta, valorPagoConfirmado, temCobrancaAtiva, modelos, isAvulso } = evidencias;
+
   let statusRecomendado = statusInternoAtual || "NOVO";
   const bloqueios: string[] = [];
   let motivo = "Nenhuma alteração calculada";
@@ -42,36 +60,46 @@ export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineSt
   let podeGravarAutomaticamente = false;
   let emArte = false;
 
-  // REGRAS FINANCEIRAS
-  // Para uma proposta ser considerada financeiramente aprovada, todos os registros 
-  // válidos de pagamentos_v2 do mesmo id_int precisam estar confirmados/aprovados.
-  const temPagamentos = pagamentosAtivos.length > 0;
-  const todosPagamentosConfirmados = temPagamentos && pagamentosAtivos.every(p => p.confirmado === true || p.status === "PAID");
-  const possuiPagamentoPendente = temPagamentos && !todosPagamentosConfirmados;
+  // REGRA FINANCEIRA
+  // Só reavalia dentro da família comercial/financeira (NOVO/AGUARDANDO/APROVADO[legado]/LIBERADO).
+  // Estados de Produção/Expedição/Entrega e CANCELADO nunca são tocados por esta engine —
+  // evidência financeira não é autorização para avançar ou regredir etapas produtivas
+  // (FLUXO-OFICIAL-STATUS-PROPOSTAS.md §1.4).
+  //
+  // Quando não há nenhuma cobrança ativa, a engine não recomenda nada (evita regressão
+  // silenciosa para NOVO, proibida em §12) — esse caso já é tratado pelo mecanismo de
+  // reversão dedicado (reverterStatusPropostaSeSemCobranca / checkAndRevertPropostaStatus).
+  const dentroDaFamiliaFinanceira = FAMILIA_FINANCEIRA.includes(baseStatus(statusInternoAtual));
 
-  if (statusInternoAtual === "NOVO" && temPagamentos) {
-    if (todosPagamentosConfirmados) {
-      statusRecomendado = "APROVADO";
-      motivo = "Todos os pagamentos foram confirmados";
+  if (dentroDaFamiliaFinanceira && temCobrancaAtiva) {
+    const cobreIntegralmente = valorTotalProposta > 0 && valorPagoConfirmado >= (valorTotalProposta - TOLERANCIA_MONETARIA);
+    const valorPagoFmt = valorPagoConfirmado.toFixed(2);
+    const valorTotalFmt = valorTotalProposta.toFixed(2);
+
+    if (cobreIntegralmente) {
+      statusRecomendado = "LIBERADO";
+      motivo = `Cobertura financeira integral: R$ ${valorPagoFmt} de R$ ${valorTotalFmt} (tolerância R$ ${TOLERANCIA_MONETARIA.toFixed(2)})`;
       nivelConfianca = "ALTO";
       podeGravarAutomaticamente = true;
-    } else if (possuiPagamentoPendente) {
+    } else {
       statusRecomendado = "AGUARDANDO";
-      motivo = "Existem pagamentos pendentes aguardando confirmação";
+      motivo = `Cobertura financeira parcial: R$ ${valorPagoFmt} de R$ ${valorTotalFmt} — saldo pendente R$ ${(valorTotalProposta - valorPagoConfirmado).toFixed(2)}`;
       nivelConfianca = "ALTO";
       podeGravarAutomaticamente = true;
     }
   }
 
-  // REGRAS DE ARTE / PRODUCAO
+  // REGRAS DE ARTE / PRODUCAO (inalteradas na semântica; passam a reconhecer LIBERADO
+  // além do legado APROVADO como o estado "financeiramente liberado").
   if (!isAvulso && modelos.length > 0) {
     const statusesAprovados = ["APROVADA", "APROVADO", "APROVADA_CLIENTE", "LIBERADA", "IMPRESSA", "NAO_NECESSARIA"];
     const todosAprovados = modelos.every(m => m.status_arte && statusesAprovados.includes(m.status_arte.toUpperCase()));
-    
+    const financeiramenteLiberado = statusRecomendado === "APROVADO" || statusRecomendado === "LIBERADO";
+
     if (todosAprovados) {
-      if (statusRecomendado === "APROVADO") {
+      if (financeiramenteLiberado) {
         statusRecomendado = "REVISAO ATENDENTE";
-        motivo = "Aprovado financeiramente e todas as artes aprovadas";
+        motivo = "Liberado financeiramente e todas as artes aprovadas";
         nivelConfianca = "ALTO";
       } else if (statusRecomendado === "NOVO") {
         statusRecomendado = "NOVO_ARTE_APROVADA";
@@ -90,8 +118,8 @@ export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineSt
       } else if (statusRecomendado === "AGUARDANDO") {
         motivo = "Aguardando confirmação financeira, mas com arte em andamento";
         nivelConfianca = "MEDIO";
-      } else if (statusRecomendado === "APROVADO") {
-        motivo = "Aprovado financeiramente, mas modelos encontram-se em fase de arte";
+      } else if (financeiramenteLiberado) {
+        motivo = "Liberado financeiramente, mas modelos encontram-se em fase de arte";
         nivelConfianca = "MEDIO";
       }
     }

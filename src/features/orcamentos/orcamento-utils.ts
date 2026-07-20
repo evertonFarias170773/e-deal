@@ -70,6 +70,7 @@ export function buildPropostaInformalText({
     itemsText = `✅ *Orçamento Avulso*: *${formatPlainCurrency(resumo.subtotalProdutos)}*`;
   } else {
     itemsText = itens
+      .filter((item) => item.statusItem !== "CANCELADO")
       .map((item) => {
         return `✅ *${item.quantidade.toLocaleString("pt-BR")}* ${item.nome}: *${formatPlainCurrency(item.subtotal)}* (${item.prazo})`;
       })
