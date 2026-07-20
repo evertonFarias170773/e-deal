@@ -1,6 +1,6 @@
 # CONTA-CORRENTE-CREDITO.md
 
-Versão: 1.0
+Versão: 1.3
 Status: Oficial
 Última atualização: 19/07/2026
 Projeto: ERP Ideal
@@ -128,10 +128,23 @@ Nenhum item abaixo deve ser considerado disponível ou validado até execução 
 
 # 4. Falhas Ainda Abertas
 
-Falhas confirmadas por leitura do código atual. Nenhuma foi corrigida nesta sincronização — a sincronização tratou apenas os bypasses de autenticação (seção 2.1) e a organização documental.
+Falhas confirmadas por leitura do código atual.
 
-1. **Pagamento combinado — consulta de saldo quebrada.** A rota de pagamento combinado consulta campos que não existem na estrutura real de `movimento_credito` (a tabela usa `cancelado`, não os campos consultados). A consulta falha antes de qualquer débito ocorrer.
-2. **Pagamento combinado — sem rollback compensatório.** Se o registro de pagamento E-Crédito falhar depois que o débito em `movimento_credito` já foi gravado, não há reversão automática nem pendência gerada — diferente do fluxo de uso integral, que já trata esse caso corretamente.
+## 4.1 Corrigidas nesta sincronização (pendentes de homologação)
+
+As falhas abaixo foram corrigidas no código, mas **não foram homologadas**. Homologação exige teste controlado com proposta nova, em ambiente de Preview/Homologação, seguindo `DEVELOPMENT.md`, e nunca com as propostas `#19359` ou `#19365`.
+
+1. **Pagamento combinado — consulta de saldo quebrada (corrigida).** A consulta de saldo foi ajustada para usar apenas os campos reais da tabela: `select("tipo, valor")` com `eq("cancelado", false)`, removendo as referências a `status` e `validade` que não existem em `movimento_credito`. O somatório segue a mesma semântica oficial de `CREDITO` soma e `DEBITO` subtrai, recalculado sempre no servidor.
+2. **Pagamento combinado — sem rollback compensatório (corrigida).** Quando a criação do pagamento `E-CREDITO` em `pagamentos_v2` falha depois que o débito em `movimento_credito` já foi gravado, o débito agora é cancelado logicamente (`cancelado = true`, `cancelado_em`, `cancelado_por`) antes de retornar o erro, no mesmo padrão já usado em `usar-credito/route.ts`. Nenhum `DELETE` físico é realizado.
+3. **Pagamento combinado — permissão desalinhada (corrigida).** Alinhado para validar a permissão `credito.usar` em vez de `financeiro.resolver_credito`.
+4. **Catálogo de cobrança — tipo E-CREDITO ausente no mock (corrigido).** O tipo `E-CREDITO` foi adicionado à lista `tiposCobrancaMock` para garantir resolução visual como "E-Crédito".
+5. **Atualização do saldo sem reload (corrigido).** O evento órfão `cobrancas-updated` foi substituído por um callback explícito `onRefreshProposta` em `OrcamentoFormPage.tsx` para recarregar o saldo do banner (`fetchSaldoCredito()`) e do modal de forma assíncrona após sucesso na operação.
+6. **Ação Consultar crédito na lista de clientes (implementado e pendente de homologação funcional).** Conectamos a ação "Consultar crédito" ao modal `AjusteContaCorrenteModal` para Desktop e Mobile. O acesso e as APIs `/api/cobrancas/ajuste-credito` e `/api/cobrancas/estorno-credito` foram restritos a administradores reais (`is_admin` ou `is_super_adm` no banco de dados).
+
+## 4.2 Falhas ainda abertas
+
+Nenhuma foi corrigida nesta sincronização, além das seis listadas em 4.1.
+
 3. **Idempotência frouxa em `usar-credito`.** A checagem de duplicidade não considera o valor da operação — um débito recente da mesma proposta, de qualquer origem ou valor, pode ser tratado como duplicata, retornando sucesso sem gravar a nova operação.
 4. **Idempotência frouxa em `resolver-diferenca`.** A janela de 5 minutos identifica duplicidade por proposta e tipo de movimento, não pela pendência específica — duas resoluções legítimas do mesmo tipo em um intervalo curto podem resultar na segunda sendo descartada silenciosamente como sucesso.
 5. **Cancelamento de item bloqueado pela interface.** O backend já implementa corretamente o cancelamento lógico de item em proposta paga, mas a interface bloqueia a ação de remoção sempre que existe cobrança ativa, sem verificar se a edição de proposta paga está autorizada — o caminho correto fica inacessível pelo fluxo padrão.
