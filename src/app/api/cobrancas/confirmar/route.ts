@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
+import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import fs from "fs";
 import path from "path";
 
@@ -162,8 +163,79 @@ export async function POST(request: NextRequest) {
       throw updateErr;
     }
 
-    // Opcional: disparar automação ou chat aqui (o frontend já pode fazer se quiser, ou fazemos)
-    // O sync-status já é feito externamente ou via trigger em alguns casos.
+    // ── 6. Abatimento de débito da conta corrente ──────────────────────────
+    // Se esta cobrança foi criada incluindo abatimento de débito (marcador em
+    // obs_v2, gravado por PropostaCobrancaPanel), o crédito na conta corrente
+    // só é registrado agora — quando o pagamento é de fato confirmado, nunca
+    // no momento da criação da cobrança (evita creditar dinheiro não recebido).
+    // "autorizar_faturamento" não é confirmação de recebimento, é só pré-aprovação
+    // de faturado — não dispara o abatimento.
+    if (!isAutorizacao) {
+      const marcador = String(cobranca.obs_v2 || "").match(/\[ABATIMENTO_DEBITO:(\d+(?:\.\d{1,2})?)\]/);
+      if (marcador && cobranca.id_cliente) {
+        const valorAbatimento = Math.round(parseFloat(marcador[1]) * 100) / 100;
+        if (valorAbatimento > 0) {
+          const { data: jaRegistrado } = await supabase
+            .from("movimento_credito")
+            .select("id")
+            .eq("id_cliente", cobranca.id_cliente)
+            .eq("tipo", "CREDITO")
+            .eq("cancelado", false)
+            .ilike("observacao", `%pagamento ${idCobranca}%`)
+            .limit(1)
+            .maybeSingle();
+
+          if (!jaRegistrado) {
+            const obsMovimento = `Abatimento de débito via cobrança confirmada (pagamento ${idCobranca}${cobranca.id_int ? `, proposta #${cobranca.id_int}` : ""}). Operador: ${confirmadoPor || "Sistema"}.`;
+            const { error: errMovimento } = await supabase
+              .from("movimento_credito")
+              .insert({
+                id_cliente: cobranca.id_cliente,
+                id_int: cobranca.id_int ?? null,
+                valor: valorAbatimento,
+                tipo: "CREDITO",
+                origem: "SISTEMA",
+                observacao: obsMovimento,
+                created_by: userId,
+                cancelado: false,
+              });
+
+            if (errMovimento) {
+              console.error("[confirmar] Falha ao registrar abatimento de débito:", errMovimento.message);
+            } else if (cobranca.id_int) {
+              await supabase.from("propostas_chat").insert([{
+                id_int: cobranca.id_int,
+                id_cliente: cobranca.id_cliente,
+                mensagem: `💳 Débito de R$ ${valorAbatimento.toFixed(2).replace(".", ",")} abatido na conta corrente após confirmação do pagamento.`,
+                tipo: "SISTEMA",
+                autor_nome: "Sistema",
+                setor: "Financeiro",
+                visivel_externo: false,
+                anexos: null,
+              }]);
+            }
+          }
+        }
+      }
+    }
+
+    // ── 7. Reconciliar status_interno pelo fluxo oficial ─────────────────────
+    // Confirmação de pagamento é um dos eventos que exigem reavaliação (nunca
+    // confiar em formState.status do cliente). Best-effort: nunca falha a
+    // confirmação do pagamento em si; "autorizar_faturamento" não é recebimento
+    // real, não reconcilia aqui.
+    if (!isAutorizacao && cobranca.id_int) {
+      const reconciliacao = await aplicarStatusRecomendadoProposta(
+        cobranca.id_int,
+        { uid: userId, nome: confirmadoPor || authData.user.email || "Sistema", email: authData.user.email || "" },
+        supabase,
+        "AUTO_FINANCEIRO"
+      );
+      if (!reconciliacao.success) {
+        console.warn(`[confirmar] Reconciliação de status sem efeito para proposta #${cobranca.id_int}: ${reconciliacao.errorMessage}`);
+      }
+    }
+
     return NextResponse.json({ success: true });
     
   } catch (err: any) {

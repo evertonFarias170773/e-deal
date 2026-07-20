@@ -1,17 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSupabaseClient } from "@/lib/supabase/client";
-
-// Limpa caracteres nao numericos
-function keepDigitsOnly(value: string | undefined | null): string {
-  if (!value) {
-    return "";
-  }
-  return value.replace(/\D/g, "");
-}
-
-function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 
 type GerarPixRequest = {
   cobrancaId: string;
@@ -42,7 +32,6 @@ export async function POST(request: Request) {
 
   const {
     cobrancaId,
-    idEmpresa,
     seuNumero,
     valorNominal,
     dataVencimento,
@@ -63,169 +52,100 @@ export async function POST(request: Request) {
     );
   }
 
-  const cpfCnpjDigits = keepDigitsOnly(cpfCnpj);
-  const tipoPessoa = cpfCnpjDigits.length === 11 ? "CPF" : "CNPJ";
-  const telefoneDigits = keepDigitsOnly(telefone);
-  const cepDigits = keepDigitsOnly(cep);
+  // 1. Obter ENV
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // Formata o body esperado pelo webhook do Banco Inter
-  const webhookBody = {
-    seuNumero: seuNumero,
-    valorNominal: roundMoney(valorNominal),
-    dataVencimento: dataVencimento,
-    numDiasAgenda: 1,
-    telefone: telefoneDigits,
-    cpfCnpj: cpfCnpjDigits,
-    tipoPessoa: tipoPessoa,
-    nome: nome,
-    endereco: endereco,
-    cidade: cidade,
-    uf: uf,
-    id_interno: seuNumero,
-    cep: cepDigits
-  };
-
-  let webhookUrl = "";
-  if (idEmpresa === 1) {
-    webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-ideal";
-  } else if (idEmpresa === 2) {
-    webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-biro";
-  } else if (idEmpresa === 3) {
-    webhookUrl = "https://10074.hostoo.net.br/webhook/vibe-e3";
-  } else {
-    console.error("[API][GerarPix] id_empresa nao suportado para PIX real:", idEmpresa);
+  if (!url || !anonKey) {
+    console.error("[GerarPix] ENV AUSENTE");
     return NextResponse.json(
-      { success: false, message: `Criacao de cobranca real nao suportada/bloqueada para a empresa ID ${idEmpresa}.` },
+      { success: false, message: "Erro interno no servidor de banco de dados." },
+      { status: 500 }
+    );
+  }
+
+  // 2. Autenticação JWT
+  const authHeader = request.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) {
+    return NextResponse.json({ success: false, message: "Sessão não encontrada." }, { status: 401 });
+  }
+
+  const supabaseUser = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabaseUser.auth.getUser();
+  if (authError || !authData.user) {
+    return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+  }
+
+  // 3. Autorização / Permissão
+  const temPermissao = await verificarPermissaoServerSide(
+    supabaseUser,
+    authData.user.id,
+    "cobrancas.emitir_boleto"
+  );
+  if (!temPermissao) {
+    return NextResponse.json({ success: false, message: "Sem permissão para gerar cobrança." }, { status: 403 });
+  }
+
+  // 4. Validação da cobrança e RLS
+  const { data: cobranca, error: fetchErr } = await supabaseUser
+    .from("pagamentos_v2")
+    .select("id, id_empresa, tipo_cobranca, valor")
+    .eq("id", cobrancaId)
+    .maybeSingle();
+
+  if (fetchErr || !cobranca) {
+    return NextResponse.json(
+      { success: false, message: "Cobrança não encontrada ou fora do escopo de acesso do usuário." },
+      { status: 404 }
+    );
+  }
+
+  const tipo = cobranca.tipo_cobranca?.toUpperCase() || "";
+  if (tipo !== "E-PIX" && tipo !== "PIX") {
+    return NextResponse.json(
+      { success: false, message: "Esta cobrança não é do tipo PIX." },
       { status: 400 }
     );
   }
 
-  console.info(`[API][GerarPix] Chamando webhook da Empresa ${idEmpresa}...`, {
-    cobrancaId,
-    seuNumero,
-    valorNominal,
-    tipoPessoa,
-    webhookUrl
-  });
-
-  try {
-    const webhookResponse = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify(webhookBody)
-    });
-
-    if (!webhookResponse.ok) {
-      const errorText = await webhookResponse.text();
-      console.error("[API][GerarPix] Webhook retornou erro:", webhookResponse.status, errorText);
-      return NextResponse.json(
-        { success: false, message: `Erro no processamento do Banco Inter: ${errorText}` },
-        { status: webhookResponse.status }
-      );
-    }
-
-    const responseData = await webhookResponse.json();
-    
-    // Parser seguro por id_empresa
-    let codSolicitacaoInter: string;
-    let pixCopiaCola: string;
-    let linhaDigitavel: string | undefined = undefined;
-
-    try {
-      const webhookResult = Array.isArray(responseData) ? responseData[0] : responseData;
-      if (!webhookResult) {
-        throw new Error("Resposta do Banco Inter vazia ou em formato inesperado.");
-      }
-
-      if (idEmpresa === 2) {
-        const codSolicitacao = webhookResult.cobranca?.codigoSolicitacao;
-        const pCopiaCola = webhookResult.pix?.pixCopiaECola;
-        linhaDigitavel = webhookResult.boleto?.linhaDigitavel;
-
-        if (!codSolicitacao) {
-          throw new Error("Resposta nao contem codigoSolicitacao da cobranca.");
-        }
-        if (!pCopiaCola) {
-          throw new Error("Resposta nao contem pixCopiaECola.");
-        }
-
-        codSolicitacaoInter = codSolicitacao;
-        pixCopiaCola = pCopiaCola;
-      } else {
-        // Para empresas 1 e 3
-        const txid = webhookResult.txid;
-        const pCopiaCola = webhookResult.pix_copia_e_cola;
-
-        if (!txid) {
-          throw new Error("Resposta nao contem txid.");
-        }
-        if (!pCopiaCola) {
-          throw new Error("Resposta nao contem pix_copia_e_cola.");
-        }
-
-        codSolicitacaoInter = txid;
-        pixCopiaCola = pCopiaCola;
-      }
-    } catch (parseError: unknown) {
-      const errMessage = parseError instanceof Error ? parseError.message : String(parseError);
-      console.error("[API][GerarPix] Erro ao fazer parse da resposta do Banco Inter:", parseError, responseData);
-      return NextResponse.json(
-        { success: false, message: `Resposta do Banco Inter em formato invalido: ${errMessage}` },
-        { status: 502 }
-      );
-    }
-
-    // Inicializa o Supabase Client no servidor
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.error("[API][GerarPix] Nao foi possivel inicializar cliente Supabase no servidor.");
-      return NextResponse.json(
-        { success: false, message: "Erro interno ao conectar ao banco de dados no servidor." },
-        { status: 500 }
-      );
-    }
-
-    console.info("[API][GerarPix] Gravando retorno do PIX no Supabase...", {
-      cobrancaId,
-      codSolicitacaoInter
-    });
-
-    const updatePayload: Record<string, unknown> = {
-      cod_solicitacao_inter: codSolicitacaoInter,
-      pix_copia_cola: pixCopiaCola
-    };
-
-    if (linhaDigitavel) {
-      updatePayload.linha_digitavel = linhaDigitavel;
-    }
-
-    // Atualiza o registro no Supabase com os dados do PIX
-    const { data: updatedData, error: updateError } = await supabase
-      .from("pagamentos_v2")
-      .update(updatePayload)
-      .eq("id", cobrancaId)
-      .select();
-
-    if (updateError) {
-      console.error("[API][GerarPix] Erro ao salvar dados do PIX no Supabase:", updateError);
-      return NextResponse.json(
-        { success: false, message: `Erro ao salvar dados do PIX no banco: ${updateError.message}` },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: updatedData && updatedData[0] ? updatedData[0] : null
-    });
-  } catch (error: unknown) {
-    console.error("[API][GerarPix] Excecao na API route:", error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
+  const idEmpresaReal = Number(cobranca.id_empresa);
+  if (!idEmpresaReal) {
     return NextResponse.json(
-      { success: false, message: `Excecao ao processar cobranca: ${errorMessage}` },
-      { status: 500 }
+      { success: false, message: "Cobrança sem empresa associada." },
+      { status: 400 }
     );
   }
+
+  // 5. Executar integração real do PIX
+  const resPix = await gerarPixBancoInter(supabaseUser, {
+    cobrancaId,
+    idEmpresa: idEmpresaReal,
+    seuNumero,
+    valorNominal,
+    dataVencimento,
+    telefone,
+    cpfCnpj,
+    nome,
+    endereco,
+    cidade,
+    uf,
+    cep
+  });
+
+  if (!resPix.success) {
+    return NextResponse.json(
+      { success: false, message: resPix.error || "Erro de processamento no Banco Inter." },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: resPix.data
+  });
 }

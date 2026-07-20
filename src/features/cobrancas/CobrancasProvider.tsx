@@ -14,6 +14,7 @@ import {
   type CobrancasReadSource
 } from "@/features/cobrancas/services/pagamentos-v2.service";
 import { registrarMensagemSistemaProposta } from "@/features/orcamentos/services/orcamentos.service";
+import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
 
 type CobrancasContextValue = {
   cobrancas: Cobranca[];
@@ -22,7 +23,6 @@ type CobrancasContextValue = {
   createCobranca: (values: CriarCobrancaFormValues, proposta?: Proposta) => Promise<Cobranca>;
   confirmPagamento: (id: string) => void;
   cancelCobranca: (id: string, motivo: string) => Promise<{ success: boolean; errorMessage?: string }>;
-  deleteCobranca: (id: string) => Promise<{ success: boolean; errorMessage?: string }>;
   cancelarExterno: (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string) => Promise<{ success: boolean; errorMessage?: string }>;
   
   liberarParaPedido: (idInt: number) => boolean;
@@ -392,10 +392,14 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           is_prorrogado: false
         };
 
+        const sessionResponse = await client.auth.getSession();
+        const token = sessionResponse.data.session?.access_token || "";
+
         response = await fetch("/api/cobrancas/gerar-boleto", {
           method: "POST",
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
+            "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify(webhookPayload)
         });
@@ -416,10 +420,14 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           cep: proposta.enderecoEntrega?.cep || ""
         };
 
+        const sessionResponse = await client.auth.getSession();
+        const token = sessionResponse.data.session?.access_token || "";
+
         response = await fetch("/api/cobrancas/gerar-pix", {
           method: "POST",
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
+            "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify(webhookPayload)
         });
@@ -604,14 +612,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
         if (propData) {
           const currentStatus = String(propData.status_interno || "NOVO").trim().toUpperCase();
-          const PROTECTED_STATUSES = [
-            "APROVADO", "APROVADO / EM ARTE",
-            "REVISAO ATENDENTE", "REVISAO PRODUCAO",
-            "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO",
-            "EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"
-          ];
 
-          if (PROTECTED_STATUSES.includes(currentStatus)) {
+          if ((PROPOSTA_STATUS_PROTEGIDOS as readonly string[]).includes(currentStatus)) {
             console.log(`[CobrancasProvider] Cancelamento ignorou regressão pois status ${currentStatus} é protegido.`);
             return;
           }
@@ -736,25 +738,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: "Não é permitido cancelar cobrança paga ou com faturamento aprovado (A_VENCER)." };
       }
 
-      const tipoNormalized = cob.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
-      const isExternoCancelable = ((tipoNormalized === "BOLETO" || tipoNormalized === "PIX") && !!cob.cod_solicitacao_inter) || tipoNormalized === "CARD-PARCELADO";
-
-      if (isExternoCancelable) {
-        const acao = tipoNormalized === "PIX" ? "DELETE" : "CANCEL";
-        const extResult = await cancelarExterno(cob, acao, motivo);
-        if (!extResult.success) {
-          return extResult;
-        }
-      } else {
-        const { error: updateError } = await client
-          .from("pagamentos_v2")
-          .update({ status: "CANCELADO", motivo_cancela: motivo })
-          .eq("id", id);
-
-        if (updateError) {
-          console.error("[cancelCobranca] Erro ao cancelar cobrança no Supabase:", updateError);
-          return { success: false, errorMessage: updateError.message || "Erro ao cancelar cobrança no banco." };
-        }
+      // Toda escrita financeira de cancelamento passa pela API protegida
+      // (JWT + cobrancas.cancel + escopo de empresa). A rota decide se há
+      // cancelamento no provedor ou apenas cancelamento lógico local.
+      const extResult = await cancelarExterno(cob, "CANCEL", motivo);
+      if (!extResult.success) {
+        return extResult;
       }
 
       const msg = `Cobrança cancelada. Motivo: ${motivo}`;
@@ -818,11 +807,25 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
   const cancelarExterno = useCallback(async (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string): Promise<{ success: boolean; errorMessage?: string }> => {
     try {
+      const client = getSupabaseClient();
+      if (!client) {
+        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+      }
+      const sessionResponse = await client.auth.getSession();
+      const token = sessionResponse.data.session?.access_token || "";
+      if (!token) {
+        return { success: false, errorMessage: "Sessão não encontrada. Faça login novamente." };
+      }
+
       const response = await fetch("/api/cobrancas/cancelar-externo", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           id: cobranca.id,
+          id_int: cobranca.id_int,
           tipo_cobranca: cobranca.tipo_cobranca,
           acao_local: acaoLocal,
           cod_c6: cobranca.cod_solicitacao_inter,
@@ -836,17 +839,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: data.message || "Erro desconhecido ao cancelar externamente." };
       }
 
-      // Update local state immediately so UI updates reactively
-      if (acaoLocal === "DELETE") {
-        const updateCob = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== cobranca.id);
-        setCobrancas(updateCob);
-        setCobrancasStats(updateCob);
-      } else {
-        const updateCob = (list: Cobranca[]): Cobranca[] =>
-          list.map((c) => (c.id === cobranca.id ? { ...c, status: "CANCELADO", motivo_cancela: motivo || "" } : c));
-        setCobrancas(updateCob);
-        setCobrancasStats(updateCob);
-      }
+      // A ação local no backend é sempre cancelamento lógico (nunca DELETE físico):
+      // o registro permanece com status CANCELADO, para os dois valores de acaoLocal.
+      const updateCob = (list: Cobranca[]): Cobranca[] =>
+        list.map((c) => (c.id === cobranca.id ? { ...c, status: "CANCELADO", motivo_cancela: motivo || "" } : c));
+      setCobrancas(updateCob);
+      setCobrancasStats(updateCob);
 
       await refreshCobrancas();
       if (cobranca.id_int) {
@@ -858,73 +856,6 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       return { success: false, errorMessage: error.message || "Falha na comunicação com a API." };
     }
   }, [refreshCobrancas, recalcularBoletoIdIntsLocal]);
-
-  const deleteCobranca = useCallback(async (id: string): Promise<{ success: boolean; errorMessage?: string }> => {
-    const cobranca = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
-    if (!cobranca) {
-      return { success: false, errorMessage: "Cobrança não encontrada." };
-    }
-
-    const statusNormalized = cobranca.status?.trim().toUpperCase();
-    if (statusNormalized === "PAID" || statusNormalized === "A_VENCER") {
-      return { success: false, errorMessage: "Não é permitido excluir cobrança paga ou com faturamento aprovado (A_VENCER)." };
-    }
-
-    if (source === "supabase") {
-      const client = getSupabaseClient();
-      if (!client) {
-        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
-      }
-
-      // Revalidar status atual no Supabase para impedir exclusão de PAID em tempo real
-      const { data: dbRow, error: fetchError } = await client
-        .from("pagamentos_v2")
-        .select("status")
-        .eq("id", id)
-        .maybeSingle();
-
-      if (fetchError || !dbRow) {
-        console.error("[deleteCobranca] Erro ao buscar status atual da cobrança:", fetchError);
-        return {
-          success: false,
-          errorMessage: fetchError?.message || "Não foi possível verificar o status atual da cobrança no banco."
-        };
-      }
-
-      const dbStatusNorm = String(dbRow.status || "").trim().toUpperCase();
-      if (dbStatusNorm === "PAID" || dbStatusNorm === "A_VENCER") {
-        return { success: false, errorMessage: "Não é permitido excluir cobrança paga ou aprovada (A_VENCER)." };
-      }
-
-      const { error } = await client
-        .from("pagamentos_v2")
-        .delete()
-        .eq("id", id);
-
-      if (error) {
-        console.error("[deleteCobranca] Erro ao excluir do Supabase:", error);
-        return { success: false, errorMessage: error.message };
-      }
-
-      // Update local state immediately so UI updates reactively
-      const updateCobLocal = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== id);
-      setCobrancas(updateCobLocal);
-      setCobrancasStats(updateCobLocal);
-
-      await refreshCobrancas();
-      if (cobranca.id_int) {
-        await recalcularBoletoIdIntsLocal(cobranca.id_int);
-        await checkAndRevertPropostaStatus(cobranca.id_int);
-      }
-      return { success: true };
-    } else {
-      const updateCob = (list: Cobranca[]): Cobranca[] => list.filter((c) => c.id !== id);
-      setCobrancas(updateCob);
-      setCobrancasStats(updateCob);
-      return { success: true };
-    }
-  }, [source, cobrancas, cobrancasStats, refreshCobrancas, recalcularBoletoIdIntsLocal]);
-
 
   const liberarParaPedido = useCallback((idInt: number) => {
     if (source === "supabase") {
@@ -1407,7 +1338,6 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       createCobranca,
       confirmPagamento,
       cancelCobranca,
-      deleteCobranca,
       cancelarExterno,
       liberarParaPedido,
       refreshCobrancas,
@@ -1430,7 +1360,6 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       cobrancasStats,
       source,
       cancelCobranca,
-      deleteCobranca,
       cancelarExterno,
       confirmPagamento,
       createCobranca,
