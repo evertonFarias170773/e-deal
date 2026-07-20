@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { getSaldoCredito } from "@/features/cobrancas/services/movimento-credito.service";
+import { getSaldoCredito, getSaldoContaCorrente } from "@/features/cobrancas/services/movimento-credito.service";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { Field, PanelCard, inputClass, InfoBox } from "@/features/cobrancas/form-ui";
@@ -111,18 +111,28 @@ export function PropostaCobrancaPanel({
     (user?.id_perfil != null && user.permissoes?.includes("credito.usar"))
   );
 
+  // saldoDevedor: valor em aberto do cliente na conta corrente (independente de saldoCredito,
+  // que é sempre >=0). Usado para o lembrete de abatimento de débito ao gerar cobrança.
+  const [saldoDevedor, setSaldoDevedor] = useState<number>(0);
+
+  const idClienteAtual = proposta.cliente?.idCliente;
+
   const fetchSaldo = useCallback(async () => {
-    if (!proposta.cliente?.idCliente) return;
+    if (!idClienteAtual) return;
     setIsLoadingSaldo(true);
     try {
-      const s = await getSaldoCredito(proposta.cliente.idCliente);
+      const [s, saldoReal] = await Promise.all([
+        getSaldoCredito(idClienteAtual),
+        getSaldoContaCorrente(idClienteAtual),
+      ]);
       setSaldoCredito(s);
+      setSaldoDevedor(saldoReal < 0 ? Math.round(Math.abs(saldoReal) * 100) / 100 : 0);
     } catch (err) {
       console.error("[PropostaCobrancaPanel] Erro ao carregar saldo de crédito:", err);
     } finally {
       setIsLoadingSaldo(false);
     }
-  }, [proposta.cliente?.idCliente]);
+  }, [idClienteAtual]);
 
   useEffect(() => {
     fetchSaldo();
@@ -203,6 +213,11 @@ export function PropostaCobrancaPanel({
   const [isLoadingCredit, setIsLoadingCredit] = useState(false);
   const [nowTime, setNowTime] = useState<number>(0);
   const [showPendingAlert, setShowPendingAlert] = useState(false);
+  // Lembrete de débito ao gerar cobrança — não bloqueia, apenas pergunta antes de prosseguir.
+  const [showDebitoModal, setShowDebitoModal] = useState(false);
+  const [debitoResolvido, setDebitoResolvido] = useState(false);
+  const [debitoIncluido, setDebitoIncluido] = useState<number>(0);
+  const [debitoInputValor, setDebitoInputValor] = useState<string>("");
   const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
   const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>("");
   /** Pagador efetivo: resolvido via proposta.id_faturado; fallback = cliente principal */
@@ -464,9 +479,13 @@ export function PropostaCobrancaPanel({
     if (!isControlled) {
       setInternalModalOpen(false);
     }
+    // Reseta a decisão de abatimento de débito para a próxima vez que o modal abrir.
+    setDebitoResolvido(false);
+    setDebitoIncluido(0);
+    setDebitoInputValor("");
 
     onCloseModal?.();
-  }, [isControlled, onCloseModal]);
+  }, [isControlled, onCloseModal, setDebitoResolvido, setDebitoIncluido, setDebitoInputValor]);
 
   useEffect(() => {
     if (!modalOpen) {
@@ -503,7 +522,24 @@ export function PropostaCobrancaPanel({
     });
   }
 
-  async function handleSubmit(bypassPendingCheck?: boolean | React.MouseEvent) {
+  /**
+   * Gate acionado pelo clique nos botões "Gerar cobrança". Antes de qualquer
+   * requisição real, se o cliente tem débito em aberto e a decisão ainda não foi
+   * tomada nesta tentativa, pausa e pergunta se quer incluir parte/total do débito
+   * na cobrança. Não bloqueia — é só uma pergunta opcional, respondida uma vez por
+   * tentativa de envio (resetada quando o modal de cobrança fecha).
+   */
+  function handleSubmitClick() {
+    if (isSaving) return;
+    if (saldoDevedor > 0 && form.tipoCobranca !== "E-CREDITO" && !debitoResolvido) {
+      setDebitoInputValor(saldoDevedor.toFixed(2).replace(".", ","));
+      setShowDebitoModal(true);
+      return;
+    }
+    void handleSubmit();
+  }
+
+  async function handleSubmit(bypassPendingCheck?: boolean | React.MouseEvent, debitoIncluidoOverride?: number) {
     const shouldBypass = bypassPendingCheck === true;
     if (isSaving) {
       return;
@@ -598,16 +634,23 @@ export function PropostaCobrancaPanel({
         });
   
         const json = await res.json();
-        if (!res.ok || !json.success) {
+        // Se a requisição não foi bem-sucedida, mas É um resultado parcial, NÃO lançamos erro para cair no catch genérico.
+        // O backend retornará status: 200 e success: false com isCombinadoParcial = true.
+        if (!res.ok) {
+          throw new Error(json.error || "Erro na comunicação com a API.");
+        }
+        
+        if (!json.success && !json.isCombinadoParcial) {
           throw new Error(json.error || "Erro desconhecido ao aplicar crédito.");
         }
   
-        if (json.isCombinadoFalho) {
+        if (json.isCombinadoParcial) {
             showToast({
                 type: "warning",
-                title: "Cobrança Parcial Gerada",
-                description: json.error // Mensagem descrevendo que o E-Credito foi mas a segunda falhou
+                title: "Cobrança Parcial",
+                description: json.error // Mensagem descrevendo que o E-Credito foi, mas a segunda falhou
             });
+            // Importante: NÃO disparamos onPagamentoIntegralConcluido
         } else {
             showToast({
                 type: "success",
@@ -620,13 +663,13 @@ export function PropostaCobrancaPanel({
         }
   
         if (onRefreshProposta) onRefreshProposta();
-        window.dispatchEvent(new Event("cobrancas-updated")); 
         await fetchSaldo();
         
         setForm(buildInitialFormState());
         closeModal();
-      } catch (err: any) {
-        showToast({ type: "error", title: "Falha ao aplicar crédito", description: err.message });
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        showToast({ type: "error", title: "Falha ao aplicar crédito", description: errorMessage });
         await fetchSaldo();
       } finally {
         setIsSaving(false);
@@ -734,11 +777,25 @@ export function PropostaCobrancaPanel({
       };
     }
 
+    // Abatimento de débito opcional: soma ao valor real cobrado (PIX/Boleto/Cartão sai
+    // pelo valor combinado) e deixa um marcador parseável em obs_v2 (campo interno, não
+    // exposto ao cliente) para o crédito na conta corrente ser registrado somente quando
+    // este pagamento for de fato confirmado — nunca no momento da criação da cobrança.
+    const debitoIncluidoArredondado = Math.round((debitoIncluidoOverride ?? debitoIncluido) * 100) / 100;
+    const valorComDebito = roundMoney(roundedValor + debitoIncluidoArredondado);
+    const observacaoComMarcador = debitoIncluidoArredondado > 0
+      ? [
+          form.observacao?.trim() || null,
+          `[ABATIMENTO_DEBITO:${debitoIncluidoArredondado.toFixed(2)}] Cobrança inclui R$ ${debitoIncluidoArredondado.toFixed(2).replace(".", ",")} para abatimento do débito em aberto do cliente na conta corrente. Será registrado como crédito assim que este pagamento for confirmado.`,
+        ].filter(Boolean).join(" | ")
+      : form.observacao;
+
     const payload: CriarCobrancaFormValues = {
       ...form,
       ...extraPayload,
       vencimento: payloadVencimento,
-      valor: roundedValor,
+      valor: valorComDebito,
+      observacao: observacaoComMarcador,
       descricao: `Cobrança ${getCobrancaTipoLabel(form.tipoCobranca)} da proposta #${proposta.id_int}`,
       parcelaSelecionada: undefined,
       // Pagador efetivo: id_faturado validado; fallback automático via ?? no createCobranca
@@ -775,6 +832,14 @@ export function PropostaCobrancaPanel({
         showToast({
           type: "success",
           title: source === "supabase" ? "Cobrança real criada com sucesso!" : "Cobrança criada com sucesso."
+        });
+      }
+
+      if (debitoIncluidoArredondado > 0) {
+        showToast({
+          type: "info",
+          title: "Abatimento de débito incluído",
+          description: `R$ ${debitoIncluidoArredondado.toFixed(2).replace(".", ",")} do débito do cliente foram incluídos nesta cobrança. O crédito na conta corrente será registrado automaticamente assim que o pagamento for confirmado.`
         });
       }
 
@@ -1079,7 +1144,7 @@ export function PropostaCobrancaPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={handleSubmit}
+                  onClick={handleSubmitClick}
                   disabled={
                       isSaving ||
                       !tipoDisponivel ||
@@ -1123,6 +1188,72 @@ export function PropostaCobrancaPanel({
                 className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
               >
                 Enviar para avaliação
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showDebitoModal ? (
+        <div className="fixed inset-0 z-[85] bg-slate-950/60 p-4 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-slate-950">Cliente com débito em aberto</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {proposta.cliente?.nome ?? "Este cliente"} possui <strong>{formatCurrency(saldoDevedor)}</strong> em débito na conta corrente.
+                Quer incluir nesta cobrança parte ou o total do débito deste cliente?
+              </p>
+              <p className="text-xs text-slate-500">Não é obrigatório — a cobrança pode ser gerada normalmente pelo valor da proposta.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-500">Valor do débito a incluir (R$)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={debitoInputValor}
+                onChange={(e) => setDebitoInputValor(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+                placeholder="0,00"
+              />
+              <p className="text-[11px] text-slate-400">Máximo: {formatCurrency(saldoDevedor)}</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDebitoModal(false)}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDebitoIncluido(0);
+                  setDebitoResolvido(true);
+                  setShowDebitoModal(false);
+                  void handleSubmit(undefined, 0);
+                }}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Não incluir
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const parsed = parseFloat(debitoInputValor.replace(",", "."));
+                  if (isNaN(parsed) || parsed <= 0 || parsed > saldoDevedor + 0.01) {
+                    showToast({ type: "error", title: `Informe um valor entre R$ 0,01 e ${formatCurrency(saldoDevedor)}.` });
+                    return;
+                  }
+                  const arredondado = Math.round(parsed * 100) / 100;
+                  setDebitoIncluido(arredondado);
+                  setDebitoResolvido(true);
+                  setShowDebitoModal(false);
+                  void handleSubmit(undefined, arredondado);
+                }}
+                className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                Incluir no valor
               </button>
             </div>
           </div>
@@ -1621,7 +1752,7 @@ export function PropostaCobrancaPanel({
                   </button>
                   <button
                     type="button"
-                    onClick={handleSubmit}
+                    onClick={handleSubmitClick}
                     disabled={
                       isSaving ||
                       !tipoDisponivel ||
@@ -1665,6 +1796,72 @@ export function PropostaCobrancaPanel({
                 className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
               >
                 Enviar para avaliação
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showDebitoModal ? (
+        <div className="fixed inset-0 z-[85] bg-slate-950/60 p-4 flex items-center justify-center animate-fade-in" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5">
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-slate-950">Cliente com débito em aberto</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                {proposta.cliente?.nome ?? "Este cliente"} possui <strong>{formatCurrency(saldoDevedor)}</strong> em débito na conta corrente.
+                Quer incluir nesta cobrança parte ou o total do débito deste cliente?
+              </p>
+              <p className="text-xs text-slate-500">Não é obrigatório — a cobrança pode ser gerada normalmente pelo valor da proposta.</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-500">Valor do débito a incluir (R$)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={debitoInputValor}
+                onChange={(e) => setDebitoInputValor(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+                placeholder="0,00"
+              />
+              <p className="text-[11px] text-slate-400">Máximo: {formatCurrency(saldoDevedor)}</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDebitoModal(false)}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDebitoIncluido(0);
+                  setDebitoResolvido(true);
+                  setShowDebitoModal(false);
+                  void handleSubmit(undefined, 0);
+                }}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Não incluir
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const parsed = parseFloat(debitoInputValor.replace(",", "."));
+                  if (isNaN(parsed) || parsed <= 0 || parsed > saldoDevedor + 0.01) {
+                    showToast({ type: "error", title: `Informe um valor entre R$ 0,01 e ${formatCurrency(saldoDevedor)}.` });
+                    return;
+                  }
+                  const arredondado = Math.round(parsed * 100) / 100;
+                  setDebitoIncluido(arredondado);
+                  setDebitoResolvido(true);
+                  setShowDebitoModal(false);
+                  void handleSubmit(undefined, arredondado);
+                }}
+                className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+              >
+                Incluir no valor
               </button>
             </div>
           </div>

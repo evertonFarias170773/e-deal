@@ -15,6 +15,8 @@ import { formatDocument } from "@/lib/formatters/document";
 import { useCadastrosDashboardResumo } from "@/features/cadastros/hooks/useCadastrosDashboardResumo";
 import { useCadastrosReadOnlyData } from "@/features/cadastros/hooks/useCadastrosReadOnlyData";
 import type { CadastrosListaItem } from "@/features/cadastros/services/cadastros-read.service";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal";
 
 const PAGE_SIZE = 200;
 
@@ -143,11 +145,13 @@ function AniversariantesModal({
 
 export function CadastrosListPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const { showToast } = useAppToast();
   const [search, setSearch] = useState("");
   const [idClienteSearch, setIdClienteSearch] = useState("");
   const [pageIndex, setPageIndex] = useState(0);
   const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
+  const [activeClienteParaAjuste, setActiveClienteParaAjuste] = useState<{ idCliente: number; nome: string } | null>(null);
 
   const query = useMemo<SearchState>(
     () => ({
@@ -405,7 +409,18 @@ export function CadastrosListPage() {
                   { label: "Ver cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}`) },
                   { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
                   { label: "Criar proposta", onClick: () => showPlaceholderActionToast("Criar proposta") },
-                  { label: "Consultar credito", onClick: () => showPlaceholderActionToast("Consultar credito") },
+                  ...(user?.isAdmin || user?.isSuperAdmin
+                    ? [
+                        {
+                          label: "Consultar crédito",
+                          onClick: () =>
+                            setActiveClienteParaAjuste({
+                              idCliente: cadastro.idCliente,
+                              nome: cadastro.nome,
+                            }),
+                        },
+                      ]
+                    : []),
                   { label: "Abrir WhatsApp", onClick: () => showPlaceholderActionToast("Abrir WhatsApp") },
                   { label: "Ver financeiro", onClick: () => showPlaceholderActionToast("Ver financeiro") },
                   { label: "Inativar cadastro", destructive: true, onClick: () => showPlaceholderActionToast("Inativar cadastro") }
@@ -453,6 +468,18 @@ export function CadastrosListPage() {
                 items={[
                   { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
                   { label: "Criar proposta", onClick: () => showPlaceholderActionToast("Criar proposta") },
+                  ...(user?.isAdmin || user?.isSuperAdmin
+                    ? [
+                        {
+                          label: "Consultar crédito",
+                          onClick: () =>
+                            setActiveClienteParaAjuste({
+                              idCliente: cadastro.idCliente,
+                              nome: cadastro.nome,
+                            }),
+                        },
+                      ]
+                    : []),
                   { label: "Abrir WhatsApp", onClick: () => showPlaceholderActionToast("Abrir WhatsApp") },
                   { label: "Inativar cadastro", destructive: true, onClick: () => showPlaceholderActionToast("Inativar cadastro") }
                 ]}
@@ -489,6 +516,18 @@ export function CadastrosListPage() {
           </button>
         </div>
       </section>
+
+      {activeClienteParaAjuste && (
+        <AjusteContaCorrenteModal
+          isOpen={!!activeClienteParaAjuste}
+          onClose={() => setActiveClienteParaAjuste(null)}
+          idCliente={activeClienteParaAjuste.idCliente}
+          nomeCliente={activeClienteParaAjuste.nome}
+          onSuccess={() => {
+            // O próprio modal atualiza saldo e histórico internamente, sem necessidade de recarga da página pai
+          }}
+        />
+      )}
     </div>
   );
 }

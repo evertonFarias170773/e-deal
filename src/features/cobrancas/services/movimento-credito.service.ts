@@ -85,6 +85,44 @@ export async function getSaldoCredito(idCliente: number): Promise<number> {
   return Math.max(0, Math.round(saldo * 100) / 100);
 }
 
+/**
+ * Saldo real da conta corrente do cliente (COM sinal, SEM piso em zero).
+ *
+ * Diferente de `getSaldoCredito` (que retorna apenas o crédito disponível para
+ * aplicar em pagamentos e por isso nunca fica negativo), esta função devolve o
+ * saldo líquido verdadeiro: negativo quando o cliente está devedor
+ * (Σ DEBITO > Σ CREDITO). É a base do extrato/modal de Conta Corrente.
+ *
+ * Retorna 0 em caso de erro para não bloquear a UI.
+ */
+export async function getSaldoContaCorrente(idCliente: number): Promise<number> {
+  const client = getSupabaseClient();
+  if (!client || !idCliente) return 0;
+
+  const { data, error } = await client
+    .from("movimento_credito")
+    .select("valor, tipo")
+    .eq("id_cliente", idCliente)
+    .eq("cancelado", false);
+
+  if (error) {
+    console.warn("[MovimentoCreditoService] Erro ao calcular saldo da conta corrente:", error.message);
+    return 0;
+  }
+
+  let saldo = 0;
+  for (const row of data || []) {
+    const v = Number(row.valor) || 0;
+    if (row.tipo === "CREDITO") {
+      saldo += v;
+    } else if (row.tipo === "DEBITO") {
+      saldo -= v;
+    }
+  }
+
+  return Math.round(saldo * 100) / 100;
+}
+
 // ---------------------------------------------------------------------------
 // Registro de movimentos
 // ---------------------------------------------------------------------------

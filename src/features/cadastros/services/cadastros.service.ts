@@ -263,7 +263,12 @@ function buildCadastrosSearchClause(search: string) {
     `cidade_uf.ilike.%${normalized}%`
   ];
 
-  if (digits) {
+  // id_cliente é int4; um termo numérico maior que o limite do inteiro
+  // (ex.: CPF de 11 dígitos ou CNPJ de 14) faz o PostgREST responder 400 e
+  // derruba a busca inteira. Só incluir o filtro por id quando couber em int4;
+  // documentos continuam cobertos por `documento.ilike`.
+  const INT4_MAX = 2147483647;
+  if (digits && Number(digits) <= INT4_MAX) {
     clauses.unshift(`id_cliente.eq.${digits}`);
   }
 

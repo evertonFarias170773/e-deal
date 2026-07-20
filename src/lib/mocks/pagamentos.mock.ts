@@ -36,7 +36,8 @@ export const tiposCobrancaMock: Array<{ id: CobrancaTipo; label: string; descric
   { id: "E-FATURADO", label: "Faturado", descricao: "Valida crédito do cliente e envia para análise financeira." },
   { id: "E-RETRABALHO", label: "E-Retrabalho", descricao: "Faturamento interno para retrabalho de produção." },
   { id: "E-PERMUTA", label: "E-Permuta", descricao: "Faturamento interno para permuta comercial." },
-  { id: "E-AMOSTRA", label: "E-Amostra", descricao: "Faturamento interno para envio de amostras." }
+  { id: "E-AMOSTRA", label: "E-Amostra", descricao: "Faturamento interno para envio de amostras." },
+  { id: "E-CREDITO", label: "E-Crédito", descricao: "Uso de saldo de conta corrente do cliente." }
 ];
 
 const tipoDisponibilidadePorEmpresa: Record<string, Record<CobrancaTipo, boolean>> = {

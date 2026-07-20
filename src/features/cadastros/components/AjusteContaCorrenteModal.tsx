@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
-import { getSaldoCredito } from "@/features/cobrancas/services/movimento-credito.service";
+import { getSaldoContaCorrente } from "@/features/cobrancas/services/movimento-credito.service";
 import type { MovimentoCredito } from "@/features/cobrancas/types";
 import { X } from "lucide-react";
 
@@ -49,7 +49,7 @@ export function AjusteContaCorrenteModal({ isOpen, onClose, idCliente, nomeClien
 
   async function carregarSaldo() {
     try {
-      const s = await getSaldoCredito(idCliente);
+      const s = await getSaldoContaCorrente(idCliente);
       setSaldo(s);
     } catch {
       setSaldo(0);
@@ -66,14 +66,15 @@ export function AjusteContaCorrenteModal({ isOpen, onClose, idCliente, nomeClien
         const hist = await listarHistoricoCredito(idCliente, client);
         setHistorico(hist);
       }
-    } catch (e: any) {
-      showToast({ title: "Erro", description: e.message, type: "error" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Erro ao carregar histórico";
+      showToast({ title: "Erro", description: message, type: "error" });
     } finally {
       setLoadingHistorico(false);
     }
   }
 
-  async function handleAjuste(e: any) {
+  async function handleAjuste(e: React.FormEvent) {
     e.preventDefault();
     if (!valor || Number(valor) <= 0) {
       showToast({ title: "Atenção", description: "O valor deve ser maior que zero.", type: "warning" });
@@ -109,8 +110,10 @@ export function AjusteContaCorrenteModal({ isOpen, onClose, idCliente, nomeClien
       await carregarSaldo();
       onSuccess();
       if (tab === "HISTORICO") carregarHistorico();
-    } catch (e: any) {
-      showToast({ title: "Erro", description: e.message, type: "error" });
+      onClose();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Erro ao registrar ajuste";
+      showToast({ title: "Erro", description: message, type: "error" });
     } finally {
       setLoadingAjuste(false);
     }
@@ -134,8 +137,9 @@ export function AjusteContaCorrenteModal({ isOpen, onClose, idCliente, nomeClien
       carregarHistorico();
       await carregarSaldo();
       onSuccess();
-    } catch (e: any) {
-      showToast({ title: "Estorno bloqueado", description: e.message, type: "error" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Erro ao estornar";
+      showToast({ title: "Estorno bloqueado", description: message, type: "error" });
     } finally {
       setEstornandoId(null);
     }
@@ -172,12 +176,25 @@ export function AjusteContaCorrenteModal({ isOpen, onClose, idCliente, nomeClien
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {/* Saldo display */}
+          {/* Saldo display — negativo = cliente devedor, positivo = crédito disponível */}
           <div
-            className="flex items-center justify-between rounded-xl px-4 py-3 mb-4"
-            style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
+            className={`flex items-center justify-between rounded-xl px-4 py-3 mb-4 text-white ${
+              saldo === null
+                ? "bg-slate-400"
+                : saldo < 0
+                  ? "bg-red-600"
+                  : saldo > 0
+                    ? "bg-emerald-600"
+                    : "bg-amber-600"
+            }`}
           >
-            <span className="text-sm font-medium">Saldo atual</span>
+            <span className="text-sm font-medium">
+              {saldo !== null && saldo < 0
+                ? "Saldo devedor"
+                : saldo !== null && saldo > 0
+                  ? "Saldo credor (crédito disponível)"
+                  : "Saldo atual"}
+            </span>
             <span className="text-lg font-bold">
               {saldo !== null ? formatCurrency(saldo) : '...'}
             </span>
@@ -212,7 +229,7 @@ export function AjusteContaCorrenteModal({ isOpen, onClose, idCliente, nomeClien
                     className="w-full rounded-xl border px-4 py-2 text-sm outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                     style={inputStyle}
                     value={tipo}
-                    onChange={e => setTipo(e.target.value as any)}
+                    onChange={e => setTipo(e.target.value as "CREDITO" | "DEBITO")}
                   >
                     <option value="CREDITO">Adicionar Crédito (+)</option>
                     <option value="DEBITO">Registrar Débito Manual (-)</option>

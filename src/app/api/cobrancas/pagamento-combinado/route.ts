@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
+import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization") ?? "";
@@ -37,15 +38,12 @@ export async function POST(request: NextRequest) {
   }
   const user = { id: authData.user.id, email: authData.user.email ?? "", nome: authData.user.user_metadata?.name || "Usuário" };
 
-  const temPermissao = await verificarPermissaoServerSide(
-    supabaseUser,
-    user.id,
-    "financeiro.resolver_credito"
-  );
+  const temPermissaoCredito = await verificarPermissaoServerSide(supabaseUser, user.id, "credito.usar");
+  const temPermissaoEmitir = await verificarPermissaoServerSide(supabaseUser, user.id, "cobrancas.emitir_boleto");
 
-  if (!temPermissao) {
+  if (!temPermissaoCredito || !temPermissaoEmitir) {
     return NextResponse.json(
-      { success: false, error: "Você não tem permissão para usar E-Crédito (financeiro.resolver_credito)." },
+      { success: false, error: "Você não tem permissões suficientes para realizar o pagamento combinado (credito.usar e cobrancas.emitir_boleto)." },
       { status: 403 }
     );
   }
@@ -65,13 +63,11 @@ export async function POST(request: NextRequest) {
     valorSecundario, 
     tipoSecundario, 
     empresa, 
-    idEmpresa,
     atendente,
     vencimento,
     forma_pgto,
     forma_fatu,
-    observacao,
-    clienteNome
+    observacao
   } = body;
 
   if (!idInt || !idCliente || !valorCredito || !valorSecundario || !tipoSecundario) {
@@ -91,8 +87,8 @@ export async function POST(request: NextRequest) {
       fs.writeFileSync(lockPath, 'LOCKED', { flag: 'wx' });
       lockAdquirido = true;
       break;
-    } catch (err: any) {
-      if (err.code === 'EEXIST') {
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'EEXIST') {
         await new Promise(resolve => setTimeout(resolve, 50));
       } else {
         throw err;
@@ -133,12 +129,12 @@ export async function POST(request: NextRequest) {
     }
     const nomeClienteReal = clienteData.nome;
 
-    // C. Consultar Saldo E-Crédito
+    // C. Consultar Saldo E-Crédito (recalculado no servidor, nunca aceito do cliente)
     const { data: creditos, error: creditosErr } = await supabaseUser
       .from("movimento_credito")
-      .select("tipo, valor, validade")
+      .select("tipo, valor")
       .eq("id_cliente", idCliente)
-      .not("status", "eq", "CANCELADO");
+      .eq("cancelado", false);
 
     if (creditosErr) {
       return NextResponse.json({ success: false, error: "Falha ao consultar saldo." }, { status: 500 });
@@ -147,11 +143,11 @@ export async function POST(request: NextRequest) {
     let saldoReal = 0;
     if (creditos) {
       for (const c of creditos) {
+        const v = Number(c.valor) || 0;
         if (c.tipo === "CREDITO") {
-          const isValid = !c.validade || new Date(c.validade) >= new Date();
-          if (isValid) saldoReal += Number(c.valor);
+          saldoReal += v;
         } else if (c.tipo === "DEBITO") {
-          saldoReal -= Number(c.valor);
+          saldoReal -= v;
         }
       }
     }
@@ -221,7 +217,17 @@ export async function POST(request: NextRequest) {
       .insert([payloadCobrancaCredito]);
 
     if (errPagV2Credito) {
-      return NextResponse.json({ success: false, error: "Falha grave ao salvar a cobrança E-Crédito após débito." }, { status: 500 });
+      // Rollback compensatório: cancela logicamente o débito já gravado (nunca DELETE físico).
+      await supabaseUser
+        .from("movimento_credito")
+        .update({
+          cancelado: true,
+          cancelado_em: new Date().toISOString(),
+          cancelado_por: user.id,
+        })
+        .eq("id", insertedMovimento.id);
+
+      return NextResponse.json({ success: false, error: "Falha grave ao salvar a cobrança E-Crédito após débito. Débito estornado automaticamente." }, { status: 500 });
     }
 
     // E. Criar Cobrança Secundária
@@ -243,13 +249,15 @@ export async function POST(request: NextRequest) {
       forma_fatu: forma_fatu
     };
 
-    const { error: errPagSecundaria } = await supabaseUser
+    const { data: insertedSecundaria, error: errPagSecundaria } = await supabaseUser
       .from("pagamentos_v2")
-      .insert([payloadSecundaria]);
+      .insert([payloadSecundaria])
+      .select()
+      .single();
 
-    if (errPagSecundaria) {
+    if (errPagSecundaria || !insertedSecundaria) {
       // FALHA NA SEGUNDA COBRANÇA
-      const msgFalha = `ATENÇÃO: Crédito de R$ ${valorCredito} utilizado, mas a geração da cobrança do restante (${tipoSecundario} de R$ ${valorSecundario}) FALHOU. Favor regularizar a proposta. Motivo: ${errPagSecundaria.message}`;
+      const msgFalha = `ATENÇÃO: Crédito de R$ ${valorCredito} utilizado, mas a geração da cobrança do restante (${tipoSecundario} de R$ ${valorSecundario}) FALHOU. Favor regularizar a proposta. Motivo: ${errPagSecundaria?.message || "Erro desconhecido"}`;
       
       await supabaseUser.from("propostas_chat").insert([{
         id_int: idInt,
@@ -266,7 +274,7 @@ export async function POST(request: NextRequest) {
         id_cliente: idCliente,
         titulo: "Erro no pagamento combinado",
         descricao: msgFalha,
-        categoria: "CREDITO",
+        categoria: "PAGAMENTO",
         status: "ABERTA",
         prioridade: "ALTA",
         responsavel_setor: "FINANCEIRO",
@@ -276,7 +284,85 @@ export async function POST(request: NextRequest) {
         id_empresa: idEmpresaReal,
       }]);
 
-      return NextResponse.json({ success: false, isCombinadoFalho: true, error: msgFalha }, { status: 500 });
+      return NextResponse.json({ success: false, isCombinadoParcial: true, error: msgFalha }, { status: 200 });
+    }
+
+    // Geração do PIX Banco Inter
+    let pixData = null;
+    let interError: string | null = null;
+    const isPix = tipoSecundario === "PIX" || tipoSecundario === "E-PIX";
+
+    if (isPix) {
+      // Buscar dados de faturamento do cliente
+      const { data: clienteFatu } = await supabaseUser
+        .from("clientes")
+        .select("cnpj_cpf, telefone, celular, endereco, numero, complemento, bairro, cidade, uf, cep")
+        .eq("id_cliente", idCliente)
+        .maybeSingle();
+
+      const { data: propostaFatu } = await supabaseUser
+        .from("propostas")
+        .select("contato")
+        .eq("id_int", idInt)
+        .maybeSingle();
+
+      const telefoneCli = propostaFatu?.contato?.whatsapp || clienteFatu?.celular || clienteFatu?.telefone || "";
+
+      const resPix = await gerarPixBancoInter(supabaseUser, {
+        cobrancaId: insertedSecundaria.id,
+        idEmpresa: idEmpresaReal,
+        seuNumero: idEmpresaReal === 2 ? (insertedSecundaria.id_pagamento || String(idInt)) : String(idInt),
+        valorNominal: valorSecundario,
+        dataVencimento: vencimento || new Date().toISOString().split("T")[0],
+        telefone: telefoneCli,
+        cpfCnpj: clienteFatu?.cnpj_cpf || "",
+        nome: nomeClienteReal,
+        endereco: `${clienteFatu?.endereco || ""}, ${clienteFatu?.numero || ""} ${clienteFatu?.complemento || ""}`.trim(),
+        cidade: clienteFatu?.cidade || "",
+        uf: clienteFatu?.uf || "",
+        cep: clienteFatu?.cep || ""
+      });
+
+      if (resPix.success) {
+        pixData = resPix.data;
+      } else {
+        interError = resPix.error || "Erro desconhecido na emissão do PIX Inter";
+      }
+    }
+
+    if (interError) {
+      const msgFalha = `Crédito de R$ ${valorCredito} utilizado, mas a geração do PIX Inter de R$ ${valorSecundario} falhou: ${interError}. A cobrança secundária foi criada como pendente de geração.`;
+      
+      await supabaseUser.from("propostas_chat").insert([{
+        id_int: idInt,
+        id_cliente: idCliente,
+        mensagem: msgFalha,
+        tipo: "SISTEMA",
+        autor_nome: "Sistema",
+        setor: "Financeiro",
+        visivel_externo: false
+      }]);
+
+      await supabaseUser.from("propostas_pendencias").insert([{
+        id_int: idInt,
+        id_cliente: idCliente,
+        titulo: "Erro ao gerar PIX combinado",
+        descricao: msgFalha,
+        categoria: "PAGAMENTO",
+        status: "ABERTA",
+        prioridade: "ALTA",
+        responsavel_setor: "FINANCEIRO",
+        origem: "SISTEMA",
+        criado_por_user_id: user.id,
+        criado_por_nome: user.nome,
+        id_empresa: idEmpresaReal,
+      }]);
+
+      return NextResponse.json({
+        success: false,
+        isCombinadoParcial: true,
+        error: msgFalha
+      }, { status: 200 });
     }
 
     // SUCESSO
@@ -301,11 +387,13 @@ export async function POST(request: NextRequest) {
       totalPagoAtivo: situacao.novoValorQuitado,
       totalProposta: situacao.valorTotalProposta,
       quitada,
-      possuiPagamentoPendente: situacao.saldoPendente > 0.02
+      possuiPagamentoPendente: situacao.saldoPendente > 0.02,
+      pixData
     });
 
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ success: false, error: errMsg }, { status: 500 });
   } finally {
     if (fs.existsSync(lockPath)) {
       fs.unlinkSync(lockPath);

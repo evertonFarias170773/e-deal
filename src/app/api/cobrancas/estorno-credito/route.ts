@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { estornarMovimentoCredito } from "@/features/cobrancas/services/movimento-credito.service";
-import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 
 /** Origens que indicam vínculo com proposta — não podem ser estornadas por esta tela. */
 const ORIGENS_VINCULADAS_PROPOSTA = new Set([
@@ -25,14 +24,16 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Permissão ─────────────────────────────────────────────────────────────
-    const temPermissao = await verificarPermissaoServerSide(
-      supabase,
-      user.id,
-      "financeiro.ajuste_credito"
-    );
-    if (!temPermissao) {
+    const { data: usuarioData } = await supabase
+      .from("usuarios")
+      .select("is_super_adm, is_admin")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const isAdm = usuarioData?.is_super_adm || usuarioData?.is_admin;
+    if (!isAdm) {
       return NextResponse.json(
-        { error: "Sem permissão para estorno de crédito." },
+        { error: "Apenas administradores podem realizar esta operação de crédito." },
         { status: 403 }
       );
     }
@@ -103,10 +104,11 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error) {
     console.error("[POST /api/cobrancas/estorno-credito] Erro:", error);
+    const message = error instanceof Error ? error.message : "Erro ao estornar movimento";
     return NextResponse.json(
-      { error: error.message || "Erro ao estornar movimento" },
+      { error: message },
       { status: 500 }
     );
   }
