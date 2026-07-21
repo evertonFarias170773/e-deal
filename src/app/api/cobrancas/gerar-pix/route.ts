@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 
 type GerarPixRequest = {
@@ -81,17 +80,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
   }
 
-  // 3. Autorização / Permissão
-  const temPermissao = await verificarPermissaoServerSide(
-    supabaseUser,
-    authData.user.id,
-    "cobrancas.emitir_boleto"
-  );
-  if (!temPermissao) {
-    return NextResponse.json({ success: false, message: "Sem permissão para gerar cobrança." }, { status: 403 });
-  }
-
-  // 4. Validação da cobrança e RLS
+  // 3. Validação da cobrança e RLS
   const { data: cobranca, error: fetchErr } = await supabaseUser
     .from("pagamentos_v2")
     .select("id, id_empresa, tipo_cobranca, valor")
@@ -121,7 +110,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // 5. Executar integração real do PIX
+  // 4. Executar integração real do PIX
   const resPix = await gerarPixBancoInter(supabaseUser, {
     cobrancaId,
     idEmpresa: idEmpresaReal,
