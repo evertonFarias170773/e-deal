@@ -58,11 +58,6 @@ import {
   calcularDiferencaFinanceira
 } from "@/features/cobrancas/cobrancas-utils";
 import {
-  registrarCredito,
-  registrarConsumo,
-  registrarDevolucao,
-  registrarBonificacao,
-  registrarDebitoFuturo,
   getSaldoContaCorrente
 } from "@/features/cobrancas/services/movimento-credito.service";
 
@@ -432,13 +427,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
   useEffect(() => {
     if (mode !== "edit" || !proposta?.id_int || !hasActiveCobranca || !canEditarPropostaPaga) return;
-    // Verificar pendência ABERTA de revisão financeira
-    import("@/features/orcamentos/services/propostas-pendencias.service")
-      .then(({ listPropostasPendencias }) => listPropostasPendencias(proposta.id_int))
-      .then(({ data }) => {
-        const aberta = data.find(p => p.status === "ABERTA" && (p.origem === "REVISAO_PROPOSTA_PAGA" || (p.origem === "SISTEMA" && String(p.titulo).startsWith("Revisão financeira pendente"))));
+    // Verificar pendência ABERTA/PARCIALMENTE_RESOLVIDA de Conta Corrente
+    // (public.conta_corrente_pendencias — fora do domínio de propostas_pendencias)
+    import("@/features/cobrancas/services/conta-corrente.service")
+      .then(({ listPendenciasByProposta }) => listPendenciasByProposta(proposta.id_int))
+      .then((pendenciasCC) => {
+        const aberta = pendenciasCC.find(p => p.status === "ABERTA" || p.status === "PARCIALMENTE_RESOLVIDA");
         if (aberta) {
-          setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
+          const valorPendente = Math.round((aberta.valor_saldo + aberta.valor_reservado) * 100) / 100;
+          setPendenciaRevisaoAberta({
+            id: aberta.id,
+            descricao: `Diferença pendente: R$ ${valorPendente.toFixed(2).replace(".", ",")} (${aberta.direcao === "FAVOR_CLIENTE" ? "a favor do cliente" : "a favor da empresa"}). Motivo: ${aberta.motivo}.`,
+          });
         } else {
           setPendenciaRevisaoAberta(null);
         }
@@ -2659,13 +2659,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               title: "Erro de sistema",
               description: "A pendência de revisão não foi criada corretamente. Por favor, verifique a aba de Pendências.",
             });
-            // We do NOT open the modal with partial data. We just fetch pendencies to show the banner if it exists.
+            // We do NOT open the modal with partial data. We just fetch the pendência
+            // de Conta Corrente (public.conta_corrente_pendencias) to show the banner if it exists.
             try {
-              const { listPropostasPendencias } = await import("@/features/orcamentos/services/propostas-pendencias.service");
-              const { data } = await listPropostasPendencias(finalIdInt);
-              const aberta = data.find(p => p.status === "ABERTA" && (p.origem === "REVISAO_PROPOSTA_PAGA" || (p.origem === "SISTEMA" && String(p.titulo).startsWith("Revisão financeira pendente"))));
+              const { listPendenciasByProposta } = await import("@/features/cobrancas/services/conta-corrente.service");
+              const pendenciasCC = await listPendenciasByProposta(finalIdInt);
+              const aberta = pendenciasCC.find(p => p.status === "ABERTA" || p.status === "PARCIALMENTE_RESOLVIDA");
               if (aberta) {
-                setPendenciaRevisaoAberta({ id: aberta.id, descricao: aberta.descricao });
+                const valorPendente = Math.round((aberta.valor_saldo + aberta.valor_reservado) * 100) / 100;
+                setPendenciaRevisaoAberta({
+                  id: aberta.id,
+                  descricao: `Diferença pendente: R$ ${valorPendente.toFixed(2).replace(".", ",")} (${aberta.direcao === "FAVOR_CLIENTE" ? "a favor do cliente" : "a favor da empresa"}). Motivo: ${aberta.motivo}.`,
+                });
               }
             } catch (e) {
                // silent
@@ -3235,32 +3240,54 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {historicoMovimentos.map((mov) => {
-                          const isCreditoGerado = mov.tipo === "CREDITO";
-                          const isCreditoUtilizado = mov.tipo === "DEBITO" || mov.tipo === "CONSUMO";
-                          const isDevolucao = mov.tipo === "DEVOLUCAO";
-                          const isBonificacao = mov.tipo === "BONIFICACAO";
+                          // tipo_evento (Fase 1 — Conta Corrente) é a fonte estruturada real.
+                          // Registros legados (anteriores à Fase 1) não o possuem — nesse caso,
+                          // cai no rótulo genérico por `tipo` (CREDITO/DEBITO), a única
+                          // informação disponível para eles.
+                          const evento = mov.tipo_evento ?? null;
                           const isCancelado = mov.cancelado === true;
 
                           let badgeColor = "bg-slate-100 text-slate-800";
-                          let badgeText = mov.tipo;
-                          let descRelacao = "Movimento financeiro geral.";
+                          let badgeText: string = mov.tipo === "CREDITO" ? "Crédito" : "Débito";
+                          let descRelacao = "Movimento financeiro geral (registro anterior à Conta Corrente v1).";
 
-                          if (isCreditoGerado) {
+                          if (evento === "ABERTURA") {
                             badgeColor = "bg-teal-50 text-teal-700 border border-teal-200";
-                            badgeText = "Crédito Gerado";
-                            descRelacao = "Diferença comercial a favor do cliente gerada por esta proposta.";
-                          } else if (isCreditoUtilizado) {
+                            badgeText = "Pendência Aberta";
+                            descRelacao = "Diferença financeira gerada por esta proposta após pagamento.";
+                          } else if (evento === "USO_PEDIDO") {
                             badgeColor = "bg-sky-50 text-sky-700 border border-sky-200";
-                            badgeText = "Crédito Utilizado";
-                            descRelacao = "Crédito acumulado do cliente consumido para pagar esta proposta.";
-                          } else if (isDevolucao) {
+                            badgeText = mov.tipo === "CREDITO" ? "Débito Recebido" : "Crédito Utilizado";
+                            descRelacao = mov.tipo === "CREDITO"
+                              ? "Débito de outra proposta recebido/confirmado nesta cobrança."
+                              : "Crédito do cliente consumido (uso imediato ou reserva confirmada).";
+                          } else if (evento === "DEVOLUCAO") {
                             badgeColor = "bg-amber-50 text-amber-700 border border-amber-200";
                             badgeText = "Devolução";
-                            descRelacao = "Solicitação de devolução física de valor pago a maior.";
-                          } else if (isBonificacao) {
+                            descRelacao = "Devolução ao cliente (ou abatimento equivalente) do valor pago a maior.";
+                          } else if (evento === "BONIFICACAO") {
                             badgeColor = "bg-purple-50 text-purple-700 border border-purple-200";
                             badgeText = "Bonificação";
                             descRelacao = "Diferença financeira abonada comercialmente.";
+                          } else if (evento === "BAIXA") {
+                            badgeColor = "bg-purple-50 text-purple-700 border border-purple-200";
+                            badgeText = "Baixa de Débito";
+                            descRelacao = "Débito quitado por outra via, sem gerar nova cobrança.";
+                          } else if (evento === "CANCELAMENTO") {
+                            badgeColor = "bg-slate-100 text-slate-600 border border-slate-200";
+                            badgeText = "Pendência Cancelada";
+                            descRelacao = "Pendência anulada (diferença zerada ou inversão de direção).";
+                          } else if (evento === "ESTORNO") {
+                            badgeColor = "bg-red-50 text-red-700 border border-red-200";
+                            badgeText = "Estorno";
+                            descRelacao = "Lançamento compensatório revertendo um evento anterior.";
+                          } else if (mov.tipo === "CREDITO") {
+                            badgeColor = "bg-teal-50 text-teal-700 border border-teal-200";
+                            badgeText = "Crédito Gerado";
+                            descRelacao = "Diferença comercial a favor do cliente gerada por esta proposta.";
+                          } else {
+                            badgeColor = "bg-sky-50 text-sky-700 border border-sky-200";
+                            badgeText = "Crédito Utilizado";
                           }
 
                           return (
@@ -3285,8 +3312,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
                               {/* Valor */}
                               <td className="px-4 py-3 font-bold whitespace-nowrap">
-                                <span className={isCreditoGerado ? "text-teal-600" : isCreditoUtilizado ? "text-sky-600" : "text-slate-800"}>
-                                  {isCreditoGerado ? "+" : "-"} {formatCurrency(mov.valor)}
+                                <span className={mov.tipo === "CREDITO" ? "text-teal-600" : "text-sky-600"}>
+                                  {mov.tipo === "CREDITO" ? "+" : "-"} {formatCurrency(mov.valor)}
                                 </span>
                               </td>
 

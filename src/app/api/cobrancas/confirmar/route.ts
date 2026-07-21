@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
-import fs from "fs";
-import path from "path";
 
 type UsuarioMinRow = {
   id_perfil: number | null;
@@ -80,32 +78,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "idCobranca obrigatório." }, { status: 400 });
   }
 
-  // Idempotência baseada no ID da cobrança
-  const lockPath = path.join(process.cwd(), `.lock_confirmar_cobranca_${idCobranca}`);
-  let lockAdquirido = false;
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < 3000) {
-    try {
-      fs.writeFileSync(lockPath, 'LOCKED', { flag: 'wx' });
-      lockAdquirido = true;
-      break;
-    } catch (err: any) {
-      if (err.code === 'EEXIST') {
-        await new Promise(resolve => setTimeout(resolve, 50));
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  if (!lockAdquirido) {
-    return NextResponse.json(
-      { success: false, error: "Confirmação já em processamento. Tente novamente." },
-      { status: 503 }
-    );
-  }
-
   try {
     // 3. Revalidação da cobrança
     const { data: cobranca, error: cobError } = await supabase
@@ -171,48 +143,46 @@ export async function POST(request: NextRequest) {
     // "autorizar_faturamento" não é confirmação de recebimento, é só pré-aprovação
     // de faturado — não dispara o abatimento.
     if (!isAutorizacao) {
-      const marcador = String(cobranca.obs_v2 || "").match(/\[ABATIMENTO_DEBITO:(\d+(?:\.\d{1,2})?)\]/);
-      if (marcador && cobranca.id_cliente) {
-        const valorAbatimento = Math.round(parseFloat(marcador[1]) * 100) / 100;
-        if (valorAbatimento > 0) {
-          const { data: jaRegistrado } = await supabase
-            .from("movimento_credito")
-            .select("id")
-            .eq("id_cliente", cobranca.id_cliente)
-            .eq("tipo", "CREDITO")
-            .eq("cancelado", false)
-            .ilike("observacao", `%pagamento ${idCobranca}%`)
-            .limit(1)
-            .maybeSingle();
-
-          if (!jaRegistrado) {
+      if (cobranca.reserva_estado === "RESERVA_ATIVA" && cobranca.id_pendencia && cobranca.chave_reserva) {
+        // Caminho novo (Conta Corrente — Pendências Financeiras): a reserva foi
+        // feita na criação da cobrança via cc_usar_pendencia(RESERVA_DEBITO).
+        // Confirmar aqui grava o USO_PEDIDO na razão via cc_encerrar_pendencia —
+        // nunca antes do recebimento real.
+        const { error: rpcError } = await supabase.rpc("cc_encerrar_pendencia", {
+          p_id_pendencia: cobranca.id_pendencia,
+          p_modo: "CONFIRMAR_RESERVA",
+          p_valor: null,
+          p_id_movimento_ref: null,
+          p_chave_reserva: cobranca.chave_reserva,
+          p_motivo: null,
+          p_observacao: `Confirmado via cobrança ${idCobranca}. Operador: ${confirmadoPor || "Sistema"}.`,
+        });
+        if (rpcError) {
+          console.error("[confirmar] Falha ao confirmar reserva de débito:", rpcError.message);
+        }
+      } else {
+        // Fallback legado: cobranças criadas antes deste refactor, com o
+        // marcador [ABATIMENTO_DEBITO:x] em obs_v2 e sem reserva formal.
+        // Escrita via RPC `mc_confirmar_abatimento_legado` (SECURITY DEFINER)
+        // — nunca por INSERT direto (revogado de `authenticated` no cutover).
+        // Idempotência determinística: chave é o próprio id do pagamento
+        // (único), via ux_mc_abatimento_legado_unico — a RPC é quem decide
+        // se já foi registrado, não mais um ilike sobre a observação.
+        const marcador = String(cobranca.obs_v2 || "").match(/\[ABATIMENTO_DEBITO:(\d+(?:\.\d{1,2})?)\]/);
+        if (marcador && cobranca.id_cliente) {
+          const valorAbatimento = Math.round(parseFloat(marcador[1]) * 100) / 100;
+          if (valorAbatimento > 0) {
             const obsMovimento = `Abatimento de débito via cobrança confirmada (pagamento ${idCobranca}${cobranca.id_int ? `, proposta #${cobranca.id_int}` : ""}). Operador: ${confirmadoPor || "Sistema"}.`;
-            const { error: errMovimento } = await supabase
-              .from("movimento_credito")
-              .insert({
-                id_cliente: cobranca.id_cliente,
-                id_int: cobranca.id_int ?? null,
-                valor: valorAbatimento,
-                tipo: "CREDITO",
-                origem: "SISTEMA",
-                observacao: obsMovimento,
-                created_by: userId,
-                cancelado: false,
-              });
+            const { error: rpcErrorLegado } = await supabase.rpc("mc_confirmar_abatimento_legado", {
+              p_id_cliente: cobranca.id_cliente,
+              p_id_int: cobranca.id_int ?? null,
+              p_id_pagamento: idCobranca,
+              p_valor: valorAbatimento,
+              p_observacao: obsMovimento,
+            });
 
-            if (errMovimento) {
-              console.error("[confirmar] Falha ao registrar abatimento de débito:", errMovimento.message);
-            } else if (cobranca.id_int) {
-              await supabase.from("propostas_chat").insert([{
-                id_int: cobranca.id_int,
-                id_cliente: cobranca.id_cliente,
-                mensagem: `💳 Débito de R$ ${valorAbatimento.toFixed(2).replace(".", ",")} abatido na conta corrente após confirmação do pagamento.`,
-                tipo: "SISTEMA",
-                autor_nome: "Sistema",
-                setor: "Financeiro",
-                visivel_externo: false,
-                anexos: null,
-              }]);
+            if (rpcErrorLegado) {
+              console.error("[confirmar] Falha ao registrar abatimento de débito:", rpcErrorLegado.message);
             }
           }
         }
@@ -237,12 +207,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-    
+
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
-  } finally {
-    if (fs.existsSync(lockPath)) {
-      fs.unlinkSync(lockPath);
-    }
   }
 }

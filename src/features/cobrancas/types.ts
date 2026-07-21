@@ -12,6 +12,10 @@ export type MovimentoCreditoTipo =
   | "CREDITO"      // crédito: saldo aumenta
   | "DEBITO";      // débito: saldo diminui
 
+/** Evento estruturado da Conta Corrente (Fase 1) — ver conta_corrente_pendencias. */
+export type MovimentoCreditoTipoEvento =
+  | "ABERTURA" | "USO_PEDIDO" | "DEVOLUCAO" | "BONIFICACAO" | "BAIXA" | "CANCELAMENTO" | "ESTORNO";
+
 export type MovimentoCredito = {
   id: number;
   id_cliente: number;
@@ -25,6 +29,15 @@ export type MovimentoCredito = {
   cancelado: boolean;
   cancelado_em: string | null;
   cancelado_por: string | null;
+  // Colunas estruturadas da Fase 1 (Conta Corrente — Pendências Financeiras).
+  // Nullable: registros legados anteriores à Fase 1 não as possuem.
+  id_pendencia?: number | null;
+  tipo_evento?: MovimentoCreditoTipoEvento | null;
+  id_int_origem?: number | null;
+  id_int_destino?: number | null;
+  id_pagamento_destino?: string | null;
+  id_movimento_ref?: number | null;
+  motivo_evento?: string | null;
 };
 
 // ---------------------------------------------------------------------------

@@ -83,7 +83,7 @@ export async function POST(request: Request) {
   // 3. Validação da cobrança e RLS
   const { data: cobranca, error: fetchErr } = await supabaseUser
     .from("pagamentos_v2")
-    .select("id, id_empresa, tipo_cobranca, valor")
+    .select("id, id_empresa, tipo_cobranca, valor, status, pix_copia_cola, linha_digitavel, cod_solicitacao_inter")
     .eq("id", cobrancaId)
     .maybeSingle();
 
@@ -100,6 +100,31 @@ export async function POST(request: Request) {
       { success: false, message: "Esta cobrança não é do tipo PIX." },
       { status: 400 }
     );
+  }
+
+  if (cobranca.status === "CANCELADO") {
+    return NextResponse.json(
+      { success: false, message: "Esta cobrança está cancelada." },
+      { status: 400 }
+    );
+  }
+
+  // Idempotência: se o PIX já foi gerado para esta cobrança (retry sobre a
+  // mesma cobrança pendente — ex.: após falha anterior na leitura da resposta
+  // do webhook), não rechama a integração externa — cada chamada ao webhook
+  // pode emitir uma cobrança real no Banco Inter, então reprocessar geraria
+  // um PIX duplicado para a mesma cobrança interna. Devolve os dados já salvos.
+  if (cobranca.pix_copia_cola) {
+    return NextResponse.json({
+      success: true,
+      idempotente: true,
+      data: {
+        id: cobranca.id,
+        pix_copia_cola: cobranca.pix_copia_cola,
+        linha_digitavel: cobranca.linha_digitavel,
+        cod_solicitacao_inter: cobranca.cod_solicitacao_inter
+      }
+    });
   }
 
   const idEmpresaReal = Number(cobranca.id_empresa);

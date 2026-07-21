@@ -97,7 +97,8 @@ export function AjusteContaCorrenteModal({ isOpen, onClose, idCliente, nomeClien
           id_cliente: idCliente,
           tipo,
           valor: Number(valor),
-          observacao
+          observacao,
+          chaveIdempotencia: crypto.randomUUID()
         })
       });
 

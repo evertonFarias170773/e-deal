@@ -1,15 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getOrcamentosReadOnlyData, type OrcamentosReadResult } from "@/features/orcamentos/services/orcamentos.service";
+import { useEffect, useRef, useState } from "react";
+import {
+  getOrcamentosReadOnlyData,
+  type OrcamentosReadResult,
+  type OrcamentosReadFilters
+} from "@/features/orcamentos/services/orcamentos.service";
 
 
-export function useOrcamentosReadOnlyData(periodo = "all") {
+export function useOrcamentosReadOnlyData(
+  periodo = "all",
+  page = 1,
+  pageSize = 200,
+  filters?: OrcamentosReadFilters
+) {
   const [state, setState] = useState<OrcamentosReadResult>({
     source: "supabase",
     propostas: [],
     warnings: [],
     detectedColumns: [],
+    totalCount: 0,
+    page: 1,
+    pageSize: 200,
+    totalPages: 1,
     diagnostics: {
       source: "supabase",
       hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
@@ -37,24 +50,23 @@ export function useOrcamentosReadOnlyData(periodo = "all") {
   const [loadedCount, setLoadedCount] = useState(0);
   const [refreshCount, setRefreshCount] = useState(0);
 
+  const requestIdRef = useRef(0);
+
   const triggerRefresh = () => setRefreshCount(c => c + 1);
+
+  const filterKey = JSON.stringify(filters || {});
 
   useEffect(() => {
     let active = true;
+    const currentRequestId = ++requestIdRef.current;
 
     void (async () => {
       setIsLoading(true);
-      const result = await getOrcamentosReadOnlyData(periodo);
-      if (!active) {
+      const result = await getOrcamentosReadOnlyData(periodo, page, pageSize, filters);
+
+      if (!active || currentRequestId !== requestIdRef.current) {
         return;
       }
-
-      console.log("[Orcamentos][Hook]", {
-        source: result.source,
-        registros: result.propostas.length,
-        warnings: result.warnings,
-        detectedColumns: result.detectedColumns
-      });
 
       setState(result);
       setLoadedCount(result.propostas.length);
@@ -64,7 +76,7 @@ export function useOrcamentosReadOnlyData(periodo = "all") {
     return () => {
       active = false;
     };
-  }, [periodo, refreshCount]);
+  }, [periodo, page, pageSize, filterKey, refreshCount]);
 
   return {
     ...state,
@@ -73,4 +85,5 @@ export function useOrcamentosReadOnlyData(periodo = "all") {
     triggerRefresh
   } as OrcamentosReadResult & { loadedCount: number; isLoading: boolean; triggerRefresh: () => void };
 }
+
 

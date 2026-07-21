@@ -32,6 +32,15 @@ import type {
 } from "@/features/orcamentos/types";
 
 
+export type OrcamentosReadFilters = {
+  search?: string;
+  status?: string;
+  modelo?: string;
+  vendedor?: string;
+  filterTipoCobranca?: string;
+  activeCard?: "ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null;
+};
+
 export type OrcamentosReadResult = {
   source: OrcamentoListSource;
   propostas: OrcamentoListItem[];
@@ -39,6 +48,10 @@ export type OrcamentosReadResult = {
   detectedColumns: string[];
   errorMessage?: string;
   diagnostics: OrcamentosDiagnostics;
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
 };
 
 export type OrcamentosDiagnostics = {
@@ -184,13 +197,22 @@ function buildPeriodoFilter(periodo: string): OrcamentosPeriodoFilter | null {
   };
 }
 
-async function fetchPropostaRows(periodo = "all", limit = 500) {
+async function fetchPropostaRows(
+  periodo = "all",
+  page = 1,
+  pageSize = 200,
+  filters?: OrcamentosReadFilters
+) {
   const env = logSupabaseEnv();
   const client = getSupabaseClient();
   const hasFrom = Boolean(client && typeof client.from === "function");
   const clientShape = `from:${hasFrom ? "sim" : "nao"}`;
   const periodoFilter = buildPeriodoFilter(periodo);
-  const queryLimit = periodoFilter ? 1000 : limit;
+
+  const safePageSize = Math.min(Math.max(1, pageSize), 200);
+  const safePage = Math.max(1, page);
+  const from = (safePage - 1) * safePageSize;
+  const to = safePage * safePageSize - 1;
 
   const smoke: OrcamentosSmokeDiagnostics = {
     resultExists: false,
@@ -205,9 +227,9 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
 
   if (!client) {
     const fallbackReason = !env.hasSupabaseUrl || !env.hasSupabaseAnonKey ? "envs ausentes" : "client compartilhado retornou null";
-    console.log("[Orcamentos][Fallback] client nao inicializou.", { motivo: fallbackReason });
     return {
       rows: null,
+      totalCount: 0,
       diagnostics: {
         source: "mock",
         hasSupabaseUrl: env.hasSupabaseUrl,
@@ -227,38 +249,83 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
   try {
     const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado";
 
-    console.log("[Orcamentos][Query]", {
-      table: "propostas",
-      select: columnsToSelect,
-      orderBy: "id_int.desc",
-      limit: queryLimit,
-      periodoSelecionado: periodoFilter?.periodoKey ?? "all",
-      campoData: "created_at",
-      inicioIso: periodoFilter?.inicioIso ?? null,
-      fimExclusivoIso: periodoFilter?.fimExclusivoIso ?? null
-    });
-
     let query = client
       .from("propostas")
-      .select(columnsToSelect)
-      .order("id_int", { ascending: false })
-      .limit(queryLimit);
+      .select(columnsToSelect, { count: "exact" });
 
     if (periodoFilter) {
       query = query.gte("created_at", periodoFilter.inicioIso).lt("created_at", periodoFilter.fimExclusivoIso);
     }
 
-    const { data, error } = await query.returns<SupabasePropostaRow[]>();
+    if (filters?.vendedor && filters.vendedor !== "TODOS") {
+      query = query.ilike("vendedor", filters.vendedor);
+    }
+
+    if (filters?.modelo && filters.modelo !== "TODOS_MODELOS") {
+      if (filters.modelo === "AVULSO") {
+        query = query.eq("is_avulso", true);
+      } else if (filters.modelo === "PROPOSTA") {
+        query = query.or("is_avulso.is.null,is_avulso.eq.false");
+      }
+    }
+
+    if (filters?.activeCard) {
+      const card = filters.activeCard;
+      if (card === "EM_ARTE") {
+        query = query.or("status_interno.eq.NOVO / EM ARTE,status_interno.eq.AGUARDANDO / EM ARTE,status_interno.eq.LIBERADO / EM ARTE,em_arte.eq.true");
+      } else if (card === "LIBERADAS") {
+        query = query.or("status_interno.eq.LIBERADO,status_interno.eq.LIBERADO / EM ARTE");
+      } else if (card === "REVISAO_ATENDENTE") {
+        query = query.eq("status_interno", "REVISAO ATENDENTE");
+      } else if (card === "EM_PRODUCAO") {
+        query = query.in("status_interno", ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"]);
+      }
+    } else if (filters?.status && filters.status !== "TODOS") {
+      if (filters.status === "EM ARTE") {
+        query = query.or("status_interno.ilike.%EM ARTE%,em_arte.eq.true");
+      } else {
+        query = query.eq("status_interno", filters.status);
+      }
+    } else {
+      query = query.neq("status_interno", "CANCELADO");
+    }
+
+    if (filters?.search && filters.search.trim()) {
+      const term = filters.search.trim();
+      const num = Number(term);
+      if (Number.isInteger(num) && num > 0) {
+        query = query.or(`id_int.eq.${num},cliente.ilike.%${term}%,vendedor.ilike.%${term}%`);
+      } else {
+        query = query.or(`cliente.ilike.%${term}%,vendedor.ilike.%${term}%`);
+      }
+    }
+
+    if (filters?.filterTipoCobranca && filters.filterTipoCobranca !== "TODOS") {
+      const searchTipo = filters.filterTipoCobranca === "CARTAO" ? "CARD" : filters.filterTipoCobranca;
+      const { data: paymentRows } = await client
+        .from("pagamentos_v2")
+        .select("id_int")
+        .ilike("tipo_cobranca", `%${searchTipo}%`);
+      
+      const matchedIds = Array.from(new Set((paymentRows || []).map(p => p.id_int).filter(Boolean)));
+      if (matchedIds.length > 0) {
+        query = query.in("id_int", matchedIds);
+      } else {
+        query = query.in("id_int", [-1]);
+      }
+    }
+
+    query = query.order("id_int", { ascending: false });
+    query = query.range(from, to);
+
+    const { data, error, count } = await query.returns<SupabasePropostaRow[]>();
+    const totalCount = count ?? (data?.length || 0);
 
     if (error) {
       const supabaseError = getErrorMessage(error) ?? "Erro desconhecido no Supabase";
-      console.log("[Orcamentos][SupabaseError]", {
-        message: error instanceof Error ? error.message : String(error),
-        name: error instanceof Error ? error.name : "SupabaseError",
-        stack: error instanceof Error ? error.stack : null
-      });
       return {
         rows: null,
+        totalCount: 0,
         diagnostics: {
           source: "mock",
           hasSupabaseUrl: env.hasSupabaseUrl,
@@ -274,11 +341,9 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
     }
 
     if (!Array.isArray(data)) {
-      console.log("[Orcamentos][Fallback] payload invalido retornado pelo Supabase.", {
-        payloadType: typeof data
-      });
       return {
         rows: null,
+        totalCount: 0,
         diagnostics: {
           source: "mock",
           hasSupabaseUrl: env.hasSupabaseUrl,
@@ -302,26 +367,15 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
     );
 
     const paymentMap = new Map<string, string[]>();
-    const emArteMap = new Map<string, boolean>();
 
     if (proposalIds.length) {
-      console.log("[Orcamentos][Query]", {
-        table: "pagamentos_v2",
-        select: "id_int,tipo_cobranca",
-        filter: `id_int in (${proposalIds.join(",")})`
-      });
-
       const { data: paymentData, error: paymentError } = await client
         .from("pagamentos_v2")
         .select("id_int,tipo_cobranca,status")
         .in("id_int", proposalIds)
         .returns<SupabasePagamentoTipoCobrancaRow[]>();
 
-      if (paymentError) {
-        console.log("[Orcamentos][PagamentosV2Error]", {
-          message: paymentError instanceof Error ? paymentError.message : String(paymentError)
-        });
-      } else if (Array.isArray(paymentData)) {
+      if (!paymentError && Array.isArray(paymentData)) {
         paymentData.forEach((row) => {
           const rawStatus = row.status === null || row.status === undefined ? "" : String(row.status).trim().toUpperCase();
           if (rawStatus === "CANCELADO" || rawStatus === "EXTORNADO" || rawStatus === "RECUSADO") {
@@ -348,19 +402,9 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
       em_arte: row.em_arte === true
     }));
 
-    console.log("[Orcamentos][SupabaseRows]", {
-      registros: enrichedRows.length,
-      colunas: enrichedRows.length ? Object.keys(enrichedRows[0]).sort() : [],
-      primeiroIdInt: enrichedRows.length ? (enrichedRows[0] as SupabasePropostaRow).id_int ?? null : null,
-      pagamentosAgrupados: Array.from(paymentMap.entries()).slice(0, 5).map(([idInt, tipos]) => ({
-        idInt,
-        tipos,
-        label: joinTiposCobranca(tipos)
-      }))
-    });
-
     return {
       rows: enrichedRows as SupabasePropostaRow[],
+      totalCount,
       diagnostics: {
         source: "supabase",
         hasSupabaseUrl: env.hasSupabaseUrl,
@@ -376,9 +420,9 @@ async function fetchPropostaRows(periodo = "all", limit = 500) {
       }
     };
   } catch {
-    console.log("[Orcamentos][Fallback] excecao ao consultar Supabase.", { motivo: "fetch ou query falhou" });
     return {
       rows: null,
+      totalCount: 0,
       diagnostics: {
         source: "mock",
         hasSupabaseUrl: env.hasSupabaseUrl,
@@ -501,9 +545,19 @@ function buildEmptyRealResult(
   } satisfies OrcamentosReadResult;
 }
 
-export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<OrcamentosReadResult> {
-  const fetched = await fetchPropostaRows(periodo);
+export async function getOrcamentosReadOnlyData(
+  periodo = "all",
+  page = 1,
+  pageSize = 200,
+  filters?: OrcamentosReadFilters
+): Promise<OrcamentosReadResult> {
+  const safePageSize = Math.min(Math.max(1, pageSize), 200);
+  const safePage = Math.max(1, page);
+  const fetched = await fetchPropostaRows(periodo, safePage, safePageSize, filters);
   const rows = fetched.rows;
+  const totalCount = fetched.totalCount || 0;
+  const totalPages = Math.ceil(totalCount / safePageSize) || 1;
+
   const toNumber = (v: unknown) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
@@ -518,12 +572,23 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
       ],
       detectedColumns: [],
       errorMessage: fetched.diagnostics.supabaseError || "Erro de conexão com o banco de dados Supabase",
-      diagnostics: fetched.diagnostics as OrcamentosDiagnostics
+      diagnostics: fetched.diagnostics as OrcamentosDiagnostics,
+      totalCount: 0,
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: 1
     };
   }
 
   if (!rows.length) {
-    return buildEmptyRealResult(rows, periodo, fetched as { diagnostics: Partial<OrcamentosDiagnostics> });
+    const emptyRes = buildEmptyRealResult(rows, periodo, fetched as { diagnostics: Partial<OrcamentosDiagnostics> });
+    return {
+      ...emptyRes,
+      totalCount,
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: Math.max(1, totalPages)
+    };
   }
 
   try {
@@ -594,7 +659,6 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
           } else {
             const items = itemsMap.get(row.id_int) || [];
             if (items.length === 0) {
-              // Fallback se não há itens carregados (ex. propostas importadas/deletadas)
               const total = toNumber(row.valor_total ?? (toNumber(row.valor) + freteValor));
               row.valor_total = total;
               (row as any)._valor_total_calculado_view = total;
@@ -654,12 +718,20 @@ export async function getOrcamentosReadOnlyData(periodo = "all"): Promise<Orcame
       ],
       detectedColumns: [],
       errorMessage: "Erro ao processar mapeamento das propostas",
-      diagnostics: fetched.diagnostics as OrcamentosDiagnostics
+      diagnostics: fetched.diagnostics as OrcamentosDiagnostics,
+      totalCount,
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages
     };
   }
 
   return {
     ...real,
+    totalCount,
+    page: safePage,
+    pageSize: safePageSize,
+    totalPages,
     diagnostics: {
       ...fetched.diagnostics,
       source: "supabase",

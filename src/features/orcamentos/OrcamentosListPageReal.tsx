@@ -206,9 +206,50 @@ export function OrcamentosListPageReal() {
   const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
   const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
 
+  const [pageIndex, setPageIndex] = useState(0);
+  const PAGE_SIZE = 200;
+
   const periodOptions = buildLastSixPeriodOptions();
   const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
-  const { propostas: rawPropostas, source, warnings, detectedColumns, loadedCount, isLoading, errorMessage, triggerRefresh } = useOrcamentosReadOnlyData(periodo);
+
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("TODOS");
+  const [modelo, setModelo] = useState("TODOS_MODELOS");
+  const [vendedor, setVendedor] = useState("TODOS");
+  const [filterTipoCobranca, setFilterTipoCobranca] = useState("TODOS");
+  const [activeCard, setActiveCard] = useState<"ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null>(null);
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, periodo]);
+
+  const queryFilters = useMemo(() => {
+    const escopo = user ? getDataScope(user, "propostas") : "all";
+    const meuNome = user ? getNomeParaEscopo(user).trim() : "";
+    const escopoVendedor = escopo !== "all" && meuNome ? meuNome : undefined;
+
+    return {
+      search: search.trim() || undefined,
+      status: status !== "TODOS" ? status : undefined,
+      modelo: modelo !== "TODOS_MODELOS" ? modelo : undefined,
+      vendedor: vendedor !== "TODOS" ? vendedor : escopoVendedor,
+      filterTipoCobranca: filterTipoCobranca !== "TODOS" ? filterTipoCobranca : undefined,
+      activeCard: activeCard || undefined
+    };
+  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, user]);
+
+  const {
+    propostas: rawPropostas,
+    source,
+    warnings,
+    detectedColumns,
+    loadedCount,
+    isLoading,
+    errorMessage,
+    totalCount = 0,
+    totalPages = 1,
+    triggerRefresh
+  } = useOrcamentosReadOnlyData(periodo, pageIndex + 1, PAGE_SIZE, queryFilters);
 
   const propostas = useMemo(() => {
     const escopo = getDataScope(user, "propostas");
@@ -223,12 +264,6 @@ export function OrcamentosListPageReal() {
     });
   }, [rawPropostas, user]);
 
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("TODOS");
-  const [modelo, setModelo] = useState("TODOS_MODELOS");
-  const [vendedor, setVendedor] = useState("TODOS");
-  const [filterTipoCobranca, setFilterTipoCobranca] = useState("TODOS");
-  const [activeCard, setActiveCard] = useState<"ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null>(null);
   const [chatResumos, setChatResumos] = useState<Record<number, PropostaChatResumo>>({});
 
   const { openChat } = useGlobalChat();
@@ -1122,6 +1157,35 @@ export function OrcamentosListPageReal() {
           </article>
         )}
       />
+
+      <section className="flex flex-col gap-3 rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-slate-600">
+          <p className="font-semibold text-slate-900">
+            Página {pageIndex + 1} de {totalPages || 1} · {loadedCount} propostas nesta página
+          </p>
+          <p className="text-xs text-slate-500">
+            Total de propostas encontradas: {totalCount}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPageIndex((current) => Math.max(current - 1, 0))}
+            disabled={pageIndex === 0 || isLoading}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => setPageIndex((current) => current + 1)}
+            disabled={pageIndex + 1 >= (totalPages || 1) || loadedCount < PAGE_SIZE || isLoading}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Próxima
+          </button>
+        </div>
+      </section>
 
       {!isLoading ? (
         <section className={`rounded-3xl border border-dashed p-4 text-sm ${

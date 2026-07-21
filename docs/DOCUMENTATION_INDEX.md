@@ -83,6 +83,10 @@ Criação e acompanhamento de cobranças e pagamentos.
 
 Conta Corrente do cliente e pagamento por E-Crédito: regras oficiais, implementações confirmadas, pendências de homologação e falhas abertas.
 
+## [`business/CONTA-CORRENTE-FASE-1-PREPARACAO.md`](./business/CONTA-CORRENTE-FASE-1-PREPARACAO.md)
+
+Reformulação da Conta Corrente (Pendências Financeiras) — Fase 1 **preparada, não aplicada**: estrutura de banco, RPCs, constraints e pré-voo. Não representa capacidade disponível.
+
 ## [`business/CANCELAMENTO-COBRANCAS.md`](./business/CANCELAMENTO-COBRANCAS.md)
 
 Cancelamento, exclusão permitida, integração externa e sincronização.

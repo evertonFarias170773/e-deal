@@ -176,6 +176,7 @@ Nenhuma foi corrigida nesta sincronização, além das seis listadas em 4.1.
 - `../technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
 - `../technical/PERFIS-PERMISSOES.md`
 - `../history/IMPLEMENTACAO-PROPOSTAS-PAGAS.md`
+- `./CONTA-CORRENTE-FASE-1-PREPARACAO.md` — reformulação (Fase 1 preparada, não aplicada)
 
 ---
 

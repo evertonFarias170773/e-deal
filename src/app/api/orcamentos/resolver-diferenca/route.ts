@@ -1,106 +1,88 @@
 /**
  * /api/orcamentos/resolver-diferenca/route.ts
  *
- * Rota server-side para registrar a resolução financeira de uma proposta paga alterada.
+ * Rota server-side para resolver a pendência de Conta Corrente aberta por
+ * `cc_abrir_pendencia` (chamada em /api/orcamentos/editar-paga) quando uma
+ * proposta paga é alterada.
  *
  * SEGURANÇA:
- * - JWT obrigatório (padrão Maestro)
- * - Verifica permissão específica por ação (financeiro.resolver_credito, financeiro.bonificar, etc.)
- * - Valida se a proposta e o cliente coincidem no banco
- * - Re-calcula a diferença real no servidor (valor_total da proposta - valor pago confirmado)
- *   e valida se o valor recebido no body condiz com a diferença calculada, sem depender de parsing de texto
+ * - JWT obrigatório
+ * - Verifica permissão específica por ação (financeiro.resolver_credito,
+ *   financeiro.bonificar, financeiro.devolver, financeiro.debito_futuro) —
+ *   a checagem final e definitiva ocorre dentro da RPC `cc_encerrar_pendencia`
+ *   (SECURITY DEFINER), esta rota só valida cedo para dar erro claro.
  *
- * CONSISTÊNCIA:
- * - Verifica que a pendência existe, está ABERTA e pertence à proposta antes de registrar qualquer movimento
- * - Conclui a pendência atomicamente após registrar o movimento
- * - Em caso de falha no movimento, a pendência permanece ABERTA
- *
- * IDEMPOTÊNCIA (Nível 2):
- * - Pendência só pode ser concluída uma vez (status ABERTA → CONCLUIDA)
- * - Janela de 5 minutos: verifica duplicata em movimento_credito antes de inserir
+ * MODELO (Conta Corrente — Pendências Financeiras):
+ * - `idPendencia` refere-se a `public.conta_corrente_pendencias.id` (não mais
+ *   `propostas_pendencias`). `movimento_credito` é a razão imutável; o saldo
+ *   operacional vive em `conta_corrente_pendencias.valor_saldo`.
+ * - MANTER_CREDITO / DEBITO_FUTURO / DEBITO_PENDENTE_COBRANCA: a pendência já
+ *   nasceu ABERTA com o valor correto (via cc_abrir_pendencia) — nenhuma RPC
+ *   de estado é necessária; apenas confirma a decisão na timeline.
+ * - DEVOLVER → cc_encerrar_pendencia(DEVOLUCAO)
+ * - BONIFICAR → cc_encerrar_pendencia(BONIFICACAO)
+ * - ABATER_DEBITO → cc_encerrar_pendencia(ABATER_DEBITO), UMA ÚNICA chamada de
+ *   RPC que consome a pendência de crédito e baixa a pendência de débito alvo
+ *   dentro da MESMA transação de banco (ver Seção D.3/ABATER_DEBITO em
+ *   20260721_conta_corrente_fase1a_aditiva.sql). Nunca fica em estado
+ *   parcialmente concluído: se qualquer validação falhar, a RPC inteira sofre
+ *   ROLLBACK e nenhuma das duas pendências é alterada.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { MovimentoCreditoTipo } from "@/features/cobrancas/types";
-import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 
-// ---------------------------------------------------------------------------
-// Mapeamento de ação → tipo de movimento + permissão necessária
-// ---------------------------------------------------------------------------
-
 type AcaoResolucao =
-  | "MANTER_CREDITO"
-  | "DEVOLVER"
-  | "ABATER_DEBITO"
-  | "DEBITO_PENDENTE_COBRANCA"
-  | "BONIFICAR"
-  | "DEBITO_FUTURO";
+  | "MANTER_CREDITO" | "DEVOLVER" | "ABATER_DEBITO"
+  | "DEBITO_PENDENTE_COBRANCA" | "BONIFICAR" | "DEBITO_FUTURO";
 
 const ACAO_CONFIG: Record<AcaoResolucao, {
-  tipo: MovimentoCreditoTipo;
-  origem: string;
   permissao: string;
+  requerDirecao: "FAVOR_CLIENTE" | "FAVOR_EMPRESA";
   mensagemTimeline: (valor: string, obs?: string) => string;
 }> = {
   MANTER_CREDITO: {
-    tipo: "CREDITO",
-    origem: "MANUAL",
     permissao: "financeiro.resolver_credito",
+    requerDirecao: "FAVOR_CLIENTE",
     mensagemTimeline: (v, obs) =>
-      `💰 Crédito de R$ ${v} registrado para uso futuro. Proposta alterada após pagamento.${obs ? ` Obs: ${obs}` : ""}`,
+      `💰 Crédito de R$ ${v} mantido para uso futuro. Proposta alterada após pagamento.${obs ? ` Obs: ${obs}` : ""}`,
   },
   DEVOLVER: {
-    tipo: "DEBITO",
-    origem: "MANUAL",
     permissao: "financeiro.devolver",
+    requerDirecao: "FAVOR_CLIENTE",
     mensagemTimeline: (v, obs) =>
       `↩️ Solicitação de devolução de R$ ${v} registrada. Aguarda confirmação do Financeiro.${obs ? ` Obs: ${obs}` : ""}`,
   },
   ABATER_DEBITO: {
-    tipo: "DEBITO",
-    origem: "MANUAL",
     permissao: "financeiro.resolver_credito",
+    requerDirecao: "FAVOR_CLIENTE",
     mensagemTimeline: (v, obs) =>
       `🔗 Crédito de R$ ${v} abatido de débito existente.${obs ? ` Obs: ${obs}` : ""}`,
   },
   DEBITO_PENDENTE_COBRANCA: {
-    tipo: "DEBITO",
-    origem: "MANUAL",
     permissao: "financeiro.debito_futuro",
+    requerDirecao: "FAVOR_EMPRESA",
     mensagemTimeline: (v, obs) =>
-      `⚠️ Débito de R$ ${v} registrado. Gere a cobrança complementar na aba Pagamentos.${obs ? ` Obs: ${obs}` : ""}`,
+      `⚠️ Débito de R$ ${v} mantido em aberto. Gere a cobrança complementar na aba Pagamentos (opção "Incluir débito").${obs ? ` Obs: ${obs}` : ""}`,
   },
   BONIFICAR: {
-    tipo: "DEBITO", // Bonificação zera o débito simulando que ele foi amortizado, ou seja, consome saldo ou registra o débito
-    origem: "MANUAL",
     permissao: "financeiro.bonificar",
+    requerDirecao: "FAVOR_EMPRESA",
     mensagemTimeline: (v, obs) =>
       `🎁 Diferença de R$ ${v} bonificada comercialmente.${obs ? ` Obs: ${obs}` : ""}`,
   },
   DEBITO_FUTURO: {
-    tipo: "DEBITO",
-    origem: "MANUAL",
     permissao: "financeiro.debito_futuro",
+    requerDirecao: "FAVOR_EMPRESA",
     mensagemTimeline: (v, obs) =>
-      `📋 Débito futuro de R$ ${v} registrado. Será cobrado em negociação posterior.${obs ? ` Obs: ${obs}` : ""}`,
+      `📋 Débito futuro de R$ ${v} mantido em aberto. Será cobrado em negociação posterior.${obs ? ` Obs: ${obs}` : ""}`,
   },
 };
 
-type UsuarioMinRow = {
-  id_perfil: number | null;
-  is_super_adm: boolean;
-  is_admin: boolean;
-};
+type UsuarioMinRow = { id_perfil: number | null; is_super_adm: boolean; is_admin: boolean };
+type PerfilMinRow = { permissoes: string[] };
 
-type PerfilMinRow = {
-  permissoes: string[];
-};
-
-/**
- * Verifica se o usuário tem permissão para a ação financeira
- */
 async function verificarPermissao(
   supabase: SupabaseClient<any, any, any>,
   userId: string,
@@ -113,9 +95,7 @@ async function verificarPermissao(
     .maybeSingle();
 
   if (!usuarioData) return false;
-
   const row = usuarioData as UsuarioMinRow;
-
   if (row.is_super_adm) return true;
 
   if (row.id_perfil != null) {
@@ -125,20 +105,14 @@ async function verificarPermissao(
       .eq("id", row.id_perfil)
       .eq("ativo", true)
       .maybeSingle();
-
     if (perfilData) {
       const perfil = perfilData as PerfilMinRow;
       const permissoes: string[] = Array.isArray(perfil.permissoes) ? perfil.permissoes : [];
       return permissoes.includes("*") || permissoes.includes(permissao);
     }
   }
-
   return row.is_admin;
 }
-
-// ---------------------------------------------------------------------------
-// Handler principal
-// ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
   // ── 1. JWT ────────────────────────────────────────────────────────────────
@@ -158,7 +132,6 @@ export async function POST(request: NextRequest) {
   });
 
   const { data: authData, error: authError } = await supabase.auth.getUser();
-
   if (authError || !authData.user) {
     return NextResponse.json({ success: false, error: "Sessão inválida." }, { status: 401 });
   }
@@ -196,7 +169,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: `Ação desconhecida: ${acao}` }, { status: 400 });
   }
 
-  // ── 3. Verificar permissão da ação específica ─────────────────────────────
+  if (acao === "ABATER_DEBITO" && (!idDebitoAlvo || !valorAbatimento || valorAbatimento <= 0)) {
+    return NextResponse.json(
+      { success: false, error: "idDebitoAlvo e valorAbatimento são obrigatórios para ABATER_DEBITO." },
+      { status: 400 }
+    );
+  }
+
+  // ── 3. Permissão da ação principal ────────────────────────────────────────
   const temPermissao = await verificarPermissao(supabase, user.id, config.permissao);
   if (!temPermissao) {
     return NextResponse.json(
@@ -205,304 +185,128 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 4. Validar proposta e cliente no banco ────────────────────────────────
-  const { data: propostaBanco, error: propostaError } = await supabase
-    .from("propostas")
-    .select("id_int, id_cliente, valor_total, valor, valor_frete, empresa")
-    .eq("id_int", idInt)
+  // ── 4. Buscar e validar a pendência (conta_corrente_pendencias) ───────────
+  const { data: pendencia, error: pendenciaError } = await supabase
+    .from("conta_corrente_pendencias")
+    .select("id, id_int, id_cliente, direcao, status, valor_saldo, valor_reservado")
+    .eq("id", idPendencia)
     .maybeSingle();
 
-  if (propostaError || !propostaBanco) {
-    return NextResponse.json(
-      { success: false, error: propostaError ? propostaError.message : "Proposta não encontrada." },
-      { status: 404 }
-    );
+  if (pendenciaError || !pendencia) {
+    return NextResponse.json({ success: false, error: "Pendência não encontrada no servidor." }, { status: 404 });
   }
 
-  if (propostaBanco.id_cliente !== idCliente) {
+  if (pendencia.id_int !== idInt || pendencia.id_cliente !== idCliente) {
     return NextResponse.json(
-      { success: false, error: "Cliente informado difere do cadastrado na proposta." },
+      { success: false, error: "Inconsistência: pendência não pertence à proposta/cliente informados." },
       { status: 400 }
     );
   }
 
-  // Resolver o id_empresa a partir da proposta (mesmo padrão de editar-paga).
-  // Pendências secundárias criadas abaixo precisam de id_empresa válido; sem ele
-  // o INSERT falhava silenciosamente e a pendência não era criada.
-  const idEmpresaPendencia = resolveEmpresaIdFromTexto(propostaBanco.empresa) ?? null;
+  if (pendencia.status === "RESOLVIDA" || pendencia.status === "CANCELADA") {
+    console.info(`[resolver-diferenca] Pendência ${idPendencia} já ${pendencia.status}. Resposta idempotente.`);
+    return NextResponse.json({ success: true, idempotente: true, idPendencia });
+  }
 
-  // ── 5. Re-calcular soberanamente a diferença financeira ───────────────────
-  const { data: cobrancasBanco, error: cobrancasError } = await supabase
-    .from("pagamentos_v2")
-    .select("status, confirmado, valor, obs_v2")
-    .eq("id_int", idInt)
-    .neq("status", "CANCELADO");
-
-  if (cobrancasError) {
+  if (pendencia.status !== "ABERTA" && pendencia.status !== "PARCIALMENTE_RESOLVIDA") {
     return NextResponse.json(
-      { success: false, error: "Erro ao buscar pagamentos para validação." },
-      { status: 500 }
+      { success: false, error: `Pendência em status inválido para resolução: ${pendencia.status}` },
+      { status: 409 }
     );
   }
 
-  // Mesma exclusão de editar-paga: valor de abatimento de débito não é pagamento
-  // da proposta, não deve entrar na diferença financeira desta proposta.
-  const valorPagoReal = (cobrancasBanco || [])
-    .filter(c => c.status === "PAID" || (c.status === "A_VENCER" && c.confirmado))
-    .reduce((sum, c) => {
-      const marcador = String(c.obs_v2 || "").match(/\[ABATIMENTO_DEBITO:(\d+(?:\.\d{1,2})?)\]/);
-      const abatimento = marcador ? Number(marcador[1]) || 0 : 0;
-      return sum + Math.max(0, (Number(c.valor) || 0) - abatimento);
-    }, 0);
-
-  const valorPagoRealArredondado = Math.round(valorPagoReal * 100) / 100;
-
-  if (propostaBanco.valor_total == null) {
+  if (pendencia.direcao !== config.requerDirecao) {
     return NextResponse.json(
-      { success: false, error: "Valor total financeiro não consolidado. Salve a proposta corretamente antes de resolver a pendência." },
-      { status: 422 }
+      { success: false, error: `Ação ${acao} não é válida para uma pendência ${pendencia.direcao === "FAVOR_CLIENTE" ? "a favor do cliente" : "a favor da empresa"}.` },
+      { status: 400 }
     );
   }
-  const totalBruto = Number(propostaBanco.valor_total);
-  const novoTotalRealArredondado = Math.round(totalBruto * 100) / 100;
 
-  console.info(`[resolver-diferenca] Proposta #${idInt}: valor_total=${propostaBanco.valor_total}, valor=${propostaBanco.valor}, valor_frete=${propostaBanco.valor_frete} → total resolvido=${novoTotalRealArredondado}, pago=${valorPagoRealArredondado}`);
-  const diferencaCalculada = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
-
-  // Reconciliação consistente com editar-paga: descontar o que já foi movimentado
-  // para esta proposta (resoluções anteriores). Excluímos a janela de 5 min para
-  // não subtrair um movimento recém-criado por duplo-clique — esse caso é tratado
-  // pela idempotência da seção 7 mais abaixo.
-  const cincoMinAtrasReconc = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const { data: movimentosAnteriores } = await supabase
-    .from("movimento_credito")
-    .select("valor")
-    .eq("id_int", idInt)
-    .eq("cancelado", false)
-    .lt("created_at", cincoMinAtrasReconc);
-  const totalReconciliadoAnterior = Math.round(
-    (movimentosAnteriores || []).reduce((sum, m) => sum + Math.abs(Number(m.valor) || 0), 0) * 100
-  ) / 100;
-  const diferencaBrutaAbs = Math.abs(diferencaCalculada);
-  const diferencaReconciliadaAbs = Math.max(
-    0,
-    Math.round((diferencaBrutaAbs - totalReconciliadoAnterior) * 100) / 100
-  );
-
-  // Validação tolerante: aceita o valor tanto contra a diferença bruta (fluxo do
-  // botão "Resolver agora" e recuperação de pendências travadas) quanto contra a
-  // diferença já reconciliada com movimentos anteriores (edições incrementais).
-  // Assim o loop antigo continua quebrado sem impedir a resolução de estados presos.
-  const valorConfere =
-    Math.abs(valor - diferencaBrutaAbs) <= 0.02 ||
-    Math.abs(valor - diferencaReconciliadaAbs) <= 0.02;
-
-  if (!valorConfere) {
+  // Tolerância de R$ 0,02 contra o total pendente (saldo + eventual reserva) —
+  // proteção contra estado de UI desatualizado, mas o valor efetivamente
+  // aplicado é sempre o saldo/servidor, nunca o valor bruto enviado pelo cliente.
+  const totalPendente = Math.round((Number(pendencia.valor_saldo) + Number(pendencia.valor_reservado)) * 100) / 100;
+  if (Math.abs(valor - totalPendente) > 0.02) {
     return NextResponse.json(
       {
         success: false,
-        error: `Inconsistência de valores: o valor informado (R$ ${valor.toFixed(2)}) difere da diferença calculada no servidor (bruta R$ ${diferencaBrutaAbs.toFixed(2)} / reconciliada R$ ${diferencaReconciliadaAbs.toFixed(2)}). Pago: R$ ${valorPagoRealArredondado.toFixed(2)}, Novo total: R$ ${novoTotalRealArredondado.toFixed(2)}.`
+        error: `Inconsistência de valores: o valor informado (R$ ${valor.toFixed(2)}) difere do saldo pendente no servidor (R$ ${totalPendente.toFixed(2)}). Recarregue a proposta e tente novamente.`,
       },
       { status: 400 }
     );
   }
 
-  // ── 6. Verificar pendência ABERTA (idempotência nível 2) ──────────────────
-  let pendencia = null;
-
-  {
-    const { data, error: pendenciaError } = await supabase
-      .from("propostas_pendencias")
-      .select("id, status, titulo, id_cliente, id_int")
-      .eq("id", idPendencia)
-      .maybeSingle();
-
-    if (pendenciaError || !data) {
-      return NextResponse.json(
-        { success: false, error: "Pendência não encontrada no servidor." },
-        { status: 404 }
-      );
-    }
-    pendencia = data;
-  }
-
-  if (pendencia) {
-    if (pendencia.id_int !== idInt || pendencia.id_cliente !== idCliente) {
-      return NextResponse.json(
-        { success: false, error: "Inconsistência: pendência não pertence à proposta/cliente informados." },
-        { status: 400 }
-      );
-    }
-
-    if (pendencia.status === "CONCLUIDA") {
-      // Idempotente: já foi resolvida
-      console.info(`[resolver-diferenca] Pendência ${idPendencia} já concluída. Resposta idempotente.`);
-      return NextResponse.json({ success: true, idempotente: true, idPendencia });
-    }
-
-    if (pendencia.status !== "ABERTA" && pendencia.status !== "EM_ANDAMENTO") {
-      return NextResponse.json(
-        { success: false, error: `Pendência em status inválido para resolução: ${pendencia.status}` },
-        { status: 409 }
-      );
-    }
-  }
-
-  // ── 7. Verificar duplicata em movimento_credito (janela 5 minutos) ────────
-  const cincoMinAtras = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const valorMovimento = acao === "ABATER_DEBITO" && valorAbatimento ? valorAbatimento : valor;
-
-  const { data: movimentoExistente } = await supabase
-    .from("movimento_credito")
-    .select("id")
-    .eq("id_int", idInt)
-    .eq("id_cliente", idCliente)
-    .eq("tipo", config.tipo)
-    .eq("cancelado", false)
-    .gte("created_at", cincoMinAtras)
-    .limit(1)
-    .maybeSingle();
-
-  if (movimentoExistente) {
-    console.info(`[resolver-diferenca] Movimento duplicado detectado (id=${movimentoExistente.id}). Respondendo de forma idempotente.`);
-    // Apenas garante que a pendência seja concluída caso ainda esteja aberta no banco
-    await supabase
-      .from("propostas_pendencias")
-      .update({
-        status: "CONCLUIDA",
-        concluido_por_user_id: user.id,
-        concluido_por_nome: user.email,
-        concluido_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", idPendencia);
-
-    return NextResponse.json({ success: true, idempotente: true, movimentoId: movimentoExistente.id });
-  }
-
-  // ── 8. Registrar movimento em movimento_credito ───────────────────────────
+  const valorMovimento = acao === "ABATER_DEBITO" && valorAbatimento ? valorAbatimento : pendencia.valor_saldo;
   const obsCompleta = [
     observacao,
-    acao === "ABATER_DEBITO" && idDebitoAlvo
-      ? `Débito alvo ID: ${idDebitoAlvo}. Valor abatido: R$ ${valorMovimento?.toFixed(2)}.`
-      : null,
+    acao === "ABATER_DEBITO" && idDebitoAlvo ? `Débito alvo (pendência #${idDebitoAlvo}).` : null,
     `Operador: ${user.email}. Proposta #${idInt}.`,
   ].filter(Boolean).join(" ");
 
-  const { data: novoMovimento, error: movimentoError } = await supabase
-    .from("movimento_credito")
-    .insert({
-      id_cliente: idCliente,
-      id_int: idInt,
-      valor: valorMovimento,
-      tipo: config.tipo,
-      origem: config.origem,
-      observacao: obsCompleta,
-      created_by: user.id,
-      cancelado: false,
-    })
-    .select("id")
-    .single();
-
-  if (movimentoError) {
-    console.error("[resolver-diferenca] Erro ao registrar movimento:", movimentoError.message);
-    return NextResponse.json(
-      { success: false, error: `Erro ao registrar movimento: ${movimentoError.message}` },
-      { status: 500 }
-    );
-  }
-
-  // ── 9. Se DEVOLVER: criar pendência secundária para o financeiro confirmar a devolução ──
-  if (acao === "DEVOLVER") {
-    const { error: pendDevErr } = await supabase
-      .from("propostas_pendencias")
-      .insert([{
-        id_int: idInt,
-        id_cliente: idCliente,
-        titulo: `Confirmar devolução — R$ ${valor.toFixed(2).replace(".", ",")}`,
-        descricao: `Devolução de R$ ${valor.toFixed(2).replace(".", ",")} solicitada e aguardando transferência bancária/estorno. ${obsCompleta}`,
-        categoria: "CREDITO",
-        status: "ABERTA",
-        prioridade: "ALTA",
-        responsavel_setor: "FINANCEIRO",
-        responsavel_user_id: null,
-        criado_por_user_id: user.id,
-        criado_por_nome: user.email ?? "Sistema",
-        // A CHECK constraint chk_propostas_pendencias_origem só aceita SISTEMA/MANUAL;
-        // "CONFIRMACAO_DEVOLUCAO" fazia o INSERT falhar (23514). A semântica fica no
-        // título/categoria da pendência.
-        origem: "SISTEMA",
-        data_limite: null,
-        chat_id: null,
-        pagamento_id: null,
-        id_empresa: idEmpresaPendencia,
-      }]);
-    if (pendDevErr) console.error("[resolver-diferenca] Falha ao criar pendência de devolução:", pendDevErr.message);
-  }
-
-  // ── 10. Se DEBITO_PENDENTE_COBRANCA: criar pendência de cobrança ───────────
-  if (acao === "DEBITO_PENDENTE_COBRANCA") {
-    const { error: pendCobErr } = await supabase
-      .from("propostas_pendencias")
-      .insert([{
-        id_int: idInt,
-        id_cliente: idCliente,
-        titulo: `Cobrança complementar pendente — R$ ${valor.toFixed(2).replace(".", ",")}`,
-        descricao: `Débito de R$ ${valor.toFixed(2).replace(".", ",")} registrado. Gere a cobrança complementar (PIX, Boleto ou Cartão) pela aba Pagamentos. ${obsCompleta}`,
-        categoria: "PAGAMENTO",
-        status: "ABERTA",
-        prioridade: "ALTA",
-        responsavel_setor: "FINANCEIRO",
-        responsavel_user_id: null,
-        criado_por_user_id: user.id,
-        criado_por_nome: user.email ?? "Sistema",
-        // A CHECK constraint chk_propostas_pendencias_origem só aceita SISTEMA/MANUAL;
-        // "DEBITO_COMPLEMENTAR" fazia o INSERT falhar (23514), então a pendência de
-        // cobrança complementar nunca era criada. A semântica fica no título/categoria.
-        origem: "SISTEMA",
-        data_limite: null,
-        chat_id: null,
-        pagamento_id: null,
-        id_empresa: idEmpresaPendencia,
-      }]);
-    if (pendCobErr) console.error("[resolver-diferenca] Falha ao criar pendência de cobrança complementar:", pendCobErr.message);
-  }
-
-  // ── 11. Concluir pendência principal ──────────────────────────────────────
-  await supabase
-    .from("propostas_pendencias")
-    .update({
-      status: "CONCLUIDA",
-      concluido_por_user_id: user.id,
-      concluido_por_nome: user.email,
-      concluido_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", idPendencia);
-
-  // ── 12. Registrar mensagem na timeline ────────────────────────────────────
-  // As mensagens de timeline já prefixam "R$ "; passar só o número evita "R$ R$".
-  const valorFormatado = valor.toFixed(2).replace(".", ",");
-  const mensagem = config.mensagemTimeline(valorFormatado, observacao);
-
-  await supabase
-    .from("propostas_chat")
-    .insert([{
+  // ── 5. Executar a ação ─────────────────────────────────────────────────────
+  if (acao === "MANTER_CREDITO" || acao === "DEBITO_FUTURO" || acao === "DEBITO_PENDENTE_COBRANCA") {
+    // A pendência já nasceu ABERTA com o valor correto (cc_abrir_pendencia).
+    // Nenhuma RPC de estado é necessária — apenas confirma a decisão na timeline.
+    await supabase.from("propostas_chat").insert([{
       id_int: idInt,
       id_cliente: idCliente,
-      mensagem,
+      mensagem: config.mensagemTimeline(valorMovimento.toFixed(2).replace(".", ","), observacao),
       tipo: "SISTEMA",
       autor_nome: "Sistema",
       setor: "Financeiro",
       visivel_externo: false,
       anexos: null,
     }]);
+  } else if (acao === "DEVOLVER") {
+    const { error: rpcError } = await supabase.rpc("cc_encerrar_pendencia", {
+      p_id_pendencia: idPendencia,
+      p_modo: "DEVOLUCAO",
+      p_valor: valorMovimento,
+      p_id_movimento_ref: null,
+      p_chave_reserva: null,
+      p_motivo: "DEVOLVER",
+      p_observacao: obsCompleta,
+    });
+    if (rpcError) {
+      return NextResponse.json({ success: false, error: rpcError.message }, { status: 400 });
+    }
+  } else if (acao === "BONIFICAR") {
+    const { error: rpcError } = await supabase.rpc("cc_encerrar_pendencia", {
+      p_id_pendencia: idPendencia,
+      p_modo: "BONIFICACAO",
+      p_valor: valorMovimento,
+      p_id_movimento_ref: null,
+      p_chave_reserva: null,
+      p_motivo: "BONIFICAR",
+      p_observacao: obsCompleta,
+    });
+    if (rpcError) {
+      return NextResponse.json({ success: false, error: rpcError.message }, { status: 400 });
+    }
+  } else if (acao === "ABATER_DEBITO") {
+    // Operação ATÔMICA: uma única chamada de RPC consome a pendência de
+    // crédito desta proposta (idPendencia) e baixa a pendência de débito alvo
+    // (idDebitoAlvo) na MESMA transação de banco. Não existe estado
+    // parcialmente concluído — se qualquer validação falhar, nenhuma das
+    // duas pendências é alterada (ROLLBACK implícito da função).
+    const { error: rpcError } = await supabase.rpc("cc_encerrar_pendencia", {
+      p_id_pendencia: idDebitoAlvo,
+      p_modo: "ABATER_DEBITO",
+      p_valor: valorAbatimento,
+      p_id_movimento_ref: null,
+      p_chave_reserva: null,
+      p_motivo: "ABATER_DEBITO",
+      p_observacao: `Abatido com crédito da proposta #${idInt} (pendência #${idPendencia}). ${obsCompleta}`,
+      p_id_pendencia_credito: idPendencia,
+    });
+    if (rpcError) {
+      return NextResponse.json({ success: false, error: rpcError.message }, { status: 400 });
+    }
+  }
 
-  console.info(`[resolver-diferenca] Concluído: acao=${acao}, proposta=#${idInt}, movimento=${novoMovimento?.id}, pendencia=${idPendencia}`);
+  console.info(`[resolver-diferenca] Concluído: acao=${acao}, proposta=#${idInt}, pendencia=${idPendencia}`);
 
-  // ── 13. Reconciliar status_interno pelo fluxo oficial ─────────────────────
-  // Evento: resolução de diferença financeira de proposta paga. Best-effort:
-  // nunca falha a resolução da diferença em si.
+  // ── 6. Reconciliar status_interno pelo fluxo oficial ───────────────────────
   const reconciliacao = await aplicarStatusRecomendadoProposta(
     idInt,
     { uid: user.id, nome: user.email ?? "Sistema", email: user.email ?? "" },
@@ -513,10 +317,5 @@ export async function POST(request: NextRequest) {
     console.warn(`[resolver-diferenca] Reconciliação de status sem efeito para proposta #${idInt}: ${reconciliacao.errorMessage}`);
   }
 
-  return NextResponse.json({
-    success: true,
-    acao,
-    movimentoId: novoMovimento?.id,
-    idPendencia,
-  });
+  return NextResponse.json({ success: true, acao, idPendencia });
 }

@@ -10,12 +10,33 @@ const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
 type PagamentoRow = {
   id: string;
   id_int: number | null;
+  id_cliente: number | null;
   status: string | null;
   confirmado: boolean | null;
   tipo_cobranca: string | null;
   cod_solicitacao_inter: string | null;
   id_empresa: number | null;
+  reserva_estado: string | null;
+  id_pendencia: number | null;
+  chave_reserva: string | null;
 };
+
+/** Libera a reserva de débito (Conta Corrente) de uma cobrança cancelada, se houver. */
+async function liberarReservaSeHouver(supabase: SupabaseClient, userId: string, pagamento: PagamentoRow): Promise<void> {
+  if (pagamento.reserva_estado !== "RESERVA_ATIVA" || !pagamento.id_pendencia || !pagamento.chave_reserva) return;
+  const { error } = await supabase.rpc("cc_encerrar_pendencia", {
+    p_id_pendencia: pagamento.id_pendencia,
+    p_modo: "LIBERAR_RESERVA",
+    p_valor: null,
+    p_id_movimento_ref: null,
+    p_chave_reserva: pagamento.chave_reserva,
+    p_motivo: null,
+    p_observacao: `Cobrança ${pagamento.id} cancelada. Operador: ${userId}.`,
+  });
+  if (error) {
+    console.error("[cancelar-externo] Falha ao liberar reserva de débito:", error.message);
+  }
+}
 
 async function reverterStatusPropostaSeSemCobranca(supabase: SupabaseClient, idInt: number): Promise<string> {
   const { count, error: countError } = await supabase
@@ -130,7 +151,7 @@ export async function POST(request: Request) {
     // 3. Reconsulta o estado financeiro atual (fonte da verdade é o banco)
     const { data: pagamento, error: fetchError } = await supabase
       .from("pagamentos_v2")
-      .select("id, id_int, status, confirmado, tipo_cobranca, cod_solicitacao_inter, id_empresa")
+      .select("id, id_int, id_cliente, status, confirmado, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
       .eq("id", id)
       .single<PagamentoRow>();
 
@@ -365,6 +386,10 @@ export async function POST(request: Request) {
       );
     }
     resultados.pagamentos_v2 = "CANCELADO (logico)";
+
+    // Conta Corrente: se esta cobrança tinha uma reserva de débito ativa,
+    // libera-a (o débito volta a ficar disponível na pendência de origem).
+    await liberarReservaSeHouver(supabase, authData.user.id, pagamento);
 
     // Boletos vinculados: cancelamento lógico com filtro composto (nunca id_int isolado).
     if (tipoNormalized === "BOLETO" && codC6Final && pagamento.id_int != null) {

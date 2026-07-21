@@ -907,10 +907,23 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     const isAutorizacao = acao === "autorizar_faturamento";
 
     if (source === "supabase") {
+      const client = getSupabaseClient();
+      if (!client) {
+        throw new Error("Cliente Supabase não inicializado.");
+      }
+      const sessionResponse = await client.auth.getSession();
+      const token = sessionResponse.data.session?.access_token || "";
+      if (!token) {
+        throw new Error("Sessão não encontrada. Faça login novamente.");
+      }
+
       // Chama a nova API Server-Side para validar regras de quitação de proposta
       const response = await fetch("/api/cobrancas/confirmar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           idCobranca: id,
           confirmadoPor,

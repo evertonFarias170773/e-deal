@@ -13,7 +13,8 @@ import {
   Settings,
   ShieldCheck,
   Truck,
-  Users
+  Users,
+  Wallet
 } from "lucide-react";
 import type { NavigationItem } from "@/lib/types";
 
@@ -24,6 +25,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Produtos", href: "/produtos", icon: Package },
   { label: "Orcamentos", href: "/orcamentos", icon: ClipboardList },
   { label: "Pendências", href: "/pendencias", icon: CheckSquare },
+  { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
   { label: "Maestro", href: "/maestro", icon: Bot },
   { label: "Conferência", href: "/cobrancas", icon: CreditCard },
   { label: "Contas a receber", href: "/contas-a-receber", icon: ReceiptText },

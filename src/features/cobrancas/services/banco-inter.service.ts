@@ -85,12 +85,36 @@ export async function gerarPixBancoInter(
       body: JSON.stringify(webhookBody)
     });
 
+    // Lê sempre como texto primeiro — nunca chamar .json() direto numa
+    // resposta que pode vir vazia (n8n/webhook sem corpo) ou com texto
+    // inválido (ex.: página de erro HTML de um proxy/timeout): nesses casos
+    // .json() lança SyntaxError ("Unexpected end of JSON input") sem
+    // contexto nenhum para diagnóstico, e sem esse try/catch o erro cru
+    // vazava até o cliente.
+    const rawText = await webhookResponse.text();
+    // Preview truncado só para log/erro — o payload de resposta do PIX
+    // (txid, pix_copia_e_cola) não é credencial, mas o corte evita log
+    // gigante e qualquer excesso de exposição em caso de resposta anômala.
+    const bodyPreview = rawText.slice(0, 300);
+
     if (!webhookResponse.ok) {
-      const errorText = await webhookResponse.text();
-      return { success: false, error: `Erro no processamento do Banco Inter: ${errorText}` };
+      console.error(`[BancoInter] Webhook retornou erro HTTP. url=${webhookUrl} status=${webhookResponse.status} bodyPreview=${JSON.stringify(bodyPreview)}`);
+      return { success: false, error: `Erro no processamento do Banco Inter (HTTP ${webhookResponse.status}): ${bodyPreview || "sem corpo"}` };
     }
 
-    const responseData = await webhookResponse.json() as Record<string, unknown> | Record<string, unknown>[];
+    if (!rawText.trim()) {
+      console.error(`[BancoInter] Webhook retornou corpo vazio. url=${webhookUrl} status=${webhookResponse.status}`);
+      return { success: false, error: "Resposta do Banco Inter vazia (sem corpo na confirmação). A cobrança permanece pendente para nova tentativa." };
+    }
+
+    let responseData: Record<string, unknown> | Record<string, unknown>[];
+    try {
+      responseData = JSON.parse(rawText);
+    } catch {
+      console.error(`[BancoInter] Webhook retornou corpo não-JSON. url=${webhookUrl} status=${webhookResponse.status} bodyPreview=${JSON.stringify(bodyPreview)}`);
+      return { success: false, error: "Resposta do Banco Inter em formato inválido (não é JSON). A cobrança permanece pendente para nova tentativa." };
+    }
+
     let codSolicitacaoInter: string;
     let pixCopiaCola: string;
     let linhaDigitavel: string | undefined = undefined;

@@ -4,49 +4,55 @@
  * Camada de acesso a dados do Dashboard — somente leitura (SELECT).
  * Nenhuma escrita, migration ou alteração de schema, views, triggers, RPCs ou Edge Functions.
  *
- * ─── Fontes oficiais por card ────────────────────────────────────────────────
+ * ─── Fontes oficiais por card (Fase 0 — indicadores reais corrigidos) ────────
  *
- *  1. Vendas do mês       → view_pagamentos_pagos_v2
- *       Status PAID no mês corrente; filtro por id_empresa.
- *       Service reutilizado de: @/features/cobrancas/services/view-pagamentos-pagos.service
+ *  1. Vendas do mês (Faturamento confirmado) → view_pagamentos_pagos_v2
+ *       Regra oficial: status IN ('PAID','A_VENCER') AND confirmado = true
+ *       (a própria view já aplica esse filtro — ver view-pagamentos-pagos.service.ts).
+ *       Reutiliza o service oficial fetchViewPagamentosPagos + calcFaturamentoPeriodo/
+ *       calcFaturamentoPorEmpresa. NÃO reimplementa a soma aqui.
  *
- *  2. Contas a receber    → public.vw_boletos_controle (Todas) / public.boletos (por empresa)
- *       Saldo em aberto = situacao IN ('AVENCER', 'VENCIDO') na view /
- *                         status IN ('A_VENCER', 'A_RECEBER') em boletos.
- *       PAGO não entra no total pendente.
+ *  2. Propostas aguardando → public.propostas
+ *       status_interno IN ('AGUARDANDO','AGUARDANDO / EM ARTE','AGUARDANDO / PENDENTE').
+ *       NOVO / NOVO EM ARTE ficam de fora deliberadamente (ainda não submetidas).
+ *       Proposta com pagamento parcial permanece AGUARDANDO por decisão do motor
+ *       oficial de status (status-engine.service.ts) — aqui apenas contamos o
+ *       status_interno já reconciliado, sem reinterpretar cobertura financeira.
+ *       is_reproved = false. Filtro de empresa via campo texto `empresa`.
  *
- *       Vínculo investigado:
- *         - vw_boletos_controle não possui id_empresa nem campo de empresa.
- *         - A view não tem DDL local; origem desconhecida no código.
- *         - Não existe FK PostgREST configurada entre a view e boletos.
- *         - A tabela boletos possui id_empresa (número) nativo e confirmado.
+ *  3. OS em produção → reutiliza listarPedidosOperacionais() (Produção)
+ *       Fonte oficial já exige is_prd_aprovado = true E status operacional
+ *       (LIBERADO, REVISAO ATENDENTE/PRODUCAO, EM PRODUCAO/IMPRESSAO/ACABAMENTO).
+ *       Mesma lista exibida na tela /producao. Filtro de empresa via texto.
  *
- *       DECISÃO:
- *         companyId = 0 (Todas): paginação completa na view sem limite arbitrário.
- *         companyId ≠ 0 (empresa): consulta direta em boletos com id_empresa.
- *           status A_VENCER ≅ situacao AVENCER, status A_RECEBER ≅ situacao VENCIDO.
+ *  4. Contas a receber → reutiliza getContasReceberReadOnlyData() (public.boletos)
+ *       Fonte oficial de Contas a Receber. NUNCA mistura com pagamentos_v2.
+ *       "Em aberto a receber" = status A_VENCER (previsão futura) + VENCIDO
+ *       (overdue), somando valor_atualizado ?? valor — exatamente os buckets do
+ *       resumo da tela oficial (A_RECEBER é deliberadamente excluído da carteira,
+ *       PAID/CANCELADO não entram). Filtro de empresa por id_empresa nativo.
  *
- *  3. Propostas aguardando → public.propostas
- *       status_interno IN ['AGUARDANDO', 'AGUARDANDO / EM ARTE', 'AGUARDANDO / PENDENTE']
- *       is_reproved = false
- *       Filtro de empresa via campo texto `empresa` (propostas não tem id_empresa).
+ *  5. Notas a liberar → PLACEHOLDER EXPLÍCITO (Fiscal fora do escopo da Fase 0).
  *
- *  4. Notas a liberar     → PLACEHOLDER EXPLÍCITO
- *       Integração fiscal adiada. Retorna 0 sem consultar banco.
- *       TODO: integrar com notas_fiscais + notas_servico quando definido pelo produto.
+ * ─── Erro de consulta ≠ resultado zero ──────────────────────────────────────
+ *  Cada fetch devolve um flag `error`. Quando uma consulta falha, o card mostra
+ *  "—" com tom danger e aviso de erro — distinto de um zero real (R$ 0,00 / 0).
  *
- *  5. OS em produção      → public.propostas
- *       status_interno = 'EM PRODUCAO' (grafia exata confirmada no banco)
- *       Filtro de empresa via campo texto `empresa`.
- *
- * ─── Regra de empresa em `propostas` ────────────────────────────────────────
+ * ─── Regra de empresa em `propostas` (cards 2 e 3) ──────────────────────────
  *  A tabela `propostas` NÃO possui `id_empresa`. O campo `empresa` é texto.
  *  O filtro é aplicado no JavaScript após a busca, usando exclusão explícita.
+ *  (boletos possui id_empresa nativo, usado diretamente no card 4.)
  */
 
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { fetchViewPagamentosPagos } from "@/features/cobrancas/services/view-pagamentos-pagos.service";
+import {
+  fetchViewPagamentosPagos,
+  calcFaturamentoPeriodo,
+  calcFaturamentoPorEmpresa,
+} from "@/features/cobrancas/services/view-pagamentos-pagos.service";
+import { listarPedidosOperacionais } from "@/features/pedidos/services/pedidos-producao.service";
+import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/services/contas-receber.service";
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -66,6 +72,8 @@ export type DashboardCardData = {
   tone: "success" | "info" | "warning" | "danger" | "special" | "neutral";
   isLoading: boolean;
   isPlaceholder?: boolean;
+  /** true quando a consulta falhou (distinto de um zero legítimo). */
+  isError?: boolean;
 };
 
 export type DashboardMetricsResult = {
@@ -73,6 +81,10 @@ export type DashboardMetricsResult = {
   source: "supabase" | "fallback";
   errorMessage?: string;
 };
+
+// Resultado interno de cada fetch, separando erro de zero legítimo.
+type ValorQtdResult = { valor: number; quantidade: number; error: boolean };
+type QtdResult = { quantidade: number; error: boolean };
 
 // ─── Filtro de empresa em `propostas` (campo texto) ───────────────────────────
 // Padrões específicos listados antes dos genéricos para evitar falso-positivo.
@@ -130,283 +142,273 @@ function getCurrentMonthRangeSP(): { inicio: string; fim: string } {
   return { inicio, fim };
 }
 
-// Status de "Aguardando" conforme business-rules.ts (PROPOSTA_STATUS_GRUPOS.orcamento)
+// Status que compõem o card "Propostas aguardando".
+// Decisão explícita: NÃO inclui NOVO / NOVO EM ARTE (propostas ainda não
+// submetidas para aprovação/financeiro), apenas os estados de espera efetiva.
 const AGUARDANDO_STATUSES = [
   "AGUARDANDO",
   "AGUARDANDO / EM ARTE",
   "AGUARDANDO / PENDENTE",
 ] as const;
 
-// ─── 1. Vendas do mês — view_pagamentos_pagos_v2 ─────────────────────────────
+// ─── 1. Vendas do mês (Faturamento confirmado) — view_pagamentos_pagos_v2 ─────
 //
-// A view já possui service próprio em cobrancas/services/view-pagamentos-pagos.service.ts.
-// Reutilizamos fetchViewPagamentosPagos() que faz fetch via PostgREST.
-// Campos da view: data (YYYY-MM-DD), id_empresa (number), status, quantidade, total.
-// Filtramos status = 'PAID' (pagamentos confirmados) no mês corrente.
-// O filtro de empresa é feito no JS sobre id_empresa.
+// A view já entrega apenas linhas confirmadas conforme a regra oficial
+// (status IN ('PAID','A_VENCER') AND confirmado = true). Portanto NÃO filtramos
+// mais por "status === 'PAID'" (isso descartava indevidamente os A_VENCER já
+// confirmados e subestimava o faturamento). Usamos os agregadores oficiais.
 
-async function fetchVendasMes(companyId: number): Promise<{ valor: number; quantidade: number }> {
+async function fetchVendasMes(companyId: number): Promise<ValorQtdResult> {
   const { inicio, fim } = getCurrentMonthRangeSP();
 
   const result = await fetchViewPagamentosPagos(inicio, fim);
 
-  if (result.error || !result.rows.length) {
-    if (result.error) console.warn("[Dashboard] Erro ao buscar vendas do mês:", result.error);
-    return { valor: 0, quantidade: 0 };
+  if (result.error) {
+    console.warn("[Dashboard] Erro ao buscar vendas do mês:", result.error);
+    return { valor: 0, quantidade: 0, error: true };
   }
 
-  // Filtrar somente PAID (pagamentos efetivados) + empresa
-  const rows = result.rows.filter((r) => {
-    if (r.status !== "PAID") return false;
-    if (companyId === 0) return true;
-    return Number(r.id_empresa) === companyId;
-  });
-
-  const valor = rows.reduce((acc, r) => acc + toNumber(r.total), 0);
-  const quantidade = rows.reduce((acc, r) => acc + toNumber(r.quantidade), 0);
-
-  return { valor, quantidade };
-}
-
-// ─── 2. Contas a receber — vw_boletos_controle (Todas) / boletos (por empresa) ─────────
-//
-// Estratégia de total sem truncamento:
-//   companyId = 0 (Todas) → paginação completa em vw_boletos_controle.
-//     Cada página tem PAGE_SIZE registros. Continua enquanto a página vier cheia.
-//     Isso garante que um volume > 20.000 não produz total parcial silencioso.
-//
-//   companyId ≠ 0 (empresa) → consulta direta em public.boletos.
-//     boletos.id_empresa é numérico e nativo — filtro direto e confiável.
-//     status A_VENCER corresponde a situacao AVENCER na view.
-//     status A_RECEBER corresponde a situacao VENCIDO na view.
-//     PAGO (status PAID / confirmado) não entra em nenhum dos dois status.
-//     A paginação também se aplica aqui para cobrir volumes altos por empresa.
-//
-// PostgREST embedding (vw_boletos_controle → boletos) NÃO está disponível:
-//   Views não têm FK constraint; nenhum COMMENT ON VIEW de override foi encontrado.
-
-const PAGE_SIZE_CONTAS = 1000;
-
-async function fetchContasReceber(
-  companyId: number
-): Promise<{ valor: number; quantidade: number }> {
-  const client = getSupabaseClient();
-  if (!client) return { valor: 0, quantidade: 0 };
-
-  // ─ Caminho A: companyId = 0 (Todas empresas) – paginação sobre vw_boletos_controle ──────────
+  // companyId = 0 (Todas): soma do período inteiro.
   if (companyId === 0) {
-    let totalValor = 0;
-    let totalQtd = 0;
-    let page = 0;
-
-    while (true) {
-      const from = page * PAGE_SIZE_CONTAS;
-      const to = from + PAGE_SIZE_CONTAS - 1;
-
-      const { data, error } = await client
-        .from("vw_boletos_controle")
-        .select("valor")
-        .in("situacao", ["AVENCER", "VENCIDO"])
-        .range(from, to);
-
-      if (error) {
-        console.warn("[Dashboard] Erro ao paginar vw_boletos_controle:", error.message);
-        break;
-      }
-
-      if (!Array.isArray(data) || data.length === 0) break;
-
-      for (const row of data) totalValor += toNumber(row.valor);
-      totalQtd += data.length;
-
-      // Se a página veio incompleta, chegamos ao fim
-      if (data.length < PAGE_SIZE_CONTAS) break;
-      page++;
-    }
-
-    return { valor: totalValor, quantidade: totalQtd };
+    const { total, count } = calcFaturamentoPeriodo(result.rows, inicio, fim);
+    return { valor: total, quantidade: count, error: false };
   }
 
-  // ─ Caminho B: empresa específica – paginação sobre public.boletos com id_empresa ──────────
-  // boletos.id_empresa é um campo numérico nativo confirmado.
-  // status A_VENCER ≡ situacao AVENCER (título futuro não pago).
-  // status A_RECEBER ≡ situacao VENCIDO (título em cobrança, possivelmente vencido).
-  // PAID/CANCELADO não entram em nenhum dos dois.
-  {
-    let totalValor = 0;
-    let totalQtd = 0;
-    let page = 0;
-
-    while (true) {
-      const from = page * PAGE_SIZE_CONTAS;
-      const to = from + PAGE_SIZE_CONTAS - 1;
-
-      const { data, error } = await client
-        .from("boletos")
-        .select("valor")
-        .eq("id_empresa", companyId)
-        .in("status", ["A_VENCER", "A_RECEBER"])
-        .range(from, to);
-
-      if (error) {
-        console.warn("[Dashboard] Erro ao paginar boletos por empresa:", error.message);
-        break;
-      }
-
-      if (!Array.isArray(data) || data.length === 0) break;
-
-      for (const row of data) totalValor += toNumber(row.valor);
-      totalQtd += data.length;
-
-      if (data.length < PAGE_SIZE_CONTAS) break;
-      page++;
-    }
-
-    return { valor: totalValor, quantidade: totalQtd };
-  }
+  // Empresa específica: reutiliza o agregador oficial por empresa.
+  const porEmpresa = calcFaturamentoPorEmpresa(result.rows, inicio, fim);
+  const alvo = porEmpresa.find((e) => e.id_empresa === companyId);
+  return {
+    valor: alvo?.total ?? 0,
+    quantidade: alvo?.quantidade ?? 0,
+    error: false,
+  };
 }
 
-// ─── 3. Propostas aguardando — public.propostas ───────────────────────────────
+// ─── 2. Propostas aguardando — public.propostas ───────────────────────────────
 //
-// Contagem de propostas no grupo "aguardando" da fase comercial.
-// Status: AGUARDANDO | AGUARDANDO / EM ARTE | AGUARDANDO / PENDENTE
-// Excluir reprovadas: is_reproved = false
-// propostas não tem id_empresa → filtro de empresa no JS via campo texto `empresa`.
+// Sem truncamento silencioso:
+//   companyId = 0 (Todas) → count exato via head:true (não trafega linhas).
+//   companyId ≠ 0        → pagina apenas a coluna `empresa` (texto leve) e filtra
+//                          no JS, sem .limit fixo — nada é descartado em silêncio.
 
-async function fetchPropostasAguardando(companyId: number): Promise<{ quantidade: number }> {
+const PAGE_SIZE_PROPOSTAS = 1000;
+
+async function fetchPropostasAguardando(companyId: number): Promise<QtdResult> {
   const client = getSupabaseClient();
-  if (!client) return { quantidade: 0 };
+  if (!client) return { quantidade: 0, error: true };
 
-  const { data, error } = await client
-    .from("propostas")
-    .select("empresa")
-    .in("status_interno", AGUARDANDO_STATUSES)
-    .eq("is_reproved", false)
-    .limit(5000);
+  // Caminho A: Todas — count exato, sem trazer linhas.
+  if (companyId === 0) {
+    const { count, error } = await client
+      .from("propostas")
+      .select("*", { count: "exact", head: true })
+      .in("status_interno", AGUARDANDO_STATUSES)
+      .eq("is_reproved", false);
 
-  if (error || !Array.isArray(data)) {
-    console.warn("[Dashboard] Erro ao buscar propostas aguardando:", error?.message);
-    return { quantidade: 0 };
+    if (error) {
+      console.warn("[Dashboard] Erro ao contar propostas aguardando:", error.message);
+      return { quantidade: 0, error: true };
+    }
+    return { quantidade: count ?? 0, error: false };
   }
 
-  const quantidade =
-    companyId === 0
-      ? data.length
-      : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
+  // Caminho B: empresa específica — pagina a coluna `empresa` e filtra no JS.
+  let quantidade = 0;
+  let page = 0;
 
-  return { quantidade };
+  while (true) {
+    const from = page * PAGE_SIZE_PROPOSTAS;
+    const to = from + PAGE_SIZE_PROPOSTAS - 1;
+
+    const { data, error } = await client
+      .from("propostas")
+      .select("empresa")
+      .in("status_interno", AGUARDANDO_STATUSES)
+      .eq("is_reproved", false)
+      .range(from, to);
+
+    if (error) {
+      console.warn("[Dashboard] Erro ao paginar propostas aguardando:", error.message);
+      return { quantidade: 0, error: true };
+    }
+
+    if (!Array.isArray(data) || data.length === 0) break;
+
+    quantidade += data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
+
+    if (data.length < PAGE_SIZE_PROPOSTAS) break;
+    page++;
+  }
+
+  return { quantidade, error: false };
 }
 
-// ─── 4. Notas a liberar — PLACEHOLDER ────────────────────────────────────────
+// ─── 3. OS em produção — reutiliza o service oficial de Produção ──────────────
+//
+// listarPedidosOperacionais() já aplica a regra oficial:
+//   is_prd_aprovado = true  E  status_interno operacional.
+// É a mesma fonte da tela /producao, garantindo números idênticos.
+// Limitação conhecida: o service engole erros internamente e devolve [] — logo,
+// uma falha de consulta aparece como zero neste card (ver relatório da Fase 0).
+
+async function fetchEmProducao(companyId: number): Promise<QtdResult> {
+  try {
+    const operacionais = await listarPedidosOperacionais();
+    const quantidade =
+      companyId === 0
+        ? operacionais.length
+        : operacionais.filter((p) => empresaTextMatchesCompany(p.empresa, companyId)).length;
+    return { quantidade, error: false };
+  } catch (err) {
+    console.error("[Dashboard] Erro ao buscar OS em produção:", err);
+    return { quantidade: 0, error: true };
+  }
+}
+
+// ─── 4. Contas a receber — reutiliza o service oficial (public.boletos) ───────
+//
+// getContasReceberReadOnlyData() é a fonte oficial de Contas a Receber (boletos),
+// nunca pagamentos_v2. Somamos os títulos ainda a receber = A_VENCER (previsão
+// futura) + VENCIDO (overdue), usando valor_atualizado ?? valor — os mesmos
+// buckets do resumo da tela /contas-a-receber. A_RECEBER é excluído pela própria
+// fonte oficial; PAID/CANCELADO não são "a receber".
+//
+// Limitações registradas (sem criar RPC/view nesta tarefa):
+//   - Não há agregação SUM no banco; somamos as linhas em JS.
+//   - O service oficial carrega até 5000 boletos (mesmo teto da tela oficial);
+//     acima disso o total fica limitado — mas idêntico ao da tela oficial.
+//   - O service engole erros e devolve lista vazia, então uma falha de consulta
+//     aparece como zero neste card (ver relatório da Fase 0).
+
+async function fetchContasReceber(companyId: number): Promise<ValorQtdResult> {
+  try {
+    const { recebiveis } = await getContasReceberReadOnlyData();
+
+    const emAberto = recebiveis.filter((item) => {
+      const statusOk = item.status === "A_VENCER" || item.status === "VENCIDO";
+      if (!statusOk) return false;
+      if (companyId === 0) return true;
+      return toNumber(item.id_empresa) === companyId;
+    });
+
+    const valor = emAberto.reduce(
+      (acc, item) => acc + toNumber(item.valor_atualizado ?? item.valor),
+      0
+    );
+
+    return { valor, quantidade: emAberto.length, error: false };
+  } catch (err) {
+    console.error("[Dashboard] Erro ao buscar contas a receber:", err);
+    return { valor: 0, quantidade: 0, error: true };
+  }
+}
+
+// ─── 5. Notas a liberar — PLACEHOLDER ────────────────────────────────────────
 //
 // TODO: integrar com public.notas_fiscais e public.notas_servico.
-//       A integração real será implementada em fase posterior.
-//       Não consulta nenhuma tabela fiscal nesta etapa.
-//       Retorna valor fixo sem dados fictícios (zero, não um número inventado).
+//       Fora do escopo da Fase 0 (falta fonte fiscal documentada).
 
-function getNotasLiberarPlaceholder(): { quantidade: number } {
-  return { quantidade: 0 };
+// ─── Construtores de card (erro ≠ zero) ───────────────────────────────────────
+
+function buildValorCard(
+  key: DashboardCardKey,
+  title: string,
+  tone: DashboardCardData["tone"],
+  descOk: string,
+  res: ValorQtdResult
+): DashboardCardData {
+  if (res.error) {
+    return {
+      key,
+      title,
+      value: "—",
+      description: "Não foi possível carregar (erro de consulta).",
+      trend: "Erro ao consultar",
+      tone: "danger",
+      isLoading: false,
+      isError: true,
+    };
+  }
+  return {
+    key,
+    title,
+    value: formatCurrency(res.valor),
+    description: descOk,
+    tone,
+    isLoading: false,
+  };
 }
 
-// ─── 5. OS em produção — public.propostas ────────────────────────────────────
-//
-// Status: 'EM PRODUCAO' — grafia exata confirmada em:
-//   - src/features/orcamentos/types.ts
-//   - src/lib/constants/proposta-status.ts
-//   - src/features/maestro/core/knowledge/business-rules.ts
-// Sem acento, sem cedilha, tudo maiúsculo, espaço simples.
-// propostas não tem id_empresa → filtro de empresa no JS via campo texto `empresa`.
-
-async function fetchEmProducao(companyId: number): Promise<{ quantidade: number }> {
-  const client = getSupabaseClient();
-  if (!client) return { quantidade: 0 };
-
-  const { data, error } = await client
-    .from("propostas")
-    .select("empresa")
-    .eq("status_interno", "EM PRODUCAO")
-    .limit(5000);
-
-  if (error || !Array.isArray(data)) {
-    console.warn("[Dashboard] Erro ao buscar OS em produção:", error?.message);
-    return { quantidade: 0 };
+function buildQtdCard(
+  key: DashboardCardKey,
+  title: string,
+  tone: DashboardCardData["tone"],
+  descOk: string,
+  res: QtdResult
+): DashboardCardData {
+  if (res.error) {
+    return {
+      key,
+      title,
+      value: "—",
+      description: "Não foi possível carregar (erro de consulta).",
+      trend: "Erro ao consultar",
+      tone: "danger",
+      isLoading: false,
+      isError: true,
+    };
   }
-
-  const quantidade =
-    companyId === 0
-      ? data.length
-      : data.filter((row) => empresaTextMatchesCompany(row.empresa, companyId)).length;
-
-  return { quantidade };
+  return {
+    key,
+    title,
+    value: String(res.quantidade),
+    description: descOk,
+    tone,
+    isLoading: false,
+  };
 }
 
 // ─── Agregador principal ──────────────────────────────────────────────────────
 
 export async function getDashboardMetrics(companyId: number): Promise<DashboardMetricsResult> {
-  // Verificação de conexão Supabase (pagamentos_v2 usa fetch direto, mas propostas usa client)
-  const client = getSupabaseClient();
-  const supabaseDisponivel = Boolean(client);
-
-  if (!supabaseDisponivel) {
-    // A view_pagamentos_pagos_v2 usa fetch direto (não precisa de client), mas propostas sim
-    // Tentamos as consultas de view mesmo sem client para propostas
-  }
-
   try {
-    // Todas as consultas independentes em paralelo
+    // Todas as consultas independentes em paralelo. Cada fetch já trata o próprio
+    // erro e devolve um flag — nunca lança para o Promise.all.
     const [vendas, contasReceber, propostasAguardando, emProducao] = await Promise.all([
-      fetchVendasMes(companyId).catch((err) => {
-        console.error("[Dashboard] fetchVendasMes falhou:", err);
-        return { valor: 0, quantidade: 0 };
-      }),
-      fetchContasReceber(companyId).catch((err) => {
-        console.error("[Dashboard] fetchContasReceber falhou:", err);
-        return { valor: 0, quantidade: 0 };
-      }),
-      fetchPropostasAguardando(companyId).catch((err) => {
-        console.error("[Dashboard] fetchPropostasAguardando falhou:", err);
-        return { quantidade: 0 };
-      }),
-      fetchEmProducao(companyId).catch((err) => {
-        console.error("[Dashboard] fetchEmProducao falhou:", err);
-        return { quantidade: 0 };
-      }),
+      fetchVendasMes(companyId),
+      fetchContasReceber(companyId),
+      fetchPropostasAguardando(companyId),
+      fetchEmProducao(companyId),
     ]);
 
-    const notasLiberar = getNotasLiberarPlaceholder();
-
     const cards: DashboardCardData[] = [
-      {
-        key: "vendasMes",
-        title: "Vendas do mês",
-        value: formatCurrency(vendas.valor),
-        description: `${vendas.quantidade} pagamento(s) confirmado(s) no mês`,
-        tone: "success",
-        isLoading: false,
-      },
-      {
-        key: "contasReceber",
-        title: "Contas a receber",
-        value: formatCurrency(contasReceber.valor),
-        // companyId = 0: view paginada (total consolidado). companyId != 0: boletos por id_empresa.
-        description: companyId === 0
+      buildValorCard(
+        "vendasMes",
+        "Vendas do mês",
+        "success",
+        `${vendas.quantidade} pagamento(s) confirmado(s) no mês`,
+        vendas
+      ),
+      buildValorCard(
+        "contasReceber",
+        "Contas a receber",
+        "info",
+        companyId === 0
           ? `${contasReceber.quantidade} título(s) em aberto · todas as empresas`
           : `${contasReceber.quantidade} título(s) em aberto`,
-        tone: "info",
-        isLoading: false,
-      },
-      {
-        key: "propostasAguardando",
-        title: "Propostas aguardando",
-        value: String(propostasAguardando.quantidade),
-        description: "Aguardando retorno ou aprovação",
-        tone: "warning",
-        isLoading: false,
-      },
+        contasReceber
+      ),
+      buildQtdCard(
+        "propostasAguardando",
+        "Propostas aguardando",
+        "warning",
+        "Aguardando retorno ou aprovação",
+        propostasAguardando
+      ),
       {
         key: "notasLiberar",
         title: "Notas a liberar",
-        // TODO: substituir por dados reais de notas_fiscais + notas_servico
+        // TODO: substituir por dados reais de notas_fiscais + notas_servico (fora da Fase 0)
         value: "—",
         description: "Integração fiscal em preparação",
         trend: "Em breve",
@@ -414,14 +416,13 @@ export async function getDashboardMetrics(companyId: number): Promise<DashboardM
         isLoading: false,
         isPlaceholder: true,
       },
-      {
-        key: "emProducao",
-        title: "OS em produção",
-        value: String(emProducao.quantidade),
-        description: "Pedidos com status EM PRODUCAO",
-        tone: "special",
-        isLoading: false,
-      },
+      buildQtdCard(
+        "emProducao",
+        "OS em produção",
+        "special",
+        "Pedidos aprovados na esteira de produção",
+        emProducao
+      ),
     ];
 
     return { cards, source: "supabase" };

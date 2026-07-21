@@ -19,6 +19,7 @@ pnpm-debug.log*
 # backups
 *.backup
 *.sql
+!supabase/migrations/**/*.sql
 BACKUPS_SUPABASE/
 
 # development scratch directories and build info

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
 import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
@@ -56,18 +54,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Payload inválido." }, { status: 400 });
   }
 
-  const { 
-    idInt, 
-    idCliente, 
-    valorCredito, 
-    valorSecundario, 
-    tipoSecundario, 
-    empresa, 
+  const {
+    idInt,
+    idCliente,
+    valorCredito,
+    valorSecundario,
+    tipoSecundario,
+    empresa,
     atendente,
     vencimento,
     forma_pgto,
     forma_fatu,
-    observacao
+    observacao,
+    chaveIdempotencia
   } = body;
 
   if (!idInt || !idCliente || !valorCredito || !valorSecundario || !tipoSecundario) {
@@ -76,29 +75,13 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-
-  // Lock
-  const lockPath = path.join(process.cwd(), `.lock_pagamento_combinado_${idInt}`);
-  let lockAdquirido = false;
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < 5000) {
-    try {
-      fs.writeFileSync(lockPath, 'LOCKED', { flag: 'wx' });
-      lockAdquirido = true;
-      break;
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'code' in err && err.code === 'EEXIST') {
-        await new Promise(resolve => setTimeout(resolve, 50));
-      } else {
-        throw err;
-      }
-    }
+  if (!chaveIdempotencia || typeof chaveIdempotencia !== "string" || !/^[0-9a-f-]{36}$/i.test(chaveIdempotencia)) {
+    return NextResponse.json(
+      { success: false, error: "chaveIdempotencia (UUID) é obrigatória." },
+      { status: 400 }
+    );
   }
-
-  if (!lockAdquirido) {
-    return NextResponse.json({ success: false, error: "Serviço temporariamente indisponível. Tente novamente." }, { status: 503 });
-  }
+  const valorCreditoArredondado = Math.round(Number(valorCredito) * 100) / 100;
 
   try {
     // A. Consultar Proposta
@@ -129,75 +112,83 @@ export async function POST(request: NextRequest) {
     }
     const nomeClienteReal = clienteData.nome;
 
-    // C. Consultar Saldo E-Crédito (recalculado no servidor, nunca aceito do cliente)
-    const { data: creditos, error: creditosErr } = await supabaseUser
+    // B2. Idempotência: chave persistida por tentativa (não por janela de
+    // tempo) — repetir a mesma requisição retorna o resultado anterior;
+    // operações legítimas próximas no tempo (com chave diferente) nunca são
+    // descartadas. Verificada ANTES do saldo disponível: se o crédito já foi
+    // todo consumido pela tentativa anterior (bem-sucedida), o saldo atual
+    // pode não cobrir mais o valor — mas a operação já foi feita, então a
+    // resposta idempotente deve prevalecer sobre um novo "saldo insuficiente".
+    const { data: pagamentoExistente } = await supabaseUser
+      .from("pagamentos_v2")
+      .select("id, status, motivo_cancela")
+      .eq("chave_idempotencia", chaveIdempotencia)
+      .maybeSingle();
+
+    if (pagamentoExistente) {
+      if (pagamentoExistente.status === "CANCELADO") {
+        return NextResponse.json(
+          { success: false, idempotente: true, error: pagamentoExistente.motivo_cancela || "Tentativa anterior falhou." },
+          { status: 409 }
+        );
+      }
+      const situacaoIdempotente = await calcularSituacaoQuitacaoProposta(supabaseUser, idInt);
+      return NextResponse.json({
+        success: true,
+        idempotente: true,
+        message: "Pagamento combinado já foi processado (repetição idempotente).",
+        totalPagoAtivo: situacaoIdempotente.novoValorQuitado,
+        totalProposta: situacaoIdempotente.valorTotalProposta,
+        quitada: situacaoIdempotente.novoValorQuitado >= (situacaoIdempotente.valorTotalProposta - 0.02) && situacaoIdempotente.valorTotalProposta > 0,
+      });
+    }
+
+    // C. Saldo real disponível — MESMA fonte usada no banner/modal
+    // (getSaldoCredito/getSaldoContaCorrente): soma de toda a razão não
+    // cancelada do cliente em movimento_credito, nunca o payload do cliente.
+    // Cobre tanto pendências FAVOR_CLIENTE quanto crédito avulso manual
+    // (origem=AJUSTE, sem pendência) — ver mc_usar_credito_avulso.
+    const { data: ledgerBanco, error: ledgerErr } = await supabaseUser
       .from("movimento_credito")
-      .select("tipo, valor")
+      .select("valor, tipo")
       .eq("id_cliente", idCliente)
       .eq("cancelado", false);
 
-    if (creditosErr) {
+    if (ledgerErr) {
       return NextResponse.json({ success: false, error: "Falha ao consultar saldo." }, { status: 500 });
     }
 
-    let saldoReal = 0;
-    if (creditos) {
-      for (const c of creditos) {
-        const v = Number(c.valor) || 0;
-        if (c.tipo === "CREDITO") {
-          saldoReal += v;
-        } else if (c.tipo === "DEBITO") {
-          saldoReal -= v;
-        }
-      }
-    }
+    const saldoReal = Math.round(
+      (ledgerBanco || []).reduce((sum, r) => sum + (r.tipo === "CREDITO" ? Number(r.valor) || 0 : -(Number(r.valor) || 0)), 0) * 100
+    ) / 100;
 
-    if (saldoReal < valorCredito - 0.01) {
+    if (saldoReal < valorCreditoArredondado - 0.01) {
       return NextResponse.json({ success: false, error: "Saldo de E-Crédito insuficiente." }, { status: 400 });
     }
 
-    // Idempotência
-    const cincoMinAtras = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { data: consumoRecente } = await supabaseUser
-      .from("movimento_credito")
-      .select("id")
-      .eq("id_int", idInt)
-      .eq("tipo", "DEBITO")
-      .eq("valor", valorCredito)
-      .gte("created_at", cincoMinAtras)
-      .maybeSingle();
+    // C2. Pendências FAVOR_CLIENTE utilizáveis, mais antigas primeiro (FIFO) —
+    // pode vir vazio quando o crédito é 100% avulso; nesse caso o passo
+    // seguinte (após o loop) cobre o valor inteiro pelo crédito avulso.
+    const { data: pendenciasBanco, error: pendenciasErr } = await supabaseUser
+      .from("conta_corrente_pendencias")
+      .select("id, valor_saldo")
+      .eq("id_cliente", idCliente)
+      .eq("direcao", "FAVOR_CLIENTE")
+      .in("status", ["ABERTA", "PARCIALMENTE_RESOLVIDA"])
+      .order("created_at", { ascending: true });
 
-    if (consumoRecente) {
-      return NextResponse.json({ success: true, message: "Pagamento combinado já foi processado recentemente." });
+    if (pendenciasErr) {
+      return NextResponse.json({ success: false, error: "Falha ao consultar saldo." }, { status: 500 });
     }
 
-    // C. Consumir Crédito
-    const payloadMovimento = {
-      id_cliente: idCliente,
-      tipo: "DEBITO",
-      valor: valorCredito,
-      origem: "SISTEMA",
-      observacao: observacao || `Uso parcial em pagamento combinado. Proposta #${idInt}`,
-      id_int: idInt,
-      created_by: user.id
-    };
+    const pendencias = pendenciasBanco || [];
 
-    const { data: insertedMovimento, error: erroMovimento } = await supabaseUser
-      .from("movimento_credito")
-      .insert([payloadMovimento])
-      .select()
-      .single();
-
-    if (erroMovimento || !insertedMovimento) {
-      return NextResponse.json({ success: false, error: "Falha ao descontar saldo de E-Crédito." }, { status: 500 });
-    }
-
-    // D. Criar Cobrança E-CREDITO
+    // D. Criar Cobrança E-CREDITO (antes do consumo — cada slice FIFO referencia este id)
     const payloadCobrancaCredito = {
       id_int: idInt,
       id_cliente: idCliente,
       cliente: nomeClienteReal,
-      valor: valorCredito,
+      valor: valorCreditoArredondado,
       status: "PAID",
       tipo_cobranca: "E-CREDITO",
       confirmado: true,
@@ -212,22 +203,110 @@ export async function POST(request: NextRequest) {
       token_publico: crypto.randomBytes(16).toString("hex")
     };
 
-    const { error: errPagV2Credito } = await supabaseUser
+    const { data: insertedCredito, error: errPagV2Credito } = await supabaseUser
       .from("pagamentos_v2")
-      .insert([payloadCobrancaCredito]);
+      .insert([payloadCobrancaCredito])
+      .select("id")
+      .single();
 
-    if (errPagV2Credito) {
-      // Rollback compensatório: cancela logicamente o débito já gravado (nunca DELETE físico).
-      await supabaseUser
-        .from("movimento_credito")
-        .update({
-          cancelado: true,
-          cancelado_em: new Date().toISOString(),
-          cancelado_por: user.id,
-        })
-        .eq("id", insertedMovimento.id);
+    if (errPagV2Credito || !insertedCredito) {
+      return NextResponse.json({ success: false, error: "Falha ao salvar a cobrança E-Crédito." }, { status: 500 });
+    }
 
-      return NextResponse.json({ success: false, error: "Falha grave ao salvar a cobrança E-Crédito após débito. Débito estornado automaticamente." }, { status: 500 });
+    // Registrar a chave de idempotência via RPC — único caminho permitido
+    // para gravar pagamentos_v2.chave_idempotencia (INSERT/UPDATE diretos
+    // nessa coluna são revogados de authenticated na migration; SECURITY
+    // DEFINER é a exceção). Corrida rara: duas requisições concorrentes com
+    // a mesma chave criam cada uma seu próprio pagamento (chave_idempotencia
+    // começa NULL nas duas); só uma consegue registrar a chave (índice
+    // único). A perdedora cancela o próprio pagamento e devolve o resultado
+    // da vencedora.
+    const { error: chaveError } = await supabaseUser.rpc("pgv2_registrar_chave_idempotencia", {
+      p_id_pagamento: insertedCredito.id,
+      p_chave_idempotencia: chaveIdempotencia,
+    });
+
+    if (chaveError) {
+      console.warn(`[pagamento-combinado] Corrida de idempotência detectada (chave=${chaveIdempotencia}): ${chaveError.message}`);
+      await supabaseUser.from("pagamentos_v2").update({
+        status: "CANCELADO",
+        motivo_cancela: "Requisição duplicada (mesma chave de idempotência já registrada por outro pagamento).",
+      }).eq("id", insertedCredito.id);
+
+      const { data: concorrente } = await supabaseUser
+        .from("pagamentos_v2")
+        .select("id")
+        .eq("chave_idempotencia", chaveIdempotencia)
+        .maybeSingle();
+      if (concorrente) {
+        return NextResponse.json({ success: true, idempotente: true, message: "Pagamento combinado já foi processado (repetição idempotente)." });
+      }
+      return NextResponse.json({ success: false, error: `Falha ao registrar chave de idempotência: ${chaveError.message}` }, { status: 500 });
+    }
+
+    // C. Consumir crédito FIFO via cc_usar_pendencia (trava de linha; sem lock de
+    // filesystem). Em falha após consumir ao menos uma pendência, cancela a
+    // cobrança E-CREDITO local e alerta o Financeiro (não tenta ESTORNO — é
+    // exclusivo de admin/superadmin na v1 e este endpoint pode ser chamado por vendedor).
+    let restante = valorCreditoArredondado;
+    for (const p of pendencias) {
+      if (restante <= 0) break;
+      const slice = Math.min(restante, Number(p.valor_saldo));
+      if (slice < 0.01) continue;
+
+      const { error: rpcError } = await supabaseUser.rpc("cc_usar_pendencia", {
+        p_id_pendencia: p.id,
+        p_valor: slice,
+        p_modo: "CREDITO_IMEDIATO",
+        p_id_int_destino: idInt,
+        p_id_pagamento: insertedCredito.id,
+        p_chave_reserva: null,
+        p_observacao: observacao || `Uso parcial em pagamento combinado. Proposta #${idInt}`,
+      });
+
+      if (rpcError) {
+        console.error(`[pagamento-combinado] Falha ao consumir pendência ${p.id}:`, rpcError.message);
+        await supabaseUser.from("pagamentos_v2").update({ status: "CANCELADO", motivo_cancela: "Falha ao consumir crédito da conta corrente." }).eq("id", insertedCredito.id);
+        const msgFalha = `ATENÇÃO: falha ao aplicar crédito (pagamento combinado) na proposta #${idInt} após consumir R$ ${(valorCreditoArredondado - restante).toFixed(2)}. Cobrança E-Crédito cancelada. Erro: ${rpcError.message}. Requer conferência manual do Financeiro.`;
+        await supabaseUser.from("propostas_chat").insert([{
+          id_int: idInt, id_cliente: idCliente, mensagem: msgFalha, tipo: "SISTEMA",
+          autor_nome: "Sistema", setor: "Financeiro", visivel_externo: false, anexos: null,
+        }]);
+        return NextResponse.json({ success: false, error: msgFalha }, { status: 500 });
+      }
+      restante = Math.round((restante - slice) * 100) / 100;
+    }
+
+    // Restante após esgotar as pendências FIFO: cobre pelo crédito avulso
+    // (origem=AJUSTE, sem pendência) via mc_usar_credito_avulso. RPC recalcula
+    // o saldo real sob trava do cliente antes de gravar, então só falha aqui
+    // numa corrida genuína de saldo.
+    if (restante > 0.01) {
+      const { error: avulsoError } = await supabaseUser.rpc("mc_usar_credito_avulso", {
+        p_id_cliente: idCliente,
+        p_valor: restante,
+        p_id_int_destino: idInt,
+        p_id_pagamento: insertedCredito.id,
+        p_observacao: observacao || `Uso parcial em pagamento combinado. Proposta #${idInt}`,
+      });
+
+      if (avulsoError) {
+        console.error(`[pagamento-combinado] Falha ao consumir crédito avulso (R$ ${restante.toFixed(2)}):`, avulsoError.message);
+        await supabaseUser.from("pagamentos_v2").update({ status: "CANCELADO", motivo_cancela: "Falha ao consumir crédito avulso da conta corrente." }).eq("id", insertedCredito.id);
+        const msgFalha = `ATENÇÃO: falha ao aplicar crédito (pagamento combinado) na proposta #${idInt} após consumir R$ ${(valorCreditoArredondado - restante).toFixed(2)} em pendências. Cobrança E-Crédito cancelada. Erro: ${avulsoError.message}. Requer conferência manual do Financeiro.`;
+        await supabaseUser.from("propostas_chat").insert([{
+          id_int: idInt, id_cliente: idCliente, mensagem: msgFalha, tipo: "SISTEMA",
+          autor_nome: "Sistema", setor: "Financeiro", visivel_externo: false, anexos: null,
+        }]);
+        return NextResponse.json({ success: false, error: msgFalha }, { status: 500 });
+      }
+
+      restante = 0;
+    }
+
+    if (restante > 0.01) {
+      await supabaseUser.from("pagamentos_v2").update({ status: "CANCELADO", motivo_cancela: "Saldo insuficiente no momento do consumo." }).eq("id", insertedCredito.id);
+      return NextResponse.json({ success: false, error: `Saldo insuficiente no momento do processamento (restante não coberto: R$ ${restante.toFixed(2)}). Tente novamente.` }, { status: 409 });
     }
 
     // E. Criar Cobrança Secundária
@@ -331,8 +410,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (interError) {
-      const msgFalha = `Crédito de R$ ${valorCredito} utilizado, mas a geração do PIX Inter de R$ ${valorSecundario} falhou: ${interError}. A cobrança secundária foi criada como pendente de geração.`;
-      
+      // Crédito e cobrança secundária já foram efetivados/criados acima e NÃO
+      // são desfeitos aqui — só a geração do PIX (integração externa) falhou.
+      // A cobrança (insertedSecundaria.id) fica pendente, sem pix_copia_cola,
+      // pronta para nova tentativa via /api/cobrancas/gerar-pix (idempotente:
+      // não rechama o webhook se o PIX já tiver sido gerado).
+      const msgFalha = `Crédito de R$ ${valorCredito} utilizado, mas a geração do PIX Inter de R$ ${valorSecundario} falhou: ${interError}. A cobrança secundária (#${insertedSecundaria.id}) foi criada como pendente de geração — pode ser retentada sem novo consumo de crédito.`;
+
       await supabaseUser.from("propostas_chat").insert([{
         id_int: idInt,
         id_cliente: idCliente,
@@ -361,7 +445,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         isCombinadoParcial: true,
-        error: msgFalha
+        error: msgFalha,
+        cobrancaPendenteId: insertedSecundaria.id,
+        cobrancaPendenteIdPagamento: insertedSecundaria.id_pagamento,
+        tipoCobrancaPendente: tipoSecundario
       }, { status: 200 });
     }
 
@@ -394,9 +481,5 @@ export async function POST(request: NextRequest) {
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ success: false, error: errMsg }, { status: 500 });
-  } finally {
-    if (fs.existsSync(lockPath)) {
-      fs.unlinkSync(lockPath);
-    }
   }
 }

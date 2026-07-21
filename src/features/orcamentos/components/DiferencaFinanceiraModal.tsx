@@ -27,8 +27,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { AcaoFinanceiraDiferenca } from "@/features/cobrancas/types";
-import type { MovimentoCredito } from "@/features/cobrancas/types";
-import { getMovimentosByCliente } from "@/features/cobrancas/services/movimento-credito.service";
+import type { ContaCorrentePendencia } from "@/features/cobrancas/services/conta-corrente.service";
+import { listPendenciasUtilizaveis } from "@/features/cobrancas/services/conta-corrente.service";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -87,22 +87,22 @@ export function DiferencaFinanceiraModal({
   const isSubmittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sub-modal de abatimento
-  const [debitos, setDebitos] = useState<MovimentoCredito[]>([]);
+  // Sub-modal de abatimento — lista pendências de débito (FAVOR_EMPRESA) do
+  // cliente em public.conta_corrente_pendencias (fonte operacional do saldo).
+  const [debitos, setDebitos] = useState<ContaCorrentePendencia[]>([]);
   const [loadingDebitos, setLoadingDebitos] = useState(false);
-  const [debitoAlvo, setDebitoAlvo] = useState<MovimentoCredito | null>(null);
+  const [debitoAlvo, setDebitoAlvo] = useState<ContaCorrentePendencia | null>(null);
   const [valorAbatimento, setValorAbatimento] = useState<string>("");
 
-  // Carregar débitos ao selecionar ABATER_DEBITO
+  // Carregar pendências de débito ao selecionar ABATER_DEBITO
   useEffect(() => {
     if (selectedAcao === "ABATER_DEBITO" && idCliente) {
       setLoadingDebitos(true);
-      getMovimentosByCliente(idCliente)
-        .then((movs) => {
-          const debts = movs.filter((m) => m.tipo === "DEBITO");
-          setDebitos(debts);
-          if (debts.length === 0) {
-            setError("Este cliente não possui débitos registrados. Escolha outra opção.");
+      listPendenciasUtilizaveis(idCliente, "FAVOR_EMPRESA")
+        .then((pendencias) => {
+          setDebitos(pendencias);
+          if (pendencias.length === 0) {
+            setError("Este cliente não possui pendências de débito em aberto. Escolha outra opção.");
           } else {
             setError(null);
           }
@@ -119,7 +119,7 @@ export function DiferencaFinanceiraModal({
   // Quando selecionar débito alvo, definir valor padrão
   useEffect(() => {
     if (debitoAlvo) {
-      const defaultVal = Math.min(absDiff, debitoAlvo.valor);
+      const defaultVal = Math.min(absDiff, debitoAlvo.valor_saldo);
       setValorAbatimento(defaultVal.toFixed(2));
     }
   }, [debitoAlvo, absDiff]);
@@ -132,7 +132,7 @@ export function DiferencaFinanceiraModal({
     const v = parseFloat(valorAbatimento.replace(",", "."));
     if (isNaN(v) || v <= 0) return "Informe um valor válido para abatimento.";
     if (v > absDiff) return `Valor de abatimento (${formatCurrency(v)}) maior que o crédito disponível (${formatCurrency(absDiff)}).`;
-    if (v > debitoAlvo.valor) return `Valor de abatimento (${formatCurrency(v)}) maior que o débito alvo (${formatCurrency(debitoAlvo.valor)}).`;
+    if (v > debitoAlvo.valor_saldo) return `Valor de abatimento (${formatCurrency(v)}) maior que o débito alvo (${formatCurrency(debitoAlvo.valor_saldo)}).`;
     return null;
   }
 
@@ -164,10 +164,10 @@ export function DiferencaFinanceiraModal({
 
       if (selectedAcao === "ABATER_DEBITO") {
         const v = parseFloat(valorAbatimento.replace(",", "."));
-        const saldoRestante = debitoAlvo!.valor - v;
+        const saldoRestante = debitoAlvo!.valor_saldo - v;
         acao = {
           tipo: "ABATER_DEBITO",
-          obs: [obs.trim(), `Débito ID ${debitoAlvo!.id} | Valor: ${formatCurrency(debitoAlvo!.valor)} | Abatido: ${formatCurrency(v)} | Saldo restante: ${formatCurrency(saldoRestante)}`]
+          obs: [obs.trim(), `Pendência de débito #${debitoAlvo!.id} | Saldo: ${formatCurrency(debitoAlvo!.valor_saldo)} | Abatido: ${formatCurrency(v)} | Saldo restante: ${formatCurrency(saldoRestante)}`]
             .filter(Boolean).join(" — "),
           idDebitoAlvo: debitoAlvo!.id,
           valorAbatimento: v,
@@ -292,12 +292,12 @@ export function DiferencaFinanceiraModal({
                   )}
                   {!loadingDebitos && debitos.length === 0 && (
                     <p className="text-xs text-amber-400">
-                      ⚠️ Nenhum débito registrado para este cliente. Escolha outra opção.
+                      ⚠️ Nenhuma pendência de débito em aberto para este cliente. Escolha outra opção.
                     </p>
                   )}
                   {!loadingDebitos && debitos.length > 0 && (
                     <>
-                      <p className="text-xs text-white/50">Selecione o débito a abater:</p>
+                      <p className="text-xs text-white/50">Selecione a pendência de débito a abater:</p>
                       <div className="space-y-2 max-h-36 overflow-y-auto">
                         {debitos.map((d) => (
                           <button
@@ -311,10 +311,10 @@ export function DiferencaFinanceiraModal({
                             }`}
                           >
                             <span className="font-medium text-white/80">
-                              {formatCurrency(d.valor)}
+                              {formatCurrency(d.valor_saldo)}
                             </span>
                             <span className="text-white/40 ml-2">
-                              — {d.observacao ?? d.origem} ({new Date(d.created_at).toLocaleDateString("pt-BR")})
+                              — Proposta #{d.id_int} · {d.motivo} ({new Date(d.created_at).toLocaleDateString("pt-BR")})
                             </span>
                           </button>
                         ))}
@@ -322,21 +322,21 @@ export function DiferencaFinanceiraModal({
                       {debitoAlvo && (
                         <div>
                           <label className="block text-xs text-white/40 mb-1">
-                            Valor a abater (máx {formatCurrency(Math.min(absDiff, debitoAlvo.valor))}):
+                            Valor a abater (máx {formatCurrency(Math.min(absDiff, debitoAlvo.valor_saldo))}):
                           </label>
                           <input
                             type="number"
                             min="0.01"
                             step="0.01"
-                            max={Math.min(absDiff, debitoAlvo.valor)}
+                            max={Math.min(absDiff, debitoAlvo.valor_saldo)}
                             value={valorAbatimento}
                             onChange={(e) => setValorAbatimento(e.target.value)}
                             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
                           />
-                          {debitoAlvo.valor - parseFloat(valorAbatimento || "0") > 0 && (
+                          {debitoAlvo.valor_saldo - parseFloat(valorAbatimento || "0") > 0 && (
                             <p className="text-[10px] text-white/30 mt-1">
                               Saldo restante do débito após abatimento:{" "}
-                              {formatCurrency(debitoAlvo.valor - parseFloat(valorAbatimento || "0"))}
+                              {formatCurrency(debitoAlvo.valor_saldo - parseFloat(valorAbatimento || "0"))}
                             </p>
                           )}
                         </div>

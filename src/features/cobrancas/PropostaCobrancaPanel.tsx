@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSaldoCredito, getSaldoContaCorrente } from "@/features/cobrancas/services/movimento-credito.service";
+import { listPendenciasUtilizaveis, type ContaCorrentePendencia } from "@/features/cobrancas/services/conta-corrente.service";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { Field, PanelCard, inputClass, InfoBox } from "@/features/cobrancas/form-ui";
@@ -113,7 +114,14 @@ export function PropostaCobrancaPanel({
 
   // saldoDevedor: valor em aberto do cliente na conta corrente (independente de saldoCredito,
   // que é sempre >=0). Usado para o lembrete de abatimento de débito ao gerar cobrança.
+  // É apenas informativo — nunca bloqueia a criação de cobrança/pedido.
   const [saldoDevedor, setSaldoDevedor] = useState<number>(0);
+  // pendenciaDebitoAlvo: pendência de débito (FAVOR_EMPRESA) mais antiga em aberto
+  // (FIFO) — v1 reserva contra UMA única pendência por cobrança (sem abranger
+  // múltiplas pendências numa mesma reserva). O teto de "incluir débito" é o
+  // saldo desta pendência específica, não o saldoDevedor total (que pode somar
+  // várias pendências).
+  const [pendenciaDebitoAlvo, setPendenciaDebitoAlvo] = useState<ContaCorrentePendencia | null>(null);
 
   const idClienteAtual = proposta.cliente?.idCliente;
 
@@ -121,12 +129,14 @@ export function PropostaCobrancaPanel({
     if (!idClienteAtual) return;
     setIsLoadingSaldo(true);
     try {
-      const [s, saldoReal] = await Promise.all([
+      const [s, saldoReal, pendenciasDebito] = await Promise.all([
         getSaldoCredito(idClienteAtual),
         getSaldoContaCorrente(idClienteAtual),
+        listPendenciasUtilizaveis(idClienteAtual, "FAVOR_EMPRESA"),
       ]);
       setSaldoCredito(s);
       setSaldoDevedor(saldoReal < 0 ? Math.round(Math.abs(saldoReal) * 100) / 100 : 0);
+      setPendenciaDebitoAlvo(pendenciasDebito[0] ?? null);
     } catch (err) {
       console.error("[PropostaCobrancaPanel] Erro ao carregar saldo de crédito:", err);
     } finally {
@@ -141,6 +151,11 @@ export function PropostaCobrancaPanel({
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [selectedCobrancaId, setSelectedCobrancaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Chave de idempotência por tentativa de aplicação de crédito (E-CREDITO /
+  // pagamento combinado). Persiste entre retries do MESMO clique (mesma
+  // operação lógica) e só é renovada após um desfecho terminal (sucesso,
+  // combinado parcial ou reabertura do modal) — nunca por janela de tempo.
+  const chaveIdempotenciaECreditoRef = useRef<string | null>(null);
   const [isUserEditingValor, setIsUserEditingValor] = useState(false);
   const [tipoSecundario, setTipoSecundario] = useState<CobrancaTipo>("PIX");
   const [condicaoSecundaria, setCondicaoSecundaria] = useState<string>("");
@@ -166,6 +181,51 @@ export function PropostaCobrancaPanel({
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
+  }
+
+  /**
+   * Nova tentativa automática de gerar o PIX de uma cobrança pendente já
+   * criada (ex.: pagamento combinado em que o E-Crédito foi aplicado mas a
+   * emissão do PIX falhou). Chama /api/cobrancas/gerar-pix — idempotente:
+   * se o PIX já tiver sido gerado por outra tentativa, retorna os dados
+   * existentes sem rechamar o Banco Inter. Nunca cria pagamento novo nem
+   * mexe em crédito — só (re)tenta a integração para a MESMA cobrança.
+   */
+  async function tentarGerarPixNovamente(
+    cobrancaId: string,
+    idPagamentoCobranca: string | null | undefined,
+    idEmpresaCobranca: number,
+    valorNominal: number,
+    token: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const seuNumero = idEmpresaCobranca === 2 ? (idPagamentoCobranca || String(proposta.id_int)) : String(proposta.id_int);
+      const res = await fetch("/api/cobrancas/gerar-pix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({
+          cobrancaId,
+          idEmpresa: idEmpresaCobranca,
+          seuNumero,
+          valorNominal,
+          dataVencimento: getDefaultVencimento(0),
+          telefone: proposta.contato?.whatsapp || proposta.cliente?.whatsapp || "",
+          cpfCnpj: proposta.cliente?.documento || "",
+          nome: pagador?.nome || proposta.cliente?.nome || "Cliente",
+          endereco: `${proposta.enderecoEntrega?.endereco || ""}, ${proposta.enderecoEntrega?.numero || ""} ${proposta.enderecoEntrega?.complemento || ""}`.trim(),
+          cidade: proposta.enderecoEntrega?.cidade || "",
+          uf: proposta.enderecoEntrega?.uf || "",
+          cep: proposta.enderecoEntrega?.cep || ""
+        })
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        return { success: false, error: json?.message || `Falha ao gerar PIX (HTTP ${res.status}).` };
+      }
+      return { success: true };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   function buildInitialFormState(): CriarCobrancaFormValues {
@@ -531,8 +591,11 @@ export function PropostaCobrancaPanel({
    */
   function handleSubmitClick() {
     if (isSaving) return;
-    if (saldoDevedor > 0 && form.tipoCobranca !== "E-CREDITO" && !debitoResolvido) {
-      setDebitoInputValor(saldoDevedor.toFixed(2).replace(".", ","));
+    // A reserva de débito (v1) atua sobre UMA única pendência (a mais antiga em
+    // aberto) — o teto oferecido é o saldo dessa pendência, não o saldoDevedor
+    // total (que pode somar várias pendências).
+    if (pendenciaDebitoAlvo && pendenciaDebitoAlvo.valor_saldo > 0 && form.tipoCobranca !== "E-CREDITO" && !debitoResolvido) {
+      setDebitoInputValor(pendenciaDebitoAlvo.valor_saldo.toFixed(2).replace(".", ","));
       setShowDebitoModal(true);
       return;
     }
@@ -584,15 +647,26 @@ export function PropostaCobrancaPanel({
     if (form.tipoCobranca === "E-CREDITO") {
       setIsSaving(true);
       setRefreshingSaldo(true);
+      // Chave de idempotência: gerada uma vez por operação lógica e reutilizada
+      // em retries de uma mesma tentativa ambígua (ex.: falha de rede antes de
+      // qualquer resposta do servidor). Assim que uma resposta definitiva do
+      // servidor é recebida (sucesso OU falha), a chave é finalizada e uma
+      // nova tentativa (novo clique) usa uma chave nova — nunca reaproveita
+      // uma chave já resolvida, o que travaria retries legítimos após falha.
+      if (!chaveIdempotenciaECreditoRef.current) {
+        chaveIdempotenciaECreditoRef.current = crypto.randomUUID();
+      }
+      const chaveIdempotencia = chaveIdempotenciaECreditoRef.current;
+      let respostaDefinitivaRecebida = false;
       try {
         const client = getSupabaseClient();
         const session = (await client?.auth.getSession())?.data.session;
         const token = session?.access_token;
-  
+
         if (!token) throw new Error("Sessão expirada. Autentique-se novamente.");
-  
+
         const isCombined = roundedValor < roundedSaldoRestante;
-        
+
         let endpoint = "/api/cobrancas/usar-credito";
         let payload: any = {
             idInt: proposta.id_int,
@@ -602,7 +676,8 @@ export function PropostaCobrancaPanel({
             clienteNome: pagador?.nome || proposta.cliente?.nome || "Cliente",
             empresa: proposta.empresa || "Ideal Grafica",
             idEmpresa: form.id_empresa || 1,
-            vencimento: getDefaultVencimento(0)
+            vencimento: getDefaultVencimento(0),
+            chaveIdempotencia
         };
 
         if (isCombined) {
@@ -620,10 +695,11 @@ export function PropostaCobrancaPanel({
                 idEmpresa: form.id_empresa || 1,
                 vencimento: getDefaultVencimento(0),
                 forma_pgto: tipoSecundario === "E-FATURADO" ? null : condicaoSecundaria,
-                forma_fatu: tipoSecundario === "E-FATURADO" ? condicaoSecundaria : null
+                forma_fatu: tipoSecundario === "E-FATURADO" ? condicaoSecundaria : null,
+                chaveIdempotencia
             };
         }
-  
+
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {
@@ -632,24 +708,54 @@ export function PropostaCobrancaPanel({
           },
           body: JSON.stringify(payload)
         });
-  
+        // Resposta HTTP recebida = tentativa finalizada do lado do servidor
+        // (sucesso ou falha definitiva) — a partir daqui a chave já usada não
+        // deve ser reaproveitada por um novo clique.
+        respostaDefinitivaRecebida = true;
+
         const json = await res.json();
         // Se a requisição não foi bem-sucedida, mas É um resultado parcial, NÃO lançamos erro para cair no catch genérico.
         // O backend retornará status: 200 e success: false com isCombinadoParcial = true.
         if (!res.ok) {
           throw new Error(json.error || "Erro na comunicação com a API.");
         }
-        
+
         if (!json.success && !json.isCombinadoParcial) {
           throw new Error(json.error || "Erro desconhecido ao aplicar crédito.");
         }
-  
+
         if (json.isCombinadoParcial) {
-            showToast({
-                type: "warning",
-                title: "Cobrança Parcial",
-                description: json.error // Mensagem descrevendo que o E-Credito foi, mas a segunda falhou
-            });
+            // Crédito já foi aplicado e a cobrança secundária já existe (pendente).
+            // Se for PIX, tenta gerar automaticamente mais uma vez antes de avisar
+            // o usuário — sem criar pagamento novo nem consumir crédito de novo,
+            // só reprocessando a integração para a MESMA cobrança já criada.
+            const isPixPendente = (json.tipoCobrancaPendente === "PIX" || json.tipoCobrancaPendente === "E-PIX") && Boolean(json.cobrancaPendenteId);
+            let retry: { success: boolean; error?: string } | null = null;
+            if (isPixPendente) {
+              retry = await tentarGerarPixNovamente(
+                json.cobrancaPendenteId,
+                json.cobrancaPendenteIdPagamento,
+                form.id_empresa || 1,
+                payload.valorSecundario,
+                token
+              );
+            }
+
+            if (retry?.success) {
+              showToast({
+                type: "success",
+                title: "Pagamento Combinado Gerado",
+                description: "Crédito aplicado e PIX gerado com sucesso na nova tentativa automática."
+              });
+            } else {
+              showToast({
+                  type: "warning",
+                  title: "Cobrança Parcial",
+                  description: retry
+                    ? `${json.error} Nova tentativa automática também falhou (${retry.error}) — a cobrança segue pendente para nova tentativa.`
+                    : json.error // Mensagem descrevendo que o E-Credito foi, mas a segunda falhou
+              });
+            }
             // Importante: NÃO disparamos onPagamentoIntegralConcluido
         } else {
             showToast({
@@ -661,10 +767,10 @@ export function PropostaCobrancaPanel({
                 onPagamentoIntegralConcluido();
             }
         }
-  
+
         if (onRefreshProposta) onRefreshProposta();
         await fetchSaldo();
-        
+
         setForm(buildInitialFormState());
         closeModal();
       } catch (err: unknown) {
@@ -672,6 +778,9 @@ export function PropostaCobrancaPanel({
         showToast({ type: "error", title: "Falha ao aplicar crédito", description: errorMessage });
         await fetchSaldo();
       } finally {
+        if (respostaDefinitivaRecebida) {
+          chaveIdempotenciaECreditoRef.current = null;
+        }
         setIsSaving(false);
         setRefreshingSaldo(false);
       }
@@ -835,12 +944,46 @@ export function PropostaCobrancaPanel({
         });
       }
 
-      if (debitoIncluidoArredondado > 0) {
-        showToast({
-          type: "info",
-          title: "Abatimento de débito incluído",
-          description: `R$ ${debitoIncluidoArredondado.toFixed(2).replace(".", ",")} do débito do cliente foram incluídos nesta cobrança. O crédito na conta corrente será registrado automaticamente assim que o pagamento for confirmado.`
-        });
+      if (debitoIncluidoArredondado > 0 && pendenciaDebitoAlvo && created?.id) {
+        // Reserva a pendência de débito contra esta cobrança (RESERVA_DEBITO).
+        // Emissão não é pagamento: o crédito na conta corrente só é registrado
+        // quando a cobrança for de fato confirmada (ver /api/cobrancas/confirmar).
+        try {
+          const client = getSupabaseClient();
+          const session = (await client?.auth.getSession())?.data.session;
+          const token = session?.access_token;
+          if (!token) throw new Error("Sessão expirada.");
+
+          const resReserva = await fetch("/api/conta-corrente/usar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({
+              idPendencia: pendenciaDebitoAlvo.id,
+              valor: debitoIncluidoArredondado,
+              modo: "RESERVA_DEBITO",
+              idPagamento: created.id,
+              chaveReserva: crypto.randomUUID(),
+            }),
+          });
+          const jsonReserva = await resReserva.json();
+          if (!resReserva.ok || !jsonReserva.success) {
+            throw new Error(jsonReserva.error || "Falha ao reservar débito.");
+          }
+          showToast({
+            type: "info",
+            title: "Débito reservado nesta cobrança",
+            description: `R$ ${debitoIncluidoArredondado.toFixed(2).replace(".", ",")} do débito do cliente foram reservados nesta cobrança. Será confirmado na conta corrente somente quando o pagamento for recebido.`
+          });
+        } catch (reservaErr: unknown) {
+          const msg = reservaErr instanceof Error ? reservaErr.message : String(reservaErr);
+          console.error("[PropostaCobrancaPanel] Falha ao reservar débito na cobrança:", msg);
+          showToast({
+            type: "warning",
+            title: "Cobrança criada, mas a reserva de débito falhou",
+            description: `${msg} A cobrança foi gerada normalmente; o débito continua disponível na Conta Corrente.`
+          });
+        }
+        await fetchSaldo();
       }
 
       setForm(buildInitialFormState());
@@ -1215,7 +1358,13 @@ export function PropostaCobrancaPanel({
                 className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
                 placeholder="0,00"
               />
-              <p className="text-[11px] text-slate-400">Máximo: {formatCurrency(saldoDevedor)}</p>
+              <p className="text-[11px] text-slate-400">Máximo: {formatCurrency(pendenciaDebitoAlvo?.valor_saldo ?? 0)}</p>
+              {pendenciaDebitoAlvo && saldoDevedor > pendenciaDebitoAlvo.valor_saldo + 0.01 ? (
+                <p className="text-[11px] text-amber-600">
+                  Este cliente possui outras pendências de débito além desta ({formatCurrency(saldoDevedor)} no total).
+                  Esta cobrança pode incluir no máximo a pendência mais antiga; use a tela de Conta Corrente para as demais.
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
@@ -1241,8 +1390,9 @@ export function PropostaCobrancaPanel({
                 type="button"
                 onClick={() => {
                   const parsed = parseFloat(debitoInputValor.replace(",", "."));
-                  if (isNaN(parsed) || parsed <= 0 || parsed > saldoDevedor + 0.01) {
-                    showToast({ type: "error", title: `Informe um valor entre R$ 0,01 e ${formatCurrency(saldoDevedor)}.` });
+                  const limiteReservavel = pendenciaDebitoAlvo?.valor_saldo ?? 0;
+                  if (isNaN(parsed) || parsed <= 0 || parsed > limiteReservavel + 0.01) {
+                    showToast({ type: "error", title: `Informe um valor entre R$ 0,01 e ${formatCurrency(limiteReservavel)}.` });
                     return;
                   }
                   const arredondado = Math.round(parsed * 100) / 100;
@@ -1469,62 +1619,6 @@ export function PropostaCobrancaPanel({
                       </p>
                     )}
                   </Field>
-                  {form.tipoCobranca === "E-CREDITO" ? (
-              <PanelCard
-                title="Campos do E-Crédito"
-                description="Utilize o saldo na conta corrente do cliente para abater o valor da proposta."
-              >
-                <div className="space-y-4">
-                  <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
-                    <InfoBox label="Saldo de Crédito" value={formatCurrency(saldoCredito)} />
-                    <InfoBox label="Saldo Restante OS" value={formatCurrency(saldoRestante)} />
-                  </div>
-                  {form.valor > 0 && form.valor < saldoRestante && (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 md:col-span-4 mt-2">
-                      <p className="font-semibold text-sm mb-2">Cobrança Parcial (Pagamento Combinado)</p>
-                      <p className="text-xs leading-5 mb-4">
-                        Restará <strong>{formatCurrency(saldoRestante - form.valor)}</strong> a ser cobrado.
-                        Selecione a forma de pagamento secundária que será gerada automaticamente.
-                      </p>
-                      
-                      <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-[13px] font-semibold text-amber-900">Forma de Pagamento Secundária *</label>
-                          <select
-                            value={tipoSecundario}
-                            onChange={(e) => setTipoSecundario(e.target.value as any)}
-                            className="w-full rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
-                          >
-                            <option value="PIX">PIX</option>
-                            <option value="BOLETO">Boleto</option>
-                            <option value="CARD_PARCELADO">Cartão de Crédito</option>
-                            <option value="E-FATURADO">E-Faturado</option>
-                          </select>
-                        </div>
-                        
-                        {tipoSecundario === "E-FATURADO" && (
-                          <div className="flex flex-col gap-1.5">
-                            <label className="text-[13px] font-semibold text-amber-900">Condição Secundária *</label>
-                            <select
-                              value={condicaoSecundaria}
-                              onChange={(e) => setCondicaoSecundaria(e.target.value)}
-                              className="w-full rounded-xl border border-amber-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
-                            >
-                              <option value="">Selecione...</option>
-                              {modelosCobranca.map((m) => (
-                                <option key={m.id} value={m.resultado}>
-                                  {m.resultado}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </PanelCard>
-            ) : null}
 
             {isFaturado ? (
                     <Field label="Condição de pagamento *">
@@ -1678,6 +1772,15 @@ export function PropostaCobrancaPanel({
                       </div>
                     </div>
                   )}
+                  {form.valor > 0 && form.valor >= saldoRestante && saldoRestante > 0 && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 md:col-span-4 mt-2">
+                      <p className="mb-1 text-sm font-semibold">Pagamento integral com E-Crédito</p>
+                      <p className="text-xs leading-5">
+                        O crédito de <strong>{formatCurrency(saldoRestante)}</strong> cobre todo o saldo desta cobrança.
+                        Nenhum pagamento secundário é necessário.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </PanelCard>
             ) : null}
@@ -1823,7 +1926,13 @@ export function PropostaCobrancaPanel({
                 className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
                 placeholder="0,00"
               />
-              <p className="text-[11px] text-slate-400">Máximo: {formatCurrency(saldoDevedor)}</p>
+              <p className="text-[11px] text-slate-400">Máximo: {formatCurrency(pendenciaDebitoAlvo?.valor_saldo ?? 0)}</p>
+              {pendenciaDebitoAlvo && saldoDevedor > pendenciaDebitoAlvo.valor_saldo + 0.01 ? (
+                <p className="text-[11px] text-amber-600">
+                  Este cliente possui outras pendências de débito além desta ({formatCurrency(saldoDevedor)} no total).
+                  Esta cobrança pode incluir no máximo a pendência mais antiga; use a tela de Conta Corrente para as demais.
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
@@ -1849,8 +1958,9 @@ export function PropostaCobrancaPanel({
                 type="button"
                 onClick={() => {
                   const parsed = parseFloat(debitoInputValor.replace(",", "."));
-                  if (isNaN(parsed) || parsed <= 0 || parsed > saldoDevedor + 0.01) {
-                    showToast({ type: "error", title: `Informe um valor entre R$ 0,01 e ${formatCurrency(saldoDevedor)}.` });
+                  const limiteReservavel = pendenciaDebitoAlvo?.valor_saldo ?? 0;
+                  if (isNaN(parsed) || parsed <= 0 || parsed > limiteReservavel + 0.01) {
+                    showToast({ type: "error", title: `Informe um valor entre R$ 0,01 e ${formatCurrency(limiteReservavel)}.` });
                     return;
                   }
                   const arredondado = Math.round(parsed * 100) / 100;
