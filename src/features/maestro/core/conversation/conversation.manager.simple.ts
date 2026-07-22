@@ -46,9 +46,27 @@ export function useConversationManagerSimple() {
     setIsLoading,
   } = context;
 
-  // Ref para evitar stale closure no sendMessage
+  // Refs para evitar stale closure no sendMessage
   const globalContextRef = useRef(globalContext);
   globalContextRef.current = globalContext;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  /**
+   * Monta o histórico recente enviado ao servidor (últimos 8 turnos completos).
+   * Apenas mensagens reais (user/maestro) com conteúdo; conteúdo truncado a
+   * 600 chars para limitar o payload. O servidor re-sanitiza tudo.
+   */
+  const buildRecentMessages = (msgs: ConversationMessage[]) => {
+    return msgs
+      .filter(m => (m.role === 'user' || m.role === 'maestro'))
+      .filter(m => m.status === 'completed' && typeof m.content === 'string' && m.content.trim().length > 0)
+      .slice(-8)
+      .map(m => ({
+        role: m.role === 'maestro' ? 'assistant' : 'user',
+        content: m.content.length > 600 ? m.content.slice(0, 600) + '…' : m.content,
+      }));
+  };
 
   // ── Novo chat ────────────────────────────────────────────────────────────
   const startNewChat = useCallback(() => {
@@ -110,13 +128,16 @@ export function useConversationManagerSimple() {
       }
 
       // 4. Chama o motor simples via route handler server-side
-      //    Body: apenas { query, context } — sem tokens
+      //    Body: { query, context, recentMessages } — sem tokens
+      //    recentMessages = últimos turnos ANTERIORES a esta mensagem
+      //    (a mensagem atual já vai em `query`).
       const response = await fetch('/api/maestro/simple', {
         method: 'POST',
         headers,
         body: JSON.stringify({
           query,
           context: globalContextRef.current,
+          recentMessages: buildRecentMessages(messagesRef.current),
         }),
       });
 

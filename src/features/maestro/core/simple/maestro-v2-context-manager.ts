@@ -174,11 +174,52 @@ export interface PendingSaveQuotation {
   savedAt?: string;
 }
 
+// ─── Objetivo pendente e interação aguardada (estado de primeira classe) ─────
+
+/**
+ * Objetivo de negócio que o usuário iniciou e ainda não foi concluído.
+ * Fonte ÚNICA para retomada automática após interrupções (ex.: resolver o
+ * cliente no meio de uma cotação). Derivado centralmente em
+ * `computePendingGoal` a cada serialização — nenhum branch precisa
+ * propagá-lo manualmente.
+ */
+export interface PendingGoal {
+  tipo: 'cotacao';
+  itens: OrcamentoAvulsoItem[];
+  criadoEm: string;
+  /** Dados que ainda faltam para o objetivo prosseguir */
+  faltando: Array<'cliente' | 'endereco'>;
+}
+
+/**
+ * A pergunta/decisão que o Maestro está aguardando NESTE momento.
+ * Derivada dos campos pending* existentes (fonte única, sem duplicação de
+ * estado). Usada pelo router (bloco ESTADO REAL) e pelo gate de respostas
+ * estáticas.
+ */
+export interface PendingInteraction {
+  tipo:
+    | 'confirmar_candidato'
+    | 'escolher_candidato'
+    | 'escolher_endereco'
+    | 'escolher_frete'
+    | 'confirmar_save'
+    | 'resolver_produto';
+  /** Descrição curta e acionável para o prompt do router */
+  descricao: string;
+}
+
 export interface MaestroV2Context {
   version: number;
   updatedAt: string;
   domain: MaestroV2Domain;
   lastTool?: AllowedToolName;
+  /**
+   * Objetivo pendente (derivado centralmente — ver computePendingGoal).
+   * Sobrevive a interrupções (troca de assunto, consulta de cliente) e é a
+   * fonte da retomada automática da cotação.
+   */
+  pendingGoal?: PendingGoal | null;
   activeEntities: {
     clientId?: string;
     clientInternalId?: number;
@@ -271,6 +312,7 @@ export function getEmptyV2Context(): MaestroV2Context {
     version: 1,
     updatedAt: new Date().toISOString(),
     domain: 'desconhecido',
+    pendingGoal: null,
     activeEntities: {},
     pendingActions: [],
     orcamentoItens: [],
@@ -329,8 +371,173 @@ export function deserializeV2Context(json?: string | null): MaestroV2Context {
 
 export function serializeV2Context(ctx: MaestroV2Context): string {
   limparItensInvalidosContexto(ctx);
+  // Deriva o objetivo pendente centralmente — nenhum branch precisa lembrar
+  // de propagá-lo. Sobrevive a interrupções que limpam orcamentoItens.
+  ctx.pendingGoal = computePendingGoal(ctx);
   ctx.updatedAt = new Date().toISOString();
   return JSON.stringify(ctx);
+}
+
+// ─── Estado conversacional de primeira classe ────────────────────────────────
+
+/**
+ * Deriva o objetivo pendente a partir do estado atual.
+ * Regras:
+ *   - cotação materializada (activeQuote ou pendingSaveQuotation vivo) → sem goal;
+ *   - itens ativos no domínio de orçamento → goal com esses itens;
+ *   - itens limpos por interrupção (ex.: "cliente X" suspende o orçamento) →
+ *     PRESERVA o goal anterior — é isso que permite retomar a cotação depois;
+ *   - cancelamentos explícitos zeram `pendingGoal` diretamente (ver chamadas).
+ */
+export function computePendingGoal(ctx: MaestroV2Context): PendingGoal | null {
+  if (ctx.activeQuote) return null;
+  if (ctx.pendingSaveQuotation) return null; // cotação completa (aguardando save ou já salva)
+
+  const itensAtuais =
+    ctx.domain === 'orcamento_avulso' && ctx.orcamentoItens && ctx.orcamentoItens.length > 0
+      ? ctx.orcamentoItens
+      : null;
+  const itens = itensAtuais ?? ctx.pendingGoal?.itens ?? null;
+  if (!itens || itens.length === 0) return null;
+
+  const faltando: Array<'cliente' | 'endereco'> = [];
+  if (!ctx.activeEntities?.clientInternalId) faltando.push('cliente');
+  if (!ctx.budgetAddressId && !ctx.budgetAddressCep) faltando.push('endereco');
+
+  return {
+    tipo: 'cotacao',
+    itens: itens.map(i => ({ ...i })),
+    criadoEm: ctx.pendingGoal?.criadoEm ?? new Date().toISOString(),
+    faltando,
+  };
+}
+
+/**
+ * Deriva a pergunta/decisão aguardada AGORA a partir dos campos pending*
+ * existentes (fonte única — sem estado paralelo para dessincronizar).
+ */
+export function getPendingInteraction(ctx: MaestroV2Context): PendingInteraction | null {
+  if (ctx.pendingClientCandidate) {
+    const c = ctx.pendingClientCandidate;
+    return {
+      tipo: 'confirmar_candidato',
+      descricao:
+        `Aguardando o usuário confirmar se o cliente é "${c.nome}" (id_cliente ${c.id_cliente}). ` +
+        `Se a mensagem confirmar, use confirmar_cliente_pendente com id_cliente=${c.id_cliente}. ` +
+        `Se negar, trate como nova busca de cliente.`,
+    };
+  }
+  if (ctx.pendingClientCandidates && ctx.pendingClientCandidates.length > 0) {
+    const lista = ctx.pendingClientCandidates
+      .map(c => `${c.id_cliente}: ${c.nome}${c.cidade_uf ? ` (${c.cidade_uf})` : ''}`)
+      .join(' | ');
+    return {
+      tipo: 'escolher_candidato',
+      descricao:
+        `Aguardando o usuário escolher entre os clientes candidatos [${lista}]. ` +
+        `Se a mensagem indicar um deles (por código, nome ou característica), use confirmar_cliente_pendente com o id_cliente correspondente.`,
+    };
+  }
+  if (ctx.pendingAddressChoice) {
+    return {
+      tipo: 'escolher_endereco',
+      descricao: `Aguardando o usuário escolher 1 de ${ctx.pendingAddressChoice.addresses.length} endereços para o frete (escolhas numéricas/naturais são resolvidas automaticamente).`,
+    };
+  }
+  if (ctx.pendingFreightChoice) {
+    return {
+      tipo: 'escolher_frete',
+      descricao: `Aguardando o usuário escolher 1 de ${ctx.pendingFreightChoice.fretes.length} transportadoras (escolhas numéricas/naturais são resolvidas automaticamente).`,
+    };
+  }
+  if (ctx.pendingSaveQuotation && !ctx.pendingSaveQuotation.savedIdInt) {
+    return {
+      tipo: 'confirmar_save',
+      descricao: `Aguardando o usuário confirmar o salvamento da cotação de ${ctx.pendingSaveQuotation.clientName} (total R$ ${ctx.pendingSaveQuotation.total}).`,
+    };
+  }
+  if (ctx.pendingAmbiguousItem) {
+    return {
+      tipo: 'resolver_produto',
+      descricao: `Aguardando o usuário escolher o produto para "${ctx.pendingAmbiguousItem.lastRequestedTerm}" entre as opções apresentadas.`,
+    };
+  }
+  if (ctx.pendingProductResolution) {
+    return {
+      tipo: 'resolver_produto',
+      descricao: `Aguardando o usuário corrigir o produto "${ctx.pendingProductResolution.lastRequestedTerm}" (${ctx.pendingProductResolution.status}).`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Há estado conversacional relevante? Usado para decidir se saudações e
+ * encerramentos podem ser respondidos estaticamente (sem estado) ou se o
+ * router deve interpretar a mensagem com o ESTADO REAL.
+ */
+export function temEstadoConversacional(ctx: MaestroV2Context, temClienteAtivo: boolean): boolean {
+  return !!(
+    getPendingInteraction(ctx) ||
+    (ctx.pendingGoal && ctx.pendingGoal.itens.length > 0) ||
+    ctx.activeQuote ||
+    ctx.pendingSaveQuotation ||
+    temClienteAtivo
+  );
+}
+
+/**
+ * Itens a retomar quando um cliente acabou de ser resolvido.
+ * Fonte primária: campos legados de mesma-interação (preservados por
+ * compatibilidade); fallback estrutural: pendingGoal.
+ */
+export function obterItensRetomada(ctx: MaestroV2Context): OrcamentoAvulsoItem[] | null {
+  if (ctx.pendingBudgetForCandidate && ctx.pendingBudgetForCandidate.length > 0) {
+    return ctx.pendingBudgetForCandidate;
+  }
+  if (ctx.pendingGoal && ctx.pendingGoal.itens.length > 0) {
+    return ctx.pendingGoal.itens;
+  }
+  return null;
+}
+
+/**
+ * Descreve o ESTADO REAL da conversa para o prompt do router.
+ * É a ÚNICA fonte de verdade sobre pendências/cotações que o modelo recebe —
+ * o modelo nunca deve afirmar estado fora deste bloco.
+ */
+export function descreverEstadoReal(
+  ctx: MaestroV2Context,
+  clienteAtivo: { nome: string; id?: number } | null
+): string {
+  const linhas: string[] = ['ESTADO REAL DA CONVERSA:'];
+
+  linhas.push(clienteAtivo
+    ? `- Cliente ativo: "${clienteAtivo.nome}" (id_cliente: ${clienteAtivo.id ?? 'desconhecido'})`
+    : '- Cliente ativo: nenhum');
+
+  const goal = ctx.pendingGoal;
+  if (goal && goal.itens.length > 0) {
+    const itensStr = goal.itens.map(i => `${i.quantidade}× ${i.termo}`).join(', ');
+    const faltandoStr = goal.faltando.length > 0 ? ` — falta resolver: ${goal.faltando.join(' e ')}` : '';
+    linhas.push(`- Objetivo pendente: cotação de [${itensStr}]${faltandoStr}`);
+  } else {
+    linhas.push('- Objetivo pendente: nenhum');
+  }
+
+  const interacao = getPendingInteraction(ctx);
+  linhas.push(interacao
+    ? `- Pergunta aberta aguardando resposta: ${interacao.descricao}`
+    : '- Pergunta aberta aguardando resposta: nenhuma');
+
+  if (ctx.activeQuote) {
+    const q = ctx.activeQuote;
+    linhas.push(`- Cotação ativa: ${q.clientName}, total R$ ${q.total} — ${q.status === 'salva' ? `SALVA como proposta #${q.savedIdInt}` : 'NÃO salva'}`);
+  } else {
+    linhas.push('- Cotação ativa: nenhuma (não afirme que existe cotação aberta)');
+  }
+
+  return linhas.join('\n');
 }
 
 export function normalizeText(text: string): string {
@@ -339,6 +546,76 @@ export function normalizeText(text: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+// \u2500\u2500\u2500 Escolha em linguagem natural (ordinais e conte\u00fado) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+const ORDINAIS_ESCOLHA: Record<string, number> = {
+  'primeiro': 1, 'primeira': 1,
+  'segundo': 2, 'segunda': 2,
+  'terceiro': 3, 'terceira': 3,
+  'quarto': 4, 'quarta': 4,
+  'quinto': 5, 'quinta': 5,
+  'sexto': 6, 'sexta': 6,
+  'setimo': 7, 'setima': 7,
+  'oitavo': 8, 'oitava': 8,
+  'nono': 9, 'nona': 9,
+  'decimo': 10, 'decima': 10,
+};
+
+/**
+ * Detecta ordinal em texto normalizado ("o segundo", "a primeira op\u00e7\u00e3o",
+ * "o \u00faltimo", "1\u00aa op\u00e7\u00e3o"). Retorna \u00edndice 1-based ou null.
+ */
+export function parseOrdinalChoice(clean: string, total: number): number | null {
+  if (total <= 0) return null;
+  const texto = clean.trim();
+
+  if (/\b(ultimo|ultima)\b/.test(texto)) return total;
+  if (/\b(penultimo|penultima)\b/.test(texto) && total > 1) return total - 1;
+
+  for (const [palavra, idx] of Object.entries(ORDINAIS_ESCOLHA)) {
+    if (new RegExp(`\\b${palavra}\\b`).test(texto)) {
+      return idx <= total ? idx : null;
+    }
+  }
+
+  // "op\u00e7\u00e3o 3", "a 3\u00aa", "escolho a 2a"
+  const mNum = texto.match(/\b(\d{1,2})\s*[\u00ba\u00aaoa]?\s*(?:op[c\u00e7][a\u00e3]o)?\b/);
+  if (mNum && /\b(op[c\u00e7][a\u00e3]o|escolho|use|usa|quero|pode ser)\b/.test(texto)) {
+    const idx = parseInt(mNum[1], 10);
+    return idx >= 1 && idx <= total ? idx : null;
+  }
+
+  return null;
+}
+
+/**
+ * Tenta identificar UM endere\u00e7o pendente referenciado por conte\u00fado:
+ * cidade ("o de porto alegre"), bairro ("o do centro"), tipo ("o de entrega")
+ * ou trecho da rua. Retorna \u00edndice 1-based apenas quando EXATAMENTE UM
+ * endere\u00e7o casa \u2014 ambiguidade retorna null (o fluxo pergunta/LLM decide).
+ */
+export function matchAddressByText(clean: string, addresses: MaestroEndereco[]): number | null {
+  if (!addresses || addresses.length === 0) return null;
+  const texto = ` ${normalizeText(clean)} `;
+
+  const matches: number[] = [];
+  addresses.forEach((end, i) => {
+    const campos = [end.cidade, end.bairro, end.tipo_endereco, end.endereco]
+      .map(c => normalizeText(c || ''))
+      .filter(c => c.length >= 4);
+    const casa = campos.some(campo => {
+      if (texto.includes(campo)) return true;
+      // Primeira palavra do campo também conta ("centro" casa com "Centro Historico")
+      // — garante que referências parciais compartilhadas virem ambiguidade, não escolha.
+      const primeiraPalavra = campo.split(' ')[0];
+      return primeiraPalavra.length >= 4 && new RegExp(`\\b${primeiraPalavra}\\b`).test(texto);
+    });
+    if (casa) matches.push(i + 1);
+  });
+
+  return matches.length === 1 ? matches[0] : null;
 }
 
 // ─── Helpers P4: Detecção de Intenção sobre Cotação Ativa ──────────────────────────
@@ -456,11 +733,23 @@ export function handleContextContinuation(
 ): { routed: boolean; plan: any } | null {
   const clean = normalizeText(query);
 
-  // ── P0. DELEGAÇÃO DE ESCOLHA NUMÉRICA PARA O ROUTER ──────────────────────
+  // ── P0. DELEGAÇÃO DE ESCOLHA (NUMÉRICA OU NATURAL) PARA O ROUTER ─────────
   if (v2Ctx.pendingAddressChoice || v2Ctx.pendingFreightChoice) {
-    const isChoosing = /^(?:use|escolho|escolha|pode usar|quero)?\s*(?:o\s*|a\s*|endere[cç]o\s*|op[cç][aã]o\s*)?(\d+)\b/i.test(clean.trim());
-    if (isChoosing) {
-      console.log(`[MaestroV2Context] Escolha de endereço/frete detectada. Delegando ao router.`);
+    const totalOpcoes = v2Ctx.pendingAddressChoice
+      ? v2Ctx.pendingAddressChoice.addresses.length
+      : (v2Ctx.pendingFreightChoice?.fretes.length ?? 0);
+
+    // Número só é ESCOLHA quando está dentro da faixa de opções — "900 mobi"
+    // durante a escolha de endereço é edição de item, não a opção nº 900.
+    const numMatch = /^(?:use|escolho|escolha|pode usar|quero)?\s*(?:o\s*|a\s*|endere[cç]o\s*|op[cç][aã]o\s*)?(\d+)\b/i.exec(clean.trim());
+    const isChoosing = !!numMatch && parseInt(numMatch[1], 10) >= 1 && parseInt(numMatch[1], 10) <= totalOpcoes;
+    const isOrdinal = parseOrdinalChoice(clean, totalOpcoes) !== null;
+    // "o de porto alegre", "o endereço de entrega", "o do centro"
+    const isAddressByText = !!v2Ctx.pendingAddressChoice &&
+      matchAddressByText(clean, v2Ctx.pendingAddressChoice.addresses) !== null;
+
+    if (isChoosing || isOrdinal || isAddressByText) {
+      console.log(`[MaestroV2Context] Escolha de endereço/frete detectada (numérica/ordinal/conteúdo). Delegando ao router.`);
       return null;
     }
   }
@@ -575,6 +864,7 @@ export function handleContextContinuation(
     v2Ctx.pendingAddressChoice = null;
     v2Ctx.pendingFreightChoice = null;
     v2Ctx.orcamentoItens = [];
+    v2Ctx.pendingGoal = null;
     return {
       routed: true,
       plan: { steps: [{ tool: 'resposta_frustracao_usuario', params: {} }] }
@@ -798,6 +1088,7 @@ export function handleContextContinuation(
       v2Ctx.lastExplicitBudgetItems = [...v2Ctx.orcamentoItens];
     }
     v2Ctx.orcamentoItens = [];
+    v2Ctx.pendingGoal = null;
     v2Ctx.pendingProductResolution = null;
     v2Ctx.pendingAmbiguousItem = null;
     v2Ctx.pendingSaveQuotation = null;
@@ -871,6 +1162,9 @@ export function handleContextContinuation(
         pesoUnitario: it.pesoUnitario
       }));
     } else {
+      // Suspende os itens da conversa, mas NÃO o objetivo: `pendingGoal` é
+      // preservado por computePendingGoal e permite retomar a cotação
+      // automaticamente após o cliente ser resolvido.
       v2Ctx.orcamentoItens = [];
     }
 
@@ -999,6 +1293,7 @@ export function handleContextContinuation(
       if (engineResult.action === 'CLEAR') {
         v2Ctx.pendingProductResolution = null;
         v2Ctx.pendingAmbiguousItem = null;
+        v2Ctx.pendingGoal = null;
         return {
           routed: true,
           plan: { steps: [{ tool: 'limpar_orcamento_avulso', params: {} }] }

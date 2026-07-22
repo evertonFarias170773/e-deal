@@ -170,6 +170,8 @@ export interface ConversationContext {
   toolResults?: Record<string, ToolResult>;
   policyDecisions?: Record<string, PolicyDecision>;
   v2ContextJson?: string | null;
+  /** Conversa persistida no Supabase (quando MAESTRO_PERSISTENCE_ENABLED=true) */
+  conversationId?: string | null;
 }
 
 export interface ConversationSession {

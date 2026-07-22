@@ -1018,12 +1018,30 @@ export function presenterSemContexto(): PresenterResult {
   };
 }
 
-export function presenterAjuda(): PresenterResult {
+/** Saudação adequada ao horário de Brasília (nunca "Bom dia" fixo). */
+function saudacaoPorHorario(): string {
+  let hora: number;
+  try {
+    hora = Number(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }));
+  } catch {
+    hora = new Date().getHours();
+  }
+  if (hora >= 5 && hora < 12) return 'Bom dia';
+  if (hora >= 12 && hora < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
+
+export function presenterAjuda(ctx?: SimpleMaestroContext): PresenterResult {
+  const saudacao = saudacaoPorHorario();
+  const nomeCliente = ctx?.activeClient?.clientName;
+  const content = nomeCliente
+    ? `${saudacao}! Seguimos com **${nomeCliente}** ativo. Me diga o que você precisa — cadastro, pedidos, boletos ou uma nova cotação.`
+    : `${saudacao}! Me diga o cliente, pedido ou assunto que você quer consultar — ou já mande a cotação direto (ex.: "3450 triband para o cliente 8469").`;
   return {
     message: {
       id:          genId(),
       role:        'maestro',
-      content:     'Bom dia! Me diga o cliente, pedido ou assunto que você quer consultar.',
+      content,
       contentType: 'text',
       specialist:  'geral',
       timestamp:   now(),
@@ -1034,12 +1052,16 @@ export function presenterAjuda(): PresenterResult {
   };
 }
 
-export function presenterClosure(): PresenterResult {
+export function presenterClosure(ctx?: SimpleMaestroContext): PresenterResult {
+  const nomeCliente = ctx?.activeClient?.clientName;
+  const content = nomeCliente
+    ? `De nada! **${nomeCliente}** continua ativo — quando precisar, é só continuar daqui.`
+    : 'De nada! Quando precisar, é só chamar.';
   return {
     message: {
       id:          genId(),
       role:        'maestro',
-      content:     'De nada! Quando precisar, é só chamar.',
+      content,
       contentType: 'text',
       specialist:  'geral',
       timestamp:   now(),
@@ -1964,16 +1986,16 @@ export function presenterPerguntarQuantidade(): PresenterResult {
 }
 
 export function presenterRecuperacaoOrcamento(itens: OrcamentoAvulsoItem[], userName?: string): PresenterResult {
-  const nome = userName || 'Everton';
+  const prefixo = userName ? `Foi mal, ${userName}.` : 'Foi mal.';
   const itensStr = itens && itens.length > 0
     ? itens.map(it => `✅ ${it.quantidade.toLocaleString('pt-BR')} ${it.termo}`).join('\n')
     : 'Nenhum item válido';
-  
+
   return {
     message: {
       id: genId(),
       role: 'maestro',
-      content: `Foi mal, ${nome}. Mantive só os itens válidos do orçamento. Hoje tenho:\n\n${itensStr}\n\nQuer que eu continue daqui ou limpe e recomece?`,
+      content: `${prefixo} Mantive só os itens válidos do orçamento. Hoje tenho:\n\n${itensStr}\n\nQuer que eu continue daqui ou limpe e recomece?`,
       contentType: 'text',
       specialist: 'comercial',
       timestamp: now(),
@@ -2047,7 +2069,7 @@ export function presenterEscolhaEndereco(pending: { clientId: number, addresses:
     message: {
       id: 'maestro-msg-' + Date.now(),
       role: 'maestro',
-      content: `Encontrei ${textoEnderecos} para este cadastro. Qual deles uso para cotação do frete?\n\n${opcoesMd}\n\nResponda com "use o 1", "use o 2", etc.`,
+      content: `Encontrei ${textoEnderecos} para este cadastro. Qual deles uso para cotação do frete?\n\n${opcoesMd}\n\nPode responder com o número ("1", "2"...) ou naturalmente — "o segundo", "o de entrega", "o de Porto Alegre".`,
       contentType: 'text',
       sources: [],
       specialist: 'comercial',
@@ -2349,12 +2371,15 @@ export function presenterConsultarCotacaoAtiva(
   queryType: string
 ): PresenterResult {
   let content = '';
+  // Encurta descrições longas conhecidas para o card; nomes vindos do
+  // catálogo oficial/banco passam intactos. Word-boundary evita falsos
+  // positivos (ex.: "suporte" continha "up" e virava "Ingresso UP BOX").
   const formatName = (n: string) => {
     const lower = n.toLowerCase();
-    if (lower.includes('mobi')) return 'Ingresso MOBI';
-    if (lower.includes('up') || lower.includes('up box')) return 'Ingresso UP BOX';
+    if (/\bmobi\b/.test(lower)) return 'Ingresso MOBI';
+    if (/\bup(\s*box)?\b/.test(lower)) return 'Ingresso UP BOX';
     if (lower.includes('pulseira') && lower.includes('triband')) return 'Triband';
-    if (lower.includes('cordao') || lower.includes('jacare') || lower.includes('jacaré')) return 'Cordão Jacaré';
+    if (/\b(cordao|cordão|jacare|jacaré)\b/.test(lower)) return 'Cordão Jacaré';
     return n;
   };
 
@@ -2458,12 +2483,15 @@ export function presenterEscolhaTransportadora(
   const validForMin = fretes.filter(f => (f as any).id !== 'retira_balcao' && f.transportadora !== 'Retira no balcão');
   const menorValor = validForMin.length > 0 ? Math.min(...validForMin.map(f => f.valor)) : Math.min(...fretes.map(f => f.valor));
 
+  // Encurta descrições longas conhecidas para o card; nomes vindos do
+  // catálogo oficial/banco passam intactos. Word-boundary evita falsos
+  // positivos (ex.: "suporte" continha "up" e virava "Ingresso UP BOX").
   const formatName = (n: string) => {
     const lower = n.toLowerCase();
-    if (lower.includes('mobi')) return 'Ingresso MOBI';
-    if (lower.includes('up') || lower.includes('up box')) return 'Ingresso UP BOX';
+    if (/\bmobi\b/.test(lower)) return 'Ingresso MOBI';
+    if (/\bup(\s*box)?\b/.test(lower)) return 'Ingresso UP BOX';
     if (lower.includes('pulseira') && lower.includes('triband')) return 'Triband';
-    if (lower.includes('cordao') || lower.includes('jacare') || lower.includes('jacaré')) return 'Cordão Jacaré';
+    if (/\b(cordao|cordão|jacare|jacaré)\b/.test(lower)) return 'Cordão Jacaré';
     return n;
   };
 
@@ -2507,7 +2535,7 @@ export function presenterEscolhaTransportadora(
     ``,
     listaFretes,
     ``,
-    `Responda com ${listaOpcoes}:`
+    `Pode responder com ${listaOpcoes} — ou naturalmente: "a mais barata", "sedex", "a segunda".`
   );
 
   const content = lines.join('\n');
@@ -2538,12 +2566,15 @@ export function presenterEscolhaTransportadora(
  */
 export function presenterFreteConfirmado(quote: ActiveQuoteSnapshot): PresenterResult {
   const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Encurta descrições longas conhecidas para o card; nomes vindos do
+  // catálogo oficial/banco passam intactos. Word-boundary evita falsos
+  // positivos (ex.: "suporte" continha "up" e virava "Ingresso UP BOX").
   const formatName = (n: string) => {
     const lower = n.toLowerCase();
-    if (lower.includes('mobi')) return 'Ingresso MOBI';
-    if (lower.includes('up') || lower.includes('up box')) return 'Ingresso UP BOX';
+    if (/\bmobi\b/.test(lower)) return 'Ingresso MOBI';
+    if (/\bup(\s*box)?\b/.test(lower)) return 'Ingresso UP BOX';
     if (lower.includes('pulseira') && lower.includes('triband')) return 'Triband';
-    if (lower.includes('cordao') || lower.includes('jacare') || lower.includes('jacaré')) return 'Cordão Jacaré';
+    if (/\b(cordao|cordão|jacare|jacaré)\b/.test(lower)) return 'Cordão Jacaré';
     return n;
   };
 
@@ -2607,16 +2638,22 @@ export function presenterFreteConfirmado(quote: ActiveQuoteSnapshot): PresenterR
 }
 
 /**
- * Resposta curta para mensagens sociais durante cotação ativa ou pendência de save.
+ * Resposta curta para mensagens sociais.
+ * `temCotacaoAberta` DEVE refletir o estado real (activeQuote não salva ou
+ * pendingSaveQuotation sem savedIdInt) — este presenter nunca afirma cotação
+ * que não existe.
  */
-export function presenterRespostaSocialCotacao(userName?: string | null): PresenterResult {
+export function presenterRespostaSocialCotacao(userName?: string | null, temCotacaoAberta = false): PresenterResult {
   const nome = userName ? userName.split(' ')[0] : '';
   const greeting = nome ? `Por nada, ${nome}!` : `Por nada!`;
+  const sufixo = temCotacaoAberta
+    ? ' A cotação continua aberta se quiser salvar ou ajustar.'
+    : ' Estou por aqui quando precisar.';
   return {
     message: {
       id: genId('social-cotacao'),
       role: 'maestro',
-      content: `${greeting} Estou por aqui. A cotação continua aberta se quiser salvar ou ajustar.`,
+      content: `${greeting}${sufixo}`,
       contentType: 'text',
       specialist: 'comercial',
       timestamp: now(),

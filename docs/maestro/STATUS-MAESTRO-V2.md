@@ -1,9 +1,42 @@
 # STATUS-MAESTRO-V2.md
 
-Versão: 2.0  
+Versão: 2.2  
 Status: Oficial — Implementado com homologações pendentes  
-Última atualização: 18/07/2026  
+Última atualização: 22/07/2026  
 Projeto: ERP Ideal
+
+---
+
+# 0-B. Estado Conversacional de Primeira Classe (22/07/2026) — implementado, pendente de homologação
+
+Correção estrutural do comportamento "árvore de decisão" (perda de objetivo, confirmações fora de contexto, afirmações de estado inexistente). Sem regex ou tratamento específico de frases; o modelo escolhe a intenção, o backend valida o estado.
+
+1. **`pendingGoal` centralizado** (`maestro-v2-context-manager.ts`): objetivo de negócio pendente (ex.: cotação iniciada sem cliente), **derivado automaticamente** em `computePendingGoal` a cada serialização do contexto — nenhum branch precisa propagá-lo. Sobrevive a interrupções (ex.: "cliente X" suspende os itens mas preserva o objetivo); cancelamentos explícitos o zeram.
+2. **`pendingInteraction`** (`getPendingInteraction`): a pergunta/decisão aguardada agora (confirmar candidato, escolher endereço/frete, confirmar save, resolver produto), derivada dos campos `pending*` existentes — sem estado paralelo.
+3. **Hook único de retomada**: tool `retomar_objetivo` + `obterItensRetomada` — todos os caminhos que resolvem cliente (inclusive os que antes mostravam só o cadastro) retomam a cotação pendente automaticamente.
+4. **Caminho de cliente unificado**: intents estáticas `client_lookup`/`client_switch` são pré-mapeadas deterministicamente para o branch V2 de `buscarCliente` (registra candidatos no contexto e retoma objetivo). O bypass clássico que perdia estado foi eliminado.
+5. **ESTADO REAL no router**: o prompt do router (nativo e legado) recebe bloco com cliente ativo, objetivo pendente, pergunta aberta (com a tool sugerida), candidatos e status REAL da cotação, além do histórico recente — com regra explícita de nunca supor estado fora do bloco. Novas tools validadas no servidor: `confirmar_cliente_pendente` (id deve estar nos candidatos reais), `retomar_objetivo` (exige goal real), `encerrar_ou_social`.
+6. **Classificador externo removido do fluxo** (`MAESTRO_EXTERNAL_INTENT_ENABLED` sem efeito): era redundante com o router e a origem do "cotação continua aberta" incondicional. Módulos preservados em disco; nenhum consumidor restante.
+7. **Respostas por estado real**: saudações/encerramentos só são estáticos sem estado conversacional; com estado, o router decide (`encerrar_ou_social`). `presenterRespostaSocialCotacao` parametrizado — nunca mais afirma cotação inexistente.
+
+Suíte automatizada: `test_estado_conversacional.ts` (49 casos — inclui o diálogo real "15680 triband qual valor?" com 7 formas de confirmação). Homologação em Preview pendente (roteiro §16 + retomada com LLM ativo).
+
+---
+
+# 0. Evolução "Copiloto Operacional" (22/07/2026) — implementada, pendente de homologação
+
+Mudanças implementadas em 22/07/2026 (nenhuma altera o motor de cálculo oficial):
+
+1. **Prompt oficial corrigido**: o loader do Brain agora encontra `docs/maestro/MAESTRO-PROMPT-BASE.md` (antes caía silenciosamente no fallback TS reduzido). A constante fallback foi atualizada para refletir as capacidades reais.
+2. **Histórico de conversa**: o client envia `recentMessages` (últimos 8 turnos); o servidor sanitiza e redige dados sensíveis (`maestro-recent-turns.ts`) e repassa ao classificador externo (`recentTurns`) e ao Brain (bloco `[HISTÓRICO RECENTE]`, tratado como dado, com instrução anti-injection). Campo opcional — clients antigos seguem funcionando.
+3. **Respostas sensíveis ao contexto**: saudação por horário de Brasília; saudações/encerramentos mencionam cliente ativo; `skipLLM` passou a usar a ferramenta executada NO turno (não a herdada) — "obrigado" após cotação não responde mais template cru.
+4. **Escolhas em linguagem natural**: ordinais ("o segundo", "a última"), referência por conteúdo ("o de Porto Alegre", "o de entrega") e fallback LLM validado (índice sempre dentro da lista real; timeout 2,5s). Número fora da faixa não é mais tratado como escolha ("900 mobi" segue como edição de item).
+5. **Function calling nativo no router**: o router LLM usa tools da OpenAI (mesma whitelist, mesma validação server-side). Kill-switch: `MAESTRO_NATIVE_TOOLS_ENABLED=false` volta ao JSON mode.
+6. **Revalidação server-side no save** (`maestro-save-revalidacao.server.ts`): preços, produto ativo, preço fixo do cliente, endereço pertencente ao cliente e frete (Retira no Balcão = R$ 0) são reconfirmados contra as fontes oficiais no momento do save. **Divergência → rejeição** (nunca correção silenciosa). O contexto round-trip do browser deixou de ser confiável para valores.
+7. **Auditoria de ações** (`maestro-audit.server.ts`): log estruturado sempre; gravação em `public.maestro_acoes` somente com `MAESTRO_AUDIT_DB_ENABLED=true` + migration `20260722_maestro_auditoria.sql` aplicada.
+8. **Persistência de conversa/rascunho** (`maestro-persistence.server.ts`): preparada atrás de `MAESTRO_PERSISTENCE_ENABLED` + migration `20260722_maestro_conversas.sql`. **Migrations versionadas e NÃO aplicadas.**
+
+Homologação pendente da evolução: roteiro da seção 16 completo + cenários novos (escolhas naturais, histórico, tentativa de adulteração de preço no save — deve ser rejeitada). Suíte automatizada: `test_evolucao_copiloto.ts` (48 casos).
 
 ---
 

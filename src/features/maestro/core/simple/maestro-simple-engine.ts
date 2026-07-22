@@ -44,8 +44,7 @@ import type { PropostaFrete } from '@/features/orcamentos/types';
 import { resolverTermoCatalogo } from './maestro-orcamento-catalogo-oficial';
 import { extrairCepDaQueryEstruturado } from './maestro-cep-resolver.server';
 
-import { callExternalAgent } from './maestro-external-intent.server';
-import { mapExternalIntentToRouterResult } from './maestro-external-intent.mapper';
+import type { RecentTurn } from './maestro-recent-turns';
 import { extrairClienteDaQuery, routeToolSimple } from './maestro-v2-router';
 import { processarOrcamentoAvulso } from './maestro-orcamento-engine';
 import { detectIntent } from './maestro-simple-intents';
@@ -115,7 +114,7 @@ import {
   presenterMostrarItensOrcamento,
   type PresenterResult,
 } from './maestro-simple-presenter';
-import { deserializeV2Context, serializeV2Context, normalizeText } from './maestro-v2-context-manager';
+import { deserializeV2Context, serializeV2Context, normalizeText, obterItensRetomada } from './maestro-v2-context-manager';
 import { salvarCotacaoComoPropostaReal } from './maestro-save-proposta.server';
 
 import type { ConversationMessage, ActivityStep, ConversationContext } from '../../types';
@@ -129,6 +128,11 @@ export interface SimpleEngineOptions {
   userName?: string;
   /** UUID do usuário logado — usado para salvar proposta com RLS correta */
   userId?: string;
+  /**
+   * Últimos turnos da conversa, já sanitizados pela rota.
+   * Repassados ao classificador externo e ao Brain como contexto de continuidade.
+   */
+  recentTurns?: RecentTurn[];
 }
 
 // ─── Resultado do Motor ───────────────────────────────────────────────────
@@ -295,7 +299,7 @@ export async function processSimpleQuery(
 
       // ── Encerramento / Agradecimento ──────────────────────────────────────────
       case 'closure': {
-        return toResult(presenterClosure());
+        return toResult(presenterClosure(simpleCtx));
       }
 
       // ── Aguardo / Pausa do Usuário ──────────────────────────────────────────
@@ -455,7 +459,7 @@ export async function processSimpleQuery(
 
       // ── Ajuda ─────────────────────────────────────────────────────────
       case 'help': {
-        return toResult(presenterAjuda());
+        return toResult(presenterAjuda(simpleCtx));
       }
 
       // ── Fallback ──────────────────────────────────────────────────────
@@ -542,88 +546,78 @@ export async function processSimpleQueryWithBrain(
 
   let deterministicResult: SimpleEngineResult | null = null;
 
+  // Ferramenta efetivamente executada NESTE turno (após transições internas).
+  // Diferente de v2Ctx.lastTool herdado de turnos anteriores — usado no skipLLM
+  // para não bloquear o Brain em turnos que nem passaram pelo router
+  // (ex.: "obrigado" logo após uma cotação).
+  let toolThisTurn: string | null = null;
+
   // 1. Tenta rodar o Tool Router V2 se habilitado
-  // Ignora o roteador se for um comando imediato estático seguro (busca de cliente, troca ou ajuda)
   const initialIntent = detectIntent(query);
-  const isImmediateStatic = ['client_lookup', 'client_switch', 'help', 'closure', 'wait_user'].includes(initialIntent.type);
 
   if (process.env.MAESTRO_V2_ENABLED === 'true') {
     try {
       let routeResult: any = { routed: false };
 
-      // Helper para decidir se chama o External Agent
-      const shouldTryExternalIntent = (q: string, isStatic: boolean, ctx: any) => {
-        const compoundIntentRegex = /(?:mesm[oa]\s+(?:or[cç]amento|cota[cç][aã]o)|repete\s+(?:ess[ea]|o)|faz(?:er)?\s+(?:o|esse)?\s*mesmo|cota\s+esse\s+mesmo)/i;
-        const temComposta = compoundIntentRegex.test(q);
-
-        if (ctx.pendingAddressChoice) return false;
-        if (ctx.pendingFreightChoice) return false;
-        
-        // Se há candidatos pendentes para confirmação, desliga roteamento externo
-        if (ctx.pendingClientCandidate || ctx.pendingClientCandidates?.length) return false;
-
-        // Se houver intenção composta explícita, ela vence o pendingSaveQuotation
-        if (ctx.pendingSaveQuotation && !temComposta) return false;
-
-        if (!isStatic) return true;
-        if (temComposta) return true;
-        
-        return false;
-      };
-
-      const tryExternal = shouldTryExternalIntent(query, isImmediateStatic, v2Ctx);
-
-      if (process.env.MAESTRO_EXTERNAL_INTENT_ENABLED === 'true' && tryExternal) {
-        try {
-          
-          const payload = {
-            query,
-            currentDateIso: new Date().toISOString(),
-            activeClient: simpleCtx.activeClient ? {
-              clientInternalId: simpleCtx.activeClient.clientInternalId,
-              clientDisplayCode: simpleCtx.activeClient.clientDisplayCode,
-              clientName: simpleCtx.activeClient.clientName,
-              clientFantasia: simpleCtx.activeClient.clientFantasia,
-            } : null,
-            v2Context: {
-              domain: v2Ctx.domain,
-              lastTool: v2Ctx.lastTool ?? null,
-              hasPendingAddressChoice: !!v2Ctx.pendingAddressChoice,
-              hasPendingFreightChoice: !!v2Ctx.pendingFreightChoice,
-              hasPendingSaveQuotation: !!v2Ctx.pendingSaveQuotation,
-              hasActiveQuote: !!v2Ctx.activeQuote,
-              orcamentoItensCount: v2Ctx.orcamentoItens?.length ?? 0,
-              pendingClientCandidatesCount: v2Ctx.pendingClientCandidates?.length ?? 0
+      // ── CAMINHO UNIFICADO DE IDENTIFICAÇÃO DE CLIENTE ─────────────────────
+      // Intents estáticas de cliente (client_lookup/client_switch) entram no
+      // MESMO branch V2 de buscarCliente — que registra candidatos no contexto
+      // e retoma o objetivo pendente. Elimina o bypass clássico que mostrava
+      // o cadastro sem registrar o candidato nem preservar a cotação.
+      // Determinístico: nenhum LLM envolvido neste mapeamento.
+      if (['client_lookup', 'client_switch'].includes(initialIntent.type)) {
+        const busca = initialIntent.code ?? initialIntent.document ?? initialIntent.name;
+        if (busca) {
+          routeResult = {
+            routed: true,
+            plan: {
+              steps: [{
+                tool: 'buscarCliente',
+                params: {
+                  busca,
+                  documentPartial: initialIntent.documentPartial,
+                  documentType: initialIntent.documentType,
+                },
+              }],
             },
-            lastAnswer: simpleCtx.lastAnswer ? {
-              type: simpleCtx.lastAnswer.type,
-              label: simpleCtx.lastAnswer.label,
-              value: simpleCtx.lastAnswer.value
-            } : null,
-            recentTurns: [] // Mantenha simples para a POC, poderia injetar as últimas mensagens de legacyCtx
           };
-
-          const externalResult = await callExternalAgent(payload);
-          if (externalResult) {
-            const mappedRoute = mapExternalIntentToRouterResult(externalResult, v2Ctx, simpleCtx.activeClient);
-            if (mappedRoute?.routed) {
-              routeResult = mappedRoute;
-            }
-          }
-        } catch (extErr) {
-          console.warn('[MaestroEngine] External intent layer falhou silenciosamente — usando router interno.', extErr);
         }
       }
 
-      // [FALLBACK] Se não roteado externamente, usa o router interno V2
+      // Router interno V2 (interceptadores determinísticos + LLM com ESTADO REAL)
       if (!routeResult.routed) {
-        routeResult = await routeToolSimple(query, simpleCtx.activeClient, simpleCtx.lastAnswer, v2Ctx);
+        routeResult = await routeToolSimple(
+          query,
+          simpleCtx.activeClient,
+          simpleCtx.lastAnswer,
+          v2Ctx,
+          options.recentTurns ?? []
+        );
       }
 
       if (routeResult.routed && routeResult.plan && routeResult.plan.steps.length > 0) {
         const step = routeResult.plan.steps[0];
         let pr: PresenterResult | null = null;
         let clientForCtx = simpleCtx.activeClient;
+
+        // ── HOOK ÚNICO DE RETOMADA DO OBJETIVO PENDENTE ──────────────────────
+        // Qualquer camada (router LLM ou determinística) que decida retomar o
+        // objetivo cai aqui: restaura os itens do pendingGoal e transiciona
+        // para a simulação — validado no router (só roteia com goal real).
+        if ((step.tool as string) === 'retomar_objetivo') {
+          const itensGoal = v2Ctx.pendingGoal?.itens ?? [];
+          if (itensGoal.length > 0) {
+            v2Ctx.orcamentoItens = itensGoal.map(i => ({ ...i }));
+            v2Ctx.lastExplicitBudgetItems = itensGoal.map(i => ({ ...i }));
+            v2Ctx.domain = 'orcamento_avulso';
+            step.tool = 'simularOrcamentoAvulso';
+            step.params = { itens: v2Ctx.orcamentoItens };
+            console.log(`[MaestroEngine] retomar_objetivo → simularOrcamentoAvulso com ${itensGoal.length} itens do pendingGoal.`);
+          } else {
+            step.tool = 'requisicao_nao_suportada';
+            step.params = {};
+          }
+        }
 
         // Proteção centralizada contra cotação avulsa com cliente não resolvido na query mista
         const clienteNaQuery = extrairClienteDaQuery(query);
@@ -690,6 +684,7 @@ export async function processSimpleQueryWithBrain(
           pr = presenterCancelarOrcamentoAvulso(simpleCtx.activeClient);
           v2Ctx.orcamentoItens = [];
           v2Ctx.lastExplicitBudgetItems = [];
+          v2Ctx.pendingGoal = null;
           v2Ctx.budgetAddressCep = undefined;
           v2Ctx.budgetAddressCidade = undefined;
           v2Ctx.budgetAddressUf = undefined;
@@ -783,11 +778,15 @@ export async function processSimpleQueryWithBrain(
               }
               clientForCtx = lookupResult.client;
 
-              // ── INTENÇÃO COMPOSTA: cliente + itens na mesma mensagem ──────────────
-              // Se há itens salvos da mensagem atual, ou itens preservados do 'mesmo orçamento', ou itens pendentes salvos no contexto, prosseguir para cotação automaticamente.
-              const itensCompostos = itensDaMensagemAtual 
-                || itensDePreservacao 
-                || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+              // ── INTENÇÃO COMPOSTA + RETOMADA DE OBJETIVO ─────────────────────────
+              // Fontes, na ordem: itens explícitos desta mensagem → itens preservados
+              // para o candidato → itens ativos do contexto → OBJETIVO PENDENTE
+              // (pendingGoal — sobrevive a interrupções e garante a retomada
+              // automática da cotação após identificar o cliente).
+              const itensCompostos = itensDaMensagemAtual
+                || itensDePreservacao
+                || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null)
+                || (v2Ctx.pendingGoal?.itens && v2Ctx.pendingGoal.itens.length > 0 ? v2Ctx.pendingGoal.itens : null);
 
               if (itensCompostos && itensCompostos.length > 0) {
                 console.log(`[MaestroEngine] buscarCliente: intenção composta detectada. Cliente ${lookupResult.client.clientName} + ${itensCompostos.length} itens. Prosseguindo para cotação.`);
@@ -852,7 +851,9 @@ export async function processSimpleQueryWithBrain(
               v2Ctx.pendingClientCandidate = null;
               v2Ctx.pendingClientCandidates = null;
               v2Ctx.pendingClientSearchTerm = busca;
-              const candItemsTooMany = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+              const candItemsTooMany = itensDaMensagemAtual
+                || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null)
+                || (v2Ctx.pendingGoal?.itens && v2Ctx.pendingGoal.itens.length > 0 ? v2Ctx.pendingGoal.itens : null);
               if (candItemsTooMany) v2Ctx.pendingBudgetForCandidate = candItemsTooMany;
               pr = presenterClienteBuscaAmpla(lookupResult.searchTerm ?? busca, candItemsTooMany);
             } else if (lookupResult.reason === 'multiple' && lookupResult.candidates) {
@@ -866,7 +867,9 @@ export async function processSimpleQueryWithBrain(
               }));
               v2Ctx.pendingClientCandidate = null;
               v2Ctx.pendingClientSearchTerm = busca;
-              const candItemsMulti = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+              const candItemsMulti = itensDaMensagemAtual
+                || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null)
+                || (v2Ctx.pendingGoal?.itens && v2Ctx.pendingGoal.itens.length > 0 ? v2Ctx.pendingGoal.itens : null);
               if (candItemsMulti) v2Ctx.pendingBudgetForCandidate = candItemsMulti;
               pr = presenterClienteMultiplosCandidatos(busca, lookupResult.candidates);
             } else if (lookupResult.reason === 'partial_match' && lookupResult.candidates?.length) {
@@ -881,7 +884,9 @@ export async function processSimpleQueryWithBrain(
               };
               v2Ctx.pendingClientCandidates = null;
               v2Ctx.pendingClientSearchTerm = busca;
-              const candItemsPartial = itensDaMensagemAtual || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null);
+              const candItemsPartial = itensDaMensagemAtual
+                || (v2Ctx.orcamentoItens && v2Ctx.orcamentoItens.length > 0 ? v2Ctx.orcamentoItens : null)
+                || (v2Ctx.pendingGoal?.itens && v2Ctx.pendingGoal.itens.length > 0 ? v2Ctx.pendingGoal.itens : null);
               if (candItemsPartial) v2Ctx.pendingBudgetForCandidate = candItemsPartial;
               pr = presenterClienteMatchParcial(busca, cand);
             } else {
@@ -1079,7 +1084,9 @@ export async function processSimpleQueryWithBrain(
                 v2Ctx.budgetAddressUf = undefined;
                 v2Ctx.pendingAddressChoice = null;
               }
-              const itensPendentes = v2Ctx.pendingBudgetForCandidate;
+              // Retomada unificada: itens preservados para o candidato ou,
+              // estruturalmente, o objetivo pendente (pendingGoal)
+              const itensPendentes = obterItensRetomada(v2Ctx);
               v2Ctx.pendingClientCandidate = null;
               v2Ctx.pendingClientCandidates = null;
               v2Ctx.pendingClientSearchTerm = null;
@@ -1897,7 +1904,21 @@ export async function processSimpleQueryWithBrain(
         }
 
         if (step.tool === 'resposta_social_cotacao') {
-          pr = presenterRespostaSocialCotacao(options.userName);
+          // Estado REAL: só afirma cotação aberta se ela existir de fato
+          const temCotacaoAbertaSocial =
+            !!(v2Ctx.activeQuote && v2Ctx.activeQuote.status !== 'salva') ||
+            !!(v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt);
+          pr = presenterRespostaSocialCotacao(options.userName, temCotacaoAbertaSocial);
+        }
+
+        if ((step.tool as string) === 'encerrar_ou_social') {
+          // Resposta social/encerramento condicionada ao estado real da conversa
+          const temCotacaoAberta =
+            !!(v2Ctx.activeQuote && v2Ctx.activeQuote.status !== 'salva') ||
+            !!(v2Ctx.pendingSaveQuotation && !v2Ctx.pendingSaveQuotation.savedIdInt);
+          pr = temCotacaoAberta
+            ? presenterRespostaSocialCotacao(options.userName, true)
+            : presenterClosure(simpleCtx);
         }
 
         if (step.tool === 'resposta_frustracao_usuario') {
@@ -2017,6 +2038,11 @@ export async function processSimpleQueryWithBrain(
           }
         }
 
+        // Registra a ferramenta FINAL do turno (step.tool pode ter sido
+        // reatribuída em transições internas, ex.: buscarCliente → simularOrcamentoAvulso)
+        toolThisTurn = step.tool;
+        v2Ctx.lastTool = step.tool;
+
         if (pr) {
           deterministicResult = toResult(pr, clientForCtx);
         }
@@ -2046,11 +2072,15 @@ export async function processSimpleQueryWithBrain(
   // E também ignorar LLM se for 'orcamento_avulso_desativado', pois ele já tem resposta pronta
   // Para tools do P4 (cotação ativa): NÃO bloquear LLM — passa activeQuote como contexto e deixa o Brain humanizar
   // Exceção: 'simularOrcamentoAvulso' (o card formatado da cotação não deve ser reescrito pelo Brain)
+  //
+  // IMPORTANTE: usa toolThisTurn (ferramenta executada NESTE turno), não
+  // v2Ctx.lastTool herdado. Antes, um "obrigado" após a cotação herdava
+  // lastTool='simularOrcamentoAvulso' e recebia template cru mesmo com LLM ativo.
   const skipLLM = process.env.MAESTRO_SIMPLE_LLM_ENABLED !== 'true'
-    || (v2Ctx.domain === 'orcamento_avulso' && ['simularOrcamentoAvulso', 'confirmar_frete_cotacao', 'salvar_proposta_cotacao'].includes(v2Ctx.lastTool ?? ''))
-    || v2Ctx.lastTool === 'orcamento_avulso_desativado'
-    || v2Ctx.lastTool === 'resposta_social_cotacao'
-    || v2Ctx.lastTool === 'resposta_frustracao_usuario';
+    || (v2Ctx.domain === 'orcamento_avulso' && ['simularOrcamentoAvulso', 'confirmar_frete_cotacao', 'salvar_proposta_cotacao'].includes(toolThisTurn ?? ''))
+    || toolThisTurn === 'orcamento_avulso_desativado'
+    || toolThisTurn === 'resposta_social_cotacao'
+    || toolThisTurn === 'resposta_frustracao_usuario';
 
   if (skipLLM) {
     return deterministicResult;
@@ -2076,6 +2106,7 @@ export async function processSimpleQueryWithBrain(
       fallbackText: deterministicResult.message.content,
       maestroCtx:   brainCtx,
       userName:     options.userName,
+      recentTurns:  options.recentTurns, // continuidade entre mensagens (sanitizado na rota)
       activeQuote:  v2Ctx.activeQuote ?? null, // contexto da cotação ativa para responder perguntas naturais
     });
 

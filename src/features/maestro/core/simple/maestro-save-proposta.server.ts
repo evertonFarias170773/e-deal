@@ -24,6 +24,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PendingSaveQuotation } from './maestro-v2-context-manager';
 import { saveProposta } from '@/features/orcamentos/services/orcamentos.service';
 import type { PropostaFormState, PropostaItem, PropostaFrete } from '@/features/orcamentos/types';
+import { revalidarPendingQuotation } from './maestro-save-revalidacao.server';
+import { registrarAcaoMaestro } from './maestro-audit.server';
 
 export interface MaestroSaveResult {
   success: boolean;
@@ -44,6 +46,29 @@ export async function salvarCotacaoComoPropostaReal(
   supabase: SupabaseClient,
   userId: string
 ): Promise<MaestroSaveResult> {
+  // ── 0. REVALIDAÇÃO SERVER-SIDE ───────────────────────────────────────────
+  // O pending viaja pelo browser e é adulterável. Nunca confiar nos valores
+  // recebidos: preços, cliente, endereço e frete são reconfirmados contra as
+  // fontes oficiais. Divergência → REJEITAR (nunca corrigir silenciosamente).
+  const revalidacao = await revalidarPendingQuotation(supabase, pending);
+  if (!revalidacao.ok) {
+    await registrarAcaoMaestro(supabase, {
+      userId,
+      acao: 'salvar_cotacao_como_proposta',
+      resultado: 'rejeitado',
+      idCliente: pending.clientInternalId,
+      detalhe: revalidacao.divergencias.slice(0, 5).join(' | '),
+      payload: {
+        itens: pending.itens?.map(i => ({ id_produto: i.id_produto, qtd: i.quantidade, vu: i.valorUnitario, vf: i.valorFixo })),
+        frete: pending.freteEscolhido ? { id: pending.freteEscolhido.id, valor: pending.freteEscolhido.valor } : null,
+      },
+    });
+    return {
+      success: false,
+      errorMessage: revalidacao.mensagem || 'Não foi possível validar a cotação para salvamento.',
+    };
+  }
+
   // ── 1. Resolver contato do cliente ───────────────────────────────────────
   let contatoId = pending.contatoId || '';
 
@@ -91,15 +116,17 @@ export async function salvarCotacaoComoPropostaReal(
   }
 
   // ── 2b. Resolver bônus (percentual_bunus) do cliente ──────────────────────
+  // Cliente com preço fixo NÃO acumula bônus (mesma semântica do adapter oficial
+  // em maestro-simple-clientes.server.ts, que zera isBonus quando usa_preco_fixo).
   let percentualBonus = 0;
   try {
     const { data: clienteRow } = await supabase
       .from('clientes')
-      .select('percentual_bunus, is_bonus')
+      .select('percentual_bunus, is_bonus, usa_preco_fixo')
       .eq('id_cliente', pending.clientInternalId)
       .maybeSingle();
 
-    if (clienteRow?.is_bonus && clienteRow.percentual_bunus) {
+    if (!clienteRow?.usa_preco_fixo && clienteRow?.is_bonus && clienteRow.percentual_bunus) {
       percentualBonus = Number(clienteRow.percentual_bunus) || 0;
     }
   } catch (err) {
@@ -186,6 +213,13 @@ export async function salvarCotacaoComoPropostaReal(
 
   if (!result.success) {
     console.error('[MaestroSave] saveProposta falhou:', result.errorMessage);
+    await registrarAcaoMaestro(supabase, {
+      userId,
+      acao: 'salvar_cotacao_como_proposta',
+      resultado: 'erro',
+      idCliente: pending.clientInternalId,
+      detalhe: result.errorMessage || 'Erro desconhecido no saveProposta.',
+    });
     return {
       success: false,
       errorMessage: result.errorMessage || 'Erro desconhecido ao salvar a proposta.',
@@ -193,6 +227,19 @@ export async function salvarCotacaoComoPropostaReal(
   }
 
   console.log('[MaestroSave] Proposta salva com sucesso. id_int:', result.id_int);
+
+  await registrarAcaoMaestro(supabase, {
+    userId,
+    acao: 'salvar_cotacao_como_proposta',
+    resultado: 'sucesso',
+    idCliente: pending.clientInternalId,
+    idInt: result.id_int,
+    payload: {
+      itens: pending.itens?.map(i => ({ id_produto: i.id_produto, qtd: i.quantidade, vu: i.valorUnitario, vf: i.valorFixo })),
+      frete: { id: pending.freteEscolhido.id, transportadora: pending.freteEscolhido.transportadora, valor: pending.freteEscolhido.valor },
+      total_exibido: pending.total,
+    },
+  });
 
   return {
     success: true,

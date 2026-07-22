@@ -36,6 +36,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { SimpleClientContext, SimpleMaestroContext } from './maestro-simple-context';
+import { FORBIDDEN_LLM_PATTERNS, turnsToPromptBlock, type RecentTurn } from './maestro-recent-turns';
 
 // ─── Prompt Base — constante fallback (derivada de docs/MAESTRO-PROMPT-BASE.md) ─
 // Usada automaticamente quando o arquivo .md não estiver acessível (deploy, CI, etc.).
@@ -62,18 +63,15 @@ REGRA FUNDAMENTAL — NÃO INVENTAR:
 - Nunca exiba "—" sem explicação
 - Nunca crie dados que não existem nos fatos fornecidos
 
-FASE ATUAL — Fase 2: Inteligência Comercial e Financeira (Conectada)
-Disponível nesta fase:
-- Dados cadastrais, crédito, vínculos, endereços, etc.
-- Histórico de pedidos reais (propostas)
-- Faturamento comercial (propostas aprovadas)
-- Faturamento financeiro/recebimento real (pagamentos_v2)
+CAPACIDADES CONECTADAS (estado atual):
+- Dados cadastrais do cliente, crédito, bônus, vínculos, endereços e contatos
+- Histórico de pedidos reais (propostas) e recebimentos (pagamentos_v2)
 - Boletos em aberto/atrasados (boletos)
+- Cotação assistida: produtos, quantidades, endereço, frete e salvamento como proposta (sempre com confirmação explícita do usuário)
 
-NÃO disponível ainda (próximas fases):
-- Detalhe de produtos e itens específicos do pedido
-- Produção, OS e frete
-- Emissão de nota fiscal
+NÃO disponível (não afirme que consegue):
+- Produção, OS, expedição e emissão de nota fiscal
+- Criar/alterar cliente, cobrança, pagamento ou status de proposta
 
 Quando a pergunta depender de algo não disponível, explique de forma objetiva, sem enrolação.
 
@@ -99,6 +97,10 @@ function loadPromptBase(): string {
   if (_promptCache !== null) return _promptCache;
 
   const candidates = [
+    // Caminho oficial atual (docs/maestro/) — ver DOCUMENTATION_INDEX.md
+    path.join(/*turbopackIgnore: true*/ process.cwd(), 'docs', 'maestro', 'MAESTRO-PROMPT-BASE.md'),
+    path.join(/*turbopackIgnore: true*/ process.cwd(), '..', 'docs', 'maestro', 'MAESTRO-PROMPT-BASE.md'),
+    // Caminhos legados mantidos por compatibilidade
     path.join(/*turbopackIgnore: true*/ process.cwd(), 'docs', 'MAESTRO-PROMPT-BASE.md'),
     path.join(/*turbopackIgnore: true*/ process.cwd(), '..', 'docs', 'MAESTRO-PROMPT-BASE.md'),
   ];
@@ -123,12 +125,9 @@ function loadPromptBase(): string {
 }
 
 // ─── Campos proibidos no prompt ───────────────────────────────────────────────
+// Lista compartilhada com o histórico de conversa (maestro-recent-turns.ts).
 
-const FORBIDDEN_PATTERNS = [
-  'pix_copia_cola', 'linha_digitavel', 'token_publico',
-  'url_cobranca', 'boleto_pdf', 'OPENAI_API_KEY',
-  'api_key', 'senha', 'password', 'Bearer ',
-];
+const FORBIDDEN_PATTERNS = FORBIDDEN_LLM_PATTERNS;
 
 function sanitizeText(text: string, maxChars = 3000): string {
   let s = text;
@@ -286,6 +285,11 @@ export interface BrainInput {
   maestroCtx: SimpleMaestroContext;
   /** Nome do usuário logado (para humanização) */
   userName?: string;
+  /**
+   * Últimos turnos da conversa (já sanitizados pela rota).
+   * Usados APENAS para continuidade e tom — nunca como fonte de fatos.
+   */
+  recentTurns?: RecentTurn[];
   /** Snapshot da cotação ativa — permite ao Brain responder perguntas sobre a cotação */
   activeQuote?: {
     clientName: string;
@@ -365,8 +369,13 @@ export async function humanizeWithBrain(input: BrainInput): Promise<BrainResult>
     q.status === 'salva' && q.savedIdInt ? `Status: Salva como proposta #${q.savedIdInt}` : `Status: Não salva ainda`,
   ].join('\n') : '';
 
+  // Bloco de histórico recente (entra como DADO no user prompt, nunca como messages[])
+  const historyBlock = input.recentTurns && input.recentTurns.length > 0
+    ? turnsToPromptBlock(input.recentTurns) + '\n\n'
+    : '';
+
   const userPrompt = `
-Pergunta do usuário: "${sanitizeText(userQuery, 500)}"
+${historyBlock}Pergunta do usuário: "${sanitizeText(userQuery, 500)}"
 Intenção detectada pelo sistema: ${intentType}
 
 [DADOS DISPONÍVEIS NO ERP]

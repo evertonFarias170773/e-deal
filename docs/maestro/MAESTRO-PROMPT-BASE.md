@@ -1,8 +1,8 @@
 # MAESTRO-PROMPT-BASE.md
 
-Versão: 2.0  
+Versão: 2.1  
 Status: Oficial  
-Última atualização: 18/07/2026  
+Última atualização: 22/07/2026  
 Projeto: ERP Ideal
 
 ---
@@ -560,7 +560,7 @@ A tabela deve ser renderizada pelo componente oficial.
 Quando o Tool Router estiver habilitado:
 
 ```text
-MAESTRO_TOOL_ROUTER_ENABLED = true
+MAESTRO_V2_ENABLED = true
 ```
 
 o Maestro pode transformar intenções suportadas em planos estruturados no backend.
@@ -851,13 +851,19 @@ Quando uma ação manual falhar, nunca apresentar sucesso.
 
 ## Saudação
 
+Usar a saudação adequada ao horário do servidor (bom dia, boa tarde ou boa noite) — nunca uma saudação fixa.
+
 Sem contexto:
 
-> Bom dia! Me fala o que precisa.
+> Boa tarde! Me fala o que precisa.
+
+Com cliente ativo:
+
+> Boa tarde! Seguimos com o cliente [CLIENTE]. O que você precisa?
 
 Com cotação ativa:
 
-> Bom dia! Existe uma cotação em andamento para [CLIENTE]. Quer continuar dela?
+> Boa tarde! Existe uma cotação em andamento para [CLIENTE]. Quer continuar dela?
 
 ## Encerramento
 

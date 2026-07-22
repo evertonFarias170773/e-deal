@@ -11,16 +11,21 @@
  *   corretamente nas queries subsequentes.
  *
  * SEGURANÇA:
- * - Token NÃO está no body — body contém apenas { query, context }
+ * - Token NÃO está no body — body contém { query, context, recentMessages? }
  * - Sem service_role
  * - Sem alteração de RLS, schema, triggers, views
- * - Somente leitura — zero INSERT, UPDATE, DELETE, UPSERT
- * - OpenAI NÃO é chamada neste endpoint
+ * - Escritas possíveis (todas com RLS do usuário e confirmação explícita):
+ *   salvar cotação como proposta; persistência de conversa e auditoria
+ *   quando as flags MAESTRO_PERSISTENCE_ENABLED / MAESTRO_AUDIT_DB_ENABLED
+ *   estiverem ativas e as migrations correspondentes aplicadas.
+ * - recentMessages é sanitizado no servidor (maestro-recent-turns.ts)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { processSimpleQueryWithBrain } from '../../../../features/maestro/core/simple/maestro-simple-engine';
+import { sanitizeRecentTurns } from '../../../../features/maestro/core/simple/maestro-recent-turns';
+import { persistirTurnoMaestro } from '../../../../features/maestro/core/simple/maestro-persistence.server';
 import type { ConversationContext } from '../../../../features/maestro/types';
 
 export async function POST(request: NextRequest) {
@@ -57,7 +62,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 4. Leitura do payload ──────────────────────────────────────────────────
-  let body: { query?: unknown; context?: unknown };
+  let body: { query?: unknown; context?: unknown; recentMessages?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -66,6 +71,9 @@ export async function POST(request: NextRequest) {
 
   const query   = typeof body.query === 'string' ? body.query.trim() : '';
   const context = (body.context ?? {}) as ConversationContext;
+  // Histórico recente (campo OPCIONAL — clients antigos sem ele mantêm o
+  // comportamento anterior). Sanitizado no servidor: nunca confiar no browser.
+  const recentTurns = sanitizeRecentTurns(body.recentMessages);
 
   if (!query) {
     return NextResponse.json(
@@ -79,9 +87,30 @@ export async function POST(request: NextRequest) {
   const fullName = metadata.nome || metadata.name || metadata.first_name || '';
   const userName = fullName ? fullName.split(' ')[0] : undefined;
 
-  // ── 5. Motor simples — sem LLM, sem planner, sem policy ───────────────────
+  // ── 5. Motor simples + camadas LLM opcionais ──────────────────────────────
   try {
-    const result = await processSimpleQueryWithBrain(query, context, { supabase, userName, userId: user.id });
+    const result = await processSimpleQueryWithBrain(query, context, {
+      supabase,
+      userName,
+      userId: user.id,
+      recentTurns,
+    });
+
+    // ── 6. Persistência de conversa/rascunho (flag-gated; nunca quebra o fluxo)
+    try {
+      const conversationId = await persistirTurnoMaestro(supabase, {
+        conversationId: (context as any)?.conversationId ?? null,
+        userQuery: query,
+        assistantContent: result.message?.content ?? '',
+        contextoJson: result.context?.v2ContextJson ?? null,
+      });
+      if (conversationId) {
+        (result.context as any).conversationId = conversationId;
+      }
+    } catch (persistErr) {
+      console.warn('[/api/maestro/simple] Persistência falhou (ignorada):', persistErr);
+    }
+
     return NextResponse.json(result, { status: 200 });
 
   } catch (err: unknown) {
