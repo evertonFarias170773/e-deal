@@ -2573,6 +2573,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   //   server-side e cria pendência financeira se houver diferença
   // ------------------------------------------------------------------
   async function handleSave() {
+    // Bloqueio absoluto (vale para admin/superadmin): avulsa ou sem produtos
+    // ativos + paga = somente visualização/Histórico/Pagamentos. O backend
+    // (editar-paga) aplica a mesma regra — este guard evita o round-trip.
+    if (bloqueioAvulsaPaga) {
+      showToast({
+        type: "error",
+        title: "Edição bloqueada",
+        description: "Proposta avulsa já paga não pode ser alterada.",
+      });
+      return;
+    }
+
     const vendedorParaSalvar = cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor;
 
     if (!validateBeforeSave(vendedorParaSalvar)) {
@@ -2869,6 +2881,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   async function handleSaveForCobranca(): Promise<boolean> {
+    // Avulsa/sem-produtos paga: o formulário é somente leitura — não há nada
+    // legítimo a salvar. Prossegue direto para a cobrança (aba Pagamentos
+    // permanece funcional), sem persistir nenhuma alteração.
+    if (bloqueioAvulsaPaga) {
+      return true;
+    }
+
     if (form.id_int !== "NOVO" && form.id_int && Number(form.id_int) > 0 && !isDirty) {
       // Já está salvo e sem alterações locais
       return true;
@@ -2927,8 +2946,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const valorPagoConfirmadoAtual = calcularValorPagoConfirmado(cobrancasVinculadas);
   const isPropostaPagaAtual = valorPagoConfirmadoAtual > 0;
 
+  // Proposta avulsa (ou sem nenhum produto ativo) JÁ PAGA não pode ser
+  // alterada por NINGUÉM — inclusive admin/superadmin (caso #19486). A edição
+  // autorizada de proposta paga existe para tratar alterações de produtos,
+  // frete ou serviços; avulsa não tem produtos a alterar. Visualização,
+  // Histórico e Pagamentos permanecem acessíveis. Backend espelha o bloqueio
+  // em /api/orcamentos/editar-paga (não depende deste botão).
+  const temProdutosAtivos = form.itens.some((i) => (i.statusItem || "PENDENTE") !== "CANCELADO");
+  const bloqueioAvulsaPaga =
+    mode === "edit" && isPropostaPagaAtual && (Boolean(form.isAvulso) || !temProdutosAtivos);
+
   // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
-  const isFormBloqueadoPorCobranca = (hasActiveCobranca && !canEditarPropostaPaga) || pendenciaRevisaoAberta !== null;
+  const isFormBloqueadoPorCobranca =
+    (hasActiveCobranca && !canEditarPropostaPaga) || pendenciaRevisaoAberta !== null || bloqueioAvulsaPaga;
 
   return (
     <div className="space-y-6">
@@ -2964,7 +2994,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             canEditarPropostaPaga ? "text-amber-600 dark:text-amber-400" : "text-amber-600"
           }`} />
           <div>
-            {canEditarPropostaPaga && isPropostaPagaAtual ? (
+            {bloqueioAvulsaPaga ? (
+              <>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Proposta avulsa já paga não pode ser alterada</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
+                  Esta proposta {form.isAvulso ? "é avulsa" : "não possui produtos cadastrados"} e já possui pagamento confirmado.
+                  A edição está bloqueada para todos os perfis (inclusive administrador). Visualização, Histórico e Pagamentos permanecem disponíveis.
+                </p>
+              </>
+            ) : canEditarPropostaPaga && isPropostaPagaAtual ? (
               <>
                 <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Modo Edição Autorizada — Proposta com Pagamento Confirmado</p>
                 <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">

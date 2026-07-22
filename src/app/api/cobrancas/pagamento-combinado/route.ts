@@ -84,10 +84,11 @@ export async function POST(request: NextRequest) {
   const valorCreditoArredondado = Math.round(Number(valorCredito) * 100) / 100;
 
   try {
-    // A. Consultar Proposta
+    // A. Consultar Proposta (id_endereco_ent = endereço de entrega vinculado,
+    // usado na emissão do PIX — mesma fonte do enderecoEntrega do front)
     const { data: proposta, error: propostaErr } = await supabaseUser
       .from("propostas")
-      .select("id_int, id_cliente, empresa")
+      .select("id_int, id_cliente, empresa, id_endereco_ent")
       .eq("id_int", idInt)
       .maybeSingle();
 
@@ -100,10 +101,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Empresa inválida ou não identificada na proposta." }, { status: 400 });
     }
 
-    // B. Consultar Cliente Oficial
+    // B. Consultar Cliente Oficial — colunas REAIS de public.clientes
+    // (documento/whatsapp_1/telefone_fixo; NÃO existem cnpj_cpf/telefone/celular
+    // nem colunas de endereço em clientes — causa do PIX combinado sair com
+    // payload vazio no caso #19514).
     const { data: clienteData, error: clienteErr } = await supabaseUser
       .from("clientes")
-      .select("nome")
+      .select("nome, documento, whatsapp_1, telefone_fixo, email_contato, email")
       .eq("id_cliente", idCliente)
       .maybeSingle();
 
@@ -111,6 +115,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Cliente não encontrado no sistema." }, { status: 404 });
     }
     const nomeClienteReal = clienteData.nome;
+    const documentoClienteReal = String(clienteData.documento || "").replace(/\D/g, "");
+    const telefoneClienteReal = clienteData.whatsapp_1 || clienteData.telefone_fixo || "";
+    // Mesma precedência do cadastro oficial (getCadastroCompleto): email_contato > email
+    const emailClienteReal = String(clienteData.email_contato || clienteData.email || "").trim();
 
     // B2. Idempotência: chave persistida por tentativa (não por janela de
     // tempo) — repetir a mesma requisição retorna o resultado anterior;
@@ -141,6 +149,34 @@ export async function POST(request: NextRequest) {
         totalProposta: situacaoIdempotente.valorTotalProposta,
         quitada: situacaoIdempotente.novoValorQuitado >= (situacaoIdempotente.valorTotalProposta - 0.02) && situacaoIdempotente.valorTotalProposta > 0,
       });
+    }
+
+    // B3. Pré-validações do secundário BOLETO/CARTÃO — rodam ANTES de qualquer
+    // efeito (consumo de crédito, criação de cobrança): falha aqui devolve 400
+    // limpo, sem nada a regularizar. Espelham os gates do fluxo normal
+    // (não-combinado) do PropostaCobrancaPanel/CobrancasProvider. Ficam DEPOIS
+    // da checagem de idempotência (B2): uma repetição de operação já concluída
+    // deve devolver o resultado anterior, nunca um novo 400.
+    const isBoletoSecundario = tipoSecundario === "BOLETO";
+    const isCartaoSecundario = tipoSecundario === "CARD_PARCELADO";
+
+    if ((isBoletoSecundario || isCartaoSecundario) && idEmpresaReal === 2) {
+      return NextResponse.json(
+        { success: false, error: `Geração de ${isBoletoSecundario ? "boleto" : "cartão de crédito"} real não disponível para a empresa Ideal Birô.` },
+        { status: 400 }
+      );
+    }
+    if ((isBoletoSecundario || isCartaoSecundario) && !documentoClienteReal) {
+      return NextResponse.json(
+        { success: false, error: "Documento (CPF/CNPJ) do cliente é obrigatório para gerar a cobrança secundária. Complete o cadastro e tente novamente." },
+        { status: 400 }
+      );
+    }
+    if (isBoletoSecundario && !emailClienteReal) {
+      return NextResponse.json(
+        { success: false, error: "Cliente sem e-mail cadastrado para geração do boleto. Complete o cadastro e tente novamente." },
+        { status: 400 }
+      );
     }
 
     // C. Saldo real disponível — MESMA fonte usada no banner/modal
@@ -325,7 +361,10 @@ export async function POST(request: NextRequest) {
       vencimento: vencimento || new Date().toISOString().split("T")[0],
       token_publico: crypto.randomBytes(16).toString("hex"),
       forma_pgto: forma_pgto,
-      forma_fatu: forma_fatu
+      forma_fatu: forma_fatu,
+      // Fluxo normal (CobrancasProvider) grava documento na cobrança real de
+      // boleto/cartão — espelhado aqui; PIX permanece como está.
+      ...(isBoletoSecundario || isCartaoSecundario ? { documento: clienteData.documento || null } : {})
     };
 
     const { data: insertedSecundaria, error: errPagSecundaria } = await supabaseUser
@@ -366,56 +405,209 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, isCombinadoParcial: true, error: msgFalha }, { status: 200 });
     }
 
-    // Geração do PIX Banco Inter
+    // Geração da integração do secundário (PIX Inter / Boleto C6 / link cartão)
     let pixData = null;
     let interError: string | null = null;
     const isPix = tipoSecundario === "PIX" || tipoSecundario === "E-PIX";
 
+    // Boleto/cartão: fluxo normal (CobrancasProvider) gera token_publico a
+    // partir do primeiro bloco do UUID da cobrança e o link público
+    // correspondente. Espelhado aqui para a cobrança secundária ter checkout
+    // utilizável; PIX permanece com o comportamento atual (usa pix_copia_cola).
+    if (isBoletoSecundario || isCartaoSecundario) {
+      const tokenPublicoSec = String(insertedSecundaria.id).split("-")[0];
+      const { error: tokenErr } = await supabaseUser
+        .from("pagamentos_v2")
+        .update({
+          token_publico: tokenPublicoSec,
+          url_cobranca: `https://pay.ai-ideal.com.br/i/${tokenPublicoSec}`
+        })
+        .eq("id", insertedSecundaria.id);
+      if (tokenErr) {
+        console.error(`[pagamento-combinado] Falha ao gravar token/link públicos da cobrança secundária ${insertedSecundaria.id}:`, tokenErr.message);
+        if (isCartaoSecundario) {
+          // Para cartão o link público É a entrega — sem ele a cobrança fica
+          // pendente de regularização (fluxo parcial abaixo).
+          interError = "Falha ao gerar o link público de pagamento do cartão.";
+        }
+      }
+    }
+
+    // Endereço de entrega (PIX e Boleto): prioriza o endereço VINCULADO À
+    // PROPOSTA (propostas.id_endereco_ent → public.enderecos — mesma resolução
+    // de getPropostaDetailById); só cai para um endereço do cliente se a
+    // proposta não tiver endereço vinculado. Erros dos SELECTs são checados
+    // e logados — nunca mais engolir erro e enviar payload vazio ao banco.
+    type EnderecoPix = {
+      cep: string | null; endereco: string | null; numero: string | null;
+      complemento: string | null; bairro: string | null; cidade: string | null;
+      uf: string | null; tipo_endereco?: string | null;
+    };
+    let enderecoRow: EnderecoPix | null = null;
+
+    if (isPix || isBoletoSecundario) {
+      if (proposta.id_endereco_ent) {
+        const { data: endProposta, error: endPropostaErr } = await supabaseUser
+          .from("enderecos")
+          .select("cep, endereco, numero, complemento, bairro, cidade, uf")
+          .eq("id", proposta.id_endereco_ent)
+          .maybeSingle();
+        if (endPropostaErr) {
+          console.error(`[pagamento-combinado] Erro ao buscar endereço da proposta (enderecos.id=${proposta.id_endereco_ent}):`, endPropostaErr.message);
+        }
+        enderecoRow = (endProposta as EnderecoPix | null) ?? null;
+      }
+
+      if (!enderecoRow) {
+        const { data: endsCliente, error: endsClienteErr } = await supabaseUser
+          .from("enderecos")
+          .select("cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco")
+          .eq("id_cliente", idCliente)
+          .limit(20);
+        if (endsClienteErr) {
+          console.error(`[pagamento-combinado] Erro ao buscar endereços do cliente ${idCliente}:`, endsClienteErr.message);
+        }
+        const lista = (endsCliente || []) as EnderecoPix[];
+        enderecoRow =
+          lista.find((e) => (e.tipo_endereco || "").toUpperCase().includes("ENTREGA")) ??
+          lista.find((e) => (e.tipo_endereco || "").toUpperCase().includes("PRINCIPAL")) ??
+          lista[0] ?? null;
+      }
+    }
+
+    // Nunca chamar a integração com documento/endereço obrigatório vazio — o
+    // webhook falharia com resposta vazia e sem diagnóstico (caso #19514).
+    const camposFaltando: string[] = [];
+    if (isPix || isBoletoSecundario) {
+      if (!documentoClienteReal) camposFaltando.push("CPF/CNPJ do cliente");
+      if (!enderecoRow?.endereco?.trim()) camposFaltando.push("endereço");
+      if (!enderecoRow?.cidade?.trim()) camposFaltando.push("cidade");
+      if (!enderecoRow?.uf?.trim()) camposFaltando.push("UF");
+      if (!enderecoRow?.cep?.trim()) camposFaltando.push("CEP");
+    }
+
     if (isPix) {
-      // Buscar dados de faturamento do cliente
-      const { data: clienteFatu } = await supabaseUser
-        .from("clientes")
-        .select("cnpj_cpf, telefone, celular, endereco, numero, complemento, bairro, cidade, uf, cep")
-        .eq("id_cliente", idCliente)
-        .maybeSingle();
-
-      const { data: propostaFatu } = await supabaseUser
-        .from("propostas")
-        .select("contato")
-        .eq("id_int", idInt)
-        .maybeSingle();
-
-      const telefoneCli = propostaFatu?.contato?.whatsapp || clienteFatu?.celular || clienteFatu?.telefone || "";
-
-      const resPix = await gerarPixBancoInter(supabaseUser, {
-        cobrancaId: insertedSecundaria.id,
-        idEmpresa: idEmpresaReal,
-        seuNumero: idEmpresaReal === 2 ? (insertedSecundaria.id_pagamento || String(idInt)) : String(idInt),
-        valorNominal: valorSecundario,
-        dataVencimento: vencimento || new Date().toISOString().split("T")[0],
-        telefone: telefoneCli,
-        cpfCnpj: clienteFatu?.cnpj_cpf || "",
-        nome: nomeClienteReal,
-        endereco: `${clienteFatu?.endereco || ""}, ${clienteFatu?.numero || ""} ${clienteFatu?.complemento || ""}`.trim(),
-        cidade: clienteFatu?.cidade || "",
-        uf: clienteFatu?.uf || "",
-        cep: clienteFatu?.cep || ""
-      });
-
-      if (resPix.success) {
-        pixData = resPix.data;
+      if (camposFaltando.length > 0) {
+        // A cobrança já criada permanece pendente (fluxo parcial abaixo) —
+        // sem novo pagamento e sem novo consumo de crédito.
+        interError = `Dados obrigatórios ausentes para emissão do PIX: ${camposFaltando.join(", ")}. Complete o cadastro/endereço do cliente e tente novamente.`;
       } else {
-        interError = resPix.error || "Erro desconhecido na emissão do PIX Inter";
+        const resPix = await gerarPixBancoInter(supabaseUser, {
+          cobrancaId: insertedSecundaria.id,
+          idEmpresa: idEmpresaReal,
+          seuNumero: idEmpresaReal === 2 ? (insertedSecundaria.id_pagamento || String(idInt)) : String(idInt),
+          valorNominal: valorSecundario,
+          dataVencimento: vencimento || new Date().toISOString().split("T")[0],
+          telefone: telefoneClienteReal,
+          cpfCnpj: documentoClienteReal,
+          nome: nomeClienteReal,
+          endereco: `${enderecoRow?.endereco || ""}, ${enderecoRow?.numero || ""} ${enderecoRow?.complemento || ""}`.trim(),
+          cidade: enderecoRow?.cidade || "",
+          uf: enderecoRow?.uf || "",
+          cep: enderecoRow?.cep || ""
+        });
+
+        if (resPix.success) {
+          pixData = resPix.data;
+        } else {
+          interError = resPix.error || "Erro desconhecido na emissão do PIX Inter";
+        }
+      }
+    } else if (isBoletoSecundario) {
+      if (camposFaltando.length > 0) {
+        // A cobrança já criada permanece pendente (fluxo parcial abaixo) —
+        // sem novo pagamento e sem novo consumo de crédito.
+        interError = `Dados obrigatórios ausentes para emissão do Boleto: ${camposFaltando.join(", ")}. Complete o cadastro/endereço do cliente e tente novamente.`;
+      } else {
+        // Emissão do boleto à vista na PRIMEIRA tentativa — mesmo webhook e
+        // mesmo contrato de payload do fluxo normal (CobrancasProvider →
+        // /api/cobrancas/gerar-boleto), com dados reais verificados no servidor.
+        const boletoWebhookPayload = {
+          external_reference_id: String(idInt),
+          valor_total: Math.round(Number(valorSecundario) * 100) / 100,
+          name: nomeClienteReal,
+          id_pagamento: insertedSecundaria.id_pagamento || String(idInt),
+          documento: clienteData.documento,
+          email: emailClienteReal,
+          logradouro: enderecoRow?.endereco || "",
+          numero: enderecoRow?.numero || "S/N",
+          complemento: enderecoRow?.complemento || "",
+          cidade: enderecoRow?.cidade || "",
+          UF: enderecoRow?.uf || "",
+          zip_code: enderecoRow?.cep || "",
+          qtd_parcelas: 1,
+          intervalo: 0,
+          inicia_em: 0,
+          multa: 0,
+          juros: 0,
+          descricao: "O Pedido entrará em produção após a confirmação do pagamento.",
+          id_cliente: idCliente,
+          nf: "",
+          status: "A_RECEBER",
+          "e-faturado": false,
+          contato: telefoneClienteReal,
+          whats: telefoneClienteReal,
+          enviar_whats: false,
+          avulso: false,
+          empresa: String(idEmpresaReal),
+          is_prorrogado: false
+        };
+
+        try {
+          const boletoResponse = await fetch("https://10074.hostoo.net.br/webhook/boleto-avista-vibe", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(boletoWebhookPayload)
+          });
+
+          // Leitura texto-primeiro (mesmo padrão do gerarPixBancoInter): corpo
+          // vazio/não-JSON não derruba o fluxo — o contrato do boleto C6 admite
+          // resposta sem corpo (PDF/linha chegam de forma assíncrona via n8n).
+          const rawBoleto = await boletoResponse.text();
+          const boletoPreview = rawBoleto.slice(0, 300);
+
+          if (!boletoResponse.ok) {
+            console.error(`[pagamento-combinado] Webhook Boleto retornou erro HTTP. status=${boletoResponse.status} bodyPreview=${JSON.stringify(boletoPreview)}`);
+            interError = `Erro no processamento do Boleto C6 (HTTP ${boletoResponse.status}): ${boletoPreview || "sem corpo"}`;
+          } else {
+            let parsedBoleto: Record<string, unknown> | Array<Record<string, unknown>> = {};
+            try {
+              parsedBoleto = rawBoleto.trim() ? JSON.parse(rawBoleto) : {};
+            } catch {
+              // Mesmo contrato do /api/cobrancas/gerar-boleto: resposta não-JSON é ignorada.
+            }
+            const boletoResult = Array.isArray(parsedBoleto) ? parsedBoleto[0] : parsedBoleto;
+
+            const updateBoleto: Record<string, unknown> = { boleto_enviadoo: true };
+            if (boletoResult && typeof boletoResult.digitable_line === "string") {
+              updateBoleto.linha_digitavel = boletoResult.digitable_line;
+            }
+            const { error: upBoletoErr } = await supabaseUser
+              .from("pagamentos_v2")
+              .update(updateBoleto)
+              .eq("id", insertedSecundaria.id);
+            if (upBoletoErr) {
+              // Boleto emitido no banco; só o espelho local falhou — loga sem
+              // marcar falha (não é recuperável reemitindo, que duplicaria).
+              console.error(`[pagamento-combinado] Boleto emitido, mas falha ao atualizar cobrança ${insertedSecundaria.id}:`, upBoletoErr.message);
+            }
+          }
+        } catch (boletoErr: unknown) {
+          const msg = boletoErr instanceof Error ? boletoErr.message : String(boletoErr);
+          console.error(`[pagamento-combinado] Exceção ao chamar webhook do Boleto:`, msg);
+          interError = `Erro de conexão na emissão do Boleto: ${msg}`;
+        }
       }
     }
 
     if (interError) {
       // Crédito e cobrança secundária já foram efetivados/criados acima e NÃO
-      // são desfeitos aqui — só a geração do PIX (integração externa) falhou.
-      // A cobrança (insertedSecundaria.id) fica pendente, sem pix_copia_cola,
-      // pronta para nova tentativa via /api/cobrancas/gerar-pix (idempotente:
-      // não rechama o webhook se o PIX já tiver sido gerado).
-      const msgFalha = `Crédito de R$ ${valorCredito} utilizado, mas a geração do PIX Inter de R$ ${valorSecundario} falhou: ${interError}. A cobrança secundária (#${insertedSecundaria.id}) foi criada como pendente de geração — pode ser retentada sem novo consumo de crédito.`;
+      // são desfeitos aqui — só a geração da integração externa falhou.
+      // A cobrança (insertedSecundaria.id) fica pendente; para PIX, nova
+      // tentativa via /api/cobrancas/gerar-pix (idempotente: não rechama o
+      // webhook se o PIX já tiver sido gerado).
+      const labelIntegracao = isPix ? "PIX Inter" : isBoletoSecundario ? "Boleto" : "link de pagamento";
+      const msgFalha = `Crédito de R$ ${valorCredito} utilizado, mas a geração do ${labelIntegracao} de R$ ${valorSecundario} falhou: ${interError}. A cobrança secundária (#${insertedSecundaria.id}) foi criada como pendente de geração — pode ser retentada sem novo consumo de crédito.`;
 
       await supabaseUser.from("propostas_chat").insert([{
         id_int: idInt,
@@ -430,7 +622,7 @@ export async function POST(request: NextRequest) {
       await supabaseUser.from("propostas_pendencias").insert([{
         id_int: idInt,
         id_cliente: idCliente,
-        titulo: "Erro ao gerar PIX combinado",
+        titulo: `Erro ao gerar ${labelIntegracao} do pagamento combinado`,
         descricao: msgFalha,
         categoria: "PAGAMENTO",
         status: "ABERTA",

@@ -546,6 +546,16 @@ BEGIN
   v_dir  := CASE WHEN v_diff < 0 THEN 'FAVOR_CLIENTE' WHEN v_diff > 0 THEN 'FAVOR_EMPRESA' ELSE NULL END;
   v_new  := abs(v_diff);
 
+  -- REGRA (2026-07-22): diferença DEVEDORA (novo total > pago) é saldo da
+  -- própria proposta — resolvida por cobrança complementar, abono do
+  -- administrador ou E-Crédito — e NUNCA entra na Conta Corrente. Trata como
+  -- diferença zero para fins de pendência: encerra pendência aberta (se nada
+  -- comprometido) e não cria pendência FAVOR_EMPRESA a partir deste fluxo.
+  IF v_diff > 0 THEN
+    v_dir := NULL;
+    v_new := 0;
+  END IF;
+
   SELECT * INTO v_open FROM public.conta_corrente_pendencias
    WHERE id_int = p_id_int AND status IN ('ABERTA','PARCIALMENTE_RESOLVIDA')
    FOR UPDATE;

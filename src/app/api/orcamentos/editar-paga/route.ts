@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
   // ── 4. Validação Server-Side da Proposta no Banco ────────────────────────
   const { data: propostaBanco, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, valor_total")
+    .select("id_int, id_cliente, valor_total, is_avulso")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -281,6 +281,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── 5b. Proposta avulsa ou sem produtos + paga: edição PROIBIDA ──────────
+  // A edição autorizada de proposta paga existe para tratar alterações
+  // posteriores de PRODUTOS, frete ou serviços. Proposta avulsa (ou sem
+  // nenhum produto ativo) não tem o que "alterar" — mudar o valor de uma
+  // avulsa já paga quebraria a âncora financeira (caso #19486). Bloqueio
+  // vale para TODOS, inclusive admin e superadmin (verificado antes da
+  // checagem de permissão, que não pode contornar esta regra).
+  if (ehPropostaPaga) {
+    let semProdutosAtivos = false;
+    if (propostaBanco.is_avulso) {
+      semProdutosAtivos = true;
+    } else {
+      // status_item NULL = legado ativo (equivale a PENDENTE) — .neq puro
+      // excluiria NULL e classificaria proposta legada como "sem produtos".
+      const { count: qtdProdutosAtivos, error: produtosErr } = await supabase
+        .from("produtos_proposta")
+        .select("id", { count: "exact", head: true })
+        .eq("id_int", idInt)
+        .or("status_item.is.null,status_item.neq.CANCELADO");
+      if (produtosErr) {
+        return NextResponse.json(
+          { success: false, error: "Erro ao verificar os produtos da proposta." },
+          { status: 500 }
+        );
+      }
+      semProdutosAtivos = (qtdProdutosAtivos ?? 0) === 0;
+    }
+
+    if (semProdutosAtivos) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: propostaBanco.is_avulso
+            ? "Proposta avulsa já paga não pode ser alterada."
+            : "Proposta paga sem produtos cadastrados não pode ser alterada.",
+        },
+        { status: 403 }
+      );
+    }
+  }
+
   // ── 6. Verificar permissão de edição se for proposta paga ────────────────
   if (ehPropostaPaga) {
     const { autorizado, motivo } = await verificarPermissaoEditarPaga(supabase, user.id);
@@ -327,7 +368,29 @@ export async function POST(request: NextRequest) {
   // cobrança em pagamentos_v2, e chamar cc_abrir_pendencia criaria um débito
   // FAVOR_EMPRESA indevido (ex.: proposta #19511: R$ 63 total, R$ 15 pago,
   // R$ 48 PIX pendente → a RPC calcularia 63−15 = 48 de débito).
-  if (estavaIntegralmentePaga) {
+  //
+  // REGRA (2026-07-22): diferença DEVEDORA (novo total > pago) NUNCA entra na
+  // Conta Corrente — é saldo ainda devido da própria proposta, resolvido por
+  // cobrança complementar na aba Pagamentos, abono do administrador ou
+  // E-Crédito. A proposta salva normalmente, sem modal de opções, e o status
+  // vai para AGUARDANDO pela reconciliação abaixo (cobertura parcial). A RPC
+  // só é chamada no caso devedor quando existe pendência ABERTA a reconciliar
+  // (ex.: crédito antigo que a nova edição zerou) — nunca para criar débito.
+  const diffPrevisto = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
+  const ehDiferencaDevedora = diffPrevisto > TOLERANCIA_CC;
+  let temPendenciaAbertaParaReconciliar = false;
+
+  if (estavaIntegralmentePaga && ehDiferencaDevedora) {
+    const { data: pendAbertas } = await supabase
+      .from("conta_corrente_pendencias")
+      .select("id")
+      .eq("id_int", idInt)
+      .in("status", ["ABERTA", "PARCIALMENTE_RESOLVIDA"])
+      .limit(1);
+    temPendenciaAbertaParaReconciliar = Boolean(pendAbertas && pendAbertas.length > 0);
+  }
+
+  if (estavaIntegralmentePaga && (!ehDiferencaDevedora || temPendenciaAbertaParaReconciliar)) {
     const eventoUuid = chaveEvento && /^[0-9a-f-]{36}$/i.test(chaveEvento) ? chaveEvento : crypto.randomUUID();
 
     const { data: idPendenciaRpc, error: rpcError } = await supabase.rpc("cc_abrir_pendencia", {
@@ -354,7 +417,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (idPendenciaRpc != null) {
+    // No caso devedor a RPC foi chamada apenas para reconciliar/encerrar uma
+    // pendência antiga — nunca devolvemos diferença/pendência ao front nesse
+    // caso (nenhum modal, salvamento normal; o saldo devedor vive na proposta).
+    if (idPendenciaRpc != null && !ehDiferencaDevedora) {
       const { data: pendRow } = await supabase
         .from("conta_corrente_pendencias")
         .select("id, direcao, valor_saldo, valor_reservado, motivo")

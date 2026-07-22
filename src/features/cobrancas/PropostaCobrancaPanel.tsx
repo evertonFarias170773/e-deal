@@ -173,6 +173,58 @@ export function PropostaCobrancaPanel({
   const liberacaoStatus = getLiberacaoPedidoStatus(cobrancasDaProposta);
   const propostaLiberada = isPropostaLiberadaParaPedido(cobrancasDaProposta);
 
+  // Abonar diferença (exclusivo de administrador): disponível enquanto a
+  // proposta paga tiver saldo devedor não coberto por cobrança ativa. O valor
+  // é recalculado no servidor — o botão só decide visibilidade.
+  const isAdminUser = Boolean(user?.isSuperAdmin || user?.isAdmin);
+  const valorPagoConfirmadoPanel = roundMoney(
+    cobrancasAtivas
+      .filter((c) => c.status === "PAID" || (c.status === "A_VENCER" && c.confirmado))
+      .reduce((sum, c) => sum + (Number(c.valor) || 0), 0)
+  );
+  const podeAbonarDiferenca = isAdminUser && saldoRestante > 0 && valorPagoConfirmadoPanel > 0;
+  const [isAbonando, setIsAbonando] = useState(false);
+
+  async function handleAbonarDiferenca() {
+    if (isAbonando) return;
+    const confirmado = window.confirm(
+      `Abonar a diferença de ${formatCurrency(saldoRestante)} da proposta #${proposta.id_int}?\n\n` +
+      `Será registrado um desconto nesse valor exato, o total da proposta será recalculado e a ação ficará registrada no Histórico.`
+    );
+    if (!confirmado) return;
+
+    setIsAbonando(true);
+    try {
+      const client = getSupabaseClient();
+      const session = (await client?.auth.getSession())?.data.session;
+      const token = session?.access_token;
+      if (!token) throw new Error("Sessão expirada. Autentique-se novamente.");
+
+      const res = await fetch("/api/orcamentos/abonar-diferenca", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ idInt: proposta.id_int }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || `Falha ao abonar diferença (HTTP ${res.status}).`);
+      }
+
+      showToast({
+        type: "success",
+        title: "Diferença abonada",
+        description: `${formatCurrency(json.valorAbonado)} abonados como desconto. Novo total: ${formatCurrency(json.novoTotal)}.`,
+      });
+      if (onRefreshProposta) onRefreshProposta();
+      await fetchSaldo();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast({ type: "error", title: "Falha ao abonar diferença", description: msg });
+    } finally {
+      setIsAbonando(false);
+    }
+  }
+
   /** Retorna data futura no formato YYYY-MM-DD (padrão: 30 dias à frente). */
   function getDefaultVencimento(daysAhead = 3): string {
     const d = new Date();
@@ -1489,6 +1541,20 @@ export function PropostaCobrancaPanel({
                     Proposta #{proposta.id_int} • Saldo restante a cobrar: <strong className="text-slate-900">{formatCurrency(saldoRestante)}</strong>
                   </p>
                   <div className="flex flex-col gap-2 sm:flex-row">
+                    {podeAbonarDiferenca && (
+                      <button
+                        type="button"
+                        onClick={handleAbonarDiferenca}
+                        disabled={isAbonando || isSaving}
+                        title="Registra um desconto no valor exato do saldo pendente e recalcula a quitação (ação de administrador, registrada no Histórico)."
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isAbonando ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-300 border-t-amber-700" />
+                        ) : null}
+                        {isAbonando ? "Abonando..." : `Abonar diferença (${formatCurrency(saldoRestante)})`}
+                      </button>
+                    )}
                     {saldoRestante > 0 && (
                       <button
                         type="button"
