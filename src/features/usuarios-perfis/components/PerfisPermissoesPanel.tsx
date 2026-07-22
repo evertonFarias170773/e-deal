@@ -148,7 +148,8 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "pedidos.approve_arte",  label: "Aprovar Arte junto ao Cliente", desc: "Permite registrar a aprovação de arte pelo cliente.",                            critica: true  },
     { key: "pedidos.release_nf",    label: "Liberar para Nota Fiscal",    desc: "Permite marcar o pedido como liberado para faturamento.",                           critica: true  },
     { key: "pedidos.admin",         label: "Ações Administrativas de OS", desc: "Permite reatribuir, encerrar ou reverter etapas de OS (ação crítica).",             critica: true  },
-    { key: "pedidos.print_os",      label: "Imprimir OS (PDF de produção)", desc: "Permite gerar o PDF do boletim de OS (versão de produção, sem valores).",         critica: false }
+    { key: "pedidos.print_os",      label: "Imprimir OS (PDF de produção)", desc: "Permite gerar o PDF do boletim de OS (versão de produção, sem valores).",         critica: false },
+    { key: "pedidos.qr_rotacionar", label: "Revogar/Gerar novo QR da OS",   desc: "Permite invalidar o QR Code público de produção e emitir nova versão (ação crítica).", critica: true  }
   ],
 
   // ── Produção (Kanban) ─────────────────────────────────────────────────────

@@ -2,10 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AppToastProvider } from "@/components/common/AppToast";
-import { AuthProvider } from "@/features/auth/AuthProvider";
-import { CobrancasProvider } from "@/features/cobrancas/CobrancasProvider";
-import { CompanyProvider } from "@/features/companies/CompanyProvider";
+import { AppProviders } from "@/components/app-shell/AppProviders";
 
 // next/font/google — sem warning de lint, otimizado e auto-hospedado pelo Next.js
 const inter = Inter({
@@ -43,13 +40,7 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <AuthProvider>
-          <CompanyProvider>
-            <CobrancasProvider>
-              <AppToastProvider>{children}</AppToastProvider>
-            </CobrancasProvider>
-          </CompanyProvider>
-        </AuthProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

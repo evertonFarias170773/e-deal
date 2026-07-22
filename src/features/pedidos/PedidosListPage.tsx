@@ -17,6 +17,7 @@ import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { listarPedidosOperacionais, atualizarFaseProducaoLista } from "./services/pedidos-producao.service";
 import { abrirPdfOs } from "./services/imprimir-os.client";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { 
   devolverPropostaParaRevisaoAtendente,
   registrarMensagemSistemaProposta
@@ -45,6 +46,38 @@ export function PedidosListPage() {
   // Autorização (V2.1 + Legado V1)
   const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.view");
   const canPrintOS = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.print_os");
+
+  // Rotação do QR público da OS (permissão específica; invalida o QR impresso anterior)
+  const canRotateQr = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.qr_rotacionar");
+  const [rotacionandoQrId, setRotacionandoQrId] = useState<number | null>(null);
+  async function handleRotacionarQr(proposta: PropostaOperacionalListItem) {
+    if (rotacionandoQrId !== null) return;
+    setRotacionandoQrId(proposta.id_int);
+    try {
+      const client = getSupabaseClient();
+      const session = client ? (await client.auth.getSession()).data.session : null;
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        showToast({ type: "error", title: "Sessão expirada", description: "Faça login novamente." });
+        return;
+      }
+      const res = await fetch("/api/pedidos/os-qr/rotacionar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ id_int: proposta.id_int })
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        showToast({ type: "success", title: "Novo QR gerado", description: data.message });
+      } else {
+        showToast({ type: "error", title: "Erro ao gerar novo QR", description: data?.message || `Falha (HTTP ${res.status}).` });
+      }
+    } catch (err: any) {
+      showToast({ type: "error", title: "Erro ao gerar novo QR", description: err?.message || "Erro desconhecido." });
+    } finally {
+      setRotacionandoQrId(null);
+    }
+  }
 
   // Impressão da OS em PDF (uma por vez; erros via toast)
   const [printingOsId, setPrintingOsId] = useState<number | null>(null);
@@ -436,6 +469,11 @@ export function PedidosListPage() {
                 ...(canPrintOS && proposta.hasOS && proposta.is_prd_aprovado === true ? [{
                   label: printingOsId === proposta.id_int ? "Gerando PDF..." : "Imprimir OS (PDF)",
                   onClick: () => { void handleImprimirOS(proposta); }
+                }] : []),
+                ...(canRotateQr && proposta.hasOS && proposta.is_prd_aprovado === true ? [{
+                  label: rotacionandoQrId === proposta.id_int ? "Gerando novo QR..." : "Gerar novo QR (invalida o anterior)",
+                  destructive: true,
+                  onClick: () => { void handleRotacionarQr(proposta); }
                 }] : []),
                 {
                   label: "Ver chat interno",

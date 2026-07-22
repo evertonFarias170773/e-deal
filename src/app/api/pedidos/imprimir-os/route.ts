@@ -14,6 +14,7 @@ import type { OsPdfArteRef } from "@/features/pedidos/services/os-viewmodel.serv
 import { OsPdfDocument } from "@/features/pedidos/pdf/OsPdfDocument";
 import { EMPRESA_LOGO_FILES } from "@/features/pedidos/pdf/os-pdf-assets";
 import { carregarImagemComoDataUrl } from "@/features/pedidos/pdf/os-pdf-images";
+import { osQrFlagAtiva, obterOuEmitirTokenOsQr } from "@/features/pedidos/services/os-qr-token.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -165,12 +166,23 @@ export async function GET(request: Request) {
     console.warn("[imprimir-os] Falha ao carregar logo da empresa (não-fatal):", e);
   }
 
-  // QR Code — aponta para a tela real da OS (autenticada); sem base canônica válida → sem QR.
+  // QR Code — sob OS_QR_PUBLICO_ENABLED aponta para a página pública de produção
+  // (/os#<token>, token no fragment — nunca chega a logs de servidor); caso contrário
+  // mantém o destino autenticado do boletim. Sem base canônica válida → sem QR.
   let qrDataUrl: string | null = null;
   const baseUrl = resolverBaseUrlCanonica(request);
   if (baseUrl) {
+    let qrUrl = `${baseUrl}/pedidos/boletim?id_int=${idInt}&modo=edicao`;
+    if (osQrFlagAtiva()) {
+      const tokenResult = await obterOuEmitirTokenOsQr(token, authData.user.id, idInt);
+      if (tokenResult.success) {
+        qrUrl = `${baseUrl}/os#${tokenResult.token}`;
+      } else {
+        console.error("[imprimir-os] Token do QR público indisponível (fallback p/ boletim):", tokenResult.error);
+      }
+    }
     try {
-      qrDataUrl = await QRCode.toDataURL(`${baseUrl}/pedidos/boletim?id_int=${idInt}&modo=edicao`, {
+      qrDataUrl = await QRCode.toDataURL(qrUrl, {
         margin: 1,
         width: 256,
       });
