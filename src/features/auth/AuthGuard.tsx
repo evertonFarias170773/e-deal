@@ -12,7 +12,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.replace("/login");
+      // Preserva o destino (deep-link, ex.: OS aberta por QR Code) para o pós-login.
+      const destino =
+        typeof window !== "undefined" ? window.location.pathname + window.location.search : "";
+      const nextParam =
+        destino && destino !== "/" ? `?next=${encodeURIComponent(destino)}` : "";
+      router.replace(`/login${nextParam}`);
     }
   }, [isAuthenticated, isLoading, router]);
 

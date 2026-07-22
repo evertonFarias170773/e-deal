@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { sendPropostaChatMessage } from "@/features/orcamentos/services/orcamentos.service";
 
@@ -928,8 +929,8 @@ export async function obterGabaritosOperacionais(): Promise<string[]> {
   return data ? data.map(d => d.name) : [];
 }
 
-export async function obterFreteEscolhido(idInt: number): Promise<any | null> {
-  const client = getSupabaseClient();
+export async function obterFreteEscolhido(idInt: number, supabaseClient?: SupabaseClient | null): Promise<any | null> {
+  const client = supabaseClient ?? getSupabaseClient();
   if (!client) return null;
   const { data } = await client
     .from("cotacao_frete")

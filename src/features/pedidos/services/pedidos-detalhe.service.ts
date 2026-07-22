@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { PedidoProducaoListItem, PedidoStatus, ProdutoMock, ModeloMock } from "../types";
 
@@ -5,9 +6,10 @@ import type { PedidoProducaoListItem, PedidoStatus, ProdutoMock, ModeloMock } fr
  * Busca um pedido operacional na tabela public.pedidos por UUID (id) ou id_int.
  * Enriquece opcionalmente com dados da proposta vinculada (cliente, vendedor, empresa).
  * Tolera falhas e bloqueios de RLS de propostas sem omitir o pedido.
+ * Aceita um SupabaseClient injetado (uso server-side, ex.: PDF da OS); default = client browser.
  */
-export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number): Promise<PedidoProducaoListItem | null> {
-  const client = getSupabaseClient();
+export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number, supabaseClient?: SupabaseClient | null): Promise<PedidoProducaoListItem | null> {
+  const client = supabaseClient ?? getSupabaseClient();
   if (!client) {
     console.warn("[pedidos-detalhe.service] Supabase client não inicializado.");
     return null;

@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { sanitizeInternalNext } from "@/features/auth/redirect-utils";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type");
-  let next = searchParams.get("next") ?? "/dashboard";
 
-  // Lista de caminhos internos explicitamente permitidos para evitar Open Redirect
-  const ALLOWED_NEXT_ROUTES = ["/dashboard", "/atualizar-senha", "/boas-vindas"];
-
-  if (!ALLOWED_NEXT_ROUTES.includes(next)) {
-    next = "/dashboard";
-  }
+  // Sanitização compartilhada (allowlist de prefixos internos) para evitar Open Redirect.
+  // Mantém os destinos originais e passa a aceitar deep-links de /pedidos e /orcamentos
+  // (ex.: OS aberta por QR Code no PDF).
+  const next = sanitizeInternalNext(searchParams.get("next"));
 
   const isRecoveryFlow = next === "/atualizar-senha" || type === "recovery";
 

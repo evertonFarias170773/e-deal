@@ -6,6 +6,14 @@ import Link from "next/link";
 import { LockKeyhole, Mail } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { sanitizeInternalNext } from "@/features/auth/redirect-utils";
+
+/** Destino pós-login sanitizado (?next=), lido no momento do clique (client-only). */
+function obterDestinoPosLogin(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  const params = new URLSearchParams(window.location.search);
+  return sanitizeInternalNext(params.get("next"));
+}
 
 export function LoginForm() {
   const router = useRouter();
@@ -23,7 +31,7 @@ export function LoginForm() {
 
     try {
       await login(email, password);
-      router.replace("/dashboard");
+      router.replace(obterDestinoPosLogin());
     } catch (currentError) {
       setError(
         currentError instanceof Error
@@ -47,10 +55,11 @@ export function LoginForm() {
 
       const origin = typeof window !== "undefined" ? window.location.origin : "";
       
+      const next = obterDestinoPosLogin();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${origin}/auth/callback`,
+          redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
         },
       });
 

@@ -16,6 +16,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { listarPedidosOperacionais, atualizarFaseProducaoLista } from "./services/pedidos-producao.service";
+import { abrirPdfOs } from "./services/imprimir-os.client";
 import { 
   devolverPropostaParaRevisaoAtendente,
   registrarMensagemSistemaProposta
@@ -43,6 +44,23 @@ export function PedidosListPage() {
 
   // Autorização (V2.1 + Legado V1)
   const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.view");
+  const canPrintOS = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.print_os");
+
+  // Impressão da OS em PDF (uma por vez; erros via toast)
+  const [printingOsId, setPrintingOsId] = useState<number | null>(null);
+  async function handleImprimirOS(proposta: PropostaOperacionalListItem) {
+    if (printingOsId !== null) return;
+    setPrintingOsId(proposta.id_int);
+    const result = await abrirPdfOs(proposta.id_int);
+    setPrintingOsId(null);
+    if (!result.success) {
+      showToast({
+        type: "error",
+        title: "Erro ao gerar PDF da OS",
+        description: result.errorMessage || "Erro desconhecido."
+      });
+    }
+  }
 
   async function load() {
     setIsLoaded(false);
@@ -413,6 +431,12 @@ export function PedidosListPage() {
                   label: proposta.hasOS ? "Editar OS / Boletim" : "Criar OS / Boletim",
                   onClick: () => router.push(`/pedidos/boletim?id_int=${proposta.id_int}&modo=${proposta.hasOS ? "edicao" : "abertura"}`)
                 },
+                // Condição explícita: OS existente E proposta liberada para produção
+                // (não depende só do filtro do service; o servidor revalida com 409).
+                ...(canPrintOS && proposta.hasOS && proposta.is_prd_aprovado === true ? [{
+                  label: printingOsId === proposta.id_int ? "Gerando PDF..." : "Imprimir OS (PDF)",
+                  onClick: () => { void handleImprimirOS(proposta); }
+                }] : []),
                 {
                   label: "Ver chat interno",
                   onClick: () => openChat(proposta.id_int, { clienteNome: proposta.clienteNome, idCliente: proposta.idCliente })

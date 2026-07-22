@@ -174,6 +174,7 @@ export interface PropostaOperacionalListItem {
   valorTotal: number;
   status_interno: string; // Da tabela propostas
   libera_nf?: boolean | null; // Flag de liberação fiscal
+  is_prd_aprovado?: boolean; // Liberada para produção (gatilho oficial da fila/OS)
   urgente: boolean;
   obs?: string;
   volumes?: number;

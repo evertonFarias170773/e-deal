@@ -150,7 +150,8 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       arte_status_geral: emArte ? "PENDENTE" : "LIBERADA",
       hasArtePendente: emArte,
       obs: "",
-      libera_nf: p.libera_nf === true
+      libera_nf: p.libera_nf === true,
+      is_prd_aprovado: p.is_prd_aprovado === true
     });
   }
 

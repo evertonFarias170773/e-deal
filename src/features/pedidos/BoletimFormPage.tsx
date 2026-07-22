@@ -16,7 +16,8 @@ import {
   AlertCircle,
   Eye,
   ChevronDown,
-  ExternalLink
+  ExternalLink,
+  Printer
 } from "lucide-react";
 import { ModeloMock, ArteStatus, ProducaoStatus } from "./types";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
@@ -37,6 +38,7 @@ import {
   avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
+import { abrirPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -98,8 +100,35 @@ export function BoletimFormPage() {
   const { user } = useAuth();
   const canEditDate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.edit_data");
   const canEditObs = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.edit_obs");
+  const canPrintOS = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.print_os");
   const lockDate = isEditing && !canEditDate;
   const lockObs = isEditing && !canEditObs;
+
+  // Impressão da OS em PDF: exige proposta liberada para produção (is_prd_aprovado).
+  // Checagem explícita no componente — o servidor revalida (409) de qualquer forma.
+  const [isPrdAprovado, setIsPrdAprovado] = useState(false);
+  const [isPrintingOs, setIsPrintingOs] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing || !idIntParam) {
+      setIsPrdAprovado(false);
+      return;
+    }
+    const client = getSupabaseClient();
+    if (!client) return;
+    let cancelado = false;
+    void client
+      .from("propostas")
+      .select("is_prd_aprovado")
+      .eq("id_int", Number(idIntParam))
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelado) setIsPrdAprovado(data?.is_prd_aprovado === true);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [isEditing, idIntParam]);
 
   const [loadedPedidoId, setLoadedPedidoId] = useState<string | null>(null);
   const [existingObs, setExistingObs] = useState<string | null>(null);
@@ -1088,6 +1117,29 @@ export function BoletimFormPage() {
             >
               Voltar
             </Link>
+            {isEditing && canPrintOS && isPrdAprovado && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (isPrintingOs || !idIntParam) return;
+                  setIsPrintingOs(true);
+                  const result = await abrirPdfOs(Number(idIntParam));
+                  setIsPrintingOs(false);
+                  if (!result.success) {
+                    showToast({
+                      type: "error",
+                      title: "Erro ao gerar PDF da OS",
+                      description: result.errorMessage || "Erro desconhecido."
+                    });
+                  }
+                }}
+                disabled={isPrintingOs}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm flex items-center gap-1.5 disabled:opacity-60"
+              >
+                <Printer className="h-4 w-4" />
+                <span>{isPrintingOs ? "Gerando PDF..." : "Imprimir OS"}</span>
+              </button>
+            )}
             {selectedProposta && (
               <button
                 type="submit"

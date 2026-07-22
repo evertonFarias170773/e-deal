@@ -147,7 +147,8 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
     { key: "pedidos.edit_obs",      label: "Editar Observações da OS",    desc: "Permite editar campos de observação internos da Ordem de Serviço.",                  critica: false },
     { key: "pedidos.approve_arte",  label: "Aprovar Arte junto ao Cliente", desc: "Permite registrar a aprovação de arte pelo cliente.",                            critica: true  },
     { key: "pedidos.release_nf",    label: "Liberar para Nota Fiscal",    desc: "Permite marcar o pedido como liberado para faturamento.",                           critica: true  },
-    { key: "pedidos.admin",         label: "Ações Administrativas de OS", desc: "Permite reatribuir, encerrar ou reverter etapas de OS (ação crítica).",             critica: true  }
+    { key: "pedidos.admin",         label: "Ações Administrativas de OS", desc: "Permite reatribuir, encerrar ou reverter etapas de OS (ação crítica).",             critica: true  },
+    { key: "pedidos.print_os",      label: "Imprimir OS (PDF de produção)", desc: "Permite gerar o PDF do boletim de OS (versão de produção, sem valores).",         critica: false }
   ],
 
   // ── Produção (Kanban) ─────────────────────────────────────────────────────
