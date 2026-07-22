@@ -1010,7 +1010,10 @@ function normalizeClienteWritePayload(payload: CadastroInsertPayload | CadastroU
     motivo_erro: toNullableText(payload.motivo_erro),
     cpf_invalido: toBoolean(payload.cpf_invalido, false),
     cpf_erro: toNullableText(payload.cpf_erro),
-    credito: toNullableDecimal(payload.credito),
+    // credito só entra no write quando explicitamente informado — o formulário
+    // de cadastro não envia mais o campo (gestão exclusiva da Conta Corrente),
+    // e ausência NÃO pode virar null (sobrescreveria o saldo existente).
+    ...(payload.credito !== undefined ? { credito: toNullableDecimal(payload.credito) } : {}),
     is_bonus: toBoolean(payload.is_bonus, false),
     usa_preco_fixo: toBoolean(payload.usa_preco_fixo, false),
     percentual_bunus: toNullableDecimal(payload.percentual_bunus),

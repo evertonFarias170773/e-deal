@@ -628,6 +628,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const handleNavigateRef   = useRef<(href: string) => void>(() => {});
   const searchInputRef      = useRef<HTMLInputElement>(null);
 
+  // ── Vinculação de cliente cadastrado a proposta manual (orçamento rápido) ──
+  // Snapshot completo do estado pré-vinculação: selectCliente recalcula itens
+  // (bônus/preço fixo) e zera fretes — restaurar campo a campo seria frágil.
+  const [isVinculandoCliente, setIsVinculandoCliente] = useState(false);
+  const vinculacaoBackupRef = useRef<{
+    form: PropostaFormState;
+    cliente: Cadastro | null;
+    clientSearch: string;
+    proposalContacts: CadastroContato[];
+    proposalAddresses: CadastroEndereco[];
+    lastDestinationKey: string;
+    lastShipmentKey: string;
+    nomeClienteManual: string;
+  } | null>(null);
+  // Época da cotação automática: incrementada ao iniciar/cancelar a
+  // vinculação. Respostas TARDIAS de cotação (fetches já em voo quando o
+  // estado foi trocado/restaurado) são descartadas comparando a época
+  // capturada no início da cotação com a atual — sem isso, uma cotação do
+  // destino antigo sobrescreveria os fretes do estado restaurado.
+  const cotacaoEpochRef = useRef(0);
+
   useEffect(() => {
     if (mode === "new" && !cliente && searchInputRef.current) {
       searchInputRef.current.focus();
@@ -1171,6 +1192,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     const isDestChanged = currentDestKey !== lastDestinationKey;
 
     const timer = setTimeout(async () => {
+      // Época capturada no início desta cotação: se a vinculação de cliente
+      // for iniciada/cancelada enquanto os fetches estão em voo, a época muda
+      // e o resultado desta cotação é descartado (ver cotacaoEpochRef).
+      const epochAtStart = cotacaoEpochRef.current;
       setIsQuotingSedex(true);
       setIsQuotingAzul(true);
       setIsQuotingVeppo(true);
@@ -1248,6 +1273,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }
         })()
       ]);
+
+      // Resposta tardia: o estado do formulário foi trocado/restaurado pela
+      // vinculação de cliente depois que esta cotação começou — descarta tudo
+      // (não grava fretes nem avança as chaves de destino/embarque).
+      if (cotacaoEpochRef.current !== epochAtStart) {
+        return;
+      }
 
       const allResults = [...sedexResults, ...azulResults, ...transpResults, ...veppoResults];
       if (uf?.toUpperCase() === "RS") {
@@ -1531,6 +1563,99 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       searchInputRef.current.focus();
     }
   }, [updateField]);
+
+  // ── Vincular cliente cadastrado a proposta manual (modo edição) ───────────
+  function iniciarVinculacaoCliente() {
+    // Regra financeira completa: qualquer cobrança ativa OU pagamento
+    // confirmado bloqueia a troca de cliente — inclusive para admin/superadmin.
+    // (O save de proposta paga iria para /api/orcamentos/editar-paga, que
+    // rejeita id_cliente divergente do banco; e trocar o cliente sob cobrança
+    // emitida geraria inconsistência financeira.)
+    if (hasActiveCobranca || isPropostaPagaAtual) {
+      showToast({
+        type: "error",
+        title: "Vinculação bloqueada",
+        description: "Esta proposta possui cobrança ativa ou pagamento confirmado. Cancele as cobranças antes de vincular um cliente cadastrado."
+      });
+      return;
+    }
+
+    vinculacaoBackupRef.current = {
+      form,
+      cliente,
+      clientSearch,
+      proposalContacts,
+      proposalAddresses,
+      lastDestinationKey,
+      lastShipmentKey,
+      nomeClienteManual: form.nomeClienteLivre || proposta?.cliente?.nome || "Cliente não cadastrado",
+    };
+    cotacaoEpochRef.current += 1; // descarta cotações em voo do destino manual
+    setIsVinculandoCliente(true);
+    setForm((prev) => ({
+      ...prev,
+      clienteNaoCadastrado: false,
+      clienteId: "",
+      contatoId: "",
+      enderecoId: "",
+      compradorId: "",
+      nomeClienteLivre: "",
+      cepLivre: "",
+      cidadeLivre: "",
+      ufLivre: ""
+    }));
+    setCliente(null);
+    setClientSearch("");
+    setClientResults([]);
+    setShowClientResults(false);
+    setProposalContacts([]);
+    setProposalAddresses([]);
+    window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    showToast({
+      type: "info",
+      title: "Vinculação de cliente",
+      description: "Busque o cliente cadastrado. Preços e frete serão recalculados pelo cadastro selecionado."
+    });
+  }
+
+  function cancelarVinculacaoCliente() {
+    const backup = vinculacaoBackupRef.current;
+    if (!backup) {
+      setIsVinculandoCliente(false);
+      return;
+    }
+    cotacaoEpochRef.current += 1; // descarta cotações tardias disparadas durante a vinculação
+    setForm(backup.form);
+    setCliente(backup.cliente);
+    setClientSearch(backup.clientSearch);
+    setProposalContacts(backup.proposalContacts);
+    setProposalAddresses(backup.proposalAddresses);
+    setLastDestinationKey(backup.lastDestinationKey);
+    setLastShipmentKey(backup.lastShipmentKey);
+    setClientResults([]);
+    setShowClientResults(false);
+    vinculacaoBackupRef.current = null;
+    setIsVinculandoCliente(false);
+  }
+
+  // Conclui a vinculação após save bem-sucedido: registra a troca no
+  // Histórico e limpa o backup ANTES de qualquer onReload — a prop `proposta`
+  // recarregada já nasce com o cliente oficial e o backup não pode "vazar"
+  // para um cancelamento posterior.
+  function concluirVinculacaoAposSave(finalIdInt: number | string, formSalvo: PropostaFormState) {
+    const backup = vinculacaoBackupRef.current;
+    if (!backup) return;
+    vinculacaoBackupRef.current = null;
+    setIsVinculandoCliente(false);
+    void registrarMensagemSistemaProposta({
+      idInt: Number(finalIdInt) || 0,
+      idCliente: Number(formSalvo.clienteId) || null,
+      mensagem: `Cliente manual "${backup.nomeClienteManual}" vinculado ao cadastro #${formSalvo.clienteId}${cliente?.nome ? ` — ${cliente.nome}` : ""}.`,
+      setor: "Sistema"
+    }).catch((err) => {
+      console.warn("[OrcamentoFormPage] Falha ao registrar histórico da vinculação de cliente:", err);
+    });
+  }
 
   async function selectCliente(basicCliente: Cadastro) {
     setShowClientResults(false);
@@ -2782,6 +2907,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
         }
 
+        // Vinculação de cliente manual → cadastrado: histórico + limpeza do
+        // backup ANTES do reload da proposta (a prop recarregada já traz o
+        // novo id_cliente para Pagamentos/cobrança sem F5).
+        if (vinculacaoBackupRef.current) {
+          concluirVinculacaoAposSave(finalIdInt, formToSave);
+          if (onReload) onReload(true);
+        }
+
         showToast({
           type: res.errorMessage ? "info" : "success",
           title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
@@ -2917,6 +3050,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           return true;
         }
         showToast({ type: "success", title: "Orçamento atualizado antes de gerar cobrança." });
+        // Vinculação de cliente manual → cadastrado: concluir (histórico +
+        // limpeza do backup) ANTES do onReload.
+        if (vinculacaoBackupRef.current) {
+          concluirVinculacaoAposSave(finalIdInt, formToSave);
+        }
         if (onReload) {
           await onReload();
         }
@@ -3438,8 +3576,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 </label>
               </div>
             ) : (
-              <div className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Tipo de orçamento: {form.clienteNaoCadastrado ? "Cliente não cadastrado / Orçamento rápido" : "Cliente cadastrado"}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Tipo de orçamento: {isVinculandoCliente ? "Vinculando cliente cadastrado…" : form.clienteNaoCadastrado ? "Cliente não cadastrado / Orçamento rápido" : "Cliente cadastrado"}
+                </span>
+                {mode === "edit" && form.clienteNaoCadastrado && !isVinculandoCliente && !isFormBloqueadoPorCobranca && (
+                  <button
+                    type="button"
+                    onClick={iniciarVinculacaoCliente}
+                    title="Substitui o cliente manual pelo cadastro oficial. Preços e frete serão recalculados; a troca fica registrada no Histórico ao salvar."
+                    className="rounded-xl border border-[#0f9f9a] bg-white px-3 py-1.5 text-xs font-semibold text-[#0b6e6a] transition hover:bg-teal-50"
+                  >
+                    Vincular cliente cadastrado
+                  </button>
+                )}
+                {isVinculandoCliente && (
+                  <button
+                    type="button"
+                    onClick={cancelarVinculacaoCliente}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    Cancelar vinculação
+                  </button>
+                )}
               </div>
             )}
 

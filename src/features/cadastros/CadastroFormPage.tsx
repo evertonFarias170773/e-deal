@@ -902,7 +902,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       ativo: form.ativo,
       restricao: form.restricao,
       limite_credito: normalizeOptionalText(form.limiteCredito),
-      credito: normalizeOptionalText(form.credito),
+      // credito NÃO é enviado: saldo de crédito é gerido só pela Conta Corrente.
       risco_credito: normalizeOptionalText(form.riscoCredito),
       obs: normalizeOptionalText(form.observacoes),
       data_cadastro: normalizeOptionalText(form.dataCadastro),
@@ -1119,7 +1119,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
       ativo: form.ativo,
       restricao: form.restricao,
       limite_credito: normalizeOptionalText(form.limiteCredito),
-      credito: normalizeOptionalText(form.credito),
+      // credito NÃO é enviado: saldo de crédito é gerido só pela Conta Corrente.
       risco_credito: normalizeOptionalText(form.riscoCredito),
       obs: normalizeOptionalText(form.observacoes),
       data_cadastro: normalizeOptionalText(form.dataCadastro),
@@ -2079,8 +2079,9 @@ function CompleteForm({
             <Field label="Data fundacao"><input type="date" value={form.dataFundacao} onChange={(event) => canEditCredito && onUpdate("dataFundacao", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
             <Field label="Data verificacao"><input type="date" value={form.dataVerificacao} onChange={(event) => canEditCredito && onUpdate("dataVerificacao", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
             <Field label="Limite de credito"><input value={form.limiteCredito} onChange={(event) => canEditCredito && onUpdate("limiteCredito", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
-            <Field label="Credito"><input value={form.credito} onChange={(event) => canEditCredito && onUpdate("credito", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
-            <Field label="Credito acumulado"><input value={form.creditoDisponivel} onChange={(event) => canEditCredito && onUpdate("creditoDisponivel", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            {/* Campos "Credito" e "Credito acumulado" removidos (2026-07-22):
+                saldo de crédito é gerido exclusivamente pelo módulo Conta
+                Corrente (movimento_credito) — nunca por digitação no cadastro. */}
             <Field label="Risco financeiro"><select value={form.riscoCredito} disabled={!canEditCredito} onChange={(event) => canEditCredito && onUpdate("riscoCredito", event.target.value as "BAIXO" | "MEDIO" | "ALTO")} className={inputClassCredito}><option value="BAIXO">Baixo</option><option value="MEDIO">Medio</option><option value="ALTO">Alto</option></select></Field>
             <Field label="Ultima compra"><input type="date" value={form.ultimaCompra} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
             <Field label="Total compras (qtd)"><input value={form.totalCompras} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
