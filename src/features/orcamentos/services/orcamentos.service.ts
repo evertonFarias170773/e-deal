@@ -671,8 +671,6 @@ export async function getOrcamentosReadOnlyData(
                   quantidade: item.qtd || 0,
                   valorUnitario: item.valor_unt || 0,
                   valorFixo: item.fixo || 0,
-                  descontoTipo: "VALOR" as const,
-                  descontoValor: 0,
                   variacoesEscolhidas: []
                 };
                 const itemSubtotal = calculateItemSubtotal(itemObj, bonusPercent).subtotal;
@@ -1001,10 +999,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         qtd: item.qtd || 0,
         valorUnitario: finalBase,
         valorFixo: item.fixo || 0,
-        descontoTipo: "VALOR",
-        descontoValor: 0,
         subtotalBruto: finalBase * (item.qtd || 0) + (item.fixo || 0) + (variationExtraForLegacy * (item.qtd || 0)),
-        descontoValorCalculado: 0,
         acrescimoBonus: 0,
         subtotal: item.valor_sub_total || 0,
         prazo: finalProduct.prazo || "7 dias",
@@ -1019,7 +1014,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
     // A tabela produtos_proposta não possui coluna para acrescimo_bonus.
     // O valor_sub_total gravado pode ser o bruto (sem bônus) em propostas antigas.
     // Recalculamos aqui usando o cadastro já carregado para restaurar os campos:
-    //   acrescimoBonus, descontoValorCalculado e subtotal corretos na UI.
+    //   acrescimoBonus e subtotal corretos na UI.
     // Isso também protege contra dupla aplicação: se o valor_sub_total já estava
     // correto (líquido com bônus), o recalculo garante consistência via valorUnitario + qtd.
     const bonusPercentLoad = clientObj ? getClienteBonusPercent(clientObj as Cadastro) : 0;
@@ -1027,7 +1022,6 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       for (const mappedItem of mappedItens) {
         const totals = calculateItemSubtotal(mappedItem, bonusPercentLoad);
         mappedItem.subtotalBruto = totals.subtotalBruto;
-        mappedItem.descontoValorCalculado = totals.descontoValorCalculado;
         mappedItem.acrescimoBonus = totals.acrescimoBonus;
         mappedItem.subtotal = totals.subtotal;
       }
@@ -1169,7 +1163,6 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       freteEscolhidoId,
       resumo: {
         subtotalBrutoProdutos: subtotalProdutos,
-        descontosIndividuais: 0,
         acrescimoBonus: 0,
         subtotalProdutos,
         descontoGeralTipo: descontoGeralTipo,
@@ -1421,7 +1414,6 @@ export async function saveProposta(
     const resumo = formState.isAvulso ? {
       subtotalProdutos: subtotalProdutosBase,
       subtotalBrutoProdutos: subtotalProdutosBase,
-      descontosIndividuais: 0,
       acrescimoBonus: 0,
       descontoGeralTipo: "VALOR" as TipoDescontoProposta,
       descontoGeralValor: 0,

@@ -167,21 +167,19 @@ export function calculateDiscountValue(base: number, tipo: TipoDescontoProposta,
 }
 
 export function calculateItemSubtotal(
-  item: Pick<PropostaItem, "quantidade" | "valorUnitario" | "valorFixo" | "variacoesEscolhidas" | "descontoTipo" | "descontoValor">,
+  item: Pick<PropostaItem, "quantidade" | "valorUnitario" | "valorFixo" | "variacoesEscolhidas">,
   bonusPercent = 0
 ) {
   const variationExtra = (item.variacoesEscolhidas || []).reduce((total, escolha) => total + (escolha.tipo?.v_extra || 0), 0);
   const valorUnitarioTotal = item.valorUnitario + variationExtra;
-  
+
   const subtotalBruto = item.quantidade * valorUnitarioTotal + item.valorFixo;
-  const descontoValorCalculado = Math.min(subtotalBruto, calculateDiscountValue(subtotalBruto, item.descontoTipo, item.descontoValor));
-  const acrescimoBonus = (subtotalBruto - descontoValorCalculado) * (bonusPercent / 100);
+  const acrescimoBonus = subtotalBruto * (bonusPercent / 100);
 
   return {
     subtotalBruto,
-    descontoValorCalculado,
     acrescimoBonus,
-    subtotal: Math.max(0, subtotalBruto - descontoValorCalculado - acrescimoBonus)
+    subtotal: Math.max(0, subtotalBruto - acrescimoBonus)
   };
 }
 
@@ -211,8 +209,6 @@ export function createItemFromProduto(
     quantidade,
     valorUnitario: precoBaseReal,
     valorFixo: precoFixoBase !== undefined ? 0 : produto.valorFixo,
-    descontoTipo: "VALOR" as TipoDescontoProposta,
-    descontoValor: 0,
     prazo: produto.prazo,
     pesoUnitario: produto.peso,
     variacoesEscolhidas
@@ -303,7 +299,6 @@ export function calculateResumo(
   const activeItens = itens.filter(item => item.statusItem !== "CANCELADO");
 
   const subtotalBrutoProdutos = activeItens.reduce((total, item) => total + item.subtotalBruto, 0);
-  const descontosIndividuais = activeItens.reduce((total, item) => total + item.descontoValorCalculado, 0);
   const acrescimoBonus = activeItens.reduce((total, item) => total + item.acrescimoBonus, 0);
   const subtotalProdutos = activeItens.reduce((total, item) => total + item.subtotal, 0);
   const descontoGeral = Math.min(subtotalProdutos, calculateDiscountValue(subtotalProdutos, descontoGeralTipo, descontoGeralValor));
@@ -316,7 +311,6 @@ export function calculateResumo(
   return {
     subtotalProdutos,
     subtotalBrutoProdutos,
-    descontosIndividuais,
     acrescimoBonus,
     descontoGeralTipo,
     descontoGeralValor,

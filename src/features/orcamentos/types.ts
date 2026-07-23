@@ -68,10 +68,7 @@ export type PropostaItem = {
   qtd?: number;
   valorUnitario: number;
   valorFixo: number;
-  descontoTipo: TipoDescontoProposta;
-  descontoValor: number;
   subtotalBruto: number;
-  descontoValorCalculado: number;
   acrescimoBonus: number;
   subtotal: number;
   prazo: string;
@@ -101,7 +98,6 @@ export type PropostaFrete = {
 
 export type PropostaResumo = {
   subtotalBrutoProdutos: number;
-  descontosIndividuais: number;
   acrescimoBonus: number;
   subtotalProdutos: number;
   descontoGeralTipo: TipoDescontoProposta;

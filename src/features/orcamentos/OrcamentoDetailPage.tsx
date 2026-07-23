@@ -554,7 +554,6 @@ function ResumoValores({ proposta }: { proposta: Proposta }) {
   const bonusPercent = proposta.cliente ? getClienteBonusPercent(proposta.cliente) : 0;
   const rows = [
     ["Subtotal bruto", formatCurrency(proposta.resumo.subtotalBrutoProdutos)],
-    ["Descontos individuais", `-${formatCurrency(proposta.resumo.descontosIndividuais)}`],
     [`Tabela especial do cliente aplicada${bonusPercent > 0 ? ` (-${bonusPercent}%)` : ""}`, `-${formatCurrency(proposta.resumo.acrescimoBonus)}`],
     ["Subtotal produtos", formatCurrency(proposta.resumo.subtotalProdutos)],
     ["Desconto geral", `-${formatCurrency(proposta.resumo.descontoGeral)}`],

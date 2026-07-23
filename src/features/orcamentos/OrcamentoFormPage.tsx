@@ -737,7 +737,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return {
         subtotalProdutos,
         subtotalBrutoProdutos: subtotalProdutos,
-        descontosIndividuais: 0,
         acrescimoBonus: 0,
         descontoGeralTipo: "VALOR" as TipoDescontoProposta,
         descontoGeralValor: 0,
@@ -5000,32 +4999,6 @@ function ProductItemEditor({
         </Field>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4 pt-1">
-        <InfoBox label="Antes desconto" value={formatCurrency(item.subtotalBruto)} />
-        <Field label="Tipo desconto">
-          <select
-            value={item.descontoTipo}
-            onChange={(event) => onUpdate((current) => ({ ...current, descontoTipo: event.target.value as TipoDescontoProposta }))}
-            className={inputClass}
-            disabled={!isSuperAdmin}
-          >
-            <option value="PERCENTUAL">%</option>
-            <option value="VALOR">R$</option>
-          </select>
-        </Field>
-        <Field label="Desconto item">
-          <input
-            type="number"
-            value={item.descontoValor || ""}
-            onChange={(event) => onUpdate((current) => ({ ...current, descontoValor: Number(event.target.value) || 0 }))}
-            className={inputClass}
-            placeholder="0"
-            disabled={!isSuperAdmin}
-          />
-        </Field>
-        <InfoBox label="Desconto aplicado" value={`-${formatCurrency(item.descontoValorCalculado)}`} />
-      </div>
-
       {bonusPercent > 0 ? (
         <div className="rounded-2xl bg-teal-50/60 border border-teal-100 p-3 text-xs font-semibold text-teal-800 flex items-center justify-between">
           <span>Tabela especial do cliente aplicada</span>
@@ -5170,7 +5143,6 @@ function SelectorGrid<T extends { id: string }>({
 function ResumoValores({ resumo, bonusPercent }: { resumo: ReturnType<typeof calculateResumo>; bonusPercent: number }) {
   const rows = [
     ["Subtotal bruto", formatCurrency(resumo.subtotalBrutoProdutos)],
-    ["Descontos individuais", `-${formatCurrency(resumo.descontosIndividuais)}`],
     [`Tabela especial do cliente aplicada${bonusPercent > 0 ? ` (-${bonusPercent}%)` : ""}`, `-${formatCurrency(resumo.acrescimoBonus)}`],
     ["Subtotal produtos", formatCurrency(resumo.subtotalProdutos)],
     ["Desconto geral", `-${formatCurrency(resumo.descontoGeral)}`],
@@ -5543,7 +5515,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
       return vinculo?.id ?? clienteSelfId;
     })(),
     // Recalcular b\u00f4nus do cliente em cada item ao inicializar o formul\u00e1rio de edi\u00e7\u00e3o.
-    // Garante que acrescimoBonus, descontoValorCalculado e subtotal est\u00e3o corretos
+    // Garante que acrescimoBonus e subtotal est\u00e3o corretos
     // mesmo que o banco tenha gravado o valor_sub_total bruto (sem b\u00f4nus) em propostas antigas.
     // O recalculo \u00e9 idempotente: se o service j\u00e1 recalculou na carga, o resultado \u00e9 id\u00eantico.
     itens: (() => {
