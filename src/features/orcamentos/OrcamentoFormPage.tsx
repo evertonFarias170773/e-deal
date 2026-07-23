@@ -233,6 +233,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     hasPermissao(user, "propostas.desconto_geral")
   );
 
+  // Edição manual de "Valor Unitário (R$)" e "Fixo (R$)" do item.
+  // Regra de negócio: apenas ADM/Admin e SuperAdmin (não inclui Gerente/vendedor).
+  // Além de habilitar os inputs, controla o repricing automático em recalculateItem:
+  // usuários sem permissão continuam tendo o preço reaplicado (produto/tabela do cliente).
+  const canEditarValoresItem = Boolean(
+    user?.isSuperAdmin ||
+    user?.isAdmin
+  );
+
   // — Permissões do fluxo de edição de proposta paga —
   const canEditarPropostaPaga = Boolean(
     user?.isSuperAdmin ||
@@ -1521,22 +1530,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
-  function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent, nextClienteParam = cliente) {
+  function recalculateItem(item: PropostaItem, nextBonusPercent = bonusPercent, nextClienteParam = cliente, preservePrice = false) {
     let nextValorUnitario = item.valorUnitario;
     let nextValorFixo = item.valorFixo;
 
-    if (nextClienteParam?.usaPrecoFixo && nextClienteParam.precosFixos) {
-      const pFixo = nextClienteParam.precosFixos.find(p => p.id_produto === item.id_produto);
-      if (pFixo) {
-        nextValorUnitario = pFixo.preco_fixo;
-        nextValorFixo = 0;
+    // preservePrice: mantém o valor unitário/fixo já presente no item (edição manual
+    // autorizada). Quando false, reaplica o preço automático do produto ou da tabela
+    // especial do cliente — comportamento padrão para quem não tem permissão e para
+    // o repricing ao (re)selecionar o cliente.
+    if (!preservePrice) {
+      if (nextClienteParam?.usaPrecoFixo && nextClienteParam.precosFixos) {
+        const pFixo = nextClienteParam.precosFixos.find(p => p.id_produto === item.id_produto);
+        if (pFixo) {
+          nextValorUnitario = pFixo.preco_fixo;
+          nextValorFixo = 0;
+        } else {
+          nextValorUnitario = item.produto.valorUnt;
+          nextValorFixo = item.produto.valorFixo;
+        }
       } else {
         nextValorUnitario = item.produto.valorUnt;
         nextValorFixo = item.produto.valorFixo;
       }
-    } else {
-      nextValorUnitario = item.produto.valorUnt;
-      nextValorFixo = item.produto.valorFixo;
     }
 
     const updatedItem = { ...item, valorUnitario: nextValorUnitario, valorFixo: nextValorFixo };
@@ -2073,7 +2088,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   function updateItem(itemId: string, updater: (item: PropostaItem) => PropostaItem) {
     updateField(
       "itens",
-      form.itens.map((item) => (item.id === itemId ? recalculateItem(updater(item)) : item))
+      form.itens.map((item) => (item.id === itemId ? recalculateItem(updater(item), bonusPercent, cliente, canEditarValoresItem) : item))
     );
   }
 
@@ -2147,7 +2162,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     setErrorFields((prev) => prev.filter((field) => field !== `variacoes_${itemId}`));
 
-    const updatedItem = recalculateItem(item);
+    const updatedItem = recalculateItem(item, bonusPercent, cliente, canEditarValoresItem);
     updateField(
       "itens",
       form.itens.map((it) => (it.id === itemId ? updatedItem : it))
@@ -4182,6 +4197,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onSave={() => handleSaveItem(item.id)}
                           minQuantity={somaModelos}
                           isSuperAdmin={user?.isSuperAdmin || false}
+                          canEditarValoresItem={canEditarValoresItem}
                           isRemoveAllowed={isRemoveAllowed}
                           isPrecoFixoAplicado={isPrecoFixoAplicado}
                         />
@@ -4886,6 +4902,7 @@ function ProductItemEditor({
   onSave,
   minQuantity,
   isSuperAdmin,
+  canEditarValoresItem,
   isRemoveAllowed,
   isPrecoFixoAplicado
 }: {
@@ -4898,6 +4915,7 @@ function ProductItemEditor({
   onSave: () => void;
   minQuantity?: number;
   isSuperAdmin?: boolean;
+  canEditarValoresItem?: boolean;
   isRemoveAllowed?: boolean;
   isPrecoFixoAplicado?: boolean;
 }) {
@@ -4952,7 +4970,7 @@ function ProductItemEditor({
               onChange={(event) => onUpdate((current) => ({ ...current, valorUnitario: Math.max(0, Number(event.target.value)) }))}
               className={inputClass}
               placeholder="0,00"
-              disabled={!isSuperAdmin}
+              disabled={!canEditarValoresItem}
             />
           </Field>
           <Field label="Fixo (R$)">
@@ -4963,7 +4981,7 @@ function ProductItemEditor({
               onChange={(event) => onUpdate((current) => ({ ...current, valorFixo: Math.max(0, Number(event.target.value)) }))}
               className={inputClass}
               placeholder="0,00"
-              disabled={isPrecoFixoAplicado || !isSuperAdmin}
+              disabled={isPrecoFixoAplicado || !canEditarValoresItem}
             />
           </Field>
           <InfoBox label="Subtotal final" value={formatCurrency(item.subtotal)} />
