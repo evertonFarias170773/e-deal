@@ -135,6 +135,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
       produtos = produtosRows.map((p) => ({
         id: `prod_${p.id}`,
         db_id: p.id,
+        idProduto: p.id_produto !== null && p.id_produto !== undefined ? Number(p.id_produto) : null,
         nome: p.nome_produto || "Produto",
         quantidade: Number(p.qtd || 0),
         pesoEstimado: Number(p.peso_base || 0),

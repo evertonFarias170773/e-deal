@@ -94,6 +94,7 @@ export interface ModeloMock {
 export interface ProdutoMock {
   id: string;
   db_id?: number;
+  idProduto?: number | null; // código do catálogo (produtos_proposta.id_produto)
   nome: string; // ex: Triband, Pulseira Tyvek, Credencial
   quantidade: number;
   pesoEstimado: number; // em kg

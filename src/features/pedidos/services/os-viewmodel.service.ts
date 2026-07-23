@@ -34,6 +34,8 @@ export interface OsPdfModelo {
 }
 
 export interface OsPdfProduto {
+  /** Código do catálogo (produtos_proposta.id_produto) — ex.: "101 - Pulseira Triband". */
+  codigo: number | null;
   nome: string;
   quantidade: number;
   setor?: string;
@@ -228,6 +230,7 @@ export async function montarOsPdfViewModel(
     const obs = parsePedidosObs(pedido.obs);
 
     const produtos: OsPdfProduto[] = (pedido.produtos || []).map((prod) => ({
+      codigo: prod.idProduto ?? null,
       nome: prod.nome,
       quantidade: prod.quantidade,
       setor: prod.setor,
