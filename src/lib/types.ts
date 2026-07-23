@@ -77,6 +77,14 @@ export type NavigationItem = {
   }[];
 };
 
+export type NavigationSection = {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  requiresConfigPerm?: boolean;
+  items: NavigationItem[];
+};
+
 
 export type StatusTone = "success" | "info" | "warning" | "danger" | "neutral" | "special";
 

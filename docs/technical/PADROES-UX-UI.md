@@ -1,8 +1,8 @@
 # PADROES-UX-UI.md
 
-Versão: 2.0  
+Versão: 2.1  
 Status: Oficial  
-Última atualização: 18/07/2026  
+Última atualização: 23/07/2026  
 Projeto: ERP Ideal
 
 ---
@@ -137,37 +137,65 @@ Não montar múltiplas instâncias globais do mesmo provider ou listener sem nec
 
 # 5. Sidebar
 
-A sidebar utiliza fundo escuro nos temas claro e escuro.
+A sidebar é a navegação principal do ERP. As cores usam exclusivamente os tokens `--sidebar-*`
+definidos em `globals.css` (validados nos temas claro e escuro) e a tipografia herda a fonte
+oficial do projeto (Inter). O item ativo usa contraste claro com destaque teal discreto
+(`--sidebar-active-bg` / `--sidebar-active-text` + barra `--sidebar-active-border`).
+
+## Modelo de navegação — Acordeão por seção
+
+Os itens são agrupados em quatro seções colapsáveis, com apenas uma seção aberta por vez:
+
+- **Operação:** Dashboard, Orçamentos, Pedidos (subitens), Conferência, Expedição, Maestro;
+- **Cadastros:** Cadastros, Produtos, Verificação CPF/CNPJ;
+- **Financeiro:** Contas a receber (subitens), Conta Corrente, Pendências, Notas fiscais, Relatórios;
+- **Configurações:** Usuários e Perfis, Perfis e Permissões, Empresas, Integrações, Faturamento e Cobranças, Parâmetros Fiscais.
+
+Regras:
+
+- clicar no cabeçalho de uma seção abre essa seção e fecha a anterior;
+- a seção correspondente à rota atual abre automaticamente;
+- itens com subitens expandem e recolhem sem navegar;
+- itens "em breve" ficam desabilitados, porém visíveis, com badge;
+- um bloco fixo de **acesso rápido** (Orçamentos, Conferência) fica no topo;
+- a seção **Configurações** só aparece para usuários com permissão administrativa.
+
+A fonte de dados é `navigationSections` (com `quickAccessItems`) em `src/constants/navigation.ts`.
 
 ## Desktop
 
 Deve possuir:
 
 - logo ou marca;
-- ícone e nome do módulo;
+- nome do painel;
 - item ativo claramente identificado;
-- estado expandido;
-- estado recolhido;
-- tooltip quando recolhida;
+- estado expandido e estado recolhido (rail de ícones, ~76px);
+- tooltip/flyout quando recolhida, com fallback por clique (não depender só de hover);
 - botão de expandir ou recolher;
 - identificação do usuário no rodapé.
 
-O item ativo deve usar contraste claro e destaque teal discreto.
+No modo recolhido, cada seção vira um ícone; ao passar o mouse abre um flyout com os itens da
+seção, e clicar no ícone expande a sidebar já com a seção aberta.
 
 ## Mobile
 
-A sidebar deve funcionar como drawer.
+A sidebar funciona como drawer, reutilizando a mesma fonte de navegação (`navigationSections`).
 
 Regras:
 
 - não depender de hover;
-- fechar com `ESC`;
-- fechar após navegação;
+- fechar com `ESC`, clique fora e após navegação;
 - oferecer área de toque adequada;
 - impedir rolagem indevida do conteúdo atrás;
 - preservar a mesma estrutura de navegação do desktop.
 
 A fonte oficial dos itens de navegação deve ser reutilizada. Não manter menus paralelos por tela.
+
+## Reversão
+
+O menu ativo é selecionado pela feature flag `USE_NEW_SIDEBAR` em `src/constants/featureFlags.ts`.
+Com `false`, o `AppLayout` volta ao menu anterior em lista plana (`Sidebar` / `MobileSidebar`),
+mantidos intactos como fallback.
 
 ---
 

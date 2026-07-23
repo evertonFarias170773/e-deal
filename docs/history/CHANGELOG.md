@@ -23,6 +23,15 @@ Os registros descrevem o estado do projeto na data indicada. Eles não substitue
 
 ---
 
+## [Unreleased] - 2026-07-23
+
+### Alterado
+- **Menu lateral (Sidebar)**: Redesenho para o modelo "acordeão por seção" — itens agrupados em quatro seções colapsáveis (Operação, Cadastros, Financeiro, Configurações), com apenas uma aberta por vez, acesso rápido fixo (Orçamentos, Conferência) e modo recolhido em rail de ícones com flyout. Fonte (Inter) e tokens `--sidebar-*` do projeto preservados; permissão da seção Configurações mantida. Documentado em `docs/technical/PADROES-UX-UI.md` §5.
+
+### Adicionado
+- **Feature flag `USE_NEW_SIDEBAR`** (`src/constants/featureFlags.ts`): alterna entre o novo menu (`SidebarNav` / `MobileSidebarNav`) e o anterior em lista plana (`Sidebar` / `MobileSidebar`), permitindo reverter sem remover o menu antigo.
+- **`navigationSections` e `quickAccessItems`** (`src/constants/navigation.ts`): nova estrutura de dados agrupada, mantendo `navigationItems` intacto.
+
 ## [Unreleased] - 2026-07-10
 
 ### Corrigido
