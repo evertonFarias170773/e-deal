@@ -44,10 +44,12 @@ const defaultStatusOrder = [
   "LIBERADO", 
   "REVISAO ATENDENTE", 
   "REVISAO PRODUCAO",
-  "EM PRODUCAO", 
-  "EM IMPRESSAO", 
-  "EM ACABAMENTO", 
-  "EXPEDICAO", 
+  "EM PRODUCAO",
+  "EM IMPRESSAO",
+  "EM IMPRESSAO / PENDENTE",
+  "EM ACABAMENTO",
+  "EM ACABAMENTO / PENDENTE",
+  "EXPEDICAO",
   "A RETIRAR", 
   "EM TRANSITO", 
   "ENTREGUE", 
@@ -363,7 +365,7 @@ export function OrcamentosListPageReal() {
         } else if (activeCard === "REVISAO_ATENDENTE") {
           matchesStatus = s === "REVISAO ATENDENTE";
         } else if (activeCard === "EM_PRODUCAO") {
-          matchesStatus = ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"].includes(s);
+          matchesStatus = ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"].includes(s);
         }
       } else {
         matchesStatus = status === "TODOS"
@@ -479,7 +481,7 @@ export function OrcamentosListPageReal() {
       if (s === "REVISAO ATENDENTE") {
         revisaoCnt++; revisaoTotal += v;
       }
-      if (["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"].includes(s)) {
+      if (["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"].includes(s)) {
         producaoCnt++; producaoTotal += v;
       }
     }

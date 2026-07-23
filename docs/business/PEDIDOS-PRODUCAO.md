@@ -414,7 +414,9 @@ REVISAO ATENDENTE
 REVISAO PRODUCAO
 EM PRODUCAO
 EM IMPRESSAO
+EM IMPRESSAO / PENDENTE
 EM ACABAMENTO
+EM ACABAMENTO / PENDENTE
 EXPEDICAO
 A RETIRAR
 EM TRANSITO
@@ -428,6 +430,14 @@ Não espalhar comparações com strings em componentes.
 Status desconhecido nunca deve virar `NOVO` automaticamente.
 
 A liberação da fila produtiva continua separada e depende de `is_prd_aprovado`.
+
+## Pausas e transições via QR de Produção
+
+`EM IMPRESSAO / PENDENTE` e `EM ACABAMENTO / PENDENTE` representam pausa operacional da etapa base (falta de material, aguardo de arte, máquina indisponível). Entrada em pausa exige motivo obrigatório registrado na auditoria; a retomada da etapa base é a transição natural.
+
+A página pública `/os` (QR impresso na OS, origem `qr_producao`) é executor oficial das transições entre os status produtivos e logísticos: destaca o próximo natural, permite pausa, salto e retorno com motivo obrigatório validado no servidor, exige confirmação reforçada para `ENTREGUE` (terminal — sem transição posterior via QR) e registra tudo em `public.os_status_log` e na timeline. O próximo natural de `EXPEDICAO` segue a cotação de frete escolhida (retirada → `A RETIRAR`; transporte → `EM TRANSITO`; sem informação → nenhum natural, ambos disponíveis). Detalhes normativos: `FLUXO-OFICIAL-STATUS-PROPOSTAS.md` §13 e Matriz de Segurança (seção QR de Produção).
+
+Uma proposta pausada permanece na fila de `/pedidos` (o filtro da fila inclui os status `/ PENDENTE`).
 
 ---
 

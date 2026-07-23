@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Todos os 18 status possíveis de uma proposta, em ordem de ciclo.
+ * Todos os 20 status possíveis de uma proposta, em ordem de ciclo.
  */
 export const PROPOSTA_STATUS_TODOS = [
   'NOVO',
@@ -25,7 +25,9 @@ export const PROPOSTA_STATUS_TODOS = [
   'REVISAO PRODUCAO',
   'EM PRODUCAO',
   'EM IMPRESSAO',
+  'EM IMPRESSAO / PENDENTE',
   'EM ACABAMENTO',
+  'EM ACABAMENTO / PENDENTE',
   'EXPEDICAO',
   'A RETIRAR',
   'EM TRANSITO',
@@ -49,7 +51,8 @@ export const PROPOSTA_STATUS_GRUPOS = {
   /** Pedido real — is_prd_aprovado=true, liberado para produção */
   pedidoReal: [
     'REVISAO ATENDENTE', 'REVISAO PRODUCAO',
-    'EM PRODUCAO', 'EM IMPRESSAO', 'EM ACABAMENTO',
+    'EM PRODUCAO', 'EM IMPRESSAO', 'EM IMPRESSAO / PENDENTE',
+    'EM ACABAMENTO', 'EM ACABAMENTO / PENDENTE',
   ] as string[],
 
   /** Expedição e entrega */
@@ -70,7 +73,8 @@ export const PROPOSTA_STATUS_GRUPOS = {
   /** Lista de produção */
   listaProducao: [
     'NOVO / EM ARTE', 'AGUARDANDO / EM ARTE', 'APROVADO / EM ARTE',
-    'REVISAO PRODUCAO', 'EM PRODUCAO', 'EM IMPRESSAO', 'EM ACABAMENTO',
+    'REVISAO PRODUCAO', 'EM PRODUCAO', 'EM IMPRESSAO', 'EM IMPRESSAO / PENDENTE',
+    'EM ACABAMENTO', 'EM ACABAMENTO / PENDENTE',
   ] as string[],
 } as const;
 
@@ -92,7 +96,8 @@ export const REGRAS_PEDIDO_REAL = {
    */
   statusQueIndicamPedidoReal: [
     'LIBERADO', 'REVISAO ATENDENTE', 'REVISAO PRODUCAO',
-    'EM PRODUCAO', 'EM IMPRESSAO', 'EM ACABAMENTO',
+    'EM PRODUCAO', 'EM IMPRESSAO', 'EM IMPRESSAO / PENDENTE',
+    'EM ACABAMENTO', 'EM ACABAMENTO / PENDENTE',
     'EXPEDICAO', 'A RETIRAR', 'EM TRANSITO', 'ENTREGUE',
   ] as string[],
 

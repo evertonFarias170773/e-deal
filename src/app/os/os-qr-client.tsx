@@ -1,16 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Client da página pública do QR de produção.
- * - Captura o token do fragment (#), guarda em memória + sessionStorage e
- *   REMOVE o fragmento da barra de endereço (history.replaceState).
+ * Client da página pública do QR de produção (v2 — multi-status).
+ * - Captura o token de ?t= ou #, guarda em memória + sessionStorage e
+ *   REMOVE query/fragment da barra de endereço (history.replaceState).
  * - Consulta o estado via POST (token no body) — nunca em URL de request.
- * - Um único botão avança exatamente uma etapa; nunca atualiza ao abrir.
+ * - Mostra o status atual, destaca o próximo natural e lista os demais
+ *   destinos; pausa/salto/retorno/lateral exigem motivo (validado também
+ *   no servidor); ENTREGUE exige confirmação reforçada em 2 toques.
+ * - Nunca atualiza status ao abrir a página.
  */
 
 const SESSION_KEY = "osqr-token";
+
+type Destino = {
+  status: string;
+  tipo: string;
+  natural: boolean;
+  exige_motivo: boolean;
+};
 
 type ConsultaEstado = {
   ok: boolean;
@@ -18,15 +28,36 @@ type ConsultaEstado = {
   id_int?: number;
   produto_resumo?: string;
   status_atual?: string;
-  proximo_status?: string;
+  forma_entrega?: string;
+  destinos?: Destino[];
+  proximo_status?: string | null;
 };
 
-type AvancoResultado = {
+type TransicaoResultado = {
   ok: boolean;
   motivo?: string;
   status_anterior?: string;
   status_novo?: string;
   status_atual?: string;
+  tipo_transicao?: string;
+};
+
+const TIPO_LABEL: Record<string, string> = {
+  natural: "Próxima etapa",
+  retomada: "Retomar etapa",
+  pausa: "Pausar etapa",
+  retorno: "Retornar etapa",
+  salto: "Saltar etapa",
+  lateral: "Trocar forma de entrega",
+  avanco_entrega: "Definir entrega"
+};
+
+const MOTIVO_PLACEHOLDER: Record<string, string> = {
+  pausa: "Ex.: aguardando material para continuar",
+  retorno: "Ex.: falha detectada, retornando etapa para correção",
+  salto: "Ex.: etapa não se aplica a este pedido",
+  lateral: "Ex.: cliente optou por outra forma de entrega",
+  avanco_entrega: "Ex.: forma de entrega alterada com o cliente"
 };
 
 function capturarToken(): string | null {
@@ -55,15 +86,19 @@ function capturarToken(): string | null {
 }
 
 export function OsQrClient() {
-  const [token, setToken] = useState<string | null>(null);
+  const tokenRef = useRef<string | null>(null);
   const [estado, setEstado] = useState<ConsultaEstado | null>(null);
-  const [sucesso, setSucesso] = useState<AvancoResultado | null>(null);
+  const [sucesso, setSucesso] = useState<TransicaoResultado | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
-  const [erroRede, setErroRede] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
-  const consultar = useCallback(async (tokenAtual: string) => {
-    setErroRede(null);
+  const consultar = useCallback(async (tokenAtual: string | null) => {
+    if (!tokenAtual) {
+      setEstado({ ok: false, motivo: "TOKEN_INVALIDO" });
+      setCarregando(false);
+      return;
+    }
     try {
       const response = await fetch("/api/os-qr/consultar", {
         method: "POST",
@@ -73,43 +108,50 @@ export function OsQrClient() {
       const data = (await response.json()) as ConsultaEstado;
       setEstado(data);
     } catch {
-      setErroRede("Falha de conexão. Tente novamente.");
+      setAviso("Falha de conexão. Tente novamente.");
     } finally {
       setCarregando(false);
     }
   }, []);
 
   useEffect(() => {
-    const capturado = capturarToken();
-    setToken(capturado);
-    if (!capturado) {
-      setEstado({ ok: false, motivo: "TOKEN_INVALIDO" });
-      setCarregando(false);
-      return;
-    }
-    void consultar(capturado);
+    tokenRef.current = capturarToken();
+    void consultar(tokenRef.current);
   }, [consultar]);
 
-  async function avancar() {
+  async function transicionar(destino: Destino, motivo: string) {
+    const token = tokenRef.current;
     if (!token || !estado?.ok || !estado.status_atual || enviando) return;
     setEnviando(true);
-    setErroRede(null);
+    setAviso(null);
+    setSucesso(null);
     try {
-      const response = await fetch("/api/os-qr/avancar", {
+      const response = await fetch("/api/os-qr/transicionar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, statusEsperado: estado.status_atual })
+        body: JSON.stringify({
+          token,
+          statusEsperado: estado.status_atual,
+          statusDestino: destino.status,
+          motivo: motivo || undefined
+        })
       });
-      const data = (await response.json()) as AvancoResultado;
+      const data = (await response.json()) as TransicaoResultado;
       if (data.ok) {
         setSucesso(data);
       } else if (data.motivo === "RATE_LIMITED") {
-        setErroRede("Muitas tentativas — aguarde um instante.");
+        setAviso("Muitas tentativas — aguarde um instante.");
+      } else if (data.motivo === "MOTIVO_OBRIGATORIO") {
+        setAviso("Esta mudança exige um motivo. Descreva antes de confirmar.");
+      } else if (data.motivo === "CONFLITO") {
+        setAviso("O status mudou em outra tela. A OS foi recarregada — confira antes de continuar.");
+      } else if (data.motivo === "DESTINO_INVALIDO") {
+        setAviso("Mudança não permitida para esta OS.");
       }
       // Sempre re-consulta para refletir o estado real (sucesso, conflito ou negativa).
       await consultar(token);
     } catch {
-      setErroRede("Falha de conexão. A ação pode não ter sido aplicada — recarregue.");
+      setAviso("Falha de conexão. A ação pode não ter sido aplicada — recarregue.");
     } finally {
       setEnviando(false);
     }
@@ -130,11 +172,20 @@ export function OsQrClient() {
         </div>
       ) : null}
 
-      {erroRede ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-sm">{erroRede}</div>
+      {aviso ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-sm">{aviso}</div>
       ) : null}
 
-      {estado ? <EstadoOs estado={estado} enviando={enviando} onAvancar={avancar} /> : null}
+      {estado ? (
+        // key remonta o painel quando o estado real da OS muda (pós-transição/
+        // conflito), zerando seleção/motivo sem effect de sincronização.
+        <EstadoOs
+          key={`${estado.status_atual ?? ""}|${estado.motivo ?? ""}`}
+          estado={estado}
+          enviando={enviando}
+          onTransicionar={transicionar}
+        />
+      ) : null}
     </div>
   );
 }
@@ -151,12 +202,17 @@ function Cartao({ titulo, children }: { titulo: string; children: React.ReactNod
 function EstadoOs({
   estado,
   enviando,
-  onAvancar
+  onTransicionar
 }: {
   estado: ConsultaEstado;
   enviando: boolean;
-  onAvancar: () => void;
+  onTransicionar: (destino: Destino, motivo: string) => void;
 }) {
+  const [selecionado, setSelecionado] = useState<Destino | null>(null);
+  const [motivo, setMotivo] = useState("");
+  const [armadoEntregue, setArmadoEntregue] = useState(false);
+  const [mostrarOutros, setMostrarOutros] = useState(false);
+
   if (!estado.ok) {
     switch (estado.motivo) {
       case "TOKEN_REVOGADO":
@@ -170,7 +226,7 @@ function EstadoOs({
             <p className="mt-2">
               Status: <span className="font-semibold">{estado.status_atual}</span>
             </p>
-            <p className="mt-2 font-medium text-emerald-700">Fluxo de produção concluído.</p>
+            <p className="mt-2 font-medium text-emerald-700">Entrega concluída. Alterações somente pelo ERP.</p>
           </Cartao>
         );
       case "FORA_DO_FLUXO":
@@ -195,6 +251,28 @@ function EstadoOs({
     }
   }
 
+  const destinos = estado.destinos || [];
+  const naturais = destinos.filter((d) => d.natural);
+  // EXPEDICAO com forma de entrega indefinida: nenhum natural — os dois avanços
+  // de entrega (sem motivo) aparecem em destaque, sem rótulo de "próxima etapa".
+  const avancosEntrega = naturais.length === 0 ? destinos.filter((d) => d.tipo === "avanco_entrega" && !d.exige_motivo) : [];
+  const destaqueKeys = new Set([...naturais, ...avancosEntrega].map((d) => d.status));
+  const outros = destinos.filter((d) => !destaqueKeys.has(d.status));
+
+  const exigeMotivo = selecionado?.exige_motivo === true;
+  const motivoOk = !exigeMotivo || motivo.trim().length > 0;
+  const isEntregue = selecionado?.status === "ENTREGUE";
+
+  function confirmar() {
+    if (!selecionado || !motivoOk || enviando) return;
+    if (isEntregue && !armadoEntregue) {
+      // Confirmação reforçada: primeiro toque arma, segundo confirma.
+      setArmadoEntregue(true);
+      return;
+    }
+    onTransicionar(selecionado, motivo.trim());
+  }
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ordem de Serviço</p>
@@ -204,17 +282,140 @@ function EstadoOs({
         Status atual:{" "}
         <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800">{estado.status_atual}</span>
       </p>
-      <button
-        type="button"
-        onClick={onAvancar}
-        disabled={enviando}
-        className="mt-6 w-full rounded-2xl bg-emerald-600 px-4 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60"
-      >
-        {enviando ? "Atualizando..." : `Avançar para ${estado.proximo_status}`}
-      </button>
-      <p className="mt-3 text-center text-xs text-slate-400">
-        A etapa avança somente ao tocar no botão.
-      </p>
+
+      {selecionado === null ? (
+        <>
+          {naturais.length > 0 ? (
+            <div className="mt-6 space-y-2">
+              {naturais.map((d) => (
+                <button
+                  key={d.status}
+                  type="button"
+                  onClick={() => setSelecionado(d)}
+                  disabled={enviando}
+                  className="w-full rounded-2xl bg-emerald-600 px-4 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {d.tipo === "retomada" ? `Retomar: ${d.status}` : `Avançar para ${d.status}`}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {avancosEntrega.length > 0 ? (
+            <div className="mt-6 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Definir entrega</p>
+              {avancosEntrega.map((d) => (
+                <button
+                  key={d.status}
+                  type="button"
+                  onClick={() => setSelecionado(d)}
+                  disabled={enviando}
+                  className="w-full rounded-2xl border border-emerald-600 bg-white px-4 py-3.5 text-sm font-bold text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:opacity-60"
+                >
+                  {d.status}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {outros.length > 0 ? (
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setMostrarOutros((v) => !v)}
+                className="text-xs font-semibold uppercase tracking-wide text-slate-500 underline decoration-dotted underline-offset-4"
+              >
+                {mostrarOutros ? "Ocultar outros status" : `Outros status (${outros.length})`}
+              </button>
+              {mostrarOutros ? (
+                <div className="mt-3 space-y-2">
+                  {outros.map((d) => (
+                    <button
+                      key={d.status}
+                      type="button"
+                      onClick={() => setSelecionado(d)}
+                      disabled={enviando}
+                      className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+                    >
+                      <span>{d.status}</span>
+                      <span className="ml-3 shrink-0 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                        {TIPO_LABEL[d.tipo] || d.tipo}
+                        {d.exige_motivo ? " · motivo" : ""}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <p className="mt-4 text-center text-xs text-slate-400">O status só muda ao confirmar.</p>
+        </>
+      ) : (
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-sm text-slate-700">
+            <span className="font-semibold">{estado.status_atual}</span>
+            {" → "}
+            <span className="font-semibold">{selecionado.status}</span>
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{TIPO_LABEL[selecionado.tipo] || selecionado.tipo}</p>
+
+          {exigeMotivo ? (
+            <div className="mt-3">
+              <label htmlFor="osqr-motivo" className="text-xs font-semibold text-slate-600">
+                Motivo (obrigatório)
+              </label>
+              <textarea
+                id="osqr-motivo"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                maxLength={300}
+                rows={3}
+                placeholder={MOTIVO_PLACEHOLDER[selecionado.tipo] || "Descreva o motivo da mudança"}
+                className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800 outline-none focus:border-slate-500"
+              />
+            </div>
+          ) : null}
+
+          {isEntregue ? (
+            <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-medium text-amber-800">
+              Entrega é etapa final: depois de confirmada, este QR não permite novas mudanças.
+              {armadoEntregue ? " Toque novamente para confirmar." : ""}
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelecionado(null);
+                setMotivo("");
+                setArmadoEntregue(false);
+              }}
+              disabled={enviando}
+              className="w-1/3 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"
+            >
+              Voltar
+            </button>
+            <button
+              type="button"
+              onClick={confirmar}
+              disabled={enviando || !motivoOk}
+              className={`w-2/3 rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-sm transition disabled:opacity-60 ${
+                isEntregue && armadoEntregue ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
+            >
+              {enviando
+                ? "Atualizando..."
+                : isEntregue
+                  ? armadoEntregue
+                    ? "Confirmar ENTREGUE agora"
+                    : "Confirmar entrega"
+                  : `Confirmar ${selecionado.status}`}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

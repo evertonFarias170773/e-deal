@@ -121,6 +121,7 @@ export function PedidosListPage() {
     if (status === "ARTE_EM_ANDAMENTO") return "info";
     if (status === "AGUARDANDO_APROVACAO_CLIENTE" || status === "AGUARDANDO_APROVACAO_ATENDENTE") return "warning";
     if (status === "AGUARDANDO_OS") return "special";
+    if (status === "EM IMPRESSAO / PENDENTE" || status === "EM ACABAMENTO / PENDENTE") return "warning";
     if (status === "EM PRODUCAO" || status === "EM IMPRESSAO" || status === "EM ACABAMENTO" || status === "REVISAO") return "info";
     if (status === "PRONTO_EXPEDICAO" || status === "EXPEDIDO" || status === "A RETIRAR" || status === "ENTREGUE") return "success";
     return "neutral";

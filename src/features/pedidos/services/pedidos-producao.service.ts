@@ -43,7 +43,7 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     `)
     .eq("is_prd_aprovado", true)
     // Filtra apenas status operacionais para evitar poluir a lista com os que já saíram da produção
-    .in("status_interno", ["LIBERADO", "REVISAO ATENDENTE", "REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"])
+    .in("status_interno", ["LIBERADO", "REVISAO ATENDENTE", "REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"])
     .order("id_int", { ascending: false });
 
   if (propostasError || !propostasRows) {

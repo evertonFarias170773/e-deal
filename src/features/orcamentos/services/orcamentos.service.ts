@@ -278,7 +278,7 @@ async function fetchPropostaRows(
       } else if (card === "REVISAO_ATENDENTE") {
         query = query.eq("status_interno", "REVISAO ATENDENTE");
       } else if (card === "EM_PRODUCAO") {
-        query = query.in("status_interno", ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM ACABAMENTO"]);
+        query = query.in("status_interno", ["REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"]);
       }
     } else if (filters?.status && filters.status !== "TODOS") {
       if (filters.status === "EM ARTE") {

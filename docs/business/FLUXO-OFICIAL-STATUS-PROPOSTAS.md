@@ -1,8 +1,8 @@
 # FLUXO-OFICIAL-STATUS-PROPOSTAS.md
 
-Versão: 3.0  
+Versão: 3.1  
 Status: Oficial  
-Última atualização: 18/07/2026  
+Última atualização: 23/07/2026  
 Projeto: ERP Ideal
 
 ---
@@ -146,12 +146,16 @@ REVISAO ATENDENTE
 REVISAO PRODUCAO
 EM PRODUCAO
 EM IMPRESSAO
+EM IMPRESSAO / PENDENTE
 EM ACABAMENTO
+EM ACABAMENTO / PENDENTE
 EXPEDICAO
 A RETIRAR
 EM TRANSITO
 ENTREGUE
 ```
+
+`EM IMPRESSAO / PENDENTE` e `EM ACABAMENTO / PENDENTE` foram ratificados em 23/07/2026 como pausas operacionais da etapa base correspondente (mesmo padrão de separador de `AGUARDANDO / PENDENTE`).
 
 Status desconhecido não deve ser convertido automaticamente para `NOVO`.
 
@@ -190,7 +194,9 @@ REVISAO ATENDENTE
 REVISAO PRODUCAO
 EM PRODUCAO
 EM IMPRESSAO
+EM IMPRESSAO / PENDENTE
 EM ACABAMENTO
+EM ACABAMENTO / PENDENTE
 ```
 
 ## Expedição
@@ -451,21 +457,51 @@ EM PRODUCAO ? EM IMPRESSAO
 
 Representa impressão em andamento.
 
-Transição esperada:
+Transições esperadas:
 
 ```text
 EM IMPRESSAO ? EM ACABAMENTO
+EM IMPRESSAO ? EM IMPRESSAO / PENDENTE
 ```
+
+## 6.11.1 `EM IMPRESSAO / PENDENTE`
+
+Representa impressão pausada por impedimento operacional (ex.: falta de material, aguardo de arte ou máquina indisponível).
+
+A entrada nesse status exige motivo registrado na auditoria.
+
+Transições esperadas:
+
+```text
+EM IMPRESSAO / PENDENTE ? EM IMPRESSAO
+```
+
+A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional e exige motivo.
 
 ## 6.12 `EM ACABAMENTO`
 
 Representa atividades posteriores à impressão, como corte, serrilha, dobra, laminação, revisão e embalagem.
 
-Transição esperada:
+Transições esperadas:
 
 ```text
 EM ACABAMENTO ? EXPEDICAO
+EM ACABAMENTO ? EM ACABAMENTO / PENDENTE
 ```
+
+## 6.12.1 `EM ACABAMENTO / PENDENTE`
+
+Representa acabamento pausado por impedimento operacional.
+
+A entrada nesse status exige motivo registrado na auditoria.
+
+Transições esperadas:
+
+```text
+EM ACABAMENTO / PENDENTE ? EM ACABAMENTO
+```
+
+A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional e exige motivo.
 
 ## 6.13 `EXPEDICAO`
 
@@ -479,6 +515,12 @@ EXPEDICAO ? EM TRANSITO
 ```
 
 A escolha depende do método real de entrega.
+
+O próximo natural é determinado pela cotação de frete escolhida (`public.cotacao_frete.escolhido = true`):
+
+- serviço de retirada (ex.: `RETIRA BALCÃO`, `RETIRADA LOCAL`) ? natural é `A RETIRAR`;
+- serviço de transporte (transportadora, SEDEX, motoboy etc.) ? natural é `EM TRANSITO`;
+- sem cotação escolhida ou serviço não informativo ? nenhum dos dois é natural; ambos ficam disponíveis com confirmação.
 
 ## 6.14 `A RETIRAR`
 
@@ -508,9 +550,9 @@ A confirmação deve vir de evidência operacional válida.
 
 Representa entrega concluída.
 
-É estado terminal positivo.
+É estado terminal positivo, inclusive para o fluxo público de QR de produção: após `ENTREGUE`, o QR apenas informa a conclusão e não oferece transições.
 
-Uma reabertura precisa de fluxo específico e auditoria.
+Uma reabertura precisa de fluxo específico e auditoria, executado exclusivamente pelo ERP.
 
 ## 6.17 `CANCELADO`
 
@@ -779,17 +821,29 @@ Não permitir:
 | `LIBERADO / EM ARTE` | `REVISAO ATENDENTE` | Artes concluídas | Controlada |
 | `REVISAO ATENDENTE` | `REVISAO PRODUCAO` | Revisão final aprovada | Manual |
 | `REVISAO PRODUCAO` | `EM PRODUCAO` | Produção iniciada | Manual |
-| `EM PRODUCAO` | `EM IMPRESSAO` | Impressão iniciada | Manual |
-| `EM IMPRESSAO` | `EM ACABAMENTO` | Impressão concluída | Manual |
-| `EM ACABAMENTO` | `EXPEDICAO` | Produção concluída | Manual |
-| `EXPEDICAO` | `A RETIRAR` | Retirada definida | Manual |
-| `EXPEDICAO` | `EM TRANSITO` | Coleta confirmada | Manual |
-| `A RETIRAR` | `ENTREGUE` | Retirada confirmada | Manual |
-| `EM TRANSITO` | `ENTREGUE` | Entrega confirmada | Manual |
+| `EM PRODUCAO` | `EM IMPRESSAO` | Impressão iniciada | Manual (ERP ou QR de Produção) |
+| `EM IMPRESSAO` | `EM IMPRESSAO / PENDENTE` | Pausa com motivo obrigatório | Manual (ERP ou QR de Produção) |
+| `EM IMPRESSAO / PENDENTE` | `EM IMPRESSAO` | Impedimento resolvido | Manual (ERP ou QR de Produção) |
+| `EM IMPRESSAO` | `EM ACABAMENTO` | Impressão concluída | Manual (ERP ou QR de Produção) |
+| `EM ACABAMENTO` | `EM ACABAMENTO / PENDENTE` | Pausa com motivo obrigatório | Manual (ERP ou QR de Produção) |
+| `EM ACABAMENTO / PENDENTE` | `EM ACABAMENTO` | Impedimento resolvido | Manual (ERP ou QR de Produção) |
+| `EM ACABAMENTO` | `EXPEDICAO` | Produção concluída | Manual (ERP ou QR de Produção) |
+| `EXPEDICAO` | `A RETIRAR` | Retirada definida | Manual (ERP ou QR de Produção) |
+| `EXPEDICAO` | `EM TRANSITO` | Coleta confirmada | Manual (ERP ou QR de Produção) |
+| `A RETIRAR` | `ENTREGUE` | Retirada confirmada | Manual (ERP ou QR de Produção) |
+| `EM TRANSITO` | `ENTREGUE` | Entrega confirmada | Manual (ERP ou QR de Produção) |
 
 “Controlada” significa que a transição deve passar pelo serviço oficial e pelas validações do projeto.
 
 Não significa automação autônoma.
+
+O QR de Produção (página pública `/os`, origem `qr_producao`) é um executor oficial das transições entre os status operacionais de produção e expedição listados acima. Regras específicas do QR:
+
+- salto, retorno, pausa e troca entre `A RETIRAR` e `EM TRANSITO` exigem motivo obrigatório, validado no servidor;
+- `ENTREGUE` exige confirmação reforçada e é terminal (sem transições posteriores via QR);
+- destino igual ao status atual é rejeitado;
+- status fora da lista de produção/expedição permanecem controlados exclusivamente pelo ERP (`FORA_DO_FLUXO` no QR);
+- toda transição registra `os_status_log` (status anterior, novo, tipo, motivo, origem `qr_producao`) e mensagem SISTEMA na timeline.
 
 ---
 
@@ -871,7 +925,9 @@ Conduz:
 REVISAO PRODUCAO
 EM PRODUCAO
 EM IMPRESSAO
+EM IMPRESSAO / PENDENTE
 EM ACABAMENTO
+EM ACABAMENTO / PENDENTE
 ```
 
 conforme permissões.
