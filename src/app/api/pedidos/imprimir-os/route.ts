@@ -167,8 +167,10 @@ export async function GET(request: Request) {
   }
 
   // QR Code — sob OS_QR_PUBLICO_ENABLED aponta para a página pública de produção
-  // (/os#<token>, token no fragment — nunca chega a logs de servidor); caso contrário
-  // mantém o destino autenticado do boletim. Sem base canônica válida → sem QR.
+  // (/os?t=<token> — query string: sobrevive a leitores de QR que descartam o
+  // fragment; o client remove o token da URL imediatamente após capturar; rotas
+  // com no-store/no-referrer/noindex). Caso contrário mantém o destino
+  // autenticado do boletim. Sem base canônica válida → sem QR.
   let qrDataUrl: string | null = null;
   const baseUrl = resolverBaseUrlCanonica(request);
   if (baseUrl) {
@@ -176,7 +178,7 @@ export async function GET(request: Request) {
     if (osQrFlagAtiva()) {
       const tokenResult = await obterOuEmitirTokenOsQr(token, authData.user.id, idInt);
       if (tokenResult.success) {
-        qrUrl = `${baseUrl}/os#${tokenResult.token}`;
+        qrUrl = `${baseUrl}/os?t=${tokenResult.token}`;
       } else {
         console.error("[imprimir-os] Token do QR público indisponível (fallback p/ boletim):", tokenResult.error);
       }

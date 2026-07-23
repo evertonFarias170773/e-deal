@@ -31,16 +31,21 @@ type AvancoResultado = {
 
 function capturarToken(): string | null {
   if (typeof window === "undefined") return null;
+  // Transporte primário: query string (?t=) — sobrevive a leitores de QR que
+  // descartam o fragment. Fragment (#) mantido por compatibilidade com PDFs antigos.
+  const query = new URLSearchParams(window.location.search).get("t")?.trim() || "";
   const hash = window.location.hash.replace(/^#/, "").trim();
-  if (hash) {
+  const capturado = query || hash;
+  if (capturado) {
     try {
-      window.sessionStorage.setItem(SESSION_KEY, hash);
+      window.sessionStorage.setItem(SESSION_KEY, capturado);
     } catch {
       // sessionStorage indisponível — segue só com memória
     }
-    // Remove o fragmento da barra de endereço (token sai da URL visível/histórico)
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
-    return hash;
+    // Remove IMEDIATAMENTE query e fragment da barra de endereço
+    // (token sai da URL visível/histórico; refresh usa o sessionStorage).
+    window.history.replaceState(null, "", window.location.pathname);
+    return capturado;
   }
   try {
     return window.sessionStorage.getItem(SESSION_KEY);
@@ -178,6 +183,13 @@ function EstadoOs({
             <p className="mt-2">Etapa controlada pelo ERP.</p>
           </Cartao>
         );
+      case "INDISPONIVEL":
+        return <Cartao titulo="Serviço indisponível">Acompanhamento por QR Code desativado no momento.</Cartao>;
+      case "ERRO_INTERNO":
+        return <Cartao titulo="Erro no servidor">Não foi possível consultar a OS. Tente novamente em instantes.</Cartao>;
+      case "RATE_LIMITED":
+        return <Cartao titulo="Muitas tentativas">Aguarde um instante e recarregue a página.</Cartao>;
+      case "TOKEN_INVALIDO":
       default:
         return <Cartao titulo="QR Code inválido">Verifique se o QR pertence a uma OS ativa.</Cartao>;
     }
