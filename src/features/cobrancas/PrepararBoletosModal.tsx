@@ -7,13 +7,17 @@ import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { X, FileText, AlertTriangle, Loader2, CheckCircle2, Calendar } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
-import type { Cobranca } from "@/features/cobrancas/types";
+import { useAuth } from "@/features/auth/AuthProvider";
+import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
 
 interface PrepararBoletosModalProps {
   isOpen: boolean;
   onClose: () => void;
   cobranca: Cobranca;
   onSuccess: (extReference: string) => void;
+  defaultQtdParcelas?: number;
+  defaultDiasPraInicio?: number;
+  defaultIntervalo?: number;
 }
 
 interface GeneratedInstallment {
@@ -35,6 +39,12 @@ function getTodayLocalDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
+function formatDateBrFromIso(dateStr: string): string {
+  const [year, month, day] = dateStr.split("-");
+  if (!year || !month || !day) return dateStr;
+  return `${day}/${month}/${year}`;
+}
+
 function addDaysToLocalDateString(dateStr: string, days: number): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const date = new Date(year, month - 1, day);
@@ -50,14 +60,30 @@ export function PrepararBoletosModal({
   isOpen,
   onClose,
   cobranca,
-  onSuccess
+  onSuccess,
+  defaultQtdParcelas,
+  defaultDiasPraInicio,
+  defaultIntervalo
 }: PrepararBoletosModalProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { marcarComoBoletosPreparadosLocal } = useCobrancas();
+  const { user } = useAuth();
+  const podeArredondar = Boolean(user?.isAdmin || user?.isSuperAdmin);
   const [step] = useState<"FORM" | "SUCCESS">("FORM");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Condições de pagamento existentes (tabela modelos_cobranca)
+  const [modelosCobranca, setModelosCobranca] = useState<ModeloCobranca[]>([]);
+  const [modeloSelecionadoId, setModeloSelecionadoId] = useState<string>("");
+
+  // Arredondamento de parcelas (apenas admin/superadmin)
+  const [arredondarParcelas, setArredondarParcelas] = useState(false);
+
+  // Parcela única com vencimento escolhido manualmente
+  const [parcelaUnica, setParcelaUnica] = useState(false);
+  const [vencimentoUnico, setVencimentoUnico] = useState<string>("");
 
   // Origin info loaded from database
   const [extReference, setExtReference] = useState("");
@@ -66,9 +92,9 @@ export function PrepararBoletosModal({
 
   // Installment Config parameters
   const valorEntrada = 0;
-  const [qtdParcelas, setQtdParcelas] = useState<number>(1);
-  const [diasPraInicio, setDiasPraInicio] = useState<number>(30);
-  const [intervalo, setIntervalo] = useState<number>(30);
+  const [qtdParcelas, setQtdParcelas] = useState<number>(defaultQtdParcelas && defaultQtdParcelas >= 1 ? defaultQtdParcelas : 1);
+  const [diasPraInicio, setDiasPraInicio] = useState<number>(defaultDiasPraInicio !== undefined && defaultDiasPraInicio >= 0 ? defaultDiasPraInicio : 30);
+  const [intervalo, setIntervalo] = useState<number>(defaultIntervalo !== undefined && defaultIntervalo >= 0 ? defaultIntervalo : 30);
 
   // Generated installments list
   const [installments, setInstallments] = useState<GeneratedInstallment[]>([]);
@@ -122,8 +148,76 @@ export function PrepararBoletosModal({
     void loadOriginDetails();
   }, [cobranca]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchModelos = async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+      const { data, error } = await client
+        .from("modelos_cobranca")
+        .select("*")
+        .order("modelo", { ascending: true })
+        .order("inicio", { ascending: true })
+        .order("qtd_parcela", { ascending: true })
+        .order("intervalo", { ascending: true });
+      if (!error && data) {
+        setModelosCobranca(data as ModeloCobranca[]);
+      }
+    };
+    void fetchModelos();
+  }, [isOpen]);
+
+  const handleSelecionarModelo = (id: string) => {
+    setModeloSelecionadoId(id);
+    const modelo = modelosCobranca.find((m) => String(m.id) === id);
+    if (!modelo) return;
+
+    const qtd = Number(modelo.qtd_parcela);
+    const inicio = Number(modelo.inicio);
+    const intervaloModelo = Number(modelo.intervalo);
+
+    setQtdParcelas(Number.isFinite(qtd) && qtd >= 1 ? qtd : 1);
+    setDiasPraInicio(Number.isFinite(inicio) && inicio >= 0 ? inicio : 30);
+    setIntervalo(Number.isFinite(intervaloModelo) && intervaloModelo >= 0 ? intervaloModelo : 30);
+  };
+
+  const handleToggleParcelaUnica = (ativa: boolean) => {
+    setParcelaUnica(ativa);
+    // Parcelas já geradas no outro modo ficariam inconsistentes na revisão.
+    setInstallments([]);
+    setValidationError(null);
+  };
+
   const handleGerarParcelas = () => {
     const total = Number(cobranca.valor) || 0;
+
+    if (parcelaUnica) {
+      if (!vencimentoUnico) {
+        showToast({ type: "warning", title: "Selecione a data de vencimento da parcela única." });
+        return;
+      }
+      if (vencimentoUnico < getTodayLocalDateString()) {
+        showToast({ type: "warning", title: "O vencimento não pode ser anterior à data atual." });
+        return;
+      }
+
+      const descBaseUnica = `Boleto E-Faturado - OS: ${cobranca.os_ideal || cobranca.id_int}`;
+      setInstallments([
+        {
+          parcela: 1,
+          total_parcelas: 1,
+          valor: Number(total.toFixed(2)),
+          vencimento: vencimentoUnico,
+          descricao: `Parcela 1/1 - ${descBaseUnica}`,
+          multa: 0,
+          juros_dia: 0,
+          deposito_conta: false
+        }
+      ]);
+      setValidationError(null);
+      return;
+    }
+
     const entrada = Number(valorEntrada) || 0;
     const numParcelasFuturas = Number(qtdParcelas) || 1;
     const diasInicio = Number(diasPraInicio) || 0;
@@ -186,7 +280,10 @@ export function PrepararBoletosModal({
       }
     } else {
       const totalParcelas = numParcelasFuturas;
-      const valorBaseParcela = Math.floor((total / totalParcelas) * 100) / 100;
+      const aplicarArredondamento = arredondarParcelas && podeArredondar && totalParcelas > 1;
+      const valorBaseParcela = aplicarArredondamento
+        ? Math.round(total / totalParcelas)
+        : Math.floor((total / totalParcelas) * 100) / 100;
       const totalCalculado = Number((valorBaseParcela * totalParcelas).toFixed(2));
       const diferenca = Number((total - totalCalculado).toFixed(2));
 
@@ -280,10 +377,15 @@ export function PrepararBoletosModal({
       return;
     }
 
-    // 2. Validar parcelas com vencimento pendente ou valor <= 0
+    // 2. Validar parcelas com vencimento pendente, vencimento no passado ou valor <= 0
+    const hojeStr = getTodayLocalDateString();
     for (const item of installments) {
       if (!item.vencimento) {
         setValidationError(`A parcela ${item.parcela}/${item.total_parcelas} não possui vencimento definido.`);
+        return;
+      }
+      if (item.vencimento < hojeStr) {
+        setValidationError("O vencimento não pode ser anterior à data atual.");
         return;
       }
       if (Number(item.valor) <= 0) {
@@ -323,7 +425,7 @@ export function PrepararBoletosModal({
         empresa: cobranca.empresa,
         nome_cliente: cobranca.cliente,
         documento: cobranca.documento,
-        n_nf: hasNfe ? numeroNf : null,
+        n_nf: numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null,
         ext_reference: hasNfe ? extReference : `P${item.parcela}${item.total_parcelas}${cobranca.id_int}`,
         parcela: item.parcela,
         total_parcelas: item.total_parcelas,
@@ -412,6 +514,22 @@ export function PrepararBoletosModal({
     }
   };
 
+  const hojeLocal = getTodayLocalDateString();
+  const somaParcelas = installments.reduce((acc, item) => acc + (Number(item.valor) || 0), 0);
+  const somaConfere =
+    installments.length > 0 && Math.abs(somaParcelas - (Number(cobranca.valor) || 0)) <= 0.01;
+  const parcelasValidas =
+    installments.length > 0 &&
+    installments.every(
+      (item) => Boolean(item.vencimento) && item.vencimento >= hojeLocal && Number(item.valor) > 0
+    );
+  const revisaoValida = somaConfere && parcelasValidas;
+  const nfAplicada = numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null;
+  const arredondamentoAtivo = arredondarParcelas && podeArredondar && installments.length > 1;
+  const ultimaParcelaAjustada =
+    arredondamentoAtivo &&
+    Math.abs(installments[installments.length - 1].valor - installments[0].valor) > 0.001;
+
   if (!isOpen) return null;
 
   return (
@@ -479,19 +597,92 @@ export function PrepararBoletosModal({
 
               {/* Formulário de Parcelamento */}
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
-                <div className="max-w-xs">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Forma de Pagamento</label>
-                  <select
-                    disabled
-                    value="15"
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-100 text-slate-600 outline-none font-medium"
-                  >
-                    <option value="15">15 - Boleto Bancário</option>
-                  </select>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Forma de Pagamento</label>
+                    <select
+                      disabled
+                      value="15"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-100 text-slate-600 outline-none font-medium"
+                    >
+                      <option value="15">15 - Boleto Bancário</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Condição de Pagamento</label>
+                    <select
+                      value={modeloSelecionadoId}
+                      onChange={(e) => handleSelecionarModelo(e.target.value)}
+                      disabled={parcelaUnica}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <option value="">Selecionar condição...</option>
+                      {modelosCobranca.map((modelo) => (
+                        <option key={String(modelo.id)} value={String(modelo.id)}>
+                          {modelo.resultado}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Preenche parcelas, dias e intervalo abaixo (editáveis).
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Número da NF (opcional)</label>
+                    <input
+                      type="text"
+                      value={numeroNf ?? ""}
+                      onChange={(e) => setNumeroNf(e.target.value)}
+                      placeholder="Pode ser informada depois"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      {hasNfe
+                        ? "NF-e localizada automaticamente. Você pode ajustar."
+                        : "Sem NF vinculada. O fiscal pode complementar depois."}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="border-t border-slate-200 pt-4 space-y-4">
                   <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
+
+                  {/* Parcela única com vencimento específico */}
+                  <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="parcela-unica"
+                        checked={parcelaUnica}
+                        onChange={(e) => handleToggleParcelaUnica(e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <label
+                        htmlFor="parcela-unica"
+                        className="text-xs font-semibold text-slate-700 cursor-pointer select-none"
+                      >
+                        Parcela única com vencimento específico
+                        <span className="block text-[10px] font-normal text-slate-400">
+                          Gera 1 parcela com o valor total da cobrança no vencimento escolhido.
+                        </span>
+                      </label>
+                    </div>
+                    {parcelaUnica && (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">
+                          Vencimento da parcela única
+                        </label>
+                        <input
+                          type="date"
+                          value={vencimentoUnico}
+                          min={hojeLocal}
+                          onChange={(e) => setVencimentoUnico(e.target.value)}
+                          className="w-full md:w-48 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+                        />
+                      </div>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 mb-1">Qtd de parcelas futuras</label>
@@ -500,7 +691,8 @@ export function PrepararBoletosModal({
                         min="1"
                         value={qtdParcelas}
                         onChange={(e) => setQtdParcelas(Number(e.target.value))}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+                        disabled={parcelaUnica}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono disabled:bg-slate-100 disabled:text-slate-400"
                       />
                     </div>
                     <div>
@@ -510,7 +702,8 @@ export function PrepararBoletosModal({
                         min="0"
                         value={diasPraInicio}
                         onChange={(e) => setDiasPraInicio(Number(e.target.value))}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+                        disabled={parcelaUnica}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono disabled:bg-slate-100 disabled:text-slate-400"
                       />
                     </div>
                     <div>
@@ -520,14 +713,43 @@ export function PrepararBoletosModal({
                         min="1"
                         value={intervalo}
                         onChange={(e) => setIntervalo(Number(e.target.value))}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+                        disabled={parcelaUnica}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono disabled:bg-slate-100 disabled:text-slate-400"
                       />
                     </div>
-                    <div className="md:col-span-3 flex justify-end">
+                    <div className="md:col-span-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      {podeArredondar ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="arredondar-parcelas"
+                            checked={arredondarParcelas}
+                            onChange={(e) => setArredondarParcelas(e.target.checked)}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <label
+                            htmlFor="arredondar-parcelas"
+                            className="text-xs font-semibold text-slate-700 cursor-pointer select-none"
+                          >
+                            Arredondar valores das parcelas
+                            <span className="block text-[10px] font-normal text-slate-400">
+                              Diferença ajustada na última parcela; o total da cobrança é preservado.
+                            </span>
+                          </label>
+                        </div>
+                      ) : (
+                        <span />
+                      )}
                       <button
                         type="button"
                         onClick={handleGerarParcelas}
-                        className="rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-6 py-2.5 text-sm font-semibold text-white transition shadow-sm"
+                        disabled={parcelaUnica && !vencimentoUnico}
+                        title={
+                          parcelaUnica && !vencimentoUnico
+                            ? "Selecione a data de vencimento da parcela única."
+                            : undefined
+                        }
+                        className="rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-6 py-2.5 text-sm font-semibold text-white transition shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Gerar Parcelas
                       </button>
@@ -587,6 +809,7 @@ export function PrepararBoletosModal({
                             <input
                               type="date"
                               value={item.vencimento}
+                              min={hojeLocal}
                               onChange={(e) => handleInstallmentChange(idx, "vencimento", e.target.value)}
                               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
                             />
@@ -653,6 +876,92 @@ export function PrepararBoletosModal({
                       </div>
                     ))}
                   </div>
+
+                  {/* Revisão do Lançamento */}
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Revisão do lançamento
+                      </h4>
+                      {arredondamentoAtivo && (
+                        <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold border border-amber-200 rounded-lg text-[10px]">
+                          Valores arredondados
+                        </span>
+                      )}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400">
+                            <th className="px-4 py-2 font-bold">Parcela</th>
+                            <th className="px-4 py-2 font-bold">Vencimento</th>
+                            <th className="px-4 py-2 font-bold text-right">Valor</th>
+                            <th className="px-4 py-2 font-bold">Tipo</th>
+                            <th className="px-4 py-2 font-bold">NF aplicada</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {installments.map((item, idx) => {
+                            const ehUltimaAjustada =
+                              ultimaParcelaAjustada && idx === installments.length - 1;
+                            return (
+                              <tr key={idx} className="border-t border-slate-200 bg-white">
+                                <td className="px-4 py-2 font-semibold text-slate-800">
+                                  {item.parcela}/{item.total_parcelas}
+                                </td>
+                                <td className="px-4 py-2 font-mono text-slate-700">
+                                  {item.vencimento ? (
+                                    formatDateBrFromIso(item.vencimento)
+                                  ) : (
+                                    <span className="text-red-600 font-semibold">A definir</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-right font-mono font-semibold text-slate-800">
+                                  {formatCurrency(Number(item.valor) || 0)}
+                                  {ehUltimaAjustada && (
+                                    <span className="ml-2 px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-bold align-middle">
+                                      Ajustada
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2">
+                                  {item.deposito_conta ? (
+                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 rounded-lg text-[10px]">
+                                      Depósito em conta
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-sky-50 text-sky-700 font-bold border border-sky-200 rounded-lg text-[10px]">
+                                      Boleto
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 font-mono text-slate-700">
+                                  {nfAplicada ?? "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t border-slate-300 bg-slate-100">
+                            <td className="px-4 py-2 font-bold text-slate-700" colSpan={2}>
+                              Soma das parcelas
+                            </td>
+                            <td
+                              className={`px-4 py-2 text-right font-mono font-bold ${somaConfere ? "text-emerald-700" : "text-red-600"}`}
+                            >
+                              {formatCurrency(somaParcelas)}
+                            </td>
+                            <td className="px-4 py-2 text-[10px] text-slate-500" colSpan={2}>
+                              {somaConfere
+                                ? `Confere com o total de ${formatCurrency(Number(cobranca.valor) || 0)}.`
+                                : `Deve ser igual ao total de ${formatCurrency(Number(cobranca.valor) || 0)}.`}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -695,7 +1004,14 @@ export function PrepararBoletosModal({
               <button
                 type="button"
                 onClick={handleConfirmarFaturamento}
-                disabled={isSaving || installments.length === 0}
+                disabled={isSaving || installments.length === 0 || !revisaoValida}
+                title={
+                  installments.length === 0
+                    ? "Gere as parcelas antes de confirmar."
+                    : !revisaoValida
+                      ? "Revise as parcelas: soma igual ao total, valores válidos e vencimento a partir de hoje."
+                      : undefined
+                }
                 className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[150px]"
               >
                 {isSaving ? (
