@@ -270,6 +270,18 @@ export interface MaestroV2Context {
   pendingClientSearchTerm?: string | null;
   /** Itens do orçamento pendentes para o candidato confirmado */
   pendingBudgetForCandidate?: OrcamentoAvulsoItem[] | null;
+  /**
+   * Candidatos de cliente aguardando confirmação NO AGENT LOOP (campo próprio
+   * do motor agêntico — o motor legado nunca lê nem escreve aqui, e ele NÃO
+   * participa do gate de escrita que devolve o turno ao legado).
+   */
+  agentPendingClientCandidates?: Array<{
+    id_cliente: number;
+    nome: string;
+    fantasia: string;
+    documento: string;
+    cidade_uf: string;
+  }> | null;
   /** Seleção de transportadora pendente — usuário escolhe por número (análogo ao endereço) */
   pendingFreightChoice?: {
     clientInternalId: number;
