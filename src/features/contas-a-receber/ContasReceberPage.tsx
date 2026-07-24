@@ -34,6 +34,23 @@ import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 type ActiveTab = "CARTEIRA" | "BOLETOS" | "DEPOSITOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
 type StatusFilter = "TODOS" | "A_VENCER" | "VENCIDOS" | "PAID" | "VENCIDO" | "CANCELADO" | "NAO_REGISTRADO";
+type FormaRecebimento = "PIX" | "CARTAO" | "DINHEIRO" | "BONIFICADO" | "OUTROS";
+
+const FORMAS_RECEBIMENTO: Array<{ value: FormaRecebimento; label: string }> = [
+  { value: "PIX", label: "PIX" },
+  { value: "CARTAO", label: "Cartão" },
+  { value: "DINHEIRO", label: "Dinheiro" },
+  { value: "BONIFICADO", label: "Bonificado" },
+  { value: "OUTROS", label: "Outros" }
+];
+
+// Ações de ciclo de vida do título (aba Boletos/Depósitos): agrupadas em um único
+// prop para não multiplicar callbacks no encadeamento até BoletoActions.
+type BoletoLifecycleOps = {
+  cancelarParaDeposito: (item: BoletoDepositoMock) => void;
+  editarDeposito: (item: BoletoDepositoMock) => void;
+  transformarEmBoleto: (item: BoletoDepositoMock) => void;
+};
 
 function getResolvedPdfUrl(urlOrPath?: string): string {
   if (!urlOrPath) return "";
@@ -74,6 +91,7 @@ export function ContasReceberPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { recalcularBoletoIdIntsLocal } = useCobrancas();
+  const { user: usuarioLogado } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>("CARTEIRA");
   const [recebiveis, setRecebiveis] = useState<BoletoDepositoMock[]>([]);
   const [boletosDepositos, setBoletosDepositos] = useState<BoletoDepositoMock[]>([]);
@@ -100,6 +118,34 @@ export function ContasReceberPage() {
   const [selectedBoletoCliente, setSelectedBoletoCliente] = useState<string | null>(null);
   const [selectedBoletoIdInt, setSelectedBoletoIdInt] = useState<number | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [cancelTarget, setCancelTarget] = useState<BoletoDepositoMock | null>(null);
+  const [isCanceling, setIsCanceling] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState<BoletoDepositoMock | null>(null);
+  const [isConfirmingBaixa, setIsConfirmingBaixa] = useState(false);
+  const [confirmBankCancelDone, setConfirmBankCancelDone] = useState(false);
+  const [formaRecebimento, setFormaRecebimento] = useState<FormaRecebimento | "">("");
+  const [obsRecebimento, setObsRecebimento] = useState("");
+
+  // Prorrogar vencimento (cancela original + gera substituto)
+  const [prorrogarTarget, setProrrogarTarget] = useState<BoletoDepositoMock | null>(null);
+  const [prorrogarNovoVenc, setProrrogarNovoVenc] = useState("");
+  const [prorrogarMotivo, setProrrogarMotivo] = useState("");
+  const [isProrrogando, setIsProrrogando] = useState(false);
+  const [prorrogarBankCancelDone, setProrrogarBankCancelDone] = useState(false);
+
+  // Cancelar boleto -> depósito futuro
+  const [depConvertTarget, setDepConvertTarget] = useState<BoletoDepositoMock | null>(null);
+  const [isConvertingDep, setIsConvertingDep] = useState(false);
+  const [depConvertBankDone, setDepConvertBankDone] = useState(false);
+
+  // Editar depósito (somente vencimento)
+  const [editDepTarget, setEditDepTarget] = useState<BoletoDepositoMock | null>(null);
+  const [editDepVenc, setEditDepVenc] = useState("");
+  const [isEditingDep, setIsEditingDep] = useState(false);
+
+  // Transformar depósito -> boleto
+  const [transformTarget, setTransformTarget] = useState<BoletoDepositoMock | null>(null);
+  const [isTransforming, setIsTransforming] = useState(false);
   const [deletingBoletoId, setDeletingBoletoId] = useState<string | null>(null);
   const [confirmDeleteBoleto, setConfirmDeleteBoleto] = useState<BoletoDepositoMock | null>(null);
 
@@ -280,40 +326,417 @@ export function ContasReceberPage() {
   }, [recebiveis]);
 
   function confirmRecebimento(id: string) {
-    const paidAt = new Date().toISOString();
-    setRecebiveis((current) =>
-      current.map((item) => item.id === id ? { ...item, status: "PAID", confirmado: true, paid_at: paidAt } : item)
-    );
-    setBoletosDepositos((current) =>
-      current.map((item) => item.id === id ? { ...item, status: "PAID", confirmado: true, paid_at: paidAt } : item)
-    );
-    showToast({ type: "success", title: "Recebimento confirmado no mock." });
+    const item =
+      boletosDepositos.find((row) => row.id === id) ||
+      recebiveis.find((row) => row.id === id);
+
+    if (!item) {
+      showToast({ type: "error", title: "Registro não encontrado para baixa." });
+      return;
+    }
+    if (item.status === "PAID" || item.paid_at) {
+      showToast({ type: "warning", title: "Este título já está baixado." });
+      return;
+    }
+    if (item.status === "CANCELADO") {
+      showToast({ type: "warning", title: "Título cancelado não pode ser baixado." });
+      return;
+    }
+
+    setConfirmBankCancelDone(false);
+    setFormaRecebimento("");
+    setObsRecebimento("");
+    setConfirmTarget(item);
   }
 
   function cancelRecebivel(id: string) {
-    const confirmed = window.confirm("Cancelar recebível mockado? Nenhum backend real será acionado.");
-    if (!confirmed) return;
+    const item =
+      boletosDepositos.find((row) => row.id === id) ||
+      recebiveis.find((row) => row.id === id);
 
-    setRecebiveis((current) => current.map((item) => item.id === id ? { ...item, status: "CANCELADO", confirmado: false } : item));
-    setBoletosDepositos((current) => current.map((item) => item.id === id ? { ...item, status: "CANCELADO", confirmado: false } : item));
-    showToast({ type: "warning", title: "Recebível cancelado no mock." });
+    if (!item) {
+      showToast({ type: "error", title: "Registro não encontrado para cancelamento." });
+      return;
+    }
+    if (item.status === "CANCELADO") {
+      showToast({ type: "warning", title: "Este título já está cancelado." });
+      return;
+    }
+
+    setCancelTarget(item);
   }
 
-  function prorrogarBoleto(id: string) {
-    setBoletosDepositos((current) =>
-      current.map((item) => {
-        if (item.id !== id) return item;
-        const nextDate = addDays(item.vencimento, 7);
-        return {
-          ...item,
-          vencimento: nextDate,
-          status: "A_VENCER",
-          dias_atraso: undefined,
-          observacao: "Vencimento prorrogado no mock; status financeiro permanece A_VENCER."
-        };
-      })
-    );
-    showToast({ type: "info", title: "Vencimento prorrogado em 7 dias no mock." });
+  function abrirProrrogar(id: string) {
+    const item = boletosDepositos.find((row) => row.id === id) || recebiveis.find((row) => row.id === id);
+    if (!item) {
+      showToast({ type: "error", title: "Registro não encontrado para prorrogação." });
+      return;
+    }
+    setProrrogarNovoVenc("");
+    setProrrogarMotivo("");
+    setProrrogarBankCancelDone(false);
+    setProrrogarTarget(item);
+  }
+
+  const confirmadoPorLabel = () =>
+    usuarioLogado?.nomeUsuario || usuarioLogado?.name || usuarioLogado?.email || "Financeiro";
+
+  // 1) Prorrogar: cancela o boleto atual no banco e cria um substituto com o novo
+  //    vencimento, registrando-o pelo fluxo oficial. Nunca deixa 2 boletos ativos.
+  async function handleProrrogar() {
+    const item = prorrogarTarget;
+    if (!item || isProrrogando) return;
+
+    const isRegistered = Boolean(item.id_boleto_c6 || item.linha_digitavel || item.nosso_numero);
+    if (item.status === "PAID" || item.paid_at || item.status === "CANCELADO") {
+      showToast({ type: "warning", title: "Este título não está mais em situação de prorrogação." });
+      setProrrogarTarget(null);
+      return;
+    }
+    if (!isRegistered) {
+      showToast({ type: "warning", title: "Somente boletos registrados no banco podem ser prorrogados." });
+      return;
+    }
+    const vencAtual = String(item.vencimento).slice(0, 10);
+    if (!prorrogarNovoVenc) {
+      showToast({ type: "warning", title: "Selecione a nova data de vencimento." });
+      return;
+    }
+    if (prorrogarNovoVenc <= vencAtual) {
+      showToast({ type: "warning", title: "A nova data deve ser posterior ao vencimento atual." });
+      return;
+    }
+    if (prorrogarNovoVenc < today) {
+      showToast({ type: "warning", title: "A nova data não pode ser anterior a hoje." });
+      return;
+    }
+
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast({ type: "error", title: "Supabase não configurado." });
+      return;
+    }
+
+    setIsProrrogando(true);
+    let bancoCancelado = prorrogarBankCancelDone;
+    try {
+      const idEmpresa = Number(item.id_empresa || 1);
+
+      // Ler a linha original completa ANTES de cancelar, para uma cópia fiel.
+      const { data: origRow, error: origFetchErr } = await client
+        .from("boletos")
+        .select("*")
+        .eq("id", item.id)
+        .maybeSingle();
+      if (origFetchErr || !origRow) {
+        throw new Error(`Falha ao ler o título original: ${origFetchErr?.message || "não encontrado"}`);
+      }
+
+      // (a) Cancelar o boleto original no banco (uma única vez; retry não repete).
+      if (!bancoCancelado) {
+        const { consultarDetalhesBoletoC6 } = await import("@/features/cobrancas/services/pagamentos-v2.service");
+        const detalhes = await consultarDetalhesBoletoC6(String(item.id_boleto_c6), idEmpresa);
+        const statusC6 = String(detalhes?.status || "").toUpperCase();
+        const temPagamento = Array.isArray(detalhes?.payments) && detalhes.payments.length > 0;
+        if (statusC6 === "PAID" || temPagamento) {
+          showToast({
+            type: "warning",
+            title: "O banco indica este boleto como pago.",
+            description: "Prorrogação bloqueada para evitar duplicidade."
+          });
+          return;
+        }
+        if (!statusC6.includes("CANCEL")) {
+          const { deleteBoletoFromBankViaN8n } = await import("@/features/nfe/services/nfe.service");
+          await deleteBoletoFromBankViaN8n(item.id, String(item.id_boleto_c6), idEmpresa);
+        }
+        bancoCancelado = true;
+        setProrrogarBankCancelDone(true);
+      }
+
+      const confirmadoPor = confirmadoPorLabel();
+      const agoraIso = new Date().toISOString();
+      const diasProrg = Math.round(
+        (new Date(`${prorrogarNovoVenc}T00:00:00`).getTime() - new Date(`${vencAtual}T00:00:00`).getTime()) / 86400000
+      );
+      const motivoTxt = prorrogarMotivo.trim();
+
+      // (b) Marcar o ORIGINAL como cancelado/substituído. A guarda .in impede
+      //     duplicar o substituto num retry (se já não estiver ativo, aborta).
+      const { data: origUpd, error: origErr } = await client
+        .from("boletos")
+        .update({
+          status: "CANCELADO",
+          is_prorrogado: true,
+          motivo_prorg: `Prorrogado por ${confirmadoPor} em ${agoraIso}: venc ${vencAtual} -> ${prorrogarNovoVenc}. Substituído por novo título.${motivoTxt ? ` Motivo: ${motivoTxt}` : ""}`
+        })
+        .eq("id", item.id)
+        .in("status", ["A_VENCER", "VENCIDO", "GERADO"])
+        .select("id");
+      if (origErr) throw new Error(`Falha ao cancelar o título original: ${origErr.message}`);
+      if (!origUpd || origUpd.length === 0) {
+        throw new Error("O título original já não está em situação de prorrogação (pode já ter sido prorrogado). Nenhum novo título foi criado.");
+      }
+
+      // (c) Criar o substituto (cópia fiel; só o vencimento muda; ainda não registrado).
+      const payloadNovo = {
+        id_int: origRow.id_int ?? null,
+        id_cliente: origRow.id_cliente ?? null,
+        id_empresa: origRow.id_empresa ?? null,
+        empresa: origRow.empresa ?? null,
+        nome_cliente: origRow.nome_cliente ?? null,
+        documento: origRow.documento ?? null,
+        n_nf: origRow.n_nf ?? null,
+        ext_reference: origRow.ext_reference ?? null,
+        parcela: origRow.parcela,
+        total_parcelas: origRow.total_parcelas ?? origRow.parcela,
+        valor: origRow.valor,
+        vencimento: prorrogarNovoVenc,
+        descricao: origRow.descricao ?? "",
+        multa: origRow.multa ?? 0,
+        juros_dia: origRow.juros_dia ?? 0,
+        deposito_conta: false,
+        status: "A_VENCER",
+        is_faturado: origRow.is_faturado ?? true,
+        is_avulso: origRow.is_avulso ?? false,
+        id_pagamento: origRow.id_pagamento ?? null,
+        is_prorrogado: true,
+        dias_prorg: diasProrg,
+        motivo_prorg: `Prorrogação do título ${origRow.id_pagamento || origRow.id} (venc original ${vencAtual}) por ${confirmadoPor} em ${agoraIso}.${motivoTxt ? ` Motivo: ${motivoTxt}` : ""}`
+      };
+      const { data: novoBoleto, error: insErr } = await client
+        .from("boletos")
+        .insert(payloadNovo)
+        .select("*")
+        .maybeSingle();
+      if (insErr || !novoBoleto) {
+        throw new Error(`Original cancelado, mas falhou ao criar o novo título: ${insErr?.message || "sem retorno"}.`);
+      }
+
+      // (d) Registrar o substituto no banco. Falha aqui = mantém PENDENTE (não fatal).
+      let registroOk = false;
+      let registroErro = "";
+      try {
+        const { registerBoletoViaN8n } = await import("@/features/nfe/services/nfe.service");
+        const result = await registerBoletoViaN8n(novoBoleto);
+        if (result && result.data) {
+          const c6 = result.data;
+          const updates: Record<string, string | null> = {};
+          let vs = "A_VENCER";
+          if (c6.status && ["A_RECEBER", "A_VENCER", "PAID", "CANCELADO"].includes(String(c6.status))) {
+            vs = String(c6.status);
+          }
+          updates.status = vs;
+          const idB = c6.id_boleto_c6 || c6.id;
+          if (idB) updates.id_boleto_c6 = idB;
+          if (c6.nosso_numero || c6.our_number) updates.nosso_numero = c6.nosso_numero || c6.our_number;
+          if (c6.linha_digitavel || c6.digitable_line) updates.linha_digitavel = c6.linha_digitavel || c6.digitable_line;
+          if (c6.codigo_barras || c6.bar_code) updates.codigo_barras = c6.codigo_barras || c6.bar_code;
+          const urlPdf = c6.url_pdf || c6.pdf_url || c6.pdfUrl || c6.urlPdf || c6.pdf_storage || c6.url || c6.pdf || null;
+          if (urlPdf) updates.url_pdf = urlPdf;
+          const pdfStorage = c6.pdf_storage || c6.storage_path || null;
+          if (pdfStorage) updates.pdf_storage = pdfStorage;
+          await client.from("boletos").update(updates).eq("id", novoBoleto.id);
+        }
+        registroOk = true;
+      } catch (regErr) {
+        registroErro = regErr instanceof Error ? regErr.message : String(regErr);
+      }
+
+      if (item.id_int) await recalcularBoletoIdIntsLocal(Number(item.id_int));
+      setRefreshTrigger((prev) => prev + 1);
+      setProrrogarTarget(null);
+      setProrrogarNovoVenc("");
+      setProrrogarMotivo("");
+      setProrrogarBankCancelDone(false);
+
+      if (registroOk) {
+        showToast({
+          type: "success",
+          title: "Boleto prorrogado.",
+          description: `Original cancelado no banco e novo boleto registrado para ${formatLocalDate(prorrogarNovoVenc)}.`
+        });
+      } else {
+        showToast({
+          type: "warning",
+          title: "Prorrogado, mas o registro bancário do novo boleto falhou.",
+          description: `O novo título ficou PENDENTE de registro — registre-o depois. ${registroErro}`
+        });
+      }
+    } catch (err) {
+      console.error("[ContasReceberPage] falha na prorrogação:", err);
+      showToast({
+        type: "error",
+        title: "Erro na prorrogação",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsProrrogando(false);
+    }
+  }
+
+  // 2) Cancelar boleto -> depósito futuro: cancela no banco e mantém o recebível
+  //    ativo como depósito (sem cobrança bancária). Não marca cancelado/pago.
+  async function handleCancelarParaDeposito() {
+    const item = depConvertTarget;
+    if (!item || isConvertingDep) return;
+    const isRegistered = Boolean(item.id_boleto_c6 || item.linha_digitavel || item.nosso_numero);
+    if (item.status === "PAID" || item.paid_at || item.status === "CANCELADO") {
+      showToast({ type: "warning", title: "Este título não está em situação de cancelamento." });
+      setDepConvertTarget(null);
+      return;
+    }
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast({ type: "error", title: "Supabase não configurado." });
+      return;
+    }
+    setIsConvertingDep(true);
+    let bancoCancelado = depConvertBankDone;
+    try {
+      const idEmpresa = Number(item.id_empresa || 1);
+      if (isRegistered && !bancoCancelado) {
+        const { consultarDetalhesBoletoC6 } = await import("@/features/cobrancas/services/pagamentos-v2.service");
+        const detalhes = await consultarDetalhesBoletoC6(String(item.id_boleto_c6), idEmpresa);
+        const statusC6 = String(detalhes?.status || "").toUpperCase();
+        const temPagamento = Array.isArray(detalhes?.payments) && detalhes.payments.length > 0;
+        if (statusC6 === "PAID" || temPagamento) {
+          showToast({
+            type: "warning",
+            title: "O banco indica este boleto como pago.",
+            description: "Cancelamento bloqueado para evitar duplicidade."
+          });
+          return;
+        }
+        if (!statusC6.includes("CANCEL")) {
+          const { deleteBoletoFromBankViaN8n } = await import("@/features/nfe/services/nfe.service");
+          await deleteBoletoFromBankViaN8n(item.id, String(item.id_boleto_c6), idEmpresa);
+        }
+        bancoCancelado = true;
+        setDepConvertBankDone(true);
+      }
+
+      const { data: upd, error } = await client
+        .from("boletos")
+        .update({
+          deposito_conta: true,
+          id_boleto_c6: null,
+          nosso_numero: null,
+          linha_digitavel: null,
+          codigo_barras: null,
+          url_pdf: null,
+          pdf_storage: null
+        })
+        .eq("id", item.id)
+        .in("status", ["A_VENCER", "VENCIDO", "GERADO"])
+        .select("id");
+      if (error) throw new Error(`Falha ao converter em depósito: ${error.message}`);
+      if (!upd || upd.length === 0) {
+        throw new Error("O título não está mais em situação de conversão.");
+      }
+
+      showToast({ type: "success", title: "Boleto cancelado no banco e mantido como depósito futuro." });
+      if (item.id_int) await recalcularBoletoIdIntsLocal(Number(item.id_int));
+      setDepConvertTarget(null);
+      setDepConvertBankDone(false);
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] falha ao converter boleto em depósito:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao cancelar/converter",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsConvertingDep(false);
+    }
+  }
+
+  // 3) Editar depósito: altera somente o vencimento pelo serviço oficial.
+  async function handleEditarDeposito() {
+    const item = editDepTarget;
+    if (!item || isEditingDep) return;
+    if (item.status === "PAID" || item.paid_at || item.status === "CANCELADO") {
+      showToast({ type: "warning", title: "Este depósito não pode ser editado." });
+      setEditDepTarget(null);
+      return;
+    }
+    if (!item.deposito_conta) {
+      showToast({ type: "warning", title: "Somente depósitos podem ser editados aqui." });
+      setEditDepTarget(null);
+      return;
+    }
+    if (!editDepVenc) {
+      showToast({ type: "warning", title: "Selecione a nova data de vencimento." });
+      return;
+    }
+    setIsEditingDep(true);
+    try {
+      const { updateBoletoInDb } = await import("@/features/nfe/services/nfe.service");
+      await updateBoletoInDb(item.id, { vencimento: editDepVenc });
+      showToast({
+        type: "success",
+        title: "Depósito atualizado.",
+        description: `Vencimento alterado de ${formatLocalDate(String(item.vencimento).slice(0, 10))} para ${formatLocalDate(editDepVenc)}.`
+      });
+      if (item.id_int) await recalcularBoletoIdIntsLocal(Number(item.id_int));
+      setEditDepTarget(null);
+      setEditDepVenc("");
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] falha ao editar depósito:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao editar depósito",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsEditingDep(false);
+    }
+  }
+
+  // 4) Transformar depósito -> boleto: muda o tipo e segue para Revisar Geração
+  //    Bancária. Se a conversão falhar, mantém como depósito.
+  async function handleTransformarEmBoleto() {
+    const item = transformTarget;
+    if (!item || isTransforming) return;
+    if (item.status === "PAID" || item.paid_at || item.status === "CANCELADO") {
+      showToast({ type: "warning", title: "Este depósito não pode ser convertido." });
+      setTransformTarget(null);
+      return;
+    }
+    if (!item.deposito_conta) {
+      showToast({ type: "warning", title: "Somente depósitos podem ser convertidos em boleto." });
+      setTransformTarget(null);
+      return;
+    }
+    setIsTransforming(true);
+    try {
+      const { updateBoletoInDb } = await import("@/features/nfe/services/nfe.service");
+      await updateBoletoInDb(item.id, { deposito_conta: false });
+      if (item.id_int) await recalcularBoletoIdIntsLocal(Number(item.id_int));
+      setRefreshTrigger((prev) => prev + 1);
+      // Seguir o fluxo oficial de Revisar Geração Bancária para registrar no banco.
+      setSelectedBoletoRef(item.ext_reference || null);
+      setSelectedBoletoCliente(item.cliente);
+      setSelectedBoletoIdInt(item.id_int || null);
+      setReviewModalOpen(true);
+      setTransformTarget(null);
+      showToast({
+        type: "info",
+        title: "Depósito convertido em boleto.",
+        description: "Revise e registre no banco pela geração bancária. Sem registro, permanece como boleto pendente."
+      });
+    } catch (err) {
+      console.error("[ContasReceberPage] falha ao transformar depósito em boleto:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao converter",
+        description: `${err instanceof Error ? err.message : String(err)} O registro permanece como depósito.`
+      });
+    } finally {
+      setIsTransforming(false);
+    }
   }
 
   async function copyLinhaDigitavel(value?: string) {
@@ -376,6 +799,224 @@ export function ContasReceberPage() {
       });
     } finally {
       setDeletingBoletoId(null);
+    }
+  }
+
+  async function handleConfirmarCancelamento() {
+    const item = cancelTarget;
+    if (!item || isCanceling) return;
+
+    if (item.status === "CANCELADO") {
+      setCancelTarget(null);
+      return;
+    }
+    if (item.status === "PAID" || item.paid_at) {
+      showToast({ type: "error", title: "Título liquidado não pode ser cancelado." });
+      return;
+    }
+
+    const isDeposito = item.tipo === "DEPOSITO";
+    const registradoNoBanco = !isDeposito && Boolean(item.id_boleto_c6);
+
+    setIsCanceling(true);
+    try {
+      if (registradoNoBanco) {
+        // Regra oficial: cancelar no C6 via n8n antes de qualquer escrita local
+        const { deleteBoletoFromBankViaN8n } = await import("@/features/nfe/services/nfe.service");
+        await deleteBoletoFromBankViaN8n(item.id, String(item.id_boleto_c6), Number(item.id_empresa || 1));
+      }
+
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Supabase não configurado.");
+
+      const { error: updateError } = await client
+        .from("boletos")
+        .update({ status: "CANCELADO" })
+        .eq("id", item.id);
+
+      if (updateError) {
+        if (registradoNoBanco) {
+          // O banco já confirmou o cancelamento; não silenciar a divergência local
+          showToast({
+            type: "warning",
+            title: "Cancelado no banco, mas houve falha ao atualizar o título local.",
+            description: updateError.message
+          });
+        } else {
+          throw new Error(updateError.message);
+        }
+      } else {
+        showToast({
+          type: "success",
+          title: isDeposito
+            ? "Depósito em conta cancelado."
+            : registradoNoBanco
+              ? "Boleto cancelado no banco e no Contas a Receber."
+              : "Boleto cancelado no Contas a Receber."
+        });
+      }
+
+      if (item.id_int) {
+        await recalcularBoletoIdIntsLocal(Number(item.id_int));
+      }
+
+      setCancelTarget(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] falha ao cancelar título:", err);
+      showToast({
+        type: "error",
+        title: registradoNoBanco ? "Erro no cancelamento bancário" : "Erro ao cancelar título",
+        description: err instanceof Error ? err.message : String(err)
+      });
+    } finally {
+      setIsCanceling(false);
+    }
+  }
+
+  const cancelIsDeposito = cancelTarget?.tipo === "DEPOSITO";
+  const cancelRegistradoBanco = Boolean(cancelTarget && !cancelIsDeposito && cancelTarget.id_boleto_c6);
+  const cancelBloqueado = Boolean(cancelTarget && (cancelTarget.status === "PAID" || cancelTarget.paid_at));
+
+  const confirmIsDeposito = confirmTarget?.tipo === "DEPOSITO";
+  const confirmRegistradoBanco = Boolean(confirmTarget && !confirmIsDeposito && confirmTarget.id_boleto_c6);
+  const baixaFormValida =
+    Boolean(formaRecebimento) &&
+    (formaRecebimento !== "OUTROS" || obsRecebimento.trim().length > 0);
+
+  async function handleConfirmarBaixa() {
+    const item = confirmTarget;
+    if (!item || isConfirmingBaixa) return;
+
+    // 1. Validar se o título ainda pode ser baixado
+    if (item.status === "PAID" || item.paid_at || item.status === "CANCELADO") {
+      showToast({ type: "warning", title: "Este título não está mais em situação de baixa." });
+      setConfirmTarget(null);
+      return;
+    }
+
+    // 1b. Forma de recebimento é obrigatória; observação obrigatória para OUTROS.
+    //     Retorna sem fechar o modal para o usuário corrigir.
+    if (!formaRecebimento) {
+      showToast({ type: "warning", title: "Selecione a forma de recebimento." });
+      return;
+    }
+    if (formaRecebimento === "OUTROS" && !obsRecebimento.trim()) {
+      showToast({ type: "warning", title: "Descreva a forma em Observação (obrigatório para OUTROS)." });
+      return;
+    }
+
+    const isDeposito = item.tipo === "DEPOSITO";
+    const registradoNoBanco = !isDeposito && Boolean(item.id_boleto_c6);
+    let bancoCancelado = confirmBankCancelDone;
+
+    setIsConfirmingBaixa(true);
+    try {
+      // 2. Cancelamento bancário oficial (apenas boleto registrado, uma única vez)
+      if (registradoNoBanco && !bancoCancelado) {
+        let precisaCancelarNoBanco = true;
+
+        try {
+          const { consultarDetalhesBoletoC6 } = await import("@/features/cobrancas/services/pagamentos-v2.service");
+          const detalhes = await consultarDetalhesBoletoC6(String(item.id_boleto_c6), Number(item.id_empresa || 1));
+          const statusC6 = String(detalhes?.status || "").toUpperCase();
+          const temPagamento = Array.isArray(detalhes?.payments) && detalhes.payments.length > 0;
+
+          if (statusC6 === "PAID" || temPagamento) {
+            showToast({
+              type: "warning",
+              title: "O banco informa este boleto como pago.",
+              description:
+                "Baixa manual bloqueada para evitar duplicidade. Use 'Consultar pagamento C6' para liquidar com a data oficial do banco."
+            });
+            return;
+          }
+
+          // Cobrança já cancelada/inativa no banco: seguir sem novo cancelamento
+          if (statusC6.includes("CANCEL")) {
+            precisaCancelarNoBanco = false;
+          }
+        } catch (consultaErr) {
+          throw new Error(
+            `Não foi possível validar a situação do boleto no banco: ${consultaErr instanceof Error ? consultaErr.message : String(consultaErr)}`
+          );
+        }
+
+        if (precisaCancelarNoBanco) {
+          const { deleteBoletoFromBankViaN8n } = await import("@/features/nfe/services/nfe.service");
+          await deleteBoletoFromBankViaN8n(item.id, String(item.id_boleto_c6), Number(item.id_empresa || 1));
+        }
+
+        bancoCancelado = true;
+        setConfirmBankCancelDone(true);
+      }
+
+      // 3. Baixa local pelo padrão oficial do Contas a Receber (status PAID + paid_at + autoria)
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Supabase não configurado.");
+
+      const paidAt = new Date().toISOString();
+      const confirmadoPor =
+        usuarioLogado?.nomeUsuario || usuarioLogado?.name || usuarioLogado?.email || "Financeiro";
+
+      const { data: updatedRows, error: updateError } = await client
+        .from("boletos")
+        .update({
+          status: "PAID",
+          paid_at: paidAt,
+          confirmado_por: confirmadoPor,
+          forma_recebimento: formaRecebimento,
+          obs_recebimento: obsRecebimento.trim() || null
+        })
+        .eq("id", item.id)
+        .in("status", ["A_VENCER", "VENCIDO", "GERADO"])
+        .select("id");
+
+      if (updateError) {
+        throw new Error(`Falha na baixa local: ${updateError.message}`);
+      }
+      if (!updatedRows || updatedRows.length === 0) {
+        throw new Error(
+          "Falha na baixa local: o título não está mais em situação de baixa (status atual pode ter mudado)."
+        );
+      }
+
+      showToast({
+        type: "success",
+        title: isDeposito
+          ? "Depósito confirmado como recebido."
+          : registradoNoBanco
+            ? "Boleto cancelado no banco e recebimento confirmado."
+            : "Recebimento confirmado."
+      });
+
+      // 4. Atualizar status, cards e listagem
+      if (item.id_int) {
+        await recalcularBoletoIdIntsLocal(Number(item.id_int));
+      }
+      setConfirmTarget(null);
+      setConfirmBankCancelDone(false);
+      setFormaRecebimento("");
+      setObsRecebimento("");
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error("[ContasReceberPage] falha ao confirmar recebimento:", err);
+      const mensagem = err instanceof Error ? err.message : String(err);
+      const falhaAposCancelamento = registradoNoBanco && bancoCancelado;
+
+      showToast({
+        type: "error",
+        title: falhaAposCancelamento
+          ? "Crítico: boleto cancelado no banco, mas a baixa local falhou."
+          : mensagem.startsWith("Falha na baixa local")
+            ? "Erro na baixa local"
+            : "Erro no cancelamento bancário",
+        description: falhaAposCancelamento
+          ? `${mensagem} Tente novamente — o cancelamento bancário não será repetido.`
+          : mensagem
+      });
+    } finally {
+      setIsConfirmingBaixa(false);
     }
   }
 
@@ -804,7 +1445,18 @@ export function ContasReceberPage() {
           onCancel={cancelRecebivel}
           onCopy={copyLinhaDigitavel}
           onPdf={openPdf}
-          onProrrogar={prorrogarBoleto}
+          onProrrogar={abrirProrrogar}
+          onLifecycle={{
+            cancelarParaDeposito: (item) => {
+              setDepConvertBankDone(false);
+              setDepConvertTarget(item);
+            },
+            editarDeposito: (item) => {
+              setEditDepVenc(String(item.vencimento).slice(0, 10));
+              setEditDepTarget(item);
+            },
+            transformarEmBoleto: (item) => setTransformTarget(item)
+          }}
           onDetail={setDetailItem}
           onNavigate={(path) => router.push(path)}
           onRegister={(item) => {
@@ -898,6 +1550,451 @@ export function ContasReceberPage() {
               >
                 {deletingBoletoId ? "Excluindo..." : "Excluir boleto do banco"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmTarget && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl">
+                <Wallet className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">Confirmar recebimento?</h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  {confirmIsDeposito
+                    ? "O título de depósito em conta será baixado como PAGO no Contas a Receber."
+                    : confirmRegistradoBanco
+                      ? confirmBankCancelDone
+                        ? "O cancelamento bancário já foi concluído. Ao confirmar, apenas a baixa local será executada novamente."
+                        : "Este boleto possui registro bancário ativo. A confirmação irá primeiro CANCELAR o boleto no C6 Bank pela integração oficial e, somente após a resposta positiva do banco, o título será baixado como PAGO. Se o banco indicar o boleto como pago, a baixa manual será bloqueada."
+                      : "O título será baixado como PAGO no Contas a Receber."}
+                </p>
+              </div>
+              <div className="w-full rounded-2xl bg-slate-50 border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Cliente</span>
+                  <span className="font-medium text-slate-800 truncate">{confirmTarget.cliente}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Valor</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(confirmTarget.valor)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Vencimento</span>
+                  <span className="font-mono font-medium text-slate-800">{formatLocalDate(confirmTarget.vencimento)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Tipo</span>
+                  <span className="font-medium text-slate-800">
+                    {confirmIsDeposito
+                      ? "Depósito em conta"
+                      : confirmRegistradoBanco
+                        ? "Boleto registrado no banco"
+                        : "Boleto sem registro bancário"}
+                  </span>
+                </div>
+              </div>
+
+              {!confirmIsDeposito && (
+                <div className="w-full rounded-2xl bg-amber-50 border border-amber-200 p-3 text-left text-[11px] leading-relaxed text-amber-800">
+                  Esta ação confirma um <strong>pagamento recebido fora do boleto</strong> (ex.: PIX, dinheiro).
+                  {confirmRegistradoBanco
+                    ? " O boleto registrado no banco será cancelado no C6 antes da baixa."
+                    : ""}
+                </div>
+              )}
+
+              <div className="w-full text-left space-y-1.5">
+                <label htmlFor="forma-recebimento" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Forma de recebimento <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="forma-recebimento"
+                  value={formaRecebimento}
+                  disabled={isConfirmingBaixa}
+                  onChange={(event) => setFormaRecebimento(event.target.value as FormaRecebimento | "")}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-teal-500 disabled:bg-slate-50"
+                >
+                  <option value="">Selecione…</option>
+                  {FORMAS_RECEBIMENTO.map((forma) => (
+                    <option key={forma.value} value={forma.value}>
+                      {forma.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="w-full text-left space-y-1.5">
+                <label htmlFor="obs-recebimento" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Observação{" "}
+                  {formaRecebimento === "OUTROS" ? (
+                    <span className="text-red-500">*</span>
+                  ) : (
+                    <span className="font-normal normal-case text-slate-400">(opcional)</span>
+                  )}
+                </label>
+                <textarea
+                  id="obs-recebimento"
+                  value={obsRecebimento}
+                  disabled={isConfirmingBaixa}
+                  onChange={(event) => setObsRecebimento(event.target.value)}
+                  rows={2}
+                  placeholder={formaRecebimento === "OUTROS" ? "Descreva a forma de recebimento" : "Observação do recebimento (opcional)"}
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-teal-500 disabled:bg-slate-50"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                disabled={isConfirmingBaixa}
+                onClick={() => {
+                  setConfirmTarget(null);
+                  setConfirmBankCancelDone(false);
+                  setFormaRecebimento("");
+                  setObsRecebimento("");
+                }}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isConfirmingBaixa || !baixaFormValida}
+                title={!baixaFormValida ? "Selecione a forma de recebimento (e a observação, quando OUTROS)." : undefined}
+                onClick={() => void handleConfirmarBaixa()}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isConfirmingBaixa ? "Processando..." : "Confirmar recebimento"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {prorrogarTarget && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="p-3 bg-amber-50 text-amber-500 rounded-2xl">
+                <CalendarDays className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">Prorrogar vencimento?</h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  O boleto atual será <strong>cancelado no banco</strong> e <strong>substituído</strong> por um novo boleto com o novo vencimento, registrado pela integração oficial. Valor, cliente, proposta, descrição, multa e juros são preservados.
+                </p>
+              </div>
+              <div className="w-full rounded-2xl bg-slate-50 border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Cliente</span>
+                  <span className="font-medium text-slate-800 truncate">{prorrogarTarget.cliente}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Valor</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(prorrogarTarget.valor)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Vencimento atual</span>
+                  <span className="font-mono font-medium text-slate-800">{formatLocalDate(prorrogarTarget.vencimento)}</span>
+                </div>
+              </div>
+              <div className="w-full text-left space-y-1.5">
+                <label htmlFor="prorrogar-venc" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Nova data de vencimento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="prorrogar-venc"
+                  type="date"
+                  value={prorrogarNovoVenc}
+                  min={today}
+                  disabled={isProrrogando}
+                  onChange={(event) => setProrrogarNovoVenc(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-amber-500 disabled:bg-slate-50 font-mono"
+                />
+              </div>
+              <div className="w-full text-left space-y-1.5">
+                <label htmlFor="prorrogar-motivo" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Motivo <span className="font-normal normal-case text-slate-400">(opcional)</span>
+                </label>
+                <textarea
+                  id="prorrogar-motivo"
+                  value={prorrogarMotivo}
+                  disabled={isProrrogando}
+                  onChange={(event) => setProrrogarMotivo(event.target.value)}
+                  rows={2}
+                  placeholder="Motivo da prorrogação"
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-amber-500 disabled:bg-slate-50"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                disabled={isProrrogando}
+                onClick={() => {
+                  setProrrogarTarget(null);
+                  setProrrogarNovoVenc("");
+                  setProrrogarMotivo("");
+                  setProrrogarBankCancelDone(false);
+                }}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isProrrogando || !prorrogarNovoVenc}
+                onClick={() => void handleProrrogar()}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isProrrogando ? "Processando..." : "Prorrogar vencimento"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {depConvertTarget && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="p-3 bg-orange-50 text-orange-500 rounded-2xl">
+                <AlertTriangle className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">Cancelar boleto e manter como depósito?</h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  Este boleto será cancelado no banco e o recebível continuará ativo como <strong>depósito futuro</strong>, sem cobrança bancária. Valor, cliente, proposta, vencimento e histórico são preservados.
+                </p>
+              </div>
+              <div className="w-full rounded-2xl bg-slate-50 border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Cliente</span>
+                  <span className="font-medium text-slate-800 truncate">{depConvertTarget.cliente}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Valor</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(depConvertTarget.valor)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Vencimento</span>
+                  <span className="font-mono font-medium text-slate-800">{formatLocalDate(depConvertTarget.vencimento)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                disabled={isConvertingDep}
+                onClick={() => {
+                  setDepConvertTarget(null);
+                  setDepConvertBankDone(false);
+                }}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition disabled:opacity-50"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={isConvertingDep}
+                onClick={() => void handleCancelarParaDeposito()}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl transition disabled:opacity-60"
+              >
+                {isConvertingDep ? "Processando..." : "Cancelar → depósito"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editDepTarget && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                <CalendarDays className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">Editar depósito</h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  Altere a data de vencimento do depósito. Valor, cliente e proposta permanecem inalterados.
+                </p>
+              </div>
+              <div className="w-full rounded-2xl bg-slate-50 border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Cliente</span>
+                  <span className="font-medium text-slate-800 truncate">{editDepTarget.cliente}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Valor</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(editDepTarget.valor)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Vencimento atual</span>
+                  <span className="font-mono font-medium text-slate-800">{formatLocalDate(editDepTarget.vencimento)}</span>
+                </div>
+              </div>
+              <div className="w-full text-left space-y-1.5">
+                <label htmlFor="edit-dep-venc" className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Nova data de vencimento <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="edit-dep-venc"
+                  type="date"
+                  value={editDepVenc}
+                  disabled={isEditingDep}
+                  onChange={(event) => setEditDepVenc(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500 disabled:bg-slate-50 font-mono"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                disabled={isEditingDep}
+                onClick={() => {
+                  setEditDepTarget(null);
+                  setEditDepVenc("");
+                }}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isEditingDep || !editDepVenc}
+                onClick={() => void handleEditarDeposito()}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isEditingDep ? "Salvando..." : "Salvar vencimento"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {transformTarget && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="p-3 bg-sky-50 text-sky-600 rounded-2xl">
+                <TrendingUp className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">Transformar depósito em boleto?</h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  O recebível manterá valor, cliente, proposta e vencimento, mudará para <strong>boleto</strong> e seguirá para &quot;Revisar Geração Bancária&quot; para registro no banco. Se não for registrado, permanece como boleto pendente.
+                </p>
+              </div>
+              <div className="w-full rounded-2xl bg-slate-50 border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Cliente</span>
+                  <span className="font-medium text-slate-800 truncate">{transformTarget.cliente}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Valor</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(transformTarget.valor)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Vencimento</span>
+                  <span className="font-mono font-medium text-slate-800">{formatLocalDate(transformTarget.vencimento)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                disabled={isTransforming}
+                onClick={() => setTransformTarget(null)}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isTransforming}
+                onClick={() => void handleTransformarEmBoleto()}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-xl transition disabled:opacity-60"
+              >
+                {isTransforming ? "Processando..." : "Transformar em boleto"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelTarget && (
+        <div className="fixed inset-0 z-[10000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden p-6 transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className={`p-3 rounded-2xl ${cancelBloqueado ? "bg-slate-100 text-slate-500" : "bg-red-50 text-red-500"}`}>
+                <AlertTriangle className="h-8 w-8" />
+              </div>
+              <div className="space-y-2">
+                <h4 className="text-base font-bold text-slate-900">
+                  {cancelBloqueado
+                    ? "Cancelamento não permitido"
+                    : cancelIsDeposito
+                      ? "Cancelar depósito em conta?"
+                      : "Cancelar boleto?"}
+                </h4>
+                <p className="text-xs text-slate-500 leading-relaxed text-left">
+                  {cancelBloqueado
+                    ? "Este título está liquidado (pago) e não pode ser cancelado pela regra financeira."
+                    : cancelIsDeposito
+                      ? "O título de depósito em conta será marcado como CANCELADO no Contas a Receber. Não há registro bancário envolvido e o histórico é preservado pela auditoria."
+                      : cancelRegistradoBanco
+                        ? "O boleto será cancelado no C6 Bank pela integração oficial. Somente após a confirmação do banco o título será marcado como CANCELADO no Contas a Receber. Em caso de falha bancária, nada é alterado."
+                        : "Este boleto ainda não possui registro bancário. O título será marcado como CANCELADO apenas no Contas a Receber, com histórico preservado pela auditoria."}
+                </p>
+              </div>
+              <div className="w-full rounded-2xl bg-slate-50 border border-slate-100 p-3 text-left text-xs text-slate-600 space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Cliente</span>
+                  <span className="font-medium text-slate-800 truncate">{cancelTarget.cliente}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Valor</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(cancelTarget.valor)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400 font-semibold">Tipo</span>
+                  <span className="font-medium text-slate-800">
+                    {cancelIsDeposito
+                      ? "Depósito em conta"
+                      : cancelRegistradoBanco
+                        ? "Boleto registrado no banco"
+                        : "Boleto sem registro bancário"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center gap-3 justify-stretch">
+              <button
+                type="button"
+                disabled={isCanceling}
+                onClick={() => setCancelTarget(null)}
+                className="flex-1 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-50 border border-slate-200 rounded-xl transition disabled:opacity-50"
+              >
+                {cancelBloqueado ? "Fechar" : "Voltar"}
+              </button>
+              {!cancelBloqueado && (
+                <button
+                  type="button"
+                  disabled={isCanceling}
+                  onClick={() => void handleConfirmarCancelamento()}
+                  className="flex-1 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition disabled:opacity-60"
+                >
+                  {isCanceling ? "Cancelando..." : "Confirmar cancelamento"}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1090,7 +2187,8 @@ function GroupedSection({
   onDeleteFromBank,
   onConsultaC6,
   onConsultarPdf,
-  onGerarPdfBoleto
+  onGerarPdfBoleto,
+  onLifecycle
 }: {
   title: string;
   tone: "danger" | "warning" | "info" | "success" | "neutral";
@@ -1109,6 +2207,7 @@ function GroupedSection({
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
+  onLifecycle?: BoletoLifecycleOps;
 }) {
   if (items.length === 0) return null;
 
@@ -1165,12 +2264,12 @@ function GroupedSection({
                       Registrar
                     </button>
                   )}
-                  <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+                  <BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
                 </div>
               );
             }, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} onRegister={onRegister!} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} onRegister={onRegister!} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
         />
       ) : (
         <ResponsiveList<BoletoDepositoMock>
@@ -1284,7 +2383,8 @@ function BoletosDepositosTab({
   onDeleteFromBank,
   onConsultaC6,
   onConsultarPdf,
-  onGerarPdfBoleto
+  onGerarPdfBoleto,
+  onLifecycle
 }: {
   items: BoletoDepositoMock[];
   today: string;
@@ -1300,6 +2400,7 @@ function BoletosDepositosTab({
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
+  onLifecycle: BoletoLifecycleOps;
 }) {
   const vencidos = useMemo(() => items.filter((item) => isVisualVencido(item, today)), [items, today]);
   const previsaoFutura = useMemo(() => items.filter((item) => item.status === "A_VENCER"), [items]);
@@ -1323,10 +2424,10 @@ function BoletosDepositosTab({
 
   return (
     <div className="space-y-2">
-      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
     </div>
   );
 }
@@ -1536,7 +2637,7 @@ function RecebivelActions({
   }
 
   if (canAdmin) {
-    actionItems.push({ label: "Cancelar recebível", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) });
+    actionItems.push({ label: "Cancelar recebível", destructive: true, disabled: item.status === "CANCELADO" || item.status === "PAID", onClick: () => onCancel(item.id) });
   }
 
   return (
@@ -1561,6 +2662,7 @@ function BoletoActions({
   onConsultaC6,
   onConsultarPdf,
   onGerarPdfBoleto,
+  onLifecycle,
   label
 }: {
   item: BoletoDepositoMock;
@@ -1576,6 +2678,7 @@ function BoletoActions({
   onConsultaC6?: (item: BoletoDepositoMock) => void;
   onConsultarPdf?: (item: BoletoDepositoMock) => void;
   onGerarPdfBoleto?: (item: BoletoDepositoMock) => void;
+  onLifecycle?: BoletoLifecycleOps;
   label?: string;
 }) {
   const isRegistered = !!(item.id_boleto_c6 || item.nosso_numero || item.linha_digitavel);
@@ -1637,9 +2740,25 @@ function BoletoActions({
     actionItems.push({ label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) });
   }
 
+  const naoOperavel = item.status === "PAID" || item.status === "CANCELADO" || !!item.paid_at;
+
   if (canAdmin) {
-    actionItems.push({ label: "Prorrogar vencimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onProrrogar(item.id) });
-    actionItems.push({ label: "Cancelar boleto", destructive: true, disabled: item.status === "CANCELADO", onClick: () => onCancel(item.id) });
+    if (item.deposito_conta) {
+      // Depósito: editar vencimento, transformar em boleto, cancelar (total).
+      if (onLifecycle) {
+        actionItems.push({ label: "Editar depósito", disabled: naoOperavel, onClick: () => onLifecycle.editarDeposito(item) });
+        actionItems.push({ label: "Transformar em boleto", disabled: naoOperavel, onClick: () => onLifecycle.transformarEmBoleto(item) });
+      }
+      actionItems.push({ label: "Cancelar recebível", destructive: true, disabled: naoOperavel, onClick: () => onCancel(item.id) });
+    } else {
+      // Boleto: prorrogar (só registrado) e cancelar -> depósito futuro.
+      if (isRegistered) {
+        actionItems.push({ label: "Prorrogar vencimento", disabled: naoOperavel, onClick: () => onProrrogar(item.id) });
+      }
+      if (onLifecycle) {
+        actionItems.push({ label: "Cancelar boleto", destructive: true, disabled: naoOperavel, onClick: () => onLifecycle.cancelarParaDeposito(item) });
+      }
+    }
   }
 
   return (

@@ -87,7 +87,7 @@ export function RevisarGeracaoBancariaModal({
   };
 
   useEffect(() => {
-    if (!isOpen || !extReference) return;
+    if (!isOpen || (!idInt && !extReference)) return;
 
     async function fetchBoletosAndValidate() {
       setIsLoadingReviewBoletos(true);
@@ -98,11 +98,13 @@ export function RevisarGeracaoBancariaModal({
       try {
         const client = getSupabaseClient();
         if (client) {
-          const { data, error } = await client
-            .from("boletos")
-            .select("*")
-            .eq("ext_reference", extReference)
-            .order("parcela", { ascending: true });
+          // Agrupar as parcelas por proposta (id_int) quando disponível. Um mesmo
+          // lançamento pode gerar parcelas com ext_reference distintos (ex.:
+          // P1219503, P2219503 quando não há NF-e comum), e carregar por
+          // ext_reference isolava apenas uma parcela no fluxo de registro bancário.
+          let query = client.from("boletos").select("*");
+          query = idInt ? query.eq("id_int", idInt) : query.eq("ext_reference", extReference);
+          const { data, error } = await query.order("parcela", { ascending: true });
           if (error) throw error;
           setBoletosForReview(data || []);
 
@@ -220,7 +222,7 @@ export function RevisarGeracaoBancariaModal({
     }
 
     void fetchBoletosAndValidate();
-  }, [isOpen, extReference, showToast, refreshValidationTrigger]);
+  }, [isOpen, idInt, extReference, showToast, refreshValidationTrigger]);
 
   const handleBoletoChange = (index: number, field: keyof SupabaseBoletoRow, value: SupabaseBoletoRow[keyof SupabaseBoletoRow]) => {
     setBoletosForReview(prev => {
@@ -236,6 +238,17 @@ export function RevisarGeracaoBancariaModal({
         type: "warning",
         title: "Aviso",
         description: "Depósito em conta não é elegível para registro bancário."
+      });
+      return;
+    }
+
+    // Impedir registro duplicado no banco: se a parcela já possui vínculo bancário
+    // (id_boleto_c6 / linha digitável / código de barras), não reenviar ao C6.
+    if (boleto.id_boleto_c6 || boleto.linha_digitavel || boleto.codigo_barras) {
+      showToast({
+        type: "warning",
+        title: "Boleto já registrado",
+        description: "Esta parcela já possui registro bancário. Registro duplicado bloqueado."
       });
       return;
     }
