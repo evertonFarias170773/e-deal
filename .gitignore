@@ -26,3 +26,14 @@ BACKUPS_SUPABASE/
 scratch/
 *.tsbuildinfo
 test-router.ts
+
+# --- Rascunhos e diagnosticos temporarios na raiz (nunca commitar) ---
+# Dica: para arquivos descartaveis de teste/diagnostico, use a pasta scratch/ (ja ignorada acima).
+/scratch_*
+/diag_*
+/diag[0-9]*
+/check_*
+/test_[0-9]*.js
+/test_list_*.js
+/*.n8n
+/Untitled-*
