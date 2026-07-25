@@ -92,6 +92,15 @@ export interface FaturamentoVendedorAgregado {
   faturamento: number;
 }
 
+export interface FaturamentoEmpresaAgregado {
+  /** null = pagamentos SEM id_empresa (sinalizados, nunca descartados) */
+  id_empresa: number | null;
+  empresa: string | null;
+  propostas: number;
+  faturamento: number;
+  vendedores: FaturamentoVendedorAgregado[];
+}
+
 export interface FaturamentoOficialResult {
   found: boolean;
   periodo: string;
@@ -102,6 +111,12 @@ export interface FaturamentoOficialResult {
   faturamento: number;
   /** Ranking — presente apenas quando agruparPorVendedor=true */
   por_vendedor?: FaturamentoVendedorAgregado[];
+  /** Subtotais por empresa (id_empresa de pagamentos_v2) com vendedores dentro — quando agruparPorEmpresa=true */
+  por_empresa?: FaturamentoEmpresaAgregado[];
+  /** Contagens por empresa podem se sobrepor (proposta paga em 2 empresas) */
+  nota_contagem?: string;
+  /** Filtro de vendedor ambíguo (mais de um nome correspondente) */
+  aviso?: string;
   truncado: boolean;
   source: string;
   authError?: boolean;
@@ -126,17 +141,21 @@ export async function calcularFaturamentoOficial(
     vendedorNome?: string;
     /** Devolve o ranking por vendedor */
     agruparPorVendedor?: boolean;
+    /** Filtra uma empresa (pagamentos_v2.id_empresa — NUNCA a empresa do cadastro do cliente) */
+    idEmpresa?: number;
+    /** Subtotais por empresa com vendedores dentro de cada uma */
+    agruparPorEmpresa?: boolean;
   },
 ): Promise<FaturamentoOficialResult> {
   const base = {
     periodo: opts.periodoLabel,
     criterio: CRITERIO_FATURAMENTO_OFICIAL,
-    source: 'public.pagamentos_v2 (fonte) + public.propostas (dimensão vendedor)',
+    source: 'public.pagamentos_v2 (fonte; empresa = id_empresa) + public.propostas (dimensão vendedor)',
   };
 
   let query = supabase
     .from('pagamentos_v2')
-    .select('id_int, id_cliente, valor, data_confirmacao')
+    .select('id_int, id_cliente, valor, data_confirmacao, id_empresa, empresa')
     .eq('confirmado', true)
     .in('status', ['PAID', 'A_VENCER'])
     .not('id_int', 'is', null)
@@ -144,6 +163,7 @@ export async function calcularFaturamentoOficial(
     .gte('data_confirmacao', opts.desde);
   if (opts.ate) query = query.lt('data_confirmacao', opts.ate);
   if (opts.idCliente != null) query = query.eq('id_cliente', opts.idCliente);
+  if (opts.idEmpresa != null) query = query.eq('id_empresa', opts.idEmpresa);
 
   const { data, error } = await query
     .order('data_confirmacao', { ascending: false })
@@ -155,11 +175,18 @@ export async function calcularFaturamentoOficial(
 
   const pagamentos = (data ?? []).map(raw => {
     const r = raw as Record<string, unknown>;
-    return { id_int: Number(r.id_int), valor: r.valor != null ? Number(r.valor) : 0 };
+    return {
+      id_int: Number(r.id_int),
+      valor: r.valor != null ? Number(r.valor) : 0,
+      id_empresa: r.id_empresa != null && Number.isFinite(Number(r.id_empresa)) ? Number(r.id_empresa) : null,
+      empresaLabel: typeof r.empresa === 'string' && r.empresa.trim() ? r.empresa.trim() : null,
+    };
   });
 
   // Dimensão vendedor (propostas), somente quando necessária
-  const precisaVendedor = Boolean(opts.vendedorNome) || opts.agruparPorVendedor === true;
+  // (na separação por empresa os vendedores aparecem dentro de cada empresa)
+  const precisaVendedor =
+    Boolean(opts.vendedorNome) || opts.agruparPorVendedor === true || opts.agruparPorEmpresa === true;
   const vendedorPorProposta = new Map<number, string>();
   if (precisaVendedor && pagamentos.length > 0) {
     const ids = [...new Set(pagamentos.map(p => p.id_int))];
@@ -199,6 +226,14 @@ export async function calcularFaturamentoOficial(
   const propostasDistintas = new Set<number>();
   let faturamentoTotal = 0;
   const porVendedor = new Map<string, { vendedor: string; propostasSet: Set<number>; faturamento: number }>();
+  interface EmpresaAgg {
+    id_empresa: number | null;
+    empresa: string | null;
+    propostasSet: Set<number>;
+    faturamento: number;
+    vendedores: Map<string, { propostasSet: Set<number>; faturamento: number }>;
+  }
+  const porEmpresa = new Map<string, EmpresaAgg>();
 
   for (const pg of pagamentos) {
     const vendedor = precisaVendedor ? (vendedorPorProposta.get(pg.id_int) ?? 'SEM_VENDEDOR') : null;
@@ -213,7 +248,48 @@ export async function calcularFaturamentoOficial(
       agg.faturamento = Number((agg.faturamento + pg.valor).toFixed(2));
       porVendedor.set(vendedor, agg);
     }
+
+    if (opts.agruparPorEmpresa === true) {
+      // Pagamentos SEM id_empresa entram no grupo próprio — nunca descartados
+      const chave = pg.id_empresa != null ? `emp:${pg.id_empresa}` : 'emp:sem';
+      const emp = porEmpresa.get(chave) ?? {
+        id_empresa: pg.id_empresa,
+        empresa: pg.id_empresa != null ? pg.empresaLabel : 'SEM id_empresa (pagamentos sem empresa atribuída)',
+        propostasSet: new Set<number>(),
+        faturamento: 0,
+        vendedores: new Map(),
+      };
+      if (!emp.empresa && pg.empresaLabel) emp.empresa = pg.empresaLabel;
+      emp.propostasSet.add(pg.id_int);
+      emp.faturamento = Number((emp.faturamento + pg.valor).toFixed(2));
+      if (vendedor !== null) {
+        const ve = emp.vendedores.get(vendedor) ?? { propostasSet: new Set<number>(), faturamento: 0 };
+        ve.propostasSet.add(pg.id_int);
+        ve.faturamento = Number((ve.faturamento + pg.valor).toFixed(2));
+        emp.vendedores.set(vendedor, ve);
+      }
+      porEmpresa.set(chave, emp);
+    }
   }
+
+  const empresas: FaturamentoEmpresaAgregado[] | undefined = opts.agruparPorEmpresa
+    ? [...porEmpresa.values()]
+        .map(e => ({
+          id_empresa: e.id_empresa,
+          empresa: e.empresa,
+          propostas: e.propostasSet.size,
+          faturamento: e.faturamento,
+          vendedores: [...e.vendedores.entries()]
+            .map(([vendedor, v]) => ({ vendedor, propostas: v.propostasSet.size, faturamento: v.faturamento }))
+            .sort((a, b) => b.faturamento - a.faturamento),
+        }))
+        // sem-empresa por último; demais por faturamento desc
+        .sort((a, b) => (a.id_empresa === null ? 1 : b.id_empresa === null ? -1 : b.faturamento - a.faturamento))
+    : undefined;
+
+  // Uma proposta com pagamentos em mais de uma empresa conta em cada grupo,
+  // mas uma única vez no consolidado — sinalize quando as contagens divergirem
+  const somaPropostasEmpresas = empresas?.reduce((acc, e) => acc + e.propostas, 0);
 
   return {
     ...base,
@@ -225,6 +301,10 @@ export async function calcularFaturamentoOficial(
           .map(v => ({ vendedor: v.vendedor, propostas: v.propostasSet.size, faturamento: v.faturamento }))
           .sort((a, b) => b.faturamento - a.faturamento)
       : undefined,
+    por_empresa: empresas,
+    ...(empresas && somaPropostasEmpresas !== propostasDistintas.size
+      ? { nota_contagem: 'Proposta com pagamentos em mais de uma empresa conta em cada empresa, mas UMA única vez no total consolidado — por isso a soma das contagens difere do total.' }
+      : {}),
     ...((vendedoresFiltrados?.size ?? 0) > 1
       ? { aviso: 'O nome informado corresponde a mais de um vendedor — números apresentados SEPARADOS por vendedor; o total soma todos os correspondentes.' }
       : {}),

@@ -849,6 +849,9 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
           'Fonte oficial: pagamentos_v2 confirmados com status PAID ou A_VENCER, período por data_confirmacao; ' +
           'faturamento = soma dos pagamentos, propostas = id_int distintos (NUNCA por data de criação da proposta). ' +
           'Use para "quanto vendeu/faturou o(a) X", "ranking de vendedores", "vendas da equipe", comissão e metas. ' +
+          'EMPRESA: separar_por_empresa=true devolve subtotais por empresa (pagamentos_v2.id_empresa — NUNCA a ' +
+          'empresa do cadastro do cliente) com os vendedores dentro de cada uma; id_empresa filtra uma empresa. ' +
+          'Pagamentos sem id_empresa aparecem num grupo próprio, nunca descartados. ' +
           'PERMISSÃO aplicada no servidor: sem propostas.view_all o usuário vê SOMENTE os próprios números ' +
           '(campo escopo="proprio" na resposta — explique a restrição com naturalidade). Não exige cliente ativo.',
         parameters: {
@@ -856,6 +859,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
           properties: {
             vendedor: { type: 'string', description: 'Opcional — nome (ou parte) do vendedor. Omitir traz o ranking de todos.' },
             periodo: { ...PERIODO_SCHEMA, description: 'Período por data_confirmacao dos pagamentos.' },
+            id_empresa: { type: 'number', description: 'Opcional — filtra uma empresa (pagamentos_v2.id_empresa).' },
+            separar_por_empresa: { type: 'boolean', description: 'Opcional — subtotais por empresa com vendedores dentro de cada uma ("separe por empresa/filial").' },
           },
           required: ['periodo'],
           additionalProperties: false,
@@ -888,6 +893,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         escopo = 'proprio';
       }
 
+      const idEmpresaArg = Number(args.id_empresa);
       const res = await calcularFaturamentoOficial(ctx.supabase, {
         desde: intervalo.desde,
         ate: intervalo.ate,
@@ -895,6 +901,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         vendedorNome,
         // ranking apenas quando não há filtro de vendedor
         agruparPorVendedor: !vendedorNome,
+        idEmpresa: Number.isFinite(idEmpresaArg) && idEmpresaArg > 0 ? idEmpresaArg : undefined,
+        agruparPorEmpresa: args.separar_por_empresa === true,
       });
 
       return {
