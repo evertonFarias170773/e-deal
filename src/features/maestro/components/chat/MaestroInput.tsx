@@ -158,6 +158,14 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
       };
 
       recognition.onerror = (event: { error: string }) => {
+        if (event.error === 'aborted') {
+          // Disparado pelo NOSSO abort() no envio (descarte de resultados
+          // pendentes) — encerramento esperado, não é erro
+          clearSilenceTimer();
+          setIsListening(false);
+          isManualStopRef.current = true;
+          return;
+        }
         console.error("Erro no reconhecimento de voz:", event.error);
         if (event.error === 'not-allowed') {
           clearSilenceTimer();
