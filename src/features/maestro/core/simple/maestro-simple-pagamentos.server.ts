@@ -76,6 +76,162 @@ function primeiroDiaMesPassado(): string {
   return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() - 1, 1)).toISOString();
 }
 
+// ─── FATURAMENTO OFICIAL (regra de negócio, 2026-07-26) ───────────────────
+// Faturamento, vendas, comissão e metas vêm de public.pagamentos_v2:
+//   confirmado = true AND status IN ('PAID','A_VENCER'), período por
+//   data_confirmacao; soma por id_int; propostas = count distinct id_int.
+// public.propostas é usada APENAS como dimensão (vendedor, cliente).
+// ⚠️ NUNCA usar propostas.created_at/status_interno/valor_total como fonte
+//    de faturamento mensal.
+// Validado em 26/07/2026: André Toniazzo julho/2026 = 256 propostas,
+// R$ 177.803,45 (gabarito do negócio).
+
+export interface FaturamentoVendedorAgregado {
+  vendedor: string;
+  propostas: number;
+  faturamento: number;
+}
+
+export interface FaturamentoOficialResult {
+  found: boolean;
+  periodo: string;
+  criterio: string;
+  /** Propostas distintas com pagamento confirmado no período */
+  total_propostas: number;
+  /** Soma dos pagamentos confirmados (PAID/A_VENCER) no período */
+  faturamento: number;
+  /** Ranking — presente apenas quando agruparPorVendedor=true */
+  por_vendedor?: FaturamentoVendedorAgregado[];
+  truncado: boolean;
+  source: string;
+  authError?: boolean;
+  error?: string;
+}
+
+const FATURAMENTO_MAX_ROWS = 5000;
+const FATURAMENTO_LOTE_PROPOSTAS = 400;
+
+export const CRITERIO_FATURAMENTO_OFICIAL =
+  'pagamentos_v2 com confirmado=true e status PAID ou A_VENCER, período por data_confirmacao; ' +
+  'faturamento = soma dos pagamentos; propostas = id_int distintos. propostas é só dimensão (vendedor/cliente).';
+
+export async function calcularFaturamentoOficial(
+  supabase: SupabaseClient,
+  opts: {
+    desde: string;
+    ate?: string;
+    periodoLabel: string;
+    idCliente?: number;
+    /** Filtra um vendedor pelo nome (via propostas — match parcial, case-insensitive) */
+    vendedorNome?: string;
+    /** Devolve o ranking por vendedor */
+    agruparPorVendedor?: boolean;
+  },
+): Promise<FaturamentoOficialResult> {
+  const base = {
+    periodo: opts.periodoLabel,
+    criterio: CRITERIO_FATURAMENTO_OFICIAL,
+    source: 'public.pagamentos_v2 (fonte) + public.propostas (dimensão vendedor)',
+  };
+
+  let query = supabase
+    .from('pagamentos_v2')
+    .select('id_int, id_cliente, valor, data_confirmacao')
+    .eq('confirmado', true)
+    .in('status', ['PAID', 'A_VENCER'])
+    .not('id_int', 'is', null)
+    .not('data_confirmacao', 'is', null)
+    .gte('data_confirmacao', opts.desde);
+  if (opts.ate) query = query.lt('data_confirmacao', opts.ate);
+  if (opts.idCliente != null) query = query.eq('id_cliente', opts.idCliente);
+
+  const { data, error } = await query
+    .order('data_confirmacao', { ascending: false })
+    .limit(FATURAMENTO_MAX_ROWS);
+
+  if (error) {
+    return { ...base, found: false, total_propostas: 0, faturamento: 0, truncado: false, authError: isAuthError(error), error: error.message };
+  }
+
+  const pagamentos = (data ?? []).map(raw => {
+    const r = raw as Record<string, unknown>;
+    return { id_int: Number(r.id_int), valor: r.valor != null ? Number(r.valor) : 0 };
+  });
+
+  // Dimensão vendedor (propostas), somente quando necessária
+  const precisaVendedor = Boolean(opts.vendedorNome) || opts.agruparPorVendedor === true;
+  const vendedorPorProposta = new Map<number, string>();
+  if (precisaVendedor && pagamentos.length > 0) {
+    const ids = [...new Set(pagamentos.map(p => p.id_int))];
+    for (let i = 0; i < ids.length; i += FATURAMENTO_LOTE_PROPOSTAS) {
+      const lote = ids.slice(i, i + FATURAMENTO_LOTE_PROPOSTAS);
+      const { data: props, error: perr } = await supabase
+        .from('propostas')
+        .select('id_int, vendedor')
+        .in('id_int', lote);
+      if (perr) {
+        return { ...base, found: false, total_propostas: 0, faturamento: 0, truncado: false, authError: isAuthError(perr), error: perr.message };
+      }
+      for (const raw of props ?? []) {
+        const r = raw as Record<string, unknown>;
+        const nome = typeof r.vendedor === 'string' && r.vendedor.trim() ? r.vendedor.trim() : 'SEM_VENDEDOR';
+        vendedorPorProposta.set(Number(r.id_int), nome);
+      }
+    }
+  }
+
+  // Match de nome sem acento; preferência por igualdade exata ("Andre" não
+  // pode agregar Alexandre junto com André silenciosamente)
+  const normalizar = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const filtroNome = opts.vendedorNome?.trim() ? normalizar(opts.vendedorNome) : undefined;
+  let vendedoresFiltrados: Set<string> | null = null;
+  if (filtroNome) {
+    const nomes = [...new Set(vendedorPorProposta.values())];
+    const exatos = nomes.filter(n => normalizar(n) === filtroNome);
+    const parciais = nomes.filter(n => normalizar(n).includes(filtroNome));
+    vendedoresFiltrados = new Set(exatos.length > 0 ? exatos : parciais);
+  }
+  // Filtro ambíguo (mais de um vendedor) → devolve separado por vendedor,
+  // nunca uma soma mesclada sem aviso
+  const agrupar = opts.agruparPorVendedor === true || (vendedoresFiltrados?.size ?? 0) > 1;
+
+  const propostasDistintas = new Set<number>();
+  let faturamentoTotal = 0;
+  const porVendedor = new Map<string, { vendedor: string; propostasSet: Set<number>; faturamento: number }>();
+
+  for (const pg of pagamentos) {
+    const vendedor = precisaVendedor ? (vendedorPorProposta.get(pg.id_int) ?? 'SEM_VENDEDOR') : null;
+    if (vendedoresFiltrados && !vendedoresFiltrados.has(vendedor ?? '')) continue;
+
+    propostasDistintas.add(pg.id_int);
+    faturamentoTotal += pg.valor;
+
+    if (agrupar && vendedor !== null) {
+      const agg = porVendedor.get(vendedor) ?? { vendedor, propostasSet: new Set<number>(), faturamento: 0 };
+      agg.propostasSet.add(pg.id_int);
+      agg.faturamento = Number((agg.faturamento + pg.valor).toFixed(2));
+      porVendedor.set(vendedor, agg);
+    }
+  }
+
+  return {
+    ...base,
+    found: propostasDistintas.size > 0,
+    total_propostas: propostasDistintas.size,
+    faturamento: Number(faturamentoTotal.toFixed(2)),
+    por_vendedor: agrupar
+      ? [...porVendedor.values()]
+          .map(v => ({ vendedor: v.vendedor, propostas: v.propostasSet.size, faturamento: v.faturamento }))
+          .sort((a, b) => b.faturamento - a.faturamento)
+      : undefined,
+    ...((vendedoresFiltrados?.size ?? 0) > 1
+      ? { aviso: 'O nome informado corresponde a mais de um vendedor — números apresentados SEPARADOS por vendedor; o total soma todos os correspondentes.' }
+      : {}),
+    truncado: pagamentos.length >= FATURAMENTO_MAX_ROWS,
+  };
+}
+
 // ─── Perfil de pagamento (comportamento real) ─────────────────────────────
 
 export interface PerfilPagamentoResult {

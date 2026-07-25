@@ -44,11 +44,12 @@ import {
 import {
   calcularRecebimentoPeriodo,
   calcularPerfilPagamento,
+  calcularFaturamentoOficial,
   compararRecebimentoClienteMeses,
 } from '../simple/maestro-simple-pagamentos.server';
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo } from '../simple/maestro-simple-produtos.server';
-import { calcularVendasPorVendedor, buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
+import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { resolverTermoCatalogo } from '../simple/maestro-orcamento-catalogo-oficial';
 import type { MaestroPeriodo } from '../simple/maestro-simple-intents';
 import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
@@ -370,11 +371,12 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       const inicioMes = inicioMesUtc(agora.getUTCFullYear(), agora.getUTCMonth());
 
       // View atemporal + indicadores do mês atual (adapters parametrizados) —
-      // uma única chamada do agente, três leituras paralelas no servidor.
-      const [visaoRes, propostasMes, recebimentoMes] = await Promise.all([
+      // uma única chamada do agente, quatro leituras paralelas no servidor.
+      const [visaoRes, propostasMes, recebimentoMes, faturamentoMes] = await Promise.all([
         ctx.supabase.from('vw_maestro_cliente_360').select('*').eq('id_cliente', idCliente).maybeSingle(),
         listarPropostasCliente(ctx.supabase, idCliente, { desde: inicioMes, periodoLabel: 'mês atual', limite: 0 }),
         calcularRecebimentoPeriodo(ctx.supabase, idCliente, { tipo: 'mes_atual', label: 'mês atual' }),
+        calcularFaturamentoOficial(ctx.supabase, { desde: inicioMes, periodoLabel: 'mês atual', idCliente }),
       ]);
 
       if (visaoRes.error) {
@@ -384,8 +386,13 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       }
 
       const indicadoresMesAtual = {
-        propostas_qtd: propostasMes.count,
-        propostas_valor: propostasMes.totalValor,
+        faturamento_oficial: {
+          propostas: faturamentoMes.total_propostas,
+          valor: faturamentoMes.faturamento,
+          criterio: 'pagamentos_v2 confirmados (PAID/A_VENCER) por data_confirmacao — fonte oficial de faturamento',
+        },
+        pipeline_propostas_qtd: propostasMes.count,
+        pipeline_propostas_valor: propostasMes.totalValor,
         contagem_por_status_interno: propostasMes.contagemPorStatus,
         aprovadas_comercial: {
           quantidade: propostasMes.aprovadasComercial.quantidade,
@@ -508,7 +515,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'propostas_cliente',
         description:
-          'Propostas do cliente ativo (fonte: public.propostas; valor comercial — NÃO é recebimento), com filtro de ' +
+          'PIPELINE COMERCIAL do cliente ativo (fonte: public.propostas — NÃO é faturamento nem recebimento; ' +
+          'para faturamento use faturamento_cliente), com filtro de ' +
           'período opcional e AGREGADOS JÁ CALCULADOS: contagens E somas de valor por status_interno, ' +
           'aprovadas_comercial (status APROVADO/LIBERADO) e pedidos_producao (fila real). ' +
           'Responda "quantas..." e "qual o valor..." SOMENTE com esses agregados — nunca conte nem some itens. ' +
@@ -837,16 +845,17 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'vendas_por_vendedor',
         description:
-          'Vendas por VENDEDOR em um período: ranking ou um vendedor específico, com agregados prontos ' +
-          '(total de propostas, aprovadas comerciais com soma, pedidos de Produção, maior aprovada). ' +
-          'Use para "quanto vendeu o(a) X", "ranking de vendedores", "vendas da equipe". ' +
+          'FATURAMENTO OFICIAL por vendedor em um período: ranking ou um vendedor específico. ' +
+          'Fonte oficial: pagamentos_v2 confirmados com status PAID ou A_VENCER, período por data_confirmacao; ' +
+          'faturamento = soma dos pagamentos, propostas = id_int distintos (NUNCA por data de criação da proposta). ' +
+          'Use para "quanto vendeu/faturou o(a) X", "ranking de vendedores", "vendas da equipe", comissão e metas. ' +
           'PERMISSÃO aplicada no servidor: sem propostas.view_all o usuário vê SOMENTE os próprios números ' +
           '(campo escopo="proprio" na resposta — explique a restrição com naturalidade). Não exige cliente ativo.',
         parameters: {
           type: 'object',
           properties: {
             vendedor: { type: 'string', description: 'Opcional — nome (ou parte) do vendedor. Omitir traz o ranking de todos.' },
-            periodo: { ...PERIODO_SCHEMA, description: 'Período das propostas (por data de criação).' },
+            periodo: { ...PERIODO_SCHEMA, description: 'Período por data_confirmacao dos pagamentos.' },
           },
           required: ['periodo'],
           additionalProperties: false,
@@ -864,7 +873,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       // Gate de permissão (decisão de produto): gestores (propostas.view_all)
       // veem todos; os demais veem SOMENTE os próprios números.
       const gestor = await verificarPermissaoServerSide(ctx.supabase, ctx.userId, 'propostas.view_all');
-      let filtroVendedorNome = vendedorArg || undefined;
+      let vendedorNome = vendedorArg || undefined;
       let escopo: 'todos' | 'proprio' = 'todos';
 
       if (!gestor) {
@@ -875,15 +884,17 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
             error: 'PERMISSAO_NEGADA: o perfil do usuário não permite ver vendas de outros vendedores e não foi possível identificar o vendedor dele. Explique com educação.',
           };
         }
-        filtroVendedorNome = eu.nome;
+        vendedorNome = eu.nome;
         escopo = 'proprio';
       }
 
-      const res = await calcularVendasPorVendedor(ctx.supabase, {
+      const res = await calcularFaturamentoOficial(ctx.supabase, {
         desde: intervalo.desde,
         ate: intervalo.ate,
         periodoLabel: periodo.label,
-        filtroVendedorNome,
+        vendedorNome,
+        // ranking apenas quando não há filtro de vendedor
+        agruparPorVendedor: !vendedorNome,
       });
 
       return {
@@ -892,8 +903,42 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         ...(escopo === 'proprio'
           ? { restricao: 'Usuário sem propostas.view_all — mostrando apenas os números do próprio vendedor.' }
           : {}),
-        semantica: SEMANTICA_PROPOSTAS,
       };
+    },
+  },
+
+  faturamento_cliente: {
+    needsActiveClient: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'faturamento_cliente',
+        description:
+          'FATURAMENTO OFICIAL do cliente ativo em um período. Fonte oficial: pagamentos_v2 confirmados ' +
+          'com status PAID ou A_VENCER, período por data_confirmacao; faturamento = soma dos pagamentos, ' +
+          'propostas = id_int distintos. Use para "faturamento/vendas do cliente no período". ' +
+          'NÃO confundir com recebimento_periodo (caixa, por paid_at) nem com propostas_cliente (pipeline comercial).',
+        parameters: {
+          type: 'object',
+          properties: { ...ID_CLIENTE_PROP, periodo: PERIODO_SCHEMA },
+          required: ['periodo'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      const periodo = mapPeriodoArg(args.periodo);
+      if (!periodo) return { found: false, error: 'Período inválido.' };
+      const intervalo = intervaloDoPeriodo(periodo);
+      if (!intervalo.desde) return { found: false, error: 'Período inválido.' };
+
+      return await calcularFaturamentoOficial(ctx.supabase, {
+        desde: intervalo.desde,
+        ate: intervalo.ate,
+        periodoLabel: periodo.label,
+        idCliente,
+      });
     },
   },
 
