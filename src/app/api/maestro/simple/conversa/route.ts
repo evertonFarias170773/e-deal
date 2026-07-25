@@ -1,12 +1,14 @@
 /**
  * /api/maestro/simple/conversa/route.ts
  *
- * Retomada de conversa do Maestro (persistência server-side, RLS por usuário).
+ * Retomada e histórico de conversas do Maestro (persistência server-side, RLS).
  *
- *   GET  → última conversa NÃO encerrada do usuário + mensagens (ordem
- *          cronológica) + contexto_json para reidratar o front após reload.
- *   POST → { conversationId, action: 'encerrar' } marca a conversa como
- *          encerrada (flag lógica — histórico permanece imutável).
+ *   GET           → última conversa NÃO encerrada + mensagens + contexto_json.
+ *   GET ?list=1   → lista das conversas do usuário (sidebar de histórico).
+ *   GET ?id=<id>  → uma conversa específica + mensagens (abrir pelo histórico).
+ *   POST → { conversationId, action: 'encerrar' | 'reabrir' } — flags lógicas;
+ *          o histórico permanece imutável. 'reabrir' marca a conversa aberta
+ *          (encerrada=false) e atualiza updated_at para o F5 retomá-la.
  *
  * SEGURANÇA (idêntica à rota principal /api/maestro/simple):
  *   - token do usuário no header Authorization → client Supabase anon com RLS;
@@ -58,55 +60,99 @@ async function criarClientAutenticado(request: NextRequest): Promise<
   return { ok: true, supabase };
 }
 
+/** Carrega mensagens de uma conversa em ordem cronológica (desempate por id). */
+async function carregarMensagens(supabase: SupabaseClient, conversaId: string) {
+  // Desempate por id: user e maestro do mesmo turno recebem created_at
+  // idêntico — sem o id a ordem do par pode inverter na restauração.
+  const { data, error } = await supabase
+    .from('maestro_mensagens')
+    .select('role, content, created_at')
+    .eq('conversa_id', conversaId)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(MAX_MENSAGENS);
+
+  if (error) {
+    console.warn('[/api/maestro/simple/conversa] Falha ao ler mensagens:', error.message);
+    return null;
+  }
+  return (data ?? [])
+    .reverse()
+    .filter(m => m.role === 'user' || m.role === 'maestro')
+    .map(m => ({
+      role: m.role as 'user' | 'maestro',
+      content: String(m.content ?? ''),
+      criadaEm: String(m.created_at ?? ''),
+    }));
+}
+
 export async function GET(request: NextRequest) {
   const auth = await criarClientAutenticado(request);
   if (!auth.ok) return auth.response;
 
+  const listar = request.nextUrl.searchParams.get('list') === '1';
+  const idParam = request.nextUrl.searchParams.get('id') ?? '';
+
   if (process.env.MAESTRO_PERSISTENCE_ENABLED !== 'true') {
-    return NextResponse.json({ conversa: null }, { status: 200 });
+    return NextResponse.json(listar ? { conversas: [] } : { conversa: null }, { status: 200 });
   }
 
   try {
-    const ultima = await recuperarUltimaConversa(auth.supabase);
-    if (!ultima) {
+    // ── Listagem para a sidebar (RLS limita ao próprio usuário) ─────────────
+    if (listar) {
+      const { data, error } = await auth.supabase
+        .from('maestro_conversas')
+        .select('id, titulo, encerrada, updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(30);
+      if (error) {
+        console.warn('[/api/maestro/simple/conversa] Falha ao listar conversas:', error.message);
+        return NextResponse.json({ conversas: [] }, { status: 200 });
+      }
+      return NextResponse.json({
+        conversas: (data ?? []).map(c => ({
+          id: String(c.id),
+          titulo: typeof c.titulo === 'string' && c.titulo.trim() ? c.titulo.trim() : 'Conversa sem título',
+          encerrada: c.encerrada === true,
+          atualizadaEm: String(c.updated_at ?? ''),
+        })),
+      }, { status: 200 });
+    }
+
+    // ── Conversa específica (abrir pelo histórico) ou última não encerrada ──
+    let alvo: { id: string; contextoJson: string | null } | null = null;
+    if (idParam) {
+      const { data, error } = await auth.supabase
+        .from('maestro_conversas')
+        .select('id, contexto_json')
+        .eq('id', idParam)
+        .maybeSingle();
+      if (!error && data) {
+        alvo = {
+          id: String(data.id),
+          contextoJson: data.contexto_json ? JSON.stringify(data.contexto_json) : null,
+        };
+      }
+    } else {
+      alvo = await recuperarUltimaConversa(auth.supabase);
+    }
+
+    if (!alvo) {
       return NextResponse.json({ conversa: null }, { status: 200 });
     }
 
-    // Desempate por id: user e maestro do mesmo turno recebem created_at
-    // idêntico — sem o id a ordem do par pode inverter na restauração.
-    const { data: mensagens, error } = await auth.supabase
-      .from('maestro_mensagens')
-      .select('role, content, created_at')
-      .eq('conversa_id', ultima.id)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(MAX_MENSAGENS);
-
-    if (error) {
-      console.warn('[/api/maestro/simple/conversa] Falha ao ler mensagens:', error.message);
+    const mensagens = await carregarMensagens(auth.supabase, alvo.id);
+    if (!mensagens) {
       return NextResponse.json({ conversa: null }, { status: 200 });
     }
 
     return NextResponse.json(
-      {
-        conversa: {
-          id: ultima.id,
-          contextoJson: ultima.contextoJson,
-          mensagens: (mensagens ?? [])
-            .reverse()
-            .filter(m => m.role === 'user' || m.role === 'maestro')
-            .map(m => ({
-              role: m.role as 'user' | 'maestro',
-              content: String(m.content ?? ''),
-              criadaEm: String(m.created_at ?? ''),
-            })),
-        },
-      },
+      { conversa: { id: alvo.id, contextoJson: alvo.contextoJson, mensagens } },
       { status: 200 }
     );
   } catch (err) {
     console.warn('[/api/maestro/simple/conversa] Erro inesperado (retornando vazio):', err);
-    return NextResponse.json({ conversa: null }, { status: 200 });
+    return NextResponse.json(listar ? { conversas: [] } : { conversa: null }, { status: 200 });
   }
 }
 
@@ -126,7 +172,8 @@ export async function POST(request: NextRequest) {
   }
 
   const conversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
-  if (body.action !== 'encerrar' || !conversationId) {
+  const action = body.action === 'encerrar' || body.action === 'reabrir' ? body.action : null;
+  if (!action || !conversationId) {
     return NextResponse.json({ error: 'Ação não suportada.' }, { status: 400 });
   }
 
@@ -134,7 +181,7 @@ export async function POST(request: NextRequest) {
     // RLS garante que só a conversa do próprio usuário é afetada
     const { error } = await auth.supabase
       .from('maestro_conversas')
-      .update({ encerrada: true, updated_at: new Date().toISOString() })
+      .update({ encerrada: action === 'encerrar', updated_at: new Date().toISOString() })
       .eq('id', conversationId);
 
     if (error) {

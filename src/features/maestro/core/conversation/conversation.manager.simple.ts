@@ -29,6 +29,14 @@ import type { ActivityStep, ConversationContext, ConversationMessage } from '../
 // ─── Flag: motor simples por padrão ──────────────────────────────────────
 export const MAESTRO_ENGINE: 'simple' | 'legacy' = 'simple';
 
+/** Item da sidebar de histórico de conversas */
+export interface ConversaResumo {
+  id: string;
+  titulo: string;
+  encerrada: boolean;
+  atualizadaEm: string;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────
 
 export function useConversationManagerSimple() {
@@ -141,6 +149,79 @@ export function useConversationManagerSimple() {
       console.warn('[MaestroSimple] Retomada de conversa indisponível:', err);
     }
   }, [setMessages, setGlobalContext]);
+
+  // ── Histórico de conversas (sidebar) ─────────────────────────────────────
+
+  const listConversations = useCallback(async (): Promise<ConversaResumo[]> => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return [];
+      const response = await fetch('/api/maestro/simple/conversa?list=1', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return [];
+      const data = await response.json() as { conversas?: ConversaResumo[] };
+      return Array.isArray(data.conversas) ? data.conversas : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  /**
+   * Abre uma conversa do histórico: encerra a atual (flag lógica), reabre a
+   * escolhida (para o F5 retomá-la) e reidrata mensagens + contexto.
+   */
+  const openConversation = useCallback(async (conversaId: string) => {
+    const atualId = globalContextRef.current?.conversationId;
+    if (!conversaId || conversaId === atualId) return;
+
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+
+      const response = await fetch(`/api/maestro/simple/conversa?id=${encodeURIComponent(conversaId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+      const data = await response.json() as {
+        conversa: {
+          id: string;
+          contextoJson: string | null;
+          mensagens: Array<{ role: 'user' | 'maestro'; content: string; criadaEm: string }>;
+        } | null;
+      };
+      if (!data.conversa) return;
+
+      // Flags lógicas no servidor (nunca bloqueiam a UI)
+      const marcar = (id: string, action: 'encerrar' | 'reabrir') =>
+        fetch('/api/maestro/simple/conversa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action, conversationId: id }),
+        }).catch(() => { /* falha silenciosa */ });
+      if (atualId) void marcar(atualId, 'encerrar');
+      void marcar(data.conversa.id, 'reabrir');
+
+      const restauradas: ConversationMessage[] = data.conversa.mensagens.map((m, i) => ({
+        id: `hist-${i}-${m.criadaEm}`,
+        role: m.role,
+        content: m.content,
+        contentType: 'text',
+        timestamp: m.criadaEm,
+        status: 'completed',
+      }));
+
+      setMessages(restauradas.length > 0 ? restauradas : MOCK_WELCOME_MESSAGES);
+      setActivity([]);
+      setGlobalContext({
+        ...MOCK_INITIAL_CONTEXT,
+        conversationId: data.conversa.id,
+        v2ContextJson: data.conversa.contextoJson ?? null,
+      });
+    } catch (err) {
+      console.warn('[MaestroSimple] Falha ao abrir conversa do histórico:', err);
+    }
+  }, [setMessages, setActivity, setGlobalContext]);
 
   // ── Abrir sessão (histórico — futuro) ────────────────────────────────────
   const openSession = useCallback((sessionId: string) => {
@@ -263,5 +344,7 @@ export function useConversationManagerSimple() {
     openSession,
     sendMessage,
     restoreLastConversation,
+    listConversations,
+    openConversation,
   };
 }
