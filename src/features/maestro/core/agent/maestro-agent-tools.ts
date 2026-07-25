@@ -50,6 +50,7 @@ import {
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo } from '../simple/maestro-simple-produtos.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
+import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
 import { resolverTermoCatalogo } from '../simple/maestro-orcamento-catalogo-oficial';
 import type { MaestroPeriodo } from '../simple/maestro-simple-intents';
 import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
@@ -915,6 +916,50 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
   },
 
+  conta_corrente_cliente: {
+    needsActiveClient: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'conta_corrente_cliente',
+        description:
+          'Conta corrente do cliente ativo: saldo de crédito disponível, pendências por direção ' +
+          '(FAVOR_CLIENTE = a favor do cliente; FAVOR_EMPRESA = a favor da empresa) com somas das ABERTAS ' +
+          'já calculadas, e extrato recente de créditos/débitos. Use para "saldo do cliente", "pendências", ' +
+          '"crédito em conta", "extrato de crédito".',
+        parameters: { type: 'object', properties: { ...ID_CLIENTE_PROP }, additionalProperties: false },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      return await buscarContaCorrenteCliente(ctx.supabase, idCliente);
+    },
+  },
+
+  analise_credito_cliente: {
+    needsActiveClient: true,
+    // fn_analise_credito_cliente é SECURITY DEFINER (roda como owner) — além
+    // do isolamento por cliente resolvido, exige a permissão do módulo de
+    // crédito do ERP (Financeiro/Administração; vendedor comum não tem).
+    requiredPermission: 'cadastros.view_credito',
+    schema: {
+      type: 'function',
+      function: {
+        name: 'analise_credito_cliente',
+        description:
+          'ANÁLISE DE CRÉDITO oficial do cliente ativo (RPC do ERP): limite, utilizado, saldo em carteira, ' +
+          'disponível, status/risco de crédito, histórico de atrasos (média/maior/quantidade), pedidos aprovados ' +
+          'e ticket médio. Use para "posso vender a prazo?", "como está o crédito", "análise de crédito". ' +
+          'Exige permissão do módulo de crédito — se negada, explique com naturalidade.',
+        parameters: { type: 'object', properties: { ...ID_CLIENTE_PROP }, additionalProperties: false },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      return await buscarAnaliseCredito(ctx.supabase, idCliente);
+    },
+  },
+
   faturamento_cliente: {
     needsActiveClient: true,
     schema: {
@@ -1108,7 +1153,14 @@ export async function executeAgentTool(
 
   // 3. Permissão sensível (quando declarada) → recusa amigável
   if (tool.requiredPermission) {
-    const permitido = await verificarPermissaoServerSide(ctx.supabase, ctx.userId, tool.requiredPermission);
+    let permitido = false;
+    try {
+      permitido = await verificarPermissaoServerSide(ctx.supabase, ctx.userId, tool.requiredPermission);
+    } catch (err) {
+      // Falha na checagem NUNCA vira acesso — nega e registra
+      console.error(`[MaestroAgentTools] Erro ao verificar permissão "${tool.requiredPermission}":`, err);
+      permitido = false;
+    }
     if (!permitido) {
       return {
         ok: false,
