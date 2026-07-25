@@ -36,12 +36,14 @@ import {
 import {
   buscarUltimoOrcamento,
   buscarMaiorPedido,
+  buscarDetalheProposta,
   calcularFaturamentoPeriodo,
   listarPropostasCliente,
   type PedidoSimples,
 } from '../simple/maestro-simple-propostas.server';
 import {
   calcularRecebimentoPeriodo,
+  calcularPerfilPagamento,
   compararRecebimentoClienteMeses,
 } from '../simple/maestro-simple-pagamentos.server';
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
@@ -567,6 +569,48 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
   },
 
+  detalhe_proposta: {
+    needsActiveClient: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'detalhe_proposta',
+        description:
+          'Detalhe de UMA proposta do cliente ativo pelo número, incluindo os ITENS/PRODUTOS orçados ' +
+          '(nome, quantidade, valor unitário, subtotal, desconto). Use quando perguntarem "quais produtos", ' +
+          '"o que foi orçado" ou detalhes de uma proposta específica. ATENÇÃO: propostas AVULSAS ' +
+          '(is_avulso=true) não têm itens detalhados no ERP — explique isso em vez de dizer que não tem acesso.',
+        parameters: {
+          type: 'object',
+          properties: {
+            ...ID_CLIENTE_PROP,
+            numero: { type: 'number', description: 'Número da proposta (id_int) — obtido em consulta anterior ou informado pelo usuário.' },
+          },
+          required: ['numero'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      const numero = Number(args.numero);
+      if (!Number.isFinite(numero) || numero <= 0) {
+        return { found: false, error: 'Número de proposta inválido.' };
+      }
+      const res = await buscarDetalheProposta(ctx.supabase, idCliente, numero);
+      return {
+        ...res,
+        proposta: res.proposta ? marcarPedidoReal([res.proposta])[0] : null,
+        nota_itens: res.found && !res.itens_detalhados
+          ? (res.proposta?.is_avulso
+              ? 'Proposta AVULSA: o ERP não registra itens detalhados neste tipo — o valor é lançado direto.'
+              : 'Nenhum item detalhado registrado para esta proposta.')
+          : undefined,
+        semantica: SEMANTICA_PROPOSTAS,
+      };
+    },
+  },
+
   ultimo_orcamento_cliente: {
     needsActiveClient: true,
     schema: {
@@ -653,6 +697,34 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       const periodo = mapPeriodoArg(args.periodo);
       if (!periodo) return { found: false, error: 'Período inválido.' };
       return await calcularRecebimentoPeriodo(ctx.supabase, idCliente, periodo);
+    },
+  },
+
+  perfil_pagamento_cliente: {
+    needsActiveClient: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'perfil_pagamento_cliente',
+        description:
+          'Como o cliente ativo COSTUMA pagar de verdade: agregado dos pagamentos confirmados ' +
+          '(pagamentos_v2, PAID) por tipo de cobrança (PIX, BOLETO, cartão...) com contagens, somas e ' +
+          'condições a prazo usadas. Use para "como ele paga", "perfil/comportamento de pagamento". ' +
+          'Números JÁ VÊM AGREGADOS — nunca conte nem some. Não confundir com o campo cadastral padrao_pagamento.',
+        parameters: {
+          type: 'object',
+          properties: {
+            ...ID_CLIENTE_PROP,
+            dias: { type: 'number', description: 'Janela em dias (padrão 365, máx 1830).' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      const dias = Number.isFinite(Number(args.dias)) ? Number(args.dias) : 365;
+      return await calcularPerfilPagamento(ctx.supabase, idCliente, dias);
     },
   },
 

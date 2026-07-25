@@ -73,9 +73,20 @@ const RESPOSTA_PARCIAL_SEGURA =
 
 /** Coleta ids presentes num JSON de resultado de tool. */
 export function coletarIdsDeToolResult(json: string, destino: Set<string>): void {
-  const re = /"(?:id_int|id_cliente|id_produto|savedIdInt)"\s*:\s*"?(\d+)"?/g;
+  const re = /"(?:id_int|id_cliente|id_produto|savedIdInt|clientInternalId|clientDisplayCode|numero)"\s*:\s*"?(\d+)"?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(json)) !== null) destino.add(m[1]);
+}
+
+/**
+ * Números presentes na mensagem do usuário — o usuário os introduziu, logo não
+ * são alucinação do modelo (ex.: "cliente 8469", "e a proposta 12345?"). Sem
+ * isto, ecoar o número da pergunta ("não encontrei a 12345") seria redigido.
+ */
+export function coletarNumerosDaPergunta(texto: string, destino: Set<string>): void {
+  const re = /\d{3,}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(texto)) !== null) destino.add(m[0]);
 }
 
 /**
@@ -229,10 +240,12 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   let estourouLimite = false;
 
   // Ids que o modelo PODE citar: tudo o que apareceu em saída de tool neste
-  // turno + ids já resolvidos pelo servidor (cliente ativo, candidatos).
+  // turno + ids já resolvidos pelo servidor (cliente ativo, candidatos) +
+  // números que o PRÓPRIO usuário digitou na pergunta.
   const idsConfirmados = new Set<string>();
   state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
   (state.pendingClientCandidates ?? []).forEach(c => idsConfirmados.add(String(c.id_cliente)));
+  coletarNumerosDaPergunta(query, idsConfirmados);
   let correcoesDeCitacao = 0;
 
   for (let iter = 0; iter < maxIterations; iter++) {
@@ -325,6 +338,8 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
         if (exec.ok) {
           coletarIdsDeToolResult(JSON.stringify(exec.result), idsConfirmados);
         }
+        // Cliente ativado DURANTE o turno (resolver/confirmar) também é confirmado
+        state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
 
         activity.push({
           id: `agent-tool-${toolCallsExecutados}`,

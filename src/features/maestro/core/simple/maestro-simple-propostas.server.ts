@@ -357,6 +357,118 @@ export async function listarPropostasCliente(
   };
 }
 
+// ─── Detalhe de proposta (itens/produtos) ─────────────────────────────────
+
+export interface ItemProposta {
+  nome_produto: string | null;
+  modelo_descri: string | null;
+  qtd: number | null;
+  valor_unt: number | null;
+  fixo: number | null;
+  valor_sub_total: number | null;
+  desconto_tipo: string | null;
+  desconto_valor: number | null;
+  status_item: string | null;
+}
+
+export interface DetalheProposta extends PedidoSimples {
+  is_avulso: boolean;
+  /** Campo texto `proposta` (avulsas costumam trazer apenas "A definir") */
+  descricao: string | null;
+  valor_frete: number | null;
+  frete_escolhido: string | null;
+}
+
+export interface DetalhePropostaResult {
+  found: boolean;
+  proposta: DetalheProposta | null;
+  itens: ItemProposta[];
+  /**
+   * false quando a proposta não possui itens em produtos_proposta — caso
+   * normal das AVULSAS (o ERP não detalha produtos nelas).
+   */
+  itens_detalhados: boolean;
+  source: string;
+  authError?: boolean;
+  error?: string;
+}
+
+const ITENS_PROPOSTA_COLS =
+  'nome_produto, modelo_descri, qtd, valor_unt, fixo, valor_sub_total, desconto_tipo, desconto_valor, status_item';
+
+function numOrNull(v: unknown): number | null {
+  return v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null;
+}
+
+/**
+ * Detalhe de UMA proposta do cliente, incluindo itens (produtos_proposta).
+ * O filtro por id_cliente na própria consulta garante o isolamento — proposta
+ * de outro cliente nunca é retornada, mesmo com número válido.
+ */
+export async function buscarDetalheProposta(
+  supabase: SupabaseClient,
+  idCliente: number,
+  numeroProposta: number,
+): Promise<DetalhePropostaResult> {
+  const { data: propostaRow, error } = await supabase
+    .from('propostas')
+    .select(`${PROPOSTAS_COLS}, is_avulso, proposta, valor_frete, frete_escolhido`)
+    .eq('id_cliente', idCliente)
+    .eq('id_int', numeroProposta)
+    .maybeSingle();
+
+  if (error) {
+    return { found: false, proposta: null, itens: [], itens_detalhados: false, source: 'public.propostas', authError: isAuthError(error), error: error.message };
+  }
+  if (!propostaRow) {
+    return { found: false, proposta: null, itens: [], itens_detalhados: false, source: 'public.propostas', error: 'Proposta não encontrada para este cliente.' };
+  }
+
+  const row = propostaRow as Record<string, unknown>;
+  const descricaoRaw = typeof row.proposta === 'string' ? row.proposta.trim() : '';
+  const proposta: DetalheProposta = {
+    ...mapPedido(row),
+    is_avulso:      row.is_avulso === true,
+    descricao:      descricaoRaw ? descricaoRaw.slice(0, 400) : null,
+    valor_frete:    numOrNull(row.valor_frete),
+    frete_escolhido: typeof row.frete_escolhido === 'string' ? row.frete_escolhido : null,
+  };
+
+  const { data: itensData, error: itensError } = await supabase
+    .from('produtos_proposta')
+    .select(ITENS_PROPOSTA_COLS)
+    .eq('id_int', numeroProposta)
+    .order('id', { ascending: true })
+    .limit(50);
+
+  if (itensError) {
+    return { found: true, proposta, itens: [], itens_detalhados: false, source: 'public.propostas + public.produtos_proposta', authError: isAuthError(itensError), error: itensError.message };
+  }
+
+  const itens: ItemProposta[] = (itensData ?? []).map(r => {
+    const i = r as Record<string, unknown>;
+    return {
+      nome_produto:    typeof i.nome_produto === 'string' ? i.nome_produto : null,
+      modelo_descri:   typeof i.modelo_descri === 'string' ? i.modelo_descri : null,
+      qtd:             numOrNull(i.qtd),
+      valor_unt:       numOrNull(i.valor_unt),
+      fixo:            numOrNull(i.fixo),
+      valor_sub_total: numOrNull(i.valor_sub_total),
+      desconto_tipo:   typeof i.desconto_tipo === 'string' ? i.desconto_tipo : null,
+      desconto_valor:  numOrNull(i.desconto_valor),
+      status_item:     typeof i.status_item === 'string' ? i.status_item : null,
+    };
+  });
+
+  return {
+    found: true,
+    proposta,
+    itens,
+    itens_detalhados: itens.length > 0,
+    source: 'public.propostas + public.produtos_proposta',
+  };
+}
+
 /**
  * Último orçamento/proposta do cliente (independente de aprovação de produção).
  * Filtro: is_reproved=false.

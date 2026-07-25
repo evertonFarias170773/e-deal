@@ -76,6 +76,91 @@ function primeiroDiaMesPassado(): string {
   return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() - 1, 1)).toISOString();
 }
 
+// ─── Perfil de pagamento (comportamento real) ─────────────────────────────
+
+export interface PerfilPagamentoResult {
+  found: boolean;
+  /** Agregado por tipo_cobranca (PIX, BOLETO, CREDIT_CARD, CARD_PARCELADO...) */
+  por_tipo_cobranca: Record<string, { quantidade: number; somaValor: number; ultimo_em: string | null }>;
+  /** Condições a prazo registradas em forma_pgto (ex.: "Prazo 14 dias") */
+  condicoes_prazo: Record<string, number>;
+  total_pagamentos: number;
+  totalValor: number;
+  periodo: string;
+  truncado: boolean;
+  source: string;
+  authError?: boolean;
+  error?: string;
+}
+
+const PERFIL_MAX_ROWS = 1000;
+
+/**
+ * Como o cliente REALMENTE paga: agrega os pagamentos confirmados (PAID,
+ * confirmado=true, por paid_at) por tipo_cobranca. Servidor agrega — o
+ * consumidor nunca conta nem soma.
+ */
+export async function calcularPerfilPagamento(
+  supabase: SupabaseClient,
+  idCliente: number,
+  dias = 365,
+): Promise<PerfilPagamentoResult> {
+  const diasSeguro = Number.isFinite(dias) && dias > 0 && dias <= 1830 ? Math.floor(dias) : 365;
+  const periodo = `últimos ${diasSeguro} dias`;
+
+  const { data, error } = await supabase
+    .from('pagamentos_v2')
+    .select('tipo_cobranca, forma_pgto, valor, paid_at')
+    .eq('id_cliente', idCliente)
+    .eq('confirmado', true)
+    .eq('status', 'PAID')
+    .not('paid_at', 'is', null)
+    .gte('paid_at', menosNDias(diasSeguro))
+    .order('paid_at', { ascending: false })
+    .limit(PERFIL_MAX_ROWS);
+
+  if (error) {
+    return {
+      found: false, por_tipo_cobranca: {}, condicoes_prazo: {}, total_pagamentos: 0,
+      totalValor: 0, periodo, truncado: false, source: 'public.pagamentos_v2',
+      authError: isAuthError(error), error: error.message,
+    };
+  }
+
+  const porTipo: PerfilPagamentoResult['por_tipo_cobranca'] = {};
+  const condicoesPrazo: Record<string, number> = {};
+  let totalValor = 0;
+
+  for (const raw of data ?? []) {
+    const r = raw as Record<string, unknown>;
+    const tipo = typeof r.tipo_cobranca === 'string' && r.tipo_cobranca.trim() ? r.tipo_cobranca.trim() : 'NAO_INFORMADO';
+    const valor = r.valor != null ? Number(r.valor) : 0;
+    const paidAt = typeof r.paid_at === 'string' ? r.paid_at : null;
+
+    const agg = porTipo[tipo] ?? { quantidade: 0, somaValor: 0, ultimo_em: null };
+    agg.quantidade++;
+    agg.somaValor = Number((agg.somaValor + valor).toFixed(2));
+    if (paidAt && (!agg.ultimo_em || paidAt > agg.ultimo_em)) agg.ultimo_em = paidAt;
+    porTipo[tipo] = agg;
+    totalValor += valor;
+
+    const forma = typeof r.forma_pgto === 'string' ? r.forma_pgto.trim() : '';
+    if (forma) condicoesPrazo[forma] = (condicoesPrazo[forma] ?? 0) + 1;
+  }
+
+  const total = (data ?? []).length;
+  return {
+    found: total > 0,
+    por_tipo_cobranca: porTipo,
+    condicoes_prazo: condicoesPrazo,
+    total_pagamentos: total,
+    totalValor: Number(totalValor.toFixed(2)),
+    periodo,
+    truncado: total >= PERFIL_MAX_ROWS,
+    source: 'public.pagamentos_v2',
+  };
+}
+
 // ─── Consultas Read-Only ──────────────────────────────────────────────────
 
 /**
@@ -210,14 +295,14 @@ export async function compararRecebimentoClienteMeses(
       items,
       source: 'public.pagamentos_v2',
     };
-  } catch (err: any) {
+  } catch (err) {
     console.error('[compararRecebimentoClienteMeses] Erro:', err);
     return {
       found: false,
       idCliente,
       items: [],
       source: 'public.pagamentos_v2',
-      error: err.message || String(err),
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 }
