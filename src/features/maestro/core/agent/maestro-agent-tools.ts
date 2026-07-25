@@ -432,10 +432,10 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         name: 'propostas_cliente',
         description:
           'Propostas do cliente ativo (fonte: public.propostas; valor comercial — NÃO é recebimento), com filtro de ' +
-          'período opcional e CONTAGENS JÁ CALCULADAS: por status_interno e da fila real de Produção. ' +
-          'Use estas contagens para responder "quantas..." — NUNCA conte itens você mesmo. ' +
-          'ATENÇÃO à semântica: "aprovada" comercialmente (status APROVADO/LIBERADO) é DIFERENTE de pedido real de ' +
-          'Produção (campo pedido_real=true). Sempre diga qual critério está usando.',
+          'período opcional e AGREGADOS JÁ CALCULADOS: contagens E somas de valor por status_interno, ' +
+          'aprovadas_comercial (status APROVADO/LIBERADO) e pedidos_producao (fila real). ' +
+          'Responda "quantas..." e "qual o valor..." SOMENTE com esses agregados — nunca conte nem some itens. ' +
+          'Os itens listados são apenas as mais recentes; para "último pedido real" use o primeiro item com pedido_real=true.',
         parameters: {
           type: 'object',
           properties: {
@@ -462,15 +462,28 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         periodoLabel = periodo.label;
       }
 
-      const limite = Number.isFinite(Number(args.limite)) ? Number(args.limite) : 50;
+      const limite = Number.isFinite(Number(args.limite)) ? Number(args.limite) : 20;
       const res = await listarPropostasCliente(ctx.supabase, idCliente, { desde, ate, periodoLabel, limite });
 
       return {
-        ...res,
-        items: marcarPedidoReal(res.items),
+        found: res.found,
+        periodo: res.periodo,
+        total_propostas_no_periodo: res.count,
+        soma_valor_total_no_periodo: res.totalValor,
         contagem_por_status_interno: res.contagemPorStatus,
-        pedidos_producao_no_periodo: res.countPedidosProducao,
+        soma_valor_por_status_interno: res.somaPorStatus,
+        aprovadas_comercial: {
+          ...res.aprovadasComercial,
+          criterio: 'status_interno APROVADO* ou LIBERADO* (aprovação comercial)',
+        },
+        pedidos_producao: {
+          ...res.pedidosProducao,
+          criterio: 'is_prd_aprovado=true e não reprovado (fila real de Produção)',
+        },
+        truncado: res.truncado,
+        itens_mais_recentes: marcarPedidoReal(res.items),
         semantica: SEMANTICA_PROPOSTAS,
+        error: res.error,
       };
     },
   },

@@ -72,11 +72,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ conversa: null }, { status: 200 });
     }
 
+    // Desempate por id: user e maestro do mesmo turno recebem created_at
+    // idêntico — sem o id a ordem do par pode inverter na restauração.
     const { data: mensagens, error } = await auth.supabase
       .from('maestro_mensagens')
       .select('role, content, created_at')
       .eq('conversa_id', ultima.id)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(MAX_MENSAGENS);
 
     if (error) {

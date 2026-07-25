@@ -35,11 +35,14 @@ export async function carregarHistoricoConversa(
   if (!conversationId || typeof conversationId !== 'string') return [];
 
   try {
+    // Desempate por id: user e maestro do mesmo turno são inseridos juntos e
+    // recebem created_at idêntico — sem o id a ordem do par pode inverter.
     const { data, error } = await supabase
       .from('maestro_mensagens')
       .select('role, content, created_at')
       .eq('conversa_id', conversationId)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(MAX_MENSAGENS);
 
     if (error || !data) {

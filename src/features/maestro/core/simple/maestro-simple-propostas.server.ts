@@ -238,24 +238,37 @@ export async function buscarPropostasNaoAprovadas(
 
 export interface ListagemPropostasResult {
   found: boolean;
+  /** Propostas mais recentes para exibição (até `limite`) */
   items: PedidoSimples[];
+  /** Total de propostas do período consideradas nos agregados */
   count: number;
-  /** Soma dos valores das propostas listadas (calculada no servidor) */
+  /** Soma de TODAS as propostas do período (calculada no servidor) */
   totalValor: number;
   /** Contagem por status_interno (calculada no servidor — nunca pelo modelo) */
   contagemPorStatus: Record<string, number>;
-  /** Quantidade na fila real de Produção (is_prd_aprovado AND NOT is_reproved) */
-  countPedidosProducao: number;
+  /** Soma de valores por status_interno (calculada no servidor) */
+  somaPorStatus: Record<string, number>;
+  /** Aprovadas comercialmente: status_interno começando com APROVADO ou LIBERADO */
+  aprovadasComercial: { quantidade: number; somaValor: number };
+  /** Fila real de Produção: is_prd_aprovado AND NOT is_reproved */
+  pedidosProducao: { quantidade: number; somaValor: number };
+  /** true quando o período tem mais propostas que o teto de leitura (agregados parciais) */
+  truncado: boolean;
   periodo?: string;
   source: string;
   authError?: boolean;
   error?: string;
 }
 
+// Teto de leitura para agregados — acima disso, `truncado=true` sinaliza
+// que contagens/somas cobrem apenas as mais recentes.
+const LISTAGEM_MAX_ROWS = 500;
+
 /**
  * Lista propostas do cliente em um período, com agregados prontos.
- * Todos os números (contagens por status, fila de produção, soma) são
- * calculados AQUI — consumidores (Maestro Agent) nunca contam sozinhos.
+ * Todos os números (contagens e somas por status, fila de produção, totais)
+ * são calculados AQUI sobre TODO o período (até LISTAGEM_MAX_ROWS) —
+ * consumidores (Maestro Agent) nunca contam nem somam sozinhos.
  * Filtro base: is_reproved=false. Período sobre created_at.
  */
 export async function listarPropostasCliente(
@@ -274,36 +287,57 @@ export async function listarPropostasCliente(
 
   const { data, error } = await query
     .order('created_at', { ascending: false })
-    .limit(Math.min(opts?.limite ?? 50, 200));
+    .order('id_int', { ascending: false })
+    .limit(LISTAGEM_MAX_ROWS);
 
   if (error) {
     return {
       found: false, items: [], count: 0, totalValor: 0,
-      contagemPorStatus: {}, countPedidosProducao: 0,
+      contagemPorStatus: {}, somaPorStatus: {},
+      aprovadasComercial: { quantidade: 0, somaValor: 0 },
+      pedidosProducao: { quantidade: 0, somaValor: 0 },
+      truncado: false,
       periodo: opts?.periodoLabel, source: 'public.propostas',
       authError: isAuthError(error), error: error.message,
     };
   }
 
-  const items = (data ?? []).map(r => mapPedido(r as Record<string, unknown>));
+  const todas = (data ?? []).map(r => mapPedido(r as Record<string, unknown>));
   const contagemPorStatus: Record<string, number> = {};
-  let countPedidosProducao = 0;
+  const somaPorStatus: Record<string, number> = {};
+  const aprovadasComercial = { quantidade: 0, somaValor: 0 };
+  const pedidosProducao = { quantidade: 0, somaValor: 0 };
   let totalValor = 0;
 
-  for (const p of items) {
+  for (const p of todas) {
     const status = p.status_interno ?? 'SEM_STATUS';
+    const valor = p.valor ?? 0;
     contagemPorStatus[status] = (contagemPorStatus[status] ?? 0) + 1;
-    if (p.is_prd_aprovado && !p.is_reproved) countPedidosProducao++;
-    totalValor += p.valor ?? 0;
+    somaPorStatus[status] = Number(((somaPorStatus[status] ?? 0) + valor).toFixed(2));
+    totalValor += valor;
+
+    if (/^(APROVADO|LIBERADO)/i.test(status)) {
+      aprovadasComercial.quantidade++;
+      aprovadasComercial.somaValor = Number((aprovadasComercial.somaValor + valor).toFixed(2));
+    }
+    if (p.is_prd_aprovado && !p.is_reproved) {
+      pedidosProducao.quantidade++;
+      pedidosProducao.somaValor = Number((pedidosProducao.somaValor + valor).toFixed(2));
+    }
   }
 
+  const limite = Math.min(opts?.limite ?? 20, LISTAGEM_MAX_ROWS);
+
   return {
-    found: items.length > 0,
-    items,
-    count: items.length,
-    totalValor,
+    found: todas.length > 0,
+    items: todas.slice(0, limite),
+    count: todas.length,
+    totalValor: Number(totalValor.toFixed(2)),
     contagemPorStatus,
-    countPedidosProducao,
+    somaPorStatus,
+    aprovadasComercial,
+    pedidosProducao,
+    truncado: todas.length >= LISTAGEM_MAX_ROWS,
     periodo: opts?.periodoLabel,
     source: 'public.propostas',
   };
