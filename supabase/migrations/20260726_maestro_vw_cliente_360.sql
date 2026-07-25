@@ -139,3 +139,7 @@ comment on view public.vw_maestro_cliente_360 is
 -- Acesso: somente usuários autenticados (RLS das tabelas base governa as linhas)
 grant select on public.vw_maestro_cliente_360 to authenticated;
 revoke all on public.vw_maestro_cliente_360 from anon;
+-- Default privileges do projeto concedem ALL em objetos novos — a visão é
+-- somente leitura (aplicado também como migration maestro_vw_cliente_360_grants)
+revoke insert, update, delete, truncate, references, trigger
+  on public.vw_maestro_cliente_360 from authenticated;
