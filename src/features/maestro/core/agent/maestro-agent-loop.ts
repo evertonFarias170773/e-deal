@@ -151,7 +151,9 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
 
   // ── Loop de tool-calls ────────────────────────────────────────────────────
   const { default: OpenAI } = await import('openai');
-  const openai = new OpenAI({ apiKey });
+  // maxRetries 1 (default 2): falha dura da API cai rápido no fallback legado
+  // em vez de segurar o usuário por ~20s de retries.
+  const openai = new OpenAI({ apiKey, maxRetries: 1 });
   const model = getAgentModel();
   const maxIterations = getAgentMaxIterations();
   const maxToolCalls = getAgentMaxToolCalls();
