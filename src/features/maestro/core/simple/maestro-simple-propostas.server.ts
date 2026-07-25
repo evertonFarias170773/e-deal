@@ -249,9 +249,11 @@ export interface ListagemPropostasResult {
   /** Soma de valores por status_interno (calculada no servidor) */
   somaPorStatus: Record<string, number>;
   /** Aprovadas comercialmente: status_interno começando com APROVADO ou LIBERADO */
-  aprovadasComercial: { quantidade: number; somaValor: number };
+  aprovadasComercial: { quantidade: number; somaValor: number; maior: PedidoSimples | null };
   /** Fila real de Produção: is_prd_aprovado AND NOT is_reproved */
-  pedidosProducao: { quantidade: number; somaValor: number };
+  pedidosProducao: { quantidade: number; somaValor: number; maior: PedidoSimples | null };
+  /** Proposta de maior valor do período (qualquer status não reprovado) */
+  maiorProposta: PedidoSimples | null;
   /** true quando o período tem mais propostas que o teto de leitura (agregados parciais) */
   truncado: boolean;
   periodo?: string;
@@ -294,8 +296,9 @@ export async function listarPropostasCliente(
     return {
       found: false, items: [], count: 0, totalValor: 0,
       contagemPorStatus: {}, somaPorStatus: {},
-      aprovadasComercial: { quantidade: 0, somaValor: 0 },
-      pedidosProducao: { quantidade: 0, somaValor: 0 },
+      aprovadasComercial: { quantidade: 0, somaValor: 0, maior: null },
+      pedidosProducao: { quantidade: 0, somaValor: 0, maior: null },
+      maiorProposta: null,
       truncado: false,
       periodo: opts?.periodoLabel, source: 'public.propostas',
       authError: isAuthError(error), error: error.message,
@@ -305,8 +308,11 @@ export async function listarPropostasCliente(
   const todas = (data ?? []).map(r => mapPedido(r as Record<string, unknown>));
   const contagemPorStatus: Record<string, number> = {};
   const somaPorStatus: Record<string, number> = {};
-  const aprovadasComercial = { quantidade: 0, somaValor: 0 };
-  const pedidosProducao = { quantidade: 0, somaValor: 0 };
+  const aprovadasComercial: ListagemPropostasResult['aprovadasComercial'] =
+    { quantidade: 0, somaValor: 0, maior: null };
+  const pedidosProducao: ListagemPropostasResult['pedidosProducao'] =
+    { quantidade: 0, somaValor: 0, maior: null };
+  let maiorProposta: PedidoSimples | null = null;
   let totalValor = 0;
 
   for (const p of todas) {
@@ -315,14 +321,21 @@ export async function listarPropostasCliente(
     contagemPorStatus[status] = (contagemPorStatus[status] ?? 0) + 1;
     somaPorStatus[status] = Number(((somaPorStatus[status] ?? 0) + valor).toFixed(2));
     totalValor += valor;
+    if (!maiorProposta || valor > (maiorProposta.valor ?? 0)) maiorProposta = p;
 
     if (/^(APROVADO|LIBERADO)/i.test(status)) {
       aprovadasComercial.quantidade++;
       aprovadasComercial.somaValor = Number((aprovadasComercial.somaValor + valor).toFixed(2));
+      if (!aprovadasComercial.maior || valor > (aprovadasComercial.maior.valor ?? 0)) {
+        aprovadasComercial.maior = p;
+      }
     }
     if (p.is_prd_aprovado && !p.is_reproved) {
       pedidosProducao.quantidade++;
       pedidosProducao.somaValor = Number((pedidosProducao.somaValor + valor).toFixed(2));
+      if (!pedidosProducao.maior || valor > (pedidosProducao.maior.valor ?? 0)) {
+        pedidosProducao.maior = p;
+      }
     }
   }
 
@@ -337,6 +350,7 @@ export async function listarPropostasCliente(
     somaPorStatus,
     aprovadasComercial,
     pedidosProducao,
+    maiorProposta,
     truncado: todas.length >= LISTAGEM_MAX_ROWS,
     periodo: opts?.periodoLabel,
     source: 'public.propostas',

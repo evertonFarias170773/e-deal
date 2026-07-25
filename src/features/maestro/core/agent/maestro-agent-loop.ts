@@ -66,6 +66,71 @@ export interface AgentLoopResult {
 const RESPOSTA_PARCIAL_SEGURA =
   'Não consegui concluir todas as consultas a tempo. Pode repetir a pergunta ou dividi-la em partes menores? Assim eu consulto o ERP com calma.';
 
+// ─── Guarda de citações (defesa determinística contra números inventados) ────
+// Todo número citado como identificador de proposta/pedido na resposta precisa
+// ter aparecido na saída de alguma tool DESTE turno. O prompt já proíbe;
+// esta camada garante no servidor.
+
+/** Coleta ids presentes num JSON de resultado de tool. */
+export function coletarIdsDeToolResult(json: string, destino: Set<string>): void {
+  const re = /"(?:id_int|id_cliente|id_produto|savedIdInt)"\s*:\s*"?(\d+)"?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(json)) !== null) destino.add(m[1]);
+}
+
+/**
+ * Extrai números que o texto apresenta como identificadores (proposta/pedido)
+ * — combina padrões contextuais com inteiros "soltos" de 4–6 dígitos,
+ * excluindo anos, valores monetários, quantidades, datas e telefones.
+ */
+export function extrairNumerosDePropostaCitados(texto: string): string[] {
+  const encontrados = new Set<string>();
+
+  // (a) padrões contextuais explícitos
+  const padroes = [
+    /(?:propostas?|pedidos?|or[çc]amentos?)\s+(?:reais?\s+)?(?:n[º°o.]{0,2}\s*)?#?\s*(\d{3,})/gi,
+    /n[º°]\s*(\d{3,})/gi,
+  ];
+  for (const re of padroes) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(texto)) !== null) encontrados.add(m[1]);
+  }
+
+  // (b) inteiros soltos de 4–6 dígitos com exclusões conservadoras
+  const generico = /\d{4,6}/g;
+  let m: RegExpExecArray | null;
+  while ((m = generico.exec(texto)) !== null) {
+    const n = m[0];
+    const antes = texto.slice(Math.max(0, m.index - 4), m.index);
+    const depois = texto.slice(m.index + n.length, m.index + n.length + 12);
+
+    if (/[\d/-]$/.test(antes)) continue;             // parte de data/telefone/número maior
+    if (/\d[.,]$/.test(antes)) continue;             // parte de valor formatado (49.941)
+    if (/R\$\s?$/.test(antes)) continue;             // dinheiro sem separador
+    if (/^(\d|[.,]\d|[/%-])/.test(depois)) continue; // continuação de número/data/percentual
+    const num = parseInt(n, 10);
+    if (num >= 1990 && num <= 2099) continue;        // ano
+    if (/^\s*(unidades|un\b|gramas|g\b|dias?|min)/i.test(depois)) continue; // qtd/peso/prazo
+
+    encontrados.add(n);
+  }
+
+  return [...encontrados];
+}
+
+export function numerosNaoConfirmados(texto: string, idsConfirmados: Set<string>): string[] {
+  return extrairNumerosDePropostaCitados(texto).filter(n => !idsConfirmados.has(n));
+}
+
+/** Defesa final: redige do texto números de proposta não confirmados. */
+export function redigirNumerosNaoConfirmados(texto: string, invalidos: string[]): string {
+  let s = texto;
+  for (const n of invalidos) {
+    s = s.replace(new RegExp(`\\b${n}\\b`, 'g'), '(número não confirmado)');
+  }
+  return s;
+}
+
 // ─── Seed do estado a partir do contexto V2 (autorado pelo servidor) ─────────
 
 function seedStateFromContext(context: ConversationContext): AgentSessionState {
@@ -163,6 +228,13 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   let finalContent: string | null = null;
   let estourouLimite = false;
 
+  // Ids que o modelo PODE citar: tudo o que apareceu em saída de tool neste
+  // turno + ids já resolvidos pelo servidor (cliente ativo, candidatos).
+  const idsConfirmados = new Set<string>();
+  state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
+  (state.pendingClientCandidates ?? []).forEach(c => idsConfirmados.add(String(c.id_cliente)));
+  let correcoesDeCitacao = 0;
+
   for (let iter = 0; iter < maxIterations; iter++) {
     const restanteMs = deadline - Date.now();
     if (restanteMs <= 1_000) {
@@ -202,7 +274,28 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     const toolCalls = msg.tool_calls ?? [];
 
     if (toolCalls.length === 0) {
-      finalContent = msg.content?.trim() || null;
+      const candidato = msg.content?.trim() || null;
+
+      // Guarda de citações: número de proposta que não veio de tool → uma
+      // rodada forçada de correção (o modelo pode re-consultar); persiste o
+      // problema → a defesa final abaixo redige o número.
+      if (candidato) {
+        const invalidos = numerosNaoConfirmados(candidato, idsConfirmados);
+        if (invalidos.length > 0 && correcoesDeCitacao < 1 && Date.now() < deadline - 3_000) {
+          correcoesDeCitacao++;
+          console.warn(`[MaestroAgentLoop] Citação não confirmada (${invalidos.join(', ')}) — forçando correção.`);
+          messages.push({ role: 'assistant', content: candidato });
+          messages.push({
+            role: 'system',
+            content:
+              `CORREÇÃO OBRIGATÓRIA: o(s) número(s) ${invalidos.join(', ')} citado(s) na sua resposta NÃO vieram de nenhuma ferramenta neste turno — podem estar inventados. ` +
+              'Chame AGORA a ferramenta adequada e responda novamente citando somente números confirmados; se o dado não existir nas ferramentas, diga que não tem essa informação.',
+          });
+          continue;
+        }
+      }
+
+      finalContent = candidato;
       break;
     }
 
@@ -229,6 +322,9 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
 
         const exec = await executeAgentTool(tc.function.name, args, toolCtx);
         toolCallsExecutados++;
+        if (exec.ok) {
+          coletarIdsDeToolResult(JSON.stringify(exec.result), idsConfirmados);
+        }
 
         activity.push({
           id: `agent-tool-${toolCallsExecutados}`,
@@ -275,7 +371,17 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     }
   }
 
-  const content = finalContent || RESPOSTA_PARCIAL_SEGURA;
+  let content = finalContent || RESPOSTA_PARCIAL_SEGURA;
+
+  // Defesa final da guarda de citações — vale para qualquer caminho de saída
+  const invalidosFinais = numerosNaoConfirmados(content, idsConfirmados);
+  if (invalidosFinais.length > 0) {
+    console.warn(`[MaestroAgentLoop] Redigindo números não confirmados na resposta final: ${invalidosFinais.join(', ')}`);
+    content =
+      redigirNumerosNaoConfirmados(content, invalidosFinais) +
+      '\n\n⚠️ Removi número(s) de proposta que não pude confirmar nas consultas deste turno — desconfie de qualquer número que eu não tenha buscado agora.';
+  }
+
   if (estourouLimite) {
     console.warn(
       `[MaestroAgentLoop] Guardas acionadas (toolCalls=${toolCallsExecutados}, ` +
