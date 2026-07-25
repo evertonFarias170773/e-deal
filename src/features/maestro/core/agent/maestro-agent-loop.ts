@@ -43,6 +43,7 @@ import {
   type AgentToolContext,
 } from './maestro-agent-tools';
 import { carregarHistoricoConversa } from './maestro-agent-history.server';
+import { registrarAcaoMaestro } from '../simple/maestro-audit.server';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -403,6 +404,22 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       `budget=${getAgentTimeoutMs()}ms) — resposta ${finalContent ? 'parcial composta' : 'segura padrão'}.`
     );
   }
+
+  // ── Auditoria do turno (log sempre; banco quando MAESTRO_AUDIT_DB_ENABLED) ─
+  await registrarAcaoMaestro(supabase, {
+    userId,
+    acao: 'agent_turn',
+    resultado: finalContent ? 'sucesso' : 'erro',
+    idCliente: state.activeClient?.clientInternalId ?? undefined,
+    detalhe: estourouLimite ? 'guardas acionadas (resposta parcial)' : undefined,
+    payload: {
+      tools: activity.map(a => a.label.replace(/^Consulta: /, '')),
+      tool_calls: toolCallsExecutados,
+      limite_atingido: estourouLimite,
+      citacoes_redigidas: invalidosFinais.length,
+      correcoes_de_citacao: correcoesDeCitacao,
+    },
+  });
 
   // ── Contexto de retorno (servidor grava o cliente ativo no V2) ───────────
   const novoContexto: ConversationContext = { ...context, rawQuery: query };

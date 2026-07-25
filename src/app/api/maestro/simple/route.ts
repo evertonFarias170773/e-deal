@@ -29,6 +29,7 @@ import { persistirTurnoMaestro } from '../../../../features/maestro/core/simple/
 import { deserializeV2Context } from '../../../../features/maestro/core/simple/maestro-v2-context-manager';
 import { deveUsarAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-config';
 import { runMaestroAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-loop';
+import { registrarAcaoMaestro } from '../../../../features/maestro/core/simple/maestro-audit.server';
 import type { ConversationContext } from '../../../../features/maestro/types';
 
 export async function POST(request: NextRequest) {
@@ -111,6 +112,12 @@ export async function POST(request: NextRequest) {
       } catch (agentErr) {
         // Falha do agent loop NUNCA derruba o Maestro — fallback para o legado.
         console.error('[/api/maestro/simple] Agent loop falhou — fallback para o motor legado:', agentErr);
+        await registrarAcaoMaestro(supabase, {
+          userId: user.id,
+          acao: 'agent_fallback_legado',
+          resultado: 'erro',
+          detalhe: agentErr instanceof Error ? agentErr.message.slice(0, 300) : String(agentErr).slice(0, 300),
+        });
         result = null;
       }
     }

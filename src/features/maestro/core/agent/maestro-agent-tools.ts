@@ -48,6 +48,7 @@ import {
 } from '../simple/maestro-simple-pagamentos.server';
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo } from '../simple/maestro-simple-produtos.server';
+import { calcularVendasPorVendedor, buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { resolverTermoCatalogo } from '../simple/maestro-orcamento-catalogo-oficial';
 import type { MaestroPeriodo } from '../simple/maestro-simple-intents';
 import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
@@ -576,10 +577,11 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'detalhe_proposta',
         description:
-          'Detalhe de UMA proposta do cliente ativo pelo número, incluindo os ITENS/PRODUTOS orçados ' +
-          '(nome, quantidade, valor unitário, subtotal, desconto). Use quando perguntarem "quais produtos", ' +
-          '"o que foi orçado" ou detalhes de uma proposta específica. ATENÇÃO: propostas AVULSAS ' +
-          '(is_avulso=true) não têm itens detalhados no ERP — explique isso em vez de dizer que não tem acesso.',
+          'Detalhe de UMA proposta do cliente ativo pelo número: ITENS/PRODUTOS orçados ' +
+          '(nome, quantidade, valor unitário, subtotal, desconto) e SITUAÇÃO OPERACIONAL do pedido ' +
+          '(status_pedido, etapa_operacional, prazo_operacional, em_arte) — use também para "onde está o pedido X". ' +
+          'ATENÇÃO: propostas AVULSAS (is_avulso=true) não têm itens detalhados no ERP — explique isso ' +
+          'em vez de dizer que não tem acesso.',
         parameters: {
           type: 'object',
           properties: {
@@ -826,6 +828,72 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       const filtroArg = typeof args.filtro === 'string' ? args.filtro : 'todos';
       const filtro = filtroArg === 'atrasados' ? 'atraso' : filtroArg === 'abertos' ? 'aberto' : 'todos';
       return await buscarBoletosCliente(ctx.supabase, idCliente, filtro);
+    },
+  },
+
+  vendas_por_vendedor: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'vendas_por_vendedor',
+        description:
+          'Vendas por VENDEDOR em um período: ranking ou um vendedor específico, com agregados prontos ' +
+          '(total de propostas, aprovadas comerciais com soma, pedidos de Produção, maior aprovada). ' +
+          'Use para "quanto vendeu o(a) X", "ranking de vendedores", "vendas da equipe". ' +
+          'PERMISSÃO aplicada no servidor: sem propostas.view_all o usuário vê SOMENTE os próprios números ' +
+          '(campo escopo="proprio" na resposta — explique a restrição com naturalidade). Não exige cliente ativo.',
+        parameters: {
+          type: 'object',
+          properties: {
+            vendedor: { type: 'string', description: 'Opcional — nome (ou parte) do vendedor. Omitir traz o ranking de todos.' },
+            periodo: { ...PERIODO_SCHEMA, description: 'Período das propostas (por data de criação).' },
+          },
+          required: ['periodo'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const periodo = mapPeriodoArg(args.periodo);
+      if (!periodo) return { found: false, error: 'Período inválido.' };
+      const intervalo = intervaloDoPeriodo(periodo);
+      if (!intervalo.desde) return { found: false, error: 'Período inválido.' };
+
+      const vendedorArg = typeof args.vendedor === 'string' ? args.vendedor.trim() : '';
+
+      // Gate de permissão (decisão de produto): gestores (propostas.view_all)
+      // veem todos; os demais veem SOMENTE os próprios números.
+      const gestor = await verificarPermissaoServerSide(ctx.supabase, ctx.userId, 'propostas.view_all');
+      let filtroVendedorNome = vendedorArg || undefined;
+      let escopo: 'todos' | 'proprio' = 'todos';
+
+      if (!gestor) {
+        const eu = await buscarNomeUsuario(ctx.supabase, ctx.userId);
+        if (!eu.nome) {
+          return {
+            found: false,
+            error: 'PERMISSAO_NEGADA: o perfil do usuário não permite ver vendas de outros vendedores e não foi possível identificar o vendedor dele. Explique com educação.',
+          };
+        }
+        filtroVendedorNome = eu.nome;
+        escopo = 'proprio';
+      }
+
+      const res = await calcularVendasPorVendedor(ctx.supabase, {
+        desde: intervalo.desde,
+        ate: intervalo.ate,
+        periodoLabel: periodo.label,
+        filtroVendedorNome,
+      });
+
+      return {
+        ...res,
+        escopo,
+        ...(escopo === 'proprio'
+          ? { restricao: 'Usuário sem propostas.view_all — mostrando apenas os números do próprio vendedor.' }
+          : {}),
+        semantica: SEMANTICA_PROPOSTAS,
+      };
     },
   },
 

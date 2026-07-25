@@ -380,6 +380,11 @@ export interface DetalheProposta extends PedidoSimples {
   descricao: string | null;
   valor_frete: number | null;
   frete_escolhido: string | null;
+  /** Situação operacional (lado seguro da Produção, direto de propostas) */
+  status_pedido: string | null;
+  etapa_operacional: string | null;
+  prazo_operacional: string | null;
+  em_arte: boolean;
 }
 
 export interface DetalhePropostaResult {
@@ -415,7 +420,7 @@ export async function buscarDetalheProposta(
 ): Promise<DetalhePropostaResult> {
   const { data: propostaRow, error } = await supabase
     .from('propostas')
-    .select(`${PROPOSTAS_COLS}, proposta, valor_frete, frete_escolhido`)
+    .select(`${PROPOSTAS_COLS}, proposta, valor_frete, frete_escolhido, status_pedido, etapa_operacional, prazo_operacional, em_arte`)
     .eq('id_cliente', idCliente)
     .eq('id_int', numeroProposta)
     .maybeSingle();
@@ -435,6 +440,10 @@ export async function buscarDetalheProposta(
     descricao:      descricaoRaw ? descricaoRaw.slice(0, 400) : null,
     valor_frete:    numOrNull(row.valor_frete),
     frete_escolhido: typeof row.frete_escolhido === 'string' ? row.frete_escolhido : null,
+    status_pedido:      typeof row.status_pedido === 'string' && row.status_pedido.trim() ? row.status_pedido.trim() : null,
+    etapa_operacional:  typeof row.etapa_operacional === 'string' && row.etapa_operacional.trim() ? row.etapa_operacional.trim() : null,
+    prazo_operacional:  typeof row.prazo_operacional === 'string' && String(row.prazo_operacional).trim() ? String(row.prazo_operacional) : null,
+    em_arte:            row.em_arte === true,
   };
 
   const { data: itensData, error: itensError } = await supabase
