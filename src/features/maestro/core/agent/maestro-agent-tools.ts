@@ -47,7 +47,7 @@ import {
   compararRecebimentoClienteMeses,
 } from '../simple/maestro-simple-pagamentos.server';
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
-import { simularOrcamentoAvulsoDb } from '../simple/maestro-simple-produtos.server';
+import { simularOrcamentoAvulsoDb, listarProdutosCatalogo } from '../simple/maestro-simple-produtos.server';
 import { resolverTermoCatalogo } from '../simple/maestro-orcamento-catalogo-oficial';
 import type { MaestroPeriodo } from '../simple/maestro-simple-intents';
 import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
@@ -617,18 +617,37 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       type: 'function',
       function: {
         name: 'ultimo_orcamento_cliente',
-        description: 'Último orçamento/proposta gerado do cliente ativo (independente de aprovação). Fonte: public.propostas.',
-        parameters: { type: 'object', properties: { ...ID_CLIENTE_PROP }, additionalProperties: false },
+        description:
+          'Último orçamento/proposta gerado do cliente ativo. Fonte: public.propostas. ' +
+          'Use filtro="nao_aprovada_comercial" quando pedirem o último "ainda não aprovado" ' +
+          '(vocabulário da equipe: não aprovado = status NOVO/AGUARDANDO — NUNCA responda com APROVADO/LIBERADO). ' +
+          'Use filtro="nao_avulsa" quando pedirem o último que não seja proposta avulsa (com itens detalháveis).',
+        parameters: {
+          type: 'object',
+          properties: {
+            ...ID_CLIENTE_PROP,
+            filtro: {
+              type: 'string',
+              enum: ['qualquer', 'nao_aprovada_comercial', 'nao_avulsa'],
+              description: 'Padrão: qualquer (última proposta independente de status).',
+            },
+          },
+          additionalProperties: false,
+        },
       },
     },
     handler: async (args, ctx) => {
       const idCliente = (args.__idClienteSeguro as number)!;
-      const res = await buscarUltimoOrcamento(ctx.supabase, idCliente);
+      const filtroArg = typeof args.filtro === 'string' ? args.filtro : 'qualquer';
+      const filtro = filtroArg === 'nao_aprovada_comercial' || filtroArg === 'nao_avulsa' ? filtroArg : 'qualquer';
+      const res = await buscarUltimoOrcamento(ctx.supabase, idCliente, filtro);
       return {
         ...res,
         items: marcarPedidoReal(res.items),
         semantica: SEMANTICA_PROPOSTAS,
-        atencao: 'Este é o último ORÇAMENTO/proposta gerado — só chame de "aprovado" ou "pedido" se pedido_real=true.',
+        atencao: res.janela_esgotada
+          ? `Nenhuma encontrada nas ${res.varridas} propostas mais recentes — pode existir uma mais antiga; diga isso em vez de afirmar que não existe.`
+          : 'Este é o último ORÇAMENTO/proposta gerado — só chame de "aprovado" ou "pedido" se pedido_real=true.',
       };
     },
   },
@@ -650,15 +669,16 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
   },
 
-  faturamento_comercial_periodo: {
+  soma_pedidos_producao_periodo: {
     needsActiveClient: true,
     schema: {
       type: 'function',
       function: {
-        name: 'faturamento_comercial_periodo',
+        name: 'soma_pedidos_producao_periodo',
         description:
-          'Soma do VALOR COMERCIAL dos pedidos reais do cliente ativo em um período (public.propostas). ' +
-          'NÃO é dinheiro recebido — para recebimento use recebimento_periodo.',
+          'Soma dos PEDIDOS REAIS DE PRODUÇÃO (is_prd_aprovado, fila oficial) do cliente ativo em um período. ' +
+          'ATENÇÃO: isto NÃO é o "faturamento" do vocabulário da equipe — para faturamento/vendas de um período ' +
+          'use propostas_cliente e responda com aprovadas_comercial. Também NÃO é dinheiro recebido (recebimento_periodo).',
         parameters: {
           type: 'object',
           properties: { ...ID_CLIENTE_PROP, periodo: PERIODO_SCHEMA },
@@ -809,13 +829,43 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
   },
 
+  listar_produtos: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'listar_produtos',
+        description:
+          'Listar produtos do catálogo por busca AMPLA (nome, apelidos, descrição e categoria, match parcial). ' +
+          'Use para "quais produtos temos", "lista de pulseiras/credenciais/cordões", "o que vendemos". ' +
+          'Sem termo lista o catálogo ativo inteiro, agrupado por categoria. Não exige cliente ativo. ' +
+          'Para COTAR um item específico continue usando buscar_produto/simular_orcamento_avulso.',
+        parameters: {
+          type: 'object',
+          properties: {
+            termo: { type: 'string', description: 'Opcional — família ou palavra-chave (ex.: pulseira, credencial, jacaré).' },
+            incluir_inativos: { type: 'boolean', description: 'Padrão false — só produtos ativos.' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const termo = typeof args.termo === 'string' ? args.termo : undefined;
+      return await listarProdutosCatalogo(ctx.supabase, {
+        termo,
+        incluirInativos: args.incluir_inativos === true,
+      });
+    },
+  },
+
   buscar_produto: {
     schema: {
       type: 'function',
       function: {
         name: 'buscar_produto',
         description:
-          'Buscar produto do catálogo por apelido, descrição ou id (preço unitário, valor fixo, ativo). ' +
+          'Buscar produto do catálogo por apelido, descrição ou id (preço unitário, valor fixo, ativo) — busca PONTUAL ' +
+          'para cotação. Para listas por família ("todas as pulseiras") use listar_produtos. ' +
           'Não exige cliente ativo. Passe o termo EXATO digitado pelo usuário.',
         parameters: {
           type: 'object',

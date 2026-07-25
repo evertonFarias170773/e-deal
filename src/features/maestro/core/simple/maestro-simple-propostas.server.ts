@@ -19,7 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MaestroPeriodo } from './maestro-simple-intents';
 
 // Colunas seguras — sem dados sensíveis de proposta
-const PROPOSTAS_COLS = 'id_int, status_interno, valor_total, valor, created_at, vendedor, is_prd_aprovado, is_reproved';
+const PROPOSTAS_COLS = 'id_int, status_interno, valor_total, valor, created_at, vendedor, is_prd_aprovado, is_reproved, is_avulso';
 
 // ─── Tipos Exportados ──────────────────────────────────────────────────────
 
@@ -33,6 +33,8 @@ export interface PedidoSimples {
   /** Entrada oficial na fila de Produção (FLUXO-OFICIAL-STATUS-PROPOSTAS §1.3) */
   is_prd_aprovado?: boolean;
   is_reproved?: boolean;
+  /** Proposta avulsa (valor direto, sem itens detalhados em produtos_proposta) */
+  is_avulso?: boolean;
 }
 
 export interface PropostasResult {
@@ -68,6 +70,7 @@ function mapPedido(row: Record<string, unknown>): PedidoSimples {
     vendedor:        typeof row.vendedor === 'string' ? row.vendedor : null,
     is_prd_aprovado: row.is_prd_aprovado === true,
     is_reproved:     row.is_reproved === true,
+    is_avulso:       row.is_avulso === true,
   };
 }
 
@@ -412,7 +415,7 @@ export async function buscarDetalheProposta(
 ): Promise<DetalhePropostaResult> {
   const { data: propostaRow, error } = await supabase
     .from('propostas')
-    .select(`${PROPOSTAS_COLS}, is_avulso, proposta, valor_frete, frete_escolhido`)
+    .select(`${PROPOSTAS_COLS}, proposta, valor_frete, frete_escolhido`)
     .eq('id_cliente', idCliente)
     .eq('id_int', numeroProposta)
     .maybeSingle();
@@ -469,27 +472,58 @@ export async function buscarDetalheProposta(
   };
 }
 
+export type FiltroUltimoOrcamento = 'qualquer' | 'nao_aprovada_comercial' | 'nao_avulsa';
+
+// Quantas propostas recentes varrer quando há filtro (determinístico no servidor)
+const ULTIMO_ORCAMENTO_JANELA = 30;
+
 /**
  * Último orçamento/proposta do cliente (independente de aprovação de produção).
- * Filtro: is_reproved=false.
- * Ordenação: created_at DESC.
+ * Filtro base: is_reproved=false. Ordenação: created_at DESC.
+ * Filtros opcionais (vocabulário da equipe):
+ *   - nao_aprovada_comercial → último SEM aprovação comercial (status fora de APROVADO/LIBERADO);
+ *   - nao_avulsa             → último com is_avulso=false (tem itens detalháveis).
  */
 export async function buscarUltimoOrcamento(
   supabase: SupabaseClient,
   idCliente: number,
-): Promise<PropostasResult> {
+  filtro: FiltroUltimoOrcamento = 'qualquer',
+): Promise<PropostasResult & { criterio?: string; varridas?: number; janela_esgotada?: boolean }> {
+  const janela = filtro === 'qualquer' ? 1 : ULTIMO_ORCAMENTO_JANELA;
+
   const { data, error } = await supabase
     .from('propostas')
     .select(PROPOSTAS_COLS)
     .eq('id_cliente', idCliente)
     .eq('is_reproved', false)
     .order('created_at', { ascending: false })
-    .limit(1);
+    .order('id_int', { ascending: false })
+    .limit(janela);
 
   if (error) {
     return { found: false, items: [], count: 0, source: 'public.propostas', authError: isAuthError(error), error: error.message };
   }
 
-  const items = (data ?? []).map(r => mapPedido(r as Record<string, unknown>));
-  return { found: items.length > 0, items, count: items.length, source: 'public.propostas' };
+  const todas = (data ?? []).map(r => mapPedido(r as Record<string, unknown>));
+  let candidatas = todas;
+  let criterio = 'última proposta (qualquer status)';
+  if (filtro === 'nao_aprovada_comercial') {
+    candidatas = todas.filter(p => !/^(APROVADO|LIBERADO)/i.test(p.status_interno ?? ''));
+    criterio = 'última proposta SEM aprovação comercial (status fora de APROVADO/LIBERADO)';
+  } else if (filtro === 'nao_avulsa') {
+    candidatas = todas.filter(p => p.is_avulso !== true);
+    criterio = 'última proposta NÃO avulsa (com itens detalháveis)';
+  }
+
+  const items = candidatas.slice(0, 1);
+  return {
+    found: items.length > 0,
+    items,
+    count: items.length,
+    source: 'public.propostas',
+    criterio,
+    varridas: todas.length,
+    // sem match dentro da janela → pode existir mais antiga; sinalize em vez de afirmar que não existe
+    janela_esgotada: filtro !== 'qualquer' && items.length === 0 && todas.length >= ULTIMO_ORCAMENTO_JANELA,
+  };
 }
