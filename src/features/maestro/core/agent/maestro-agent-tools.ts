@@ -836,8 +836,9 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         name: 'listar_produtos',
         description:
           'Listar produtos do catálogo por busca AMPLA (nome, apelidos, descrição e categoria, match parcial). ' +
-          'Use para "quais produtos temos", "lista de pulseiras/credenciais/cordões", "o que vendemos". ' +
-          'Sem termo lista o catálogo ativo inteiro, agrupado por categoria. Não exige cliente ativo. ' +
+          'Use para "quais produtos temos", "lista de pulseiras/credenciais/cordões", "o que vendemos" e para ' +
+          'COMPARAR produtos: cada item traz preço, formato (dimensões), peso unitário em gramas, prazo de produção ' +
+          'e quantidade mínima. Sem termo lista o catálogo ativo inteiro, agrupado por categoria. Não exige cliente ativo. ' +
           'Para COTAR um item específico continue usando buscar_produto/simular_orcamento_avulso.',
         parameters: {
           type: 'object',
@@ -896,7 +897,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         name: 'simular_orcamento_avulso',
         description:
           'Simular valor de orçamento por produto e quantidade (cálculo informativo, NADA é salvo). ' +
-          'Subtotais e total JÁ VÊM CALCULADOS — nunca recalcule. Não exige cliente ativo.',
+          'Subtotais, total, pesoTotalGramas (peso da quantidade) e prazoProducao JÁ VÊM CALCULADOS — nunca recalcule. ' +
+          'Também responde "quanto pesa X unidades de Y". Não exige cliente ativo.',
         parameters: {
           type: 'object',
           properties: {
@@ -931,17 +933,25 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
       const res = await simularOrcamentoAvulsoDb(ctx.supabase, itens);
       // Enriquece com o nome comercial oficial do catálogo — é ele que deve
-      // aparecer no orçamento formatado (não a descrição crua do banco).
+      // aparecer no orçamento formatado (não a descrição crua do banco) —
+      // e com prazo de produção e peso total JÁ CALCULADOS (o modelo nunca calcula).
       return {
         ...res,
         itens: res.itens.map(item => {
           const catalogo = resolverTermoCatalogo(item.termo);
+          const produto = item.produtosEncontrados.length === 1 ? item.produtosEncontrados[0] : null;
+          const pesoUnit = produto?.pesoUnitario;
           return {
             ...item,
             nomeComercialOficial:
               catalogo.nomeComercial ??
               item.produtosEncontrados[0]?.descricao ??
               item.termo,
+            prazoProducao: produto?.prazo ?? null,
+            pesoTotalGramas:
+              pesoUnit != null && Number.isFinite(pesoUnit) && item.quantidade > 0
+                ? Number((pesoUnit * item.quantidade).toFixed(1))
+                : null,
           };
         }),
       };

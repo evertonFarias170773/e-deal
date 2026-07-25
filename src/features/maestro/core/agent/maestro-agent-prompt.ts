@@ -94,6 +94,7 @@ COMO USAR AS FERRAMENTAS:
 - PRODUTOS/ITENS de uma proposta específica ("quais produtos", "o que foi orçado na 19675") → detalhe_proposta com o número. Se vier itens_detalhados=false em proposta AVULSA, explique que avulsas não têm itens detalhados no ERP (não diga "não tenho acesso").
 - COMPORTAMENTO DE PAGAMENTO ("como ele costuma pagar", "paga por PIX ou boleto?") → perfil_pagamento_cliente (pagamentos reais por tipo de cobrança). O campo cadastral padrao_pagamento é só a condição cadastrada — se estiver vazio, consulte o perfil real em vez de encerrar a resposta.
 - LISTAS DE PRODUTOS ("quais pulseiras temos", "tipos de credencial", "o que vendemos") → listar_produtos com o termo da família — a busca é ampla (nome, apelidos, categoria). buscar_produto é pontual (cotação) e NÃO serve para listar; nunca conclua que "só existe um" a partir dele.
+- COMPARAÇÃO/ESPECIFICAÇÃO DE PRODUTOS ("qual a diferença", "têm o mesmo tamanho", "qual o formato/peso/prazo") → listar_produtos traz formato (dimensões), peso_unitario_gramas, prazo_producao, preços e quantidade mínima. Compare SOMENTE com esses campos — NUNCA invente características, materiais, indicações de uso ou qualidades que não vieram da tool. Peso de uma QUANTIDADE ("quanto pesam 1000 tribands") → simular_orcamento_avulso devolve pesoTotalGramas pronto — nunca multiplique você mesmo.
 - Resolva o cliente PRIMEIRO (resolver_cliente) antes de qualquer consulta por cliente. Se a busca retornar candidatos, apresente a lista numerada e pergunte qual é o certo — nunca escolha sozinho.
 - CONFIRMAÇÃO DE CANDIDATO: quando o usuário confirmar um candidato de QUALQUER forma natural ("sim", "esse mesmo", "é ele", "o primeiro", "1", o nome), chame confirmar_cliente_candidato imediatamente e já traga os dados. NUNCA exija que ele responda com o número, NUNCA repita a pergunta de confirmação se ele já confirmou.
 - Encadeie ferramentas quando a pergunta exigir (ex.: resolver cliente → boletos → recebimento).
@@ -132,7 +133,7 @@ Regras do formato:
 - Um bloco 🎟️/📦/🏭 por item, na ordem pedida. Use o campo nomeComercialOficial retornado pela tool.
 - Valores EXATOS da tool, formatados no padrão brasileiro (R$ 4.090,00) — formatar não é calcular: nunca altere o número.
 - Com "Retira no balcão" o Total final é IGUAL ao Subtotal produtos (não some nada).
-- Se o item tiver prazo de produção informado pela tool, use-o; senão escreva "Prazo sob consulta".
+- Prazo de produção: use o campo prazoProducao retornado pela tool; se vier vazio, escreva "Prazo sob consulta".
 - Dentro do bloco: texto puro, sem negrito, itálico ou tabelas — precisa colar limpo no WhatsApp.
 - Antes do bloco, no máximo uma linha curta de contexto (ex.: "Segue o orçamento:"); depois dele, se fizer sentido, UMA pergunta útil (ex.: calcular frete com endereço, salvar como proposta via fluxo de cotação).
 - Item não encontrado/inativo/sem preço: NÃO monte o bloco oficial — explique o problema e pergunte como proceder.
@@ -171,6 +172,7 @@ export function buildAgentSystemPrompt(opts: AgentPromptOptions): string {
     '',
     `DATA DE REFERÊNCIA DO SERVIDOR: ${opts.currentDateIso}`,
     'Períodos relativos ("últimos 3 meses", "mês passado") contam SEMPRE a partir desta data — nunca projete meses futuros. Mês citado sem ano assume o ano da data de referência.',
+    '"ÚLTIMOS N MESES" INCLUI O MÊS CORRENTE: consulte o mês atual (parcial) + os N-1 meses fechados anteriores, e sinalize que o mês corrente é parcial. Só use meses fechados excluindo o atual se o usuário pedir explicitamente ("meses fechados/completos").',
   ];
 
   if (opts.userName) {

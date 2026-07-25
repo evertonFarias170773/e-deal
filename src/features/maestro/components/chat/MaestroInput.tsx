@@ -1,12 +1,30 @@
 'use client';
-import { Send, Plus, Wrench, Mic } from 'lucide-react';
-import { useRef, useEffect, useState } from 'react';
+import { Send, Mic } from 'lucide-react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 
 interface Props {
   value: string;
   onChange: (v: string) => void;
   onSend: (v: string) => void;
   isLoading: boolean;
+}
+
+// Tipos mínimos da Web Speech API (sem tipos nativos no TS)
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+}
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort?: () => void;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
 }
 
 // Helper para compor fragmentos de texto garantindo o espaçamento correto entre palavras e pontuações
@@ -45,12 +63,16 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
   // States para o Speech-to-Text
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   
   // Controles de texto acumulado entre sessões automáticas
   const originalValueRef = useRef<string>('');
   const finalTranscriptRef = useRef<string>('');
   const isManualStopRef = useRef<boolean>(false);
+  // Após um ENVIO, resultados atrasados do recognition devem ser DESCARTADOS —
+  // sem isto eles repõem o transcript no input e rearmam o auto-envio,
+  // reenviando a mesma pergunta.
+  const descartarResultadosRef = useRef<boolean>(false);
   
   // Timer de auto-envio por silêncio
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -66,26 +88,52 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
     isLoadingRef.current = isLoading;
   }, [onChange, onSend, isLoading]);
 
-  const clearSilenceTimer = () => {
+  const clearSilenceTimer = useCallback(() => {
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
-  };
+  }, []);
+
+  // Encerra a sessão de voz de forma DEFINITIVA para um envio: descarta
+  // qualquer resultado pendente (abort) e zera o texto acumulado, para que
+  // nada re-popule o input depois que a mensagem já foi enviada.
+  const encerrarVozParaEnvio = useCallback(() => {
+    clearSilenceTimer();
+    descartarResultadosRef.current = true;
+    isManualStopRef.current = true;
+    finalTranscriptRef.current = '';
+    originalValueRef.current = '';
+    const rec = recognitionRef.current;
+    if (rec) {
+      try {
+        // abort() descarta resultados pendentes; stop() ainda os entregaria
+        if (typeof rec.abort === 'function') rec.abort();
+        else rec.stop();
+      } catch {
+        // já parado — ignorar
+      }
+    }
+  }, [clearSilenceTimer]);
 
   useEffect(() => {
     return () => clearSilenceTimer(); // Limpa timer se componente desmontar
-  }, []);
+  }, [clearSilenceTimer]);
 
   // Setup da Web Speech API
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const w = window as unknown as Record<string, unknown>;
+      const SpeechRecognition = (w.SpeechRecognition ?? w.webkitSpeechRecognition) as
+        | (new () => SpeechRecognitionLike)
+        | undefined;
       if (!SpeechRecognition) {
+        // Detecção de recurso só existe no client (SSR-safe); setState único pós-mount
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsSupported(false);
         return;
       }
-      
+
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -103,13 +151,13 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
         } else {
           try {
             recognition.start();
-          } catch (e) {
+          } catch {
             setIsListening(false); // Fallback caso não seja possível reiniciar
           }
         }
       };
-      
-      recognition.onerror = (event: any) => {
+
+      recognition.onerror = (event: { error: string }) => {
         console.error("Erro no reconhecimento de voz:", event.error);
         if (event.error === 'not-allowed') {
           clearSilenceTimer();
@@ -125,7 +173,11 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
         }
       };
       
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        // Sessão já enviada → resultado atrasado é lixo: não pode re-popular
+        // o input nem rearmar o auto-envio (causa de mensagem duplicada)
+        if (descartarResultadosRef.current) return;
+
         let interimTranscript = '';
         let sessionFinalTranscript = '';
         
@@ -151,23 +203,27 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
         
         // Trata o temporizador de auto-envio:
         clearSilenceTimer();
-        
-        // Re-engatilha a bomba relógio para enviar após 4 segundos de inatividade da voz
-        silenceTimerRef.current = setTimeout(() => {
-          // Forçamos a parada permanente da gravação
-          isManualStopRef.current = true;
-          recognitionRef.current?.stop();
-          
-          // O envio automático ocorre apenas se tiver conteúdo e não estiver processando
-          if (textComposto.trim() && !isLoadingRef.current) {
-            onSendRef.current(textComposto);
-          }
-        }, 4000);
+
+        // Re-engatilha a bomba relógio para enviar após 4 segundos de inatividade
+        // da voz — somente enquanto a sessão de escuta estiver viva (um resultado
+        // final atrasado após parada manual não pode agendar envio)
+        if (!isManualStopRef.current) {
+          silenceTimerRef.current = setTimeout(() => {
+            // Parada definitiva + descarte de pendências ANTES do envio
+            encerrarVozParaEnvio();
+
+            // O envio automático ocorre apenas se tiver conteúdo e não estiver processando
+            if (textComposto.trim() && !isLoadingRef.current) {
+              onSendRef.current(textComposto);
+            }
+          }, 4000);
+        }
       };
       
       recognitionRef.current = recognition;
     }
-  }, []);
+    // useCallbacks estáveis (só refs) — o setup roda uma única vez
+  }, [encerrarVozParaEnvio, clearSilenceTimer]);
 
   const toggleListening = () => {
     if (!isSupported) {
@@ -185,6 +241,7 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
     } else {
       // Inicia nova gravação a pedido do usuário
       isManualStopRef.current = false;
+      descartarResultadosRef.current = false;
       finalTranscriptRef.current = '';
       originalValueRef.current = value;
       clearSilenceTimer();
@@ -220,12 +277,9 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (value.trim() && !isLoading) {
-        clearSilenceTimer();
-        // Se estiver gravando ao enviar (por atalho), forçamos parada definitiva
-        if (isListening && recognitionRef.current) {
-          isManualStopRef.current = true;
-          recognitionRef.current.stop();
-        }
+        // Parada definitiva + descarte de resultados pendentes de voz:
+        // nada pode re-popular o input depois deste envio
+        encerrarVozParaEnvio();
         onSend(value);
       }
     }
@@ -233,12 +287,8 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
 
   const handleSendClick = () => {
     if (value.trim() && !isLoading) {
-      clearSilenceTimer();
-      // Força parada definitiva antes de enviar
-      if (isListening && recognitionRef.current) {
-        isManualStopRef.current = true;
-        recognitionRef.current.stop();
-      }
+      // Parada definitiva + descarte de resultados pendentes de voz
+      encerrarVozParaEnvio();
       onSend(value);
     }
   };

@@ -12,6 +12,10 @@ export interface OrcamentoAvulsoProdutoDb {
   valorUnt: number | null;
   valorFixo: number | null;
   pesoUnitario?: number | null;
+  /** Dimensões cadastradas (ex.: "25×2cm") */
+  formato?: string | null;
+  /** Prazo de produção cadastrado (texto) */
+  prazo?: string | null;
   ativo: boolean;
 }
 
@@ -56,6 +60,12 @@ export interface ProdutoCatalogoItem {
   valorFixo: number | null;
   quantidade_minima_venda: number | null;
   apelidos: string | null;
+  /** Dimensões do produto (ex.: "25×2cm") */
+  formato: string | null;
+  /** Peso unitário em gramas */
+  peso_unitario_gramas: number | null;
+  /** Prazo de produção cadastrado (texto, ex.: "2 dias úteis") */
+  prazo_producao: string | null;
 }
 
 export interface ListagemProdutosResult {
@@ -86,7 +96,7 @@ export async function listarProdutosCatalogo(
 
   let query = supabase
     .from('produtos')
-    .select('id_produto, "nomeReal", descricao, apelidos, categoria, ativo, "valorUnt", "valorFixo", quantidade_minima_venda');
+    .select('id_produto, "nomeReal", descricao, apelidos, categoria, ativo, "valorUnt", "valorFixo", quantidade_minima_venda, formato, peso, prazo');
 
   if (!opts?.incluirInativos) query = query.eq('ativo', true);
   if (termo) {
@@ -118,6 +128,9 @@ export async function listarProdutosCatalogo(
       valorFixo: r.valorFixo != null ? Number(r.valorFixo) : null,
       quantidade_minima_venda: r.quantidade_minima_venda != null ? Number(r.quantidade_minima_venda) : null,
       apelidos: typeof r.apelidos === 'string' && r.apelidos.trim() ? r.apelidos.trim() : null,
+      formato: typeof r.formato === 'string' && r.formato.trim() ? r.formato.trim() : null,
+      peso_unitario_gramas: r.peso != null && Number.isFinite(Number(r.peso)) ? Number(r.peso) : null,
+      prazo_producao: typeof r.prazo === 'string' && r.prazo.trim() ? r.prazo.trim() : null,
     };
   });
 
@@ -157,7 +170,7 @@ export async function simularOrcamentoAvulsoDb(
 
     if (!isNaN(parsedId)) {
       const resId = await supabase.from('produtos')
-        .select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso')
+        .select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo')
         .eq('id_produto', parsedId)
         .limit(1);
       console.log(`[MaestroProductsServer] Busca por ID ${parsedId} -> data:`, resId.data, "error:", resId.error);
@@ -170,8 +183,8 @@ export async function simularOrcamentoAvulsoDb(
     // Fallback: busca textual normal se não encontrou por ID
     if (data.length === 0) {
       const [resApelido, resDesc] = await Promise.all([
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso').ilike('apelidos', `%${termoOriginal}%`),
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso').ilike('descricao', `%${termoOriginal}%`)
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo').ilike('apelidos', `%${termoOriginal}%`),
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo').ilike('descricao', `%${termoOriginal}%`)
       ]);
 
       const map = new Map<number, OrcamentoAvulsoProdutoDb>();
