@@ -345,6 +345,80 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
   },
 
+  visao_geral_cliente: {
+    needsActiveClient: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'visao_geral_cliente',
+        description:
+          'PRIMEIRA FONTE para perguntas gerais sobre o cliente ativo ("como está", "resumo", "situação", "me fala sobre"). ' +
+          'Uma única chamada traz: cadastro essencial, crédito/limite, bônus, vendedor, resumo de boletos abertos/atrasados, ' +
+          'últimos registros (última proposta, último pedido real, último recebimento, última movimentação) e os ' +
+          'indicadores do MÊS ATUAL (propostas por status, aprovadas comerciais, fila de Produção, recebimento) já calculados. ' +
+          'NÃO cobre: outros períodos, comparações, listagens item a item, endereços/contatos/sócios — ' +
+          'para isso use as tools específicas. Fontes: vw_maestro_cliente_360 + public.propostas + public.pagamentos_v2.',
+        parameters: { type: 'object', properties: { ...ID_CLIENTE_PROP }, additionalProperties: false },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      const agora = new Date();
+      const inicioMes = inicioMesUtc(agora.getUTCFullYear(), agora.getUTCMonth());
+
+      // View atemporal + indicadores do mês atual (adapters parametrizados) —
+      // uma única chamada do agente, três leituras paralelas no servidor.
+      const [visaoRes, propostasMes, recebimentoMes] = await Promise.all([
+        ctx.supabase.from('vw_maestro_cliente_360').select('*').eq('id_cliente', idCliente).maybeSingle(),
+        listarPropostasCliente(ctx.supabase, idCliente, { desde: inicioMes, periodoLabel: 'mês atual', limite: 0 }),
+        calcularRecebimentoPeriodo(ctx.supabase, idCliente, { tipo: 'mes_atual', label: 'mês atual' }),
+      ]);
+
+      if (visaoRes.error) {
+        // View ainda não aplicada neste ambiente (42P01) ou indisponível —
+        // degrada graciosamente entregando ao menos os indicadores do mês.
+        console.warn('[MaestroAgentTools] vw_maestro_cliente_360 indisponível:', visaoRes.error.message);
+      }
+
+      const indicadoresMesAtual = {
+        propostas_qtd: propostasMes.count,
+        propostas_valor: propostasMes.totalValor,
+        contagem_por_status_interno: propostasMes.contagemPorStatus,
+        aprovadas_comercial: {
+          quantidade: propostasMes.aprovadasComercial.quantidade,
+          somaValor: propostasMes.aprovadasComercial.somaValor,
+        },
+        pedidos_producao: {
+          quantidade: propostasMes.pedidosProducao.quantidade,
+          somaValor: propostasMes.pedidosProducao.somaValor,
+        },
+        recebimento_valor: recebimentoMes.totalValor ?? 0,
+        recebimento_qtd: recebimentoMes.count,
+      };
+
+      if (visaoRes.error || !visaoRes.data) {
+        return {
+          found: !visaoRes.error,
+          visao: null,
+          aviso: visaoRes.error
+            ? 'Visão consolidada indisponível neste ambiente — para cadastro/boletos use dados_cadastrais_cliente e boletos_cliente.'
+            : 'Cliente não encontrado na visão consolidada.',
+          indicadores_mes_atual: indicadoresMesAtual,
+          semantica: SEMANTICA_PROPOSTAS,
+        };
+      }
+
+      return {
+        found: true,
+        visao: visaoRes.data,
+        indicadores_mes_atual: indicadoresMesAtual,
+        referencia: 'visao = estado atual/últimos registros (atemporal); indicadores_mes_atual = calculados agora para o mês corrente.',
+        semantica: SEMANTICA_PROPOSTAS,
+        source: 'public.vw_maestro_cliente_360 + public.propostas + public.pagamentos_v2',
+      };
+    },
+  },
+
   dados_cadastrais_cliente: {
     needsActiveClient: true,
     schema: {
