@@ -1,4 +1,5 @@
 'use client';
+import { useEffect, useRef } from 'react';
 import { useMaestro } from './hooks/useMaestro';
 import { MaestroMessage } from './components/chat/MaestroMessage';
 import { MaestroSuggestions } from './components/shared/MaestroSuggestions';
@@ -19,7 +20,17 @@ function MaestroLayout() {
     messagesEndRef,
     startNewChat,
     sendMessage,
+    restoreLastConversation,
   } = useMaestro();
+
+  // Retoma a última conversa persistida uma única vez no mount
+  // (o ref evita duplo disparo do StrictMode em dev)
+  const restoreAttempted = useRef(false);
+  useEffect(() => {
+    if (restoreAttempted.current) return;
+    restoreAttempted.current = true;
+    restoreLastConversation();
+  }, [restoreLastConversation]);
 
   const showSuggestions = messages.length <= 1 && !isLoading;
 

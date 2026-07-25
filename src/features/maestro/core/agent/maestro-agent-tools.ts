@@ -34,11 +34,11 @@ import {
   buscarSociosCliente,
 } from '../simple/maestro-simple-clientes.server';
 import {
-  buscarUltimosPedidos,
-  buscarPropostasNaoAprovadas,
   buscarUltimoOrcamento,
   buscarMaiorPedido,
   calcularFaturamentoPeriodo,
+  listarPropostasCliente,
+  type PedidoSimples,
 } from '../simple/maestro-simple-propostas.server';
 import {
   calcularRecebimentoPeriodo,
@@ -127,6 +127,37 @@ const PERIODO_SCHEMA = {
 function inicioMesUtc(ano: number, mesIndex0: number): string {
   return new Date(Date.UTC(ano, mesIndex0, 1)).toISOString();
 }
+
+/** Converte MaestroPeriodo em intervalo desde/ate (UTC) para listagens. */
+function intervaloDoPeriodo(p: MaestroPeriodo): { desde?: string; ate?: string } {
+  const agora = new Date();
+  const ano = agora.getUTCFullYear();
+  const mes = agora.getUTCMonth();
+  switch (p.tipo) {
+    case 'mes_atual':
+      return { desde: inicioMesUtc(ano, mes) };
+    case 'mes_passado':
+      return { desde: inicioMesUtc(ano, mes - 1), ate: inicioMesUtc(ano, mes) };
+    case 'dinamico':
+      return { desde: p.start, ate: p.end };
+    default:
+      return {};
+  }
+}
+
+/** Marca cada proposta com o conceito oficial de pedido real (fila de Produção). */
+function marcarPedidoReal(items: PedidoSimples[]): Array<PedidoSimples & { pedido_real: boolean }> {
+  return items.map(p => ({
+    ...p,
+    pedido_real: p.is_prd_aprovado === true && p.is_reproved !== true,
+  }));
+}
+
+/** Nota fixa de semântica — devolvida junto com resultados de propostas. */
+const SEMANTICA_PROPOSTAS =
+  'pedido_real=true (is_prd_aprovado E NOT is_reproved) = na fila oficial de Producao. ' +
+  'status_interno = estado operacional (fluxo oficial: NOVO -> AGUARDANDO -> LIBERADO -> REVISAO -> EM PRODUCAO -> ... -> ENTREGUE); ' +
+  'o valor legado "APROVADO" em status_interno significa aprovacao COMERCIAL e NAO significa pedido real.';
 
 function mapPeriodoArg(raw: unknown): MaestroPeriodo | null {
   const p = raw as PeriodoArg | undefined;
@@ -400,15 +431,17 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'propostas_cliente',
         description:
-          'Histórico de propostas/pedidos do cliente ativo. status="aprovadas" = pedidos reais ' +
-          '(is_prd_aprovado=true AND is_reproved=false); "abertas" = propostas ainda não aprovadas no mês atual; ' +
-          '"todas" = ambos. Fonte: public.propostas (valor comercial — NÃO é recebimento).',
+          'Propostas do cliente ativo (fonte: public.propostas; valor comercial — NÃO é recebimento), com filtro de ' +
+          'período opcional e CONTAGENS JÁ CALCULADAS: por status_interno e da fila real de Produção. ' +
+          'Use estas contagens para responder "quantas..." — NUNCA conte itens você mesmo. ' +
+          'ATENÇÃO à semântica: "aprovada" comercialmente (status APROVADO/LIBERADO) é DIFERENTE de pedido real de ' +
+          'Produção (campo pedido_real=true). Sempre diga qual critério está usando.',
         parameters: {
           type: 'object',
           properties: {
             ...ID_CLIENTE_PROP,
-            status: { type: 'string', enum: ['abertas', 'aprovadas', 'todas'] },
-            limite: { type: 'number', description: 'Máximo de pedidos aprovados retornados (padrão 5, máx 10).' },
+            periodo: { ...PERIODO_SCHEMA, description: 'Opcional — filtra por data de criação da proposta.' },
+            limite: { type: 'number', description: 'Máximo de propostas listadas (padrão 50, máx 200).' },
           },
           additionalProperties: false,
         },
@@ -416,20 +449,29 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
     handler: async (args, ctx) => {
       const idCliente = (args.__idClienteSeguro as number)!;
-      const status = typeof args.status === 'string' ? args.status : 'aprovadas';
-      const limite = Number.isFinite(Number(args.limite)) ? Number(args.limite) : 5;
 
-      if (status === 'abertas') {
-        return await buscarPropostasNaoAprovadas(ctx.supabase, idCliente);
+      let desde: string | undefined;
+      let ate: string | undefined;
+      let periodoLabel: string | undefined;
+      if (args.periodo != null) {
+        const periodo = mapPeriodoArg(args.periodo);
+        if (!periodo) return { found: false, error: 'Período inválido.' };
+        const intervalo = intervaloDoPeriodo(periodo);
+        desde = intervalo.desde;
+        ate = intervalo.ate;
+        periodoLabel = periodo.label;
       }
-      if (status === 'todas') {
-        const [aprovadas, abertas] = await Promise.all([
-          buscarUltimosPedidos(ctx.supabase, idCliente, limite),
-          buscarPropostasNaoAprovadas(ctx.supabase, idCliente),
-        ]);
-        return { pedidos_aprovados: aprovadas, propostas_abertas: abertas };
-      }
-      return await buscarUltimosPedidos(ctx.supabase, idCliente, limite);
+
+      const limite = Number.isFinite(Number(args.limite)) ? Number(args.limite) : 50;
+      const res = await listarPropostasCliente(ctx.supabase, idCliente, { desde, ate, periodoLabel, limite });
+
+      return {
+        ...res,
+        items: marcarPedidoReal(res.items),
+        contagem_por_status_interno: res.contagemPorStatus,
+        pedidos_producao_no_periodo: res.countPedidosProducao,
+        semantica: SEMANTICA_PROPOSTAS,
+      };
     },
   },
 
@@ -445,7 +487,13 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
     handler: async (args, ctx) => {
       const idCliente = (args.__idClienteSeguro as number)!;
-      return await buscarUltimoOrcamento(ctx.supabase, idCliente);
+      const res = await buscarUltimoOrcamento(ctx.supabase, idCliente);
+      return {
+        ...res,
+        items: marcarPedidoReal(res.items),
+        semantica: SEMANTICA_PROPOSTAS,
+        atencao: 'Este é o último ORÇAMENTO/proposta gerado — só chame de "aprovado" ou "pedido" se pedido_real=true.',
+      };
     },
   },
 
@@ -461,7 +509,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
     handler: async (args, ctx) => {
       const idCliente = (args.__idClienteSeguro as number)!;
-      return await buscarMaiorPedido(ctx.supabase, idCliente);
+      const res = await buscarMaiorPedido(ctx.supabase, idCliente);
+      return { ...res, items: marcarPedidoReal(res.items), semantica: SEMANTICA_PROPOSTAS };
     },
   },
 

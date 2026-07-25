@@ -24,7 +24,7 @@ import { useRouter } from 'next/navigation';
 import { MaestroContext } from '../../context/maestro.context';
 import { MOCK_WELCOME_MESSAGES, MOCK_INITIAL_CONTEXT } from '../../mocks/maestro.mock';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import type { ConversationMessage } from '../../types';
+import type { ActivityStep, ConversationContext, ConversationMessage } from '../../types';
 
 // ─── Flag: motor simples por padrão ──────────────────────────────────────
 export const MAESTRO_ENGINE: 'simple' | 'legacy' = 'simple';
@@ -68,13 +68,79 @@ export function useConversationManagerSimple() {
       }));
   };
 
+  /** Token da sessão Supabase do browser (para o header Authorization). */
+  const getAccessToken = async (): Promise<string> => {
+    const supabaseBrowser = getSupabaseClient();
+    const { data: sessionData } = supabaseBrowser
+      ? await supabaseBrowser.auth.getSession()
+      : { data: { session: null } };
+    return sessionData?.session?.access_token ?? '';
+  };
+
   // ── Novo chat ────────────────────────────────────────────────────────────
   const startNewChat = useCallback(() => {
+    // Encerra a conversa persistida no servidor (flag lógica; nunca bloqueia a UI)
+    const conversationId = globalContextRef.current?.conversationId;
+    if (conversationId) {
+      getAccessToken().then(token => {
+        if (!token) return;
+        fetch('/api/maestro/simple/conversa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: 'encerrar', conversationId }),
+        }).catch(() => { /* falha silenciosa — conversa só não fica encerrada */ });
+      });
+    }
+
     setActiveSessionId(null);
     setMessages(MOCK_WELCOME_MESSAGES);
     setActivity([]);
     setGlobalContext(MOCK_INITIAL_CONTEXT);
   }, [setActiveSessionId, setMessages, setActivity, setGlobalContext]);
+
+  // ── Retomada automática da última conversa (persistência server-side) ────
+  // Chamada uma vez no mount da página. Sem persistência ativa (ou sem
+  // conversa aberta) o endpoint retorna vazio e nada muda — comportamento
+  // idêntico ao anterior.
+  const restoreLastConversation = useCallback(async () => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+
+      const response = await fetch('/api/maestro/simple/conversa', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+
+      const data = await response.json() as {
+        conversa: {
+          id: string;
+          contextoJson: string | null;
+          mensagens: Array<{ role: 'user' | 'maestro'; content: string; criadaEm: string }>;
+        } | null;
+      };
+
+      if (!data.conversa || data.conversa.mensagens.length === 0) return;
+
+      const restauradas: ConversationMessage[] = data.conversa.mensagens.map((m, i) => ({
+        id: `hist-${i}-${m.criadaEm}`,
+        role: m.role,
+        content: m.content,
+        contentType: 'text',
+        timestamp: m.criadaEm,
+        status: 'completed',
+      }));
+
+      setMessages(restauradas);
+      setGlobalContext({
+        ...MOCK_INITIAL_CONTEXT,
+        conversationId: data.conversa.id,
+        v2ContextJson: data.conversa.contextoJson ?? null,
+      });
+    } catch (err) {
+      console.warn('[MaestroSimple] Retomada de conversa indisponível:', err);
+    }
+  }, [setMessages, setGlobalContext]);
 
   // ── Abrir sessão (histórico — futuro) ────────────────────────────────────
   const openSession = useCallback((sessionId: string) => {
@@ -147,8 +213,8 @@ export function useConversationManagerSimple() {
 
       const result = await response.json() as {
         message: ConversationMessage;
-        activity: any[];
-        context: any;
+        activity: ActivityStep[];
+        context: ConversationContext;
       };
 
       // 4. Substitui o placeholder pela resposta real
@@ -173,8 +239,8 @@ export function useConversationManagerSimple() {
         }
       }
 
-    } catch (err: any) {
-      console.error('[MaestroSimple] Erro no sendMessage:', err?.message);
+    } catch (err) {
+      console.error('[MaestroSimple] Erro no sendMessage:', err instanceof Error ? err.message : err);
       // Substitui o placeholder por mensagem de erro amigável
       setMessages(prev =>
         prev.map(m => m.id === thinkingId ? {
@@ -196,5 +262,6 @@ export function useConversationManagerSimple() {
     startNewChat,
     openSession,
     sendMessage,
+    restoreLastConversation,
   };
 }

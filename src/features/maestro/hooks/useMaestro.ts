@@ -46,5 +46,6 @@ export function useMaestro() {
     startNewChat: manager.startNewChat,
     openSession: manager.openSession,
     sendMessage: handleSend,
+    restoreLastConversation: manager.restoreLastConversation,
   };
 }

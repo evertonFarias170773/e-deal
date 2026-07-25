@@ -19,7 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MaestroPeriodo } from './maestro-simple-intents';
 
 // Colunas seguras — sem dados sensíveis de proposta
-const PROPOSTAS_COLS = 'id_int, status_interno, valor_total, valor, created_at, vendedor';
+const PROPOSTAS_COLS = 'id_int, status_interno, valor_total, valor, created_at, vendedor, is_prd_aprovado, is_reproved';
 
 // ─── Tipos Exportados ──────────────────────────────────────────────────────
 
@@ -30,6 +30,9 @@ export interface PedidoSimples {
   valor: number | null;
   created_at: string;
   vendedor: string | null;
+  /** Entrada oficial na fila de Produção (FLUXO-OFICIAL-STATUS-PROPOSTAS §1.3) */
+  is_prd_aprovado?: boolean;
+  is_reproved?: boolean;
 }
 
 export interface PropostasResult {
@@ -58,11 +61,13 @@ function coalesceValor(row: Record<string, unknown>): number | null {
 
 function mapPedido(row: Record<string, unknown>): PedidoSimples {
   return {
-    id_int:         Number(row.id_int),
-    status_interno: typeof row.status_interno === 'string' ? row.status_interno : null,
-    valor:          coalesceValor(row),
-    created_at:     String(row.created_at),
-    vendedor:       typeof row.vendedor === 'string' ? row.vendedor : null,
+    id_int:          Number(row.id_int),
+    status_interno:  typeof row.status_interno === 'string' ? row.status_interno : null,
+    valor:           coalesceValor(row),
+    created_at:      String(row.created_at),
+    vendedor:        typeof row.vendedor === 'string' ? row.vendedor : null,
+    is_prd_aprovado: row.is_prd_aprovado === true,
+    is_reproved:     row.is_reproved === true,
   };
 }
 
@@ -229,6 +234,79 @@ export async function buscarPropostasNaoAprovadas(
 
   const items = (data ?? []).map(r => mapPedido(r as Record<string, unknown>));
   return { found: items.length > 0, items, count: items.length, periodo: 'neste mês', source: 'public.propostas' };
+}
+
+export interface ListagemPropostasResult {
+  found: boolean;
+  items: PedidoSimples[];
+  count: number;
+  /** Soma dos valores das propostas listadas (calculada no servidor) */
+  totalValor: number;
+  /** Contagem por status_interno (calculada no servidor — nunca pelo modelo) */
+  contagemPorStatus: Record<string, number>;
+  /** Quantidade na fila real de Produção (is_prd_aprovado AND NOT is_reproved) */
+  countPedidosProducao: number;
+  periodo?: string;
+  source: string;
+  authError?: boolean;
+  error?: string;
+}
+
+/**
+ * Lista propostas do cliente em um período, com agregados prontos.
+ * Todos os números (contagens por status, fila de produção, soma) são
+ * calculados AQUI — consumidores (Maestro Agent) nunca contam sozinhos.
+ * Filtro base: is_reproved=false. Período sobre created_at.
+ */
+export async function listarPropostasCliente(
+  supabase: SupabaseClient,
+  idCliente: number,
+  opts?: { desde?: string; ate?: string; periodoLabel?: string; limite?: number },
+): Promise<ListagemPropostasResult> {
+  let query = supabase
+    .from('propostas')
+    .select(PROPOSTAS_COLS)
+    .eq('id_cliente', idCliente)
+    .eq('is_reproved', false);
+
+  if (opts?.desde) query = query.gte('created_at', opts.desde);
+  if (opts?.ate)   query = query.lt('created_at', opts.ate);
+
+  const { data, error } = await query
+    .order('created_at', { ascending: false })
+    .limit(Math.min(opts?.limite ?? 50, 200));
+
+  if (error) {
+    return {
+      found: false, items: [], count: 0, totalValor: 0,
+      contagemPorStatus: {}, countPedidosProducao: 0,
+      periodo: opts?.periodoLabel, source: 'public.propostas',
+      authError: isAuthError(error), error: error.message,
+    };
+  }
+
+  const items = (data ?? []).map(r => mapPedido(r as Record<string, unknown>));
+  const contagemPorStatus: Record<string, number> = {};
+  let countPedidosProducao = 0;
+  let totalValor = 0;
+
+  for (const p of items) {
+    const status = p.status_interno ?? 'SEM_STATUS';
+    contagemPorStatus[status] = (contagemPorStatus[status] ?? 0) + 1;
+    if (p.is_prd_aprovado && !p.is_reproved) countPedidosProducao++;
+    totalValor += p.valor ?? 0;
+  }
+
+  return {
+    found: items.length > 0,
+    items,
+    count: items.length,
+    totalValor,
+    contagemPorStatus,
+    countPedidosProducao,
+    periodo: opts?.periodoLabel,
+    source: 'public.propostas',
+  };
 }
 
 /**
