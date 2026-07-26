@@ -11,6 +11,16 @@ import {
 } from "@/features/orcamentos/services/pedidos-modelos.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import type { PropostaItem, PedidoModeloState } from "@/features/orcamentos/types";
+import {
+  TIPO_CAMAROTE,
+  TIPO_TICKET,
+  normalizarTipoNumeracao,
+  findNumeracaoByName,
+  resolverMultiplicadorNumeracao,
+  derivarCamposNumeracao,
+  calcularQtdCamarote,
+  parseNumeroOpcional,
+} from "@/features/orcamentos/numeracao-modelo-utils";
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
@@ -68,28 +78,15 @@ function ModeloInlineCard({
   }, [isNew, modelo.numeracao_inicio, onUpdateParent]);
 
   const handleChange = (partial: Partial<PedidoModeloState>) => {
-    const updated = { ...partial };
+    const atual = latestModelo.current;
 
-    // Calcula numeracao_fim de forma síncrona
-    const novoTipo = updated.tipo_numeracao !== undefined ? updated.tipo_numeracao : latestModelo.current.tipo_numeracao;
-    if (novoTipo !== "SEM_NUMERACAO") {
-      const novaQtd = updated.quantidade !== undefined ? updated.quantidade : latestModelo.current.quantidade;
-      const novoInicio = updated.numeracao_inicio !== undefined ? updated.numeracao_inicio : latestModelo.current.numeracao_inicio;
-      
-      if (novaQtd && novoInicio !== null) {
-        const start = Number(novoInicio);
-        const qty = Number(novaQtd);
-        if (!isNaN(start) && !isNaN(qty) && qty > 0) {
-          const expectedFim = start + qty - 1;
-          if (expectedFim !== latestModelo.current.numeracao_fim && updated.numeracao_fim === undefined) {
-            updated.numeracao_fim = expectedFim;
-          }
-        }
-      }
-    }
+    // QTD (tipo CAMAROTE) e Nº Final (NI + QTD × ticket_qtd - 1 no tipo TICKET)
+    // são derivados de forma síncrona a partir do numerador em vigor.
+    const derivados = derivarCamposNumeracao(atual, partial, numeracoesOpcoes);
+    const updated: Partial<PedidoModeloState> = { ...partial, ...derivados };
 
     // Atualiza a ref imediatamente para o onBlur capturar caso dispare antes do render
-    latestModelo.current = { ...latestModelo.current, ...updated };
+    latestModelo.current = { ...atual, ...updated };
     onUpdateParent(updated);
   };
 
@@ -98,6 +95,34 @@ function ModeloInlineCard({
     if (!mod.quantidade || mod.quantidade <= 0) {
       showToast({ type: "warning", title: "Atenção", description: "A quantidade deve ser maior que zero para salvar." });
       return;
+    }
+
+    const numeracaoSel = findNumeracaoByName(numeracoesOpcoes, mod.gabarito_operacional);
+    const tipoSel = normalizarTipoNumeracao(numeracaoSel?.tipo);
+
+    if (tipoSel === TIPO_CAMAROTE) {
+      const qtdCamarote = calcularQtdCamarote(mod.Q_CAM, mod.L_CAM);
+      if (qtdCamarote === null) {
+        showToast({ type: "warning", title: "Atenção", description: "Informe Q CAM e L CAM (maiores que zero) para numerador do tipo Camarote." });
+        return;
+      }
+      if (Number(mod.quantidade) !== qtdCamarote) {
+        showToast({ type: "warning", title: "Atenção", description: `A QTD (${mod.quantidade}) deve ser igual a Q CAM × L CAM (${qtdCamarote}).` });
+        return;
+      }
+      // A QTD do camarote é calculada, não digitada: não passa pelo clamp do input
+      if (qtdCamarote > maxQtd) {
+        showToast({ type: "warning", title: "Atenção", description: `A QTD calculada (${qtdCamarote}) excede o saldo disponível do item (${maxQtd}).` });
+        return;
+      }
+    }
+
+    if (tipoSel === TIPO_TICKET) {
+      const { erro } = resolverMultiplicadorNumeracao(numeracaoSel);
+      if (erro) {
+        showToast({ type: "error", title: "Numerador inválido", description: erro });
+        return;
+      }
     }
 
     if (isNew) {
@@ -120,6 +145,9 @@ function ModeloInlineCard({
          verso_tipo: mod.verso_tipo || null,
          bloco: mod.bloco || null,
          gabarito_operacional: mod.gabarito_operacional || null,
+         Q_CAM: mod.Q_CAM ?? null,
+         L_CAM: mod.L_CAM ?? null,
+         C_INI: mod.C_INI ?? null,
       }).then(res => {
          if (res.success && res.data) {
            setSaveStatus("saved");
@@ -146,6 +174,9 @@ function ModeloInlineCard({
            verso_tipo: mod.verso_tipo || null,
            bloco: mod.bloco || null,
            gabarito_operacional: mod.gabarito_operacional || null,
+           Q_CAM: mod.Q_CAM ?? null,
+           L_CAM: mod.L_CAM ?? null,
+           C_INI: mod.C_INI ?? null,
          }).then(res => {
            if(res.success) {
              setSaveStatus("saved");
@@ -173,6 +204,26 @@ function ModeloInlineCard({
     if (Array.isArray(n.formato_ids) && n.formato_ids.some((id: any) => String(id) === formatoReferencia)) return true;
     return false;
   }) : [];
+
+  // Numerador selecionado (busca na lista completa: o gravado pode estar fora do filtro por formato)
+  const numeracaoSelecionada = findNumeracaoByName(numeracoesOpcoes, modelo.gabarito_operacional);
+  const tipoNumeracaoSelecionada = normalizarTipoNumeracao(numeracaoSelecionada?.tipo);
+  const isCamarote = tipoNumeracaoSelecionada === TIPO_CAMAROTE;
+  const isTicket = tipoNumeracaoSelecionada === TIPO_TICKET;
+  const qtdCamaroteCalculada = calcularQtdCamarote(modelo.Q_CAM, modelo.L_CAM);
+  const { multiplicador: ticketMultiplicador, erro: erroTicket } = isTicket
+    ? resolverMultiplicadorNumeracao(numeracaoSelecionada)
+    : { multiplicador: 1, erro: null };
+
+  // Camarote: QTD é derivada. Realinha ao abrir o modelo (cobre registros gravados
+  // antes desta regra) para que QTD nunca fique divergente de Q_CAM × L_CAM.
+  useEffect(() => {
+    if (!isCamarote || qtdCamaroteCalculada === null) return;
+    if (Number(modelo.quantidade) === qtdCamaroteCalculada) return;
+    handleChange({ quantidade: qtdCamaroteCalculada });
+    // handleChange é recriada a cada render; o guard acima impede reexecução em loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCamarote, qtdCamaroteCalculada, modelo.quantidade]);
 
   return (
     <div className="relative rounded-2xl border-2 border-teal-500 bg-teal-50/30 p-5 shadow-sm transition-all">
@@ -233,9 +284,13 @@ function ModeloInlineCard({
           <label className={labelClass}>Qtd *</label>
           <input
             type="number"
-            className={inputClass}
+            className={isCamarote ? `${inputClass} bg-slate-50` : inputClass}
             value={modelo.quantidade || ""}
+            readOnly={isCamarote}
+            title={isCamarote ? "Calculado automaticamente: Q CAM × L CAM" : undefined}
+            placeholder={isCamarote ? "Auto" : undefined}
             onChange={(e) => {
+              if (isCamarote) return;
               const val = Number(e.target.value);
               if (!isNaN(val)) {
                 handleChange({ quantidade: Math.min(val, maxQtd) });
@@ -243,6 +298,48 @@ function ModeloInlineCard({
             }}
           />
         </div>
+
+        {isCamarote && (
+          <>
+            <div className="flex-[0.8] min-w-[70px]">
+              <label className={labelClass}>Q CAM *</label>
+              <input
+                type="number"
+                min={1}
+                className={inputClass}
+                placeholder="Ex: 10"
+                title="Quantidade total de camarotes"
+                value={modelo.Q_CAM ?? ""}
+                onChange={(e) => handleChange({ Q_CAM: parseNumeroOpcional(e.target.value) })}
+              />
+            </div>
+
+            <div className="flex-[0.8] min-w-[70px]">
+              <label className={labelClass}>L CAM *</label>
+              <input
+                type="number"
+                min={1}
+                className={inputClass}
+                placeholder="Ex: 8"
+                title="Lugares por camarote"
+                value={modelo.L_CAM ?? ""}
+                onChange={(e) => handleChange({ L_CAM: parseNumeroOpcional(e.target.value) })}
+              />
+            </div>
+
+            <div className="flex-[0.8] min-w-[70px]">
+              <label className={labelClass}>C INI</label>
+              <input
+                type="number"
+                className={inputClass}
+                placeholder="Ex: 1"
+                title="Número inicial do camarote"
+                value={modelo.C_INI ?? ""}
+                onChange={(e) => handleChange({ C_INI: parseNumeroOpcional(e.target.value) })}
+              />
+            </div>
+          </>
+        )}
 
         <div className="flex-[0.8] min-w-[70px]">
           <label className={labelClass}>Nº Inicial</label>
@@ -375,6 +472,25 @@ function ModeloInlineCard({
           </select>
         </div>
       </div>
+
+      {isCamarote && (
+        <p className={`mt-3 text-[11px] font-semibold ${qtdCamaroteCalculada !== null && qtdCamaroteCalculada > maxQtd ? "text-red-600" : "text-slate-500"}`}>
+          Numerador tipo Camarote: QTD = Q CAM × L CAM
+          {qtdCamaroteCalculada !== null
+            ? ` = ${qtdCamaroteCalculada}${qtdCamaroteCalculada > maxQtd ? ` — excede o saldo disponível do item (${maxQtd})` : ""}`
+            : " — preencha Q CAM e L CAM"}
+        </p>
+      )}
+
+      {isTicket && (
+        erroTicket ? (
+          <p className="mt-3 text-[11px] font-bold text-red-600">{erroTicket}</p>
+        ) : (
+          <p className="mt-3 text-[11px] font-semibold text-slate-500">
+            Numerador tipo Ticket ({ticketMultiplicador} numerações por unidade): Nº Final = Nº Inicial + (QTD × {ticketMultiplicador}) − 1
+          </p>
+        )
+      )}
     </div>
   );
 }
@@ -435,7 +551,7 @@ export function PedidoModelosTab({
     const [resFormatos, resCores, resNum] = await Promise.all([
       supabase.from("producao_formatos").select("id, name, id_formato_num"),
       supabase.from("producao_cores").select("id, name, formato_id, id_modelo_cor_num").order("id_modelo_cor_num", { ascending: true }),
-      supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids, id_gabarito").order("name", { ascending: true }),
+      supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids, id_gabarito, tipo, ticket_qtd").order("name", { ascending: true }),
     ]);
 
     if (resFormatos.data) setFormatosOpcoes(resFormatos.data);
@@ -482,6 +598,9 @@ export function PedidoModelosTab({
       verso_tipo: "SÓ FRENTE",
       bloco: "50",
       gabarito_operacional: defaultNumName || null,
+      Q_CAM: null,
+      L_CAM: null,
+      C_INI: null,
     };
 
     onModelosChange([...modelos, newModel]);

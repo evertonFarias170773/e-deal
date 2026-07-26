@@ -1748,6 +1748,9 @@ export async function saveProposta(
               verso_tipo: m.verso_tipo || null,
               bloco: m.bloco || null,
               gabarito_operacional: m.gabarito_operacional || null,
+              Q_CAM: m.Q_CAM ?? null,
+              L_CAM: m.L_CAM ?? null,
+              C_INI: m.C_INI ?? null,
               status_arte: m.status_arte || "PENDENTE",
               status_producao: m.status_producao || "PENDENTE",
               ordem: m.ordem || (index + 1)

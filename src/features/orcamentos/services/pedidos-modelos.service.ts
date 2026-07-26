@@ -23,6 +23,12 @@ export interface PedidoModeloRow {
   ordem: number;
   created_at: string;
   updated_at: string | null;
+  /** Camarote: quantidade total de camarotes */
+  Q_CAM?: number | null;
+  /** Camarote: lugares por camarote */
+  L_CAM?: number | null;
+  /** Camarote: número inicial do camarote */
+  C_INI?: number | null;
 }
 
 export interface ItemComModelos {
@@ -52,6 +58,12 @@ export interface ModeloInput {
   verso_tipo: string | null;
   bloco?: string | null;
   gabarito_operacional?: string | null;
+  /** Camarote: quantidade total de camarotes */
+  Q_CAM?: number | null;
+  /** Camarote: lugares por camarote */
+  L_CAM?: number | null;
+  /** Camarote: número inicial do camarote */
+  C_INI?: number | null;
 }
 
 type ServiceResult<T = unknown> = {
@@ -87,6 +99,19 @@ function validarInput(input: ModeloInput): string | null {
     }
     if (input.numeracao_fim < input.numeracao_inicio) {
       return "Numeração final não pode ser menor que a inicial.";
+    }
+  }
+  // Campos de Camarote: só valida sanidade quando informados.
+  // A regra QTD = Q_CAM × L_CAM depende do tipo da numeração (producao_numeracoes.tipo),
+  // que é conhecido no formulário — por isso não é validada aqui.
+  for (const [campo, valor] of [
+    ["Q CAM", input.Q_CAM],
+    ["L CAM", input.L_CAM],
+    ["C INI", input.C_INI],
+  ] as const) {
+    if (valor === null || valor === undefined) continue;
+    if (!Number.isFinite(Number(valor)) || Number(valor) < 0) {
+      return `${campo} deve ser um número maior ou igual a zero.`;
     }
   }
   return null;
@@ -305,6 +330,9 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       verso_tipo: input.verso_tipo?.trim() || null,
       bloco: input.bloco?.trim() || null,
       gabarito_operacional: input.gabarito_operacional?.trim() || null,
+      Q_CAM: input.Q_CAM ?? null,
+      L_CAM: input.L_CAM ?? null,
+      C_INI: input.C_INI ?? null,
       status_arte: "AGUARDANDO",
       status_producao: "AGUARDANDO",
       ordem: nextOrdem,
@@ -360,6 +388,9 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
       verso_tipo: input.verso_tipo?.trim() || null,
       bloco: input.bloco?.trim() || null,
       gabarito_operacional: input.gabarito_operacional?.trim() || null,
+      Q_CAM: input.Q_CAM ?? null,
+      L_CAM: input.L_CAM ?? null,
+      C_INI: input.C_INI ?? null,
     };
 
     const { data, error } = await client
@@ -410,6 +441,9 @@ export async function atualizarModeloParcial(id: number, partialInput: Partial<M
     if (partialInput.verso_tipo !== undefined) payload.verso_tipo = partialInput.verso_tipo?.trim() || null;
     if (partialInput.bloco !== undefined) payload.bloco = partialInput.bloco?.trim() || null;
     if (partialInput.gabarito_operacional !== undefined) payload.gabarito_operacional = partialInput.gabarito_operacional?.trim() || null;
+    if (partialInput.Q_CAM !== undefined) payload.Q_CAM = partialInput.Q_CAM ?? null;
+    if (partialInput.L_CAM !== undefined) payload.L_CAM = partialInput.L_CAM ?? null;
+    if (partialInput.C_INI !== undefined) payload.C_INI = partialInput.C_INI ?? null;
 
     if (Object.keys(payload).length === 0) {
       return { success: true };

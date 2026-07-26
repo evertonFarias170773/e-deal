@@ -326,6 +326,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             ordem: Number(m.ordem || 0),
             gabarito_operacional: m.gabarito_operacional as string | null,
             bloco: m.bloco as string | null,
+            Q_CAM: m.Q_CAM !== null && m.Q_CAM !== undefined ? Number(m.Q_CAM) : null,
+            L_CAM: m.L_CAM !== null && m.L_CAM !== undefined ? Number(m.L_CAM) : null,
+            C_INI: m.C_INI !== null && m.C_INI !== undefined ? Number(m.C_INI) : null,
           }));
           setForm((prev) => ({ ...prev, pedidosModelos: modelos }));
         }
