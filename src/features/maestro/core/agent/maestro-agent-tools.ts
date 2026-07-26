@@ -1129,27 +1129,45 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       const status = item?.status ?? 'nao_encontrado';
 
       if (status === 'nao_encontrado') {
-        // Nunca terminar em "não encontrei": busca similares (termo completo,
-        // primeira e última palavra) para o usuário escolher da lista
+        // Nunca terminar em "não encontrei": busca similares por cada palavra
+        // do termo e ranqueia por quantas palavras o nome contém — assim
+        // "cordão jacaré" sugere os cordões COM jacaré antes dos genéricos
         const palavras = termo.split(/\s+/).filter(Boolean);
-        const termosBusca = Array.from(new Set([termo, palavras[0], palavras[palavras.length - 1]].filter(Boolean)));
+        const termosBusca = Array.from(new Set([termo, ...palavras]));
         const buscas = await Promise.all(termosBusca.map(t => listarProdutosCatalogo(ctx.supabase, { termo: t })));
-        const nomes = new Map<number, string>();
+        const candidatos = new Map<number, string>();
         for (const busca of buscas) {
-          for (const p of busca.itens) {
-            if (nomes.size >= 8) break;
-            nomes.set(p.id_produto, p.nome);
-          }
+          for (const p of busca.itens) candidatos.set(p.id_produto, p.nome);
         }
+        const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const palavrasNorm = palavras.map(normalizar);
+        const sugestoes = Array.from(candidatos.values())
+          .map(nome => ({ nome, score: palavrasNorm.filter(w => normalizar(nome).includes(w)).length }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 8)
+          .map(s => s.nome);
         return {
           termo,
           status,
           produtos: [],
-          sugestoes: Array.from(nomes.values()),
+          sugestoes,
           atencao:
-            nomes.size > 0
+            sugestoes.length > 0
               ? 'Produto não encontrado com esse termo — NÃO diga apenas "não encontrei": apresente as sugestões em lista numerada e pergunte qual é o produto.'
               : 'Nenhum similar encontrado — pergunte mais detalhes ao usuário ou consulte a família com listar_produtos.',
+          source: 'public.produtos',
+        };
+      }
+
+      if (status === 'ambiguo') {
+        return {
+          termo,
+          status,
+          produtos: item?.produtosEncontrados ?? [],
+          sugestoes: (item?.produtosEncontrados ?? []).map(p => (p.nomeReal && p.nomeReal.trim()) || p.descricao).slice(0, 10),
+          atencao:
+            'Vários produtos correspondem ao termo — apresente as sugestões em lista numerada e pergunte qual é. ' +
+            'NÃO diga que o produto está inativo ou sem preço: o termo é apenas AMBÍGUO.',
           source: 'public.produtos',
         };
       }
