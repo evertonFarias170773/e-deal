@@ -340,18 +340,23 @@ export async function calcularPerfilPagamento(
   supabase: SupabaseClient,
   idCliente: number,
   dias = 365,
+  /** Recorte por empresa (pagamentos_v2.id_empresa) — princípio permanente §1.0 */
+  idEmpresa?: number,
 ): Promise<PerfilPagamentoResult> {
   const diasSeguro = Number.isFinite(dias) && dias > 0 && dias <= 1830 ? Math.floor(dias) : 365;
   const periodo = `últimos ${diasSeguro} dias`;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('pagamentos_v2')
     .select('tipo_cobranca, forma_pgto, valor, paid_at')
     .eq('id_cliente', idCliente)
     .eq('confirmado', true)
     .eq('status', 'PAID')
     .not('paid_at', 'is', null)
-    .gte('paid_at', menosNDias(diasSeguro))
+    .gte('paid_at', menosNDias(diasSeguro));
+  if (idEmpresa != null) query = query.eq('id_empresa', idEmpresa);
+
+  const { data, error } = await query
     .order('paid_at', { ascending: false })
     .limit(PERFIL_MAX_ROWS);
 
@@ -407,6 +412,8 @@ export async function calcularRecebimentoPeriodo(
   supabase: SupabaseClient,
   idCliente: number,
   periodo: MaestroPeriodo,
+  /** Recorte por empresa (pagamentos_v2.id_empresa) — princípio permanente §1.0 */
+  idEmpresa?: number,
 ): Promise<RecebimentosResult> {
   let desde: string;
   let ate: string | null = null;
@@ -441,6 +448,9 @@ export async function calcularRecebimentoPeriodo(
 
   if (ate) {
     query = query.lt('paid_at', ate);
+  }
+  if (idEmpresa != null) {
+    query = query.eq('id_empresa', idEmpresa);
   }
 
   const { data, error } = await query;
@@ -506,6 +516,8 @@ export async function compararRecebimentoClienteMeses(
   supabase: SupabaseClient,
   idCliente: number,
   meses: Array<{ startDate: string; endDate: string; label: string }>,
+  /** Recorte por empresa (pagamentos_v2.id_empresa) — princípio permanente §1.0 */
+  idEmpresa?: number,
 ): Promise<ComparacaoRecebimentosResult> {
   try {
     const promises = meses.map(async (m) => {
@@ -514,7 +526,7 @@ export async function compararRecebimentoClienteMeses(
         start: m.startDate,
         end: m.endDate,
         label: m.label,
-      });
+      }, idEmpresa);
       return {
         label: m.label,
         startDate: m.startDate,

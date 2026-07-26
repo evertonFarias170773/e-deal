@@ -13,10 +13,26 @@
 > Maestro e é sempre MAIS restritiva, nunca menos.
 
 Aprovado por: Everton Farias — 26/07/2026 (definição da etapa 1 da Trilha B).
+Emenda de 26/07/2026: princípios permanentes de negócio (§1.0) incluídos a
+pedido do aprovador antes da liberação da implementação.
 
 ---
 
 ## 1. Princípios inegociáveis
+
+0. **Princípios permanentes de NEGÓCIO** — valem para leitura E escrita, em
+   qualquer tool presente ou futura:
+   - `public.pagamentos_v2` é a **fonte oficial do faturamento** (faturamento,
+     vendas, comissão e metas): `confirmado=true`, status `PAID` ou `A_VENCER`;
+   - `public.propostas` representa o **comercial (pipeline)** — nunca é fonte
+     de faturamento; serve como dimensão (vendedor, cliente, itens);
+   - **data de faturamento = `data_confirmacao`** (nunca `created_at` da
+     proposta, nunca `paid_at` — este define o RECEBIMENTO/caixa);
+   - **toda consulta financeira deve suportar `id_empresa`**
+     (`pagamentos_v2.id_empresa` — nunca a empresa do cadastro do cliente);
+   - **visão consolidada primeiro**: perguntas amplas começam na
+     `visao_geral_cliente` (vw_maestro_cliente_360 + indicadores); tools
+     específicas entram apenas quando a visão geral não cobre.
 
 1. **Deny-by-default.** Ação que não consta nesta matriz é PROIBIDA. Não existe
    "ação parecida": cada tool de escrita futura corresponde a exatamente uma

@@ -236,6 +236,20 @@ const ID_CLIENTE_PROP = {
   },
 } as const;
 
+// Princípio permanente (§1.0 da matriz): toda consulta financeira suporta
+// recorte por empresa via pagamentos_v2.id_empresa
+const ID_EMPRESA_PROP = {
+  id_empresa: {
+    type: 'number',
+    description: 'Opcional — recorte por empresa (pagamentos_v2.id_empresa; nunca a empresa do cadastro do cliente).',
+  },
+} as const;
+
+function idEmpresaDe(args: Record<string, unknown>): number | undefined {
+  const n = Number(args.id_empresa);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
   resolver_cliente: {
     schema: {
@@ -713,11 +727,12 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'recebimento_periodo',
         description:
-          'Valor efetivamente RECEBIDO do cliente ativo em um período. Fonte: public.pagamentos_v2 ' +
-          '(status=PAID, confirmado=true, referência paid_at). Diferente de faturamento comercial e de boletos.',
+          'Valor efetivamente RECEBIDO do cliente ativo em um período (caixa). Fonte: public.pagamentos_v2 ' +
+          '(status=PAID, confirmado=true, referência paid_at). Aceita recorte por empresa (id_empresa). ' +
+          'Diferente de faturamento oficial (data_confirmacao) e de boletos.',
         parameters: {
           type: 'object',
-          properties: { ...ID_CLIENTE_PROP, periodo: PERIODO_SCHEMA },
+          properties: { ...ID_CLIENTE_PROP, periodo: PERIODO_SCHEMA, ...ID_EMPRESA_PROP },
           required: ['periodo'],
           additionalProperties: false,
         },
@@ -727,7 +742,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       const idCliente = (args.__idClienteSeguro as number)!;
       const periodo = mapPeriodoArg(args.periodo);
       if (!periodo) return { found: false, error: 'Período inválido.' };
-      return await calcularRecebimentoPeriodo(ctx.supabase, idCliente, periodo);
+      return await calcularRecebimentoPeriodo(ctx.supabase, idCliente, periodo, idEmpresaDe(args));
     },
   },
 
@@ -741,11 +756,13 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
           'Como o cliente ativo COSTUMA pagar de verdade: agregado dos pagamentos confirmados ' +
           '(pagamentos_v2, PAID) por tipo de cobrança (PIX, BOLETO, cartão...) com contagens, somas e ' +
           'condições a prazo usadas. Use para "como ele paga", "perfil/comportamento de pagamento". ' +
-          'Números JÁ VÊM AGREGADOS — nunca conte nem some. Não confundir com o campo cadastral padrao_pagamento.',
+          'Números JÁ VÊM AGREGADOS — nunca conte nem some. Aceita recorte por empresa (id_empresa). ' +
+          'Não confundir com o campo cadastral padrao_pagamento.',
         parameters: {
           type: 'object',
           properties: {
             ...ID_CLIENTE_PROP,
+            ...ID_EMPRESA_PROP,
             dias: { type: 'number', description: 'Janela em dias (padrão 365, máx 1830).' },
           },
           additionalProperties: false,
@@ -755,7 +772,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     handler: async (args, ctx) => {
       const idCliente = (args.__idClienteSeguro as number)!;
       const dias = Number.isFinite(Number(args.dias)) ? Number(args.dias) : 365;
-      return await calcularPerfilPagamento(ctx.supabase, idCliente, dias);
+      return await calcularPerfilPagamento(ctx.supabase, idCliente, dias, idEmpresaDe(args));
     },
   },
 
@@ -765,11 +782,14 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       type: 'function',
       function: {
         name: 'comparar_recebimento_meses',
-        description: 'Comparar recebimentos (pagamentos_v2, PAID) do cliente ativo em múltiplos meses específicos (máximo 6).',
+        description:
+          'Comparar recebimentos (pagamentos_v2, PAID, por paid_at) do cliente ativo em múltiplos meses ' +
+          'específicos (máximo 6). Aceita recorte por empresa (id_empresa).',
         parameters: {
           type: 'object',
           properties: {
             ...ID_CLIENTE_PROP,
+            ...ID_EMPRESA_PROP,
             meses: {
               type: 'array',
               maxItems: 6,
@@ -809,7 +829,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         .filter((m): m is { startDate: string; endDate: string; label: string } => m !== null);
 
       if (meses.length === 0) return { found: false, error: 'Nenhum mês válido informado.' };
-      return await compararRecebimentoClienteMeses(ctx.supabase, idCliente, meses);
+      return await compararRecebimentoClienteMeses(ctx.supabase, idCliente, meses, idEmpresaDe(args));
     },
   },
 
@@ -970,10 +990,16 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
           'FATURAMENTO OFICIAL do cliente ativo em um período. Fonte oficial: pagamentos_v2 confirmados ' +
           'com status PAID ou A_VENCER, período por data_confirmacao; faturamento = soma dos pagamentos, ' +
           'propostas = id_int distintos. Use para "faturamento/vendas do cliente no período". ' +
+          'Aceita recorte por empresa (id_empresa) e separar_por_empresa=true para subtotais por empresa. ' +
           'NÃO confundir com recebimento_periodo (caixa, por paid_at) nem com propostas_cliente (pipeline comercial).',
         parameters: {
           type: 'object',
-          properties: { ...ID_CLIENTE_PROP, periodo: PERIODO_SCHEMA },
+          properties: {
+            ...ID_CLIENTE_PROP,
+            periodo: PERIODO_SCHEMA,
+            ...ID_EMPRESA_PROP,
+            separar_por_empresa: { type: 'boolean', description: 'Opcional — subtotais por empresa ("separe por empresa/filial").' },
+          },
           required: ['periodo'],
           additionalProperties: false,
         },
@@ -991,6 +1017,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         ate: intervalo.ate,
         periodoLabel: periodo.label,
         idCliente,
+        idEmpresa: idEmpresaDe(args),
+        agruparPorEmpresa: args.separar_por_empresa === true,
       });
     },
   },
