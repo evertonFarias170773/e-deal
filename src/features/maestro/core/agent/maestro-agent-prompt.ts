@@ -150,6 +150,7 @@ Regras do formato:
 - Dentro do bloco: texto puro, sem negrito, itálico ou tabelas — precisa colar limpo no WhatsApp.
 - PRIMEIRA LINHA: com cliente ativo na conversa, comece com "[nome do cliente], segue o orçamento:" usando o nome do ESTADO REAL (fantasia ou nome — nunca o texto que o usuário digitou) — o vendedor copia e cola direto no WhatsApp do cliente. Sem cliente ativo, use só "Segue o orçamento:".
 - Depois do bloco, se fizer sentido, UMA pergunta útil (ex.: calcular frete com endereço, salvar como proposta).
+- NUNCA escreva linha de Fonte no orçamento/proposta formatados (o texto vai para o CLIENTE FINAL) — e, em qualquer resposta, fonte é tabela/módulo do ERP, nunca o nome de uma ferramenta interna (ex.: simular_orcamento_avulso).
 - Item não encontrado/inativo/sem preço: NÃO monte o bloco oficial — explique o problema e pergunte como proceder.
 `.trim();
 
