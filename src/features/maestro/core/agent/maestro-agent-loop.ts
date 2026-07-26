@@ -74,7 +74,7 @@ const RESPOSTA_PARCIAL_SEGURA =
 
 /** Coleta ids presentes num JSON de resultado de tool. */
 export function coletarIdsDeToolResult(json: string, destino: Set<string>): void {
-  const re = /"(?:id_int|id_cliente|id_produto|savedIdInt|clientInternalId|clientDisplayCode|numero)"\s*:\s*"?(\d+)"?/g;
+  const re = /"(?:id_int|idInt|id_cliente|idCliente|id_produto|savedIdInt|clientInternalId|clientDisplayCode|numero)"\s*:\s*"?(\d+)"?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(json)) !== null) destino.add(m[1]);
 }
@@ -196,6 +196,7 @@ function seedStateFromContext(context: ConversationContext): AgentSessionState {
   if (v2Ctx.agentPendingWriteAction) {
     state.pendingWriteAction = v2Ctx.agentPendingWriteAction;
   }
+  console.info('[MaestroAgentLoop] seed pendência de escrita:', v2Ctx.agentPendingWriteAction ? `${v2Ctx.agentPendingWriteAction.tipo} (turn ${v2Ctx.agentPendingWriteAction.turnId})` : 'nenhuma');
   const id = v2Ctx.activeEntities?.clientInternalId ?? context.clientInternalId;
   if (id != null && Number.isFinite(Number(id))) {
     const idNum = Number(id);
@@ -531,6 +532,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     state.pendingWriteAction && state.pendingWriteAction.turnId === state.currentTurnId
       ? state.pendingWriteAction
       : null;
+  console.info('[MaestroAgentLoop] persist pendência de escrita:', v2Ctx.agentPendingWriteAction ? `${v2Ctx.agentPendingWriteAction.tipo} (turn ${v2Ctx.agentPendingWriteAction.turnId})` : 'nenhuma');
 
   novoContexto.v2ContextJson = serializeV2Context(v2Ctx);
 

@@ -1453,6 +1453,12 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     handler: async (args, ctx) => {
       const idCliente = (args.__idClienteSeguro as number)!;
       const pend = ctx.state.pendingWriteAction;
+      console.info(
+        '[MaestroAgentCobranca] handler:',
+        `pend=${pend ? `${pend.tipo}@${pend.turnId}` : 'null'}`,
+        `turnoAtual=${ctx.state.currentTurnId}`,
+        `id_int=${args.id_int ?? '-'}`,
+      );
 
       // ── FASE EXECUTAR: pendência criada em turno ANTERIOR + confirmação ────
       const pendDoTurnoAnterior =
@@ -1511,7 +1517,10 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         return {
           fase: 'nao_proposta',
           motivo: 'Não há cobrança pendente do turno anterior e nenhuma proposta (id_int) foi informada — nada foi criado.',
-          atencao: 'Chame esta ferramenta AGORA com id_int (número da proposta) e, se o usuário pediu valor parcial, valor.',
+          atencao:
+            'Se o usuário estava confirmando, a proposta de cobrança EXPIROU — chame esta ferramenta AGORA, NESTE ' +
+            'turno, com id_int (o número da proposta em questão) para RE-PROPOR, apresente o novo resumo e explique ' +
+            'que precisa de nova confirmação. NUNCA responda "falha técnica" sem re-propor.',
         };
       }
       const valor = args.valor != null && Number.isFinite(Number(args.valor)) ? Number(args.valor) : undefined;
