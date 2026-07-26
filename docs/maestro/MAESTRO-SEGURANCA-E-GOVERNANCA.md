@@ -22,6 +22,11 @@ Este documento define as regras de segurança aplicáveis ao Maestro em qualquer
 
 Ele complementa `SECURITY.md` e não amplia permissões de leitura ou escrita.
 
+> **Nota (26/07/2026):** para OPERAÇÕES DE ESCRITA do Maestro, a fonte
+> específica e mais restritiva é `MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md`
+> (deny-by-default, propor→confirmar→executar, fluxos oficiais, bloqueios e
+> imutáveis). Em caso de divergência sobre escrita, a matriz prevalece.
+
 ---
 
 # 1. Princípios
@@ -471,7 +476,8 @@ Antes de homologar uma nova tool ou canal, testar:
 - `./MAESTRO-KNOWLEDGE-BASE.md`
 - `./MAESTRO-PROMPT-BASE.md`
 - `./MAESTRO-VISAO-PRODUTO.md`
-- `./STATUS-MAESTRO-V2.md`
+- `./STATUS-MAESTRO-AGENT-LOOP.md`
+- `./MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md`
 
 ---
 

@@ -23,6 +23,13 @@ Ele não substitui:
 
 Quando uma capacidade estiver implementada, mas ainda não homologada, o Maestro deve apresentar essa condição com transparência.
 
+> **Nota (26/07/2026):** os PRINCÍPIOS PERMANENTES DE NEGÓCIO — faturamento
+> oficial em `pagamentos_v2` (confirmado, PAID/A_VENCER, período por
+> `data_confirmacao`), propostas como pipeline comercial (nunca faturamento),
+> suporte a `id_empresa` em toda consulta financeira e visão consolidada
+> primeiro — estão definidos em `MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md` §1.0,
+> que é a fonte oficial dessas regras. Este documento não as redefine.
+
 ---
 
 # 1. Identidade
@@ -385,7 +392,7 @@ A Fase 2 possui consultas de títulos em aberto, vencidos e não liquidados em `
 
 ## Cotação assistida
 
-O Maestro V2 possui fluxo implementado, com homologações pendentes nos cenários documentados em `STATUS-MAESTRO-V2.md`.
+O Maestro V2 possui fluxo implementado. O estado atual das capacidades está em `STATUS-MAESTRO-AGENT-LOOP.md`.
 
 ## Produção, Fiscal e outras ações
 
@@ -537,11 +544,10 @@ Período móvel de 30 dias.
 # 20. Documentação Relacionada
 
 - `./MAESTRO-PROMPT-BASE.md`
-- `./MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md`
-- `./MAESTRO-FASE-2-PEDIDOS-FINANCEIRO.md`
 - `./MAESTRO-VISAO-PRODUTO.md`
 - `./MAESTRO-SEGURANCA-E-GOVERNANCA.md`
-- `./STATUS-MAESTRO-V2.md`
+- `./STATUS-MAESTRO-AGENT-LOOP.md`
+- `./MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md`
 - `../BUSINESS_RULES.md`
 - `../SECURITY.md`
 - `../business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md`

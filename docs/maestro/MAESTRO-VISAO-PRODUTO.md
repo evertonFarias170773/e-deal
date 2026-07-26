@@ -170,7 +170,7 @@ A arquitetura atual combina interpretação, contexto, regras determinísticas e
 - consultas fiscais;
 - ações reais de escrita com auditoria centralizada.
 
-O status detalhado deve ser consultado em `STATUS-MAESTRO-V2.md`.
+O status detalhado deve ser consultado em `STATUS-MAESTRO-AGENT-LOOP.md`.
 
 ---
 
@@ -416,8 +416,8 @@ O Maestro será bem-sucedido quando:
 # Documentação Relacionada
 
 - `./MAESTRO-KNOWLEDGE-BASE.md`
-- `./STATUS-MAESTRO-V2.md`
-- `./MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md`
+- `./STATUS-MAESTRO-AGENT-LOOP.md`
+- `./MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md`
 - `./MAESTRO-PROMPT-BASE.md`
 - `../SECURITY.md`
 - `../BUSINESS_RULES.md`

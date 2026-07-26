@@ -103,33 +103,38 @@ Timeline, anexos, menções, notificações e pendências.
 
 # 5. Maestro
 
-## [`maestro/MAESTRO-VISAO-PRODUTO.md`](./maestro/MAESTRO-VISAO-PRODUTO.md)
+Um documento oficial por tema. Reorganizado em 26/07/2026; documentos
+anteriores em `docs/_archive/maestro/`.
 
-Visão de produto e evolução do Maestro.
+## [`maestro/STATUS-MAESTRO-AGENT-LOOP.md`](./maestro/STATUS-MAESTRO-AGENT-LOOP.md)
+
+**Fonte única do estado atual**: arquitetura do agent loop V2, catálogo de
+tools de leitura, flags, segurança operacional, infra aplicada e roadmap.
+
+## [`maestro/MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md`](./maestro/MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md)
+
+**Fonte da escrita assistida (Trilha B)** e dos princípios permanentes de
+negócio (§1.0): faturamento oficial em `pagamentos_v2` por `data_confirmacao`,
+propostas como pipeline, `id_empresa` em toda consulta financeira, visão
+consolidada primeiro. Nenhuma operação de escrita liberada.
 
 ## [`maestro/MAESTRO-KNOWLEDGE-BASE.md`](./maestro/MAESTRO-KNOWLEDGE-BASE.md)
 
-Entidades, relações, fontes e regras canônicas.
-
-## [`maestro/MAESTRO-PROMPT-BASE.md`](./maestro/MAESTRO-PROMPT-BASE.md)
-
-Identidade e comportamento conversacional.
+Entidades, relações, fontes e regras canônicas (semântica).
 
 ## [`maestro/MAESTRO-SEGURANCA-E-GOVERNANCA.md`](./maestro/MAESTRO-SEGURANCA-E-GOVERNANCA.md)
 
-Governança, classificação de operações e proteção entre canais.
+Governança, classificação de operações e proteção entre canais. Para escrita,
+a Matriz de Permissões de Escrita prevalece.
 
-## [`maestro/MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md`](./maestro/MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md)
+## [`maestro/MAESTRO-PROMPT-BASE.md`](./maestro/MAESTRO-PROMPT-BASE.md)
 
-Consultas autorizadas para Clientes, Comercial e Financeiro.
+Identidade e comportamento conversacional. Carregado em RUNTIME pelo motor —
+não mover nem renomear.
 
-## [`maestro/MAESTRO-FASE-2-PEDIDOS-FINANCEIRO.md`](./maestro/MAESTRO-FASE-2-PEDIDOS-FINANCEIRO.md)
+## [`maestro/MAESTRO-VISAO-PRODUTO.md`](./maestro/MAESTRO-VISAO-PRODUTO.md)
 
-Implementação de consultas por cliente.
-
-## [`maestro/STATUS-MAESTRO-V2.md`](./maestro/STATUS-MAESTRO-V2.md)
-
-Capacidades implementadas e homologações pendentes.
+Visão de produto e evolução do Maestro.
 
 ---
 
@@ -210,7 +215,9 @@ A presença de um script não comprova aplicação nem constitui autorização d
 | Cancelamento financeiro | `CANCELAMENTO-COBRANCAS.md` |
 | Produção | `PEDIDOS-PRODUCAO.md` |
 | Chat e pendências | `CHAT-INTERNO.md` |
-| Maestro | pasta `maestro/` |
+| Maestro — estado atual e leitura | `maestro/STATUS-MAESTRO-AGENT-LOOP.md` |
+| Maestro — escrita e princípios de negócio | `maestro/MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md` |
+| Maestro — semântica canônica | `maestro/MAESTRO-KNOWLEDGE-BASE.md` |
 | SQL histórico | `migrations/README.md` |
 
 ---
@@ -296,7 +303,8 @@ Regras:
 O legado do Maestro está documentado em:
 
 ```text
-docs/_archive/maestro-legacy/README.md
+docs/_archive/maestro-legacy/README.md   (legado antigo)
+docs/_archive/maestro/README.md          (arquivados na reorganização de 26/07/2026)
 ```
 
 A documentação vigente do Maestro permanece exclusivamente em:

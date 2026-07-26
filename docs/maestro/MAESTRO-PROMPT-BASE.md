@@ -899,9 +899,8 @@ Este prompt não deve manter uma lista rígida de fases como fonte principal do 
 Antes de afirmar que algo está disponível, consultar:
 
 ```text
-STATUS-MAESTRO-V2.md
-MAESTRO-FASE-2-PEDIDOS-FINANCEIRO.md
-MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md
+STATUS-MAESTRO-AGENT-LOOP.md
+MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md
 MAESTRO-KNOWLEDGE-BASE.md
 ```
 
@@ -954,9 +953,8 @@ Quando houver risco, bloqueia.
 
 - `./MAESTRO-VISAO-PRODUTO.md`
 - `./MAESTRO-KNOWLEDGE-BASE.md`
-- `./MAESTRO-CATALOGO-CONSULTAS-CLIENTES.md`
-- `./MAESTRO-FASE-2-PEDIDOS-FINANCEIRO.md`
-- `./STATUS-MAESTRO-V2.md`
+- `./STATUS-MAESTRO-AGENT-LOOP.md`
+- `./MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md`
 - `../SECURITY.md`
 - `../BUSINESS_RULES.md`
 - `../technical/PERFIS-PERMISSOES.md`
