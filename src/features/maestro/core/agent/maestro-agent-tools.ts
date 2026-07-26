@@ -1321,6 +1321,21 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         return { quantidade: Number(i?.quantidade), termo: String(i?.termo ?? '').trim() };
       });
 
+      // Chamada de "execução" SEM pendência e sem itens — acontece quando um
+      // resumo foi apresentado sem esta tool ter sido chamada (não existe
+      // proposta). Instrui a recuperação no MESMO turno.
+      if (itens.every(i => !Number.isFinite(i.quantidade) || i.quantidade <= 0 || !i.termo)) {
+        return {
+          fase: 'nao_proposta',
+          motivo: 'Não há proposta pendente do turno anterior e nenhum item foi informado — nada foi salvo.',
+          atencao:
+            'Se o usuário está confirmando um resumo, ele NÃO veio desta ferramenta (nenhuma pendência existe). ' +
+            'Chame esta ferramenta AGORA, NESTE turno, com os itens da cotação (quantidade + termo) e o frete ' +
+            'escolhido — ela devolverá a proposta REAL (com bônus/desconto calculados pelo servidor) para o ' +
+            'usuário confirmar no próximo turno.',
+        };
+      }
+
       const prop = await proporSalvarCotacao(
         ctx.supabase,
         idCliente,

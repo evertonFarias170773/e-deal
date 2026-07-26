@@ -266,11 +266,13 @@ export async function simularOrcamentoAvulsoDb(
       }
     }
 
-    // Fallback: busca textual normal se não encontrou por ID
+    // Fallback: busca textual normal se não encontrou por ID (apelidos,
+    // descrição e nome comercial — "Ingresso MOBI" precisa achar por nomeReal)
     if (data.length === 0) {
-      const [resApelido, resDesc] = await Promise.all([
+      const [resApelido, resDesc, resNome] = await Promise.all([
         supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('apelidos', `%${termoOriginal}%`),
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('descricao', `%${termoOriginal}%`)
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('descricao', `%${termoOriginal}%`),
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('nomeReal', `%${termoOriginal}%`)
       ]);
 
       const map = new Map<number, OrcamentoAvulsoProdutoDb>();
@@ -279,6 +281,9 @@ export async function simularOrcamentoAvulsoDb(
       }
       if (resDesc.data) {
         for (const p of resDesc.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
+      }
+      if (resNome.data) {
+        for (const p of resNome.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
       }
       data = Array.from(map.values());
     }
@@ -289,28 +294,30 @@ export async function simularOrcamentoAvulsoDb(
         // Encontrado por ID direto - não faz filtragem textual
         rankedProducts = data;
       } else {
-        // 1. Match exato em apelidos
-        const exactAliasMatch = data.filter(p => {
+        // 1. Match exato: nome comercial (nomeReal) ou apelido
+        const exactMatch = data.filter(p => {
+          if (normalizeText(p.nomeReal ?? null) === termoNorm) return true;
           const apList = getApelidosList(p.apelidos);
           return apList.includes(termoNorm);
         });
 
-        if (exactAliasMatch.length > 0) {
-          rankedProducts = exactAliasMatch;
+        if (exactMatch.length > 0) {
+          rankedProducts = exactMatch;
         } else {
           // 2. Match parcial em apelidos
           const partialAliasMatch = data.filter(p => {
           const apList = getApelidosList(p.apelidos);
           return apList.some(ap => ap.includes(termoNorm));
         });
-        
+
         if (partialAliasMatch.length > 0) {
           rankedProducts = partialAliasMatch;
         } else {
-          // 3. Match em descricao
+          // 3. Match em nome comercial ou descricao
           const descMatch = data.filter(p => {
             const desc = normalizeText(p.descricao);
-            return desc.includes(termoNorm);
+            const nome = normalizeText(p.nomeReal ?? null);
+            return desc.includes(termoNorm) || nome.includes(termoNorm);
           });
           rankedProducts = descMatch;
         }
