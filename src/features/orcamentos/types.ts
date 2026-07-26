@@ -50,6 +50,12 @@ export type PedidoModeloState = {
   status_arte?: string;
   status_producao?: string;
   ordem?: number;
+  /** Camarote (producao_numeracoes.tipo = CAMAROTE): quantidade total de camarotes */
+  Q_CAM?: number | null;
+  /** Camarote: lugares por camarote */
+  L_CAM?: number | null;
+  /** Camarote: número inicial do camarote */
+  C_INI?: number | null;
 };
 
 export type TipoDescontoProposta = "PERCENTUAL" | "VALOR";
