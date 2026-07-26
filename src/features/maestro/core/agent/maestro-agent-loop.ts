@@ -310,6 +310,14 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     idsConfirmados.add(String(state.pendingWriteAction.idInt));
   }
   coletarNumerosDaPergunta(query, idsConfirmados);
+  // Números que o USUÁRIO digitou em turnos ANTERIORES desta conversa também
+  // são citáveis — redigir um número que o próprio usuário escreveu duas
+  // mensagens atrás transforma a guarda em ruído ("número não confirmado"
+  // para o 19715 que ele acabou de pedir). Mensagens do assistente ficam de
+  // fora: números antigos do modelo continuam exigindo consulta fresca.
+  for (const t of historico) {
+    if (t.role === 'user') coletarNumerosDaPergunta(t.content, idsConfirmados);
+  }
   // URLs citáveis: somente as fornecidas por tool NESTE turno (ou pelo usuário)
   const urlsConfirmadas = new Set<string>();
   coletarUrlsDeTexto(query, urlsConfirmadas);

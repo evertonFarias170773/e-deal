@@ -25,7 +25,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { processSimpleQueryWithBrain } from '../../../../features/maestro/core/simple/maestro-simple-engine';
 import { sanitizeRecentTurns } from '../../../../features/maestro/core/simple/maestro-recent-turns';
-import { persistirTurnoMaestro } from '../../../../features/maestro/core/simple/maestro-persistence.server';
+import { persistirTurnoMaestro, carregarContextoConversa } from '../../../../features/maestro/core/simple/maestro-persistence.server';
 import { deserializeV2Context } from '../../../../features/maestro/core/simple/maestro-v2-context-manager';
 import { deveUsarAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-config';
 import { runMaestroAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-loop';
@@ -97,6 +97,16 @@ export async function POST(request: NextRequest) {
   //    o fluxo de criar/salvar orçamento fica intacto.
   try {
     let result;
+
+    // Contexto V2: quando a conversa está persistida, o rascunho gravado pelo
+    // SERVIDOR no fim do turno anterior é a fonte da verdade — o eco do
+    // browser vira fallback. Estado autorado pelo servidor (pendências de
+    // ESCRITA, candidatos de cliente) nunca fica refém do round-trip cliente.
+    const contextoServidor = await carregarContextoConversa(supabase, context.conversationId);
+    if (contextoServidor != null) {
+      context.v2ContextJson = contextoServidor;
+    }
+    console.info('[/api/maestro/simple] contexto V2: fonte =', contextoServidor != null ? 'servidor (maestro_conversas)' : 'browser');
 
     const v2CtxProbe = deserializeV2Context(context.v2ContextJson);
     if (deveUsarAgentLoop(v2CtxProbe)) {

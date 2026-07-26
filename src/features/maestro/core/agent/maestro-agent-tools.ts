@@ -1416,7 +1416,11 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
   },
 
   gerar_cobranca_pix: {
-    needsActiveClient: true,
+    // SEM needsActiveClient: o cliente da cobrança é o cliente FATURADO da
+    // proposta (id_faturado), resolvido e ativado pelo SERVIDOR a partir do
+    // banco. Exigir cliente ativo prévio induzia o modelo a passar o número
+    // da PROPOSTA ao resolver_cliente — que pode colidir com um código de
+    // CLIENTE real e ativar a pessoa errada.
     isWrite: true,
     writeActionFlagEnabled: isWriteGerarCobrancaPixEnabled,
     // §2.3 da matriz: perfis com cobrancas.create; super admin
@@ -1426,17 +1430,18 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       function: {
         name: 'gerar_cobranca_pix',
         description:
-          'Ação de escrita B3: gerar UMA cobrança PIX À VISTA real para proposta do cliente ativo, em DUAS FASES. ' +
-          '1ª chamada (com id_int) = PROPOSTA: nada é criado; apresente o resumo EXATO (proposta, valor, saldo ' +
-          'restante, empresa recebedora, alerta se houver) e pergunte se confirma. 2ª chamada (no turno SEGUINTE, ' +
-          'após confirmação explícita, sem parâmetros) = EXECUÇÃO: cria a cobrança, emite o PIX e devolve ' +
-          'link_pagamento — apresente como [Link de pagamento da proposta N](link_pagamento). Valor padrão = saldo ' +
-          'restante (calculado no servidor); o usuário pode pedir valor MENOR via valor. Boleto/cartão/faturado NÃO ' +
-          'existem aqui (tela de cobranças do ERP). NUNCA proponha e execute no mesmo turno.',
+          'Ação de escrita B3: gerar UMA cobrança PIX À VISTA real para uma proposta, em DUAS FASES. NÃO exige ' +
+          'cliente ativo: chame DIRETO com o número da proposta — o servidor identifica e ativa o cliente faturado ' +
+          'dela sozinho (NUNCA passe número de proposta para resolver_cliente). 1ª chamada (com id_int) = PROPOSTA: ' +
+          'nada é criado; apresente o resumo EXATO (proposta, cliente, valor, saldo restante, empresa recebedora, ' +
+          'alerta se houver) e pergunte se confirma. 2ª chamada (no turno SEGUINTE, após confirmação explícita, sem ' +
+          'parâmetros) = EXECUÇÃO: cria a cobrança, emite o PIX e devolve link_pagamento — apresente como ' +
+          '[Link de pagamento da proposta N](link_pagamento). Valor padrão = saldo restante (calculado no servidor); ' +
+          'o usuário pode pedir valor MENOR via valor. Boleto/cartão/faturado NÃO existem aqui (tela de cobranças ' +
+          'do ERP). NUNCA proponha e execute no mesmo turno.',
         parameters: {
           type: 'object',
           properties: {
-            ...ID_CLIENTE_PROP,
             id_int: {
               type: 'number',
               description: 'Número da proposta (obrigatório na fase de PROPOSTA; ignorado na execução).',
@@ -1451,7 +1456,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       },
     },
     handler: async (args, ctx) => {
-      const idCliente = (args.__idClienteSeguro as number)!;
+      const idClienteAtivo = ctx.state.activeClient?.clientInternalId ?? null;
       const pend = ctx.state.pendingWriteAction;
       console.info(
         '[MaestroAgentCobranca] handler:',
@@ -1465,7 +1470,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         pend != null && pend.tipo === 'gerar_cobranca_pix' && pend.turnId !== ctx.state.currentTurnId;
 
       if (pendDoTurnoAnterior) {
-        if (pend.idCliente !== idCliente) {
+        if (idClienteAtivo != null && pend.idCliente !== idClienteAtivo) {
           ctx.state.pendingWriteAction = null;
           return {
             fase: 'rejeitada',
@@ -1525,10 +1530,49 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       }
       const valor = args.valor != null && Number.isFinite(Number(args.valor)) ? Number(args.valor) : undefined;
 
+      // Dono da cobrança = cliente FATURADO da proposta, direto do banco.
+      // Determinístico: o modelo nunca escolhe o cliente — evita ativar um
+      // cliente cujo código coincide com o número da proposta.
+      const { data: donoRow, error: donoErr } = await ctx.supabase
+        .from('propostas')
+        .select('id_faturado')
+        .eq('id_int', idInt)
+        .maybeSingle();
+      if (donoErr || !donoRow) {
+        return {
+          fase: 'nao_proposta',
+          motivo: `Proposta ${idInt} não encontrada.`,
+          atencao: 'NADA foi criado. Confirme o número da proposta com o usuário — NÃO tente resolver cliente por esse número.',
+        };
+      }
+      const idDono = Number(donoRow.id_faturado);
+      if (!Number.isFinite(idDono) || idDono <= 0) {
+        return {
+          fase: 'nao_proposta',
+          motivo: `A proposta ${idInt} não tem cliente faturado definido — gere esta cobrança pela tela de cobranças do ERP.`,
+          atencao: 'NADA foi criado.',
+        };
+      }
+
+      let clienteAtivado: string | null = null;
+      if (idClienteAtivo !== idDono) {
+        const res = await buscarClientePorCodigo(ctx.supabase, String(idDono));
+        if (!res.found || !res.client) {
+          return {
+            fase: 'nao_proposta',
+            motivo: 'Não foi possível carregar o cadastro do cliente faturado da proposta.',
+            atencao: 'NADA foi criado.',
+          };
+        }
+        registrarClienteResolvido(ctx.state, res.client);
+        ctx.state.pendingClientCandidates = null;
+        clienteAtivado = res.client.clientFantasia || res.client.clientName;
+      }
+
       const prop = await proporGerarCobrancaPix(
         ctx.supabase,
-        idCliente,
-        ctx.state.activeClient?.clientFantasia || ctx.state.activeClient?.clientName || `Cliente ${idCliente}`,
+        idDono,
+        ctx.state.activeClient?.clientFantasia || ctx.state.activeClient?.clientName || `Cliente ${idDono}`,
         idInt,
         valor,
         ctx.state.currentTurnId,
@@ -1541,10 +1585,14 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       return {
         fase: 'proposta_criada',
         resumo: prop.pendencia,
+        clienteAtivado,
         atencao:
           'NADA FOI CRIADO AINDA. Apresente este resumo EXATO (proposta, cliente, valor, saldo restante, empresa recebedora' +
           (prop.pendencia.alertaRestricao ? `, e o ALERTA: ${prop.pendencia.alertaRestricao}` : '') +
-          ') e pergunte se o usuário confirma a geração da cobrança PIX. A execução só acontece no próximo turno.',
+          ') e pergunte se o usuário confirma a geração da cobrança PIX. A execução só acontece no próximo turno.' +
+          (clienteAtivado
+            ? ` O cliente ativo da conversa passou a ser ${clienteAtivado}, dono da proposta — mencione isso no resumo.`
+            : ''),
       };
     },
   },
