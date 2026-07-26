@@ -53,7 +53,8 @@ import { cotarOpcoesFrete } from './maestro-agent-frete.server';
 import { gerarPdfPropostaServer } from './maestro-agent-pdf.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
-import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
+import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled, isWriteGerarCobrancaPixEnabled } from './maestro-agent-config';
+import { proporGerarCobrancaPix, executarGerarCobrancaPix } from './maestro-agent-cobranca.server';
 import {
   proporSalvarCotacao,
   executarSalvarCotacao,
@@ -1347,7 +1348,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       }
 
       // ── FASE PROPOR ────────────────────────────────────────────────────────
-      if (pend != null && pend.turnId === ctx.state.currentTurnId) {
+      if (pend != null && pend.tipo === 'salvar_cotacao_como_proposta' && pend.turnId === ctx.state.currentTurnId) {
         // O modelo tentou executar no MESMO turno da proposta — bloqueado (§4)
         return {
           fase: 'aguardando_confirmacao',
@@ -1403,6 +1404,131 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
           `frete ${freteResumo}` +
           (prop.pendencia.alertaRestricao ? `, e o ALERTA: ${prop.pendencia.alertaRestricao}` : '') +
           ') e pergunte se o usuário confirma o salvamento. A execução só acontece no próximo turno.',
+      };
+    },
+  },
+
+  gerar_cobranca_pix: {
+    needsActiveClient: true,
+    isWrite: true,
+    writeActionFlagEnabled: isWriteGerarCobrancaPixEnabled,
+    // §2.3 da matriz: perfis com cobrancas.create; super admin
+    requiredPermission: 'cobrancas.create',
+    schema: {
+      type: 'function',
+      function: {
+        name: 'gerar_cobranca_pix',
+        description:
+          'Ação de escrita B3: gerar UMA cobrança PIX À VISTA real para proposta do cliente ativo, em DUAS FASES. ' +
+          '1ª chamada (com id_int) = PROPOSTA: nada é criado; apresente o resumo EXATO (proposta, valor, saldo ' +
+          'restante, empresa recebedora, alerta se houver) e pergunte se confirma. 2ª chamada (no turno SEGUINTE, ' +
+          'após confirmação explícita, sem parâmetros) = EXECUÇÃO: cria a cobrança, emite o PIX e devolve ' +
+          'link_pagamento — apresente como [Link de pagamento da proposta N](link_pagamento). Valor padrão = saldo ' +
+          'restante (calculado no servidor); o usuário pode pedir valor MENOR via valor. Boleto/cartão/faturado NÃO ' +
+          'existem aqui (tela de cobranças do ERP). NUNCA proponha e execute no mesmo turno.',
+        parameters: {
+          type: 'object',
+          properties: {
+            ...ID_CLIENTE_PROP,
+            id_int: {
+              type: 'number',
+              description: 'Número da proposta (obrigatório na fase de PROPOSTA; ignorado na execução).',
+            },
+            valor: {
+              type: 'number',
+              description: 'Opcional — valor pedido pelo usuário (nunca acima do saldo restante). Ausente = saldo restante.',
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      const pend = ctx.state.pendingWriteAction;
+
+      // ── FASE EXECUTAR: pendência criada em turno ANTERIOR + confirmação ────
+      const pendDoTurnoAnterior =
+        pend != null && pend.tipo === 'gerar_cobranca_pix' && pend.turnId !== ctx.state.currentTurnId;
+
+      if (pendDoTurnoAnterior) {
+        if (pend.idCliente !== idCliente) {
+          ctx.state.pendingWriteAction = null;
+          return {
+            fase: 'rejeitada',
+            motivo: 'A cobrança pendente era para OUTRO cliente — foi descartada. Proponha novamente se necessário.',
+          };
+        }
+        const res = await executarGerarCobrancaPix(ctx.supabase, ctx.userId, pend, ctx.state.currentTurnId);
+        if (res.ok) {
+          ctx.state.pendingWriteAction = null;
+          return {
+            fase: 'executada',
+            idPagamento: res.idPagamento,
+            valor: pend.valor,
+            link_pagamento: res.linkPagamento,
+            aviso: res.aviso ?? null,
+            mensagem:
+              `Cobrança PIX de R$ ${pend.valor.toFixed(2)} criada para a proposta ${pend.idInt}. ` +
+              `Apresente o link markdown: [Link de pagamento da proposta ${pend.idInt}](${res.linkPagamento})` +
+              (res.aviso ? ` e o AVISO: ${res.aviso}` : ''),
+          };
+        }
+        if (res.reproposta) {
+          // §4: alvo mudou → aborta e re-propõe com os dados NOVOS
+          ctx.state.pendingWriteAction = res.reproposta;
+          return {
+            fase: 'reproposta',
+            motivo: res.motivo,
+            resumo: res.reproposta,
+            atencao: 'NADA foi criado — os dados mudaram desde a proposta. Apresente o NOVO resumo exato e peça nova confirmação.',
+          };
+        }
+        ctx.state.pendingWriteAction = null;
+        return { fase: 'rejeitada', motivo: res.motivo, atencao: 'NADA foi criado. Explique o motivo ao usuário.' };
+      }
+
+      // ── FASE PROPOR ────────────────────────────────────────────────────────
+      if (pend != null && pend.tipo === 'gerar_cobranca_pix' && pend.turnId === ctx.state.currentTurnId) {
+        return {
+          fase: 'aguardando_confirmacao',
+          atencao:
+            'A proposta de cobrança acabou de ser criada NESTE turno. Apresente o resumo ao usuário e AGUARDE a ' +
+            'confirmação no próximo turno — não chame esta ferramenta de novo agora.',
+          resumo: pend,
+        };
+      }
+
+      const idInt = Number(args.id_int);
+      if (!Number.isFinite(idInt) || idInt <= 0) {
+        return {
+          fase: 'nao_proposta',
+          motivo: 'Não há cobrança pendente do turno anterior e nenhuma proposta (id_int) foi informada — nada foi criado.',
+          atencao: 'Chame esta ferramenta AGORA com id_int (número da proposta) e, se o usuário pediu valor parcial, valor.',
+        };
+      }
+      const valor = args.valor != null && Number.isFinite(Number(args.valor)) ? Number(args.valor) : undefined;
+
+      const prop = await proporGerarCobrancaPix(
+        ctx.supabase,
+        idCliente,
+        ctx.state.activeClient?.clientFantasia || ctx.state.activeClient?.clientName || `Cliente ${idCliente}`,
+        idInt,
+        valor,
+        ctx.state.currentTurnId,
+      );
+      if (!prop.ok) {
+        return { fase: 'nao_proposta', motivo: prop.motivo, atencao: 'NADA foi criado.' };
+      }
+
+      ctx.state.pendingWriteAction = prop.pendencia;
+      return {
+        fase: 'proposta_criada',
+        resumo: prop.pendencia,
+        atencao:
+          'NADA FOI CRIADO AINDA. Apresente este resumo EXATO (proposta, cliente, valor, saldo restante, empresa recebedora' +
+          (prop.pendencia.alertaRestricao ? `, e o ALERTA: ${prop.pendencia.alertaRestricao}` : '') +
+          ') e pergunte se o usuário confirma a geração da cobrança PIX. A execução só acontece no próximo turno.',
       };
     },
   },

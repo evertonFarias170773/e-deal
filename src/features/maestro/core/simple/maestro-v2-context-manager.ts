@@ -324,6 +324,22 @@ export interface MaestroV2Context {
     /** Total EXATO que será gravado (subtotal − desconto + frete escolhido) */
     total: number;
     alertaRestricao: string | null;
+  } | {
+    tipo: 'gerar_cobranca_pix';
+    /** Turno em que a proposta de ação foi criada — execução só no turno SEGUINTE */
+    turnId: string;
+    criadaEm: string;
+    idCliente: number;
+    clientName: string;
+    /** Proposta alvo da cobrança */
+    idInt: number;
+    /** Valor da cobrança — calculado/validado no servidor (≤ saldo restante) */
+    valor: number;
+    saldoRestante: number;
+    totalProposta: number;
+    empresa: string;
+    idEmpresa: number;
+    alertaRestricao: string | null;
   } | null;
   /** Seleção de transportadora pendente — usuário escolhe por número (análogo ao endereço) */
   pendingFreightChoice?: {

@@ -37,6 +37,8 @@ import {
 } from './maestro-agent-frete.server';
 
 export type AgentPendingWriteAction = NonNullable<MaestroV2Context['agentPendingWriteAction']>;
+/** Variante da pendência específica da B1 (salvar cotação como proposta) */
+export type PendenciaSalvarCotacao = Extract<AgentPendingWriteAction, { tipo: 'salvar_cotacao_como_proposta' }>;
 
 const TOLERANCIA = 0.01;
 const MAX_ITENS = 20;
@@ -47,7 +49,7 @@ export interface ItemCotacaoReq {
 }
 
 type ProporResultado =
-  | { ok: true; pendencia: AgentPendingWriteAction }
+  | { ok: true; pendencia: PendenciaSalvarCotacao }
   | { ok: false; motivo: string };
 
 /**
@@ -133,7 +135,7 @@ export async function proporSalvarCotacao(
     }
   }
 
-  const pendItens: AgentPendingWriteAction['itens'] = sim.itens.map(item => {
+  const pendItens: PendenciaSalvarCotacao['itens'] = sim.itens.map(item => {
     const p = item.produtosEncontrados[0];
     return {
       termo: item.termo,
@@ -203,7 +205,7 @@ export async function proporSalvarCotacao(
 
 type ExecutarResultado =
   | { ok: true; idInt: number }
-  | { ok: false; motivo: string; reproposta?: AgentPendingWriteAction };
+  | { ok: false; motivo: string; reproposta?: PendenciaSalvarCotacao };
 
 /**
  * FASE EXECUTAR — chamada SOMENTE quando o usuário confirmou a proposta do
@@ -213,7 +215,7 @@ type ExecutarResultado =
 export async function executarSalvarCotacao(
   supabase: SupabaseClient,
   userId: string,
-  pendencia: AgentPendingWriteAction,
+  pendencia: PendenciaSalvarCotacao,
   turnIdAtual: string,
 ): Promise<ExecutarResultado> {
   // Frete confirmado pelo usuário (pendências antigas sem o campo = retira)
