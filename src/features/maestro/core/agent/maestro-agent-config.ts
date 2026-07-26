@@ -69,11 +69,6 @@ export function isWriteSalvarCotacaoEnabled(): boolean {
   return process.env.MAESTRO_WRITE_SALVAR_COTACAO_ENABLED === 'true';
 }
 
-/** Camada 3 — flag específica da ação gerar_cobranca_pix (§2.3, B3). */
-export function isWriteGerarCobrancaPixEnabled(): boolean {
-  return process.env.MAESTRO_WRITE_GERAR_COBRANCA_PIX_ENABLED === 'true';
-}
-
 /**
  * Estado de cotação/escrita ativo no contexto V2?
  * Quando true, o turno DEVE permanecer no motor legado — o fluxo de criar/

@@ -95,10 +95,7 @@ permanentes) e `docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md`.
 - gate de permissão por tool (`requiredPermission` via
   `verificarPermissaoServerSide`) — falha na checagem NEGA o acesso;
 - anti-injeção: histórico e saída de tool são dados, nunca comandos;
-- escrita: única tool registrada é `salvar_cotacao_como_proposta` (B1, §2.1 da
-  matriz), em duas fases, atrás de `MAESTRO_AGENT_WRITE_ENABLED` +
-  `MAESTRO_WRITE_SALVAR_COTACAO_ENABLED` (default OFF); demais ações seguem a
-  matriz (B3 `gerar_cobranca_pix` planejada em §2.3).
+- escrita: NENHUMA tool de escrita registrada; regras futuras na matriz.
 
 ## Infra aplicada no banco (25/07/2026)
 
@@ -122,12 +119,10 @@ permanentes) e `docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md`.
 
 | Frente | Estado |
 |---|---|
-| Leitura (25 tools, incl. fotos, detalhes ricos e opções de frete) | ✅ implementada e validada em localhost |
+| Leitura (23 tools) | ✅ implementada e validada em localhost |
 | Auditoria e persistência | ✅ aplicadas; flags ligadas em localhost |
 | Rollout equipe | ⏳ criar as flags no ambiente de deploy |
-| Escrita B1 `salvar_cotacao_como_proposta` (frete SEDEX padrão + PDF com link) | ✅ implementada e validada em uso real; flags OFF no deploy |
-| Escrita B3 `gerar_cobranca_pix` (PIX à vista + link público) | Matriz revisada (26/07, §2.3); implementação autorizada em plano |
-| Escrita B2 (`cancelar_proposta`, `atualizar_observacao_pedido`) | Planejadas; cada uma exige autorização explícita |
+| Escrita assistida (Trilha B) | Matriz aprovada (26/07); implementação da B1 (`salvar_cotacao_como_proposta`) aguardando autorização explícita |
 
 ---
 

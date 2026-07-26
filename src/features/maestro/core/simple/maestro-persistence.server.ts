@@ -91,35 +91,6 @@ export async function persistirTurnoMaestro(
 }
 
 /**
- * Lê o contexto (rascunho) persistido de UMA conversa. O servidor grava o
- * contexto final de cada turno em `maestro_conversas.contexto_json`
- * (persistirTurnoMaestro) — esta leitura é a FONTE DA VERDADE do turno
- * seguinte: estado autorado pelo servidor (ex.: pendências de ESCRITA)
- * nunca depende do eco do browser.
- * Retorna null quando desabilitado, sem conversa, sem rascunho ou em erro
- * (caller usa o contexto do browser como fallback).
- */
-export async function carregarContextoConversa(
-  supabase: SupabaseClient,
-  conversationId: string | null | undefined
-): Promise<string | null> {
-  if (process.env.MAESTRO_PERSISTENCE_ENABLED !== 'true') return null;
-  if (!conversationId || typeof conversationId !== 'string') return null;
-
-  try {
-    const { data, error } = await supabase
-      .from('maestro_conversas')
-      .select('contexto_json')
-      .eq('id', conversationId)
-      .maybeSingle();
-    if (error || !data?.contexto_json) return null;
-    return JSON.stringify(data.contexto_json);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Recupera a conversa mais recente não encerrada do usuário (para retomada).
  * Retorna null quando desabilitado, sem dados ou em erro.
  */

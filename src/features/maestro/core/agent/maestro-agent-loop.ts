@@ -74,7 +74,7 @@ const RESPOSTA_PARCIAL_SEGURA =
 
 /** Coleta ids presentes num JSON de resultado de tool. */
 export function coletarIdsDeToolResult(json: string, destino: Set<string>): void {
-  const re = /"(?:id_int|idInt|id_cliente|idCliente|id_produto|savedIdInt|clientInternalId|clientDisplayCode|numero)"\s*:\s*"?(\d+)"?/g;
+  const re = /"(?:id_int|id_cliente|id_produto|savedIdInt|clientInternalId|clientDisplayCode|numero)"\s*:\s*"?(\d+)"?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(json)) !== null) destino.add(m[1]);
 }
@@ -143,37 +143,6 @@ export function redigirNumerosNaoConfirmados(texto: string, invalidos: string[])
   return s;
 }
 
-// ─── Guarda de LINKS (defesa determinística contra URLs inventadas) ──────────
-// Toda URL exibida na resposta precisa ter vindo de saída de tool DESTE turno
-// (pdfUrl, link_pagamento, fotos) ou da mensagem do usuário. Link fabricado
-// (ex.: domínio "plausível" inventado pelo modelo) é removido no servidor.
-
-/** Coleta URLs http(s) de um texto/JSON de fonte confiável. */
-export function coletarUrlsDeTexto(texto: string, destino: Set<string>): void {
-  const re = /https?:\/\/[^\s"'<>)\]]+/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(texto)) !== null) destino.add(m[0].replace(/[.,;]+$/, ''));
-}
-
-export function urlsNaoConfirmadas(texto: string, urlsConfirmadas: Set<string>): string[] {
-  const achadas = new Set<string>();
-  coletarUrlsDeTexto(texto, achadas);
-  return [...achadas].filter(u => !urlsConfirmadas.has(u));
-}
-
-/** Defesa final: remove do texto links/URLs que nenhuma tool deste turno forneceu. */
-export function redigirUrlsNaoConfirmadas(texto: string, invalidas: string[]): string {
-  let s = texto;
-  for (const url of invalidas) {
-    const alvo = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Link markdown com URL inválida → mantém só o rótulo, sem link
-    s = s.replace(new RegExp(`!?\\[([^\\]]*)\\]\\(${alvo}[^)]*\\)`, 'g'), '$1 (link não confirmado)');
-    // URL solta no texto
-    s = s.replace(new RegExp(alvo, 'g'), '(link não confirmado)');
-  }
-  return s;
-}
-
 // ─── Seed do estado a partir do contexto V2 (autorado pelo servidor) ─────────
 
 function seedStateFromContext(context: ConversationContext): AgentSessionState {
@@ -196,7 +165,6 @@ function seedStateFromContext(context: ConversationContext): AgentSessionState {
   if (v2Ctx.agentPendingWriteAction) {
     state.pendingWriteAction = v2Ctx.agentPendingWriteAction;
   }
-  console.info('[MaestroAgentLoop] seed pendência de escrita:', v2Ctx.agentPendingWriteAction ? `${v2Ctx.agentPendingWriteAction.tipo} (turn ${v2Ctx.agentPendingWriteAction.turnId})` : 'nenhuma');
   const id = v2Ctx.activeEntities?.clientInternalId ?? context.clientInternalId;
   if (id != null && Number.isFinite(Number(id))) {
     const idNum = Number(id);
@@ -256,22 +224,13 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       'Se a mensagem confirmar um deles, chame confirmar_cliente_candidato AGORA.';
   }
 
-  if (state.pendingWriteAction?.tipo === 'salvar_cotacao_como_proposta') {
+  if (state.pendingWriteAction) {
     const p = state.pendingWriteAction;
     estadoReal +=
       `\n- AÇÃO DE ESCRITA PROPOSTA no turno anterior, aguardando a DECISÃO do usuário: salvar cotação de ` +
       `${p.clientName} (${p.itens.length} item(ns), frete ${p.freteEscolhido ? `${p.freteEscolhido.transportadora} R$ ${p.freteEscolhido.valor.toFixed(2)}` : 'Retira no Balcão R$ 0,00'}, total R$ ${p.total.toFixed(2)}` +
       (p.alertaRestricao ? `; ALERTA: ${p.alertaRestricao}` : '') +
       '). Se a mensagem CONFIRMAR explicitamente, chame salvar_cotacao_como_proposta AGORA (sem itens) para executar. ' +
-      'Se negar, mudar de assunto ou pedir alteração, NÃO chame — a proposta expira neste turno e você deve seguir o novo assunto.';
-  } else if (state.pendingWriteAction?.tipo === 'gerar_cobranca_pix') {
-    const p = state.pendingWriteAction;
-    estadoReal +=
-      `\n- AÇÃO DE ESCRITA PROPOSTA no turno anterior, aguardando a DECISÃO do usuário: gerar cobrança PIX de ` +
-      `R$ ${p.valor.toFixed(2)} para a proposta ${p.idInt} de ${p.clientName} (empresa ${p.empresa}, saldo restante R$ ${p.saldoRestante.toFixed(2)}` +
-      (p.alertaRestricao ? `; ALERTA: ${p.alertaRestricao}` : '') +
-      '). Se a mensagem CONFIRMAR explicitamente, chame gerar_cobranca_pix AGORA (sem parâmetros) para executar — ' +
-      'SEM essa chamada a cobrança NÃO existe e nenhum link existe: nunca anuncie sucesso sem o retorno dela. ' +
       'Se negar, mudar de assunto ou pedir alteração, NÃO chame — a proposta expira neste turno e você deve seguir o novo assunto.';
   }
 
@@ -304,23 +263,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   const idsConfirmados = new Set<string>();
   state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
   (state.pendingClientCandidates ?? []).forEach(c => idsConfirmados.add(String(c.id_cliente)));
-  // Números autorados pelo SERVIDOR na pendência de escrita (ex.: nº da
-  // proposta da cobrança) são citáveis no turno de confirmação
-  if (state.pendingWriteAction?.tipo === 'gerar_cobranca_pix') {
-    idsConfirmados.add(String(state.pendingWriteAction.idInt));
-  }
   coletarNumerosDaPergunta(query, idsConfirmados);
-  // Números que o USUÁRIO digitou em turnos ANTERIORES desta conversa também
-  // são citáveis — redigir um número que o próprio usuário escreveu duas
-  // mensagens atrás transforma a guarda em ruído ("número não confirmado"
-  // para o 19715 que ele acabou de pedir). Mensagens do assistente ficam de
-  // fora: números antigos do modelo continuam exigindo consulta fresca.
-  for (const t of historico) {
-    if (t.role === 'user') coletarNumerosDaPergunta(t.content, idsConfirmados);
-  }
-  // URLs citáveis: somente as fornecidas por tool NESTE turno (ou pelo usuário)
-  const urlsConfirmadas = new Set<string>();
-  coletarUrlsDeTexto(query, urlsConfirmadas);
   let correcoesDeCitacao = 0;
 
   for (let iter = 0; iter < maxIterations; iter++) {
@@ -369,21 +312,15 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       // problema → a defesa final abaixo redige o número.
       if (candidato) {
         const invalidos = numerosNaoConfirmados(candidato, idsConfirmados);
-        const linksInvalidos = urlsNaoConfirmadas(candidato, urlsConfirmadas);
-        if ((invalidos.length > 0 || linksInvalidos.length > 0) && correcoesDeCitacao < 1 && Date.now() < deadline - 3_000) {
+        if (invalidos.length > 0 && correcoesDeCitacao < 1 && Date.now() < deadline - 3_000) {
           correcoesDeCitacao++;
-          const problemas = [
-            ...(invalidos.length > 0 ? [`número(s) ${invalidos.join(', ')}`] : []),
-            ...(linksInvalidos.length > 0 ? [`link(s) ${linksInvalidos.join(', ')}`] : []),
-          ].join(' e ');
-          console.warn(`[MaestroAgentLoop] Citação não confirmada (${problemas}) — forçando correção.`);
+          console.warn(`[MaestroAgentLoop] Citação não confirmada (${invalidos.join(', ')}) — forçando correção.`);
           messages.push({ role: 'assistant', content: candidato });
           messages.push({
             role: 'system',
             content:
-              `CORREÇÃO OBRIGATÓRIA: ${problemas} citado(s) na sua resposta NÃO vieram de nenhuma ferramenta neste turno — podem estar inventados. ` +
-              'Chame AGORA a ferramenta adequada (para executar uma ação pendente confirmada, chame a ferramenta de escrita correspondente) e responda novamente ' +
-              'citando somente números e links confirmados; se o dado não existir nas ferramentas, diga que não tem essa informação.',
+              `CORREÇÃO OBRIGATÓRIA: o(s) número(s) ${invalidos.join(', ')} citado(s) na sua resposta NÃO vieram de nenhuma ferramenta neste turno — podem estar inventados. ` +
+              'Chame AGORA a ferramenta adequada e responda novamente citando somente números confirmados; se o dado não existir nas ferramentas, diga que não tem essa informação.',
           });
           continue;
         }
@@ -417,9 +354,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
         const exec = await executeAgentTool(tc.function.name, args, toolCtx);
         toolCallsExecutados++;
         if (exec.ok) {
-          const jsonResult = JSON.stringify(exec.result);
-          coletarIdsDeToolResult(jsonResult, idsConfirmados);
-          coletarUrlsDeTexto(jsonResult, urlsConfirmadas);
+          coletarIdsDeToolResult(JSON.stringify(exec.result), idsConfirmados);
         }
         // Cliente ativado DURANTE o turno (resolver/confirmar) também é confirmado
         state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
@@ -480,15 +415,6 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       '\n\n⚠️ Removi número(s) de proposta que não pude confirmar nas consultas deste turno — desconfie de qualquer número que eu não tenha buscado agora.';
   }
 
-  // Defesa final da guarda de LINKS — URL que nenhuma tool deste turno forneceu
-  const urlsInvalidasFinais = urlsNaoConfirmadas(content, urlsConfirmadas);
-  if (urlsInvalidasFinais.length > 0) {
-    console.warn(`[MaestroAgentLoop] Removendo links não confirmados na resposta final: ${urlsInvalidasFinais.join(', ')}`);
-    content =
-      redigirUrlsNaoConfirmadas(content, urlsInvalidasFinais) +
-      '\n\n⚠️ Removi link(s) que não vieram das consultas deste turno — um link só é confiável quando gerado pela ferramenta na hora.';
-  }
-
   if (estourouLimite) {
     console.warn(
       `[MaestroAgentLoop] Guardas acionadas (toolCalls=${toolCallsExecutados}, ` +
@@ -508,7 +434,6 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       tool_calls: toolCallsExecutados,
       limite_atingido: estourouLimite,
       citacoes_redigidas: invalidosFinais.length,
-      links_redigidos: urlsInvalidasFinais.length,
       correcoes_de_citacao: correcoesDeCitacao,
     },
   });
@@ -540,7 +465,6 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     state.pendingWriteAction && state.pendingWriteAction.turnId === state.currentTurnId
       ? state.pendingWriteAction
       : null;
-  console.info('[MaestroAgentLoop] persist pendência de escrita:', v2Ctx.agentPendingWriteAction ? `${v2Ctx.agentPendingWriteAction.tipo} (turn ${v2Ctx.agentPendingWriteAction.turnId})` : 'nenhuma');
 
   novoContexto.v2ContextJson = serializeV2Context(v2Ctx);
 
