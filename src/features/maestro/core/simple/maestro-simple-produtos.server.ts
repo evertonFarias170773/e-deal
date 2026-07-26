@@ -70,6 +70,12 @@ export interface ProdutoCatalogoItem {
   prazo_producao: string | null;
   /** Descrição oficial cadastrada — única fonte para "para que serve" */
   descricao: string | null;
+  /** Nível de segurança cadastrado (produtos."nivelSeg", ex.: "Médio / Alto") */
+  nivel_seguranca: string | null;
+  /** Opções de personalização/impressão cadastradas */
+  personalizacao: string | null;
+  /** Frase comercial do consultor (produtos."fraseCons") */
+  frase_consultor: string | null;
 }
 
 export interface ListagemProdutosResult {
@@ -100,7 +106,7 @@ export async function listarProdutosCatalogo(
 
   let query = supabase
     .from('produtos')
-    .select('id_produto, "nomeReal", descricao, apelidos, categoria, ativo, "valorUnt", "valorFixo", quantidade_minima_venda, formato, peso, prazo');
+    .select('id_produto, "nomeReal", descricao, apelidos, categoria, ativo, "valorUnt", "valorFixo", quantidade_minima_venda, formato, peso, prazo, "nivelSeg", personalizacao, "fraseCons"');
 
   if (!opts?.incluirInativos) query = query.eq('ativo', true);
   if (termo) {
@@ -136,6 +142,9 @@ export async function listarProdutosCatalogo(
       peso_unitario_gramas: r.peso != null && Number.isFinite(Number(r.peso)) ? Number(r.peso) : null,
       prazo_producao: typeof r.prazo === 'string' && r.prazo.trim() ? r.prazo.trim() : null,
       descricao: typeof r.descricao === 'string' && r.descricao.trim() ? r.descricao.trim().slice(0, 300) : null,
+      nivel_seguranca: typeof r.nivelSeg === 'string' && r.nivelSeg.trim() ? r.nivelSeg.trim() : null,
+      personalizacao: typeof r.personalizacao === 'string' && r.personalizacao.trim() ? r.personalizacao.trim().slice(0, 300) : null,
+      frase_consultor: typeof r.fraseCons === 'string' && r.fraseCons.trim() ? r.fraseCons.trim().slice(0, 300) : null,
     };
   });
 

@@ -1048,10 +1048,11 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         name: 'listar_produtos',
         description:
           'Listar produtos do catálogo por busca AMPLA (nome, apelidos, descrição e categoria, match parcial). ' +
-          'Use para "quais produtos temos", "lista de pulseiras/credenciais/cordões", "o que vendemos" e para ' +
-          'COMPARAR produtos: cada item traz preço, formato (dimensões), peso unitário em gramas, prazo de produção ' +
-          'e quantidade mínima. Sem termo lista o catálogo ativo inteiro, agrupado por categoria. Não exige cliente ativo. ' +
-          'Para COTAR um item específico continue usando buscar_produto/simular_orcamento_avulso.',
+          'Use para "quais produtos temos", "lista de pulseiras/credenciais/cordões", "o que vendemos", para ' +
+          'COMPARAR produtos e para DETALHES de um produto: cada item traz preço, formato (dimensões), peso unitário ' +
+          'em gramas, prazo de produção, nível de segurança, personalização disponível, descrição oficial, frase ' +
+          'comercial do consultor e quantidade mínima. Sem termo lista o catálogo ativo inteiro, agrupado por categoria. ' +
+          'Não exige cliente ativo. Para COTAR um item específico continue usando buscar_produto/simular_orcamento_avulso.',
         parameters: {
           type: 'object',
           properties: {
