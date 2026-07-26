@@ -17,8 +17,9 @@
  * Bloqueios desta ação (§2.1):
  *   - cliente com preço fixo → NÃO propõe (a simulação usa preço de tabela;
  *     o fluxo assistido do chat legado é o caminho para esses clientes);
- *   - frete: somente "Retira no Balcão" (R$ 0,00) nesta fase — frete
- *     calculado permanece no fluxo legado;
+ *   - frete: "Retira no Balcão" (R$ 0,00) por padrão, ou uma opção COTADA
+ *     pelo servidor (maestro-agent-frete.server) escolhida pelo usuário —
+ *     §2.1(c): frete definido (calculado ou retira no balcão explícito);
  *   - nunca altera proposta existente; data sempre atual.
  *
  * ⚠️ Roda apenas no servidor.
@@ -28,6 +29,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MaestroV2Context, PendingSaveQuotation } from '../simple/maestro-v2-context-manager';
 import { simularOrcamentoAvulsoDb } from '../simple/maestro-simple-produtos.server';
 import { salvarCotacaoComoPropostaReal } from '../simple/maestro-save-proposta.server';
+import {
+  cotarOpcoesFrete,
+  escolherOpcaoFrete,
+  OPCAO_RETIRA_BALCAO,
+  type OpcaoFrete,
+} from './maestro-agent-frete.server';
 
 export type AgentPendingWriteAction = NonNullable<MaestroV2Context['agentPendingWriteAction']>;
 
@@ -54,6 +61,8 @@ export async function proporSalvarCotacao(
   clientName: string,
   itensReq: ItemCotacaoReq[],
   turnId: string,
+  /** Escolha de frete do usuário (id/nome da opção); vazio = Retira no Balcão */
+  freteReq?: string,
 ): Promise<ProporResultado> {
   const itens = (itensReq ?? [])
     .map(i => ({ quantidade: Number(i?.quantidade), termo: String(i?.termo ?? '').trim() }))
@@ -141,7 +150,23 @@ export async function proporSalvarCotacao(
   });
   const subtotal = Number(pendItens.reduce((acc, i) => acc + i.subtotal, 0).toFixed(2));
   const descontoReais = Number((subtotal * (percentualBonus / 100)).toFixed(2));
-  const total = Number((subtotal - descontoReais).toFixed(2)); // frete Retira no Balcão = R$ 0,00
+
+  // Frete: Retira no Balcão por padrão; escolha do usuário → cotação NO
+  // SERVIDOR e match determinístico (§2.1(c) — o modelo nunca fornece valor)
+  const pesoBrutoGramas = Math.round(pendItens.reduce((acc, i) => acc + i.pesoUnitario * i.quantidade, 0));
+  const pesoUsado = Math.round(pesoBrutoGramas * 1.02);
+  const termoFrete = (freteReq ?? '').trim();
+  let freteOpcao: OpcaoFrete = OPCAO_RETIRA_BALCAO;
+  if (termoFrete && !/\b(retira|retirada|balc[aã]o|local)\b/i.test(termoFrete)) {
+    const cot = await cotarOpcoesFrete(supabase, idCliente, { pesoGramas: pesoBrutoGramas, valorTotal: subtotal });
+    const escolha = escolherOpcaoFrete(cot.opcoes, termoFrete);
+    if (!escolha.ok) {
+      return { ok: false, motivo: [escolha.motivo, ...cot.avisos].join(' ') };
+    }
+    freteOpcao = escolha.opcao;
+  }
+
+  const total = Number((subtotal - descontoReais + freteOpcao.valor).toFixed(2));
 
   return {
     ok: true,
@@ -155,6 +180,14 @@ export async function proporSalvarCotacao(
       subtotal,
       percentualBonus,
       descontoReais,
+      freteEscolhido: {
+        id: freteOpcao.id,
+        transportadora: freteOpcao.transportadora,
+        servico: freteOpcao.servico,
+        valor: freteOpcao.valor,
+        prazo: freteOpcao.prazo,
+        pesoUsado,
+      },
       total,
       alertaRestricao,
     },
@@ -176,13 +209,19 @@ export async function executarSalvarCotacao(
   pendencia: AgentPendingWriteAction,
   turnIdAtual: string,
 ): Promise<ExecutarResultado> {
-  // Re-verificação integral no momento da execução (camada 6)
+  // Frete confirmado pelo usuário (pendências antigas sem o campo = retira)
+  const freteConfirmado = pendencia.freteEscolhido ?? { ...OPCAO_RETIRA_BALCAO, pesoUsado: 0 };
+  const freteCalculado = freteConfirmado.id !== OPCAO_RETIRA_BALCAO.id;
+
+  // Re-verificação integral no momento da execução (camada 6) — frete
+  // calculado é RE-COTADO pelo nome da opção (ids de cotação não são estáveis)
   const fresh = await proporSalvarCotacao(
     supabase,
     pendencia.idCliente,
     pendencia.clientName,
     pendencia.itens.map(i => ({ quantidade: i.quantidade, termo: i.termo })),
     turnIdAtual,
+    freteCalculado ? `${freteConfirmado.transportadora} ${freteConfirmado.servico}` : undefined,
   );
   if (!fresh.ok) {
     return { ok: false, motivo: `A cotação não é mais válida: ${fresh.motivo}` };
@@ -191,13 +230,14 @@ export async function executarSalvarCotacao(
   const mudou =
     Math.abs(fresh.pendencia.total - pendencia.total) > TOLERANCIA ||
     Math.abs(fresh.pendencia.subtotal - pendencia.subtotal) > TOLERANCIA ||
+    Math.abs((fresh.pendencia.freteEscolhido?.valor ?? 0) - freteConfirmado.valor) > TOLERANCIA ||
     fresh.pendencia.percentualBonus !== pendencia.percentualBonus ||
     (fresh.pendencia.alertaRestricao ?? null) !== (pendencia.alertaRestricao ?? null) ||
     fresh.pendencia.itens.length !== pendencia.itens.length;
   if (mudou) {
     return {
       ok: false,
-      motivo: 'Os dados mudaram desde a proposta (preço, bônus ou situação do cliente).',
+      motivo: 'Os dados mudaram desde a proposta (preço, frete, bônus ou situação do cliente).',
       reproposta: fresh.pendencia,
     };
   }
@@ -216,7 +256,7 @@ export async function executarSalvarCotacao(
       .limit(10);
     if (ends && ends.length > 0) {
       const principal =
-        ends.find(e => String((e as Record<string, unknown>).tipo ?? '').toUpperCase().includes('PRINCIPAL')) ?? ends[0];
+        ends.find(e => String((e as Record<string, unknown>).tipo_endereco ?? '').toUpperCase().includes('PRINCIPAL')) ?? ends[0];
       const p = principal as Record<string, unknown>;
       enderecoId = p.id != null ? String(p.id) : '';
       cep = typeof p.cep === 'string' ? p.cep : '';
@@ -251,13 +291,15 @@ export async function executarSalvarCotacao(
       subtotal: i.subtotal,
       pesoUnitario: i.pesoUnitario,
     })),
+    // Valores CONFIRMADOS pelo usuário (a revalidação fresh garantiu que
+    // continuam válidos dentro da tolerância)
     freteEscolhido: {
-      id: 'retira_balcao',
-      servico: 'Retira no Balcão',
-      transportadora: 'Retira no Balcão',
-      valor: 0,
-      prazo: 'A combinar',
-      pesoUsado: pesoTotalGramas,
+      id: freteConfirmado.id,
+      servico: freteConfirmado.servico,
+      transportadora: freteConfirmado.transportadora,
+      valor: freteConfirmado.valor,
+      prazo: freteConfirmado.prazo,
+      pesoUsado: freteConfirmado.pesoUsado > 0 ? freteConfirmado.pesoUsado : pesoTotalGramas,
     },
     subtotal: pendencia.subtotal,
     percentualBonus: pendencia.percentualBonus,

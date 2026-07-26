@@ -49,6 +49,7 @@ import {
 } from '../simple/maestro-simple-pagamentos.server';
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo, buscarFotosProduto } from '../simple/maestro-simple-produtos.server';
+import { cotarOpcoesFrete } from './maestro-agent-frete.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
 import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
@@ -1133,6 +1134,75 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
   },
 
+  opcoes_frete: {
+    needsActiveClient: true,
+    schema: {
+      type: 'function',
+      function: {
+        name: 'opcoes_frete',
+        description:
+          'Cotar as opções de FRETE reais para entregar itens ao cliente ativo (endereço resolvido no servidor): ' +
+          'SEDEX/PAC, Azul Cargo, transportadoras e VEPPO, conforme a região — mais "Retira no Balcão" R$ 0,00, ' +
+          'sempre disponível. Nada é salvo. Apresente as opções numeradas com transportadora, valor EXATO e prazo; ' +
+          'os valores são cotações do momento. Para salvar a proposta com uma delas, chame ' +
+          'salvar_cotacao_como_proposta passando frete com o nome da opção.',
+        parameters: {
+          type: 'object',
+          properties: {
+            ...ID_CLIENTE_PROP,
+            itens: {
+              type: 'array',
+              description: 'Itens da cotação (produto e quantidade) — o peso vem do cadastro dos produtos.',
+              items: {
+                type: 'object',
+                properties: {
+                  quantidade: { type: 'number' },
+                  termo: { type: 'string' },
+                },
+                required: ['quantidade', 'termo'],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ['itens'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      const itensRaw: unknown[] = Array.isArray(args.itens) ? args.itens : [];
+      const itens = itensRaw
+        .map(raw => {
+          const i = raw as { quantidade?: unknown; termo?: unknown } | null;
+          return { quantidade: Number(i?.quantidade), termo: String(i?.termo ?? '').trim() };
+        })
+        .filter(i => Number.isFinite(i.quantidade) && i.quantidade > 0 && i.termo.length > 0);
+      if (itens.length === 0) return { found: false, motivo: 'Informe os itens (produto e quantidade) para cotar o frete.' };
+
+      const sim = await simularOrcamentoAvulsoDb(ctx.supabase, itens);
+      const problemas: string[] = [];
+      let pesoGramas = 0;
+      let subtotal = 0;
+      for (const item of sim.itens) {
+        if (item.status !== 'sucesso' || item.produtosEncontrados.length !== 1) {
+          problemas.push(`"${item.termo}": ${item.status}`);
+          continue;
+        }
+        const p = item.produtosEncontrados[0];
+        pesoGramas += (p.pesoUnitario ?? 0) * item.quantidade;
+        subtotal += item.subtotalCalculado ?? 0;
+      }
+      if (problemas.length > 0) {
+        return { found: false, motivo: `Itens não prontos para cotação de frete: ${problemas.join('; ')}.` };
+      }
+      return await cotarOpcoesFrete(ctx.supabase, idCliente, {
+        pesoGramas: Math.round(pesoGramas),
+        valorTotal: Number(subtotal.toFixed(2)),
+      });
+    },
+  },
+
   salvar_cotacao_como_proposta: {
     needsActiveClient: true,
     isWrite: true,
@@ -1146,7 +1216,7 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         description:
           'ÚNICA ação de escrita: salvar a cotação simulada como proposta REAL no ERP, em DUAS FASES. ' +
           '1ª chamada (com itens) = PROPOSTA: nada é salvo; apresente o resumo EXATO retornado (itens, valores, ' +
-          'desconto/bônus, total, frete Retira no Balcão) e pergunte se o usuário confirma. ' +
+          'desconto/bônus, frete e total) e pergunte se o usuário confirma. ' +
           '2ª chamada (sem itens, no turno SEGUINTE, somente após confirmação EXPLÍCITA do usuário) = EXECUÇÃO ' +
           'pelo fluxo oficial. NUNCA chame para executar sem o usuário ter confirmado a proposta apresentada; ' +
           'NUNCA proponha e execute no mesmo turno. Se vier alertaRestricao, a confirmação deve mencioná-lo.',
@@ -1166,6 +1236,12 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
                 required: ['quantidade', 'termo'],
                 additionalProperties: false,
               },
+            },
+            frete: {
+              type: 'string',
+              description:
+                'Opcional — frete escolhido pelo usuário: nome da opção cotada por opcoes_frete (ex.: "SEDEX", ' +
+                '"Azul Cargo"), "mais barato" ou "retira" (padrão: Retira no Balcão R$ 0,00). Ignorado na execução.',
             },
           },
           additionalProperties: false,
@@ -1193,11 +1269,14 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         const res = await executarSalvarCotacao(ctx.supabase, ctx.userId, pend, ctx.state.currentTurnId);
         if (res.ok) {
           ctx.state.pendingWriteAction = null;
+          const freteDesc = pend.freteEscolhido
+            ? `${pend.freteEscolhido.transportadora} R$ ${pend.freteEscolhido.valor.toFixed(2)}`
+            : 'Retira no Balcão R$ 0,00';
           return {
             fase: 'executada',
             savedIdInt: res.idInt,
             total: pend.total,
-            mensagem: `Proposta nº ${res.idInt} criada com sucesso pelo fluxo oficial (status NOVO, frete Retira no Balcão).`,
+            mensagem: `Proposta nº ${res.idInt} criada com sucesso pelo fluxo oficial (status NOVO, frete ${freteDesc}).`,
           };
         }
         if (res.reproposta) {
@@ -1239,18 +1318,22 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         ctx.state.activeClient?.clientFantasia || ctx.state.activeClient?.clientName || `Cliente ${idCliente}`,
         itens,
         ctx.state.currentTurnId,
+        typeof args.frete === 'string' ? args.frete : undefined,
       );
       if (!prop.ok) {
         return { fase: 'nao_proposta', motivo: prop.motivo, atencao: 'NADA foi salvo.' };
       }
 
       ctx.state.pendingWriteAction = prop.pendencia;
+      const freteResumo = prop.pendencia.freteEscolhido
+        ? `${prop.pendencia.freteEscolhido.transportadora} R$ ${prop.pendencia.freteEscolhido.valor.toFixed(2)} (${prop.pendencia.freteEscolhido.prazo})`
+        : 'Retira no Balcão R$ 0,00';
       return {
         fase: 'proposta_criada',
         resumo: prop.pendencia,
         atencao:
           'NADA FOI SALVO AINDA. Apresente este resumo EXATO (itens, quantidades, valores, desconto/bônus, total, ' +
-          'frete Retira no Balcão R$ 0,00' +
+          `frete ${freteResumo}` +
           (prop.pendencia.alertaRestricao ? `, e o ALERTA: ${prop.pendencia.alertaRestricao}` : '') +
           ') e pergunte se o usuário confirma o salvamento. A execução só acontece no próximo turno.',
       };

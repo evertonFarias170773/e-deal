@@ -228,7 +228,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     const p = state.pendingWriteAction;
     estadoReal +=
       `\n- AÇÃO DE ESCRITA PROPOSTA no turno anterior, aguardando a DECISÃO do usuário: salvar cotação de ` +
-      `${p.clientName} (${p.itens.length} item(ns), total R$ ${p.total.toFixed(2)}` +
+      `${p.clientName} (${p.itens.length} item(ns), frete ${p.freteEscolhido ? `${p.freteEscolhido.transportadora} R$ ${p.freteEscolhido.valor.toFixed(2)}` : 'Retira no Balcão R$ 0,00'}, total R$ ${p.total.toFixed(2)}` +
       (p.alertaRestricao ? `; ALERTA: ${p.alertaRestricao}` : '') +
       '). Se a mensagem CONFIRMAR explicitamente, chame salvar_cotacao_como_proposta AGORA (sem itens) para executar. ' +
       'Se negar, mudar de assunto ou pedir alteração, NÃO chame — a proposta expira neste turno e você deve seguir o novo assunto.';

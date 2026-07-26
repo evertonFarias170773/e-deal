@@ -312,7 +312,16 @@ export interface MaestroV2Context {
     subtotal: number;
     percentualBonus: number;
     descontoReais: number;
-    /** Total EXATO que será gravado (subtotal − desconto + frete retira R$0) */
+    /** Frete escolhido para a proposta — ausente = Retira no Balcão R$ 0,00 (pendências antigas) */
+    freteEscolhido?: {
+      id: string;
+      transportadora: string;
+      servico: string;
+      valor: number;
+      prazo: string;
+      pesoUsado: number;
+    };
+    /** Total EXATO que será gravado (subtotal − desconto + frete escolhido) */
     total: number;
     alertaRestricao: string | null;
   } | null;
