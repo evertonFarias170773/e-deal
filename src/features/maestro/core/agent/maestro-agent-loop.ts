@@ -271,6 +271,11 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   const idsConfirmados = new Set<string>();
   state.resolvedClientIds.forEach(id => idsConfirmados.add(String(id)));
   (state.pendingClientCandidates ?? []).forEach(c => idsConfirmados.add(String(c.id_cliente)));
+  // Números autorados pelo SERVIDOR na pendência de escrita (ex.: nº da
+  // proposta da cobrança) são citáveis no turno de confirmação
+  if (state.pendingWriteAction?.tipo === 'gerar_cobranca_pix') {
+    idsConfirmados.add(String(state.pendingWriteAction.idInt));
+  }
   coletarNumerosDaPergunta(query, idsConfirmados);
   let correcoesDeCitacao = 0;
 

@@ -235,7 +235,14 @@ function resolverIdClienteSeguro(
   }
   const ativo = ctx.state.activeClient?.clientInternalId;
   if (ativo == null) {
-    return { erro: 'Nenhum cliente ativo na conversa. Use resolver_cliente para localizar o cliente antes desta consulta.' };
+    const temCandidatos = (ctx.state.pendingClientCandidates?.length ?? 0) > 0;
+    return {
+      erro: temCandidatos
+        ? 'Nenhum cliente ativo, mas HÁ CANDIDATOS aguardando confirmação — chame confirmar_cliente_candidato ' +
+          'com o candidato escolhido AGORA e, NESTE MESMO turno, repita esta ferramenta. Não prometa para depois.'
+        : 'Nenhum cliente ativo na conversa. Chame resolver_cliente AGORA para localizar o cliente e, NESTE ' +
+          'MESMO turno, repita esta ferramenta. Não prometa para depois.',
+    };
   }
   return { id: ativo };
 }
