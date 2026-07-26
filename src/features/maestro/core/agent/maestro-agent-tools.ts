@@ -50,6 +50,7 @@ import {
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo, buscarFotosProduto } from '../simple/maestro-simple-produtos.server';
 import { cotarOpcoesFrete } from './maestro-agent-frete.server';
+import { gerarPdfPropostaServer } from './maestro-agent-pdf.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
 import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
@@ -1272,11 +1273,19 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
           const freteDesc = pend.freteEscolhido
             ? `${pend.freteEscolhido.transportadora} R$ ${pend.freteEscolhido.valor.toFixed(2)}`
             : 'Retira no Balcão R$ 0,00';
+          // PDF oficial da proposta recém-criada (best-effort — a proposta já existe)
+          const pdf = await gerarPdfPropostaServer(ctx.supabase, res.idInt);
           return {
             fase: 'executada',
             savedIdInt: res.idInt,
             total: pend.total,
-            mensagem: `Proposta nº ${res.idInt} criada com sucesso pelo fluxo oficial (status NOVO, frete ${freteDesc}).`,
+            pdfUrl: pdf.success ? pdf.url : null,
+            pdfIndisponivel: pdf.success ? undefined : (pdf.errorMessage ?? 'falha na geração'),
+            mensagem:
+              `Proposta nº ${res.idInt} criada com sucesso pelo fluxo oficial (status NOVO, frete ${freteDesc}).` +
+              (pdf.success && pdf.url
+                ? ` PDF pronto — apresente o link markdown: [Baixar PDF da proposta ${res.idInt}](${pdf.url})`
+                : ' O PDF não pôde ser gerado agora — a proposta existe e o PDF pode ser gerado na tela de Orçamentos.'),
           };
         }
         if (res.reproposta) {
