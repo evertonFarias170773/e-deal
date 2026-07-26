@@ -55,6 +55,20 @@ export function getAgentTimeoutMs(): number {
   return envInt('MAESTRO_AGENT_TIMEOUT_MS', 25_000);
 }
 
+// ─── Escrita assistida (Trilha B — MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md) ─────
+// Camada 1 do modelo de decisão (§3): flag global de escrita, default OFF.
+// Camada 3: flag específica por ação, default OFF. Ausente = negado.
+
+/** Camada 1 — master switch da escrita assistida do agente. */
+export function isAgentWriteEnabled(): boolean {
+  return process.env.MAESTRO_AGENT_WRITE_ENABLED === 'true';
+}
+
+/** Camada 3 — flag específica da ação salvar_cotacao_como_proposta (§2.1). */
+export function isWriteSalvarCotacaoEnabled(): boolean {
+  return process.env.MAESTRO_WRITE_SALVAR_COTACAO_ENABLED === 'true';
+}
+
 /**
  * Estado de cotação/escrita ativo no contexto V2?
  * Quando true, o turno DEVE permanecer no motor legado — o fluxo de criar/

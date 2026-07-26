@@ -150,6 +150,9 @@ function seedStateFromContext(context: ConversationContext): AgentSessionState {
     activeClient: null,
     resolvedClientIds: new Set<number>(),
     pendingClientCandidates: null,
+    pendingWriteAction: null,
+    // Turno único — impede propor e executar uma ação de escrita no MESMO turno
+    currentTurnId: `t${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`,
   };
 
   const v2Ctx = deserializeV2Context(context.v2ContextJson);
@@ -157,6 +160,10 @@ function seedStateFromContext(context: ConversationContext): AgentSessionState {
   // Candidatos aguardando confirmação (gravados pelo agente no turno anterior)
   if (v2Ctx.agentPendingClientCandidates && v2Ctx.agentPendingClientCandidates.length > 0) {
     state.pendingClientCandidates = v2Ctx.agentPendingClientCandidates;
+  }
+  // Ação de escrita proposta no turno anterior (matriz §4 — vale só este turno)
+  if (v2Ctx.agentPendingWriteAction) {
+    state.pendingWriteAction = v2Ctx.agentPendingWriteAction;
   }
   const id = v2Ctx.activeEntities?.clientInternalId ?? context.clientInternalId;
   if (id != null && Number.isFinite(Number(id))) {
@@ -215,6 +222,16 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
     estadoReal +=
       `\n- Candidatos de cliente aguardando confirmação do usuário: ${lista}. ` +
       'Se a mensagem confirmar um deles, chame confirmar_cliente_candidato AGORA.';
+  }
+
+  if (state.pendingWriteAction) {
+    const p = state.pendingWriteAction;
+    estadoReal +=
+      `\n- AÇÃO DE ESCRITA PROPOSTA no turno anterior, aguardando a DECISÃO do usuário: salvar cotação de ` +
+      `${p.clientName} (${p.itens.length} item(ns), total R$ ${p.total.toFixed(2)}` +
+      (p.alertaRestricao ? `; ALERTA: ${p.alertaRestricao}` : '') +
+      '). Se a mensagem CONFIRMAR explicitamente, chame salvar_cotacao_como_proposta AGORA (sem itens) para executar. ' +
+      'Se negar, mudar de assunto ou pedir alteração, NÃO chame — a proposta expira neste turno e você deve seguir o novo assunto.';
   }
 
   const systemPrompt = buildAgentSystemPrompt({ currentDateIso, userName, estadoReal });
@@ -441,6 +458,13 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   // Candidatos pendentes de confirmação sobrevivem ao turno (campo do agente,
   // ignorado pelo motor legado e fora do gate de escrita)
   v2Ctx.agentPendingClientCandidates = state.pendingClientCandidates ?? null;
+
+  // Ação de escrita: só sobrevive se foi criada NESTE turno (matriz §4 —
+  // proposta não confirmada no turno seguinte expira; executada → já é null)
+  v2Ctx.agentPendingWriteAction =
+    state.pendingWriteAction && state.pendingWriteAction.turnId === state.currentTurnId
+      ? state.pendingWriteAction
+      : null;
 
   novoContexto.v2ContextJson = serializeV2Context(v2Ctx);
 

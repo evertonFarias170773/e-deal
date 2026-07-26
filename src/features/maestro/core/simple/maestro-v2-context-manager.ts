@@ -282,6 +282,37 @@ export interface MaestroV2Context {
     documento: string;
     cidade_uf: string;
   }> | null;
+  /**
+   * Ação de ESCRITA proposta pelo agent loop aguardando confirmação do usuário
+   * (MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md §4: vale só para o turno seguinte).
+   * Campo próprio do motor agêntico — o legado nunca lê nem escreve aqui e o
+   * campo NÃO participa do gate que devolve o turno ao legado. Snapshot
+   * autorado pelo SERVIDOR; o modelo nunca fornece valores.
+   */
+  agentPendingWriteAction?: {
+    tipo: 'salvar_cotacao_como_proposta';
+    /** Turno em que a proposta foi criada — execução só no turno SEGUINTE */
+    turnId: string;
+    criadaEm: string;
+    idCliente: number;
+    clientName: string;
+    itens: Array<{
+      termo: string;
+      id_produto: number;
+      nome: string;
+      quantidade: number;
+      valorUnitario: number;
+      valorFixo: number;
+      subtotal: number;
+      pesoUnitario: number;
+    }>;
+    subtotal: number;
+    percentualBonus: number;
+    descontoReais: number;
+    /** Total EXATO que será gravado (subtotal − desconto + frete retira R$0) */
+    total: number;
+    alertaRestricao: string | null;
+  } | null;
   /** Seleção de transportadora pendente — usuário escolhe por número (análogo ao endereço) */
   pendingFreightChoice?: {
     clientInternalId: number;

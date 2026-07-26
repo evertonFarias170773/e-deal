@@ -51,6 +51,13 @@ import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo } from '../simple/maestro-simple-produtos.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
+import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
+import {
+  proporSalvarCotacao,
+  executarSalvarCotacao,
+  type AgentPendingWriteAction,
+  type ItemCotacaoReq,
+} from './maestro-agent-write.server';
 import { resolverTermoCatalogo } from '../simple/maestro-orcamento-catalogo-oficial';
 import type { MaestroPeriodo } from '../simple/maestro-simple-intents';
 import { sanitizeAgentToolOutput } from './maestro-agent-sanitize';
@@ -76,6 +83,13 @@ export interface AgentSessionState {
    * origem aceita por confirmar_cliente_candidato.
    */
   pendingClientCandidates: AgentClientCandidate[] | null;
+  /**
+   * Ação de ESCRITA proposta aguardando confirmação (matriz §4: vale só para
+   * o turno seguinte). Autorada pelo SERVIDOR — o modelo nunca fornece valores.
+   */
+  pendingWriteAction: AgentPendingWriteAction | null;
+  /** Identificador do turno atual — impede propor e executar no MESMO turno */
+  currentTurnId: string;
 }
 
 export interface AgentToolContext {
@@ -103,6 +117,10 @@ interface AgentToolDefinition {
   };
   needsActiveClient?: boolean;
   requiredPermission?: string;
+  /** Tool de ESCRITA — sujeita às camadas 1 e 3 da matriz (flags de escrita) */
+  isWrite?: boolean;
+  /** Camada 3 — flag específica da ação (matriz §3). Ausente em tool de escrita = negado. */
+  writeActionFlagEnabled?: () => boolean;
   handler: (args: Record<string, unknown>, ctx: AgentToolContext) => Promise<unknown>;
 }
 
@@ -1084,6 +1102,130 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
   },
 
+  salvar_cotacao_como_proposta: {
+    needsActiveClient: true,
+    isWrite: true,
+    writeActionFlagEnabled: isWriteSalvarCotacaoEnabled,
+    // §2.1 da matriz: perfis com propostas.create (Vendedor, Administrador)
+    requiredPermission: 'propostas.create',
+    schema: {
+      type: 'function',
+      function: {
+        name: 'salvar_cotacao_como_proposta',
+        description:
+          'ÚNICA ação de escrita: salvar a cotação simulada como proposta REAL no ERP, em DUAS FASES. ' +
+          '1ª chamada (com itens) = PROPOSTA: nada é salvo; apresente o resumo EXATO retornado (itens, valores, ' +
+          'desconto/bônus, total, frete Retira no Balcão) e pergunte se o usuário confirma. ' +
+          '2ª chamada (sem itens, no turno SEGUINTE, somente após confirmação EXPLÍCITA do usuário) = EXECUÇÃO ' +
+          'pelo fluxo oficial. NUNCA chame para executar sem o usuário ter confirmado a proposta apresentada; ' +
+          'NUNCA proponha e execute no mesmo turno. Se vier alertaRestricao, a confirmação deve mencioná-lo.',
+        parameters: {
+          type: 'object',
+          properties: {
+            ...ID_CLIENTE_PROP,
+            itens: {
+              type: 'array',
+              description: 'Itens a salvar (obrigatório na fase de PROPOSTA; ignorado na execução).',
+              items: {
+                type: 'object',
+                properties: {
+                  quantidade: { type: 'number' },
+                  termo: { type: 'string' },
+                },
+                required: ['quantidade', 'termo'],
+                additionalProperties: false,
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const idCliente = (args.__idClienteSeguro as number)!;
+      const pend = ctx.state.pendingWriteAction;
+
+      // ── FASE EXECUTAR: pendência criada em turno ANTERIOR + confirmação ────
+      const pendDoTurnoAnterior =
+        pend != null &&
+        pend.tipo === 'salvar_cotacao_como_proposta' &&
+        pend.turnId !== ctx.state.currentTurnId;
+
+      if (pendDoTurnoAnterior) {
+        if (pend.idCliente !== idCliente) {
+          ctx.state.pendingWriteAction = null;
+          return {
+            fase: 'rejeitada',
+            motivo: 'A proposta pendente era para OUTRO cliente — foi descartada. Proponha novamente se necessário.',
+          };
+        }
+        const res = await executarSalvarCotacao(ctx.supabase, ctx.userId, pend, ctx.state.currentTurnId);
+        if (res.ok) {
+          ctx.state.pendingWriteAction = null;
+          return {
+            fase: 'executada',
+            savedIdInt: res.idInt,
+            total: pend.total,
+            mensagem: `Proposta nº ${res.idInt} criada com sucesso pelo fluxo oficial (status NOVO, frete Retira no Balcão).`,
+          };
+        }
+        if (res.reproposta) {
+          // §4: alvo mudou → aborta e re-propõe com os dados NOVOS
+          ctx.state.pendingWriteAction = res.reproposta;
+          return {
+            fase: 'reproposta',
+            motivo: res.motivo,
+            resumo: res.reproposta,
+            atencao:
+              'NADA foi salvo — os dados mudaram desde a proposta. Apresente o NOVO resumo exato e peça nova confirmação.',
+          };
+        }
+        ctx.state.pendingWriteAction = null;
+        return { fase: 'rejeitada', motivo: res.motivo, atencao: 'NADA foi salvo. Explique o motivo ao usuário.' };
+      }
+
+      // ── FASE PROPOR ────────────────────────────────────────────────────────
+      if (pend != null && pend.turnId === ctx.state.currentTurnId) {
+        // O modelo tentou executar no MESMO turno da proposta — bloqueado (§4)
+        return {
+          fase: 'aguardando_confirmacao',
+          atencao:
+            'A proposta acabou de ser criada NESTE turno. Apresente o resumo ao usuário e AGUARDE a confirmação ' +
+            'no próximo turno — não chame esta ferramenta de novo agora.',
+          resumo: pend,
+        };
+      }
+
+      const itensRaw: unknown[] = Array.isArray(args.itens) ? args.itens : [];
+      const itens: ItemCotacaoReq[] = itensRaw.map(raw => {
+        const i = raw as { quantidade?: unknown; termo?: unknown } | null;
+        return { quantidade: Number(i?.quantidade), termo: String(i?.termo ?? '').trim() };
+      });
+
+      const prop = await proporSalvarCotacao(
+        ctx.supabase,
+        idCliente,
+        ctx.state.activeClient?.clientFantasia || ctx.state.activeClient?.clientName || `Cliente ${idCliente}`,
+        itens,
+        ctx.state.currentTurnId,
+      );
+      if (!prop.ok) {
+        return { fase: 'nao_proposta', motivo: prop.motivo, atencao: 'NADA foi salvo.' };
+      }
+
+      ctx.state.pendingWriteAction = prop.pendencia;
+      return {
+        fase: 'proposta_criada',
+        resumo: prop.pendencia,
+        atencao:
+          'NADA FOI SALVO AINDA. Apresente este resumo EXATO (itens, quantidades, valores, desconto/bônus, total, ' +
+          'frete Retira no Balcão R$ 0,00' +
+          (prop.pendencia.alertaRestricao ? `, e o ALERTA: ${prop.pendencia.alertaRestricao}` : '') +
+          ') e pergunte se o usuário confirma o salvamento. A execução só acontece no próximo turno.',
+      };
+    },
+  },
+
   simular_orcamento_avulso: {
     schema: {
       type: 'function',
@@ -1163,10 +1305,31 @@ export async function executeAgentTool(
   args: Record<string, unknown>,
   ctx: AgentToolContext
 ): Promise<AgentToolExecution> {
-  // 1. Deny-by-default: só executa tool do catálogo
+  // 1. Deny-by-default: só executa tool do catálogo (camada 2 da matriz)
   const tool = Object.prototype.hasOwnProperty.call(AGENT_TOOLS, name) ? AGENT_TOOLS[name] : undefined;
   if (!tool) {
     return { ok: false, error: `Ferramenta "${name}" não existe no catálogo.` };
+  }
+
+  // 1b. ESCRITA (camadas 1 e 3 da matriz): flag global + flag da ação.
+  // Ambas default OFF — ausência de flag = NEGADO.
+  if (tool.isWrite) {
+    if (!isAgentWriteEnabled()) {
+      return {
+        ok: false,
+        error:
+          'ESCRITA_DESABILITADA: as ações de escrita do Maestro estão desligadas neste ambiente. ' +
+          'Explique com naturalidade e oriente o módulo correspondente do ERP.',
+      };
+    }
+    if (!tool.writeActionFlagEnabled || !tool.writeActionFlagEnabled()) {
+      return {
+        ok: false,
+        error:
+          'ESCRITA_DESABILITADA: esta ação específica ainda não está habilitada. ' +
+          'Explique com naturalidade e oriente o módulo correspondente do ERP.',
+      };
+    }
   }
 
   // 2. Isolamento por id_cliente (somente ids resolvidos pelo servidor)
