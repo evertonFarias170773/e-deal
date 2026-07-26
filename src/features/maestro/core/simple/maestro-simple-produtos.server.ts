@@ -16,6 +16,8 @@ export interface OrcamentoAvulsoProdutoDb {
   formato?: string | null;
   /** Prazo de produção cadastrado (texto) */
   prazo?: string | null;
+  /** Nome comercial do produto (produtos."nomeReal") */
+  nomeReal?: string | null;
   ativo: boolean;
 }
 
@@ -66,6 +68,8 @@ export interface ProdutoCatalogoItem {
   peso_unitario_gramas: number | null;
   /** Prazo de produção cadastrado (texto, ex.: "2 dias úteis") */
   prazo_producao: string | null;
+  /** Descrição oficial cadastrada — única fonte para "para que serve" */
+  descricao: string | null;
 }
 
 export interface ListagemProdutosResult {
@@ -131,6 +135,7 @@ export async function listarProdutosCatalogo(
       formato: typeof r.formato === 'string' && r.formato.trim() ? r.formato.trim() : null,
       peso_unitario_gramas: r.peso != null && Number.isFinite(Number(r.peso)) ? Number(r.peso) : null,
       prazo_producao: typeof r.prazo === 'string' && r.prazo.trim() ? r.prazo.trim() : null,
+      descricao: typeof r.descricao === 'string' && r.descricao.trim() ? r.descricao.trim().slice(0, 300) : null,
     };
   });
 
@@ -170,7 +175,7 @@ export async function simularOrcamentoAvulsoDb(
 
     if (!isNaN(parsedId)) {
       const resId = await supabase.from('produtos')
-        .select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo')
+        .select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"')
         .eq('id_produto', parsedId)
         .limit(1);
       console.log(`[MaestroProductsServer] Busca por ID ${parsedId} -> data:`, resId.data, "error:", resId.error);
@@ -183,8 +188,8 @@ export async function simularOrcamentoAvulsoDb(
     // Fallback: busca textual normal se não encontrou por ID
     if (data.length === 0) {
       const [resApelido, resDesc] = await Promise.all([
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo').ilike('apelidos', `%${termoOriginal}%`),
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo').ilike('descricao', `%${termoOriginal}%`)
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('apelidos', `%${termoOriginal}%`),
+        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('descricao', `%${termoOriginal}%`)
       ]);
 
       const map = new Map<number, OrcamentoAvulsoProdutoDb>();

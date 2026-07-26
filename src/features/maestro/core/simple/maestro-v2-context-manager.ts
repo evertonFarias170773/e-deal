@@ -299,12 +299,15 @@ export interface MaestroV2Context {
     itens: Array<{
       termo: string;
       id_produto: number;
+      /** Nome COMERCIAL (produtos.nomeReal) — é o que vai para a proposta */
       nome: string;
       quantidade: number;
       valorUnitario: number;
       valorFixo: number;
       subtotal: number;
       pesoUnitario: number;
+      /** Prazo de produção cadastrado (exibição no resumo) */
+      prazoProducao?: string | null;
     }>;
     subtotal: number;
     percentualBonus: number;

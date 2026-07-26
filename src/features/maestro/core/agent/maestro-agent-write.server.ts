@@ -129,12 +129,14 @@ export async function proporSalvarCotacao(
     return {
       termo: item.termo,
       id_produto: p.id_produto,
-      nome: p.descricao,
+      // Nome COMERCIAL na proposta (nomeReal), nunca a descrição técnica crua
+      nome: (p.nomeReal && p.nomeReal.trim()) || p.descricao,
       quantidade: item.quantidade,
       valorUnitario: p.valorUnt ?? 0,
       valorFixo: p.valorFixo ?? 0,
       subtotal: item.subtotalCalculado ?? 0,
       pesoUnitario: p.pesoUnitario ?? 0,
+      prazoProducao: p.prazo ?? null,
     };
   });
   const subtotal = Number(pendItens.reduce((acc, i) => acc + i.subtotal, 0).toFixed(2));
