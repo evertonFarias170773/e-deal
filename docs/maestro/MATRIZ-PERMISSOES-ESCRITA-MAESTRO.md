@@ -1,12 +1,13 @@
 # Matriz de Permissões de Escrita — Maestro V2 (Trilha B)
 
-> **STATUS: NORMATIVO, NADA LIBERADO.**
-> Este documento define as regras de escrita do Maestro **antes** de qualquer
-> implementação. Nesta etapa **nenhuma operação de escrita está habilitada** no
-> agent loop: o catálogo permanece 100% somente leitura, não existe a flag
-> `MAESTRO_AGENT_WRITE_ENABLED` e nenhuma tool de escrita foi registrada.
-> Toda implementação futura DEVE se conformar a esta matriz; divergência entre
-> código e matriz é bug do código.
+> **STATUS: NORMATIVO.**
+> Este documento define as regras de escrita do Maestro. A ação B1
+> `salvar_cotacao_como_proposta` (§2.1) está IMPLEMENTADA e validada em uso
+> real, protegida pelas flags `MAESTRO_AGENT_WRITE_ENABLED` +
+> `MAESTRO_WRITE_SALVAR_COTACAO_ENABLED` (default OFF — ausentes no deploy).
+> Todas as demais ações permanecem não implementadas ou bloqueadas conforme
+> as seções abaixo. Toda implementação DEVE se conformar a esta matriz;
+> divergência entre código e matriz é bug do código.
 >
 > Documento relacionado: `docs/technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md`
 > (matriz geral de escrita do ERP). Esta matriz é o recorte específico do
@@ -15,6 +16,10 @@
 Aprovado por: Everton Farias — 26/07/2026 (definição da etapa 1 da Trilha B).
 Emenda de 26/07/2026: princípios permanentes de negócio (§1.0) incluídos a
 pedido do aprovador antes da liberação da implementação.
+Revisão de 26/07/2026 (aprovada pelo Everton em plano): B1 marcada como
+implementada/validada; nova ação B3 `gerar_cobranca_pix` (§2.3) retirada do
+bloqueio §2.4 com escopo restrito a PIX à vista e exceção de exibição do
+link público de pagamento.
 
 ---
 
@@ -64,7 +69,9 @@ pedido do aprovador antes da liberação da implementação.
      Maestro nunca usa `/api/orcamentos/editar-paga`, `abonar-diferenca`,
      `resolver-diferenca` ou `consolidar-total-paga`;
    - dados financeiros (cobranças, recebíveis, crédito) e fiscais (NF-e/NFS-e)
-     são SOMENTE LEITURA via Maestro nesta fase;
+     são SOMENTE LEITURA via Maestro — única exceção: a ação B3
+     `gerar_cobranca_pix` (§2.3), quando liberada, nos exatos limites daquela
+     seção;
    - tabelas `producao_*` (frente Produção/OS) permanecem intocadas.
 7. **Nesta etapa** (e até nova revisão desta matriz): **nenhum UPDATE, DELETE,
    DDL ou ampliação de RLS** será feito por conta da Trilha B. As ações abaixo
@@ -115,21 +122,26 @@ pedido do aprovador antes da liberação da implementação.
 | Fluxo oficial | Serviço oficial do módulo de Pedidos (a definir na implementação; se não existir rota/serviço, a ação NÃO será implementada — nunca UPDATE direto). |
 | Bloqueios | Nunca edita `obs_proposta`/observações de produção técnica; apenas `obs_pedido`. |
 
-### 2.3 Ações do próprio Maestro (JÁ EXISTENTES — fora do agent loop)
+### 2.3 Fase B3 — cobrança PIX à vista (PLANEJADA, NÃO LIBERADA)
 
-Estas escritas já existem, não passam pelo modelo e permanecem como estão:
+#### `gerar_cobranca_pix`
 
-| Ação | Registros | Quem | Fluxo |
-|---|---|---|---|
-| Persistir turno de conversa | `maestro_conversas`/`maestro_mensagens` (RLS `user_id=auth.uid()`) | usuário autenticado | `persistirTurnoMaestro` |
-| Encerrar/reabrir conversa | flag lógica em `maestro_conversas` própria | usuário autenticado | `POST /api/maestro/simple/conversa` |
-| Auditoria | `maestro_acoes` (INSERT-only) | servidor, em nome do usuário | `registrarAcaoMaestro` |
+| Dimensão | Regra |
+|---|---|
+| Quem pode executar | Perfis com `cobrancas.create` (permissão do catálogo oficial — o Maestro a verifica via `verificarPermissaoServerSide`); super admin. |
+| Em quais registros | Cria UMA cobrança PIX à vista NOVA em `public.pagamentos_v2` para proposta (`id_int`) do **cliente ativo resolvido pelo servidor**, com o `id_int` confirmado por tool na conversa. Empresa recebedora herdada da proposta — somente empresas 1, 2 e 3. Nunca altera cobrança existente. |
+| Pré-condições obrigatórias (re-verificadas na execução) | (a) proposta existe, pertence ao cliente ativo e não está cancelada; (b) cliente cadastrado com `documento` válido; (c) **saldo restante** da proposta (valor_total − cobranças não-CANCELADO) > 0; (d) valor da cobrança 100% calculado/validado no servidor — padrão = saldo restante; o usuário pode pedir valor menor, nunca maior que o saldo; o modelo nunca fornece número; (e) cliente com `restricao=true` ou limite estourado → a proposta de ação DEVE exibir o alerta e a confirmação DEVE mencioná-lo. |
+| Confirmação do usuário | Resumo exato (proposta, cliente, valor, tipo PIX, empresa recebedora, saldo restante, alerta se houver) no turno anterior. "Sim" genérico só vale se a última mensagem do Maestro foi ESTA proposta de ação (seção 4). |
+| Registro de autor/data/histórico | `maestro_acoes` (autor, data, `id_cliente`, `id_int`, id da cobrança criada, valor) + mensagem SISTEMA na timeline da proposta (`propostas_chat`), como o fluxo oficial faz. |
+| Fluxo oficial | INSERT server-side com o payload ESTRITO do fluxo oficial de criação (`createCobranca` — status `A_RECEBER`, `confirmado=false`, `token_publico` + `url_cobranca`) seguido de `gerarPixBancoInter` (o MESMO service da rota `/api/cobrancas/gerar-pix`), sempre com o client do usuário (RLS). Falha do PIX bancário NÃO desfaz o registro — a cobrança fica pendente para o financeiro, com aviso explícito na resposta. |
+| Exceção de exibição | SOMENTE o link público de pagamento (`url_cobranca`, checkout `pay.ai-ideal.com.br/i/{token}`) da cobrança recém-criada pelo próprio usuário pode ser exibido no chat (campo dedicado `link_pagamento` no retorno da tool). PIX copia-e-cola, linha digitável, código de barras, tokens e demais dados de cobrança continuam PROIBIDOS (§ do prompt base e sanitização inalterados para todo o resto). |
+| Bloqueios | Boleto, cartão, faturado e pagamento combinado seguem BLOQUEADOS (§2.4); nunca confirma pagamento; nunca cancela cobrança; nunca cria cobrança acima do saldo restante; nunca em proposta cancelada; flag própria `MAESTRO_WRITE_GERAR_COBRANCA_PIX_ENABLED` (default OFF) além da flag global. |
 
 ### 2.4 BLOQUEADO — sem exceção nesta fase (mesmo para admin, via Maestro)
 
 | Domínio | Operações | Fluxos existentes que o Maestro NÃO usa |
 |---|---|---|
-| Cobranças | gerar/confirmar/cancelar boleto, PIX, cartão, pagamento combinado | `/api/cobrancas/*` |
+| Cobranças | gerar boleto/cartão/faturado/pagamento combinado; confirmar ou cancelar QUALQUER cobrança (a geração de PIX à vista saiu deste bloqueio — ver §2.3) | `/api/cobrancas/*` (exceto o service de PIX nos limites da §2.3) |
 | Recebíveis | baixa, envio de e-mail de cobrança | contas a receber (`contas_receber.baixa`) |
 | Crédito/conta corrente | lançar/cancelar/usar movimento de crédito, encerrar pendência | `fn_lancar_movimento_credito`, `fn_cancelar_movimento_credito`, `mc_usar_credito_avulso`, `/api/conta-corrente/*`, `/api/cobrancas/ajuste-credito`, `estorno-credito`, `usar-credito` |
 | Fiscal | emitir/cancelar NF-e e NFS-e, qualquer campo fiscal | módulo fiscal (`fiscal.*`) |
@@ -138,6 +150,16 @@ Estas escritas já existem, não passam pelo modelo e permanecem como estão:
 | Cadastros sensíveis | campos fiscais (`cadastros.edit_fiscal`), crédito/limite (`cadastros.edit_credito`), exclusões | módulo de cadastros |
 | Status de propostas | transições de `status_interno`/liberação p/ produção (`propostas.release_producao`, `release_nf`, `devolver_revisao`, `alterar_vendedor`) | status-engine / módulo de orçamentos |
 | Infra | SQL livre, UPDATE/DELETE diretos, DDL, alteração de RLS/grants, service_role | — (proibidos por construção: não existe tool de SQL) |
+
+### 2.5 Ações do próprio Maestro (JÁ EXISTENTES — fora do agent loop)
+
+Estas escritas já existem, não passam pelo modelo e permanecem como estão:
+
+| Ação | Registros | Quem | Fluxo |
+|---|---|---|---|
+| Persistir turno de conversa | `maestro_conversas`/`maestro_mensagens` (RLS `user_id=auth.uid()`) | usuário autenticado | `persistirTurnoMaestro` |
+| Encerrar/reabrir conversa | flag lógica em `maestro_conversas` própria | usuário autenticado | `POST /api/maestro/simple/conversa` |
+| Auditoria | `maestro_acoes` (INSERT-only) | servidor, em nome do usuário | `registrarAcaoMaestro` |
 
 ---
 
@@ -167,13 +189,14 @@ Toda tool de escrita futura avalia NESTA ordem — a primeira falha encerra:
 - Negativa ou silêncio nunca executa nada. Confirmações "em lote" ("pode
   fazer tudo que sugerir") são inválidas — uma confirmação por ação.
 
-## 5. O que a próxima etapa da Trilha B fará (e esta NÃO fez)
+## 5. Estado da Trilha B
 
-- Criar a flag `MAESTRO_AGENT_WRITE_ENABLED` (default OFF) + flag por ação;
-- implementar SOMENTE `salvar_cotacao_como_proposta` conforme §2.1, reutilizando
-  o fluxo legado `salvarCotacaoComoPropostaReal`;
-- estado de "ação proposta aguardando confirmação" no contexto V2 (autorado
-  pelo servidor, como os candidatos de cliente);
-- testes determinísticos das 8 camadas do §3 no smoke test.
-
-Nenhuma dessas peças existe ainda. Este documento é a única entrega desta etapa.
+- **B1 `salvar_cotacao_como_proposta` (§2.1): IMPLEMENTADA e validada** em uso
+  real (propostas de teste conferidas no banco), com frete calculado (SEDEX
+  padrão) e PDF automático — flags `MAESTRO_AGENT_WRITE_ENABLED` +
+  `MAESTRO_WRITE_SALVAR_COTACAO_ENABLED`, default OFF, ausentes no deploy.
+- **B3 `gerar_cobranca_pix` (§2.3): próxima a implementar** — flag própria
+  `MAESTRO_WRITE_GERAR_COBRANCA_PIX_ENABLED` (default OFF); mesma arquitetura
+  da B1 (propor → confirmar → executar, re-verificação na execução, auditoria).
+- **B2 `cancelar_proposta` / `atualizar_observacao_pedido` (§2.2): planejadas,
+  não implementadas** — cada uma só sai do papel com autorização explícita.
