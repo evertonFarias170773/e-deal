@@ -1126,12 +1126,35 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       if (!termo) return { found: false, reason: 'termo_vazio' };
       const res = await simularOrcamentoAvulsoDb(ctx.supabase, [{ quantidade: 1, termo }]);
       const item = res.itens[0];
-      return {
-        termo,
-        status: item?.status ?? 'nao_encontrado',
-        produtos: item?.produtosEncontrados ?? [],
-        source: 'public.produtos',
-      };
+      const status = item?.status ?? 'nao_encontrado';
+
+      if (status === 'nao_encontrado') {
+        // Nunca terminar em "não encontrei": busca similares (termo completo,
+        // primeira e última palavra) para o usuário escolher da lista
+        const palavras = termo.split(/\s+/).filter(Boolean);
+        const termosBusca = Array.from(new Set([termo, palavras[0], palavras[palavras.length - 1]].filter(Boolean)));
+        const buscas = await Promise.all(termosBusca.map(t => listarProdutosCatalogo(ctx.supabase, { termo: t })));
+        const nomes = new Map<number, string>();
+        for (const busca of buscas) {
+          for (const p of busca.itens) {
+            if (nomes.size >= 8) break;
+            nomes.set(p.id_produto, p.nome);
+          }
+        }
+        return {
+          termo,
+          status,
+          produtos: [],
+          sugestoes: Array.from(nomes.values()),
+          atencao:
+            nomes.size > 0
+              ? 'Produto não encontrado com esse termo — NÃO diga apenas "não encontrei": apresente as sugestões em lista numerada e pergunte qual é o produto.'
+              : 'Nenhum similar encontrado — pergunte mais detalhes ao usuário ou consulte a família com listar_produtos.',
+          source: 'public.produtos',
+        };
+      }
+
+      return { termo, status, produtos: item?.produtosEncontrados ?? [], source: 'public.produtos' };
     },
   },
 
@@ -1144,8 +1167,9 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         description:
           'Cotar as opções de FRETE reais para entregar itens ao cliente ativo (endereço resolvido no servidor): ' +
           'SEDEX/PAC, Azul Cargo, transportadoras e VEPPO, conforme a região — mais "Retira no Balcão" R$ 0,00, ' +
-          'sempre disponível. Nada é salvo. Apresente as opções numeradas com transportadora, valor EXATO e prazo; ' +
-          'os valores são cotações do momento. Para salvar a proposta com uma delas, chame ' +
+          'sempre disponível. Chame em TODA cotação/orçamento com cliente ativo (mesmo sem pedido de frete): o ' +
+          'orçamento oficial sai com as opções e o SEDEX como padrão. Cada opção traz totalComFrete (subtotal + ' +
+          'frete, calculado no servidor). Nada é salvo. Para salvar com uma opção específica, chame ' +
           'salvar_cotacao_como_proposta passando frete com o nome da opção.',
         parameters: {
           type: 'object',
@@ -1242,7 +1266,8 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
               type: 'string',
               description:
                 'Opcional — frete escolhido pelo usuário: nome da opção cotada por opcoes_frete (ex.: "SEDEX", ' +
-                '"Azul Cargo"), "mais barato" ou "retira" (padrão: Retira no Balcão R$ 0,00). Ignorado na execução.',
+                '"Azul Cargo"), "mais barato" ou "retira". Sem este campo o servidor aplica o padrão do ERP ' +
+                '(SEDEX quando cotável; senão Retira no Balcão). Ignorado na execução.',
             },
           },
           additionalProperties: false,
@@ -1418,9 +1443,11 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
           return {
             ...item,
             nomeComercialOficial:
-              catalogo.nomeComercial ??
-              item.produtosEncontrados[0]?.descricao ??
+              (produto?.nomeReal && produto.nomeReal.trim()) ||
+              catalogo.nomeComercial ||
+              item.produtosEncontrados[0]?.descricao ||
               item.termo,
+            formato: produto?.formato ?? null,
             prazoProducao: produto?.prazo ?? null,
             pesoTotalGramas:
               pesoUnit != null && Number.isFinite(pesoUnit) && item.quantidade > 0

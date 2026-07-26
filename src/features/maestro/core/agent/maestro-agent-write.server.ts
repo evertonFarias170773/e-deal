@@ -157,13 +157,20 @@ export async function proporSalvarCotacao(
   const pesoUsado = Math.round(pesoBrutoGramas * 1.02);
   const termoFrete = (freteReq ?? '').trim();
   let freteOpcao: OpcaoFrete = OPCAO_RETIRA_BALCAO;
-  if (termoFrete && !/\b(retira|retirada|balc[aã]o|local)\b/i.test(termoFrete)) {
+  if (!/\b(retira|retirada|balc[aã]o|local)\b/i.test(termoFrete)) {
     const cot = await cotarOpcoesFrete(supabase, idCliente, { pesoGramas: pesoBrutoGramas, valorTotal: subtotal });
-    const escolha = escolherOpcaoFrete(cot.opcoes, termoFrete);
-    if (!escolha.ok) {
-      return { ok: false, motivo: [escolha.motivo, ...cot.avisos].join(' ') };
+    if (termoFrete) {
+      const escolha = escolherOpcaoFrete(cot.opcoes, termoFrete);
+      if (!escolha.ok) {
+        return { ok: false, motivo: [escolha.motivo, ...cot.avisos].join(' ') };
+      }
+      freteOpcao = escolha.opcao;
+    } else {
+      // Padrão do ERP: SEDEX quando cotável; sem SEDEX → Retira no Balcão
+      freteOpcao =
+        cot.opcoes.find(o => `${o.transportadora} ${o.servico}`.toLowerCase().includes('sedex')) ??
+        OPCAO_RETIRA_BALCAO;
     }
-    freteOpcao = escolha.opcao;
   }
 
   const total = Number((subtotal - descontoReais + freteOpcao.valor).toFixed(2));
@@ -214,14 +221,15 @@ export async function executarSalvarCotacao(
   const freteCalculado = freteConfirmado.id !== OPCAO_RETIRA_BALCAO.id;
 
   // Re-verificação integral no momento da execução (camada 6) — frete
-  // calculado é RE-COTADO pelo nome da opção (ids de cotação não são estáveis)
+  // calculado é RE-COTADO pelo nome da opção (ids de cotação não são estáveis);
+  // retira confirmada é EXPLÍCITA (o padrão do propor sem frete é SEDEX)
   const fresh = await proporSalvarCotacao(
     supabase,
     pendencia.idCliente,
     pendencia.clientName,
     pendencia.itens.map(i => ({ quantidade: i.quantidade, termo: i.termo })),
     turnIdAtual,
-    freteCalculado ? `${freteConfirmado.transportadora} ${freteConfirmado.servico}` : undefined,
+    freteCalculado ? `${freteConfirmado.transportadora} ${freteConfirmado.servico}` : 'retira no balcão',
   );
   if (!fresh.ok) {
     return { ok: false, motivo: `A cotação não é mais válida: ${fresh.motivo}` };

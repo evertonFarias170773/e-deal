@@ -25,6 +25,7 @@ import type { PropostaFrete } from '@/features/orcamentos/types';
 export interface EnderecoFrete {
   id: string;
   cep: string;
+  bairro: string;
   cidade: string;
   uf: string;
   enderecoFull: string;
@@ -36,6 +37,8 @@ export interface OpcaoFrete {
   servico: string;
   valor: number;
   prazo: string;
+  /** Subtotal dos itens + valor desta opção (calculado no servidor) */
+  totalComFrete?: number;
 }
 
 export interface CotacaoFreteResult {
@@ -92,6 +95,7 @@ export async function resolverEnderecoFrete(
   return {
     id: p.id != null ? String(p.id) : '',
     cep: String(p.cep),
+    bairro: typeof p.bairro === 'string' ? p.bairro.trim() : '',
     cidade: String(p.cidade).trim(),
     uf: String(p.uf).trim().toUpperCase(),
     enderecoFull: [rua, numero].filter(Boolean).join(', '),
@@ -156,11 +160,16 @@ export async function cotarOpcoesFrete(
   }
 
   opcoes.push(OPCAO_RETIRA_BALCAO);
+  // Total pronto por opção (subtotal + frete) — o modelo nunca soma
+  const comTotais = opcoes.map(o => ({
+    ...o,
+    totalComFrete: Number((params.valorTotal + o.valor).toFixed(2)),
+  }));
   return {
     found: true,
     endereco,
     pesoGramas,
-    opcoes,
+    opcoes: comTotais,
     avisos,
     source: 'frete.service (SEDEX/PAC, Azul Cargo, transportadoras, VEPPO) + Retira no Balcão',
   };
