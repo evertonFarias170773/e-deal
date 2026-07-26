@@ -159,6 +159,78 @@ export async function listarProdutosCatalogo(
   };
 }
 
+// ─── Fotos do catálogo (public.view_fotos_por_produtos) ─────────────────────
+
+export interface FotosProdutoGrupo {
+  nome_produto: string;
+  fotos: string[];
+}
+
+export interface FotosProdutoResult {
+  found: boolean;
+  produtos: FotosProdutoGrupo[];
+  /** Presente quando found=false — a resposta deve usar EXATAMENTE esta formulação */
+  mensagem_sem_fotos?: string;
+  termo: string;
+  source: string;
+  error?: string;
+}
+
+const FOTOS_MAX_PRODUTOS = 3;
+const FOTOS_MAX_POR_PRODUTO = 4;
+export const MENSAGEM_SEM_FOTOS =
+  'Os administradores ainda não salvaram as fotos deste produto no catálogo.';
+
+/**
+ * Fotos oficiais de um produto. A view vincula por NOME (texto livre, com
+ * inconsistências de espaços), então o match é por nome normalizado: igualdade
+ * exata tem prioridade; sem igualdade, valem os matches parciais (ilike).
+ * Sem foto NÃO é erro: found=false + mensagem oficial dos administradores.
+ */
+export async function buscarFotosProduto(
+  supabase: SupabaseClient,
+  nomeProduto: string,
+): Promise<FotosProdutoResult> {
+  const termo = (nomeProduto ?? '').trim().replace(/[,()%]/g, ' ').replace(/\s+/g, ' ').trim();
+  const base: FotosProdutoResult = {
+    found: false,
+    produtos: [],
+    termo,
+    source: 'public.view_fotos_por_produtos',
+  };
+  if (!termo) return { ...base, error: 'termo_vazio', mensagem_sem_fotos: MENSAGEM_SEM_FOTOS };
+
+  const { data, error } = await supabase
+    .from('view_fotos_por_produtos')
+    .select('nome_produto, imagens_url')
+    .ilike('nome_produto', `%${termo}%`)
+    .limit(60);
+  if (error) return { ...base, error: error.message, mensagem_sem_fotos: MENSAGEM_SEM_FOTOS };
+
+  const termoNorm = normalizeText(termo);
+  const grupos = new Map<string, { nome: string; fotos: Set<string>; exato: boolean }>();
+  for (const raw of data ?? []) {
+    const r = raw as Record<string, unknown>;
+    const nome = typeof r.nome_produto === 'string' ? r.nome_produto.trim() : '';
+    const url = typeof r.imagens_url === 'string' ? r.imagens_url.trim() : '';
+    if (!nome || !url.startsWith('https://')) continue;
+    const chave = normalizeText(nome);
+    const grupo = grupos.get(chave) ?? { nome, fotos: new Set<string>(), exato: chave === termoNorm };
+    grupo.fotos.add(url);
+    grupos.set(chave, grupo);
+  }
+
+  let lista = Array.from(grupos.values());
+  if (lista.some(g => g.exato)) lista = lista.filter(g => g.exato);
+  const produtos = lista.slice(0, FOTOS_MAX_PRODUTOS).map(g => ({
+    nome_produto: g.nome,
+    fotos: Array.from(g.fotos).slice(0, FOTOS_MAX_POR_PRODUTO),
+  }));
+
+  if (produtos.length === 0) return { ...base, mensagem_sem_fotos: MENSAGEM_SEM_FOTOS };
+  return { ...base, found: true, produtos };
+}
+
 export async function simularOrcamentoAvulsoDb(
   supabase: SupabaseClient,
   itensReq: OrcamentoAvulsoItemReq[]

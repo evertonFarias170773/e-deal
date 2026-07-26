@@ -48,7 +48,7 @@ import {
   compararRecebimentoClienteMeses,
 } from '../simple/maestro-simple-pagamentos.server';
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
-import { simularOrcamentoAvulsoDb, listarProdutosCatalogo } from '../simple/maestro-simple-produtos.server';
+import { simularOrcamentoAvulsoDb, listarProdutosCatalogo, buscarFotosProduto } from '../simple/maestro-simple-produtos.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
 import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
@@ -1069,6 +1069,36 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         termo,
         incluirInativos: args.incluir_inativos === true,
       });
+    },
+  },
+
+  fotos_produto: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'fotos_produto',
+        description:
+          'Fotos oficiais de um produto do catálogo (URLs públicas https). Use quando pedirem foto/imagem/"como é" ' +
+          'o produto. Cada foto retornada deve ser exibida como imagem markdown: ![Nome do produto](url). ' +
+          'Se found=false, use EXATAMENTE a mensagem_sem_fotos retornada (os administradores ainda não salvaram ' +
+          'as fotos) — NUNCA diga que "não encontrou as fotos". Não exige cliente ativo.',
+        parameters: {
+          type: 'object',
+          properties: {
+            nome_produto: {
+              type: 'string',
+              description: 'Nome do produto (ideal: o nome exato do catálogo, ex.: "Pulseira Triband") ou o termo dito pelo usuário.',
+            },
+          },
+          required: ['nome_produto'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const nome = String(args.nome_produto ?? '').trim();
+      if (!nome) return { found: false, reason: 'nome_vazio' };
+      return await buscarFotosProduto(ctx.supabase, nome);
     },
   },
 
