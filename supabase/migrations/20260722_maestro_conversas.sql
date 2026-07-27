@@ -8,6 +8,9 @@
 --    O código correspondente (maestro-persistence.server.ts) permanece
 --    desativado até MAESTRO_PERSISTENCE_ENABLED=true E esta migration aplicada.
 --
+-- Idempotente: pode ser executada mais de uma vez sem erro
+-- (tabelas/índices com IF NOT EXISTS; policies guardadas por pg_policies).
+--
 -- Segurança:
 --   - RLS habilitada nas duas tabelas;
 --   - isolamento por usuário: user_id = auth.uid();
@@ -54,33 +57,68 @@ create index if not exists idx_maestro_mensagens_conversa
 alter table public.maestro_conversas enable row level security;
 alter table public.maestro_mensagens enable row level security;
 
--- Conversas: cada usuário vê e mantém apenas as suas
-create policy maestro_conversas_select on public.maestro_conversas
-  for select to authenticated
-  using (user_id = auth.uid());
+-- Policies criadas somente se ainda não existirem (CREATE POLICY não aceita
+-- IF NOT EXISTS — o guard via pg_policies torna a migration re-executável).
+do $$
+begin
+  -- Conversas: cada usuário vê e mantém apenas as suas
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'maestro_conversas'
+      and policyname = 'maestro_conversas_select'
+  ) then
+    create policy maestro_conversas_select on public.maestro_conversas
+      for select to authenticated
+      using (user_id = auth.uid());
+  end if;
 
-create policy maestro_conversas_insert on public.maestro_conversas
-  for insert to authenticated
-  with check (user_id = auth.uid());
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'maestro_conversas'
+      and policyname = 'maestro_conversas_insert'
+  ) then
+    create policy maestro_conversas_insert on public.maestro_conversas
+      for insert to authenticated
+      with check (user_id = auth.uid());
+  end if;
 
-create policy maestro_conversas_update on public.maestro_conversas
-  for update to authenticated
-  using (user_id = auth.uid())
-  with check (user_id = auth.uid());
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'maestro_conversas'
+      and policyname = 'maestro_conversas_update'
+  ) then
+    create policy maestro_conversas_update on public.maestro_conversas
+      for update to authenticated
+      using (user_id = auth.uid())
+      with check (user_id = auth.uid());
+  end if;
 
--- Mensagens: cada usuário vê e insere apenas as suas
-create policy maestro_mensagens_select on public.maestro_mensagens
-  for select to authenticated
-  using (user_id = auth.uid());
+  -- Mensagens: cada usuário vê e insere apenas as suas
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'maestro_mensagens'
+      and policyname = 'maestro_mensagens_select'
+  ) then
+    create policy maestro_mensagens_select on public.maestro_mensagens
+      for select to authenticated
+      using (user_id = auth.uid());
+  end if;
 
-create policy maestro_mensagens_insert on public.maestro_mensagens
-  for insert to authenticated
-  with check (
-    user_id = auth.uid()
-    and exists (
-      select 1 from public.maestro_conversas c
-      where c.id = conversa_id and c.user_id = auth.uid()
-    )
-  );
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'maestro_mensagens'
+      and policyname = 'maestro_mensagens_insert'
+  ) then
+    create policy maestro_mensagens_insert on public.maestro_mensagens
+      for insert to authenticated
+      with check (
+        user_id = auth.uid()
+        and exists (
+          select 1 from public.maestro_conversas c
+          where c.id = conversa_id and c.user_id = auth.uid()
+        )
+      );
+  end if;
+end $$;
 
 -- Sem policy de DELETE: histórico não é apagável pelo client.

@@ -9,6 +9,9 @@
 --    somente quando MAESTRO_AUDIT_DB_ENABLED=true E esta migration aplicada.
 --    Enquanto isso, a auditoria mínima sai como log estruturado no servidor.
 --
+-- Idempotente: pode ser executada mais de uma vez sem erro
+-- (tabela/índices com IF NOT EXISTS; policies guardadas por pg_policies).
+--
 -- Segurança:
 --   - RLS habilitada; INSERT apenas do próprio usuário (user_id = auth.uid());
 --   - SELECT apenas das próprias ações (leitura administrativa ampla, se
@@ -46,12 +49,29 @@ create index if not exists idx_maestro_acoes_id_int
 -- ── RLS ──────────────────────────────────────────────────────────────────────
 alter table public.maestro_acoes enable row level security;
 
-create policy maestro_acoes_insert on public.maestro_acoes
-  for insert to authenticated
-  with check (user_id = auth.uid());
+-- Policies criadas somente se ainda não existirem (CREATE POLICY não aceita
+-- IF NOT EXISTS — o guard via pg_policies torna a migration re-executável).
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'maestro_acoes'
+      and policyname = 'maestro_acoes_insert'
+  ) then
+    create policy maestro_acoes_insert on public.maestro_acoes
+      for insert to authenticated
+      with check (user_id = auth.uid());
+  end if;
 
-create policy maestro_acoes_select on public.maestro_acoes
-  for select to authenticated
-  using (user_id = auth.uid());
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'maestro_acoes'
+      and policyname = 'maestro_acoes_select'
+  ) then
+    create policy maestro_acoes_select on public.maestro_acoes
+      for select to authenticated
+      using (user_id = auth.uid());
+  end if;
+end $$;
 
 -- Sem policies de UPDATE/DELETE: a trilha é imutável para o client.

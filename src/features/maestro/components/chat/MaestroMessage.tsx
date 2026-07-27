@@ -11,8 +11,29 @@ interface Props {
   onSend?: (text: string) => void;
 }
 
-function parseContent(text: string): string {
+function escapeHtml(text: string): string {
   return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Converte o subconjunto de markdown emitido pelo Maestro em HTML seguro:
+ * escapa TODO o texto primeiro e só então reinsere as marcas suportadas
+ * (imagem e link apenas com URL https, negrito, itálico).
+ */
+function parseContent(text: string): string {
+  return escapeHtml(text)
+    .replace(
+      /!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,
+      '<img src="$2" alt="$1" loading="lazy" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid var(--border);display:inline-block;margin:4px 8px 4px 0;vertical-align:top" />',
+    )
+    .replace(
+      /\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="underline font-medium text-indigo-500 hover:text-indigo-600">$1</a>',
+    )
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>');
 }

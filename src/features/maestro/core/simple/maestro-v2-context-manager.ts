@@ -270,6 +270,61 @@ export interface MaestroV2Context {
   pendingClientSearchTerm?: string | null;
   /** Itens do orçamento pendentes para o candidato confirmado */
   pendingBudgetForCandidate?: OrcamentoAvulsoItem[] | null;
+  /**
+   * Candidatos de cliente aguardando confirmação NO AGENT LOOP (campo próprio
+   * do motor agêntico — o motor legado nunca lê nem escreve aqui, e ele NÃO
+   * participa do gate de escrita que devolve o turno ao legado).
+   */
+  agentPendingClientCandidates?: Array<{
+    id_cliente: number;
+    nome: string;
+    fantasia: string;
+    documento: string;
+    cidade_uf: string;
+  }> | null;
+  /**
+   * Ação de ESCRITA proposta pelo agent loop aguardando confirmação do usuário
+   * (MATRIZ-PERMISSOES-ESCRITA-MAESTRO.md §4: vale só para o turno seguinte).
+   * Campo próprio do motor agêntico — o legado nunca lê nem escreve aqui e o
+   * campo NÃO participa do gate que devolve o turno ao legado. Snapshot
+   * autorado pelo SERVIDOR; o modelo nunca fornece valores.
+   */
+  agentPendingWriteAction?: {
+    tipo: 'salvar_cotacao_como_proposta';
+    /** Turno em que a proposta foi criada — execução só no turno SEGUINTE */
+    turnId: string;
+    criadaEm: string;
+    idCliente: number;
+    clientName: string;
+    itens: Array<{
+      termo: string;
+      id_produto: number;
+      /** Nome COMERCIAL (produtos.nomeReal) — é o que vai para a proposta */
+      nome: string;
+      quantidade: number;
+      valorUnitario: number;
+      valorFixo: number;
+      subtotal: number;
+      pesoUnitario: number;
+      /** Prazo de produção cadastrado (exibição no resumo) */
+      prazoProducao?: string | null;
+    }>;
+    subtotal: number;
+    percentualBonus: number;
+    descontoReais: number;
+    /** Frete escolhido para a proposta — ausente = Retira no Balcão R$ 0,00 (pendências antigas) */
+    freteEscolhido?: {
+      id: string;
+      transportadora: string;
+      servico: string;
+      valor: number;
+      prazo: string;
+      pesoUsado: number;
+    };
+    /** Total EXATO que será gravado (subtotal − desconto + frete escolhido) */
+    total: number;
+    alertaRestricao: string | null;
+  } | null;
   /** Seleção de transportadora pendente — usuário escolhe por número (análogo ao endereço) */
   pendingFreightChoice?: {
     clientInternalId: number;

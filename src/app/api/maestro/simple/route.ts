@@ -26,6 +26,10 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { processSimpleQueryWithBrain } from '../../../../features/maestro/core/simple/maestro-simple-engine';
 import { sanitizeRecentTurns } from '../../../../features/maestro/core/simple/maestro-recent-turns';
 import { persistirTurnoMaestro } from '../../../../features/maestro/core/simple/maestro-persistence.server';
+import { deserializeV2Context } from '../../../../features/maestro/core/simple/maestro-v2-context-manager';
+import { deveUsarAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-config';
+import { runMaestroAgentLoop } from '../../../../features/maestro/core/agent/maestro-agent-loop';
+import { registrarAcaoMaestro } from '../../../../features/maestro/core/simple/maestro-audit.server';
 import type { ConversationContext } from '../../../../features/maestro/types';
 
 export async function POST(request: NextRequest) {
@@ -87,25 +91,56 @@ export async function POST(request: NextRequest) {
   const fullName = metadata.nome || metadata.name || metadata.first_name || '';
   const userName = fullName ? fullName.split(' ')[0] : undefined;
 
-  // ── 5. Motor simples + camadas LLM opcionais ──────────────────────────────
+  // ── 5. Motor de resposta ──────────────────────────────────────────────────
+  //    Agent Loop (leitura, atrás de MAESTRO_AGENT_LOOP_ENABLED) OU motor
+  //    legado. Estado de cotação/escrita ativo SEMPRE permanece no legado —
+  //    o fluxo de criar/salvar orçamento fica intacto.
   try {
-    const result = await processSimpleQueryWithBrain(query, context, {
-      supabase,
-      userName,
-      userId: user.id,
-      recentTurns,
-    });
+    let result;
+
+    const v2CtxProbe = deserializeV2Context(context.v2ContextJson);
+    if (deveUsarAgentLoop(v2CtxProbe)) {
+      try {
+        result = await runMaestroAgentLoop({
+          query,
+          context,
+          supabase,
+          userId: user.id,
+          userName,
+          recentTurns,
+        });
+      } catch (agentErr) {
+        // Falha do agent loop NUNCA derruba o Maestro — fallback para o legado.
+        console.error('[/api/maestro/simple] Agent loop falhou — fallback para o motor legado:', agentErr);
+        await registrarAcaoMaestro(supabase, {
+          userId: user.id,
+          acao: 'agent_fallback_legado',
+          resultado: 'erro',
+          detalhe: agentErr instanceof Error ? agentErr.message.slice(0, 300) : String(agentErr).slice(0, 300),
+        });
+        result = null;
+      }
+    }
+
+    if (!result) {
+      result = await processSimpleQueryWithBrain(query, context, {
+        supabase,
+        userName,
+        userId: user.id,
+        recentTurns,
+      });
+    }
 
     // ── 6. Persistência de conversa/rascunho (flag-gated; nunca quebra o fluxo)
     try {
       const conversationId = await persistirTurnoMaestro(supabase, {
-        conversationId: (context as any)?.conversationId ?? null,
+        conversationId: context.conversationId ?? null,
         userQuery: query,
         assistantContent: result.message?.content ?? '',
         contextoJson: result.context?.v2ContextJson ?? null,
       });
-      if (conversationId) {
-        (result.context as any).conversationId = conversationId;
+      if (conversationId && result.context) {
+        result.context.conversationId = conversationId;
       }
     } catch (persistErr) {
       console.warn('[/api/maestro/simple] Persistência falhou (ignorada):', persistErr);

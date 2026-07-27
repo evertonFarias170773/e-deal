@@ -1,6 +1,6 @@
 # FLUXO-OFICIAL-STATUS-PROPOSTAS.md
 
-Versão: 3.1  
+Versão: 3.2  
 Status: Oficial  
 Última atualização: 23/07/2026  
 Projeto: ERP Ideal
@@ -468,7 +468,7 @@ EM IMPRESSAO ? EM IMPRESSAO / PENDENTE
 
 Representa impressão pausada por impedimento operacional (ex.: falta de material, aguardo de arte ou máquina indisponível).
 
-A entrada nesse status exige motivo registrado na auditoria.
+O motivo da pausa é opcional e, quando informado, é registrado na auditoria.
 
 Transições esperadas:
 
@@ -476,7 +476,7 @@ Transições esperadas:
 EM IMPRESSAO / PENDENTE ? EM IMPRESSAO
 ```
 
-A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional e exige motivo.
+A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional, com motivo opcional.
 
 ## 6.12 `EM ACABAMENTO`
 
@@ -493,7 +493,7 @@ EM ACABAMENTO ? EM ACABAMENTO / PENDENTE
 
 Representa acabamento pausado por impedimento operacional.
 
-A entrada nesse status exige motivo registrado na auditoria.
+O motivo da pausa é opcional e, quando informado, é registrado na auditoria.
 
 Transições esperadas:
 
@@ -501,7 +501,7 @@ Transições esperadas:
 EM ACABAMENTO / PENDENTE ? EM ACABAMENTO
 ```
 
-A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional e exige motivo.
+A retomada da etapa base é a transição natural. Qualquer outra saída é excepcional, com motivo opcional.
 
 ## 6.13 `EXPEDICAO`
 
@@ -822,10 +822,10 @@ Não permitir:
 | `REVISAO ATENDENTE` | `REVISAO PRODUCAO` | Revisão final aprovada | Manual |
 | `REVISAO PRODUCAO` | `EM PRODUCAO` | Produção iniciada | Manual |
 | `EM PRODUCAO` | `EM IMPRESSAO` | Impressão iniciada | Manual (ERP ou QR de Produção) |
-| `EM IMPRESSAO` | `EM IMPRESSAO / PENDENTE` | Pausa com motivo obrigatório | Manual (ERP ou QR de Produção) |
+| `EM IMPRESSAO` | `EM IMPRESSAO / PENDENTE` | Pausa (motivo opcional) | Manual (ERP ou QR de Produção) |
 | `EM IMPRESSAO / PENDENTE` | `EM IMPRESSAO` | Impedimento resolvido | Manual (ERP ou QR de Produção) |
 | `EM IMPRESSAO` | `EM ACABAMENTO` | Impressão concluída | Manual (ERP ou QR de Produção) |
-| `EM ACABAMENTO` | `EM ACABAMENTO / PENDENTE` | Pausa com motivo obrigatório | Manual (ERP ou QR de Produção) |
+| `EM ACABAMENTO` | `EM ACABAMENTO / PENDENTE` | Pausa (motivo opcional) | Manual (ERP ou QR de Produção) |
 | `EM ACABAMENTO / PENDENTE` | `EM ACABAMENTO` | Impedimento resolvido | Manual (ERP ou QR de Produção) |
 | `EM ACABAMENTO` | `EXPEDICAO` | Produção concluída | Manual (ERP ou QR de Produção) |
 | `EXPEDICAO` | `A RETIRAR` | Retirada definida | Manual (ERP ou QR de Produção) |
@@ -839,7 +839,7 @@ Não significa automação autônoma.
 
 O QR de Produção (página pública `/os`, origem `qr_producao`) é um executor oficial das transições entre os status operacionais de produção e expedição listados acima. Regras específicas do QR:
 
-- salto, retorno, pausa e troca entre `A RETIRAR` e `EM TRANSITO` exigem motivo obrigatório, validado no servidor;
+- salto, retorno, pausa e troca entre `A RETIRAR` e `EM TRANSITO` aceitam motivo **opcional** — quando informado, é registrado na auditoria e na timeline (regra vigente desde 23/07/2026; a obrigatoriedade anterior foi removida);
 - `ENTREGUE` exige confirmação reforçada e é terminal (sem transições posteriores via QR);
 - destino igual ao status atual é rejeitado;
 - status fora da lista de produção/expedição permanecem controlados exclusivamente pelo ERP (`FORA_DO_FLUXO` no QR);

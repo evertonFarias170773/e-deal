@@ -6,9 +6,10 @@
  *
  * Regra financeira oficial (LIBERADO só com cobertura integral):
  * a soma de pagamentos válidos (`PAID`, ou `A_VENCER` com `confirmado=true`)
- * precisa cobrir `propostas.valor_total` dentro da tolerância monetária oficial
- * (R$ 0,02 — mesma constante usada em conferencia-financeira.service.ts).
- * Pagamento parcial nunca produz LIBERADO.
+ * precisa cobrir `propostas.valor_total` DE FATO, comparando os valores em
+ * centavos (arredondados a 2 casas). Saldo devedor real de R$ 0,01/0,02
+ * mantém AGUARDANDO — a tolerância vale só para ruído técnico de ponto
+ * flutuante que arredonda para zero. Pagamento parcial nunca produz LIBERADO.
  */
 
 // Tolerância monetária oficial (mesma usada em calcularSituacaoQuitacaoProposta).
@@ -72,13 +73,21 @@ export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineSt
   const dentroDaFamiliaFinanceira = FAMILIA_FINANCEIRA.includes(baseStatus(statusInternoAtual));
 
   if (dentroDaFamiliaFinanceira && temCobrancaAtiva) {
-    const cobreIntegralmente = valorTotalProposta > 0 && valorPagoConfirmado >= (valorTotalProposta - TOLERANCIA_MONETARIA);
-    const valorPagoFmt = valorPagoConfirmado.toFixed(2);
-    const valorTotalFmt = valorTotalProposta.toFixed(2);
+    // Comparação em CENTAVOS dos valores arredondados a 2 casas: cobertura
+    // integral exige pago >= total DE FATO. Um saldo devedor REAL de
+    // R$ 0,01/0,02 mantém a proposta AGUARDANDO — nunca é "quitado por
+    // tolerância" (regressão #19514). O arredondamento a 2 casas continua
+    // absorvendo apenas ruído técnico de ponto flutuante (frações menores
+    // que meio centavo, que arredondam para zero).
+    const totalCents = Math.round(valorTotalProposta * 100);
+    const pagoCents = Math.round(valorPagoConfirmado * 100);
+    const cobreIntegralmente = totalCents > 0 && pagoCents >= totalCents;
+    const valorPagoFmt = (pagoCents / 100).toFixed(2);
+    const valorTotalFmt = (totalCents / 100).toFixed(2);
 
     if (cobreIntegralmente) {
       statusRecomendado = "LIBERADO";
-      motivo = `Cobertura financeira integral: R$ ${valorPagoFmt} de R$ ${valorTotalFmt} (tolerância R$ ${TOLERANCIA_MONETARIA.toFixed(2)})`;
+      motivo = `Cobertura financeira integral: R$ ${valorPagoFmt} de R$ ${valorTotalFmt}`;
       nivelConfianca = "ALTO";
       podeGravarAutomaticamente = true;
     } else {

@@ -26,3 +26,13 @@ BACKUPS_SUPABASE/
 scratch/
 *.tsbuildinfo
 test-router.ts
+
+# artefatos locais de sessoes de IA e diagnosticos (nunca publicar)
+/scratch_*
+/check_*.js
+/diag*.mjs
+/test_*.js
+/*.n8n
+.claude/
+.agents/
+.mcp.json

@@ -376,8 +376,13 @@ export async function POST(request: NextRequest) {
   // vai para AGUARDANDO pela reconciliação abaixo (cobertura parcial). A RPC
   // só é chamada no caso devedor quando existe pendência ABERTA a reconciliar
   // (ex.: crédito antigo que a nova edição zerou) — nunca para criar débito.
-  const diffPrevisto = Math.round((novoTotalRealArredondado - valorPagoRealArredondado) * 100) / 100;
-  const ehDiferencaDevedora = diffPrevisto > TOLERANCIA_CC;
+  // Classificação DEVEDORA por comparação direta dos dois valores já
+  // arredondados a 2 casas: QUALQUER centavo devido (≥ R$ 0,01) segue o fluxo
+  // novo. A tolerância (TOLERANCIA_CC) NÃO participa desta classificação — ela
+  // serve só à cobertura (estavaIntegralmentePaga); usá-la aqui deixava
+  // débitos de R$ 0,01–0,02 no fluxo antigo (RPC → pendência → modal),
+  // regressão vista na #19514 (pago R$ 140,44 × total R$ 140,45).
+  const ehDiferencaDevedora = novoTotalRealArredondado > valorPagoRealArredondado;
   let temPendenciaAbertaParaReconciliar = false;
 
   if (estavaIntegralmentePaga && ehDiferencaDevedora) {
