@@ -44,6 +44,8 @@ import {
 } from './maestro-agent-tools';
 import { carregarHistoricoConversa } from './maestro-agent-history.server';
 import { registrarAcaoMaestro } from '../simple/maestro-audit.server';
+import { verificarPermissaoServerSide } from '../../../../lib/auth/verificar-permissao';
+import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -207,6 +209,26 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
   const historicoDb = await carregarHistoricoConversa(supabase, context.conversationId);
   const historico: RecentTurn[] = historicoDb.length > 0 ? historicoDb : (input.recentTurns ?? []);
 
+  // ── Escopo do usuário logado (determinístico, autorado pelo servidor) ─────
+  // O modelo precisa saber ANTES de responder o que este perfil pode ver —
+  // sem isto ele promete "vendas de todos" a um vendedor de escopo próprio.
+  let escopoUsuario = '';
+  try {
+    const [gestorVendas, identidade] = await Promise.all([
+      verificarPermissaoServerSide(supabase, userId, 'propostas.view_all'),
+      buscarNomeUsuario(supabase, userId),
+    ]);
+    const rotulo = identidade.nome ?? identidade.nomeComercial ?? 'usuário';
+    escopoUsuario = gestorVendas
+      ? `\n- Usuário logado: ${rotulo} — PODE ver vendas, ranking e números de TODOS os vendedores (perfil de gestão).`
+      : `\n- Usuário logado: ${rotulo}${identidade.isVendedor ? ' (vendedor)' : ''} — escopo PRÓPRIO: ele NÃO pode ver ` +
+        'vendas, ranking nem números de OUTROS vendedores (vendas_por_vendedor devolve apenas os números dele). ' +
+        'Se perguntarem "posso ver as vendas de todos?", responda que o perfil mostra somente os próprios números ' +
+        '— NUNCA prometa ranking ou dados de colegas.';
+  } catch {
+    // Sem escopo resolvido o gate das tools continua valendo — só perde o aviso antecipado
+  }
+
   // ── Prompt e messages[] ───────────────────────────────────────────────────
   let estadoReal = descreverEstadoReal(
     v2Ctx,
@@ -214,6 +236,7 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       ? { nome: state.activeClient.clientFantasia || state.activeClient.clientName, id: state.activeClient.clientInternalId }
       : null
   );
+  estadoReal += escopoUsuario;
 
   if (state.pendingClientCandidates && state.pendingClientCandidates.length > 0) {
     const lista = state.pendingClientCandidates
