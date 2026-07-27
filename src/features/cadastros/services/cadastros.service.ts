@@ -258,25 +258,22 @@ function isBuscaExplicitaPorId(search: string) {
   return /^\s*#/.test(search);
 }
 
-/** Nenhum id_cliente é negativo: força zero resultados sem erro no PostgREST. */
-const CLAUSULA_SEM_RESULTADO = "id_cliente.eq.-1";
-
 function buildCadastrosSearchClause(search: string) {
   const normalized = normalizeSearchTerm(search);
 
   // "#N" busca só pelo id_cliente. Sem isso o match exato disputa o mesmo or()
   // com ~11 ilike parciais — para "#14" são milhares de acertos em documento e
   // telefone, e o cliente certo cai fora da primeira página.
+  //
+  // Só vale quando o que vem depois do "#" é um número que cabe em int4. O campo
+  // da Nova proposta NASCE com "#", então "#andre" e "#<cpf>" são busca textual
+  // comum e precisam continuar caindo no or() amplo — tratá-los como ID inválido
+  // zerava a busca por nome, apelido e documento.
   if (isBuscaExplicitaPorId(search)) {
     const idInformado = normalized.replace(/\s+/g, "");
-    if (!/^\d+$/.test(idInformado)) {
-      return CLAUSULA_SEM_RESULTADO;
+    if (/^\d+$/.test(idInformado) && Number(idInformado) <= INT4_MAX) {
+      return `id_cliente.eq.${Number(idInformado)}`;
     }
-    const id = Number(idInformado);
-    if (!Number.isSafeInteger(id) || id > INT4_MAX) {
-      return CLAUSULA_SEM_RESULTADO;
-    }
-    return `id_cliente.eq.${id}`;
   }
 
   if (!normalized) {
