@@ -314,7 +314,14 @@ export async function runMaestroAgentLoop(input: AgentLoopInput): Promise<AgentL
       );
     } catch (err) {
       clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === 'AbortError') {
+      // Estouro do orçamento de tempo NO MEIO da chamada: o SDK da OpenAI
+      // lança APIUserAbortError ("Request was aborted.") — não o AbortError
+      // do DOM. Sem reconhecer os dois nomes, o estouro vazava para o
+      // fallback LEGADO, que respondia no fluxo antigo e plantava estado de
+      // cotação no contexto — prendendo a conversa fora do agente.
+      const nomeErr = err instanceof Error ? err.name : '';
+      const msgErr = err instanceof Error ? err.message : '';
+      if (nomeErr === 'AbortError' || nomeErr === 'APIUserAbortError' || /abort/i.test(msgErr)) {
         estourouLimite = true;
         break;
       }
