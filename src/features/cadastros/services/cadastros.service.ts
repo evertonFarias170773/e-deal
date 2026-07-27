@@ -89,11 +89,15 @@ function sortCadastrosByIdClienteDesc(cadastros: Cadastro[]) {
   return [...cadastros].sort((a, b) => b.idCliente - a.idCliente);
 }
 
+// O campo de busca do novo orçamento nasce com "#" como dica visual de "buscar
+// por ID". Esse caractere é apenas de UI: se chegar ao PostgREST, vira
+// `nome.ilike.%#andre%` e zera a busca textual. Removido antes do trim para não
+// deixar espaço à esquerda quando o usuário digitar "# andre".
 function normalizeSearchTerm(value: string) {
   return value
+    .replace(/[%*,#]/g, "")
     .trim()
-    .replace(/\s+/g, " ")
-    .replace(/[%*,]/g, "");
+    .replace(/\s+/g, " ");
 }
 
 function normalizeIdCliente(value: unknown) {
