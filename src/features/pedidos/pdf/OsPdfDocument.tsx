@@ -1,32 +1,41 @@
 import React from "react";
-import { Document, Page, View, Text, Image, StyleSheet, Svg, Rect, Circle } from "@react-pdf/renderer";
+import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 
 /**
- * Documento PDF da OS (Boletim de Produção) — layout "OS NOVA".
+ * Documento PDF da OS (Boletim de Produção) — layout "OS 2027".
  *
- * Estrutura: cabeçalho com logo + Nº OS destacado + Setor + QR; meta (emissão/
- * prazo); cliente reduzido (cliente, vendedor, entrega/frete); checklist de
- * etapas; área livre de observações; por produto: placeholder de imagem à
- * esquerda + barra "código - produto - qtd total" + uma linha compacta por
- * modelo real (com checkbox); assinatura única do responsável; rodapé fixo
- * com paginação. Sem valores financeiros.
+ * Estrutura: faixa de cabeçalho (logo + Nº OS | Setor do boletim | Prazo/Hora | QR);
+ * bloco de cliente/evento/vendedor/designer; um CARD por produto da proposta —
+ * barra de título com quantidade e peso, seguida dos cards dos seus modelos
+ * (imagem grande da arte + campos + checklist IMP/ACA/CON fixo); observações;
+ * forma de envio; assinaturas; rodapé fixo com paginação.
  *
- * Paginação segura: cada linha de modelo e cada barra de produto são blocos
- * wrap={false}; quebras só entre blocos; rodapé fixo em todas as páginas.
+ * Regra de agrupamento: modelos nunca cruzam produtos — cada card de produto
+ * renderiza somente `produto.modelos`.
+ *
+ * Paginação segura: a barra de produto e cada linha de 3 cards de modelo são
+ * blocos wrap={false}; quebras só ocorrem entre blocos; rodapé fixo em todas as
+ * páginas. Sem valores financeiros.
  */
 
 const OBS_MAX_CHARS = 600;
 
-/** Etapas do checklist no padrão da OS NOVA (caixas para marcação manual). */
-const ETAPAS_CHECKLIST = ["EM IMPRESSAO", "EM ACABAMENTO", "REVISAO PRODUCAO", "EXPEDICAO"];
+/** Checklist fixo do card de modelo — literal do layout aprovado, nunca variável. */
+const CHECKLIST_CARD = ["IMP", "ACA", "CON"];
+
+/** Cards de modelo por linha (grade do layout 2027). */
+const MODELOS_POR_LINHA = 3;
+
+
+const nfInteiro = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+const nfDecimal = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Remove caracteres fora do Latin-1 (emoji etc.) — fontes Standard do PDF são WinAnsi. */
 function pdfSafe(value: string | null | undefined): string {
   if (!value) return "";
   return String(value)
     .replace(/ /g, " ")
-    // eslint-disable-next-line no-control-regex
     .replace(/[^ -ÿ]/g, "")
     .trim();
 }
@@ -49,10 +58,52 @@ function formatarData(iso: string | null | undefined): string {
   }).format(date);
 }
 
+/** Data curta (dd/mm/aa) usada no selo de PRAZO do cabeçalho. */
+function formatarDataCurta(iso: string | null | undefined): string {
+  const completa = formatarData(iso);
+  if (completa === "-") return "-";
+  const partes = completa.split("/");
+  return partes.length === 3 ? `${partes[0]}/${partes[1]}/${partes[2].slice(-2)}` : completa;
+}
+
+/** `hora` do boletim vem como TIME (HH:MM:SS) — exibimos HH:MM. */
+function formatarHora(hora: string | null | undefined): string {
+  const texto = pdfSafe(hora);
+  const match = texto.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "-";
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function formatarQuantidade(valor: number | null | undefined): string {
+  return nfInteiro.format(Number(valor) || 0);
+}
+
+/** peso_total é gravado em gramas; acima de 1kg exibimos em kg. */
+function formatarPeso(gramas: number | null | undefined): string | null {
+  const valor = Number(gramas);
+  if (!Number.isFinite(valor) || valor <= 0) return null;
+  return valor >= 1000 ? `${nfDecimal.format(valor / 1000)} kg` : `${nfInteiro.format(valor)} g`;
+}
+
+function faixaNumeracao(modelo: OsPdfModelo): string {
+  const inicio = modelo.numeracaoInicio;
+  const fim = modelo.numeracaoFim;
+  if (inicio === undefined && fim === undefined) return "-";
+  return `${inicio !== undefined ? nfInteiro.format(inicio) : "?"}-${fim !== undefined ? nfInteiro.format(fim) : "?"}`;
+}
+
+function emGrupos<T>(itens: T[], tamanho: number): T[][] {
+  const grupos: T[][] = [];
+  for (let i = 0; i < itens.length; i += tamanho) {
+    grupos.push(itens.slice(i, i + tamanho));
+  }
+  return grupos;
+}
+
 const styles = StyleSheet.create({
   page: {
-    paddingTop: 24,
-    paddingHorizontal: 28,
+    paddingTop: 20,
+    paddingHorizontal: 24,
     paddingBottom: 46,
     fontSize: 8,
     fontFamily: "Helvetica",
@@ -62,116 +113,184 @@ const styles = StyleSheet.create({
   // ── Cabeçalho ──────────────────────────────────────────────────────────────
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 10
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#3f3f42",
+    borderRadius: 8,
+    padding: 7,
+    marginBottom: 7
   },
-  headerLeft: { width: 150 },
-  logo: { width: 110, height: 34, objectFit: "contain", marginBottom: 6 },
+  headerIdentidade: { width: 128, alignItems: "flex-start" },
+  logo: { width: 104, height: 30, objectFit: "contain", marginBottom: 5 },
   osBox: {
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#3f3f42",
     borderRadius: 5,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  osBoxLabel: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#5a6b7a", marginRight: 5 },
+  osBoxNumero: { fontSize: 17, fontFamily: "Helvetica-Bold" },
+  headerSetor: { flex: 1, paddingHorizontal: 10 },
+  setorBox: {
+    borderWidth: 1,
+    borderColor: "#3f3f42",
+    borderRadius: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  setorLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#5a6b7a", marginRight: 8 },
+  setorValor: { fontSize: 16, fontFamily: "Helvetica-Bold", flex: 1, textAlign: "center" },
+  headerPrazo: { width: 116, marginRight: 8 },
+  prazoBox: {
+    borderWidth: 1,
+    borderColor: "#3f3f42",
+    borderRadius: 5,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start"
+    justifyContent: "space-between",
+    marginBottom: 4
   },
-  osBoxLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", marginRight: 5 },
-  osBoxNumero: { fontSize: 16, fontFamily: "Helvetica-Bold" },
-  headerCenter: { flex: 1, alignItems: "center", paddingTop: 8 },
-  setorLabel: { fontSize: 9, fontFamily: "Helvetica-Bold" },
-  setorValor: { fontSize: 18, fontFamily: "Helvetica-Bold", marginTop: 2 },
-  qr: { width: 70, height: 70 },
+  prazoLabel: { fontSize: 7, fontFamily: "Helvetica-Bold", color: "#5a6b7a" },
+  prazoValor: { fontSize: 12, fontFamily: "Helvetica-Bold" },
+  qr: { width: 62, height: 62 },
   qrIndisponivel: {
-    width: 70,
-    height: 70,
+    width: 62,
+    height: 62,
     borderWidth: 0.5,
     borderColor: "#999",
     alignItems: "center",
     justifyContent: "center"
   },
-  // ── Meta / blocos ──────────────────────────────────────────────────────────
-  metaRow: { flexDirection: "row", marginBottom: 8 },
-  metaItem: { flexDirection: "row", marginRight: 16 },
-  bold: { fontFamily: "Helvetica-Bold" },
+  // ── Cliente / responsáveis ─────────────────────────────────────────────────
   bloco: {
-    borderWidth: 0.75,
-    borderColor: "#8aa0b3",
-    borderRadius: 4,
-    padding: 7,
-    marginBottom: 8
-  },
-  blocoTitulo: {
-    fontSize: 8.5,
-    fontFamily: "Helvetica-Bold",
-    color: "#0a2540",
-    marginBottom: 4,
-    textTransform: "uppercase"
+    borderWidth: 1,
+    borderColor: "#3f3f42",
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    marginBottom: 7
   },
   linha: { flexDirection: "row", flexWrap: "wrap" },
-  campo: { flexDirection: "row", marginRight: 14, marginBottom: 2 },
-  campoLabel: { fontFamily: "Helvetica-Bold", color: "#333" },
-  checklistRow: { flexDirection: "row", flexWrap: "wrap" },
-  checklistItem: { marginRight: 12, marginBottom: 2 },
-  obsBox: {
-    borderWidth: 0.75,
-    borderColor: "#8aa0b3",
+  campo: { flexDirection: "row", marginRight: 16, marginBottom: 1.5 },
+  campoLabel: { fontFamily: "Helvetica-Bold", fontSize: 8.5 },
+  campoValor: { fontSize: 8.5 },
+  // ── Card do produto ────────────────────────────────────────────────────────
+  produtoCard: { marginBottom: 7 },
+  produtoBarra: {
+    backgroundColor: "#58585a",
     borderRadius: 4,
-    padding: 7,
-    marginBottom: 10,
-    minHeight: 64
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4
   },
-  // ── Produto ────────────────────────────────────────────────────────────────
-  produtoRow: { flexDirection: "row", marginBottom: 10 },
-  placeholderBox: {
-    width: 86,
-    height: 86,
+  produtoNome: {
+    fontSize: 10.5,
+    fontFamily: "Helvetica-Bold",
+    color: "#ffffff",
+    textTransform: "uppercase",
+    flex: 1,
+    paddingRight: 8
+  },
+  produtoChip: {
+    backgroundColor: "#ffffff",
+    borderRadius: 3,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 5
+  },
+  produtoChipLabel: { fontSize: 6.5, fontFamily: "Helvetica-Bold", color: "#5a6b7a", marginRight: 4 },
+  produtoChipValor: { fontSize: 11, fontFamily: "Helvetica-Bold" },
+  // ── Card do modelo ─────────────────────────────────────────────────────────
+  modelosLinha: { flexDirection: "row", marginBottom: 4 },
+  modeloCard: {
+    flex: 1,
     borderWidth: 0.75,
     borderColor: "#b9c5d0",
-    borderRadius: 6,
-    marginRight: 8,
+    borderRadius: 4,
+    padding: 4
+  },
+  modeloEspacador: { flex: 1 },
+  modeloGap: { width: 5 },
+  modeloImagem: { width: "100%", height: 58, objectFit: "contain", marginBottom: 4 },
+  modeloImagemVazia: {
+    width: "100%",
+    height: 58,
+    marginBottom: 4,
+    borderWidth: 0.75,
+    borderColor: "#d5dde4",
+    borderRadius: 3,
     alignItems: "center",
     justifyContent: "center"
   },
-  placeholderTexto: { fontSize: 7, color: "#9aa8b5", textAlign: "center", marginTop: 3 },
-  produtoColuna: { flex: 1 },
-  produtoHeader: {
-    backgroundColor: "#e9edf1",
-    borderRadius: 3,
-    paddingVertical: 4,
-    paddingHorizontal: 7,
-    marginBottom: 4
-  },
-  produtoHeaderLabel: { fontSize: 6, color: "#5a6b7a", fontFamily: "Helvetica-Oblique" },
-  produtoHeaderNome: { fontSize: 10, fontFamily: "Helvetica-Bold" },
-  modeloRow: {
-    borderWidth: 0.6,
-    borderColor: "#b9c5d0",
-    borderRadius: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    marginBottom: 4,
+  modeloImagemVaziaTexto: { fontSize: 6.5, color: "#9aa8b5", textAlign: "center" },
+  modeloLinhaCampos: { flexDirection: "row", alignItems: "flex-start", marginBottom: 2 },
+  modeloCampo: { flex: 1, paddingHorizontal: 2 },
+  modeloCampoLabel: { fontSize: 5.5, fontFamily: "Helvetica-Bold", color: "#6b7a88" },
+  modeloCampoValor: { fontSize: 8, fontFamily: "Helvetica-Bold", textAlign: "right" },
+  modeloDivisor: { width: 0.75, backgroundColor: "#cfd8e0", alignSelf: "stretch" },
+  modeloObs: { fontSize: 6, color: "#5a6b7a", marginTop: 1, marginBottom: 1 },
+  checklistLinha: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    borderTopWidth: 0.75,
+    borderTopColor: "#cfd8e0",
+    marginTop: 3,
+    paddingTop: 3
   },
-  modeloMd: { fontSize: 7.5, color: "#5a6b7a", width: 24, marginRight: 4 },
-  modeloNome: { fontFamily: "Helvetica-Bold", marginRight: 7 },
-  modeloCampos: { flexDirection: "row", flexWrap: "wrap", flex: 1, alignItems: "center" },
-  modeloCampo: { flexDirection: "row", marginRight: 7 },
-  modeloCheckbox: {
-    width: 10,
-    height: 10,
+  checklistItem: { flexDirection: "row", alignItems: "center", marginRight: 6 },
+  checklistCaixa: {
+    width: 8,
+    height: 8,
     borderWidth: 0.75,
-    borderColor: "#8aa0b3",
-    borderRadius: 2,
-    marginLeft: 6
+    borderColor: "#6b7a88",
+    borderRadius: 1.5,
+    marginRight: 2.5
   },
-  // ── Assinatura / rodapé ────────────────────────────────────────────────────
-  assinaturaArea: { marginTop: "auto", paddingTop: 24, alignItems: "flex-end" },
+  checklistTexto: { fontSize: 6.5, fontFamily: "Helvetica-Bold", color: "#3f3f42" },
+  checklistAssinatura: { flex: 1, borderBottomWidth: 0.75, borderBottomColor: "#cfd8e0", height: 8 },
+  // ── Observações / envio ────────────────────────────────────────────────────
+  obsBox: {
+    borderWidth: 1,
+    borderColor: "#3f3f42",
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    marginTop: 4,
+    minHeight: 46
+  },
+  obsTitulo: {
+    fontSize: 8.5,
+    fontFamily: "Helvetica-Bold",
+    marginBottom: 3,
+    textTransform: "uppercase"
+  },
+  obsTexto: { fontSize: 8, marginBottom: 1 },
+  envioBarra: {
+    borderWidth: 1,
+    borderColor: "#3f3f42",
+    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    marginTop: 5,
+    alignItems: "flex-end"
+  },
+  envioTexto: { fontSize: 9, fontFamily: "Helvetica-Bold", textTransform: "uppercase" },
+  // ── Assinaturas / rodapé ───────────────────────────────────────────────────
+  assinaturaArea: { marginTop: "auto", paddingTop: 26, flexDirection: "row", justifyContent: "space-between" },
   assinatura: {
-    width: 190,
+    width: 150,
     borderTopWidth: 0.9,
     borderTopColor: "#111",
     paddingTop: 3,
@@ -180,8 +299,8 @@ const styles = StyleSheet.create({
   footer: {
     position: "absolute",
     bottom: 16,
-    left: 28,
-    right: 28,
+    left: 24,
+    right: 24,
     borderTopWidth: 0.5,
     borderTopColor: "#8aa0b3",
     paddingTop: 4,
@@ -196,81 +315,132 @@ function Campo({ label, valor }: { label: string; valor: string | null | undefin
   return (
     <View style={styles.campo}>
       <Text style={styles.campoLabel}>{label}: </Text>
-      <Text>{pdfSafe(valor) || "-"}</Text>
+      <Text style={styles.campoValor}>{pdfSafe(valor) || "-"}</Text>
     </View>
   );
 }
 
-/** Placeholder neutro para a futura imagem/ícone do produto. */
-function PlaceholderImagemProduto() {
+function CampoModelo({ label, valor }: { label: string; valor: string }) {
   return (
-    <View style={styles.placeholderBox} wrap={false}>
-      <Svg width={26} height={20} viewBox="0 0 26 20">
-        <Rect x={1} y={4} width={24} height={15} rx={3} stroke="#b9c5d0" strokeWidth={1.4} fill="none" />
-        <Rect x={8} y={1} width={10} height={5} rx={2} stroke="#b9c5d0" strokeWidth={1.4} fill="none" />
-        <Circle cx={13} cy={11.5} r={4.5} stroke="#b9c5d0" strokeWidth={1.4} fill="none" />
-      </Svg>
-      <Text style={styles.placeholderTexto}>Imagem{"\n"}mini{"\n"}produto</Text>
+    <View style={styles.modeloCampo}>
+      <Text style={styles.modeloCampoLabel}>{label}</Text>
+      <Text style={styles.modeloCampoValor}>{pdfSafe(valor) || "-"}</Text>
     </View>
   );
 }
 
-function ModeloLinha({ modelo, indice }: { modelo: OsPdfModelo; indice: number }) {
-  const md = `Md. ${String(indice + 1).padStart(2, "0")}`;
+function LinhaCampos({ esquerda, direita }: { esquerda: React.ReactNode; direita: React.ReactNode }) {
   return (
-    <View style={styles.modeloRow} wrap={false}>
-      <Text style={styles.modeloMd}>{md}</Text>
-      <View style={styles.modeloCampos}>
-        <Text style={styles.modeloNome}>
-          {pdfSafe(modelo.nomeModelo)} - qtd. {modelo.quantidade}
-        </Text>
-        <View style={styles.modeloCampo}>
-          <Text style={styles.campoLabel}>Fundo: </Text>
-          <Text>{pdfSafe(modelo.corMaterial) || "-"}</Text>
+    <View style={styles.modeloLinhaCampos}>
+      {esquerda}
+      <View style={styles.modeloDivisor} />
+      {direita}
+    </View>
+  );
+}
+
+/** Card de um modelo: imagem grande da arte + campos + checklist fixo. */
+function ModeloCard({ modelo }: { modelo: OsPdfModelo }) {
+  return (
+    <View style={styles.modeloCard}>
+      {modelo.imagemDataUrl ? (
+        // eslint-disable-next-line jsx-a11y/alt-text
+        <Image style={styles.modeloImagem} src={modelo.imagemDataUrl} />
+      ) : (
+        <View style={styles.modeloImagemVazia}>
+          <Text style={styles.modeloImagemVaziaTexto}>Sem imagem{"\n"}da arte</Text>
         </View>
-        {modelo.numeracaoInicio !== undefined ? (
-          <View style={styles.modeloCampo}>
-            <Text style={styles.campoLabel}>Inicio: </Text>
-            <Text>{modelo.numeracaoInicio}</Text>
+      )}
+
+      <LinhaCampos
+        esquerda={<CampoModelo label="SETOR:" valor={modelo.nomeModelo} />}
+        direita={<CampoModelo label="QUANT.:" valor={formatarQuantidade(modelo.quantidade)} />}
+      />
+      <LinhaCampos
+        esquerda={<CampoModelo label="COR:" valor={modelo.corMaterial || "-"} />}
+        direita={<CampoModelo label="INICIAL/FINAL:" valor={faixaNumeracao(modelo)} />}
+      />
+      <LinhaCampos
+        esquerda={<CampoModelo label="NUM.:" valor={modelo.gabarito || "-"} />}
+        direita={<CampoModelo label="MODELO:" valor={modelo.codigo || "-"} />}
+      />
+      <LinhaCampos
+        esquerda={<CampoModelo label="IMPRESSAO:" valor={modelo.frenteVerso ? "FxV" : "Frente"} />}
+        direita={<CampoModelo label="NUMERACAO:" valor={modelo.tipoNumeracao || "-"} />}
+      />
+
+      {modelo.obsTecnicas ? (
+        <Text style={styles.modeloObs}>Obs: {truncar(modelo.obsTecnicas, 90)}</Text>
+      ) : null}
+
+      <View style={styles.checklistLinha}>
+        {CHECKLIST_CARD.map((etapa) => (
+          <View key={etapa} style={styles.checklistItem}>
+            <View style={styles.checklistCaixa} />
+            <Text style={styles.checklistTexto}>{etapa}</Text>
           </View>
-        ) : null}
-        {modelo.numeracaoFim !== undefined ? (
-          <View style={styles.modeloCampo}>
-            <Text style={styles.campoLabel}>Fim: </Text>
-            <Text>{modelo.numeracaoFim}</Text>
-          </View>
-        ) : null}
-        <View style={styles.modeloCampo}>
-          <Text style={styles.campoLabel}>Frente/Verso: </Text>
-          <Text>{modelo.frenteVerso ? "Sim" : "Nao"}</Text>
-        </View>
-        <View style={styles.modeloCampo}>
-          <Text style={styles.campoLabel}>Numeracao: </Text>
-          <Text>{pdfSafe(modelo.tipoNumeracao) || "-"}</Text>
-        </View>
-        {modelo.obsTecnicas ? <Text>Obs: {truncar(modelo.obsTecnicas, 160)}</Text> : null}
-      </View>
-      <View style={styles.modeloCheckbox} />
-    </View>
-  );
-}
-
-function ProdutoBloco({ produto }: { produto: OsPdfProduto }) {
-  const codigoNome = [produto.codigo, pdfSafe(produto.nome)].filter((v) => v !== null && v !== "").join(" - ");
-  return (
-    <View style={styles.produtoRow}>
-      <PlaceholderImagemProduto />
-      <View style={styles.produtoColuna}>
-        <View style={styles.produtoHeader} wrap={false}>
-          <Text style={styles.produtoHeaderLabel}>Produto:</Text>
-          <Text style={styles.produtoHeaderNome}>
-            {codigoNome} {"  "}- Qtd: {produto.quantidade}
-          </Text>
-        </View>
-        {produto.modelos.map((modelo, i) => (
-          <ModeloLinha key={i} modelo={modelo} indice={i} />
         ))}
+        <View style={styles.checklistAssinatura} />
       </View>
+    </View>
+  );
+}
+
+/** Uma linha da grade de modelos (até 3 cards), com espaçadores de largura. */
+function ModelosLinha({ modelos }: { modelos: OsPdfModelo[] }) {
+  return (
+    <View style={styles.modelosLinha} wrap={false}>
+      {modelos.map((modelo, j) => (
+        <React.Fragment key={j}>
+          {j > 0 ? <View style={styles.modeloGap} /> : null}
+          <ModeloCard modelo={modelo} />
+        </React.Fragment>
+      ))}
+      {/* Espaçadores mantêm a largura dos cards na última linha incompleta. */}
+      {Array.from({ length: MODELOS_POR_LINHA - modelos.length }).map((_, k) => (
+        <React.Fragment key={`vazio-${k}`}>
+          <View style={styles.modeloGap} />
+          <View style={styles.modeloEspacador} />
+        </React.Fragment>
+      ))}
+    </View>
+  );
+}
+
+/** Card do produto: barra de título (qtd + peso) e a grade dos seus modelos. */
+function ProdutoCard({ produto }: { produto: OsPdfProduto }) {
+  const codigoNome = [produto.codigo, pdfSafe(produto.nome)]
+    .filter((v) => v !== null && v !== "")
+    .join(" - ");
+  const peso = formatarPeso(produto.pesoTotalGramas);
+  const linhas = emGrupos(produto.modelos, MODELOS_POR_LINHA);
+
+  const barra = (
+    <View style={styles.produtoBarra}>
+      <Text style={styles.produtoNome}>{codigoNome || "Produto"}</Text>
+      <View style={styles.produtoChip}>
+        <Text style={styles.produtoChipLabel}>QUANT.:</Text>
+        <Text style={styles.produtoChipValor}>{formatarQuantidade(produto.quantidade)}</Text>
+      </View>
+      {peso ? (
+        <View style={styles.produtoChip}>
+          <Text style={styles.produtoChipLabel}>PESO:</Text>
+          <Text style={styles.produtoChipValor}>{peso}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  return (
+    <View style={styles.produtoCard}>
+      {/* Barra + primeira linha de cards no mesmo bloco: a barra nunca fica órfã. */}
+      <View wrap={false}>
+        {barra}
+        {linhas.length > 0 ? <ModelosLinha modelos={linhas[0]} /> : null}
+      </View>
+      {linhas.slice(1).map((linha, i) => (
+        <ModelosLinha key={i} modelos={linha} />
+      ))}
     </View>
   );
 }
@@ -285,7 +455,8 @@ export interface OsPdfDocumentProps {
 
 export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
   const emissao = formatarData(vm.os.emissao);
-  const setor = pdfSafe(vm.produtos[0]?.setor).toUpperCase() || "-";
+  // Setor é campo próprio do boletim (pedidos_artes.setor) — nunca o setor do produto.
+  const setor = pdfSafe(vm.boletim.setor).toUpperCase() || "-";
   const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
     .map((t) => truncar(t, 200))
     .filter(Boolean);
@@ -300,22 +471,37 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
       subject="Boletim de Producao / Ordem de Servico"
     >
       <Page size="A4" style={styles.page}>
-        {/* Cabeçalho — logo + Nº OS destacado | Setor | QR */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
+        {/* Cabeçalho — logo + Nº OS | Setor do boletim | Prazo/Hora | QR */}
+        <View style={styles.header} wrap={false}>
+          <View style={styles.headerIdentidade}>
             {logoDataUrl ? (
               // eslint-disable-next-line jsx-a11y/alt-text
               <Image style={styles.logo} src={logoDataUrl} />
             ) : null}
             <View style={styles.osBox}>
-              <Text style={styles.osBoxLabel}>N° OS:</Text>
+              <Text style={styles.osBoxLabel}>OS:</Text>
               <Text style={styles.osBoxNumero}>{vm.idInt}</Text>
             </View>
           </View>
-          <View style={styles.headerCenter}>
-            <Text style={styles.setorLabel}>Setor:</Text>
-            <Text style={styles.setorValor}>{setor}</Text>
+
+          <View style={styles.headerSetor}>
+            <View style={styles.setorBox}>
+              <Text style={styles.setorLabel}>Setor:</Text>
+              <Text style={styles.setorValor}>{setor}</Text>
+            </View>
           </View>
+
+          <View style={styles.headerPrazo}>
+            <View style={styles.prazoBox}>
+              <Text style={styles.prazoLabel}>PRAZO:</Text>
+              <Text style={styles.prazoValor}>{formatarDataCurta(vm.os.prazo)}</Text>
+            </View>
+            <View style={styles.prazoBox}>
+              <Text style={styles.prazoLabel}>HORA:</Text>
+              <Text style={styles.prazoValor}>{formatarHora(vm.boletim.hora)}</Text>
+            </View>
+          </View>
+
           {qrDataUrl ? (
             // eslint-disable-next-line jsx-a11y/alt-text
             <Image style={styles.qr} src={qrDataUrl} />
@@ -326,57 +512,50 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
           )}
         </View>
 
-        {/* Meta */}
-        <View style={styles.metaRow}>
-          <View style={styles.metaItem}>
-            <Text style={styles.bold}>Emissao: </Text>
-            <Text>{emissao}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.bold}>Prazo/Entrega: </Text>
-            <Text>{formatarData(vm.os.prazo)}</Text>
-          </View>
-        </View>
-
-        {/* Cliente reduzido */}
+        {/* Cliente e responsáveis (dados da proposta) */}
         <View style={styles.bloco} wrap={false}>
-          <Text style={styles.blocoTitulo}>Cliente e responsaveis</Text>
           <View style={styles.linha}>
-            <Campo label="Cliente" valor={vm.cliente.nome} />
-            <Campo label="Vendedor" valor={vm.vendedor} />
+            <Campo label="CLIENTE" valor={vm.cliente.nome} />
+            <Campo label="EVENTO" valor={vm.boletim.evento} />
           </View>
           <View style={styles.linha}>
-            <Campo label="Entrega/Frete" valor={entregaFrete} />
+            <Campo label="VENDEDOR" valor={vm.vendedor} />
+            <Campo label="DESIGNER" valor={vm.designer} />
           </View>
         </View>
 
-        {/* Checklist de etapas (marcação manual) */}
-        <View style={styles.bloco} wrap={false}>
-          <Text style={styles.blocoTitulo}>Checklist de etapas</Text>
-          <View style={styles.checklistRow}>
-            {ETAPAS_CHECKLIST.map((etapa) => (
-              <Text key={etapa} style={styles.checklistItem}>
-                [  ] {etapa}
-              </Text>
-            ))}
-          </View>
-        </View>
-
-        {/* Área livre de observações */}
-        <View style={styles.obsBox} wrap={false}>
-          <Text style={styles.blocoTitulo}>Observações para OS:</Text>
-          {obsLinhas.map((linha, i) => (
-            <Text key={i}>{linha}</Text>
-          ))}
-        </View>
-
-        {/* Produtos: placeholder + código/nome/qtd + uma linha por modelo real */}
+        {/* Um card por produto da proposta, cada um com os seus próprios modelos */}
         {vm.produtos.map((produto, i) => (
-          <ProdutoBloco key={i} produto={produto} />
+          <ProdutoCard key={i} produto={produto} />
         ))}
 
-        {/* Assinatura única do responsável (base da última página) */}
+        {/* Observações da OS */}
+        <View style={styles.obsBox} wrap={false}>
+          <Text style={styles.obsTitulo}>Observações:</Text>
+          {obsLinhas.length > 0 ? (
+            obsLinhas.map((linha, i) => (
+              <Text key={i} style={styles.obsTexto}>
+                {linha}
+              </Text>
+            ))
+          ) : (
+            <Text style={styles.obsTexto}>-</Text>
+          )}
+        </View>
+
+        {/* Forma de envio (mesma origem/comportamento do layout anterior) */}
+        <View style={styles.envioBarra} wrap={false}>
+          <Text style={styles.envioTexto}>Forma de envio: {pdfSafe(entregaFrete) || "-"}</Text>
+        </View>
+
+        {/* Assinaturas (base da última página) */}
         <View style={styles.assinaturaArea} wrap={false}>
+          <View style={styles.assinatura}>
+            <Text>Producao</Text>
+          </View>
+          <View style={styles.assinatura}>
+            <Text>Conferencia</Text>
+          </View>
           <View style={styles.assinatura}>
             <Text>Responsavel</Text>
           </View>

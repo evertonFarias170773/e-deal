@@ -38,6 +38,7 @@ import {
   avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
+import { carregarDadosBoletim, salvarDadosBoletim } from "./services/pedidos-artes.service";
 import { abrirPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -50,6 +51,9 @@ export interface GabaritoItem {
   descricao: string;
   previewImageUrl: string;
 }
+
+/** Setores possíveis do Boletim de Produção (campo próprio do boletim). */
+export const SETORES_BOLETIM = ["IMPRESSÃO", "LASER", "TEXTIL", "PVC", "FLEXO"];
 
 export const MOCK_GABARITOS: GabaritoItem[] = [
   { id: "sem_gabarito", nome: "Sem gabarito", descricao: "Sem formatação ou gabarito específico.", previewImageUrl: "" },
@@ -152,6 +156,9 @@ export function BoletimFormPage() {
   const [empresa, setEmpresa] = useState("Ideal Grafica");
   const [vendedor, setVendedor] = useState("Everton Farias");
   const [dataPrevistaEntrega, setDataPrevistaEntrega] = useState("");
+  // Campos próprios do boletim (pedidos_artes.setor / pedidos_artes.hora)
+  const [boletimSetor, setBoletimSetor] = useState("");
+  const [boletimHora, setBoletimHora] = useState("");
   const [urgente, setUrgente] = useState(false);
   const [formaPagamento, setFormaPagamento] = useState("Pix a vista");
   
@@ -350,8 +357,15 @@ export function BoletimFormPage() {
         setDadosEventoNome("Evento não informado");
       }
     }
-    
+
+    async function loadDadosBoletim() {
+      const dados = await carregarDadosBoletim(Number(idIntParam));
+      if (dados.setor) setBoletimSetor(dados.setor);
+      if (dados.hora) setBoletimHora(dados.hora);
+    }
+
     loadEvento();
+    loadDadosBoletim();
   }, [idIntParam]);
 
   useEffect(() => {
@@ -911,6 +925,19 @@ export function BoletimFormPage() {
           return;
         }
 
+        // 1b. Campos próprios do boletim (setor/hora) — não-fatal.
+        const dadosBoletim = await salvarDadosBoletim(Number(idIntParam), {
+          setor: boletimSetor || null,
+          hora: boletimHora || null
+        });
+        if (!dadosBoletim.success) {
+          showToast({
+            type: "error",
+            title: "Setor/Hora do Boletim",
+            description: dadosBoletim.error || "Não foi possível gravar o setor e a hora do boletim."
+          });
+        }
+
         // 2. Update Modelos (Lotes Técnicos)
         const modelosUpdates = produtos.flatMap(p => p.modelos.map(m => ({
           id: Number(m.id),
@@ -1048,8 +1075,21 @@ export function BoletimFormPage() {
         return;
       }
 
+      // 2b. Campos próprios do boletim (setor/hora) — não-fatal.
+      const dadosBoletim = await salvarDadosBoletim(idInt, {
+        setor: boletimSetor || null,
+        hora: boletimHora || null
+      });
+      if (!dadosBoletim.success) {
+        showToast({
+          type: "error",
+          title: "Setor/Hora do Boletim",
+          description: dadosBoletim.error || "Não foi possível gravar o setor e a hora do boletim."
+        });
+      }
+
       // 3. Mapear e Salvar Modelos/Lotes no Supabase
-      const modelosPayload = produtos.flatMap(p => 
+      const modelosPayload = produtos.flatMap(p =>
         p.modelos.map(m => ({
           id_produto_proposta_origem: p.id_produto_proposta_origem || null,
           nome_modelo: m.nomeModelo || p.nome,
@@ -1362,7 +1402,21 @@ export function BoletimFormPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4 p-5 rounded-3xl bg-blue-50/80 border-2 border-blue-100">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mt-4 p-5 rounded-3xl bg-blue-50/80 border-2 border-blue-100">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-blue-900 uppercase tracking-wider">Setor do Boletim</label>
+                    <select
+                      value={boletimSetor}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setBoletimSetor(e.target.value)}
+                      className="w-full h-11 rounded-2xl border-2 border-blue-300 bg-white px-4 text-base font-bold text-blue-950 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                    >
+                      <option value="">Não definido</option>
+                      {SETORES_BOLETIM.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-blue-900 uppercase tracking-wider">Data Limite de Entrega *</label>
                     <div className={`relative flex items-center w-full rounded-2xl border-2 h-11 transition focus-within:ring-4 ${lockDate ? "border-blue-200 bg-slate-100/80 cursor-not-allowed" : "border-blue-300 bg-white focus-within:border-blue-600 focus-within:ring-blue-100"}`}>
@@ -1381,6 +1435,16 @@ export function BoletimFormPage() {
                         className={`w-full h-full bg-transparent border-none outline-none pl-4 pr-3 text-transparent [&::-webkit-datetime-edit]:text-transparent [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 ${lockDate ? "cursor-not-allowed" : "cursor-pointer"}`}
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-blue-900 uppercase tracking-wider">Hora do Prazo</label>
+                    <input
+                      type="time"
+                      value={boletimHora}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBoletimHora(e.target.value)}
+                      className="w-full h-11 rounded-2xl border-2 border-blue-300 bg-white px-4 text-xl font-bold font-mono text-blue-950 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                    />
                   </div>
 
                   <div className="flex items-center gap-3 pt-8">

@@ -57,6 +57,9 @@ export interface PedidoArte {
   observacoes?: any | null; // jsonb
   designer_uid?: string | null;
   designer_nome?: string | null;
+  // Cadastro do Boletim de Produção (campos próprios do boletim)
+  setor?: string | null;
+  hora?: string | null; // TIME (HH:MM)
   status: StatusArteProducao;
   comentarios_revisao: string | null;
   enviado_por: string | null;

@@ -10,7 +10,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { montarOsPdfViewModel } from "@/features/pedidos/services/os-viewmodel.service";
-import type { OsPdfArteRef } from "@/features/pedidos/services/os-viewmodel.service";
+import type { OsPdfArteRef, OsPdfModelo } from "@/features/pedidos/services/os-viewmodel.service";
 import { OsPdfDocument } from "@/features/pedidos/pdf/OsPdfDocument";
 import { EMPRESA_LOGO_FILES } from "@/features/pedidos/pdf/os-pdf-assets";
 import { carregarImagemComoDataUrl } from "@/features/pedidos/pdf/os-pdf-images";
@@ -77,6 +77,34 @@ async function preencherMiniaturas(artesLists: OsPdfArteRef[][]): Promise<void> 
     }
   }
   await Promise.all(tarefas);
+}
+
+/**
+ * Imagem grande de cada modelo no card: pedidos_modelos.arte_url é a fonte oficial.
+ * Quando a arte é PDF/vetor (não renderizável pelo @react-pdf) usa-se a amostra
+ * renderizada do mesmo modelo. Tolerante a falha: sem imagem o card usa placeholder.
+ */
+async function preencherImagensDosModelos(modelos: OsPdfModelo[]): Promise<void> {
+  await Promise.all(
+    modelos.map(async (modelo) => {
+      const candidatas = [modelo.imagemUrl, modelo.imagemFallbackUrl].filter(
+        (url): url is string => typeof url === "string" && url.trim() !== ""
+      );
+      for (const url of candidatas) {
+        if (url.startsWith("data:image/")) {
+          modelo.imagemDataUrl = url;
+          return;
+        }
+        // Evita baixar artes vetoriais só para descartá-las na validação de mime.
+        if (/\.(pdf|ai|eps|svg|cdr)(\?|$)/i.test(url)) continue;
+        const dataUrl = await carregarImagemComoDataUrl(url);
+        if (dataUrl) {
+          modelo.imagemDataUrl = dataUrl;
+          return;
+        }
+      }
+    })
+  );
 }
 
 export async function GET(request: Request) {
@@ -155,6 +183,9 @@ export async function GET(request: Request) {
     vm.artesGerais,
     ...vm.produtos.flatMap((p) => p.modelos.map((m) => m.artes)),
   ]);
+
+  // Imagem grande de cada modelo (card do novo layout).
+  await preencherImagensDosModelos(vm.produtos.flatMap((p) => p.modelos));
 
   // Logo da empresa (asset estático — falha não impede a emissão).
   let logoDataUrl: string | null = null;
