@@ -52,6 +52,7 @@ import { simularOrcamentoAvulsoDb, listarProdutosCatalogo, buscarFotosProduto } 
 import { cotarOpcoesFrete } from './maestro-agent-frete.server';
 import { gerarPdfPropostaServer } from './maestro-agent-pdf.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
+import { intervaloDiaSaoPaulo } from '../simple/maestro-simple-tempo';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
 import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
 import {
@@ -129,7 +130,7 @@ interface AgentToolDefinition {
 // ─── Helpers de período (UTC — mesma convenção dos adapters) ─────────────────
 
 interface PeriodoArg {
-  tipo: 'mes_atual' | 'mes_passado' | 'ultimos_dias' | 'mes_especifico';
+  tipo: 'mes_atual' | 'mes_passado' | 'ultimos_dias' | 'mes_especifico' | 'hoje' | 'ontem';
   mes?: number;
   ano?: number;
   dias?: number;
@@ -139,7 +140,11 @@ interface PeriodoArg {
 const PERIODO_SCHEMA = {
   type: 'object',
   properties: {
-    tipo: { type: 'string', enum: ['mes_atual', 'mes_passado', 'ultimos_dias', 'mes_especifico'] },
+    tipo: {
+      type: 'string',
+      enum: ['mes_atual', 'mes_passado', 'ultimos_dias', 'mes_especifico', 'hoje', 'ontem'],
+      description: 'hoje/ontem = dia-calendário em America/Sao_Paulo (não janela de 24h).',
+    },
     mes: { type: 'number' },
     ano: { type: 'number' },
     dias: { type: 'number' },
@@ -193,6 +198,14 @@ function mapPeriodoArg(raw: unknown): MaestroPeriodo | null {
       return { tipo: 'mes_atual', label: p.label || 'mês atual' };
     case 'mes_passado':
       return { tipo: 'mes_passado', label: p.label || 'mês passado' };
+    case 'hoje': {
+      const d = intervaloDiaSaoPaulo(0);
+      return { tipo: 'dinamico', start: d.desde, end: d.ate, label: p.label || 'hoje' };
+    }
+    case 'ontem': {
+      const d = intervaloDiaSaoPaulo(-1);
+      return { tipo: 'dinamico', start: d.desde, end: d.ate, label: p.label || 'ontem' };
+    }
     case 'ultimos_dias': {
       const dias = Number(p.dias);
       if (!Number.isFinite(dias) || dias <= 0 || dias > 366) return null;
@@ -924,13 +937,14 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
 
       if (!gestor) {
         const eu = await buscarNomeUsuario(ctx.supabase, ctx.userId);
-        if (!eu.nome) {
+        if (!eu.nomeComercial) {
           return {
             found: false,
             error: 'PERMISSAO_NEGADA: o perfil do usuário não permite ver vendas de outros vendedores e não foi possível identificar o vendedor dele. Explique com educação.',
           };
         }
-        vendedorNome = eu.nome;
+        // nome COMERCIAL (usuarios.meu_vendedor) — é o que casa com propostas.vendedor
+        vendedorNome = eu.nomeComercial;
         escopo = 'proprio';
       }
 
