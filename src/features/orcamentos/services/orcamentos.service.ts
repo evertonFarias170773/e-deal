@@ -32,6 +32,9 @@ import type {
 } from "@/features/orcamentos/types";
 
 
+/** Limite de public.propostas.id_cliente (integer / int4). */
+const MAX_INT4 = 2147483647;
+
 export type OrcamentosReadFilters = {
   search?: string;
   status?: string;
@@ -294,7 +297,13 @@ async function fetchPropostaRows(
       const term = filters.search.trim();
       const num = Number(term);
       if (Number.isInteger(num) && num > 0) {
-        query = query.or(`id_int.eq.${num},cliente.ilike.%${term}%,vendedor.ilike.%${term}%`);
+        // id_int (nº da proposta) e id_cliente são colunas numéricas → comparação exata,
+        // igual ao comportamento já existente do nº da proposta.
+        const condicoes = [`id_int.eq.${num}`];
+        // id_cliente é integer (int4): fora da faixa o Postgres aborta a consulta inteira.
+        if (num <= MAX_INT4) condicoes.push(`id_cliente.eq.${num}`);
+        condicoes.push(`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`);
+        query = query.or(condicoes.join(","));
       } else {
         query = query.or(`cliente.ilike.%${term}%,vendedor.ilike.%${term}%`);
       }
