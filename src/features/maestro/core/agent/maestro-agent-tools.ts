@@ -39,6 +39,7 @@ import {
   buscarDetalheProposta,
   calcularFaturamentoPeriodo,
   listarPropostasCliente,
+  listarPipelineVendedor,
   type PedidoSimples,
 } from '../simple/maestro-simple-propostas.server';
 import {
@@ -1058,6 +1059,83 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
       return {
         ...res,
         ...(eu.isVendedor ? {} : { nota: 'Usuário não está marcado como vendedor no cadastro — números do nome comercial vinculado.' }),
+      };
+    },
+  },
+
+  minhas_propostas: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'minhas_propostas',
+        description:
+          'Pipeline de propostas do USUÁRIO LOGADO (Maestro Vendedor): "quantas propostas fiz hoje/no mês", ' +
+          '"quais aguardam retorno do cliente", "quais estão paradas", "minhas maiores", "quem devo ligar primeiro". ' +
+          'Fonte: public.propostas por vendedor (não canceladas, período por data de criação). Agregados PRONTOS: ' +
+          'total, criadas hoje, contagem/soma por status, aguardando retorno do CLIENTE (= NOVO/NOVO EM ARTE, sem ' +
+          'cobrança gerada), aguardando PAGAMENTO (= AGUARDANDO*, cobrança ativa — NUNCA confundir com retorno), ' +
+          'na fila de produção (estado atual), paradas (sem movimentação interna há N+ dias) e prioridade ' +
+          'de contato (ordenada pelo servidor: maior valor primeiro, desempate por mais dias parada — apresente o ' +
+          'critério). SEMPRE o vendedor logado; não aceita nome de vendedor. Não exige cliente ativo. ' +
+          'NÃO é fonte de faturamento nem de "pedidos fechados" ("quanto faturei"/"quantos pedidos fechei" → minha_performance).',
+        parameters: {
+          type: 'object',
+          properties: {
+            periodo: { ...PERIODO_SCHEMA, description: 'Opcional — omitido usa o mês atual (por data de criação).' },
+            visao: {
+              type: 'string',
+              enum: ['resumo', 'aguardando_retorno', 'paradas', 'maiores', 'prioridade_contato'],
+              description:
+                'Qual lista detalhar (default resumo = só agregados). "quem ligar primeiro" → prioridade_contato.',
+            },
+            dias_parada: { type: 'number', description: 'Opcional — dias sem movimentação para "parada" (default 2, 1-30).' },
+            limite: { type: 'number', description: 'Opcional — tamanho das listas (default 10, máx 20).' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const periodo = mapPeriodoArg(args.periodo) ?? { tipo: 'mes_atual' as const, label: 'mês atual' };
+      const intervalo = intervaloDoPeriodo(periodo);
+      if (!intervalo.desde) return { found: false, error: 'Período inválido.' };
+
+      const eu = await buscarNomeUsuario(ctx.supabase, ctx.userId);
+      if (!eu.nomeComercial) {
+        return {
+          found: false,
+          error:
+            'IDENTIDADE_NAO_VINCULADA: o usuário logado não está vinculado a um vendedor no cadastro de usuários. ' +
+            'Explique com transparência e oriente a pedir ao gestor para preencher o vínculo de vendedor.',
+        };
+      }
+
+      const diasParada = Number(args.dias_parada);
+      const limite = Number(args.limite);
+      const res = await listarPipelineVendedor(ctx.supabase, eu.nomeComercial, {
+        desde: intervalo.desde,
+        ate: intervalo.ate,
+        periodoLabel: periodo.label,
+        diasParada: Number.isFinite(diasParada) ? diasParada : undefined,
+        limite: Number.isFinite(limite) ? limite : undefined,
+        inicioHojeUtcIso: intervaloDiaSaoPaulo(0).desde,
+      });
+
+      // Economia de tokens: expõe items só da visão pedida (agregados sempre)
+      const visao = typeof args.visao === 'string' ? args.visao : 'resumo';
+      return {
+        ...res,
+        aguardando_retorno_cliente: {
+          ...res.aguardando_retorno_cliente,
+          items: visao === 'aguardando_retorno' ? res.aguardando_retorno_cliente.items : undefined,
+        },
+        paradas: { ...res.paradas, items: visao === 'paradas' ? res.paradas.items : undefined },
+        maiores_propostas: visao === 'maiores' ? res.maiores_propostas : undefined,
+        prioridade_contato: {
+          criterio: res.prioridade_contato.criterio,
+          items: visao === 'prioridade_contato' ? res.prioridade_contato.items : undefined,
+        },
+        semantica: SEMANTICA_PROPOSTAS,
       };
     },
   },

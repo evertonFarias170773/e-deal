@@ -360,6 +360,257 @@ export async function listarPropostasCliente(
   };
 }
 
+// ─── Pipeline do VENDEDOR (Maestro Vendedor, fase 1) ──────────────────────
+
+// Colunas do pipeline por vendedor — inclui cliente e updated_at (recência)
+const PIPELINE_VENDEDOR_COLS = PROPOSTAS_COLS + ', id_cliente, cliente, updated_at, em_arte';
+
+// Vendedores grandes passam de 500 propostas/mês — teto maior, com truncado
+const PIPELINE_VENDEDOR_MAX_ROWS = 1000;
+
+/** Status "aguardando retorno do CLIENTE": orçamento sem cobrança gerada. */
+const STATUS_AGUARDANDO_RETORNO = ['NOVO', 'NOVO / EM ARTE'];
+
+export interface PropostaVendedorItem {
+  id_int: number;
+  cliente: string | null;
+  id_cliente: number | null;
+  valor: number | null;
+  status_interno: string | null;
+  created_at: string;
+  updated_at: string | null;
+  /** Dias desde a última movimentação INTERNA (updated_at ?? created_at) */
+  dias_sem_movimentacao: number | null;
+  pedido_real: boolean;
+  em_arte: boolean;
+  is_avulso: boolean;
+}
+
+export interface PipelineVendedorResult {
+  found: boolean;
+  vendedor: string;
+  escopo: 'proprio';
+  periodo?: string;
+  criterio_vinculo: string;
+  /** Propostas não canceladas no período (count exact — correto mesmo truncado) */
+  total_propostas: number;
+  valor_total_pipeline: number;
+  criadas_hoje: { quantidade: number; soma_valor: number };
+  contagem_por_status: Record<string, number>;
+  soma_por_status: Record<string, number>;
+  aguardando_retorno_cliente: { quantidade: number; soma_valor: number; criterio: string; items: PropostaVendedorItem[] };
+  aguardando_pagamento: { quantidade: number; soma_valor: number; criterio: string };
+  /** Fila VIVA de produção (estado atual) — NÃO é métrica de "pedidos fechados no mês" */
+  na_fila_producao: { quantidade: number; soma_valor: number; criterio: string };
+  paradas: { quantidade: number; soma_valor: number; dias_sem_movimento: number; criterio: string; items: PropostaVendedorItem[] };
+  maiores_propostas: { items: PropostaVendedorItem[] };
+  prioridade_contato: { criterio: string; items: PropostaVendedorItem[] };
+  truncado: boolean;
+  source: string;
+  aviso_vinculo?: string;
+  authError?: boolean;
+  error?: string;
+}
+
+function mapPropostaVendedor(row: Record<string, unknown>, agoraMs: number): PropostaVendedorItem {
+  const updated = typeof row.updated_at === 'string' ? row.updated_at : null;
+  const referencia = updated ?? (typeof row.created_at === 'string' ? row.created_at : null);
+  const refMs = referencia ? new Date(referencia).getTime() : NaN;
+  return {
+    id_int: Number(row.id_int),
+    cliente: typeof row.cliente === 'string' ? row.cliente : null,
+    id_cliente: row.id_cliente != null ? Number(row.id_cliente) : null,
+    valor: coalesceValor(row),
+    status_interno: typeof row.status_interno === 'string' ? row.status_interno : null,
+    created_at: String(row.created_at),
+    updated_at: updated,
+    dias_sem_movimentacao: Number.isFinite(refMs)
+      ? Math.max(0, Math.floor((agoraMs - refMs) / (24 * 60 * 60 * 1000)))
+      : null,
+    pedido_real: row.is_prd_aprovado === true && row.is_reproved !== true,
+    em_arte: row.em_arte === true,
+    is_avulso: row.is_avulso === true,
+  };
+}
+
+/**
+ * Pipeline comercial de UM vendedor com agregados prontos (Maestro Vendedor).
+ * Espelha os filtros da tela /orcamentos: vendedor por TEXTO (ilike exato,
+ * com fallback de prefixo p/ ruído tipo "Edison Jr" vs "Edison Jr."),
+ * não canceladas, período por created_at.
+ * "Aguardando retorno do cliente" = NOVO/NOVO EM ARTE (sem cobrança gerada);
+ * AGUARDANDO* = aguardando PAGAMENTO; "parada" = aguardando retorno sem
+ * movimentação INTERNA (updated_at) há N+ dias — o ERP não registra a data
+ * do último contato com o cliente.
+ */
+export async function listarPipelineVendedor(
+  supabase: SupabaseClient,
+  vendedorNome: string,
+  opts?: {
+    desde?: string;
+    ate?: string;
+    periodoLabel?: string;
+    /** Dias sem movimentação interna para considerar "parada" (default 2) */
+    diasParada?: number;
+    /** Tamanho das listas de itens (default 10, máx 20) */
+    limite?: number;
+    /** Início do dia-calendário de hoje (UTC ISO) para "criadas hoje" */
+    inicioHojeUtcIso?: string;
+  },
+): Promise<PipelineVendedorResult> {
+  const criterioVinculoBase = 'propostas.vendedor = nome comercial do usuário (match case-insensitive';
+  const base = {
+    vendedor: vendedorNome,
+    escopo: 'proprio' as const,
+    periodo: opts?.periodoLabel,
+    source: 'public.propostas',
+  };
+  const vazio = (extra: Partial<PipelineVendedorResult>): PipelineVendedorResult => ({
+    ...base,
+    found: false,
+    criterio_vinculo: criterioVinculoBase + ')',
+    total_propostas: 0,
+    valor_total_pipeline: 0,
+    criadas_hoje: { quantidade: 0, soma_valor: 0 },
+    contagem_por_status: {},
+    soma_por_status: {},
+    aguardando_retorno_cliente: { quantidade: 0, soma_valor: 0, criterio: '', items: [] },
+    aguardando_pagamento: { quantidade: 0, soma_valor: 0, criterio: '' },
+    na_fila_producao: { quantidade: 0, soma_valor: 0, criterio: '' },
+    paradas: { quantidade: 0, soma_valor: 0, dias_sem_movimento: opts?.diasParada ?? 2, criterio: '', items: [] },
+    maiores_propostas: { items: [] },
+    prioridade_contato: { criterio: '', items: [] },
+    truncado: false,
+    ...extra,
+  });
+
+  const consultar = (padraoVendedor: string) => {
+    let query = supabase
+      .from('propostas')
+      .select(PIPELINE_VENDEDOR_COLS, { count: 'exact' })
+      .ilike('vendedor', padraoVendedor)
+      .neq('status_interno', 'CANCELADO');
+    if (opts?.desde) query = query.gte('created_at', opts.desde);
+    if (opts?.ate) query = query.lt('created_at', opts.ate);
+    return query
+      .order('created_at', { ascending: false })
+      .order('id_int', { ascending: false })
+      .limit(PIPELINE_VENDEDOR_MAX_ROWS);
+  };
+
+  // 1ª tentativa: match exato (ilike sem curinga); fallback: prefixo
+  //   (pega "Edison Jr." quando o cadastro traz "Edison Jr")
+  const primeira = await consultar(vendedorNome);
+  const error = primeira.error;
+  let data = primeira.data;
+  let count = primeira.count;
+  let avisoVinculo: string | undefined;
+  let criterioVinculo = criterioVinculoBase + ')';
+  if (!error && (data ?? []).length === 0) {
+    const fallback = await consultar(vendedorNome + '%');
+    if (!fallback.error && (fallback.data ?? []).length > 0) {
+      data = fallback.data;
+      count = fallback.count;
+      criterioVinculo = criterioVinculoBase + ', com fallback de prefixo)';
+      avisoVinculo =
+        `Nenhuma proposta com o nome exato "${vendedorNome}" — usando match por prefixo (variação de grafia no cadastro).`;
+    }
+  }
+
+  if (error) {
+    return vazio({ authError: isAuthError(error), error: error.message });
+  }
+
+  const agoraMs = Date.now();
+  const todas = (data ?? []).map(r => mapPropostaVendedor(r as unknown as Record<string, unknown>, agoraMs));
+  const diasParada = Math.min(Math.max(opts?.diasParada ?? 2, 1), 30);
+  const limite = Math.min(Math.max(opts?.limite ?? 10, 1), 20);
+
+  const contagemPorStatus: Record<string, number> = {};
+  const somaPorStatus: Record<string, number> = {};
+  let valorTotal = 0;
+  const criadasHoje = { quantidade: 0, soma_valor: 0 };
+  const aguardandoRetorno: PropostaVendedorItem[] = [];
+  const aguardandoPagamento = { quantidade: 0, soma_valor: 0 };
+  const naFilaProducao = { quantidade: 0, soma_valor: 0 };
+
+  for (const p of todas) {
+    const status = p.status_interno ?? 'SEM_STATUS';
+    const valor = p.valor ?? 0;
+    contagemPorStatus[status] = (contagemPorStatus[status] ?? 0) + 1;
+    somaPorStatus[status] = Number(((somaPorStatus[status] ?? 0) + valor).toFixed(2));
+    valorTotal += valor;
+    if (opts?.inicioHojeUtcIso && p.created_at >= opts.inicioHojeUtcIso) {
+      criadasHoje.quantidade++;
+      criadasHoje.soma_valor = Number((criadasHoje.soma_valor + valor).toFixed(2));
+    }
+    if (STATUS_AGUARDANDO_RETORNO.includes(status)) aguardandoRetorno.push(p);
+    if (status.startsWith('AGUARDANDO')) {
+      aguardandoPagamento.quantidade++;
+      aguardandoPagamento.soma_valor = Number((aguardandoPagamento.soma_valor + valor).toFixed(2));
+    }
+    if (p.pedido_real) {
+      naFilaProducao.quantidade++;
+      naFilaProducao.soma_valor = Number((naFilaProducao.soma_valor + valor).toFixed(2));
+    }
+  }
+
+  const somaValores = (arr: PropostaVendedorItem[]) =>
+    Number(arr.reduce((acc, p) => acc + (p.valor ?? 0), 0).toFixed(2));
+
+  const paradasArr = aguardandoRetorno.filter(
+    p => (p.dias_sem_movimentacao ?? 0) >= diasParada,
+  );
+  const porValorDesc = (a: PropostaVendedorItem, b: PropostaVendedorItem) =>
+    (b.valor ?? 0) - (a.valor ?? 0) ||
+    (b.dias_sem_movimentacao ?? 0) - (a.dias_sem_movimentacao ?? 0);
+
+  return {
+    ...base,
+    found: todas.length > 0,
+    criterio_vinculo: criterioVinculo,
+    total_propostas: count ?? todas.length,
+    valor_total_pipeline: Number(valorTotal.toFixed(2)),
+    criadas_hoje: criadasHoje,
+    contagem_por_status: contagemPorStatus,
+    soma_por_status: somaPorStatus,
+    aguardando_retorno_cliente: {
+      quantidade: aguardandoRetorno.length,
+      soma_valor: somaValores(aguardandoRetorno),
+      criterio: 'status NOVO ou NOVO / EM ARTE — sem cobrança gerada; aguardando decisão do cliente',
+      items: [...aguardandoRetorno].sort(porValorDesc).slice(0, limite),
+    },
+    aguardando_pagamento: {
+      ...aguardandoPagamento,
+      criterio: 'status AGUARDANDO* — cobrança ativa; aguardando PAGAMENTO, não retorno do cliente',
+    },
+    na_fila_producao: {
+      ...naFilaProducao,
+      criterio:
+        'is_prd_aprovado=true e is_reproved=false — fila VIVA de produção (estado atual, não histórico); ' +
+        '"quantos pedidos fechei" = pedidos_pagos de minha_performance (pagamentos confirmados)',
+    },
+    paradas: {
+      quantidade: paradasArr.length,
+      soma_valor: somaValores(paradasArr),
+      dias_sem_movimento: diasParada,
+      criterio:
+        `NOVO/NOVO EM ARTE sem movimentação INTERNA (updated_at) há ${diasParada}+ dias — ` +
+        'o ERP não registra a data do último contato com o cliente',
+      items: [...paradasArr]
+        .sort((a, b) => (b.dias_sem_movimentacao ?? 0) - (a.dias_sem_movimentacao ?? 0))
+        .slice(0, limite),
+    },
+    maiores_propostas: { items: [...todas].sort(porValorDesc).slice(0, limite) },
+    prioridade_contato: {
+      criterio: 'aguardando retorno do cliente, ordenado por maior valor; desempate por mais dias sem movimentação',
+      items: [...aguardandoRetorno].sort(porValorDesc).slice(0, limite),
+    },
+    truncado: todas.length >= PIPELINE_VENDEDOR_MAX_ROWS,
+    ...(avisoVinculo ? { aviso_vinculo: avisoVinculo } : {}),
+  };
+}
+
 // ─── Detalhe de proposta (itens/produtos) ─────────────────────────────────
 
 export interface ItemProposta {
