@@ -498,16 +498,18 @@ export async function listarPipelineVendedor(
       .limit(PIPELINE_VENDEDOR_MAX_ROWS);
   };
 
-  // 1ª tentativa: match exato (ilike sem curinga); fallback: prefixo
-  //   (pega "Edison Jr." quando o cadastro traz "Edison Jr")
+  // 1ª tentativa: match exato (ilike sem curinga); fallback: prefixo SEM a
+  // pontuação final — cobre as duas direções do ruído de grafia
+  // ("Edison Jr." no cadastro × "Edison Jr" nas propostas, e vice-versa)
   const primeira = await consultar(vendedorNome);
   const error = primeira.error;
   let data = primeira.data;
   let count = primeira.count;
   let avisoVinculo: string | undefined;
   let criterioVinculo = criterioVinculoBase + ')';
-  if (!error && (data ?? []).length === 0) {
-    const fallback = await consultar(vendedorNome + '%');
+  const prefixoSemPontuacao = vendedorNome.replace(/[.\s]+$/, '');
+  if (!error && (data ?? []).length === 0 && prefixoSemPontuacao) {
+    const fallback = await consultar(prefixoSemPontuacao + '%');
     if (!fallback.error && (fallback.data ?? []).length > 0) {
       data = fallback.data;
       count = fallback.count;
