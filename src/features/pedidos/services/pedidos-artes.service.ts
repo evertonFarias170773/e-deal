@@ -124,6 +124,89 @@ export async function salvarBriefingArtes(idInt: number, payload: Partial<Pedido
 }
 
 /**
+ * Carrega apenas os campos próprios do Boletim de Produção (setor e hora).
+ * Usa a linha mais recente de pedidos_artes do id_int.
+ */
+export async function carregarDadosBoletim(
+  idInt: number
+): Promise<{ setor: string | null; hora: string | null }> {
+  const client = getSupabaseClient();
+  if (!client) return { setor: null, hora: null };
+
+  const { data, error } = await client
+    .from("pedidos_artes")
+    .select("setor, hora")
+    .eq("id_int", idInt)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error || !data || data.length === 0) {
+    if (error) console.error(`[PedidosArtesService] Erro ao carregar dados do boletim:`, error);
+    return { setor: null, hora: null };
+  }
+
+  return {
+    setor: data[0].setor ? String(data[0].setor) : null,
+    hora: data[0].hora ? String(data[0].hora).slice(0, 5) : null
+  };
+}
+
+/**
+ * Grava setor e hora do Boletim de Produção em pedidos_artes.
+ *
+ * Atualiza a linha mais recente do id_int sem tocar em `status` (o fluxo de artes
+ * é preservado). Quando não existe linha, cria uma apenas com esses campos; nesse
+ * caso o status APROVADO mantém o resultado da liberação para produção idêntico ao
+ * cenário "proposta sem artes cadastradas".
+ */
+export async function salvarDadosBoletim(
+  idInt: number,
+  dados: { setor: string | null; hora: string | null }
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Conexão com o banco de dados não disponível." };
+
+  const payload = {
+    setor: dados.setor?.trim() ? dados.setor.trim() : null,
+    hora: dados.hora?.trim() ? dados.hora.trim() : null
+  };
+
+  const { data: existente, error: fetchError } = await client
+    .from("pedidos_artes")
+    .select("id")
+    .eq("id_int", idInt)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (fetchError) {
+    console.error(`[PedidosArtesService] Erro ao localizar boletim para gravar setor/hora:`, fetchError);
+    return { success: false, error: fetchError.message };
+  }
+
+  if (existente && existente.length > 0) {
+    const { error } = await client
+      .from("pedidos_artes")
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq("id", existente[0].id);
+    if (error) {
+      console.error(`[PedidosArtesService] Erro ao atualizar setor/hora do boletim:`, error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  }
+
+  const { error } = await client
+    .from("pedidos_artes")
+    .insert({ id_int: idInt, ...payload, status: "APROVADO" });
+
+  if (error) {
+    console.error(`[PedidosArtesService] Erro ao criar cadastro do boletim:`, error);
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+/**
  * Valida, faz upload e adiciona no array `arquivos` JSONB.
  * Cria o registro caso não exista.
  */

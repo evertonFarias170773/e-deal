@@ -323,16 +323,25 @@ export function UsuariosPerfisList() {
           <>
             {/* Desktop View */}
             <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              {/* table-fixed + colgroup: nenhuma coluna monopoliza o espaço; o
+                  e-mail cede largura e trunca, mantendo Perfil/Origem/Ações inteiras. */}
+              <table className="w-full min-w-[1080px] table-fixed text-left border-collapse">
+                <colgroup>
+                  <col style={{ width: canEdit ? "20%" : "24%" }} />
+                  <col style={{ width: canEdit ? "21%" : "25%" }} />
+                  <col style={{ width: canEdit ? "11%" : "13%" }} />
+                  <col style={{ width: canEdit ? "18%" : "20%" }} />
+                  <col style={{ width: canEdit ? "15%" : "18%" }} />
+                  {canEdit && <col style={{ width: "15%" }} />}
+                </colgroup>
                 <thead>
                   <tr className="border-b" style={{ borderColor: "var(--border)", background: "var(--sidebar-hover-bg)" }}>
                     <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Usuário</th>
                     <th className="p-4 text-xs font-bold text-muted-foreground uppercase">E-mail</th>
                     <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Setor</th>
-                    <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Empresa</th>
                     <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Perfil Efetivo</th>
-                    <th className="p-4 text-xs font-bold text-muted-foreground uppercase">Origem</th>
-                    {canEdit && <th className="p-4 text-xs font-bold text-muted-foreground uppercase text-center">Ações</th>}
+                    <th className="p-4 text-xs font-bold text-muted-foreground uppercase whitespace-nowrap">Origem</th>
+                    {canEdit && <th className="px-3 py-4 text-xs font-bold text-muted-foreground uppercase text-center">Ações</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y" style={{ borderColor: "var(--border)" }}>
@@ -341,22 +350,24 @@ export function UsuariosPerfisList() {
                       key={user.user_id} 
                       className="hover:bg-neutral-50/20 dark:hover:bg-neutral-900/10 transition-colors"
                     >
-                      <td className="p-4 text-sm font-semibold text-foreground">
+                      <td className="p-4 text-sm font-semibold text-foreground truncate" title={user.nome_usuario || undefined}>
                         {user.nome_usuario || <span className="italic text-muted-foreground">Sem Nome</span>}
                       </td>
-                      <td className="p-4 text-sm text-muted-foreground font-mono">{user.email}</td>
+                      <td className="p-4 text-sm text-muted-foreground font-mono truncate" title={user.email}>
+                        {user.email}
+                      </td>
                       <td className="p-4 text-sm text-foreground">
-                        <span className="rounded-md bg-neutral-100 dark:bg-neutral-800 px-2 py-1 text-xs">
+                        <span className="inline-block max-w-full truncate align-middle rounded-md bg-neutral-100 dark:bg-neutral-800 px-2 py-1 text-xs" title={user.setor || "N/A"}>
                           {user.setor || "N/A"}
                         </span>
                       </td>
-                      <td className="p-4 text-sm text-muted-foreground">Empresa #{user.id_empresa || 1}</td>
                       <td className="p-4 text-sm">
-                        <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold"
+                        <span className="inline-flex max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-bold"
                           style={{
                             background: user.origemPerfil === "banco" ? "rgba(59, 130, 246, 0.1)" : "rgba(107, 114, 128, 0.1)",
                             color: user.origemPerfil === "banco" ? "#3b82f6" : "var(--muted-foreground)"
                           }}
+                          title={user.perfilEfetivoNome}
                         >
                           {user.perfilEfetivoNome}
                         </span>
@@ -364,20 +375,20 @@ export function UsuariosPerfisList() {
                       <td className="p-4 text-sm">
                         {/* Destaque Visual Forte conforme solicitado */}
                         {user.origemPerfil === "banco" ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                            <Database className="h-3 w-3" /> Perfil do Banco
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                            <Database className="h-3 w-3 shrink-0" /> Perfil do Banco
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 px-2.5 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                            <History className="h-3 w-3" /> Fallback Legado
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 px-2.5 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                            <History className="h-3 w-3 shrink-0" /> Fallback Legado
                           </span>
                         )}
                       </td>
                       {canEdit && (
-                        <td className="p-4 text-center">
+                        <td className="px-3 py-4 text-center">
                           <button
                             onClick={() => setSelectedUser(user)}
-                            className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 text-foreground transition"
+                            className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 text-foreground transition"
                             style={{ borderColor: "var(--border)" }}
                           >
                             <UserCog className="h-3.5 w-3.5" />

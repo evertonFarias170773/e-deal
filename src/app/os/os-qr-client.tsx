@@ -8,8 +8,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *   REMOVE query/fragment da barra de endereço (history.replaceState).
  * - Consulta o estado via POST (token no body) — nunca em URL de request.
  * - Mostra o status atual, destaca o próximo natural e lista os demais
- *   destinos; pausa/salto/retorno/lateral exigem motivo (validado também
- *   no servidor); ENTREGUE exige confirmação reforçada em 2 toques.
+ *   destinos; o motivo é sempre OPCIONAL (registrado quando informado);
+ *   ENTREGUE exige confirmação reforçada em 2 toques.
  * - Nunca atualiza status ao abrir a página.
  */
 
@@ -141,8 +141,6 @@ export function OsQrClient() {
         setSucesso(data);
       } else if (data.motivo === "RATE_LIMITED") {
         setAviso("Muitas tentativas — aguarde um instante.");
-      } else if (data.motivo === "MOTIVO_OBRIGATORIO") {
-        setAviso("Esta mudança exige um motivo. Descreva antes de confirmar.");
       } else if (data.motivo === "CONFLITO") {
         setAviso("O status mudou em outra tela. A OS foi recarregada — confira antes de continuar.");
       } else if (data.motivo === "DESTINO_INVALIDO") {
@@ -259,12 +257,10 @@ function EstadoOs({
   const destaqueKeys = new Set([...naturais, ...avancosEntrega].map((d) => d.status));
   const outros = destinos.filter((d) => !destaqueKeys.has(d.status));
 
-  const exigeMotivo = selecionado?.exige_motivo === true;
-  const motivoOk = !exigeMotivo || motivo.trim().length > 0;
   const isEntregue = selecionado?.status === "ENTREGUE";
 
   function confirmar() {
-    if (!selecionado || !motivoOk || enviando) return;
+    if (!selecionado || enviando) return;
     if (isEntregue && !armadoEntregue) {
       // Confirmação reforçada: primeiro toque arma, segundo confirma.
       setArmadoEntregue(true);
@@ -340,7 +336,6 @@ function EstadoOs({
                       <span>{d.status}</span>
                       <span className="ml-3 shrink-0 text-[10px] font-medium uppercase tracking-wide text-slate-400">
                         {TIPO_LABEL[d.tipo] || d.tipo}
-                        {d.exige_motivo ? " · motivo" : ""}
                       </span>
                     </button>
                   ))}
@@ -360,22 +355,20 @@ function EstadoOs({
           </p>
           <p className="mt-1 text-xs text-slate-500">{TIPO_LABEL[selecionado.tipo] || selecionado.tipo}</p>
 
-          {exigeMotivo ? (
-            <div className="mt-3">
-              <label htmlFor="osqr-motivo" className="text-xs font-semibold text-slate-600">
-                Motivo (obrigatório)
-              </label>
-              <textarea
-                id="osqr-motivo"
-                value={motivo}
-                onChange={(e) => setMotivo(e.target.value)}
-                maxLength={300}
-                rows={3}
-                placeholder={MOTIVO_PLACEHOLDER[selecionado.tipo] || "Descreva o motivo da mudança"}
-                className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800 outline-none focus:border-slate-500"
-              />
-            </div>
-          ) : null}
+          <div className="mt-3">
+            <label htmlFor="osqr-motivo" className="text-xs font-semibold text-slate-600">
+              Motivo (opcional)
+            </label>
+            <textarea
+              id="osqr-motivo"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              maxLength={300}
+              rows={2}
+              placeholder={MOTIVO_PLACEHOLDER[selecionado.tipo] || "Se quiser, registre uma observação"}
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800 outline-none focus:border-slate-500"
+            />
+          </div>
 
           {isEntregue ? (
             <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-medium text-amber-800">
@@ -400,7 +393,7 @@ function EstadoOs({
             <button
               type="button"
               onClick={confirmar}
-              disabled={enviando || !motivoOk}
+              disabled={enviando}
               className={`w-2/3 rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-sm transition disabled:opacity-60 ${
                 isEntregue && armadoEntregue ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700"
               }`}

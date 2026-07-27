@@ -20,6 +20,8 @@ export interface OsPdfArteRef {
 }
 
 export interface OsPdfModelo {
+  /** Código do modelo (pedidos_modelos.id) — impresso no card como "MODELO:". */
+  codigo: string | null;
   nomeModelo: string;
   quantidade: number;
   tipoNumeracao: string;
@@ -31,6 +33,12 @@ export interface OsPdfModelo {
   gabarito?: string;
   obsTecnicas?: string;
   artes: OsPdfArteRef[];
+  /** Imagem do modelo — pedidos_modelos.arte_url (fonte oficial). */
+  imagemUrl: string | null;
+  /** Amostra renderizada (pedidos_modelos.amostra_arte_base64) — usada quando arte_url não é raster. */
+  imagemFallbackUrl: string | null;
+  /** Preenchido pela rota (pré-fetch server-side) a partir das URLs acima. */
+  imagemDataUrl?: string | null;
 }
 
 export interface OsPdfProduto {
@@ -39,6 +47,8 @@ export interface OsPdfProduto {
   nome: string;
   quantidade: number;
   setor?: string;
+  /** produtos_proposta.peso_total, em gramas. */
+  pesoTotalGramas: number | null;
   modelos: OsPdfModelo[];
 }
 
@@ -51,6 +61,8 @@ export interface OsPdfViewModel {
     statusProducao: string;
     statusInterno: string;
   };
+  /** Cadastro do boletim (pedidos_artes) — setor e hora são próprios do boletim. */
+  boletim: { setor: string | null; hora: string | null; evento: string | null };
   empresa: { id: EmpresaId; nome: string; cnpj: string | null };
   cliente: { nome: string; documento: string | null; contato: string | null; telefone: string | null };
   vendedor: string;
@@ -170,42 +182,64 @@ export async function montarOsPdfViewModel(
       console.warn("[os-viewmodel] Falha ao buscar empresa (não-fatal):", e);
     }
 
-    // Artes: briefing/anexos de pedidos_artes (JSONB `arquivos`), agrupadas por id_modelo.
-    const artesPorModelo = new Map<string, OsPdfArteRef[]>();
+    // Cadastro do boletim + anexos do briefing (pedidos_artes). Setor e hora são
+    // campos próprios do boletim; a linha mais recente do id_int é a vigente.
+    let boletimSetor: string | null = null;
+    let boletimHora: string | null = null;
+    let boletimEvento: string | null = null;
     const artesGerais: OsPdfArteRef[] = [];
     try {
       const { data: artesRows } = await client
         .from("pedidos_artes")
-        .select("id_modelo, arquivos")
-        .eq("id_int", idInt);
+        .select("setor, hora, nome_evento, arquivos, created_at")
+        .eq("id_int", idInt)
+        .order("created_at", { ascending: false });
+      const boletimRow = (artesRows || [])[0];
+      if (boletimRow) {
+        boletimSetor = boletimRow.setor ? String(boletimRow.setor) : null;
+        boletimHora = boletimRow.hora ? String(boletimRow.hora) : null;
+        boletimEvento = boletimRow.nome_evento ? String(boletimRow.nome_evento) : null;
+      }
       for (const row of artesRows || []) {
         const arquivos: ArquivoJsonb[] = Array.isArray(row.arquivos) ? row.arquivos : [];
-        const refs = arquivos.map((a) => arquivoParaArteRef(client, a));
-        if (row.id_modelo !== null && row.id_modelo !== undefined) {
-          const key = String(row.id_modelo);
-          artesPorModelo.set(key, [...(artesPorModelo.get(key) || []), ...refs]);
-        } else {
-          artesGerais.push(...refs);
-        }
+        artesGerais.push(...arquivos.map((a) => arquivoParaArteRef(client, a)));
       }
     } catch (e) {
-      console.warn("[os-viewmodel] Falha ao buscar artes (não-fatal):", e);
+      console.warn("[os-viewmodel] Falha ao buscar cadastro do boletim/artes (não-fatal):", e);
     }
 
-    // url_arte direta dos modelos (usada na fila de impressão).
-    const urlArtePorModelo = new Map<string, string>();
+    // Imagem do modelo: pedidos_modelos.arte_url (oficial) + amostra renderizada
+    // como alternativa quando a arte é PDF/vetor (não renderizável no PDF).
+    const imagemPorModelo = new Map<string, { url: string | null; fallback: string | null }>();
     try {
       const { data: modelosRows } = await client
         .from("pedidos_modelos")
-        .select("id, url_arte")
+        .select("id, arte_url, amostra_arte_base64")
         .eq("id_int", idInt);
       for (const row of modelosRows || []) {
-        if (row.url_arte) {
-          urlArtePorModelo.set(String(row.id), String(row.url_arte));
+        imagemPorModelo.set(String(row.id), {
+          url: row.arte_url ? String(row.arte_url) : null,
+          fallback: row.amostra_arte_base64 ? String(row.amostra_arte_base64) : null
+        });
+      }
+    } catch (e) {
+      console.warn("[os-viewmodel] Falha ao buscar arte_url dos modelos (não-fatal):", e);
+    }
+
+    // Peso total por produto (produtos_proposta.peso_total, em gramas).
+    const pesoPorProduto = new Map<number, number>();
+    try {
+      const { data: pesosRows } = await client
+        .from("produtos_proposta")
+        .select("id, peso_total")
+        .eq("id_int", idInt);
+      for (const row of pesosRows || []) {
+        if (row.peso_total !== null && row.peso_total !== undefined) {
+          pesoPorProduto.set(Number(row.id), Number(row.peso_total));
         }
       }
     } catch (e) {
-      console.warn("[os-viewmodel] Falha ao buscar url_arte dos modelos (não-fatal):", e);
+      console.warn("[os-viewmodel] Falha ao buscar peso dos produtos (não-fatal):", e);
     }
 
     // Frete escolhido (apenas dados não-monetários).
@@ -234,14 +268,18 @@ export async function montarOsPdfViewModel(
       nome: prod.nome,
       quantidade: prod.quantidade,
       setor: prod.setor,
+      pesoTotalGramas: prod.db_id !== undefined ? pesoPorProduto.get(prod.db_id) ?? null : null,
       modelos: (prod.modelos || []).map((m) => {
-        const artes = [...(artesPorModelo.get(String(m.id)) || [])];
-        const urlArte = urlArtePorModelo.get(String(m.id));
-        if (urlArte) {
-          const nome = urlArte.split("/").pop() || "arte";
-          artes.unshift({ nomeArquivo: nome, mimeType: mimeFromNome(nome), publicUrl: urlArte });
+        const imagens = imagemPorModelo.get(String(m.id));
+        const artes: OsPdfArteRef[] = [];
+        if (imagens?.url) {
+          const nome = imagens.url.split("/").pop() || "arte";
+          artes.push({ nomeArquivo: nome, mimeType: mimeFromNome(nome), publicUrl: imagens.url });
         }
         return {
+          codigo: /^\d+$/.test(String(m.id)) ? String(m.id) : null,
+          imagemUrl: imagens?.url ?? null,
+          imagemFallbackUrl: imagens?.fallback ?? null,
           nomeModelo: m.nomeModelo,
           quantidade: m.quantidade,
           tipoNumeracao: m.configImpressao?.tipoNumeracao || "SEM_NUMERACAO",
@@ -269,6 +307,7 @@ export async function montarOsPdfViewModel(
         statusProducao: pedido.status_producao || "",
         statusInterno
       },
+      boletim: { setor: boletimSetor, hora: boletimHora, evento: boletimEvento },
       empresa: { id: empresaId, nome: empresaNome, cnpj: empresaCnpj },
       cliente: {
         nome: pedido.clienteNome,
