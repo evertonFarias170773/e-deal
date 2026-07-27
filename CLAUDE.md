@@ -2,7 +2,7 @@
 
 Leia primeiro:
 
-AGENTS.md (inclui o fluxo OBRIGATÓRIO de commit/push/deploy — worktree D:\worktrees\maestro-agent-loop, branch erp-ideal-preview)
+AGENTS.md (inclui o fluxo OBRIGATÓRIO de publicação — BRANCH ÚNICA erp-ideal-preview nesta árvore; "publica" = commit de TUDO + push = deploy automático)
 
 docs/PROJECT_CONTEXT.md
 

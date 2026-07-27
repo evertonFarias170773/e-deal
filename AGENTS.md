@@ -14,19 +14,28 @@ Este arquivo contém as diretrizes gerais e obrigatórias para atuação de agen
 
 ## Fluxo de commit, push e deploy (OBRIGATÓRIO para qualquer agente)
 
-Quando o usuário pedir "commit", "push", "coloca no ar" ou "sobe":
+**Modelo de BRANCH ÚNICA** (vigente desde 27/07/2026): todo o trabalho acontece
+na árvore principal `d:\PROJETO IDEAL ANTIGRAVITY`, direto na branch
+**`erp-ideal-preview`** — a mesma que a Vercel publica em produção
+automaticamente a cada push. Não existem branches de feature, worktrees nem
+cherry-picks: apenas UM desenvolvedor (o dono) trabalha no projeto.
 
-1. **Valide antes**: `npx tsc --noEmit` e `npx eslint <arquivos alterados>` — nunca commite com erro.
-2. **Onde commitar**: o trabalho é editado na árvore principal (`d:\PROJETO IDEAL ANTIGRAVITY`), mas o commit de produção acontece no worktree **`D:\worktrees\maestro-agent-loop`**, que aponta para a branch **`erp-ideal-preview`**. Copie os arquivos alterados da árvore principal para o MESMO caminho no worktree antes do commit.
-3. **`git add` somente dos arquivos da tarefa** (nunca `git add -A`); um commit por mudança lógica.
-4. **Mensagem de commit**: `tipo(modulo): descricao` em ASCII (sem acentos), SEM aspas duplas — no PowerShell 5.1 aspas duplas quebram; use here-string com aspas simples (`@'...'@`).
-5. **Push**: `git push origin erp-ideal-preview`. O push dispara o **deploy automático de produção na Vercel** — só faça quando o usuário pedir.
+Quando o usuário pedir "publica", "coloca no ar", "commit e push" ou "sobe":
+
+1. **Valide antes**: `npx tsc --noEmit` (e `npx eslint` nos arquivos alterados) — nunca publique com erro.
+2. **Publique TUDO**: `git add -A` (o `.gitignore` já exclui rascunhos, diagnósticos e segredos) — o dono quer SEMPRE o estado local completo publicado, nunca pedaços escolhidos a dedo.
+3. **Mensagem de commit**: `tipo(modulo): descricao` em ASCII (sem acentos), SEM aspas duplas — no PowerShell 5.1 aspas duplas quebram; use here-string com aspas simples (`@'...'@`).
+4. **Push**: `git push origin erp-ideal-preview` → deploy automático de produção na Vercel.
+5. Se o usuário pedir só "commit" (sem publicar), pare antes do push.
+
+Enquanto o usuário NÃO pedir publicação: trabalhe e valide normalmente, sem
+commitar — o estado local acumula e sai completo no próximo "publica".
 
 NUNCA:
-- commitar `.env.local`, segredos ou `tsconfig.tsbuildinfo`;
+- criar branch nova, worktree ou cherry-pick — o fluxo é branch única;
+- commitar `.env.local` ou segredos (arquivos de rascunho/diagnóstico ficam fora via `.gitignore` — rascunhos novos vão na pasta `scratch/`);
 - `git push --force`, `git reset --hard` em branch publicada ou rebase interativo;
-- criar/alterar variáveis de ambiente do deploy (Vercel) — isso é decisão do dono do projeto; variáveis novas nascem só no `.env.local` local;
-- commitar direto na árvore principal achando que é deploy — a branch de produção é a `erp-ideal-preview` via worktree.
+- criar/alterar variáveis de ambiente do deploy (Vercel) — decisão do dono; variáveis novas nascem só no `.env.local` local.
 
 Reversão: sempre `git revert` (novo commit), preservando o histórico — nunca apagar commits.
 
