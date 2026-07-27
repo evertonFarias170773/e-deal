@@ -53,6 +53,7 @@ import { cotarOpcoesFrete } from './maestro-agent-frete.server';
 import { gerarPdfPropostaServer } from './maestro-agent-pdf.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { intervaloDiaSaoPaulo } from '../simple/maestro-simple-tempo';
+import { calcularPerformanceVendedor } from '../simple/maestro-simple-performance.server';
 import { buscarContaCorrenteCliente, buscarAnaliseCredito } from '../simple/maestro-simple-conta-corrente.server';
 import { isAgentWriteEnabled, isWriteSalvarCotacaoEnabled } from './maestro-agent-config';
 import {
@@ -173,6 +174,38 @@ function intervaloDoPeriodo(p: MaestroPeriodo): { desde?: string; ate?: string }
     default:
       return {};
   }
+}
+
+/**
+ * Intervalo imediatamente ANTERIOR ao período informado (para comparação).
+ * mes_atual → mês passado completo; hoje → ontem; janelas dinâmicas → a
+ * janela de mesma duração imediatamente anterior.
+ */
+function intervaloAnterior(
+  periodo: MaestroPeriodo,
+  intervalo: { desde?: string; ate?: string },
+): { desde: string; ate: string; label: string } | null {
+  const agora = new Date();
+  const ano = agora.getUTCFullYear();
+  const mes = agora.getUTCMonth();
+  if (periodo.tipo === 'mes_atual') {
+    return { desde: inicioMesUtc(ano, mes - 1), ate: inicioMesUtc(ano, mes), label: 'mês passado' };
+  }
+  if (periodo.tipo === 'mes_passado') {
+    return { desde: inicioMesUtc(ano, mes - 2), ate: inicioMesUtc(ano, mes - 1), label: 'mês retrasado' };
+  }
+  if (!intervalo.desde) return null;
+  const desdeMs = new Date(intervalo.desde).getTime();
+  const fimMs = intervalo.ate ? new Date(intervalo.ate).getTime() : agora.getTime();
+  const duracao = fimMs - desdeMs;
+  if (!Number.isFinite(duracao) || duracao <= 0) return null;
+  const label =
+    periodo.label === 'hoje' ? 'ontem' : periodo.label === 'ontem' ? 'anteontem' : 'período anterior equivalente';
+  return {
+    desde: new Date(desdeMs - duracao).toISOString(),
+    ate: new Date(desdeMs).toISOString(),
+    label,
+  };
 }
 
 /** Marca cada proposta com o conceito oficial de pedido real (fila de Produção). */
@@ -966,6 +999,65 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         ...(escopo === 'proprio'
           ? { restricao: 'Usuário sem propostas.view_all — mostrando apenas os números do próprio vendedor.' }
           : {}),
+      };
+    },
+  },
+
+  minha_performance: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'minha_performance',
+        description:
+          'Performance comercial do USUÁRIO LOGADO (Maestro Vendedor): "quanto EU vendi/faturei", "meu ticket ' +
+          'médio", "meus pedidos fechados", "como estou vs mês passado", "qual empresa mais faturou comigo". ' +
+          'Fonte oficial: pagamentos_v2 confirmados (PAID/A_VENCER) por data_confirmacao. Devolve PRONTOS: ' +
+          'faturamento, pedidos_pagos, ticket_medio (null sem pedidos — diga que não há pedidos pagos, nunca R$ 0), ' +
+          'comparação com o período anterior (variação absoluta e %) e subtotais/top por empresa. ' +
+          'SEMPRE o vendedor logado — não aceita nome de vendedor (ranking/equipe/outro vendedor → vendas_por_vendedor). ' +
+          'Não exige cliente ativo. Períodos hoje/ontem = dia-calendário de Brasília.',
+        parameters: {
+          type: 'object',
+          properties: {
+            periodo: { ...PERIODO_SCHEMA, description: 'Opcional — omitido usa o mês atual.' },
+            comparar_com_anterior: {
+              type: 'boolean',
+              description: 'Opcional (default true) — inclui o período anterior com variação calculada.',
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const periodo = mapPeriodoArg(args.periodo) ?? { tipo: 'mes_atual' as const, label: 'mês atual' };
+      const intervalo = intervaloDoPeriodo(periodo);
+      if (!intervalo.desde) return { found: false, error: 'Período inválido.' };
+
+      const eu = await buscarNomeUsuario(ctx.supabase, ctx.userId);
+      if (!eu.nomeComercial) {
+        return {
+          found: false,
+          error:
+            'IDENTIDADE_NAO_VINCULADA: o usuário logado não está vinculado a um vendedor no cadastro de usuários. ' +
+            'Explique com transparência e oriente a pedir ao gestor para preencher o vínculo de vendedor.',
+        };
+      }
+
+      const comparar = args.comparar_com_anterior !== false;
+      const anterior = comparar ? intervaloAnterior(periodo, intervalo) : null;
+
+      const res = await calcularPerformanceVendedor(ctx.supabase, {
+        vendedorNome: eu.nomeComercial,
+        desde: intervalo.desde,
+        ate: intervalo.ate,
+        periodoLabel: periodo.label ?? 'período',
+        ...(anterior ? { comparar: anterior } : {}),
+      });
+
+      return {
+        ...res,
+        ...(eu.isVendedor ? {} : { nota: 'Usuário não está marcado como vendedor no cadastro — números do nome comercial vinculado.' }),
       };
     },
   },
