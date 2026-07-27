@@ -54,7 +54,9 @@ function MaestroLayout() {
     openConversation(id).then(refreshConversas);
   }, [openConversation, refreshConversas]);
 
-  const showSuggestions = messages.length <= 1 && !isLoading;
+  // === 0 (não <= 1): a conversa nova criada só com a saudação do dia
+  // tem 1 mensagem e precisa aparecer, não ficar atrás das sugestões
+  const showSuggestions = messages.length === 0 && !isLoading;
 
   return (
     // Ocupa toda a largura disponível dentro do main do AppLayout

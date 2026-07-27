@@ -19,12 +19,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js';
-import { recuperarUltimaConversa } from '../../../../../features/maestro/core/simple/maestro-persistence.server';
+import {
+  recuperarUltimaConversa,
+  persistirMensagemMaestro,
+} from '../../../../../features/maestro/core/simple/maestro-persistence.server';
+import { montarSaudacaoDoDia } from '../../../../../features/maestro/core/simple/maestro-saudacao.server';
+import { ymdSaoPaulo } from '../../../../../features/maestro/core/simple/maestro-simple-tempo';
 
 const MAX_MENSAGENS = 60; // ~30 turnos — mesma janela do histórico do agente
 
 async function criarClientAutenticado(request: NextRequest): Promise<
-  { ok: true; supabase: SupabaseClient } | { ok: false; response: NextResponse }
+  { ok: true; supabase: SupabaseClient; userId: string } | { ok: false; response: NextResponse }
 > {
   const authHeader = request.headers.get('authorization') ?? '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -57,7 +62,7 @@ async function criarClientAutenticado(request: NextRequest): Promise<
     };
   }
 
-  return { ok: true, supabase };
+  return { ok: true, supabase, userId: user.id };
 }
 
 /** Carrega mensagens de uma conversa em ordem cronológica (desempate por id). */
@@ -137,13 +142,50 @@ export async function GET(request: NextRequest) {
       alvo = await recuperarUltimaConversa(auth.supabase);
     }
 
+    // Saudação do dia (Maestro Vendedor) — SOMENTE na retomada padrão
+    // (nunca ao abrir conversa específica pelo histórico); flag-gated e
+    // idempotente por dia via mensagem persistida. Nunca quebra a retomada.
+    const saudacao = idParam ? null : await montarSaudacaoDoDia(auth.supabase, auth.userId);
+
     if (!alvo) {
-      return NextResponse.json({ conversa: null }, { status: 200 });
+      if (!saudacao) {
+        return NextResponse.json({ conversa: null }, { status: 200 });
+      }
+      const [ano, mes, dia] = ymdSaoPaulo().split('-');
+      const convId = await persistirMensagemMaestro(auth.supabase, {
+        conversationId: null,
+        content: saudacao.content,
+        tituloSeNova: `Resumo do dia ${dia}/${mes}/${ano}`,
+      });
+      if (!convId) {
+        // Sem persistência não há idempotência — segue o comportamento antigo
+        return NextResponse.json({ conversa: null }, { status: 200 });
+      }
+      return NextResponse.json(
+        {
+          conversa: {
+            id: convId,
+            contextoJson: null,
+            mensagens: [{ role: 'maestro', content: saudacao.content, criadaEm: new Date().toISOString() }],
+          },
+        },
+        { status: 200 }
+      );
     }
 
     const mensagens = await carregarMensagens(auth.supabase, alvo.id);
     if (!mensagens) {
       return NextResponse.json({ conversa: null }, { status: 200 });
+    }
+
+    if (saudacao) {
+      const convId = await persistirMensagemMaestro(auth.supabase, {
+        conversationId: alvo.id,
+        content: saudacao.content,
+      });
+      if (convId) {
+        mensagens.push({ role: 'maestro', content: saudacao.content, criadaEm: new Date().toISOString() });
+      }
     }
 
     return NextResponse.json(

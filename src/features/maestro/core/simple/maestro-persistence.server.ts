@@ -91,6 +91,58 @@ export async function persistirTurnoMaestro(
 }
 
 /**
+ * Persiste UMA mensagem avulsa do Maestro (ex.: saudação do dia), criando a
+ * conversa quando necessário. A idempotência da saudação DEPENDE desta
+ * gravação: é a mensagem persistida de hoje que impede a repetição no F5.
+ * Retorna o id da conversa, ou null quando desabilitado/falha.
+ */
+export async function persistirMensagemMaestro(
+  supabase: SupabaseClient,
+  input: { conversationId: string | null; content: string; tituloSeNova?: string },
+): Promise<string | null> {
+  if (process.env.MAESTRO_PERSISTENCE_ENABLED !== 'true') return null;
+
+  try {
+    let conversationId = input.conversationId;
+
+    if (!conversationId) {
+      const titulo = (input.tituloSeNova ?? input.content).slice(0, 80);
+      const { data, error } = await supabase
+        .from('maestro_conversas')
+        .insert({ titulo })
+        .select('id')
+        .single();
+      if (error || !data) {
+        console.warn('[MaestroPersistence] Falha ao criar conversa (mensagem avulsa):', error?.message);
+        return null;
+      }
+      conversationId = data.id as string;
+    }
+
+    const { error: msgError } = await supabase
+      .from('maestro_mensagens')
+      .insert([{ conversa_id: conversationId, role: 'maestro', content: input.content.slice(0, 8000) }]);
+    if (msgError) {
+      console.warn('[MaestroPersistence] Falha ao gravar mensagem avulsa:', msgError.message);
+      return null;
+    }
+
+    const { error: updError } = await supabase
+      .from('maestro_conversas')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', conversationId);
+    if (updError) {
+      console.warn('[MaestroPersistence] Falha ao atualizar conversa (mensagem avulsa):', updError.message);
+    }
+
+    return conversationId;
+  } catch (err) {
+    console.warn('[MaestroPersistence] Erro inesperado em mensagem avulsa (ignorado):', err);
+    return null;
+  }
+}
+
+/**
  * Recupera a conversa mais recente não encerrada do usuário (para retomada).
  * Retorna null quando desabilitado, sem dados ou em erro.
  */
