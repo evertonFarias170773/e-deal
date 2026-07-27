@@ -246,8 +246,39 @@ type CadastrosListQuery = {
   status?: "TODOS" | "ATIVO" | "INATIVO" | "RESTRICAO";
 };
 
+// id_cliente é int4; um termo numérico maior que o limite do inteiro
+// (ex.: CPF de 11 dígitos ou CNPJ de 14) faz o PostgREST responder 400.
+const INT4_MAX = 2147483647;
+
+/**
+ * O prefixo "#" marca busca explícita por ID. `normalizeSearchTerm` apaga o
+ * caractere, então a intenção precisa ser lida no termo cru, antes dele.
+ */
+function isBuscaExplicitaPorId(search: string) {
+  return /^\s*#/.test(search);
+}
+
+/** Nenhum id_cliente é negativo: força zero resultados sem erro no PostgREST. */
+const CLAUSULA_SEM_RESULTADO = "id_cliente.eq.-1";
+
 function buildCadastrosSearchClause(search: string) {
   const normalized = normalizeSearchTerm(search);
+
+  // "#N" busca só pelo id_cliente. Sem isso o match exato disputa o mesmo or()
+  // com ~11 ilike parciais — para "#14" são milhares de acertos em documento e
+  // telefone, e o cliente certo cai fora da primeira página.
+  if (isBuscaExplicitaPorId(search)) {
+    const idInformado = normalized.replace(/\s+/g, "");
+    if (!/^\d+$/.test(idInformado)) {
+      return CLAUSULA_SEM_RESULTADO;
+    }
+    const id = Number(idInformado);
+    if (!Number.isSafeInteger(id) || id > INT4_MAX) {
+      return CLAUSULA_SEM_RESULTADO;
+    }
+    return `id_cliente.eq.${id}`;
+  }
+
   if (!normalized) {
     return "";
   }
@@ -267,11 +298,9 @@ function buildCadastrosSearchClause(search: string) {
     `cidade_uf.ilike.%${normalized}%`
   ];
 
-  // id_cliente é int4; um termo numérico maior que o limite do inteiro
-  // (ex.: CPF de 11 dígitos ou CNPJ de 14) faz o PostgREST responder 400 e
-  // derruba a busca inteira. Só incluir o filtro por id quando couber em int4;
-  // documentos continuam cobertos por `documento.ilike`.
-  const INT4_MAX = 2147483647;
+  // Busca ampla (termo sem "#"): só incluir o filtro por id quando couber em
+  // int4, senão o PostgREST responde 400 e derruba a busca inteira.
+  // Documentos continuam cobertos por `documento.ilike`.
   if (digits && Number(digits) <= INT4_MAX) {
     clauses.unshift(`id_cliente.eq.${digits}`);
   }
