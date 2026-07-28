@@ -82,6 +82,16 @@ Antes de criar qualquer listagem, defina: nome da listagem, objetivo operacional
 - Colunas ordenáveis importantes: ID, data, valor, cliente, status e vencimento. No mobile, ordenação fica dentro de "Filtros".
 - Desktop deve funcionar com sidebar fixa e conteúdo fluido; mobile deve usar drawer, topbar com menu e conteúdo 100%.
 
+## Persistência de Filtros na URL (obrigatório em listas novas)
+
+- Filtros, busca, ordenação, paginação, período e aba ficam nos query params, nunca só em `useState`. Sem isso o usuário perde tudo ao atualizar a página, sair e voltar ou usar o histórico do navegador.
+- Use sempre o hook compartilhado `useUrlFilters` (`src/hooks/useUrlFilters.ts`) com os codecs de `src/lib/url-state.ts`. Não crie mecanismo próprio de persistência.
+- Campo de busca usa `useDebouncedInput`: responde a cada tecla e grava na URL depois da pausa.
+- Valor igual ao padrão não entra na URL; valor inválido cai no padrão seguro; "Limpar filtros" remove os parâmetros; mudar filtro volta para a primeira página.
+- A rota precisa de `<Suspense>` no `page.tsx`, exigência do `useSearchParams`.
+- `sessionStorage` só para estado visual não compartilhável (modo compacto, tela cheia, grupos recolhidos). Nunca dado sensível na URL.
+- Padrão completo, nomes de parâmetros e checklist: `docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md`.
+
 ## Diretriz Final
 
 O sistema antigo é referência operacional, não visual. Preserve produtividade, densidade de informação, velocidade para operadores, facilidade de encontrar registros e ações rápidas. Melhore responsividade, filtros, organização visual, badges, menus de ação, cards mobile, estados vazios, feedback de erro e performance.

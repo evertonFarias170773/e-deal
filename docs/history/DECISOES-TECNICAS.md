@@ -32,6 +32,55 @@ Quando houver divergência, prevalece a fonte oficial atual do domínio. A decis
 
 ---
 
+## Estado de lista na URL, escrito com `router.replace` (28/07/2026)
+
+Decisão: filtros, busca, ordenação, paginação, período e aba das listagens ficam em query params, lidos e escritos por um hook compartilhado (`useUrlFilters`), e a escrita usa `router.replace(url, { scroll: false })`.
+
+Motivo:
+
+- no App Router a página é desmontada ao trocar de rota, então `useState` não sobrevive a atualizar a página, sair e voltar, ao histórico do navegador nem a um link compartilhado;
+- a URL como única fonte de verdade elimina estado espelhado e, com ele, o risco de laço de sincronização;
+- foi medido nesta versão do Next que `window.history.replaceState` altera a barra de endereços mas **não** reprocessa `useSearchParams` — a tela exibiria filtros diferentes dos que estão na URL. `router.replace` foi verificado e atualiza corretamente, sem remontar o componente;
+- a estratégia fica concentrada em um único ponto do hook, então revê-la no futuro não exige tocar nas telas.
+
+Consequências:
+
+- toda rota com lista precisa de `<Suspense>` no `page.tsx`, exigência do `useSearchParams` (o build falha com erro explícito quando falta);
+- padrões calculados no cliente (mês corrente, por exemplo) exigem schema memorizado;
+- criação de `src/hooks/`, pasta já prevista na arquitetura oficial e até então não usada.
+
+## Exceção do parâmetro `autoRegister` (28/07/2026)
+
+Decisão: a remoção do parâmetro `autoRegister` da URL, em Contas a Receber, usa `window.history.replaceState` direto, sem passar pelo `useUrlFilters`.
+
+Motivo:
+
+- `autoRegister` não é filtro: é um comando de uso único, vindo da preparação de boletos, que abre o modal de registro bancário e precisa desaparecer para um F5 não reabrir o modal;
+- uma navegação de router disparada logo após a carga inicial dos dados é descartada no build de produção — verificado em produção, com o parâmetro permanecendo na URL indefinidamente, inclusive adiando a chamada para fora do commit;
+- neste caso a tela não precisa reagir à mudança: basta o parâmetro sumir, e um `ref` já impede a reabertura do modal.
+
+Consequências:
+
+- é a única escrita de URL do sistema fora do hook, e deve permanecer assim;
+- qualquer parâmetro que a tela precise **ler e reagir** continua obrigado a usar o hook;
+- as escritas de filtro seguintes partem de `window.location.search`, então o parâmetro removido não retorna.
+
+## Dedupe de eventos de sessão no `AuthProvider` (28/07/2026)
+
+Decisão: eventos de autenticação redundantes do mesmo `user.id` já enriquecido não republicam o usuário base; o reenriquecimento acontece em silêncio e só o resultado final é publicado.
+
+Motivo:
+
+- o Supabase reemite `SIGNED_IN` sempre que a aba volta a ficar visível;
+- o usuário base é montado sem permissões, e o `PermissionGuard` interpretava isso como acesso negado, desmontando a página inteira e apagando o estado da tela;
+- medido em produção: janela de cerca de 235 ms exibindo "Acesso Negado", com remontagem e recarregamento dos dados a cada retorno à janela.
+
+Consequências:
+
+- permissões continuam sendo revalidadas a cada retorno à janela, sem passar pelo estado intermediário sem permissões;
+- usuário bloqueado ou sem cadastro continua perdendo o acesso, inclusive quando o bloqueio é detectado durante o retorno à janela;
+- troca real de usuário segue o fluxo completo, porque a comparação é por `user.id`.
+
 ## Iniciar sem Supabase
 
 Decisão: a primeira etapa do ERP será visual e mockada.

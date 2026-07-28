@@ -1,8 +1,8 @@
 # DOCUMENTATION_INDEX.md
 
-Versão: 3.1  
+Versão: 3.2  
 Status: Oficial  
-Última atualização: 19/07/2026  
+Última atualização: 28/07/2026  
 Projeto: ERP Ideal
 
 ---
@@ -152,6 +152,10 @@ Perfis, permissões, escopos e estado de persistência.
 
 Padrões visuais, responsividade, acessibilidade e componentes.
 
+## [`technical/PADRAO-FILTROS-URL-NAVEGACAO.md`](./technical/PADRAO-FILTROS-URL-NAVEGACAO.md)
+
+Persistência de filtros, busca, período, paginação e abas na URL. Obrigatório em listas novas.
+
 ---
 
 # 7. Histórico
@@ -209,6 +213,7 @@ A presença de um script não comprova aplicação nem constitui autorização d
 | Escrita no Supabase | `MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md` |
 | Perfis e acesso | `PERFIS-PERMISSOES.md` |
 | Interface | `PADROES-UX-UI.md` |
+| Filtros e estado de lista na URL | `PADRAO-FILTROS-URL-NAVEGACAO.md` |
 | Status de proposta | `FLUXO-OFICIAL-STATUS-PROPOSTAS.md` |
 | Cobrança e pagamento | `CHECKOUT-PAGAMENTOS.md` |
 | Conta Corrente e E-Crédito | `CONTA-CORRENTE-CREDITO.md` |
