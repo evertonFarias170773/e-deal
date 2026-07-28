@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import type { MockUser } from "@/lib/types";
@@ -81,6 +81,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isBlocked: false,
   }));
 
+  /**
+   * Id do usuário cujo enriquecimento já foi concluído (com sucesso ou com bloqueio).
+   *
+   * O Supabase reemite SIGNED_IN/TOKEN_REFRESHED sempre que a aba volta a ficar
+   * visível. Sem esta marcação, cada retorno à janela republicava o usuário base
+   * (sem permissões) antes do enriquecimento, o que fazia o PermissionGuard negar
+   * o acesso por alguns instantes e desmontar a página — apagando filtros e
+   * disparando novos carregamentos. Para eventos redundantes do mesmo usuário,
+   * mantemos o usuário atual e só publicamos o resultado já enriquecido.
+   */
+  const usuarioResolvidoIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     // Se a rota atual for a de redefinição de senha, evitamos inicializar a sessão concorrentemente
     if (pathname === "/atualizar-senha") {
@@ -105,11 +117,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const baseUser = mapSessionToUser(data.session);
 
       if (baseUser) {
-        // Setar temporariamente para não bloquear a UI, isBlocked: false
-        setAuthState({ user: baseUser, isLoading: false, isBlocked: false });
+        // Usuário novo (primeiro acesso ou troca de conta): libera a UI de imediato.
+        // Usuário já resolvido: preserva o estado atual e enriquece em silêncio.
+        if (usuarioResolvidoIdRef.current !== baseUser.id) {
+          setAuthState({ user: baseUser, isLoading: false, isBlocked: false });
+        }
 
         // Enriquecer com dados reais do banco de forma assíncrona
         const enrichedUser = await enrichUserWithSupabaseData(baseUser);
+        usuarioResolvidoIdRef.current = baseUser.id;
         if (isMounted) {
           if (enrichedUser) {
             setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
@@ -118,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } else {
+        usuarioResolvidoIdRef.current = null;
         setAuthState({ user: null, isLoading: false, isBlocked: false });
       }
     });
@@ -128,11 +145,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const baseUser = mapSessionToUser(session);
 
       if (baseUser) {
-        // Setar imediatamente (sem esperar enriquecimento) para não bloquear
-        setAuthState({ user: baseUser, isLoading: false, isBlocked: false });
+        // Evento redundante do mesmo usuário (ex.: SIGNED_IN ao refocar a janela):
+        // não republica o usuário base sem permissões — apenas reenriquece.
+        if (usuarioResolvidoIdRef.current !== baseUser.id) {
+          // Setar imediatamente (sem esperar enriquecimento) para não bloquear
+          setAuthState({ user: baseUser, isLoading: false, isBlocked: false });
+        }
 
         // Enriquecer assincronamente
         void enrichUserWithSupabaseData(baseUser).then((enrichedUser) => {
+          usuarioResolvidoIdRef.current = baseUser.id;
           if (isMounted) {
             if (enrichedUser) {
               setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
@@ -142,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         });
       } else {
+        usuarioResolvidoIdRef.current = null;
         setAuthState({ user: null, isLoading: false, isBlocked: false });
       }
     });
@@ -181,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Enriquecimento assíncrono pós-login (não bloqueia o redirecionamento)
     void enrichUserWithSupabaseData(mappedUser).then((enrichedUser) => {
+      usuarioResolvidoIdRef.current = mappedUser.id;
       if (enrichedUser) {
         setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
       } else {
@@ -192,6 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     const client = getSupabaseClient();
     if (!client) {
+      usuarioResolvidoIdRef.current = null;
       setAuthState({ user: null, isLoading: false, isBlocked: false });
       return;
     }
@@ -201,6 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(error.message || "Nao foi possivel encerrar sessao.");
     }
 
+    usuarioResolvidoIdRef.current = null;
     setAuthState({ user: null, isLoading: false, isBlocked: false });
   }, []);
 
