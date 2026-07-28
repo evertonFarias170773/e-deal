@@ -1,9 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import {
   AlertTriangle,
   CalendarDays,
@@ -87,12 +90,22 @@ interface C6QueryResult {
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none w-full";
 
+const ABAS = ["CARTEIRA", "BOLETOS", "DEPOSITOS", "CARTOES", "PREVISAO"] as const;
+const STATUS_FILTROS = [
+  "TODOS",
+  "A_VENCER",
+  "VENCIDOS",
+  "PAID",
+  "VENCIDO",
+  "CANCELADO",
+  "NAO_REGISTRADO"
+] as const;
+
 export function ContasReceberPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { recalcularBoletoIdIntsLocal } = useCobrancas();
   const { user: usuarioLogado } = useAuth();
-  const [activeTab, setActiveTab] = useState<ActiveTab>("CARTEIRA");
   const [recebiveis, setRecebiveis] = useState<BoletoDepositoMock[]>([]);
   const [boletosDepositos, setBoletosDepositos] = useState<BoletoDepositoMock[]>([]);
   const [dataSource, setDataSource] = useState<"supabase" | "mock">("supabase");
@@ -103,14 +116,55 @@ export function ContasReceberPage() {
   const [firstDayOfMonth, setFirstDayOfMonth] = useState("2026-06-01");
   const [lastDayOfMonth, setLastDayOfMonth] = useState("2026-06-30");
 
-  const [search, setSearch] = useState("");
-  const [empresa, setEmpresa] = useState("TODAS");
   const [tipo, setTipo] = useState<TipoFilter>("TODOS");
-  const [status, setStatus] = useState<StatusFilter>("TODOS");
-  const [dataInicial, setDataInicial] = useState("2026-06-01");
-  const [dataFinal, setDataFinal] = useState("2026-06-30");
   const [isAvulsoFilter, setIsAvulsoFilter] = useState<"TODOS" | "SIM" | "NAO">("TODOS");
   const [isFaturadoFilter, setIsFaturadoFilter] = useState<"TODOS" | "SIM" | "NAO">("TODOS");
+
+  // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
+  // histórico do navegador e a um link copiado.
+  //
+  // O período tem padrão dinâmico (mês corrente, calculado no cliente), por isso
+  // fica fora da URL enquanto não for alterado. Links antigos com `?search=` da
+  // preparação de boletos abriam sem período para não esconder o título procurado;
+  // esse acordo é preservado transformando a ausência de período em padrão vazio
+  // quando o parâmetro legado está presente.
+  const paramsAtuais = useSearchParams();
+  const veioDeLinkLegadoComBusca =
+    Boolean(paramsAtuais?.get("search")) && !paramsAtuais?.has("ini") && !paramsAtuais?.has("fim");
+
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "", alias: ["search"] as const },
+      aba: { codec: codecs.enumOf(ABAS), default: "CARTEIRA" as ActiveTab },
+      emp: { codec: codecs.texto(), default: "TODAS" },
+      status: { codec: codecs.enumOf(STATUS_FILTROS), default: "TODOS" as StatusFilter },
+      ini: {
+        codec: codecs.dataIsoOuTodas(),
+        default: veioDeLinkLegadoComBusca ? "" : firstDayOfMonth
+      },
+      fim: {
+        codec: codecs.dataIsoOuTodas(),
+        default: veioDeLinkLegadoComBusca ? "" : lastDayOfMonth
+      },
+      autoRegister: { codec: codecs.booleano(), default: false }
+    }),
+    [firstDayOfMonth, lastDayOfMonth, veioDeLinkLegadoComBusca]
+  );
+
+  const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema);
+
+  // Nomes locais preservados: o restante da tela continua lendo estas variáveis.
+  const activeTab = filters.aba;
+  const search = filters.q;
+  const empresa = filters.emp;
+  const status = filters.status;
+  const dataInicial = filters.ini;
+  const dataFinal = filters.fim;
+
+  // O campo responde a cada tecla; a URL (e a filtragem) só depois da pausa.
+  const [buscaDigitada, setBuscaDigitada] = useDebouncedInput(search, (valor) =>
+    setFilter("q", valor)
+  );
   const [detailItem, setDetailItem] = useState<BoletoDepositoMock | null>(null);
 
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -170,18 +224,7 @@ export function ContasReceberPage() {
       setToday(clientToday);
       setFirstDayOfMonth(clientFirstDay);
       setLastDayOfMonth(clientLastDay);
-
-      // Ler o parâmetro search da URL
-      const params = new URLSearchParams(window.location.search);
-      const searchParam = params.get("search");
-      if (searchParam) {
-        setSearch(searchParam);
-        setDataInicial("");
-        setDataFinal("");
-      } else {
-        setDataInicial(clientFirstDay);
-        setDataFinal(clientLastDay);
-      }
+      // O período em si vem da URL (ou do padrão do mês corrente, calculado acima).
     }, 0);
     return () => clearTimeout(timer);
   }, []);
@@ -226,14 +269,16 @@ export function ContasReceberPage() {
   }, [refreshTrigger]);
   
   // Efeito para abertura automática inteligente do modal de registro bancário
+  const autoRegisterConsumidoRef = useRef(false);
+
   useEffect(() => {
     if (isLoadingSource) return;
 
-    const params = new URLSearchParams(window.location.search);
-    const autoRegister = params.get("autoRegister") === "true";
-    const searchParam = params.get("search");
+    const autoRegister = filters.autoRegister;
+    const searchParam = filters.q;
 
-    if (autoRegister && searchParam) {
+    if (autoRegister && searchParam && !autoRegisterConsumidoRef.current) {
+      autoRegisterConsumidoRef.current = true;
       const idIntBuscado = Number(searchParam);
       if (!Number.isNaN(idIntBuscado)) {
         // Procurar boletos elegíveis para registro bancário da proposta buscada
@@ -255,13 +300,20 @@ export function ContasReceberPage() {
           }, 0);
         }
 
-        // Limpar autoRegister da URL para evitar loops e reabertura indesejada
+        // Limpar autoRegister da URL para evitar loops e reabertura indesejada.
+        //
+        // Exceção deliberada ao caminho de escrita do useUrlFilters: uma navegação
+        // do router disparada logo após a carga inicial é engolida no build de
+        // produção (verificado), e aqui não precisamos que a tela reaja — só que o
+        // parâmetro suma para um F5 não reabrir o modal. As escritas seguintes de
+        // filtro partem de window.location.search, então ele não volta.
+        const params = new URLSearchParams(window.location.search);
         params.delete("autoRegister");
-        const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-        window.history.replaceState(null, '', newUrl);
+        const novaUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+        window.history.replaceState(window.history.state, "", novaUrl);
       }
     }
-  }, [isLoadingSource, boletosDepositos]);
+  }, [isLoadingSource, boletosDepositos, filters.autoRegister, filters.q]);
 
   const filterState = useMemo(() => ({
     search,
@@ -1328,14 +1380,14 @@ export function ContasReceberPage() {
             <input
               type="date"
               value={dataInicial}
-              onChange={(event) => setDataInicial(event.target.value)}
+              onChange={(event) => setFilter("ini", event.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
               aria-label="Data inicial"
             />
             <input
               type="date"
               value={dataFinal}
-              onChange={(event) => setDataFinal(event.target.value)}
+              onChange={(event) => setFilter("fim", event.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
               aria-label="Data final"
             />
@@ -1351,14 +1403,14 @@ export function ContasReceberPage() {
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 xl:col-span-2">
             <Search className="h-4 w-4 text-[#0f9f9a] shrink-0" />
             <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              value={buscaDigitada}
+              onChange={(event) => setBuscaDigitada(event.target.value)}
               className="w-full bg-transparent text-sm text-slate-900 outline-none"
               placeholder="Buscar por cliente, id, pagamento, OS ou CPF/CNPJ"
             />
           </label>
 
-          <select value={empresa} onChange={(event) => setEmpresa(event.target.value)} className={filterClass}>
+          <select value={empresa} onChange={(event) => setFilter("emp", event.target.value)} className={filterClass}>
             <option value="TODAS">Todas as empresas</option>
             {empresaOptions.map((item) => (
               <option key={item} value={item}>
@@ -1367,7 +1419,7 @@ export function ContasReceberPage() {
             ))}
           </select>
 
-          <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)} className={filterClass}>
+          <select value={status} onChange={(event) => setFilter("status", event.target.value as StatusFilter)} className={filterClass}>
             <option value="TODOS">Todos status</option>
             <option value="A_VENCER">Previsão futura / E-Faturado (A Vencer)</option>
             <option value="VENCIDOS">Vencidos</option>
@@ -1379,14 +1431,19 @@ export function ContasReceberPage() {
           <button
             type="button"
             onClick={() => {
-              setSearch("");
-              setEmpresa("TODAS");
+              // Volta os filtros ao padrão, o que os remove da URL. A aba continua
+              // onde está: limpar filtros nunca mudou de aba nesta tela.
+              setFilters({
+                q: "",
+                emp: "TODAS",
+                status: "TODOS",
+                ini: firstDayOfMonth,
+                fim: lastDayOfMonth
+              });
+              setBuscaDigitada("");
               setTipo("TODOS");
-              setStatus("TODOS");
               setIsAvulsoFilter("TODOS");
               setIsFaturadoFilter("TODOS");
-              setDataInicial(firstDayOfMonth);
-              setDataFinal(lastDayOfMonth);
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 w-full"
           >
@@ -1401,7 +1458,7 @@ export function ContasReceberPage() {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setFilter("aba", tab.id)}
               className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
                 activeTab === tab.id ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
               }`}

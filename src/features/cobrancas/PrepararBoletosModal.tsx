@@ -498,7 +498,11 @@ export function PrepararBoletosModal({
       });
 
       onClose();
-      router.push(`/contas-a-receber?search=${cobranca.id_int}&autoRegister=true`);
+      // `ini`/`fim` como "todas" para o título recém-criado não ficar escondido
+      // pelo período padrão (mês corrente) da tela de contas a receber.
+      router.push(
+        `/contas-a-receber?q=${cobranca.id_int}&ini=todas&fim=todas&autoRegister=1`
+      );
     } catch (err) {
       const error = err as { message?: string; details?: string; hint?: string; code?: string };
       console.error('[PrepararBoletosModal] Erro ao salvar parcelas:', {
