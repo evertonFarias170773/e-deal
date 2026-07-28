@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { getSaldoCredito, getSaldoContaCorrente } from "@/features/cobrancas/services/movimento-credito.service";
 import { listPendenciasUtilizaveis, type ContaCorrentePendencia } from "@/features/cobrancas/services/conta-corrente.service";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -2049,7 +2050,18 @@ export function PropostaCobrancaPanel({
 
 function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshProposta }: { cobrancas: Cobranca[], onSelectCobranca: (id: string) => void, onRefreshProposta?: () => void }) {
   const { showToast } = useAppToast();
+  const { user } = useAuth();
   const [cobrancaParaExcluir, setCobrancaParaExcluir] = useState<Cobranca | null>(null);
+
+  // Cancelar cobrança exige permissão. `cobrancas.cancel` = poder financeiro pleno;
+  // `propostas.cancelar_cobranca_nao_paga` = só cobrança não paga da própria proposta.
+  // A rota /api/cobrancas/cancelar-externo revalida permissão, escopo e estado.
+  const podeCancelarCobranca = Boolean(
+    user?.isSuperAdmin ||
+    user?.isAdmin ||
+    hasPermissao(user, "cobrancas.cancel") ||
+    hasPermissao(user, "propostas.cancelar_cobranca_nao_paga")
+  );
 
   const handleAbrirCheckout = async (url: string) => {
     if (!url) return;
@@ -2255,10 +2267,11 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
 
                 <button
                   type="button"
-                  disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || cobranca.confirmado}
+                  disabled={!podeCancelarCobranca || cobranca.status === "PAID" || cobranca.status === "A_VENCER" || cobranca.confirmado}
                   onClick={() => setCobrancaParaExcluir(cobranca)}
                   title={
-                    cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
+                    !podeCancelarCobranca ? "Sem permissão para cancelar cobrança"
+                    : cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
                     : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
                     : cobranca.confirmado ? "Não é possível excluir cobrança confirmada"
                     : "Excluir cobrança"
@@ -2319,10 +2332,11 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
                   <button
                     type="button"
-                    disabled={cobranca.status === "PAID" || cobranca.status === "A_VENCER" || cobranca.confirmado}
+                    disabled={!podeCancelarCobranca || cobranca.status === "PAID" || cobranca.status === "A_VENCER" || cobranca.confirmado}
                     onClick={() => setCobrancaParaExcluir(cobranca)}
                     title={
-                      cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
+                      !podeCancelarCobranca ? "Sem permissão para cancelar cobrança"
+                      : cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
                       : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
                       : cobranca.confirmado ? "Não é possível excluir cobrança confirmada"
                       : "Excluir cobrança"

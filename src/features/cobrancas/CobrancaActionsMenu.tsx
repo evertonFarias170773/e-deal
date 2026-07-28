@@ -211,7 +211,13 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     {
       label: "Cancelar cobrança",
       destructive: true,
-      disabled: cobranca.status === "CANCELADO" || (!user?.isSuperAdmin && !user?.isAdmin && !hasPermissao(user, "cobrancas.cancel")),
+      disabled:
+        cobranca.status === "CANCELADO" ||
+        (!user?.isSuperAdmin &&
+          !user?.isAdmin &&
+          !hasPermissao(user, "cobrancas.cancel") &&
+          // Cancelamento restrito (só cobrança não paga) — a rota revalida tudo.
+          !hasPermissao(user, "propostas.cancelar_cobranca_nao_paga")),
       onClick: () => setIsCancelModalOpen(true)
     }
   ];

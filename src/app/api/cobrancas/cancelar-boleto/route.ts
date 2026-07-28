@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     // 3. Reconsulta o estado financeiro atual
     const { data: pagamento, error: fetchError } = await supabase
       .from("pagamentos_v2")
-      .select("id_int, status, confirmado, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
+      .select("id_int, status, confirmado, paid_at, data_confirmacao, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
       .eq("id", id)
       .single();
 
@@ -165,6 +165,15 @@ export async function POST(request: Request) {
     if (statusNormalized === "PAID" || statusNormalized === "A_VENCER" || pagamento.confirmado === true) {
       return NextResponse.json(
         { success: false, code: "PAGAMENTO_QUITADO", message: "Não é permitido cancelar cobrança paga, confirmada ou a vencer." },
+        { status: 409 }
+      );
+    }
+
+    // Baixa ou conciliação registrada no próprio pagamento (paridade com
+    // cancelar-externo): status não-pago não garante ausência de pagamento.
+    if (pagamento.paid_at != null || pagamento.data_confirmacao != null) {
+      return NextResponse.json(
+        { success: false, code: "PAGAMENTO_QUITADO", message: "Cobrança com baixa ou confirmação registrada. Cancelamento não permitido." },
         { status: 409 }
       );
     }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { isPropostaStatusProtegido } from "@/features/orcamentos/services/status-protegidos";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 
@@ -11,8 +12,11 @@ type PagamentoRow = {
   id: string;
   id_int: number | null;
   id_cliente: number | null;
+  id_pagamento: string | null;
   status: string | null;
   confirmado: boolean | null;
+  paid_at: string | null;
+  data_confirmacao: string | null;
   tipo_cobranca: string | null;
   cod_solicitacao_inter: string | null;
   id_empresa: number | null;
@@ -139,19 +143,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
     }
 
-    // 2. Permissão granular
-    const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "cobrancas.cancel");
-    if (!temPermissao) {
-      return NextResponse.json(
-        { success: false, message: "Sem permissão para cancelar cobrança (cobrancas.cancel)." },
-        { status: 403 }
+    // 2. Permissão granular — cascata.
+    // `cobrancas.cancel` = poder financeiro pleno (comportamento histórico, intacto).
+    // Sem ela, `propostas.cancelar_cobranca_nao_paga` habilita o MODO RESTRITO:
+    // apenas cobrança comprovadamente não paga, de proposta do próprio usuário.
+    const temCancelamentoFinanceiro = await verificarPermissaoServerSide(
+      supabase,
+      authData.user.id,
+      "cobrancas.cancel"
+    );
+    let modoRestrito = false;
+    if (!temCancelamentoFinanceiro) {
+      const temCancelamentoRestrito = await verificarPermissaoServerSide(
+        supabase,
+        authData.user.id,
+        "propostas.cancelar_cobranca_nao_paga"
       );
+      if (!temCancelamentoRestrito) {
+        return NextResponse.json(
+          { success: false, message: "Sem permissão para cancelar cobrança (cobrancas.cancel)." },
+          { status: 403 }
+        );
+      }
+      modoRestrito = true;
     }
 
     // 3. Reconsulta o estado financeiro atual (fonte da verdade é o banco)
     const { data: pagamento, error: fetchError } = await supabase
       .from("pagamentos_v2")
-      .select("id, id_int, id_cliente, status, confirmado, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
+      .select("id, id_int, id_cliente, id_pagamento, status, confirmado, paid_at, data_confirmacao, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
       .eq("id", id)
       .single<PagamentoRow>();
 
@@ -168,7 +188,7 @@ export async function POST(request: Request) {
     // para não revelar dados da cobrança a quem está fora do escopo.
     const { data: usuarioRow } = await supabase
       .from("usuarios")
-      .select("id_empresa, is_super_adm")
+      .select("id_empresa, is_super_adm, nome_usuario")
       .eq("user_id", authData.user.id)
       .maybeSingle();
 
@@ -233,6 +253,82 @@ export async function POST(request: Request) {
         { success: false, code: "PAGAMENTO_QUITADO", message: "Não é permitido cancelar/excluir cobrança paga, confirmada ou a vencer." },
         { status: 409 }
       );
+    }
+
+    // 7b. Baixa ou conciliação registrada no PRÓPRIO pagamento. Até aqui só
+    // `boletos.paid_at` era verificado, e apenas para BOLETO — existem linhas
+    // com status não-pago e `paid_at`/`data_confirmacao` preenchidos.
+    if (pagamento.paid_at != null || pagamento.data_confirmacao != null) {
+      return NextResponse.json(
+        { success: false, code: "PAGAMENTO_QUITADO", message: "Cobrança com baixa ou confirmação registrada. Cancelamento não permitido." },
+        { status: 409 }
+      );
+    }
+
+    // 7c. MODO RESTRITO (propostas.cancelar_cobranca_nao_paga): allowlist estrita.
+    // Tudo que não for comprovadamente "emitida e não paga" é negado.
+    if (modoRestrito) {
+      if (pagamento.id_int == null) {
+        return NextResponse.json(
+          { success: false, message: "Esta permissão só cancela cobrança vinculada a uma proposta." },
+          { status: 403 }
+        );
+      }
+
+      if (statusNormalized !== "A_RECEBER") {
+        return NextResponse.json(
+          { success: false, code: "PAGAMENTO_QUITADO", message: "Esta permissão só cancela cobrança emitida e não paga (A_RECEBER)." },
+          { status: 409 }
+        );
+      }
+
+      // Conta Corrente: cobrança que reservou crédito/débito do cliente segue
+      // exclusiva de quem tem cobrancas.cancel.
+      if (pagamento.reserva_estado === "RESERVA_ATIVA" || pagamento.id_pendencia != null) {
+        return NextResponse.json(
+          { success: false, message: "Cobrança vinculada à Conta Corrente. Cancelamento restrito ao financeiro." },
+          { status: 403 }
+        );
+      }
+
+      // Boleto liquidado no registro vinculado a esta cobrança.
+      if (pagamento.cod_solicitacao_inter) {
+        const { data: boletosVinculados } = await supabase
+          .from("boletos")
+          .select("id, status, paid_at")
+          .eq("id_boleto_c6", pagamento.cod_solicitacao_inter)
+          .eq("id_int", pagamento.id_int);
+
+        const temBoletoPago = (boletosVinculados || []).some(
+          (b: { status: string | null; paid_at: string | null }) =>
+            b.paid_at != null || String(b.status || "").trim().toUpperCase() === "PAID"
+        );
+        if (temBoletoPago) {
+          return NextResponse.json(
+            { success: false, code: "PAGAMENTO_QUITADO", message: "Boleto pago vinculado a esta cobrança. Cancelamento não permitido." },
+            { status: 409 }
+          );
+        }
+      }
+
+      // Escopo: só age sobre proposta da qual o usuário é responsável.
+      const { data: propostaEscopo } = await supabase
+        .from("propostas")
+        .select("id_int, empresa, vendedor")
+        .eq("id_int", pagamento.id_int)
+        .maybeSingle();
+
+      if (!propostaEscopo) {
+        return NextResponse.json({ success: false, message: "Proposta não encontrada." }, { status: 404 });
+      }
+
+      const escopoOk = await verificarEscopoPropostaServerSide(supabase, authData.user.id, {
+        empresa: propostaEscopo.empresa,
+        vendedor: propostaEscopo.vendedor
+      });
+      if (!escopoOk) {
+        return NextResponse.json({ success: false, message: "Acesso negado a esta proposta." }, { status: 403 });
+      }
     }
 
     // Código bancário: fonte da verdade é o registro local; payload apenas cross-check.
@@ -424,6 +520,27 @@ export async function POST(request: Request) {
       );
       if (!reconciliacao.success) {
         console.warn(`[cancelar-externo] Reconciliação de status sem efeito para proposta #${pagamento.id_int}: ${reconciliacao.errorMessage}`);
+      }
+
+      // 12. Histórico da proposta com AUTOR REAL. Gravado aqui (e não no cliente)
+      // porque só o servidor conhece o usuário autenticado de forma confiável.
+      // Best-effort: nunca derruba um cancelamento já efetivado.
+      const autorNome = usuarioRow.nome_usuario || authData.user.email || "Sistema";
+      const referenciaCobranca = pagamento.id_pagamento || pagamento.id;
+      const origemPermissao = modoRestrito ? "propostas.cancelar_cobranca_nao_paga" : "cobrancas.cancel";
+      const { error: errorChat } = await supabase.from("propostas_chat").insert([
+        {
+          id_int: pagamento.id_int,
+          id_cliente: pagamento.id_cliente,
+          mensagem: `Cobrança ${referenciaCobranca} cancelada por ${autorNome} (${origemPermissao}). Motivo: ${motivoFinal}`,
+          tipo: "SISTEMA",
+          autor_nome: autorNome,
+          setor: "Financeiro",
+          visivel_externo: false
+        }
+      ]);
+      if (errorChat) {
+        console.warn("[cancelar-externo] Falha ao registrar histórico do cancelamento:", errorChat.message);
       }
     }
 

@@ -746,17 +746,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return extResult;
       }
 
-      const msg = `Cobrança cancelada. Motivo: ${motivo}`;
-      try {
-        await registrarMensagemSistemaProposta({
-          idInt: cob.id_int,
-          idCliente: cob.id_cliente,
-          mensagem: msg,
-          setor: "Financeiro"
-        });
-      } catch (chatErr) {
-        console.warn("[cancelCobranca] Falha ao registrar histórico no chat:", chatErr);
-      }
+      // O histórico do cancelamento é gravado pela rota /api/cobrancas/cancelar-externo,
+      // que registra o AUTOR real (aqui só seria possível gravar autor "Sistema").
 
       // Update local state immediately so UI updates reactively
       const updateCobLocal = (list: Cobranca[]): Cobranca[] =>

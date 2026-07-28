@@ -25,6 +25,14 @@ Os registros descrevem o estado do projeto na data indicada. Eles não substitue
 
 ## [Unreleased] - 2026-07-28
 
+### Adicionado
+- **Permissões / Orçamentos:** Nova permissão `propostas.cancelar_cobranca_nao_paga` ("Cancelar Cobrança Não Paga", crítica). Permite ao comercial cancelar cobrança emitida e comprovadamente não paga da **própria** proposta, destravando a edição sem conceder `cobrancas.cancel` (poder financeiro pleno). Nasce **desligada** em todos os perfis — é ligada manualmente em Configurações → Perfis e Permissões. Modo restrito exige: `status = A_RECEBER`, `confirmado = false`, `paid_at` e `data_confirmacao` nulos, nenhum boleto pago vinculado, sem reserva de Conta Corrente, e escopo da proposta aprovado por `verificarEscopoPropostaServerSide`.
+
+### Corrigido
+- **Cobranças (segurança):** As rotas `cancelar-externo` e `cancelar-boleto` verificavam `paid_at` apenas em `public.boletos`. Agora também bloqueiam quando o próprio registro em `pagamentos_v2` tem `paid_at` ou `data_confirmacao` preenchidos — existiam cobranças com status não-pago e baixa registrada que passariam pelas guardas anteriores.
+- **Cobranças (auditoria):** O histórico de cancelamento gravava `autor_nome: "Sistema"` fixo, sem identificar quem cancelou. O registro passou para a rota (server-side), que grava o autor real, o motivo e a permissão usada em `propostas_chat`. Removido o registro duplicado do cliente.
+- **Cobranças (permissão):** O botão "Excluir" da aba Pagamentos do orçamento não tinha nenhum gate de permissão — só de estado. Agora exige `cobrancas.cancel` ou `propostas.cancelar_cobranca_nao_paga`, nos layouts desktop e mobile.
+
 ### Alterado
 - **Menu lateral (Sidebar)**: Reorganização de ordem e agrupamento — Dashboard, Cadastros, Operação, Pedidos, Financeiro, Notas fiscais, Maestro e Configurações. Expedição passou para dentro de Pedidos e Conferência para Operação; "Contas a receber" virou lista plana no Financeiro (Carteira + Registro de recebíveis); Verificação CPF/CNPJ foi para o Financeiro; "Usuários" (em breve) entrou em Configurações. Introduzido o conceito de **seção-link** (`NavigationSection.href`) para itens principais sem acordeão. Rotas, permissões, ícones e responsividade preservados. Documentado em `docs/technical/PADROES-UX-UI.md` §5.
 - **Menu lateral (Sidebar)**: A rota ativa passou a ser resolvida pelo href mais específico (`navigationHrefs`), evitando que `/contas-a-receber/registro` destaque também "Carteira".

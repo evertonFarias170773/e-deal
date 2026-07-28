@@ -292,6 +292,18 @@ Uma chave nova deve:
 
 Não usar apenas `isAdmin` quando já existir permissão granular homologada.
 
+## Cancelamento de cobrança — duas permissões, escopos diferentes
+
+| Chave | Alcance |
+|---|---|
+| `cobrancas.cancel` | Poder financeiro pleno: cancela/estorna qualquer cobrança, de qualquer proposta, inclusive as vinculadas à Conta Corrente. |
+| `propostas.cancelar_cobranca_nao_paga` | Modo restrito, para o comercial destravar a própria proposta: só cobrança `A_RECEBER`, sem `paid_at`, sem `data_confirmacao`, `confirmado = false`, sem boleto pago vinculado, sem reserva de Conta Corrente, e **apenas** em proposta dentro do escopo do usuário (`verificarEscopoPropostaServerSide`). |
+
+Ambas passam pela mesma rota oficial `POST /api/cobrancas/cancelar-externo`, que revalida
+permissão, escopo e estado financeiro no servidor — o payload do cliente nunca é fonte da verdade.
+O cancelamento é sempre **lógico** (`status = 'CANCELADO'` + `motivo_cancela`), nunca DELETE físico,
+e o autor é registrado em `propostas_chat` pelo servidor.
+
 ---
 
 # 12. Validação
