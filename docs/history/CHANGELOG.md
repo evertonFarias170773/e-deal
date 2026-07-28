@@ -23,6 +23,15 @@ Os registros descrevem o estado do projeto na data indicada. Eles não substitue
 
 ---
 
+## [Unreleased] - 2026-07-28
+
+### Alterado
+- **Menu lateral (Sidebar)**: Reorganização de ordem e agrupamento — Dashboard, Cadastros, Operação, Pedidos, Financeiro, Notas fiscais, Maestro e Configurações. Expedição passou para dentro de Pedidos e Conferência para Operação; "Contas a receber" virou lista plana no Financeiro (Carteira + Registro de recebíveis); Verificação CPF/CNPJ foi para o Financeiro; "Usuários" (em breve) entrou em Configurações. Introduzido o conceito de **seção-link** (`NavigationSection.href`) para itens principais sem acordeão. Rotas, permissões, ícones e responsividade preservados. Documentado em `docs/technical/PADROES-UX-UI.md` §5.
+- **Menu lateral (Sidebar)**: A rota ativa passou a ser resolvida pelo href mais específico (`navigationHrefs`), evitando que `/contas-a-receber/registro` destaque também "Carteira".
+
+### Corrigido
+- **Orçamentos / aba Produtos**: Os selects de "Configuração de Variações" estavam travados em `disabled={!isSuperAdmin}` (resíduo do bloqueio da 0.2.2). Como as variações obrigatórias nascem vazias, Vendedor, Gerente e Admin ficavam impedidos de salvar o item e a proposta. O gate por cargo foi substituído pela prop semântica `podeEditarVariacoes`, calculada a partir de `isFormBloqueadoPorCobranca` — a mesma condição de edição já usada na aba. Proposta paga, pendência de revisão e avulsa paga continuam bloqueadas; regras de preço, valor fixo, desconto, comissão e aprovação inalteradas.
+
 ## [Unreleased] - 2026-07-23
 
 ### Alterado

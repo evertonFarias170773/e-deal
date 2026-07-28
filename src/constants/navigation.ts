@@ -6,13 +6,16 @@ import {
   Boxes,
   Building2,
   CheckSquare,
+  ClipboardCheck,
   ClipboardList,
   CreditCard,
   FileText,
   FolderOpen,
   Gauge,
   KeyRound,
+  LayoutDashboard,
   Package,
+  Printer,
   Receipt,
   ReceiptText,
   Settings,
@@ -82,26 +85,13 @@ export const quickAccessItems: NavigationItem[] = [
 ];
 
 export const navigationSections: NavigationSection[] = [
+  // Seções com `href` são links diretos (sem acordeão) — ver NavigationSection em lib/types.
   {
-    id: "operacao",
-    label: "Operação",
-    icon: Zap,
-    items: [
-      { label: "Dashboard", href: "/dashboard", icon: Gauge },
-      { label: "Orçamentos", href: "/orcamentos", icon: ClipboardList },
-      {
-        label: "Pedidos",
-        href: "/pedidos",
-        icon: Boxes,
-        children: [
-          { label: "Painel geral", href: "/pedidos" },
-          { label: "Fila de impressão", href: "/pedidos/impressao" }
-        ]
-      },
-      { label: "Conferência", href: "/cobrancas", icon: CreditCard },
-      { label: "Expedição", href: "/expedicao", icon: Truck },
-      { label: "Maestro", href: "/maestro", icon: Bot }
-    ]
+    id: "dashboard",
+    label: "Dashboard",
+    icon: Gauge,
+    href: "/dashboard",
+    items: []
   },
   {
     id: "cadastros",
@@ -109,8 +99,26 @@ export const navigationSections: NavigationSection[] = [
     icon: FolderOpen,
     items: [
       { label: "Cadastros", href: "/cadastros", icon: Users },
-      { label: "Produtos", href: "/produtos", icon: Package },
-      { label: "Verificação CPF/CNPJ", href: "/verificacao", icon: ShieldCheck }
+      { label: "Produtos", href: "/produtos", icon: Package }
+    ]
+  },
+  {
+    id: "operacao",
+    label: "Operação",
+    icon: Zap,
+    items: [
+      { label: "Orçamentos", href: "/orcamentos", icon: ClipboardList },
+      { label: "Conferência", href: "/cobrancas", icon: CreditCard }
+    ]
+  },
+  {
+    id: "pedidos",
+    label: "Pedidos",
+    icon: Boxes,
+    items: [
+      { label: "Painel geral", href: "/pedidos", icon: LayoutDashboard },
+      { label: "Fila de impressão", href: "/pedidos/impressao", icon: Printer },
+      { label: "Expedição", href: "/expedicao", icon: Truck }
     ]
   },
   {
@@ -118,20 +126,27 @@ export const navigationSections: NavigationSection[] = [
     label: "Financeiro",
     icon: Banknote,
     items: [
-      {
-        label: "Contas a receber",
-        href: "/contas-a-receber",
-        icon: ReceiptText,
-        children: [
-          { label: "Carteira", href: "/contas-a-receber" },
-          { label: "Registro de recebíveis", href: "/contas-a-receber/registro" }
-        ]
-      },
+      { label: "Carteira", href: "/contas-a-receber", icon: ReceiptText },
+      { label: "Registro de recebíveis", href: "/contas-a-receber/registro", icon: ClipboardCheck },
       { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
       { label: "Pendências", href: "/pendencias", icon: CheckSquare },
-      { label: "Notas fiscais", href: "/notas-fiscais", icon: FileText },
+      { label: "Verificação CPF/CNPJ", href: "/verificacao", icon: ShieldCheck },
       { label: "Relatórios", href: "/relatorios", icon: BarChart3, disabled: true }
     ]
+  },
+  {
+    id: "notas-fiscais",
+    label: "Notas fiscais",
+    icon: FileText,
+    href: "/notas-fiscais",
+    items: []
+  },
+  {
+    id: "maestro",
+    label: "Maestro",
+    icon: Bot,
+    href: "/maestro",
+    items: []
   },
   {
     id: "config",
@@ -144,9 +159,23 @@ export const navigationSections: NavigationSection[] = [
       { label: "Empresas", href: "/configuracoes/empresas", icon: Building2, disabled: true },
       { label: "Integrações", href: "/configuracoes/integracoes", icon: Blocks, disabled: true },
       { label: "Faturamento e Cobranças", href: "/configuracoes/faturamento", icon: Receipt, disabled: true },
-      { label: "Parâmetros Fiscais", href: "/configuracoes/fiscal", icon: SlidersHorizontal, disabled: true }
+      { label: "Parâmetros Fiscais", href: "/configuracoes/fiscal", icon: SlidersHorizontal, disabled: true },
+      // href placeholder: item desabilitado, a rota ainda não existe (não colidir com /configuracoes/usuarios).
+      { label: "Usuários", href: "/configuracoes/usuarios-em-breve", icon: Users, disabled: true }
     ]
   }
 ];
+
+/**
+ * Todos os hrefs navegáveis do menu. Usado para resolver a rota ativa pelo href
+ * mais específico (ex.: /contas-a-receber/registro não acende "Carteira").
+ */
+export const navigationHrefs: string[] = navigationSections.flatMap((section) => [
+  ...(section.href ? [section.href] : []),
+  ...section.items.flatMap((item) => [
+    item.href,
+    ...(item.children?.map((child) => child.href) ?? [])
+  ])
+]);
 
 

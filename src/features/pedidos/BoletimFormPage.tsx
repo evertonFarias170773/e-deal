@@ -38,7 +38,12 @@ import {
   avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
-import { carregarDadosBoletim, salvarDadosBoletim } from "./services/pedidos-artes.service";
+import {
+  listarBoletinsDaProposta,
+  salvarBoletimSetor,
+  atribuirSetorAosModelos,
+  type BoletimSetor
+} from "./services/pedidos-artes.service";
 import { abrirPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -156,7 +161,10 @@ export function BoletimFormPage() {
   const [empresa, setEmpresa] = useState("Ideal Grafica");
   const [vendedor, setVendedor] = useState("Everton Farias");
   const [dataPrevistaEntrega, setDataPrevistaEntrega] = useState("");
-  // Campos próprios do boletim (pedidos_artes.setor / pedidos_artes.hora)
+  // Boletins da proposta — um por setor, todos no mesmo pedido.
+  // `boletimId` é a identidade do boletim aberto (pedidos_artes.id).
+  const [boletins, setBoletins] = useState<BoletimSetor[]>([]);
+  const [boletimId, setBoletimId] = useState<string | null>(null);
   const [boletimSetor, setBoletimSetor] = useState("");
   const [boletimHora, setBoletimHora] = useState("");
   const [urgente, setUrgente] = useState(false);
@@ -341,15 +349,19 @@ export function BoletimFormPage() {
       if (!client) return;
       
       try {
+        // A proposta pode ter vários boletins (um por setor) — maybeSingle() daria
+        // erro com mais de uma linha. O evento é o mesmo para todos.
         const { data, error } = await client
           .from("pedidos_artes")
           .select("nome_evento, data_evento")
           .eq("id_int", Number(idIntParam))
-          .maybeSingle();
-          
-        if (!error && data) {
-          setDadosEventoNome(data.nome_evento || "Evento não informado");
-          setDadosEventoData(data.data_evento || "");
+          .order("created_at", { ascending: true })
+          .limit(1);
+
+        const evento = data && data.length > 0 ? data[0] : null;
+        if (!error && evento) {
+          setDadosEventoNome(evento.nome_evento || "Evento não informado");
+          setDadosEventoData(evento.data_evento || "");
         } else {
           setDadosEventoNome("Evento não informado");
         }
@@ -358,14 +370,20 @@ export function BoletimFormPage() {
       }
     }
 
-    async function loadDadosBoletim() {
-      const dados = await carregarDadosBoletim(Number(idIntParam));
-      if (dados.setor) setBoletimSetor(dados.setor);
-      if (dados.hora) setBoletimHora(dados.hora);
+    async function loadBoletins() {
+      const lista = await listarBoletinsDaProposta(Number(idIntParam));
+      setBoletins(lista);
+      const vigente = lista[0];
+      if (vigente) {
+        setBoletimId(vigente.id);
+        setBoletimSetor(vigente.setor || "");
+        setBoletimHora(vigente.hora || "");
+        if (vigente.prazo) setDataPrevistaEntrega(vigente.prazo);
+      }
     }
 
     loadEvento();
-    loadDadosBoletim();
+    loadBoletins();
   }, [idIntParam]);
 
   useEffect(() => {
@@ -925,17 +943,41 @@ export function BoletimFormPage() {
           return;
         }
 
-        // 1b. Campos próprios do boletim (setor/hora) — não-fatal.
-        const dadosBoletim = await salvarDadosBoletim(Number(idIntParam), {
+        // 1b. Boletim do setor (setor/prazo/hora) — bloqueia em caso de erro,
+        // porque a unicidade (proposta, setor) é garantida pelo banco.
+        const dadosBoletim = await salvarBoletimSetor({
+          id: boletimId,
+          idInt: Number(idIntParam),
           setor: boletimSetor || null,
+          prazo: dataPrevistaEntrega || null,
           hora: boletimHora || null
         });
         if (!dadosBoletim.success) {
           showToast({
             type: "error",
-            title: "Setor/Hora do Boletim",
-            description: dadosBoletim.error || "Não foi possível gravar o setor e a hora do boletim."
+            title: "Erro ao Salvar Boletim do Setor",
+            description: dadosBoletim.error
           });
+          setLoadingDetails(false);
+          return;
+        }
+        setBoletimId(dadosBoletim.boletim.id);
+
+        // 1c. Cada modelo pertence ao setor deste boletim.
+        const setoresDosModelos = produtos.flatMap((p) =>
+          p.modelos.map((m) => ({ id: Number(m.id), setor: boletimSetor || null }))
+        ).filter((m) => !isNaN(m.id) && m.id > 0);
+        if (setoresDosModelos.length > 0) {
+          const atribuicao = await atribuirSetorAosModelos(setoresDosModelos);
+          if (!atribuicao.success) {
+            showToast({
+              type: "error",
+              title: "Erro ao Vincular Setor aos Lotes",
+              description: atribuicao.error || "Não foi possível gravar o setor dos lotes."
+            });
+            setLoadingDetails(false);
+            return;
+          }
         }
 
         // 2. Update Modelos (Lotes Técnicos)
@@ -1075,18 +1117,25 @@ export function BoletimFormPage() {
         return;
       }
 
-      // 2b. Campos próprios do boletim (setor/hora) — não-fatal.
-      const dadosBoletim = await salvarDadosBoletim(idInt, {
+      // 2b. Boletim do setor. A unicidade (proposta, setor) é do banco: se já
+      // existe boletim para este setor, a abertura para e o usuário é avisado.
+      const dadosBoletim = await salvarBoletimSetor({
+        id: boletimId,
+        idInt,
         setor: boletimSetor || null,
+        prazo: dataPrevistaEntrega || null,
         hora: boletimHora || null
       });
       if (!dadosBoletim.success) {
         showToast({
           type: "error",
-          title: "Setor/Hora do Boletim",
-          description: dadosBoletim.error || "Não foi possível gravar o setor e a hora do boletim."
+          title: "Erro ao Salvar Boletim do Setor",
+          description: dadosBoletim.error
         });
+        setLoadingDetails(false);
+        return;
       }
+      setBoletimId(dadosBoletim.boletim.id);
 
       // 3. Mapear e Salvar Modelos/Lotes no Supabase
       const modelosPayload = produtos.flatMap(p =>
@@ -1104,7 +1153,8 @@ export function BoletimFormPage() {
         }))
       );
 
-      const modelsResult = await salvarModelosBoletim(idInt, result.id, modelosPayload);
+      // Os lotes nascem no setor deste boletim.
+      const modelsResult = await salvarModelosBoletim(idInt, result.id, modelosPayload, boletimSetor || null);
 
       if (!modelsResult.success) {
         showToast({
@@ -1163,7 +1213,8 @@ export function BoletimFormPage() {
                 onClick={async () => {
                   if (isPrintingOs || !idIntParam) return;
                   setIsPrintingOs(true);
-                  const result = await abrirPdfOs(Number(idIntParam));
+                  // Imprime o boletim aberto: o PDF é do setor, não da proposta.
+                  const result = await abrirPdfOs(Number(idIntParam), boletimId);
                   setIsPrintingOs(false);
                   if (!result.success) {
                     showToast({
@@ -1177,7 +1228,13 @@ export function BoletimFormPage() {
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm flex items-center gap-1.5 disabled:opacity-60"
               >
                 <Printer className="h-4 w-4" />
-                <span>{isPrintingOs ? "Gerando PDF..." : "Imprimir OS"}</span>
+                <span>
+                  {isPrintingOs
+                    ? "Gerando PDF..."
+                    : boletimSetor
+                      ? `Imprimir OS · ${boletimSetor}`
+                      : "Imprimir OS"}
+                </span>
               </button>
             )}
             {selectedProposta && (
@@ -1401,6 +1458,56 @@ export function BoletimFormPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Boletins da proposta — um por setor, todos no mesmo pedido */}
+                {isEditing && boletins.length > 0 && (
+                  <div className="mt-4 rounded-3xl border-2 border-blue-100 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        Boletins deste pedido ({boletins.length})
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        Cada setor tem o seu boletim e o seu PDF, todos na proposta #{idIntParam}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {boletins.map((b) => {
+                        const ativo = b.id === boletimId;
+                        return (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() => {
+                              setBoletimId(b.id);
+                              setBoletimSetor(b.setor || "");
+                              setBoletimHora(b.hora || "");
+                              if (b.prazo) setDataPrevistaEntrega(b.prazo);
+                            }}
+                            className={`rounded-2xl border-2 px-4 py-2 text-sm font-bold transition ${
+                              ativo
+                                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50"
+                            }`}
+                          >
+                            {b.setor || "Sem setor"}
+                            {b.hora && <span className="ml-2 font-mono text-xs opacity-80">{b.hora}</span>}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBoletimId(null);
+                          setBoletimSetor("");
+                          setBoletimHora("");
+                        }}
+                        className="rounded-2xl border-2 border-dashed border-slate-300 px-4 py-2 text-sm font-bold text-slate-500 transition hover:border-blue-400 hover:text-blue-700"
+                      >
+                        + Novo setor
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mt-4 p-5 rounded-3xl bg-blue-50/80 border-2 border-blue-100">
                   <div className="space-y-2">

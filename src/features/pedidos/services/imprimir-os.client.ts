@@ -13,7 +13,11 @@ export interface AbrirPdfOsResult {
   errorMessage?: string;
 }
 
-export async function abrirPdfOs(idInt: number): Promise<AbrirPdfOsResult> {
+/**
+ * Abre o PDF da OS. `idBoletim` (pedidos_artes.id) seleciona o boletim do setor;
+ * sem ele, mantém o comportamento legado do boletim mais recente da proposta.
+ */
+export async function abrirPdfOs(idInt: number, idBoletim?: string | null): Promise<AbrirPdfOsResult> {
   // Aberta de forma síncrona no gesto do usuário — não move para depois de um await.
   const win = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
   if (win) {
@@ -37,7 +41,10 @@ export async function abrirPdfOs(idInt: number): Promise<AbrirPdfOsResult> {
       return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
     }
 
-    const response = await fetch(`/api/pedidos/imprimir-os?id_int=${idInt}`, {
+    const url = idBoletim
+      ? `/api/pedidos/imprimir-os?id_int=${idInt}&boletim=${encodeURIComponent(idBoletim)}`
+      : `/api/pedidos/imprimir-os?id_int=${idInt}`;
+    const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` }
     });
 

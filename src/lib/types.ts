@@ -82,6 +82,8 @@ export type NavigationSection = {
   label: string;
   icon: LucideIcon;
   requiresConfigPerm?: boolean;
+  /** Quando definido, a seção é um link direto (sem acordeão) e `items` fica vazio. */
+  href?: string;
   items: NavigationItem[];
 };
 

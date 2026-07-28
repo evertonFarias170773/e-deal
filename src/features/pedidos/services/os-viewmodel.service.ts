@@ -61,8 +61,18 @@ export interface OsPdfViewModel {
     statusProducao: string;
     statusInterno: string;
   };
-  /** Cadastro do boletim (pedidos_artes) — setor e hora são próprios do boletim. */
-  boletim: { setor: string | null; hora: string | null; evento: string | null };
+  /**
+   * O boletim (pedidos_artes) deste PDF. A proposta pode ter vários — um por
+   * setor —, todos vinculados ao mesmo id_int. `id` é a identidade estável.
+   */
+  boletim: {
+    id: string | null;
+    setor: string | null;
+    hora: string | null;
+    evento: string | null;
+    /** O que os demais boletins da proposta produzem, para o resumo do rodapé. */
+    outrosSetores: { setor: string; itens: { produto: string; quantidade: number }[] }[];
+  };
   empresa: { id: EmpresaId; nome: string; cnpj: string | null };
   cliente: { nome: string; documento: string | null; contato: string | null; telefone: string | null };
   vendedor: string;
@@ -112,7 +122,11 @@ function arquivoParaArteRef(client: SupabaseClient, arquivo: ArquivoJsonb): OsPd
 export async function montarOsPdfViewModel(
   client: SupabaseClient,
   idInt: number,
-  opts: { incluirValores: boolean }
+  opts: {
+    incluirValores: boolean;
+    /** Boletim (pedidos_artes.id) a imprimir. Ausente = legado: boletim mais recente, sem filtro de setor. */
+    idBoletim?: string | null;
+  }
 ): Promise<MontarOsPdfViewModelResult> {
   try {
     const pedido = await obterPedidoOperacionalPorIdOuIdInt(idInt, client);
@@ -183,24 +197,32 @@ export async function montarOsPdfViewModel(
     }
 
     // Cadastro do boletim + anexos do briefing (pedidos_artes). Setor e hora são
-    // campos próprios do boletim; a linha mais recente do id_int é a vigente.
+    // campos próprios do boletim. Com idBoletim, o boletim é escolhido pelo seu
+    // id (identidade estável); sem ele, mantém o legado da linha mais recente.
+    let boletimId: string | null = null;
     let boletimSetor: string | null = null;
+    let boletimPrazo: string | null = null;
     let boletimHora: string | null = null;
     let boletimEvento: string | null = null;
     const artesGerais: OsPdfArteRef[] = [];
     try {
       const { data: artesRows } = await client
         .from("pedidos_artes")
-        .select("setor, hora, nome_evento, arquivos, created_at")
+        .select("id, setor, prazo, hora, nome_evento, arquivos, created_at")
         .eq("id_int", idInt)
         .order("created_at", { ascending: false });
-      const boletimRow = (artesRows || [])[0];
+      const linhas = artesRows || [];
+      const boletimRow = opts.idBoletim
+        ? linhas.find((r) => String(r.id) === String(opts.idBoletim))
+        : linhas[0];
       if (boletimRow) {
+        boletimId = String(boletimRow.id);
         boletimSetor = boletimRow.setor ? String(boletimRow.setor) : null;
+        boletimPrazo = boletimRow.prazo ? String(boletimRow.prazo) : null;
         boletimHora = boletimRow.hora ? String(boletimRow.hora) : null;
         boletimEvento = boletimRow.nome_evento ? String(boletimRow.nome_evento) : null;
       }
-      for (const row of artesRows || []) {
+      for (const row of linhas) {
         const arquivos: ArquivoJsonb[] = Array.isArray(row.arquivos) ? row.arquivos : [];
         artesGerais.push(...arquivos.map((a) => arquivoParaArteRef(client, a)));
       }
@@ -210,17 +232,20 @@ export async function montarOsPdfViewModel(
 
     // Imagem do modelo: pedidos_modelos.arte_url (oficial) + amostra renderizada
     // como alternativa quando a arte é PDF/vetor (não renderizável no PDF).
+    // `setor` define a que boletim cada modelo pertence.
     const imagemPorModelo = new Map<string, { url: string | null; fallback: string | null }>();
+    const setorPorModelo = new Map<string, string | null>();
     try {
       const { data: modelosRows } = await client
         .from("pedidos_modelos")
-        .select("id, arte_url, amostra_arte_base64")
+        .select("id, setor, arte_url, amostra_arte_base64")
         .eq("id_int", idInt);
       for (const row of modelosRows || []) {
         imagemPorModelo.set(String(row.id), {
           url: row.arte_url ? String(row.arte_url) : null,
           fallback: row.amostra_arte_base64 ? String(row.amostra_arte_base64) : null
         });
+        setorPorModelo.set(String(row.id), row.setor ? String(row.setor) : null);
       }
     } catch (e) {
       console.warn("[os-viewmodel] Falha ao buscar arte_url dos modelos (não-fatal):", e);
@@ -263,13 +288,19 @@ export async function montarOsPdfViewModel(
 
     const obs = parsePedidosObs(pedido.obs);
 
+    // Modelos deste boletim. Quando o boletim tem setor, o PDF mostra apenas os
+    // modelos daquele setor; o produto entra no card por ter modelos ali — nunca
+    // é duplicado entre setores. Sem setor (legado), nada é filtrado.
+    const pertenceAoBoletim = (idModelo: string) =>
+      !boletimSetor || (setorPorModelo.get(idModelo) ?? null) === boletimSetor;
+
     const produtos: OsPdfProduto[] = (pedido.produtos || []).map((prod) => ({
       codigo: prod.idProduto ?? null,
       nome: prod.nome,
       quantidade: prod.quantidade,
       setor: prod.setor,
       pesoTotalGramas: prod.db_id !== undefined ? pesoPorProduto.get(prod.db_id) ?? null : null,
-      modelos: (prod.modelos || []).map((m) => {
+      modelos: (prod.modelos || []).filter((m) => pertenceAoBoletim(String(m.id))).map((m) => {
         const imagens = imagemPorModelo.get(String(m.id));
         const artes: OsPdfArteRef[] = [];
         if (imagens?.url) {
@@ -295,6 +326,22 @@ export async function montarOsPdfViewModel(
       })
     }));
 
+    // Resumo dos demais setores da mesma proposta: o que está sendo produzido
+    // fora deste boletim, agrupado por setor (nome do modelo + quantidade).
+    const resumoPorSetor = new Map<string, { produto: string; quantidade: number }[]>();
+    for (const prod of pedido.produtos || []) {
+      for (const m of prod.modelos || []) {
+        const setorDoModelo = setorPorModelo.get(String(m.id)) ?? null;
+        if (!setorDoModelo || setorDoModelo === boletimSetor) continue;
+        const lista = resumoPorSetor.get(setorDoModelo) || [];
+        lista.push({ produto: m.nomeModelo || prod.nome, quantidade: m.quantidade });
+        resumoPorSetor.set(setorDoModelo, lista);
+      }
+    }
+    const outrosSetores = Array.from(resumoPorSetor.entries())
+      .map(([setor, itens]) => ({ setor, itens }))
+      .sort((a, b) => a.setor.localeCompare(b.setor, "pt-BR"));
+
     // v1: variante administrativa não implementada — valores nunca são consultados.
     void opts.incluirValores;
 
@@ -302,12 +349,19 @@ export async function montarOsPdfViewModel(
       idInt,
       os: {
         emissao: pedido.dataPedido,
-        prazo: pedido.dataPrevistaEntrega || null,
+        // Prazo é do boletim; sem ele, cai no prazo do pedido (compatibilidade).
+        prazo: boletimPrazo || pedido.dataPrevistaEntrega || null,
         statusPedido: pedido.status_pedido || "",
         statusProducao: pedido.status_producao || "",
         statusInterno
       },
-      boletim: { setor: boletimSetor, hora: boletimHora, evento: boletimEvento },
+      boletim: {
+        id: boletimId,
+        setor: boletimSetor,
+        hora: boletimHora,
+        evento: boletimEvento,
+        outrosSetores
+      },
       empresa: { id: empresaId, nome: empresaNome, cnpj: empresaCnpj },
       cliente: {
         nome: pedido.clienteNome,

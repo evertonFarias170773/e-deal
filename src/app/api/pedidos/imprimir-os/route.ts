@@ -107,12 +107,21 @@ async function preencherImagensDosModelos(modelos: OsPdfModelo[]): Promise<void>
   );
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const idIntRaw = searchParams.get("id_int");
   const idInt = Number(idIntRaw);
   if (!idIntRaw || !Number.isInteger(idInt) || idInt <= 0) {
     return NextResponse.json({ success: false, message: "Parâmetro id_int inválido." }, { status: 400 });
+  }
+
+  // Boletim a imprimir (pedidos_artes.id). Sem ele, mantém o comportamento
+  // legado: boletim mais recente da proposta e nenhum filtro por setor.
+  const idBoletim = (searchParams.get("boletim") || "").trim() || null;
+  if (idBoletim && !UUID_RE.test(idBoletim)) {
+    return NextResponse.json({ success: false, message: "Parâmetro boletim inválido." }, { status: 400 });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -172,7 +181,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, message: "Acesso negado a esta proposta." }, { status: 403 });
   }
 
-  const resultado = await montarOsPdfViewModel(supabase, idInt, { incluirValores: false });
+  const resultado = await montarOsPdfViewModel(supabase, idInt, { incluirValores: false, idBoletim });
   if (!resultado.success) {
     return NextResponse.json({ success: false, message: resultado.error }, { status: resultado.status });
   }

@@ -124,84 +124,157 @@ export async function salvarBriefingArtes(idInt: number, payload: Partial<Pedido
 }
 
 /**
- * Carrega apenas os campos próprios do Boletim de Produção (setor e hora).
- * Usa a linha mais recente de pedidos_artes do id_int.
+ * Boletim de Produção. Uma proposta (id_int) pode ter vários — um por setor.
+ * A identidade é o `id` da linha em pedidos_artes: é por ele que o PDF é gerado,
+ * de modo que renomear um setor não quebra links já emitidos.
  */
-export async function carregarDadosBoletim(
-  idInt: number
-): Promise<{ setor: string | null; hora: string | null }> {
-  const client = getSupabaseClient();
-  if (!client) return { setor: null, hora: null };
+export interface BoletimSetor {
+  id: string;
+  idInt: number;
+  setor: string | null;
+  prazo: string | null;
+  hora: string | null;
+  nomeEvento: string | null;
+}
 
-  const { data, error } = await client
-    .from("pedidos_artes")
-    .select("setor, hora")
-    .eq("id_int", idInt)
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error || !data || data.length === 0) {
-    if (error) console.error(`[PedidosArtesService] Erro ao carregar dados do boletim:`, error);
-    return { setor: null, hora: null };
-  }
-
+function mapBoletim(row: Record<string, unknown>): BoletimSetor {
   return {
-    setor: data[0].setor ? String(data[0].setor) : null,
-    hora: data[0].hora ? String(data[0].hora).slice(0, 5) : null
+    id: String(row.id),
+    idInt: Number(row.id_int),
+    setor: row.setor ? String(row.setor) : null,
+    prazo: row.prazo ? String(row.prazo).slice(0, 10) : null,
+    hora: row.hora ? String(row.hora).slice(0, 5) : null,
+    nomeEvento: row.nome_evento ? String(row.nome_evento) : null
   };
 }
 
+const BOLETIM_SELECT = "id, id_int, setor, prazo, hora, nome_evento, created_at";
+
+/** Lista os boletins da proposta, um por setor. Legados (setor nulo) vêm no fim. */
+export async function listarBoletinsDaProposta(idInt: number): Promise<BoletimSetor[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from("pedidos_artes")
+    .select(BOLETIM_SELECT)
+    .eq("id_int", idInt)
+    .order("created_at", { ascending: true });
+
+  if (error || !data) {
+    if (error) console.error(`[PedidosArtesService] Erro ao listar boletins:`, error);
+    return [];
+  }
+
+  return data
+    .map(mapBoletim)
+    .sort((a, b) => (a.setor || "￿").localeCompare(b.setor || "￿", "pt-BR"));
+}
+
+/** Carrega um boletim pelo seu id. */
+export async function carregarBoletimPorId(idBoletim: string): Promise<BoletimSetor | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  const { data, error } = await client
+    .from("pedidos_artes")
+    .select(BOLETIM_SELECT)
+    .eq("id", idBoletim)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.error(`[PedidosArtesService] Erro ao carregar boletim:`, error);
+    return null;
+  }
+  return mapBoletim(data);
+}
+
+export interface SalvarBoletimInput {
+  /** Boletim existente. Ausente = criar um novo para o setor informado. */
+  id?: string | null;
+  idInt: number;
+  setor: string | null;
+  prazo: string | null;
+  hora: string | null;
+}
+
+export type SalvarBoletimResult =
+  | { success: true; boletim: BoletimSetor }
+  | { success: false; error: string };
+
 /**
- * Grava setor e hora do Boletim de Produção em pedidos_artes.
+ * Cria ou atualiza um boletim de setor.
  *
- * Atualiza a linha mais recente do id_int sem tocar em `status` (o fluxo de artes
- * é preservado). Quando não existe linha, cria uma apenas com esses campos; nesse
- * caso o status APROVADO mantém o resultado da liberação para produção idêntico ao
- * cenário "proposta sem artes cadastradas".
+ * Nunca toca em `status` de linhas existentes — o fluxo de artes é preservado.
+ * Ao criar, `status: "APROVADO"` mantém o resultado da liberação para produção
+ * idêntico ao cenário "proposta sem artes cadastradas" (a validação de liberação
+ * exige que toda arte esteja APROVADO, e zero linhas já passava).
+ * A unicidade (id_int, setor) é garantida por índice único parcial no banco.
  */
-export async function salvarDadosBoletim(
-  idInt: number,
-  dados: { setor: string | null; hora: string | null }
-): Promise<{ success: boolean; error?: string }> {
+export async function salvarBoletimSetor(input: SalvarBoletimInput): Promise<SalvarBoletimResult> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: "Conexão com o banco de dados não disponível." };
 
   const payload = {
-    setor: dados.setor?.trim() ? dados.setor.trim() : null,
-    hora: dados.hora?.trim() ? dados.hora.trim() : null
+    setor: input.setor?.trim() ? input.setor.trim() : null,
+    prazo: input.prazo?.trim() ? input.prazo.trim() : null,
+    hora: input.hora?.trim() ? input.hora.trim() : null
   };
 
-  const { data: existente, error: fetchError } = await client
-    .from("pedidos_artes")
-    .select("id")
-    .eq("id_int", idInt)
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (fetchError) {
-    console.error(`[PedidosArtesService] Erro ao localizar boletim para gravar setor/hora:`, fetchError);
-    return { success: false, error: fetchError.message };
-  }
-
-  if (existente && existente.length > 0) {
-    const { error } = await client
+  if (input.id) {
+    const { data, error } = await client
       .from("pedidos_artes")
       .update({ ...payload, updated_at: new Date().toISOString() })
-      .eq("id", existente[0].id);
+      .eq("id", input.id)
+      .select(BOLETIM_SELECT)
+      .maybeSingle();
+
     if (error) {
-      console.error(`[PedidosArtesService] Erro ao atualizar setor/hora do boletim:`, error);
-      return { success: false, error: error.message };
+      console.error(`[PedidosArtesService] Erro ao atualizar boletim:`, error);
+      return { success: false, error: traduzirErroBoletim(error) };
     }
-    return { success: true };
+    if (!data) return { success: false, error: "Boletim não encontrado para atualização." };
+    return { success: true, boletim: mapBoletim(data) };
   }
 
-  const { error } = await client
+  const { data, error } = await client
     .from("pedidos_artes")
-    .insert({ id_int: idInt, ...payload, status: "APROVADO" });
+    .insert({ id_int: input.idInt, ...payload, status: "APROVADO" })
+    .select(BOLETIM_SELECT)
+    .maybeSingle();
 
   if (error) {
-    console.error(`[PedidosArtesService] Erro ao criar cadastro do boletim:`, error);
-    return { success: false, error: error.message };
+    console.error(`[PedidosArtesService] Erro ao criar boletim:`, error);
+    return { success: false, error: traduzirErroBoletim(error) };
+  }
+  if (!data) return { success: false, error: "O banco não retornou o boletim criado." };
+  return { success: true, boletim: mapBoletim(data) };
+}
+
+function traduzirErroBoletim(error: { code?: string; message?: string }): string {
+  if (error.code === "23505") {
+    return "Já existe um boletim deste setor para esta proposta.";
+  }
+  return error.message || "Falha ao gravar o boletim.";
+}
+
+/** Define o setor de cada modelo (a que boletim ele pertence). */
+export async function atribuirSetorAosModelos(
+  atribuicoes: { id: number; setor: string | null }[]
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Conexão com o banco de dados não disponível." };
+
+  for (const item of atribuicoes) {
+    if (!item.id || Number.isNaN(Number(item.id))) continue;
+    const { error } = await client
+      .from("pedidos_modelos")
+      .update({ setor: item.setor?.trim() ? item.setor.trim() : null })
+      .eq("id", item.id);
+    if (error) {
+      console.error(`[PedidosArtesService] Erro ao atribuir setor ao modelo ${item.id}:`, error);
+      return { success: false, error: error.message };
+    }
   }
   return { success: true };
 }

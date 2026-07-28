@@ -144,17 +144,24 @@ oficial do projeto (Inter). O item ativo usa contraste claro com destaque teal d
 
 ## Modelo de navegação — Acordeão por seção
 
-Os itens são agrupados em quatro seções colapsáveis, com apenas uma seção aberta por vez:
+O menu combina **seções colapsáveis** (apenas uma aberta por vez) com **seções-link**
+(item principal que navega direto, sem acordeão — declaradas com `href` em `NavigationSection`):
 
-- **Operação:** Dashboard, Orçamentos, Pedidos (subitens), Conferência, Expedição, Maestro;
-- **Cadastros:** Cadastros, Produtos, Verificação CPF/CNPJ;
-- **Financeiro:** Contas a receber (subitens), Conta Corrente, Pendências, Notas fiscais, Relatórios;
-- **Configurações:** Usuários e Perfis, Perfis e Permissões, Empresas, Integrações, Faturamento e Cobranças, Parâmetros Fiscais.
+1. **Dashboard** — seção-link;
+2. **Cadastros:** Cadastros, Produtos;
+3. **Operação:** Orçamentos, Conferência;
+4. **Pedidos:** Painel geral, Fila de impressão, Expedição;
+5. **Financeiro:** Carteira, Registro de recebíveis, Conta Corrente, Pendências, Verificação CPF/CNPJ, Relatórios;
+6. **Notas fiscais** — seção-link;
+7. **Maestro** — seção-link;
+8. **Configurações:** Usuários e Perfis, Perfis e Permissões, Empresas, Integrações, Faturamento e Cobranças, Parâmetros Fiscais, Usuários.
 
 Regras:
 
 - clicar no cabeçalho de uma seção abre essa seção e fecha a anterior;
-- a seção correspondente à rota atual abre automaticamente;
+- a seção correspondente à rota atual abre automaticamente; seções-link não fecham o acordeão aberto;
+- a rota ativa é resolvida pelo href **mais específico** (`navigationHrefs`), para que
+  `/contas-a-receber/registro` não acenda também "Carteira";
 - itens com subitens expandem e recolhem sem navegar;
 - itens "em breve" ficam desabilitados, porém visíveis, com badge;
 - um bloco fixo de **acesso rápido** (Orçamentos, Conferência) fica no topo;
@@ -175,7 +182,8 @@ Deve possuir:
 - identificação do usuário no rodapé.
 
 No modo recolhido, cada seção vira um ícone; ao passar o mouse abre um flyout com os itens da
-seção, e clicar no ícone expande a sidebar já com a seção aberta.
+seção, e clicar no ícone expande a sidebar já com a seção aberta. Seções-link não têm flyout:
+o clique navega direto para a rota.
 
 ## Mobile
 

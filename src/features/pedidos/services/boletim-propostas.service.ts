@@ -105,10 +105,10 @@ export async function listarPropostasLiberadasParaBoletim(): Promise<PropostaLib
   }
 
   // Filtra as elegíveis e mapeia para a interface final
-  // TODO (Fase Multi-OS): A nova regra prevê múltiplas OS para a mesma proposta. 
-  // O bloqueio abaixo será substituído por uma validação que permite novas OS (Boletins) 
-  // se houver necessidade parcial, e lista as já existentes.
-  const eligible = withProducts.filter((p) => !existingPedidoIds.has(Number(p.id_int)));
+  // Multi-boletim: a proposta continua elegível mesmo com pedido aberto, porque
+  // cada setor abre o seu próprio boletim sobre o mesmo pedido.
+  void existingPedidoIds;
+  const eligible = withProducts;
 
   const mapped = eligible.map((row) => {
     const valor_total_calc = (row.valor_total && Number(row.valor_total) !== 0) ? Number(row.valor_total) : (Number(row.valor) || 0);
@@ -215,10 +215,10 @@ export async function buscarPropostasLiberadasParaBoletim(
     }
   }
 
-  // TODO (Fase Multi-OS): A nova regra prevê múltiplas OS para a mesma proposta. 
-  // O bloqueio abaixo será substituído por uma validação que permite novas OS (Boletins) 
-  // se houver necessidade parcial, e lista as já existentes.
-  const eligible = withProducts.filter((p) => !existingPedidoIds.has(Number(p.id_int)));
+  // Multi-boletim: a proposta continua elegível mesmo com pedido aberto, porque
+  // cada setor abre o seu próprio boletim sobre o mesmo pedido.
+  void existingPedidoIds;
+  const eligible = withProducts;
 
   const mapped = eligible.map((row) => {
     const valor_total_calc = (row.valor_total && Number(row.valor_total) !== 0) ? Number(row.valor_total) : (Number(row.valor) || 0);
@@ -307,20 +307,9 @@ export async function obterPropostaLiberadaParaBoletim(
     return { success: false, error: "Proposta sem produtos vinculados" };
   }
 
-  // 5. Verifica se já existe pedido
-  const { data: pedidosData, error: pedidosError } = await client
-    .from("propostas_os")
-    .select("id")
-    .eq("id_int", idInt);
-
-  if (pedidosError) {
-    console.error("[BoletimPropostasService] Erro ao verificar pedidos existentes:", pedidosError);
-    return { success: false, error: "Erro ao consultar pedidos existentes." };
-  }
-
-  if (pedidosData && pedidosData.length > 0) {
-    return { success: false, error: "Pedido já aberto para esta proposta" };
-  }
+  // 5. O pedido (propostas_os) é único por proposta, mas não bloqueia mais a
+  // abertura: uma proposta pode ter vários boletins, um por setor, todos
+  // vinculados ao mesmo pedido. Reaproveitamos o pedido existente quando houver.
 
   // 5b. Verifica se já existem modelos (Apenas log, não bloqueia mais a abertura)
   const { data: modelsData, error: modelsError } = await client
@@ -433,7 +422,9 @@ export async function criarPedidoParaBoletim(
     return { success: false, error: "Proposta sem produtos vinculados" };
   }
 
-  // Validar se não existe pedido em public.pedidos para esse id_int
+  // O pedido (propostas_os) é único por proposta e agrupa TODOS os boletins de
+  // setor. Se já existe, reaproveitamos em vez de bloquear — abrir o boletim de
+  // um novo setor não pode exigir um segundo pedido.
   const { data: pedidosData, error: pedidosError } = await client
     .from("propostas_os")
     .select("id")
@@ -450,7 +441,7 @@ export async function criarPedidoParaBoletim(
   }
 
   if (pedidosData && pedidosData.length > 0) {
-    return { success: false, error: "Pedido já aberto para esta proposta" };
+    return { success: true, id: String(pedidosData[0].id) };
   }
 
   // (Bloqueio de modelos removido aqui para permitir criação de OS retroativa. 
@@ -595,13 +586,15 @@ export interface ModeloBoletimInput {
 }
 
 /**
- * Salva a lista de modelos de pedidos na tabela public.pedidos_modelos
- * após verificar a existência prévia de registros para evitar duplicação.
+ * Salva a lista de modelos do boletim em public.pedidos_modelos.
+ * `setor` identifica a que boletim os modelos pertencem — a anti-duplicidade é
+ * por (id_int, setor), de modo que setores diferentes convivem na mesma proposta.
  */
 export async function salvarModelosBoletim(
   idInt: number,
   idPedido: string,
-  modelosInput: ModeloBoletimInput[]
+  modelosInput: ModeloBoletimInput[],
+  setor?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -625,11 +618,15 @@ export async function salvarModelosBoletim(
     return { success: false, error: "ID interno (id_int) não fornecido." };
   }
 
-  // 2. Anti-duplicidade: verificar se já existem modelos para esse id_int
-  const { data: existingModelos, error: queryError } = await client
-    .from("pedidos_modelos")
-    .select("id")
-    .eq("id_int", idInt);
+  // 2. Anti-duplicidade POR SETOR: cada boletim tem os seus modelos. Abrir o
+  // boletim de um novo setor não pode esbarrar nos modelos de outro setor.
+  const setorDoLote = (setor || "").trim() || null;
+  let queryExistentes = client.from("pedidos_modelos").select("id").eq("id_int", idInt);
+  queryExistentes = setorDoLote
+    ? queryExistentes.eq("setor", setorDoLote)
+    : queryExistentes.is("setor", null);
+
+  const { data: existingModelos, error: queryError } = await queryExistentes;
 
   if (queryError) {
     console.error("[BoletimPropostasService] Erro ao consultar modelos existentes:", queryError);
@@ -637,20 +634,27 @@ export async function salvarModelosBoletim(
   }
 
   if (existingModelos && existingModelos.length > 0) {
-    return { success: false, error: "Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura." };
+    return {
+      success: false,
+      error: setorDoLote
+        ? `Já existem lotes cadastrados no setor ${setorDoLote} desta proposta.`
+        : "Modelos/lotes já cadastrados para este pedido. Edição será liberada em etapa futura."
+    };
   }
 
-  // 3. Mapear os dados para o payload
+  // 3. Mapear os dados para o payload.
+  // `descricao` e `obs_impressao` não existem em public.pedidos_modelos — o insert
+  // falhava por coluna inexistente. A observação livre vai para `observacao_arte`.
   const payloads = modelosInput.map((m, idx) => ({
     id_int: idInt,
     id_produto_proposta_origem: m.id_produto_proposta_origem || null,
     nome_modelo: m.nome_modelo,
-    descricao: m.descricao || null,
     quantidade: m.quantidade,
+    setor: setorDoLote,
     tipo_numeracao: m.tipo_numeracao || null,
     numeracao_inicio: m.numeracao_inicio || null,
     numeracao_fim: m.numeracao_fim || null,
-    obs_impressao: m.obs_impressao || null,
+    observacao_arte: m.descricao || m.obs_impressao || null,
     bloco: m.bloco || null,
     status_arte: "PENDENTE",
     status_producao: "BLOQUEADO",

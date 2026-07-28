@@ -46,9 +46,22 @@ function truncar(value: string | null | undefined, max: number = OBS_MAX_CHARS):
   return `${text.slice(0, max)}... (integra no ERP - use o QR Code)`;
 }
 
+/**
+ * Datas sem fuso ("2026-08-14" de uma coluna `date`, ou "...T00:00:00" de um
+ * timestamp without time zone) são lidas literalmente: convertê-las para
+ * America/Sao_Paulo recuaria um dia, porque `new Date` as trata como UTC.
+ * Só valores com fuso explícito (Z ou ±HH:MM) passam pela conversão.
+ */
 function formatarData(iso: string | null | undefined): string {
   if (!iso) return "-";
-  const date = new Date(iso);
+
+  const texto = String(iso).trim();
+  const semFuso = /^(\d{4})-(\d{2})-(\d{2})(?:[T ][\d:.]+)?$/.exec(texto);
+  if (semFuso) {
+    return `${semFuso[3]}/${semFuso[2]}/${semFuso[1]}`;
+  }
+
+  const date = new Date(texto);
   if (!Number.isFinite(date.getTime())) return "-";
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
@@ -260,6 +273,34 @@ const styles = StyleSheet.create({
   },
   checklistTexto: { fontSize: 6.5, fontFamily: "Helvetica-Bold", color: "#3f3f42" },
   checklistAssinatura: { flex: 1, borderBottomWidth: 0.75, borderBottomColor: "#cfd8e0", height: 8 },
+  // ── Resumo dos demais setores ──────────────────────────────────────────────
+  resumoBarra: {
+    backgroundColor: "#e9edf1",
+    borderRadius: 4,
+    paddingVertical: 3,
+    marginTop: 2,
+    marginBottom: 4,
+    alignItems: "center"
+  },
+  resumoTitulo: {
+    fontSize: 9,
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5
+  },
+  resumoLinha: { flexDirection: "row" },
+  resumoCard: {
+    flex: 1,
+    borderWidth: 0.75,
+    borderColor: "#b9c5d0",
+    borderRadius: 4,
+    padding: 6,
+    minHeight: 52
+  },
+  resumoSetor: { fontSize: 8.5, fontFamily: "Helvetica-Bold", marginBottom: 3 },
+  resumoItem: { flexDirection: "row", justifyContent: "space-between", marginBottom: 1 },
+  resumoItemNome: { fontSize: 7, fontFamily: "Helvetica-Bold", flex: 1, paddingRight: 4 },
+  resumoItemQtd: { fontSize: 7, fontFamily: "Helvetica-Bold" },
   // ── Observações / envio ────────────────────────────────────────────────────
   obsBox: {
     borderWidth: 1,
@@ -445,6 +486,53 @@ function ProdutoCard({ produto }: { produto: OsPdfProduto }) {
   );
 }
 
+/**
+ * Resumo do que os demais boletins da mesma proposta produzem. Serve para a
+ * produção enxergar o pedido inteiro sem misturar os modelos de outros setores.
+ */
+function ResumoDemaisSetores({
+  setores
+}: {
+  setores: OsPdfViewModel["boletim"]["outrosSetores"];
+}) {
+  if (setores.length === 0) return null;
+  const linhas = emGrupos(setores, MODELOS_POR_LINHA);
+
+  return (
+    <View style={styles.produtoCard}>
+      <View wrap={false}>
+        <View style={styles.resumoBarra}>
+          <Text style={styles.resumoTitulo}>Resumo demais setores</Text>
+        </View>
+        {linhas.map((linha, i) => (
+          <View key={i} style={styles.resumoLinha} wrap={false}>
+            {linha.map((grupo, j) => (
+              <React.Fragment key={j}>
+                {j > 0 ? <View style={styles.modeloGap} /> : null}
+                <View style={styles.resumoCard}>
+                  <Text style={styles.resumoSetor}>{pdfSafe(grupo.setor).toUpperCase()}:</Text>
+                  {grupo.itens.map((item, k) => (
+                    <View key={k} style={styles.resumoItem}>
+                      <Text style={styles.resumoItemNome}>{pdfSafe(item.produto).toUpperCase()}</Text>
+                      <Text style={styles.resumoItemQtd}>{formatarQuantidade(item.quantidade)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </React.Fragment>
+            ))}
+            {Array.from({ length: MODELOS_POR_LINHA - linha.length }).map((_, k) => (
+              <React.Fragment key={`vazio-${k}`}>
+                <View style={styles.modeloGap} />
+                <View style={styles.modeloEspacador} />
+              </React.Fragment>
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export interface OsPdfDocumentProps {
   vm: OsPdfViewModel;
   /** Data URL do QR Code (null = QR indisponível, ex.: APP_URL ausente em produção). */
@@ -524,10 +612,16 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
           </View>
         </View>
 
-        {/* Um card por produto da proposta, cada um com os seus próprios modelos */}
-        {vm.produtos.map((produto, i) => (
-          <ProdutoCard key={i} produto={produto} />
-        ))}
+        {/* Um card por produto, com os modelos DESTE boletim (setor). Produtos sem
+            modelos no setor pertencem a outro boletim e saem do corpo do PDF. */}
+        {vm.produtos
+          .filter((produto) => produto.modelos.length > 0)
+          .map((produto, i) => (
+            <ProdutoCard key={i} produto={produto} />
+          ))}
+
+        {/* O que os demais boletins da proposta produzem */}
+        <ResumoDemaisSetores setores={vm.boletim.outrosSetores} />
 
         {/* Observações da OS */}
         <View style={styles.obsBox} wrap={false}>

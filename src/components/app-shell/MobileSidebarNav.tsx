@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { navigationSections, quickAccessItems } from "@/constants/navigation";
+import { navigationHrefs, navigationSections, quickAccessItems } from "@/constants/navigation";
 import type { NavigationItem } from "@/lib/types";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -19,24 +19,33 @@ function isPathActive(href: string, pathname: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function isItemActive(item: NavigationItem, pathname: string) {
-  return (
-    isPathActive(item.href, pathname) ||
-    !!item.children?.some((child) => isPathActive(child.href, pathname))
-  );
+/** Rota ativa = href mais específico (mais longo) que casa com o pathname. */
+function resolveActiveHref(pathname: string): string | null {
+  let best: string | null = null;
+  for (const href of navigationHrefs) {
+    if (isPathActive(href, pathname) && (best === null || href.length > best.length)) {
+      best = href;
+    }
+  }
+  return best;
 }
 
-function findActiveSectionId(pathname: string) {
-  const section = navigationSections.find((sec) =>
-    sec.items.some((item) => isItemActive(item, pathname))
-  );
-  return section?.id ?? navigationSections[0].id;
+function isItemActive(item: NavigationItem, activeHref: string | null) {
+  return item.href === activeHref || !!item.children?.some((child) => child.href === activeHref);
 }
 
-function findActiveParentHref(pathname: string): string | null {
+/** Seção em acordeão que contém a rota atual (seção-link não abre acordeão). */
+function findActiveSectionId(activeHref: string | null): string | null {
+  const section = navigationSections.find(
+    (sec) => sec.items.length > 0 && sec.items.some((item) => isItemActive(item, activeHref))
+  );
+  return section?.id ?? null;
+}
+
+function findActiveParentHref(activeHref: string | null): string | null {
   for (const section of navigationSections) {
     for (const item of section.items) {
-      if (item.children && item.children.length > 0 && isItemActive(item, pathname)) {
+      if (item.children && item.children.length > 0 && isItemActive(item, activeHref)) {
         return item.href;
       }
     }
@@ -44,20 +53,30 @@ function findActiveParentHref(pathname: string): string | null {
   return null;
 }
 
+const DEFAULT_SECTION_ID = navigationSections.find((sec) => sec.items.length > 0)?.id ?? "";
+
 export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
   const pathname = usePathname();
   const { user } = useAuth();
 
-  const [openSection, setOpenSection] = useState<string>(() => findActiveSectionId(pathname));
-  const [openItem, setOpenItem] = useState<string | null>(() => findActiveParentHref(pathname));
+  const activeHref = resolveActiveHref(pathname);
+
+  const [openSection, setOpenSection] = useState<string>(
+    () => findActiveSectionId(activeHref) ?? DEFAULT_SECTION_ID
+  );
+  const [openItem, setOpenItem] = useState<string | null>(() => findActiveParentHref(activeHref));
   const [prevPathname, setPrevPathname] = useState(pathname);
 
   // Ao navegar (mudança de rota), reabre a seção/itens da rota atual.
   // Ajuste de estado durante a renderização (padrão React), não em efeito.
   if (pathname !== prevPathname) {
     setPrevPathname(pathname);
-    setOpenSection(findActiveSectionId(pathname));
-    setOpenItem(findActiveParentHref(pathname));
+    const nextSection = findActiveSectionId(activeHref);
+    // Seção-link (Dashboard, Notas fiscais, Maestro) não fecha o acordeão aberto.
+    if (nextSection) {
+      setOpenSection(nextSection);
+    }
+    setOpenItem(findActiveParentHref(activeHref));
   }
 
   useEffect(() => {
@@ -89,7 +108,7 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
 
   const renderItem = (item: NavigationItem) => {
     const Icon = item.icon;
-    const active = isItemActive(item, pathname);
+    const active = isItemActive(item, activeHref);
     const hasChildren = !!item.children && item.children.length > 0;
     const isItemOpen = openItem === item.href;
 
@@ -153,7 +172,7 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
             style={{ borderColor: "var(--sidebar-border)" }}
           >
             {item.children!.map((child) => {
-              const childActive = isPathActive(child.href, pathname);
+              const childActive = child.href === activeHref;
               return (
                 <Link
                   key={child.href}
@@ -263,6 +282,36 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
         <nav className="space-y-1 pb-8">
           {visibleSections.map((section) => {
             const SectionIcon = section.icon;
+
+            // Seção-link: item principal sem acordeão (Dashboard, Notas fiscais, Maestro).
+            if (section.href) {
+              const active = section.href === activeHref;
+              return (
+                <Link
+                  key={section.id}
+                  href={section.href}
+                  onClick={onClose}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors"
+                  style={
+                    active
+                      ? {
+                          background: "var(--sidebar-active-bg)",
+                          color: "var(--sidebar-active-text)"
+                        }
+                      : { color: "var(--sidebar-text-muted)" }
+                  }
+                >
+                  <SectionIcon
+                    className="h-4 w-4 shrink-0"
+                    style={{ color: active ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
+                  />
+                  <span className="flex-1 text-sm font-semibold uppercase tracking-wide">
+                    {section.label}
+                  </span>
+                </Link>
+              );
+            }
+
             const open = openSection === section.id;
             return (
               <div key={section.id}>

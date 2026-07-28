@@ -4198,7 +4198,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onRemove={() => handleRemoveProductClick(item.id)}
                           onSave={() => handleSaveItem(item.id)}
                           minQuantity={somaModelos}
-                          isSuperAdmin={user?.isSuperAdmin || false}
+                          // Variação é característica do produto, não valor: segue a mesma
+                          // condição de edição do formulário (proposta paga/pendência bloqueiam).
+                          podeEditarVariacoes={!isFormBloqueadoPorCobranca}
                           canEditarValoresItem={canEditarValoresItem}
                           isRemoveAllowed={isRemoveAllowed}
                           isPrecoFixoAplicado={isPrecoFixoAplicado}
@@ -4209,7 +4211,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         <ProductItemSummary
                           key={item.id}
                           item={item}
-                          isSuperAdmin={user?.isSuperAdmin || false}
                           isRemoveAllowed={isRemoveAllowed}
                           onEdit={() => handleEditItem(item.id)}
                           onRemove={() => handleRemoveProductClick(item.id)}
@@ -4835,13 +4836,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
 function ProductItemSummary({
   item,
-  isSuperAdmin,
   isRemoveAllowed,
   onEdit,
   onRemove
 }: {
   item: PropostaItem;
-  isSuperAdmin?: boolean;
   isRemoveAllowed?: boolean;
   onEdit: () => void;
   onRemove: () => void;
@@ -4903,7 +4902,7 @@ function ProductItemEditor({
   onRemove,
   onSave,
   minQuantity,
-  isSuperAdmin,
+  podeEditarVariacoes,
   canEditarValoresItem,
   isRemoveAllowed,
   isPrecoFixoAplicado
@@ -4916,7 +4915,7 @@ function ProductItemEditor({
   onRemove: () => void;
   onSave: () => void;
   minQuantity?: number;
-  isSuperAdmin?: boolean;
+  podeEditarVariacoes?: boolean;
   canEditarValoresItem?: boolean;
   isRemoveAllowed?: boolean;
   isPrecoFixoAplicado?: boolean;
@@ -5022,7 +5021,7 @@ function ProductItemEditor({
                     value={selected?.tipo.id ?? ""}
                     onChange={(event) => onVariationChange(variacao.id_variacao, event.target.value)}
                     className={`${inputClass} ${isMissing ? "border-red-300 bg-red-50 focus:ring-red-100" : ""}`}
-                    disabled={!isSuperAdmin}
+                    disabled={!podeEditarVariacoes}
                   >
                     <option value="">Selecione</option>
                     {variacao.tipos.map((tipo) => (

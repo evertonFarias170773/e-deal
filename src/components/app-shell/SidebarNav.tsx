@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, ChevronDown, UserRound } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { navigationSections, quickAccessItems } from "@/constants/navigation";
+import { navigationHrefs, navigationSections, quickAccessItems } from "@/constants/navigation";
 import type { NavigationItem, NavigationSection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ThemedLogo } from "@/components/app-shell/ThemedLogo";
@@ -20,24 +20,33 @@ function isPathActive(href: string, pathname: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function isItemActive(item: NavigationItem, pathname: string) {
-  return (
-    isPathActive(item.href, pathname) ||
-    !!item.children?.some((child) => isPathActive(child.href, pathname))
-  );
+/** Rota ativa = href mais específico (mais longo) que casa com o pathname. */
+function resolveActiveHref(pathname: string): string | null {
+  let best: string | null = null;
+  for (const href of navigationHrefs) {
+    if (isPathActive(href, pathname) && (best === null || href.length > best.length)) {
+      best = href;
+    }
+  }
+  return best;
 }
 
-function findActiveSectionId(pathname: string) {
-  const section = navigationSections.find((sec) =>
-    sec.items.some((item) => isItemActive(item, pathname))
-  );
-  return section?.id ?? navigationSections[0].id;
+function isItemActive(item: NavigationItem, activeHref: string | null) {
+  return item.href === activeHref || !!item.children?.some((child) => child.href === activeHref);
 }
 
-function findActiveParentHref(pathname: string): string | null {
+/** Seção em acordeão que contém a rota atual (seção-link não abre acordeão). */
+function findActiveSectionId(activeHref: string | null): string | null {
+  const section = navigationSections.find(
+    (sec) => sec.items.length > 0 && sec.items.some((item) => isItemActive(item, activeHref))
+  );
+  return section?.id ?? null;
+}
+
+function findActiveParentHref(activeHref: string | null): string | null {
   for (const section of navigationSections) {
     for (const item of section.items) {
-      if (item.children && item.children.length > 0 && isItemActive(item, pathname)) {
+      if (item.children && item.children.length > 0 && isItemActive(item, activeHref)) {
         return item.href;
       }
     }
@@ -45,13 +54,19 @@ function findActiveParentHref(pathname: string): string | null {
   return null;
 }
 
+const DEFAULT_SECTION_ID = navigationSections.find((sec) => sec.items.length > 0)?.id ?? "";
+
 export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useAuth();
 
-  const [openSection, setOpenSection] = useState<string>(() => findActiveSectionId(pathname));
-  const [openItem, setOpenItem] = useState<string | null>(() => findActiveParentHref(pathname));
+  const activeHref = resolveActiveHref(pathname);
+
+  const [openSection, setOpenSection] = useState<string>(
+    () => findActiveSectionId(activeHref) ?? DEFAULT_SECTION_ID
+  );
+  const [openItem, setOpenItem] = useState<string | null>(() => findActiveParentHref(activeHref));
   const [hoverSection, setHoverSection] = useState<string | null>(null);
   const [prevPathname, setPrevPathname] = useState(pathname);
 
@@ -59,8 +74,12 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
   // Ajuste de estado durante a renderização (padrão React), não em efeito.
   if (pathname !== prevPathname) {
     setPrevPathname(pathname);
-    setOpenSection(findActiveSectionId(pathname));
-    setOpenItem(findActiveParentHref(pathname));
+    const nextSection = findActiveSectionId(activeHref);
+    // Seção-link (Dashboard, Notas fiscais, Maestro) não fecha o acordeão aberto.
+    if (nextSection) {
+      setOpenSection(nextSection);
+    }
+    setOpenItem(findActiveParentHref(activeHref));
   }
 
   const canViewConfig =
@@ -75,7 +94,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
 
   const renderItem = (item: NavigationItem) => {
     const Icon = item.icon;
-    const active = isItemActive(item, pathname);
+    const active = isItemActive(item, activeHref);
     const hasChildren = !!item.children && item.children.length > 0;
     const isItemOpen = openItem === item.href;
 
@@ -153,7 +172,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
             style={{ borderColor: "var(--sidebar-border)" }}
           >
             {item.children!.map((child) => {
-              const childActive = isPathActive(child.href, pathname);
+              const childActive = child.href === activeHref;
               return (
                 <Link
                   key={child.href}
@@ -256,7 +275,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
       <div className="flex flex-col space-y-0.5">
         {section.items.map((item) => {
           const Icon = item.icon;
-          const active = isItemActive(item, pathname);
+          const active = isItemActive(item, activeHref);
           if (item.disabled) {
             return (
               <span
@@ -389,6 +408,46 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
           {/* Seções em acordeão */}
           {visibleSections.map((section) => {
             const SectionIcon = section.icon;
+
+            // Seção-link: item principal sem acordeão (Dashboard, Notas fiscais, Maestro).
+            if (section.href) {
+              const active = section.href === activeHref;
+              return (
+                <Link
+                  key={section.id}
+                  href={section.href}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all duration-150"
+                  style={
+                    active
+                      ? {
+                          background: "var(--sidebar-active-bg)",
+                          color: "var(--sidebar-active-text)"
+                        }
+                      : { color: "var(--sidebar-text-muted)" }
+                  }
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      (e.currentTarget as HTMLAnchorElement).style.background =
+                        "var(--sidebar-hover-bg)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
+                    }
+                  }}
+                >
+                  <SectionIcon
+                    className="h-4 w-4 shrink-0"
+                    style={{ color: active ? "var(--sidebar-icon-active)" : "var(--sidebar-icon)" }}
+                  />
+                  <span className="flex-1 text-sm font-semibold uppercase tracking-wide">
+                    {section.label}
+                  </span>
+                </Link>
+              );
+            }
+
             const open = openSection === section.id;
             return (
               <div key={section.id}>
@@ -438,7 +497,20 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
             )
           )}
           <div className="my-1 h-px w-9" style={{ background: "var(--sidebar-border)" }} />
-          {visibleSections.map((section) => (
+          {visibleSections.map((section) => {
+            // Seção-link: navega direto, sem flyout.
+            if (section.href) {
+              const href = section.href;
+              return renderRailIcon(
+                `rail-${section.id}`,
+                section.icon,
+                section.label,
+                href === activeHref,
+                () => router.push(href)
+              );
+            }
+
+            return (
             <div
               key={section.id}
               className="relative"
@@ -449,7 +521,7 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
                 `rail-${section.id}`,
                 section.icon,
                 section.label,
-                section.items.some((item) => isItemActive(item, pathname)),
+                section.items.some((item) => isItemActive(item, activeHref)),
                 () => {
                   // Fallback sem hover: abre a seção e expande a sidebar.
                   setOpenSection(section.id);
@@ -459,7 +531,8 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
               )}
               {hoverSection === section.id && renderFlyout(section)}
             </div>
-          ))}
+            );
+          })}
         </nav>
       )}
 
