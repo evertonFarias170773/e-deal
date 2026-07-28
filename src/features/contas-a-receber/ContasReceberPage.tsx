@@ -301,19 +301,10 @@ export function ContasReceberPage() {
         }
 
         // Limpar autoRegister da URL para evitar loops e reabertura indesejada.
-        //
-        // Exceção deliberada ao caminho de escrita do useUrlFilters: uma navegação
-        // do router disparada logo após a carga inicial é engolida no build de
-        // produção (verificado), e aqui não precisamos que a tela reaja — só que o
-        // parâmetro suma para um F5 não reabrir o modal. As escritas seguintes de
-        // filtro partem de window.location.search, então ele não volta.
-        const params = new URLSearchParams(window.location.search);
-        params.delete("autoRegister");
-        const novaUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
-        window.history.replaceState(window.history.state, "", novaUrl);
+        setFilter("autoRegister", false);
       }
     }
-  }, [isLoadingSource, boletosDepositos, filters.autoRegister, filters.q]);
+  }, [isLoadingSource, boletosDepositos, filters.autoRegister, filters.q, setFilter]);
 
   const filterState = useMemo(() => ({
     search,

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   buildSearchString,
   parseSearchParams,
@@ -30,17 +30,23 @@ export type UseUrlFiltersRetorno<S extends UrlFiltersSchema> = {
 /**
  * Mantém os filtros da tela na URL.
  *
- * A URL é a única fonte de verdade: os valores são derivados de `useSearchParams`,
- * então não existe estado espelhado para sincronizar — e, por consequência, não há
- * laço de atualização. Voltar e avançar no navegador funcionam sem código extra,
- * porque a própria mudança de URL redispara a leitura.
+ * A URL manda: ao abrir a tela, atualizar a página ou usar o histórico do navegador,
+ * os valores vêm dela. Enquanto o usuário permanece na tela, uma cópia local da query
+ * acompanha as trocas de filtro.
  *
- * A escrita usa `router.replace` com `scroll: false`: troca a URL sem recarregar a
- * página e sem empilhar uma entrada de histórico a cada tecla digitada. Foi medido
- * nesta versão do Next que `window.history.replaceState` altera a barra de endereço
- * mas **não** reprocessa `useSearchParams`, o que deixaria a tela exibindo filtros
- * diferentes dos que estão na URL. Toda escrita passa por `aplicar`, então rever essa
- * decisão é mexer em um ponto só, sem tocar nas telas.
+ * A escrita usa `window.history.replaceState` e atualiza essa cópia. Duas medições
+ * explicam a combinação: `history.replaceState` sempre atualiza a barra de endereços,
+ * mas não reprocessa `useSearchParams` — daí a cópia local, que faz a tela reagir na
+ * hora; já `router.replace` reprocessa, porém em telas com carga de dados ele é
+ * engolido quando a página foi aberta direto por um link com parâmetros, e o usuário
+ * fica sem conseguir trocar de filtro. A combinação atual não depende de transição de
+ * rota e funciona nos dois casos, sem empilhar histórico a cada tecla digitada.
+ *
+ * A cópia local vale só até a URL mudar por fora — link novo, voltar ou avançar —,
+ * quando a leitura volta a sair da própria URL.
+ *
+ * Efeito colateral a conhecer: um `useSearchParams` lido fora deste hook, na mesma
+ * tela, não enxerga as trocas de filtro até a próxima navegação real.
  *
  * Passe um `schema` memorizado (`useMemo`) quando ele tiver padrões calculados, como
  * o mês corrente; os valores são recalculados quando esses padrões mudam.
@@ -59,14 +65,20 @@ export function useUrlFilters<S extends UrlFiltersSchema>(
   opcoes?: Opcoes<S>
 ): UseUrlFiltersRetorno<S> {
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const pageKey = opcoes?.pageKey;
   const resetPageOn = opcoes?.resetPageOn;
 
+  const queryDaUrl = searchParams?.toString() ?? "";
+
+  // Cópia local da query, válida apenas enquanto a URL de origem continuar a mesma.
+  // Guardar a origem junto dispensa sincronização: quando a URL muda por fora (link
+  // novo, voltar/avançar do navegador), a cópia deixa de valer sozinha.
+  const [copiaLocal, setCopiaLocal] = useState<{ origem: string; query: string } | null>(null);
+  const queryEfetiva = copiaLocal?.origem === queryDaUrl ? copiaLocal.query : queryDaUrl;
+
   const filters = useMemo(
-    () => parseSearchParams(schema, new URLSearchParams(searchParams?.toString() ?? "")),
-    [schema, searchParams]
+    () => parseSearchParams(schema, new URLSearchParams(queryEfetiva)),
+    [schema, queryEfetiva]
   );
 
   const hasActiveFilters = useMemo(
@@ -77,28 +89,22 @@ export function useUrlFilters<S extends UrlFiltersSchema>(
     [schema, filters]
   );
 
-  // Última query que nós mesmos escrevemos. A navegação do router não é imediata,
-  // então ela serve de base enquanto a URL não acompanha — é o que permite duas
-  // alterações seguidas no mesmo ciclo sem uma sobrescrever a outra.
-  const ultimaQueryRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // A URL alcançou o que escrevemos (ou mudou por fora, no histórico): a partir
-    // daqui a própria barra de endereço volta a ser a base confiável.
-    ultimaQueryRef.current = null;
-  }, [searchParams]);
-
-  /** Ponto único de escrita da URL. */
+  /**
+   * Ponto único de escrita da URL.
+   *
+   * Parte de `window.location.search`, que `replaceState` já deixou atualizado — por
+   * isso duas alterações seguidas no mesmo ciclo não se sobrescrevem.
+   */
   const aplicar = useCallback(
     (parcial: Partial<ValoresDe<S>>) => {
       if (typeof window === "undefined") return;
 
-      const base = ultimaQueryRef.current ?? window.location.search;
-      const query = buildSearchString(schema, parcial, base);
-      ultimaQueryRef.current = query;
-      router.replace(`${pathname}${query}`, { scroll: false });
+      const query = buildSearchString(schema, parcial, window.location.search);
+      const destino = `${window.location.pathname}${query}${window.location.hash}`;
+      window.history.replaceState(window.history.state, "", destino);
+      setCopiaLocal({ origem: queryDaUrl, query: query.startsWith("?") ? query.slice(1) : query });
     },
-    [schema, router, pathname]
+    [schema, queryDaUrl]
   );
 
   const setFilters = useCallback(

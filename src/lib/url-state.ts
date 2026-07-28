@@ -103,6 +103,24 @@ export const codecs = {
   },
 
   /**
+   * Lista fechada em que "nenhum selecionado" é um estado válido.
+   *
+   * Use quando o filtro pode simplesmente não estar ativo — um cartão-filtro
+   * destacável, por exemplo. O valor nulo é o padrão natural e, por isso, não
+   * aparece na URL.
+   */
+  enumOpcional<const V extends readonly string[]>(valores: V): ParamCodec<V[number] | null> {
+    return {
+      parse: (bruto) => {
+        const valor = textoLimpo(bruto);
+        if (valor === undefined) return undefined;
+        return (valores as readonly string[]).includes(valor) ? (valor as V[number]) : undefined;
+      },
+      serialize: (valor) => valor
+    };
+  },
+
+  /**
    * Data AAAA-MM-DD ou "sem data" declarado explicitamente.
    *
    * Diferente de `dataIso`, aqui o vazio é um valor com significado ("todas as

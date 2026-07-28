@@ -29,6 +29,9 @@ import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao, getDataScope, getNomeParaEscopo } from "@/features/auth/usuarios.service";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
 import { LiberarProducaoModal } from "@/features/orcamentos/components/LiberarProducaoModal";
 import { CancelPropostaModal } from "@/features/orcamentos/components/CancelPropostaModal";
@@ -36,6 +39,12 @@ import type { Proposta } from "@/features/orcamentos/types";
 
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
+
+const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "CARTAO"] as const;
+type TipoCobrancaFiltro = (typeof TIPOS_COBRANCA)[number];
+
+const CARDS_FILTRO = ["ORCAMENTOS", "EM_ARTE", "LIBERADAS", "REVISAO_ATENDENTE", "EM_PRODUCAO"] as const;
+type CardFiltro = (typeof CARDS_FILTRO)[number] | null;
 const defaultStatusOrder = [
   "NOVO", 
   "AGUARDANDO", 
@@ -208,22 +217,50 @@ export function OrcamentosListPageReal() {
   const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
   const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
 
-  const [pageIndex, setPageIndex] = useState(0);
   const PAGE_SIZE = 200;
 
-  const periodOptions = buildLastSixPeriodOptions();
-  const [periodo, setPeriodo] = useState(periodOptions[0]?.value ?? getPeriodValue(new Date()));
+  const periodOptions = useMemo(() => buildLastSixPeriodOptions(), []);
 
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("TODOS");
-  const [modelo, setModelo] = useState("TODOS_MODELOS");
-  const [vendedor, setVendedor] = useState("TODOS");
-  const [filterTipoCobranca, setFilterTipoCobranca] = useState("TODOS");
-  const [activeCard, setActiveCard] = useState<"ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null>(null);
+  // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
+  // histórico do navegador e a um link copiado.
+  // Padrão oficial: docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      status: { codec: codecs.texto(), default: "TODOS" },
+      modelo: { codec: codecs.texto(), default: "TODOS_MODELOS" },
+      vend: { codec: codecs.texto(), default: "TODOS" },
+      cob: { codec: codecs.enumOf(TIPOS_COBRANCA), default: "TODOS" as TipoCobrancaFiltro },
+      card: { codec: codecs.enumOpcional(CARDS_FILTRO), default: null as CardFiltro },
+      periodo: {
+        codec: codecs.mesIso(),
+        default: periodOptions[0]?.value ?? getPeriodValue(new Date())
+      },
+      pag: { codec: codecs.numero({ min: 1 }), default: 1 }
+    }),
+    [periodOptions]
+  );
 
-  useEffect(() => {
-    setPageIndex(0);
-  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, periodo]);
+  // pageKey: mudar qualquer filtro devolve a lista para a primeira página.
+  const { filters, setFilter, setFilters, clearFilters } = useUrlFilters(filtrosSchema, {
+    pageKey: "pag"
+  });
+
+  // Nomes locais preservados: o restante da tela continua lendo estas variáveis.
+  const periodo = filters.periodo;
+  const search = filters.q;
+  const status = filters.status;
+  const modelo = filters.modelo;
+  const vendedor = filters.vend;
+  const filterTipoCobranca = filters.cob;
+  const activeCard = filters.card;
+  const pageIndex = filters.pag - 1;
+
+  // O campo responde a cada tecla; a URL — e a consulta ao banco — só depois da
+  // pausa. Antes desta migração cada tecla disparava uma busca no Supabase.
+  const [buscaDigitada, setBuscaDigitada] = useDebouncedInput(search, (valor) =>
+    setFilter("q", valor)
+  );
 
   const queryFilters = useMemo(() => {
     const escopo = user ? getDataScope(user, "propostas") : "all";
@@ -830,7 +867,7 @@ export function OrcamentosListPageReal() {
         </section>
       ) : (
         <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-          <div onClick={() => { setActiveCard(prev => prev === "ORCAMENTOS" ? null : "ORCAMENTOS"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "ORCAMENTOS" ? null : "ORCAMENTOS", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "ORCAMENTOS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Orçamentos"
               value={cardsSummary.orcamentos.count.toString()}
@@ -844,7 +881,7 @@ export function OrcamentosListPageReal() {
               icon={FileText}
             />
           </div>
-          <div onClick={() => { setActiveCard(prev => prev === "EM_ARTE" ? null : "EM_ARTE"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_ARTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "EM_ARTE" ? null : "EM_ARTE", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_ARTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Em arte"
               value={cardsSummary.emArte.count.toString()}
@@ -858,7 +895,7 @@ export function OrcamentosListPageReal() {
               icon={Palette}
             />
           </div>
-          <div onClick={() => { setActiveCard(prev => prev === "LIBERADAS" ? null : "LIBERADAS"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "LIBERADAS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "LIBERADAS" ? null : "LIBERADAS", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "LIBERADAS" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Liberadas"
               value={cardsSummary.liberadas.count.toString()}
@@ -872,7 +909,7 @@ export function OrcamentosListPageReal() {
               icon={WalletCards}
             />
           </div>
-          <div onClick={() => { setActiveCard(prev => prev === "REVISAO_ATENDENTE" ? null : "REVISAO_ATENDENTE"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "REVISAO_ATENDENTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "REVISAO_ATENDENTE" ? null : "REVISAO_ATENDENTE", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "REVISAO_ATENDENTE" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Revisão atendente"
               value={cardsSummary.revisao.count.toString()}
@@ -886,7 +923,7 @@ export function OrcamentosListPageReal() {
               icon={CalendarDays}
             />
           </div>
-          <div onClick={() => { setActiveCard(prev => prev === "EM_PRODUCAO" ? null : "EM_PRODUCAO"); setStatus("TODOS"); }} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_PRODUCAO" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
+          <div onClick={() => setFilters({ card: activeCard === "EM_PRODUCAO" ? null : "EM_PRODUCAO", status: "TODOS" })} className={`cursor-pointer transition rounded-3xl ${activeCard === "EM_PRODUCAO" ? "ring-4 ring-teal-500 scale-[1.02]" : "hover:scale-[1.02]"}`}>
             <SummaryCard
               title="Em produção"
               value={cardsSummary.producao.count.toString()}
@@ -908,8 +945,8 @@ export function OrcamentosListPageReal() {
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <Search className="h-4 w-4 text-[#0f9f9a]" />
             <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              value={buscaDigitada}
+              onChange={(event) => setBuscaDigitada(event.target.value)}
               className="w-full bg-transparent text-sm text-slate-900 outline-none"
               placeholder="Buscar por proposta, cliente, ID cliente, valor ou OS Ideal"
             />
@@ -917,10 +954,7 @@ export function OrcamentosListPageReal() {
 
           <select
             value={status}
-            onChange={(event) => {
-              setStatus(event.target.value);
-              setActiveCard(null);
-            }}
+            onChange={(event) => setFilters({ status: event.target.value, card: null })}
             className={filterClass}
           >
             <option value="TODOS">Todos status</option>
@@ -931,7 +965,7 @@ export function OrcamentosListPageReal() {
             ))}
           </select>
 
-          <select value={modelo} onChange={(event) => setModelo(event.target.value)} className={filterClass}>
+          <select value={modelo} onChange={(event) => setFilter("modelo", event.target.value)} className={filterClass}>
             {modeloOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -939,7 +973,7 @@ export function OrcamentosListPageReal() {
             ))}
           </select>
 
-          <select value={vendedor} onChange={(event) => setVendedor(event.target.value)} className={filterClass}>
+          <select value={vendedor} onChange={(event) => setFilter("vend", event.target.value)} className={filterClass}>
             <option value="TODOS">Todos vendedores</option>
             {vendedorOptions.map((option) => (
               <option key={option} value={option}>
@@ -948,7 +982,7 @@ export function OrcamentosListPageReal() {
             ))}
           </select>
 
-          <select value={filterTipoCobranca} onChange={(event) => setFilterTipoCobranca(event.target.value)} className={filterClass}>
+          <select value={filterTipoCobranca} onChange={(event) => setFilter("cob", event.target.value as TipoCobrancaFiltro)} className={filterClass}>
             <option value="TODOS">Todas cobranças</option>
             <option value="PIX">PIX</option>
             <option value="BOLETO">BOLETO</option>
@@ -956,7 +990,7 @@ export function OrcamentosListPageReal() {
             <option value="CARTAO">CARTÃO</option>
           </select>
 
-          <select value={periodo} onChange={(event) => setPeriodo(event.target.value)} className={filterClass}>
+          <select value={periodo} onChange={(event) => setFilter("periodo", event.target.value)} className={filterClass}>
             {periodOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -967,13 +1001,9 @@ export function OrcamentosListPageReal() {
           <button
             type="button"
             onClick={() => {
-              setSearch("");
-              setStatus("TODOS");
-              setModelo("TODOS_MODELOS");
-              setVendedor("TODOS");
-              setFilterTipoCobranca("TODOS");
-              setActiveCard(null);
-              setPeriodo(periodOptions[0]?.value ?? getPeriodValue(new Date()));
+              // Volta todos os filtros ao padrão, o que os remove da URL.
+              clearFilters();
+              setBuscaDigitada("");
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
@@ -1172,7 +1202,7 @@ export function OrcamentosListPageReal() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setPageIndex((current) => Math.max(current - 1, 0))}
+            onClick={() => setFilter("pag", Math.max(filters.pag - 1, 1))}
             disabled={pageIndex === 0 || isLoading}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -1180,7 +1210,7 @@ export function OrcamentosListPageReal() {
           </button>
           <button
             type="button"
-            onClick={() => setPageIndex((current) => current + 1)}
+            onClick={() => setFilter("pag", filters.pag + 1)}
             disabled={pageIndex + 1 >= (totalPages || 1) || loadedCount < PAGE_SIZE || isLoading}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
