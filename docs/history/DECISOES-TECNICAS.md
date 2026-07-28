@@ -49,9 +49,25 @@ Consequências:
 - padrões calculados no cliente (mês corrente, por exemplo) exigem schema memorizado;
 - criação de `src/hooks/`, pasta já prevista na arquitetura oficial e até então não usada.
 
+## Escrita da URL: replaceState com cópia local (28/07/2026, revisa a decisão acima)
+
+Decisão: a escrita da query string passa a usar `window.history.replaceState` mais uma cópia local da query dentro do `useUrlFilters`, no lugar de `router.replace`.
+
+Motivo:
+
+- medido em produção: com `router.replace`, em telas com carga de dados, a navegação era descartada quando a página havia sido aberta direto por um link com parâmetros — quem abrisse uma URL filtrada não conseguia mais trocar de filtro;
+- o defeito passou despercebido na Fase 2 porque todos os testes de escrita partiam de uma URL limpa;
+- `history.replaceState` sempre atualiza a barra de endereços, e a cópia local supre o que falta nele: fazer a tela reagir sem esperar o `useSearchParams`.
+
+Consequências:
+
+- a cópia local vale apenas enquanto a URL de origem não muda; em link novo, voltar ou avançar, a leitura volta a sair da URL;
+- um `useSearchParams` lido fora do hook, na mesma tela, não enxerga as trocas de filtro até a próxima navegação real;
+- a exceção do `autoRegister` registrada abaixo deixou de ter motivo e foi removida: não há mais escrita de URL fora do hook.
+
 ## Exceção do parâmetro `autoRegister` (28/07/2026)
 
-Decisão: a remoção do parâmetro `autoRegister` da URL, em Contas a Receber, usa `window.history.replaceState` direto, sem passar pelo `useUrlFilters`.
+Decisão (revertida em 28/07/2026, ver decisão acima): a remoção do parâmetro `autoRegister` da URL, em Contas a Receber, usava `window.history.replaceState` direto, sem passar pelo `useUrlFilters`. Com a mudança na estratégia de escrita do hook, a exceção deixou de ser necessária e o código voltou a usar `setFilter`.
 
 Motivo:
 

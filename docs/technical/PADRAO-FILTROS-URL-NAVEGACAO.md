@@ -1,6 +1,6 @@
 # PADRAO-FILTROS-URL-NAVEGACAO.md
 
-Versão: 1.0  
+Versão: 1.1  
 Status: Oficial  
 Última atualização: 28/07/2026  
 Projeto: ERP Ideal
@@ -56,6 +56,7 @@ Toda tela usa o mesmo hook. Não criar solução paralela.
 | `codecs.numero({ min, max })` | Página e quantidades |
 | `codecs.booleano()` | Sim/não, gravado como `1` e `0` |
 | `codecs.enumOf([...] as const)` | Lista fechada: status, aba, ordenação |
+| `codecs.enumOpcional([...] as const)` | Lista fechada em que "nenhum selecionado" é válido |
 | `codecs.dataIso()` | Data `AAAA-MM-DD` |
 | `codecs.dataIsoOuTodas()` | Data que também aceita "sem filtro de data" |
 | `codecs.mesIso()` | Mês `AAAA-MM` |
@@ -122,25 +123,28 @@ Nomes reservados, que já têm significado no sistema e não devem ser reaprovei
 
 # 5. Como a URL é escrita
 
-A escrita usa `router.replace(url, { scroll: false })`, sempre pelo hook.
+A escrita usa `window.history.replaceState` mais uma cópia local da query, sempre pelo hook.
 
-Foi medido na versão atual do Next que `window.history.replaceState` muda a barra de endereços mas **não** reprocessa `useSearchParams`. Usar essa via deixaria a tela exibindo filtros diferentes dos que estão na URL. Por isso o padrão é `router.replace`, concentrado em um único ponto do `useUrlFilters` — trocar a estratégia no futuro é mexer em um lugar só, sem tocar nas telas.
+Duas medições explicam essa combinação:
 
-`replace` em vez de `push`: digitar na busca não deve encher o histórico do navegador. Cada entrada do histórico guarda o último estado daquela visita, de modo que voltar e avançar continuam funcionando entre telas.
+- `history.replaceState` sempre atualiza a barra de endereços, mas **não** reprocessa `useSearchParams`. Sozinho, deixaria a tela exibindo filtros diferentes dos que estão na URL — daí a cópia local, que faz a tela reagir na hora.
+- `router.replace` reprocessa, mas em telas com carga de dados ele é **engolido** quando a página foi aberta direto por um link com parâmetros. Na prática, quem abrisse uma URL filtrada não conseguia mais trocar de filtro.
+
+A combinação atual não depende de transição de rota e funciona nos dois casos. A cópia local vale apenas enquanto a URL de origem não muda; em link novo, voltar ou avançar, a leitura volta a sair da própria URL.
+
+Nada disso empilha histórico: digitar na busca não deve encher o botão "voltar". Cada entrada do histórico guarda o último estado daquela visita, de modo que voltar e avançar continuam funcionando entre telas.
+
+**Efeito colateral a conhecer:** um `useSearchParams` lido fora do hook, na mesma tela, não enxerga as trocas de filtro até a próxima navegação real. Se a tela precisar desse valor, leia pelo hook.
 
 ---
 
-# 6. Exceção documentada: `autoRegister`
+# 6. Comandos de uso único na URL
 
-`autoRegister` não é um filtro. É um comando de uso único: a preparação de boletos envia o usuário para `/contas-a-receber` já com o modal de registro bancário aberto.
+Nem todo parâmetro é filtro. `autoRegister` é um comando: a preparação de boletos envia o usuário para `/contas-a-receber` já com o modal de registro bancário aberto. Depois de consumido ele precisa sair da URL, senão um F5 reabre o modal.
 
-Depois de consumido, ele precisa sair da URL, senão um F5 reabre o modal.
+O tratamento é o mesmo dos filtros: declare no schema (`codecs.booleano()`, padrão `false`), proteja o consumo com um `ref` para não repetir e remova com `setFilter("autoRegister", false)`.
 
-Essa remoção é a **única escrita do sistema que não passa pelo `useUrlFilters`**. Ela usa `window.history.replaceState` direto, em `src/features/contas-a-receber/ContasReceberPage.tsx`.
-
-Motivo: uma navegação de router disparada logo após a carga inicial dos dados é descartada no build de produção — verificado em produção, com o parâmetro permanecendo na URL indefinidamente. Como aqui a tela não precisa reagir à mudança (basta o parâmetro sumir, e um `ref` já impede a reabertura do modal), o mecanismo direto é suficiente e seguro. As escritas de filtro seguintes partem de `window.location.search`, então o parâmetro não retorna.
-
-Trate isso como exceção, não como alternativa: qualquer parâmetro que a tela precise **ler e reagir** deve usar o hook.
+Houve um período em que essa remoção precisou ser feita fora do hook, porque a navegação de router era descartada. Isso deixou de valer quando a escrita passou a usar `history.replaceState`. **Hoje não existe exceção: toda escrita de URL passa pelo `useUrlFilters`.**
 
 ---
 
@@ -149,6 +153,7 @@ Trate isso como exceção, não como alternativa: qualquer parâmetro que a tela
 | Tela | Situação |
 |---|---|
 | Contas a Receber | Migrada (piloto), publicada em 28/07/2026 |
+| Orçamentos | Migrada em 28/07/2026 |
 | Demais listas | Ainda em `useState` local |
 
 Telas novas já nascem com o padrão. Telas existentes são migradas uma por vez, em tarefas separadas, sem refatoração ampla.
