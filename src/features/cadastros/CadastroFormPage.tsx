@@ -1750,9 +1750,8 @@ function CompleteForm({
           <Field label="Nome fantasia / Apelido">
             <input value={form.fantasia} readOnly={!isEditAllowed} onChange={(event) => onUpdate("fantasia", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
-          <Field label="Apelido">
-            <input value={form.apelido} readOnly={!isEditAllowed} onChange={(event) => onUpdate("apelido", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
-          </Field>
+          {/* "Apelido" saiu da interface. O valor continua no estado (carregado do
+              banco em createFormState) e é reenviado no payload — nada é apagado. */}
           <Field label="Contato">
             <input value={form.contato} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contato", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
@@ -1781,9 +1780,8 @@ function CompleteForm({
           <Field label="Inscricao municipal">
             <input value={form.inscricaoMunicipal} readOnly={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("inscricaoMunicipal", event.target.value)} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
-          <Field label="Cidade / UF">
-            <input value={form.cidadeUf} readOnly={!isEditAllowed} onChange={(event) => onUpdate("cidadeUf", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} placeholder="Cidade - UF" />
-          </Field>
+          {/* "Cidade / UF" saiu da interface — o endereço é mantido no box próprio.
+              O valor segue no estado e no payload, preservando o dado atual. */}
           <Field label="Telefone fixo comercial">
             <input value={form.telefoneFixo} readOnly={!isEditAllowed} onChange={(event) => onUpdate("telefoneFixo", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
@@ -2077,7 +2075,8 @@ function CompleteForm({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Data cadastro"><input type="date" value={form.dataCadastro} readOnly className={`${inputClass} bg-gray-100 text-gray-500 cursor-not-allowed`} /></Field>
             <Field label="Data fundacao"><input type="date" value={form.dataFundacao} onChange={(event) => canEditCredito && onUpdate("dataFundacao", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
-            <Field label="Data verificacao"><input type="date" value={form.dataVerificacao} onChange={(event) => canEditCredito && onUpdate("dataVerificacao", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
+            {/* "Data verificacao" saiu da interface — valor mantido no estado e no
+                payload (data_verificacao), sem apagar o que já está gravado. */}
             <Field label="Limite de credito"><input value={form.limiteCredito} onChange={(event) => canEditCredito && onUpdate("limiteCredito", event.target.value)} readOnly={!canEditCredito} className={inputClassCredito} /></Field>
             {/* Campos "Credito" e "Credito acumulado" removidos (2026-07-22):
                 saldo de crédito é gerido exclusivamente pelo módulo Conta
@@ -2126,15 +2125,13 @@ function CompleteForm({
             )}
             <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => canEditCredito && !form.usaPrecoFixo && onUpdate("percentualBonus", event.target.value)} readOnly={!canEditCredito || form.usaPrecoFixo} className={`${inputClassCredito} ${form.usaPrecoFixo ? "opacity-50" : ""}`} /></Field>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          {/* Toggles "Nota", "Verificado", "CPF invalido", "Receber e-mail" e
+              "Receber WhatsApp" saíram da interface. Os valores seguem no estado
+              (carregados do banco) e no payload — nenhum é zerado ao salvar. */}
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Toggle label="Usa Preço Fixo" checked={form.usaPrecoFixo} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("usaPrecoFixo", value)} />
             <Toggle label="Bonus" checked={form.bonusAtivo} disabled={!canEditCredito || form.usaPrecoFixo} onChange={(value) => canEditCredito && onUpdate("bonusAtivo", value)} />
-            <Toggle label="Nota" checked={form.nota} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("nota", value)} />
             <Toggle label="Restricao" checked={form.restricao} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("restricao", value)} />
-            <Toggle label="Verificado" checked={form.verificado} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("verificado", value)} />
-            <Toggle label="CPF invalido" checked={form.cpfInvalido} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("cpfInvalido", value)} />
-            <Toggle label="Receber e-mail" checked={form.sendMail} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("sendMail", value)} />
-            <Toggle label="Receber WhatsApp" checked={form.sendWhats} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("sendWhats", value)} />
           </div>
         </FormSection>
       )}

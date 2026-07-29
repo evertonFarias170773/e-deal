@@ -1475,6 +1475,47 @@ export async function updateCadastro(
   };
 }
 
+/**
+ * Inativa um cadastro (clientes.ativo = false).
+ *
+ * Escrita mínima e dedicada: `updateCadastro` exige o payload completo e revalida
+ * documento, o que não faz sentido para uma inativação — e sobrescreveria campos
+ * que a tela da lista não conhece. Aqui só a flag é tocada.
+ */
+export async function inativarCadastro(
+  idCliente: number
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase indisponivel." };
+  }
+  if (!Number.isInteger(idCliente) || idCliente <= 0) {
+    return { success: false, errorMessage: "ID do cliente invalido." };
+  }
+
+  const { data, error } = await client
+    .from("clientes")
+    .update({ ativo: false })
+    .eq("id_cliente", idCliente)
+    .select("id_cliente")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[CadastrosService] Erro ao inativar cadastro:", error);
+    return {
+      success: false,
+      errorMessage:
+        error.code === "42501"
+          ? "Sem permissão para inativar este cadastro."
+          : error.message || "Não foi possível inativar o cadastro."
+    };
+  }
+  if (!data) {
+    return { success: false, errorMessage: "Cadastro não encontrado ou sem permissão de escrita." };
+  }
+  return { success: true };
+}
+
 export async function updateCadastroReceita(
   idCliente: number,
   payload: {

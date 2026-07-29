@@ -2,14 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Cake, MapPin, Search, TrendingUp, Users, X } from "lucide-react";
+import { Cake, Search, Users, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { SummaryCard } from "@/components/common/SummaryCard";
-import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { formatDocument } from "@/lib/formatters/document";
 import { useCadastrosDashboardResumo } from "@/features/cadastros/hooks/useCadastrosDashboardResumo";
@@ -20,14 +19,19 @@ import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal";
+import { ConfirmarInativacaoModal } from "./components/ConfirmarInativacaoModal";
+import { inativarCadastro } from "@/features/cadastros/services/cadastros.service";
 
-const PAGE_SIZE = 200;
+// Carga inicial enxuta: os 100 cadastros mais recentes (a view já ordena por
+// id_cliente desc, que é a ordem de criação). Páginas seguintes sob demanda.
+const PAGE_SIZE = 100;
 
 type SearchState = {
   pageIndex: number;
   pageSize: number;
   search: string;
-  idClienteSearch: string;
+  /** Muda para forçar releitura da lista (ex.: depois de inativar um cadastro). */
+  recarga: number;
 };
 
 function AniversariantesCard({
@@ -41,8 +45,11 @@ function AniversariantesCard({
     return null;
   }
 
+  // Mesma estrutura do SummaryCard "Cadastros ativos" (título, valor, descrição,
+  // ícone) para os dois cards ficarem com a mesma altura. A lista dos
+  // aniversariantes continua no modal.
   return (
-    <button type="button" onClick={onOpen} className="text-left">
+    <button type="button" onClick={onOpen} className="h-full text-left">
       <article className="h-full rounded-3xl border border-[#d7e5e8] bg-[#f7fbfb] p-5 shadow-sm transition hover:border-[#b7d9d8] hover:bg-[#f2fbfb]">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -53,23 +60,9 @@ function AniversariantesCard({
             <Cake className="h-5 w-5" />
           </span>
         </div>
-        <p className="mt-4 text-sm leading-6 text-slate-500">Clientes com data comemorativa hoje.</p>
-        <div className="mt-4 space-y-2">
-          {items.slice(0, 2).map((item) => (
-            <div key={item.id} className="rounded-2xl bg-white px-3 py-2 ring-1 ring-slate-200">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium text-slate-800">{item.nome}</span>
-                <span className="text-xs font-semibold text-slate-500">
-                  {item.dataFundacao ? formatDate(item.dataFundacao) : "—"}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">{item.fantasia || item.apelido || "Sem nome fantasia"}</p>
-            </div>
-          ))}
-        </div>
-        <span className="mt-4 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-          Ver aniversariantes
-        </span>
+        <p className="mt-4 text-sm leading-6 text-slate-500">
+          Clientes com data comemorativa hoje. Clique para ver a lista.
+        </p>
       </article>
     </button>
   );
@@ -156,6 +149,8 @@ export function CadastrosListPage() {
   const filtrosSchema = useMemo(
     () => ({
       q: { codec: codecs.texto(), default: "" },
+      // `qid` continua no schema por compatibilidade: links antigos com o filtro
+      // de ID separado seguem funcionando, agora alimentando a busca única.
       qid: { codec: codecs.texto(), default: "" },
       pag: { codec: codecs.numero({ min: 1 }), default: 1 }
     }),
@@ -165,32 +160,30 @@ export function CadastrosListPage() {
   // pageKey: mudar a busca devolve a lista para a primeira página.
   const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema, { pageKey: "pag" });
 
-  const search = filters.q;
-  // A busca por ID sempre foi só de dígitos; a limpeza aqui também protege de um
-  // valor arbitrário digitado direto na URL.
-  const idClienteSearch = filters.qid.replace(/\D/g, "");
+  // Campo único: o termo de um link antigo (`qid`) entra na mesma busca.
+  const search = filters.q || filters.qid.replace(/\D/g, "");
   const pageIndex = filters.pag - 1;
 
-  // Os dois campos respondem a cada tecla; a URL — e a consulta ao banco — só
-  // depois da pausa. Antes desta migração cada tecla disparava uma consulta.
+  // O campo responde a cada tecla; a URL — e a consulta ao banco — só depois da
+  // pausa. Antes desta migração cada tecla disparava uma consulta.
   const [buscaDigitada, setBuscaDigitada] = useDebouncedInput(search, (valor) =>
     setFilter("q", valor)
-  );
-  const [idDigitado, setIdDigitado] = useDebouncedInput(idClienteSearch, (valor) =>
-    setFilter("qid", valor)
   );
 
   const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
   const [activeClienteParaAjuste, setActiveClienteParaAjuste] = useState<{ idCliente: number; nome: string } | null>(null);
+  const [cadastroParaInativar, setCadastroParaInativar] = useState<{ idCliente: number; nome: string } | null>(null);
+  const [isInativando, setIsInativando] = useState(false);
+  const [recarga, setRecarga] = useState(0);
 
   const query = useMemo<SearchState>(
     () => ({
       pageIndex,
       pageSize: PAGE_SIZE,
       search,
-      idClienteSearch
+      recarga
     }),
-    [idClienteSearch, pageIndex, search]
+    [pageIndex, search, recarga]
   );
 
   const {
@@ -204,15 +197,12 @@ export function CadastrosListPage() {
   } = useCadastrosReadOnlyData(query);
   const resumo = useCadastrosDashboardResumo();
 
-  const activeFilters = [idClienteSearch ? `ID cliente: ${idClienteSearch}` : null, search ? `Busca: ${search}` : null].filter(
-    Boolean
-  ) as string[];
+  const activeFilters = [search ? `Busca: ${search}` : null].filter(Boolean) as string[];
 
   function clearFilters() {
     // Volta os filtros ao padrão, o que os remove da URL.
     setFilters({ q: "", qid: "", pag: 1 });
     setBuscaDigitada("");
-    setIdDigitado("");
   }
 
   function showPlaceholderActionToast(title: string) {
@@ -228,8 +218,29 @@ export function CadastrosListPage() {
     setBuscaDigitada(value);
   }
 
-  function handleIdClienteChange(value: string) {
-    setIdDigitado(value.replace(/\D/g, ""));
+  async function handleConfirmarInativacao() {
+    if (!cadastroParaInativar || isInativando) return;
+    setIsInativando(true);
+    const resultado = await inativarCadastro(cadastroParaInativar.idCliente);
+    setIsInativando(false);
+
+    if (!resultado.success) {
+      showToast({
+        type: "error",
+        title: "Não foi possível inativar",
+        description: resultado.errorMessage || "Erro desconhecido."
+      });
+      return;
+    }
+
+    showToast({
+      type: "success",
+      title: "Cadastro inativado",
+      description: `${cadastroParaInativar.nome} não aparece mais na lista de ativos.`
+    });
+    setCadastroParaInativar(null);
+    // Só recarrega depois da confirmação bem-sucedida.
+    setRecarga((valor) => valor + 1);
   }
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -256,69 +267,13 @@ export function CadastrosListPage() {
       {resumo.isLoading ? (
         <LoadingSkeleton variant="cards" rows={4} />
       ) : (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-2">
           <SummaryCard
             title="Cadastros ativos"
             value={resumo.activeCount.toString()}
             description="Clientes ativos disponíveis para atendimento."
             tone="success"
             icon={Users}
-          />
-          <SummaryCard
-            title="Curva ABC - Clientes"
-            value={resumo.topClientes[0] ? formatCurrency(resumo.topClientes[0].valorTotal) : "R$ 0,00"}
-            description={
-              <div className="space-y-2">
-                {resumo.topClientes.length ? (
-                  resumo.topClientes.map((cliente, index) => (
-                    <div key={cliente.idCliente} className="rounded-2xl bg-slate-50 px-3 py-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-medium text-slate-800">
-                          {cliente.posicao || index + 1}. {cliente.nome}
-                        </span>
-                        <span className="text-sm font-semibold text-slate-950">{formatCurrency(cliente.valorTotal)}</span>
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        {cliente.quantidadePedidos} pedidos
-                        {cliente.ultimoPedido ? ` · Último pedido: ${formatDate(cliente.ultimoPedido)}` : ""}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">Sem dados para ranking.</p>
-                )}
-              </div>
-            }
-            tone="special"
-            icon={TrendingUp}
-          />
-          <SummaryCard
-            title="Curva ABC - Cidades"
-            value={resumo.topCidades[0] ? formatCurrency(resumo.topCidades[0].valorTotal) : "R$ 0,00"}
-            description={
-              <div className="space-y-2">
-                {resumo.topCidades.length ? (
-                  resumo.topCidades.map((cidade, index) => (
-                    <div key={cidade.cidadeUf} className="rounded-2xl bg-slate-50 px-3 py-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-medium text-slate-800">
-                          {cidade.posicao || index + 1}. {cidade.cidadeUf}
-                        </span>
-                        <span className="text-sm font-semibold text-slate-950">{formatCurrency(cidade.valorTotal)}</span>
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        {cidade.quantidadePedidos} pedidos · {cidade.quantidadeClientes} clientes
-                        {cidade.ultimoPedido ? ` · Último pedido: ${formatDate(cidade.ultimoPedido)}` : ""}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">Sem dados para ranking.</p>
-                )}
-              </div>
-            }
-            tone="info"
-            icon={MapPin}
           />
           <AniversariantesCard items={aniversariantesHoje} onOpen={() => setIsBirthdayModalOpen(true)} />
         </section>
@@ -340,21 +295,10 @@ export function CadastrosListPage() {
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Search className="h-4 w-4 text-[#0f9f9a]" />
               <input
-                value={idDigitado}
-                onChange={(event) => handleIdClienteChange(event.target.value)}
-                className="w-full bg-transparent text-sm text-slate-900 outline-none"
-                placeholder="ID cliente"
-                inputMode="numeric"
-                pattern="[0-9]*"
-              />
-            </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <Search className="h-4 w-4 text-[#0f9f9a]" />
-              <input
                 value={buscaDigitada}
                 onChange={(event) => handleSearchChange(event.target.value)}
                 className="w-full bg-transparent text-sm text-slate-900 outline-none"
-                placeholder="Buscar por nome, fantasia, documento, cidade, WhatsApp ou e-mail"
+                placeholder="Buscar por ID do cliente, documento, nome fantasia ou nome"
               />
             </label>
           </div>
@@ -385,6 +329,9 @@ export function CadastrosListPage() {
         getKey={(cadastro) => cadastro.id}
         emptyTitle="Nenhum cadastro encontrado"
         emptyDescription="Ajuste a busca ou limpe os filtros para localizar clientes."
+        // Clique (ou Enter/Espaço) na linha abre o cadastro. O menu de ações e os
+        // demais controles seguem funcionando — a navegação os ignora.
+        onRowClick={(cadastro) => router.push(`/cadastros/${cadastro.idCliente}`)}
         columns={[
           {
             header: "ID",
@@ -452,7 +399,12 @@ export function CadastrosListPage() {
                     : []),
                   { label: "Abrir WhatsApp", onClick: () => showPlaceholderActionToast("Abrir WhatsApp") },
                   { label: "Ver financeiro", onClick: () => showPlaceholderActionToast("Ver financeiro") },
-                  { label: "Inativar cadastro", destructive: true, onClick: () => showPlaceholderActionToast("Inativar cadastro") }
+                  {
+                    label: "Inativar cadastro",
+                    destructive: true,
+                    onClick: () =>
+                      setCadastroParaInativar({ idCliente: cadastro.idCliente, nome: cadastro.nome })
+                  }
                 ]}
               />
             ),
@@ -510,7 +462,12 @@ export function CadastrosListPage() {
                       ]
                     : []),
                   { label: "Abrir WhatsApp", onClick: () => showPlaceholderActionToast("Abrir WhatsApp") },
-                  { label: "Inativar cadastro", destructive: true, onClick: () => showPlaceholderActionToast("Inativar cadastro") }
+                  {
+                    label: "Inativar cadastro",
+                    destructive: true,
+                    onClick: () =>
+                      setCadastroParaInativar({ idCliente: cadastro.idCliente, nome: cadastro.nome })
+                  }
                 ]}
               />
             </div>
@@ -557,6 +514,17 @@ export function CadastrosListPage() {
           }}
         />
       )}
+
+      <ConfirmarInativacaoModal
+        isOpen={!!cadastroParaInativar}
+        idCliente={cadastroParaInativar?.idCliente ?? 0}
+        nomeCliente={cadastroParaInativar?.nome ?? ""}
+        isProcessando={isInativando}
+        onClose={() => {
+          if (!isInativando) setCadastroParaInativar(null);
+        }}
+        onConfirm={handleConfirmarInativacao}
+      />
     </div>
   );
 }

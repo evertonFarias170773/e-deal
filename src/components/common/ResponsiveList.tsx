@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
 
@@ -24,6 +24,19 @@ const alignClass = {
   center: "text-center",
   right: "text-right"
 };
+
+/**
+ * Controles que "consomem" o evento: a linha clicável não deve navegar quando o
+ * usuário interage com eles. `.prevent-row-click` permite marcar um bloco
+ * inteiro (um menu aberto em portal, por exemplo).
+ */
+function isElementoInterativo(target: HTMLElement | null) {
+  return Boolean(
+    target?.closest(
+      "button, a, input, select, textarea, label, [role='button'], [role='menu'], [role='menuitem'], [role='checkbox'], .prevent-row-click"
+    )
+  );
+}
 
 export function ResponsiveList<T>({
   items,
@@ -82,10 +95,25 @@ export function ResponsiveList<T>({
                 key={getKey(item)}
                 className={`transition ${onRowClick ? "cursor-pointer" : ""}`}
                 style={{ borderBottom: "1px solid var(--border)" }}
+                // Acessibilidade: linha clicável é focável e responde a Enter/Espaço.
+                {...(onRowClick
+                  ? {
+                      // tabIndex sem role: a linha continua sendo `row` para
+                      // leitores de tela, mas fica alcançável pelo teclado.
+                      tabIndex: 0,
+                      onKeyDown: (e: KeyboardEvent<HTMLTableRowElement>) => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        // Tecla disparada dentro de um controle pertence a ele.
+                        if (isElementoInterativo(e.target as HTMLElement)) return;
+                        e.preventDefault();
+                        onRowClick(item);
+                      }
+                    }
+                  : {})}
                 onClick={(e) => {
-                  // Se o clique for em um botao, a ou dropdown, ignoramos para nao acionar a linha (opcional)
-                  const target = e.target as HTMLElement;
-                  if (target.closest('button') || target.closest('a') || target.closest('.prevent-row-click')) return;
+                  // Clique em controle (botão, link, checkbox, select, menu…) é do
+                  // controle, não da linha — não navega.
+                  if (isElementoInterativo(e.target as HTMLElement)) return;
                   if (onRowClick) onRowClick(item);
                 }}
                 onMouseEnter={(e) => {

@@ -103,7 +103,33 @@ function normalizeSearchTerm(value: string) {
   return value
     .trim()
     .replace(/\s+/g, " ")
-    .replace(/[%*,]/g, "");
+    .replace(/[%*,#]/g, "");
+}
+
+/** Limite de public.clientes.id_cliente (integer / int4). */
+const INT4_MAX = 2147483647;
+
+/**
+ * Filtro da busca única. Um termo só de dígitos é ID do cliente ou documento —
+ * restringir a esses dois campos evita que o registro certo se perca no meio de
+ * dezenas de acertos parciais em telefone e nome (buscar "8469" casava 119
+ * cadastros pela busca_geral, e o cliente 8469 caía fora da primeira página).
+ * Termos com letras seguem na busca_geral, que já cobre nome, fantasia, apelido,
+ * documento, cidade, telefones e e-mail.
+ */
+function montarFiltroBusca(termo: string): { tipo: "digitos" | "texto"; expressao: string } {
+  const digitos = termo.replace(/\D/g, "");
+  const soDigitos = digitos.length > 0 && digitos === termo;
+
+  if (soDigitos) {
+    const clausulas = [`documento_numeros.ilike.%${digitos}%`];
+    if (Number(digitos) <= INT4_MAX) {
+      clausulas.unshift(`id_cliente_text.eq.${digitos}`);
+    }
+    return { tipo: "digitos", expressao: clausulas.join(",") };
+  }
+
+  return { tipo: "texto", expressao: `busca_geral.ilike.%${termo.toLowerCase()}%` };
 }
 
 function normalizeRankingPosicao(value: unknown, fallback = 0) {
@@ -276,14 +302,18 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       .select("id,id_cliente,id_cliente_text,nome,fantasia,apelido,documento,documento_numeros,tipo_pessoa,cidade_uf,nome_vendedor,whatsapp_1,whatsapp_2,telefone_fixo,credito,limite_credito,risco_credito,data_fundacao,aniversariante_hoje,qtd_pedidos,data_ult_pedido,busca_geral", {
         count: "exact"
       })
-      .order("id_cliente", { ascending: false });
+      // nullsFirst: false — em DESC o Postgres põe NULL primeiro, e um cadastro
+      // sem id_cliente abria a lista dos "mais recentes".
+      .order("id_cliente", { ascending: false, nullsFirst: false });
 
+    // Compatibilidade: links antigos ainda podem trazer o filtro de ID separado.
     if (idClienteDigits) {
       request = request.ilike("id_cliente_text", `${idClienteDigits}%`);
     }
 
-    if (searchTerm) {
-      request = request.ilike("busca_geral", `%${searchTerm}%`);
+    const filtroBusca = searchTerm ? montarFiltroBusca(searchTerm) : null;
+    if (filtroBusca) {
+      request = request.or(filtroBusca.expressao);
     }
 
     request = request.range(from, to);
@@ -293,7 +323,18 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       throw error;
     }
 
-    const cadastros = (data ?? []).map(mapClienteListaRow);
+    let cadastros = (data ?? []).map(mapClienteListaRow);
+
+    // Busca por dígitos: o ID exato vai para o topo da página, para o usuário não
+    // precisar caçar o cadastro certo entre os acertos por documento.
+    if (filtroBusca?.tipo === "digitos") {
+      const idExato = searchTerm.replace(/\D/g, "");
+      cadastros = [
+        ...cadastros.filter((c) => c.idClienteText === idExato),
+        ...cadastros.filter((c) => c.idClienteText !== idExato)
+      ];
+    }
+
     const totalCount = typeof count === "number" ? count : cadastros.length;
 
     return {
@@ -304,7 +345,9 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       pageIndex,
       pageSize,
       loadedCount: cadastros.length,
-      warnings: ["Leitura real aplicada em public.vw_cadastros_clientes_lista com paginação server-side de 200 registros."]
+      warnings: [
+        `Leitura real aplicada em public.vw_cadastros_clientes_lista com paginação server-side de ${pageSize} registros.`
+      ]
     };
   } catch (error) {
     console.log("[Cadastros][List] erro na leitura real - fallback vazio ativado.", { error });
