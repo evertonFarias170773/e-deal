@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
+import { useSessionState } from "@/hooks/useSessionState";
+import { codecs } from "@/lib/url-state";
 import { useAppToast } from "@/components/common/AppToast";
 import {
   listAllPropostasPendencias,
@@ -61,7 +65,33 @@ const SECTORS = [
   { value: "EXPEDICAO", label: "Expedição / Logística" }
 ];
 
-export default function PendenciasPage() {
+/**
+ * Filtros da tela. Status é a única lista escrita à mão — as demais saem das
+ * constantes acima, para não haver duas fontes da mesma verdade.
+ */
+const STATUS_FILTROS = ["TODOS", "ABERTA", "EM_ANDAMENTO", "CONCLUIDA", "CANCELADA"];
+const PRIORIDADE_FILTROS = ["TODOS", ...PRIORITIES.map((p) => p.value)];
+const CATEGORIA_FILTROS = ["TODOS", ...CATEGORIES.map((c) => c.value)];
+const SETOR_FILTROS = ["TODOS", ...SECTORS.map((s) => s.value)];
+const ABAS_RAPIDAS = ["todas", "minhas", "setor", "sem_responsavel", "urgentes", "atrasadas", "concluidas_hoje"];
+
+/** Quantas pendências a lista mostra por vez, e de quanto em quanto cresce. */
+const LIMITE_INICIAL = 25;
+const PASSO_LIMITE = 25;
+
+/** Preferência visual: não descreve o que está sendo visto, então fica fora da URL. */
+const CHAVE_PAINEL_AVANCADO = "ui:/pendencias:filtros-avancados";
+
+export default function PendenciasRoute() {
+  return (
+    // A tela lê os filtros da URL (useSearchParams), que exige limite de Suspense.
+    <Suspense fallback={null}>
+      <PendenciasPage />
+    </Suspense>
+  );
+}
+
+function PendenciasPage() {
   const { user } = useAuth();
   const { showToast } = useAppToast();
   const { openChat } = useGlobalChat();
@@ -73,18 +103,61 @@ export default function PendenciasPage() {
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Filter States
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState("TODOS");
-  const [selectedPriority, setSelectedPriority] = useState("TODOS");
-  const [selectedCategory, setSelectedCategory] = useState("TODOS");
-  const [selectedSector, setSelectedSector] = useState("TODOS");
-  const [selectedCompany, setSelectedCompany] = useState("TODAS");
-  const [quickTab, setQuickTab] = useState<"todas" | "minhas" | "setor" | "sem_responsavel" | "urgentes" | "atrasadas" | "concluidas_hoje">("todas");
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  // Filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um link copiado.
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      status: { codec: codecs.enumOf(STATUS_FILTROS), default: "TODOS" },
+      prio: { codec: codecs.enumOf(PRIORIDADE_FILTROS), default: "TODOS" },
+      cat: { codec: codecs.enumOf(CATEGORIA_FILTROS), default: "TODOS" },
+      setor: { codec: codecs.enumOf(SETOR_FILTROS), default: "TODOS" },
+      // A lista de empresas vem dos dados, então não há enum fechado aqui.
+      emp: { codec: codecs.texto(), default: "TODAS" },
+      aba: { codec: codecs.enumOf(ABAS_RAPIDAS), default: "todas" }
+    }),
+    []
+  );
+  const { filters, setFilter, clearFilters } = useUrlFilters(filtrosSchema);
 
-  // Pagination State
-  const [limit, setLimit] = useState(25);
+  const selectedStatus = filters.status;
+  const selectedPriority = filters.prio;
+  const selectedCategory = filters.cat;
+  const selectedSector = filters.setor;
+  const quickTab = filters.aba;
+  // A busca responde a cada tecla; a URL só é gravada depois da pausa.
+  const [searchTerm, definirBusca] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
+
+  /**
+   * "Carregar mais" é posição de leitura, não descrição do que está sendo visto:
+   * fica fora da URL. Toda troca de busca, filtro ou aba passa por aqui, para a
+   * leitura recomeçar do topo em vez de herdar o limite da consulta anterior.
+   */
+  const [limit, setLimit] = useState(LIMITE_INICIAL);
+
+  const aplicarFiltro = useCallback(
+    (chave: "status" | "prio" | "cat" | "setor" | "emp" | "aba", valor: string) => {
+      setLimit(LIMITE_INICIAL);
+      setFilter(chave, valor);
+    },
+    [setFilter]
+  );
+
+  const buscar = useCallback(
+    (valor: string) => {
+      setLimit(LIMITE_INICIAL);
+      definirBusca(valor);
+    },
+    [definirBusca]
+  );
+
+  const resetarFiltros = useCallback(() => {
+    setLimit(LIMITE_INICIAL);
+    definirBusca("");
+    clearFilters();
+  }, [definirBusca, clearFilters]);
+
+  // Estado visual, guardado na sessão: não faz sentido em um link compartilhado.
+  const [showAdvancedFilters, setShowAdvancedFilters] = useSessionState(CHAVE_PAINEL_AVANCADO, false);
 
   const triggerRefresh = useCallback(() => {
     setRefreshTrigger((prev) => prev + 1);
@@ -273,6 +346,15 @@ export default function PendenciasPage() {
     return Array.from(unique).sort();
   }, [rawPendencias]);
 
+  // A empresa não tem lista fechada no codec. Se vier na URL um nome que não
+  // existe nos dados, cai em "Todas" assim que a lista real fica conhecida.
+  const selectedCompany =
+    filters.emp !== "TODAS" && companiesList.length > 0 && !companiesList.includes(filters.emp)
+      ? "TODAS"
+      : filters.emp;
+
+  const carregarMais = () => setLimit((anterior) => anterior + PASSO_LIMITE);
+
   // In-Memory filtering for fast UI updates
   const filteredPendencias = useMemo(() => {
     return rawPendencias.filter((item) => {
@@ -342,7 +424,7 @@ export default function PendenciasPage() {
 
       {/* Summary Cards Grid */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <div onClick={() => setQuickTab("minhas")} className="cursor-pointer">
+        <div onClick={() => aplicarFiltro("aba", "minhas")} className="cursor-pointer">
           <SummaryCard
             title="Minhas Pendências"
             value={String(metrics.minhas)}
@@ -356,7 +438,7 @@ export default function PendenciasPage() {
           />
         </div>
 
-        <div onClick={() => setQuickTab("setor")} className="cursor-pointer">
+        <div onClick={() => aplicarFiltro("aba", "setor")} className="cursor-pointer">
           <SummaryCard
             title="Do Meu Setor"
             value={String(metrics.setor)}
@@ -370,7 +452,7 @@ export default function PendenciasPage() {
           />
         </div>
 
-        <div onClick={() => setQuickTab("sem_responsavel")} className="cursor-pointer">
+        <div onClick={() => aplicarFiltro("aba", "sem_responsavel")} className="cursor-pointer">
           <SummaryCard
             title="Sem Responsável"
             value={String(metrics.semResponsavel)}
@@ -384,7 +466,7 @@ export default function PendenciasPage() {
           />
         </div>
 
-        <div onClick={() => setQuickTab("urgentes")} className="cursor-pointer">
+        <div onClick={() => aplicarFiltro("aba", "urgentes")} className="cursor-pointer">
           <SummaryCard
             title="Urgentes"
             value={String(metrics.urgentes)}
@@ -398,7 +480,7 @@ export default function PendenciasPage() {
           />
         </div>
 
-        <div onClick={() => setQuickTab("atrasadas")} className="cursor-pointer">
+        <div onClick={() => aplicarFiltro("aba", "atrasadas")} className="cursor-pointer">
           <SummaryCard
             title="Atrasadas"
             value={String(metrics.atrasadas)}
@@ -412,7 +494,7 @@ export default function PendenciasPage() {
           />
         </div>
 
-        <div onClick={() => setQuickTab("concluidas_hoje")} className="cursor-pointer">
+        <div onClick={() => aplicarFiltro("aba", "concluidas_hoje")} className="cursor-pointer">
           <SummaryCard
             title="Concluídas Hoje"
             value={String(metrics.concluidasHoje)}
@@ -442,7 +524,7 @@ export default function PendenciasPage() {
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => buscar(e.target.value)}
               placeholder="Buscar por título, descrição, cliente ou ID da proposta..."
               className="w-full rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none transition"
               style={{
@@ -457,7 +539,7 @@ export default function PendenciasPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              onClick={() => setShowAdvancedFilters((aberto) => !aberto)}
               className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition"
               style={{
                 background: showAdvancedFilters ? "var(--accent-hover)" : "var(--background)",
@@ -473,7 +555,7 @@ export default function PendenciasPage() {
             {quickTab !== "todas" && (
               <button
                 type="button"
-                onClick={() => setQuickTab("todas")}
+                onClick={() => aplicarFiltro("aba", "todas")}
                 className="rounded-xl px-3 py-2.5 text-xs font-bold text-red-500 hover:text-red-600 transition"
               >
                 Limpar Abas
@@ -485,7 +567,7 @@ export default function PendenciasPage() {
         {/* Quick Filter Tabs */}
         <div className="flex flex-wrap gap-1.5 border-b pb-2" style={{ borderColor: "var(--border)" }}>
           <button
-            onClick={() => setQuickTab("todas")}
+            onClick={() => aplicarFiltro("aba", "todas")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               quickTab === "todas"
                 ? "bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
@@ -495,7 +577,7 @@ export default function PendenciasPage() {
             Todas ({rawPendencias.length})
           </button>
           <button
-            onClick={() => setQuickTab("minhas")}
+            onClick={() => aplicarFiltro("aba", "minhas")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               quickTab === "minhas"
                 ? "bg-[#0b2f4a] text-white"
@@ -505,7 +587,7 @@ export default function PendenciasPage() {
             Minhas ({metrics.minhas})
           </button>
           <button
-            onClick={() => setQuickTab("setor")}
+            onClick={() => aplicarFiltro("aba", "setor")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               quickTab === "setor"
                 ? "bg-[#0b2f4a] text-white"
@@ -515,7 +597,7 @@ export default function PendenciasPage() {
             Meu Setor ({metrics.setor})
           </button>
           <button
-            onClick={() => setQuickTab("sem_responsavel")}
+            onClick={() => aplicarFiltro("aba", "sem_responsavel")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               quickTab === "sem_responsavel"
                 ? "bg-[#0b2f4a] text-white"
@@ -525,7 +607,7 @@ export default function PendenciasPage() {
             Sem Responsável ({metrics.semResponsavel})
           </button>
           <button
-            onClick={() => setQuickTab("urgentes")}
+            onClick={() => aplicarFiltro("aba", "urgentes")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               quickTab === "urgentes"
                 ? "bg-red-600 text-white"
@@ -535,7 +617,7 @@ export default function PendenciasPage() {
             Urgentes ({metrics.urgentes})
           </button>
           <button
-            onClick={() => setQuickTab("atrasadas")}
+            onClick={() => aplicarFiltro("aba", "atrasadas")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               quickTab === "atrasadas"
                 ? "bg-amber-600 text-white"
@@ -545,7 +627,7 @@ export default function PendenciasPage() {
             Atrasadas ({metrics.atrasadas})
           </button>
           <button
-            onClick={() => setQuickTab("concluidas_hoje")}
+            onClick={() => aplicarFiltro("aba", "concluidas_hoje")}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
               quickTab === "concluidas_hoje"
                 ? "bg-green-600 text-white"
@@ -567,7 +649,7 @@ export default function PendenciasPage() {
               <select
                 id="filter_status"
                 value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
+                onChange={(e) => aplicarFiltro("status", e.target.value)}
                 className="w-full rounded-xl px-3 py-2 text-xs outline-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
               >
                 <option value="TODOS">Todos os Status</option>
@@ -586,7 +668,7 @@ export default function PendenciasPage() {
               <select
                 id="filter_prio"
                 value={selectedPriority}
-                onChange={(e) => setSelectedPriority(e.target.value)}
+                onChange={(e) => aplicarFiltro("prio", e.target.value)}
                 className="w-full rounded-xl px-3 py-2 text-xs outline-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
               >
                 <option value="TODOS">Todas as Prioridades</option>
@@ -605,7 +687,7 @@ export default function PendenciasPage() {
               <select
                 id="filter_cat"
                 value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
+                onChange={(e) => aplicarFiltro("cat", e.target.value)}
                 className="w-full rounded-xl px-3 py-2 text-xs outline-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
               >
                 <option value="TODOS">Todas as Categorias</option>
@@ -625,7 +707,7 @@ export default function PendenciasPage() {
               <select
                 id="filter_sector"
                 value={selectedSector}
-                onChange={(e) => setSelectedSector(e.target.value)}
+                onChange={(e) => aplicarFiltro("setor", e.target.value)}
                 className="w-full rounded-xl px-3 py-2 text-xs outline-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
               >
                 <option value="TODOS">Todos os Setores</option>
@@ -645,7 +727,7 @@ export default function PendenciasPage() {
               <select
                 id="filter_company"
                 value={selectedCompany}
-                onChange={(e) => setSelectedCompany(e.target.value)}
+                onChange={(e) => aplicarFiltro("emp", e.target.value)}
                 className="w-full rounded-xl px-3 py-2 text-xs outline-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
               >
                 <option value="TODAS">Todas as Empresas</option>
@@ -697,13 +779,7 @@ export default function PendenciasPage() {
             <button
               type="button"
               onClick={() => {
-                setSearchTerm("");
-                setSelectedStatus("TODOS");
-                setSelectedPriority("TODOS");
-                setSelectedCategory("TODOS");
-                setSelectedSector("TODOS");
-                setSelectedCompany("TODAS");
-                setQuickTab("todas");
+                resetarFiltros();
               }}
               className="mt-5 inline-flex items-center gap-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border hover:bg-slate-200 px-4 py-2.5 text-xs font-bold transition"
             >
@@ -1047,7 +1123,7 @@ export default function PendenciasPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setLimit((prev) => prev + 25)}
+                  onClick={() => carregarMais()}
                   className="rounded-xl bg-[#0b2f4a] hover:bg-[#163f5c] text-white px-4 py-2.5 text-xs font-bold transition shadow-sm"
                 >
                   Carregar Mais (+25)
