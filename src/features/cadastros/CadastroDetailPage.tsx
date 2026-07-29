@@ -17,6 +17,9 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { formatDocument } from "@/lib/formatters/document";
 import type { Cadastro, CadastroCategoria, CadastroPropostaListItem } from "@/features/cadastros/types";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -44,13 +47,36 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
   const [isLoadingPropostas, setIsLoadingPropostas] = useState(false);
   const [ajusteModalOpen, setAjusteModalOpen] = useState(false);
   const { user } = useAuth();
-  const [propostasPageIndex, setPropostasPageIndex] = useState(0);
   const [propostasTotalCount, setPropostasTotalCount] = useState(0);
   const [propostasHasNextPage, setPropostasHasNextPage] = useState(false);
   const [propostasSource, setPropostasSource] = useState<"supabase" | "mock">("mock");
   const [propostasWarnings, setPropostasWarnings] = useState<string[]>([]);
-  const [propostasSearch, setPropostasSearch] = useState("");
-  const [propostasStatus, setPropostasStatus] = useState("TODOS");
+
+  // Filtros da sub-lista de propostas na URL. O prefixo `prop-` mantém estes
+  // parâmetros separados dos que a página do cadastro venha a usar, e dos da
+  // listagem principal quando o usuário volta para ela.
+  // Padrão oficial: docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
+  const filtrosSchema = useMemo(
+    () => ({
+      "prop-q": { codec: codecs.texto(), default: "" },
+      "prop-status": { codec: codecs.texto(), default: "TODOS" },
+      "prop-pag": { codec: codecs.numero({ min: 1 }), default: 1 }
+    }),
+    []
+  );
+
+  const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema, {
+    pageKey: "prop-pag"
+  });
+
+  const propostasSearch = filters["prop-q"];
+  const propostasStatus = filters["prop-status"];
+  const propostasPageIndex = filters["prop-pag"] - 1;
+
+  // A busca consulta o banco; responde a cada tecla, grava depois da pausa.
+  const [buscaDigitada, setBuscaDigitada] = useDebouncedInput(propostasSearch, (valor) =>
+    setFilter("prop-q", valor)
+  );
 
   function showMockActionToast(title: string) {
     showToast({
@@ -260,11 +286,8 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Search className="h-4 w-4 text-[#0f9f9a]" />
               <input
-                value={propostasSearch}
-                onChange={(event) => {
-                  setPropostasSearch(event.target.value);
-                  setPropostasPageIndex(0);
-                }}
+                value={buscaDigitada}
+                onChange={(event) => setBuscaDigitada(event.target.value)}
                 className="w-full bg-transparent text-sm text-slate-900 outline-none"
                 placeholder="Buscar por nº ou descricao da proposta"
               />
@@ -272,10 +295,7 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
 
             <select
               value={propostasStatus}
-              onChange={(event) => {
-                setPropostasStatus(event.target.value);
-                setPropostasPageIndex(0);
-              }}
+              onChange={(event) => setFilter("prop-status", event.target.value)}
               className={filterClass}
             >
               <option value="TODOS">Todos status</option>
@@ -291,9 +311,9 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
             <button
               type="button"
               onClick={() => {
-                setPropostasSearch("");
-                setPropostasStatus("TODOS");
-                setPropostasPageIndex(0);
+                // Volta os filtros da sub-lista ao padrão, removendo-os da URL.
+                setFilters({ "prop-q": "", "prop-status": "TODOS", "prop-pag": 1 });
+                setBuscaDigitada("");
               }}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
@@ -421,7 +441,7 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPropostasPageIndex((current) => Math.max(current - 1, 0))}
+                onClick={() => setFilter("prop-pag", Math.max(filters["prop-pag"] - 1, 1))}
                 disabled={propostasPageIndex === 0 || isLoadingPropostas}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -432,7 +452,7 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
               </span>
               <button
                 type="button"
-                onClick={() => setPropostasPageIndex((current) => current + 1)}
+                onClick={() => setFilter("prop-pag", filters["prop-pag"] + 1)}
                 disabled={!propostasHasNextPage || isLoadingPropostas}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
               >

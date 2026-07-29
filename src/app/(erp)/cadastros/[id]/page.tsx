@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { CadastroDetailPage } from "@/features/cadastros/CadastroDetailPage";
 import { getCadastroDetailReadOnly } from "@/features/cadastros/services/cadastros.service";
@@ -16,5 +17,10 @@ export default async function CadastroDetailRoute({ params }: CadastroDetailRout
     notFound();
   }
 
-  return <CadastroDetailPage cadastro={cadastro} dataSource={source} />;
+  return (
+    // A sub-lista de propostas lê seus filtros da URL (useSearchParams).
+    <Suspense fallback={null}>
+      <CadastroDetailPage cadastro={cadastro} dataSource={source} />
+    </Suspense>
+  );
 }

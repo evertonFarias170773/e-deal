@@ -16,6 +16,9 @@ import { useCadastrosDashboardResumo } from "@/features/cadastros/hooks/useCadas
 import { useCadastrosReadOnlyData } from "@/features/cadastros/hooks/useCadastrosReadOnlyData";
 import type { CadastrosListaItem } from "@/features/cadastros/services/cadastros-read.service";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal";
 
 const PAGE_SIZE = 200;
@@ -147,9 +150,36 @@ export function CadastrosListPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { showToast } = useAppToast();
-  const [search, setSearch] = useState("");
-  const [idClienteSearch, setIdClienteSearch] = useState("");
-  const [pageIndex, setPageIndex] = useState(0);
+  // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
+  // histórico do navegador e a um link copiado.
+  // Padrão oficial: docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      qid: { codec: codecs.texto(), default: "" },
+      pag: { codec: codecs.numero({ min: 1 }), default: 1 }
+    }),
+    []
+  );
+
+  // pageKey: mudar a busca devolve a lista para a primeira página.
+  const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema, { pageKey: "pag" });
+
+  const search = filters.q;
+  // A busca por ID sempre foi só de dígitos; a limpeza aqui também protege de um
+  // valor arbitrário digitado direto na URL.
+  const idClienteSearch = filters.qid.replace(/\D/g, "");
+  const pageIndex = filters.pag - 1;
+
+  // Os dois campos respondem a cada tecla; a URL — e a consulta ao banco — só
+  // depois da pausa. Antes desta migração cada tecla disparava uma consulta.
+  const [buscaDigitada, setBuscaDigitada] = useDebouncedInput(search, (valor) =>
+    setFilter("q", valor)
+  );
+  const [idDigitado, setIdDigitado] = useDebouncedInput(idClienteSearch, (valor) =>
+    setFilter("qid", valor)
+  );
+
   const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
   const [activeClienteParaAjuste, setActiveClienteParaAjuste] = useState<{ idCliente: number; nome: string } | null>(null);
 
@@ -179,9 +209,10 @@ export function CadastrosListPage() {
   ) as string[];
 
   function clearFilters() {
-    setSearch("");
-    setIdClienteSearch("");
-    setPageIndex(0);
+    // Volta os filtros ao padrão, o que os remove da URL.
+    setFilters({ q: "", qid: "", pag: 1 });
+    setBuscaDigitada("");
+    setIdDigitado("");
   }
 
   function showPlaceholderActionToast(title: string) {
@@ -192,15 +223,13 @@ export function CadastrosListPage() {
     });
   }
 
+  // O retorno à primeira página é do hook (pageKey), na mesma escrita da busca.
   function handleSearchChange(value: string) {
-    setSearch(value);
-    setPageIndex(0);
+    setBuscaDigitada(value);
   }
 
   function handleIdClienteChange(value: string) {
-    const digits = value.replace(/\D/g, "");
-    setIdClienteSearch(digits);
-    setPageIndex(0);
+    setIdDigitado(value.replace(/\D/g, ""));
   }
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -311,7 +340,7 @@ export function CadastrosListPage() {
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Search className="h-4 w-4 text-[#0f9f9a]" />
               <input
-                value={idClienteSearch}
+                value={idDigitado}
                 onChange={(event) => handleIdClienteChange(event.target.value)}
                 className="w-full bg-transparent text-sm text-slate-900 outline-none"
                 placeholder="ID cliente"
@@ -322,7 +351,7 @@ export function CadastrosListPage() {
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Search className="h-4 w-4 text-[#0f9f9a]" />
               <input
-                value={search}
+                value={buscaDigitada}
                 onChange={(event) => handleSearchChange(event.target.value)}
                 className="w-full bg-transparent text-sm text-slate-900 outline-none"
                 placeholder="Buscar por nome, fantasia, documento, cidade, WhatsApp ou e-mail"
@@ -500,7 +529,7 @@ export function CadastrosListPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setPageIndex((current) => Math.max(current - 1, 0))}
+            onClick={() => setFilter("pag", Math.max(filters.pag - 1, 1))}
             disabled={pageIndex === 0 || isLoading}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -508,7 +537,7 @@ export function CadastrosListPage() {
           </button>
           <button
             type="button"
-            onClick={() => setPageIndex((current) => current + 1)}
+            onClick={() => setFilter("pag", filters.pag + 1)}
             disabled={!hasNextPage || isLoading}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
