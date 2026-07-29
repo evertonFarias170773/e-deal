@@ -5,6 +5,10 @@ import Link from "next/link";
 import { listarExpedicoes } from "./services/expedicao.service";
 import type { ExpedicaoListItem } from "./types";
 import { useAppToast } from "@/components/common/AppToast";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
+import { useSessionState } from "@/hooks/useSessionState";
 import {
   Truck,
   PackageCheck,
@@ -22,9 +26,32 @@ export function ExpedicaoPage() {
   const { showToast } = useAppToast();
   const [items, setItems] = useState<ExpedicaoListItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [search, setSearch] = useState("");
-  const [isCompact, setIsCompact] = useState(false);
-  const [filterStatus, setFilterStatus] = useState("TODOS");
+
+  // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
+  // histórico do navegador e a um link copiado. A filtragem é em memória sobre a
+  // lista já carregada — nada aqui muda a consulta.
+  // Padrão oficial: docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      status: { codec: codecs.texto(), default: "TODOS" }
+    }),
+    []
+  );
+
+  // Sem pageKey: esta tela não tem paginação.
+  const { filters, setFilter } = useUrlFilters(filtrosSchema);
+
+  const filterStatus = filters.status;
+
+  // A filtragem é em memória, então continua respondendo a cada tecla; o que
+  // espera a pausa é apenas a gravação na URL.
+  const [search, setSearch] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
+
+  // Preferência visual: fica na sessão, não na URL — não faz sentido em um link
+  // compartilhado, que deve abrir a lista filtrada e não o modo de exibição de
+  // quem enviou.
+  const [isCompact, setIsCompact] = useSessionState("ui:/expedicao:compacto", false);
 
   useEffect(() => {
     async function load() {
@@ -133,7 +160,7 @@ export function ExpedicaoPage() {
             </div>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e) => setFilter("status", e.target.value)}
               className="h-9 px-3 rounded-xl border border-slate-200 text-xs focus:outline-none dark:bg-slate-800 dark:border-slate-700 dark:text-white font-semibold text-slate-700"
             >
               <option value="TODOS">Todos os Status</option>
