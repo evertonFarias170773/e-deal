@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Search } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
@@ -32,7 +35,21 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { updatePagamentoV2Empresa } from "@/features/cobrancas/services/pagamentos-v2.service";
 import { listVendedoresReais, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 
-type TipoFiltro = "PENDENTES_APROVACAO" | "CONFIRMADOS_DIA" | "TODOS" | "PIX" | "BOLETO" | "FATURADO" | "CARTAO" | "CANCELADO" | "E-CREDITO";
+const TIPOS_FILTRO = [
+  "PENDENTES_APROVACAO",
+  "CONFIRMADOS_DIA",
+  "TODOS",
+  "PIX",
+  "BOLETO",
+  "FATURADO",
+  "CARTAO",
+  "CANCELADO",
+  "E-CREDITO"
+] as const;
+const ABAS_CONFERENCIA = ["FILA", "CONFIRMADOS"] as const;
+
+type TipoFiltro = (typeof TIPOS_FILTRO)[number];
+type AbaConferencia = (typeof ABAS_CONFERENCIA)[number];
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 const tipoFiltroOptions: Array<{ value: TipoFiltro; label: string }> = [
@@ -175,15 +192,40 @@ export function CobrancasList() {
   const router = useRouter();
   const { cobrancasStats, source, refreshCobrancas, existingBoletoIdInts, hasBoletoHistoryIdInts } = useCobrancas();
   const { showToast } = useAppToast();
-  const [search, setSearch] = useState("");
-  const [tipo, setTipo] = useState<TipoFiltro>("TODOS");
-  const [empresa, setEmpresa] = useState("TODAS");
-  const [vendedor, setVendedor] = useState("TODOS");
-  const [statusFilter, setStatusFilter] = useState<"FILA" | "CONFIRMADOS">("FILA");
-  
   const initialDates = useMemo(() => getInitialDates(), []);
-  const [dataInicial, setDataInicial] = useState(initialDates.start);
-  const [dataFinal, setDataFinal] = useState(initialDates.end);
+
+  // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
+  // histórico do navegador e a um link copiado. Tipo, empresa, vendedor e período
+  // refazem a consulta no servidor; a busca por texto filtra em memória.
+  // Padrão oficial: docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      tipo: { codec: codecs.enumOf(TIPOS_FILTRO), default: "TODOS" as TipoFiltro },
+      emp: { codec: codecs.texto(), default: "TODAS" },
+      vend: { codec: codecs.texto(), default: "TODOS" },
+      aba: { codec: codecs.enumOf(ABAS_CONFERENCIA), default: "FILA" as AbaConferencia },
+      ini: { codec: codecs.dataIso(), default: initialDates.start },
+      fim: { codec: codecs.dataIso(), default: initialDates.end }
+    }),
+    [initialDates]
+  );
+
+  // Sem pageKey: esta tela não tem paginação.
+  const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema);
+
+  // Nomes locais preservados: o restante da tela continua lendo estas variáveis.
+  const tipo = filters.tipo;
+  const empresa = filters.emp;
+  const vendedor = filters.vend;
+  const statusFilter = filters.aba;
+  const dataInicial = filters.ini;
+  const dataFinal = filters.fim;
+
+  // A busca filtra em memória, então continua respondendo a cada tecla; o que
+  // espera a pausa é apenas a gravação na URL.
+  const [search, setSearch] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
+
   const [mesSelecionado, setMesSelecionado] = useState(getLocalMonthKey(new Date()));
   const [empresaEmEdicao, setEmpresaEmEdicao] = useState<Cobranca | null>(null);
   const [empresaDestinoId, setEmpresaDestinoId] = useState<number | null>(null);
@@ -524,10 +566,7 @@ export function CobrancasList() {
           helper="E-Faturado aguardando validação financeira."
           tone="warning"
           isActive={tipo === "PENDENTES_APROVACAO"}
-          onClick={() => {
-            setTipo("PENDENTES_APROVACAO");
-            setStatusFilter("FILA");
-          }}
+          onClick={() => setFilters({ tipo: "PENDENTES_APROVACAO", aba: "FILA" })}
         />
 
         <ConferenceStatCard
@@ -537,10 +576,7 @@ export function CobrancasList() {
           helper="data_confirmacao = hoje em America/Sao_Paulo."
           tone="success"
           isActive={tipo === "CONFIRMADOS_DIA"}
-          onClick={() => {
-            setTipo("CONFIRMADOS_DIA");
-            setStatusFilter("CONFIRMADOS");
-          }}
+          onClick={() => setFilters({ tipo: "CONFIRMADOS_DIA", aba: "CONFIRMADOS" })}
         />
 
         <section className="rounded-2xl border border-slate-200/60 p-4 shadow-sm bg-white flex flex-col justify-between">
@@ -580,14 +616,14 @@ export function CobrancasList() {
               <input
                 type="date"
                 value={dataInicial}
-                onChange={(e) => setDataInicial(e.target.value)}
+                onChange={(e) => setFilter("ini", e.target.value)}
                 className="rounded-lg border border-slate-200 bg-slate-50/50 px-1.5 py-1 text-[10px] text-slate-700 outline-none w-full"
               />
               <span className="text-[10px] text-slate-400">a</span>
               <input
                 type="date"
                 value={dataFinal}
-                onChange={(e) => setDataFinal(e.target.value)}
+                onChange={(e) => setFilter("fim", e.target.value)}
                 className="rounded-lg border border-slate-200 bg-slate-50/50 px-1.5 py-1 text-[10px] text-slate-700 outline-none w-full"
               />
             </div>
@@ -619,10 +655,7 @@ export function CobrancasList() {
       <div className="flex gap-2 border-b border-slate-200 pb-1">
         <button
           type="button"
-          onClick={() => {
-            setStatusFilter("FILA");
-            setTipo("TODOS");
-          }}
+          onClick={() => setFilters({ aba: "FILA", tipo: "TODOS" })}
           className={[
             "rounded-t-2xl px-5 py-2 text-sm font-semibold transition-all",
             statusFilter === "FILA"
@@ -634,10 +667,7 @@ export function CobrancasList() {
         </button>
         <button
           type="button"
-          onClick={() => {
-            setStatusFilter("CONFIRMADOS");
-            setTipo("TODOS");
-          }}
+          onClick={() => setFilters({ aba: "CONFIRMADOS", tipo: "TODOS" })}
           className={[
             "rounded-t-2xl px-5 py-2 text-sm font-semibold transition-all",
             statusFilter === "CONFIRMADOS"
@@ -665,11 +695,13 @@ export function CobrancasList() {
             value={tipo}
             onChange={(event) => {
               const val = event.target.value as TipoFiltro;
-              setTipo(val);
+              // Tipo e aba mudam na mesma escrita: uma URL só, sem passo intermediário.
               if (val === "PENDENTES_APROVACAO") {
-                setStatusFilter("FILA");
+                setFilters({ tipo: val, aba: "FILA" });
               } else if (val !== "TODOS") {
-                setStatusFilter("CONFIRMADOS");
+                setFilters({ tipo: val, aba: "CONFIRMADOS" });
+              } else {
+                setFilter("tipo", val);
               }
             }}
             className={filterClass}
@@ -681,7 +713,7 @@ export function CobrancasList() {
             ))}
           </select>
 
-          <select value={empresa} onChange={(event) => setEmpresa(event.target.value)} className={filterClass}>
+          <select value={empresa} onChange={(event) => setFilter("emp", event.target.value)} className={filterClass}>
             <option value="TODAS">Todas empresas</option>
             {empresaOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -690,7 +722,7 @@ export function CobrancasList() {
             ))}
           </select>
 
-          <select value={vendedor} onChange={(event) => setVendedor(event.target.value)} className={filterClass}>
+          <select value={vendedor} onChange={(event) => setFilter("vend", event.target.value)} className={filterClass}>
             <option value="TODOS">Todos os vendedores</option>
             {vendedores.map((v) => (
               <option key={v.user_id} value={v.nome_usuario}>
@@ -705,14 +737,14 @@ export function CobrancasList() {
               <input
                 type="date"
                 value={dataInicial}
-                onChange={(e) => setDataInicial(e.target.value)}
+                onChange={(e) => setFilter("ini", e.target.value)}
                 className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
               />
               <span className="text-xs text-slate-400">a</span>
               <input
                 type="date"
                 value={dataFinal}
-                onChange={(e) => setDataFinal(e.target.value)}
+                onChange={(e) => setFilter("fim", e.target.value)}
                 className="bg-transparent text-sm text-slate-700 outline-none w-[130px]"
               />
             </div>
@@ -721,13 +753,17 @@ export function CobrancasList() {
           <button
             type="button"
             onClick={() => {
+              // Volta todos os filtros ao padrão, o que os remove da URL.
+              setFilters({
+                q: "",
+                tipo: "TODOS",
+                emp: "TODAS",
+                vend: "TODOS",
+                aba: "FILA",
+                ini: initialDates.start,
+                fim: initialDates.end
+              });
               setSearch("");
-              setTipo("TODOS");
-              setEmpresa("TODAS");
-              setVendedor("TODOS");
-              setStatusFilter("FILA");
-              setDataInicial(initialDates.start);
-              setDataFinal(initialDates.end);
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
