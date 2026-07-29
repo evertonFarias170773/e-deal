@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, FileText, RefreshCw, Search, Wallet, X } from "lucide-react";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
+import { codecs } from "@/lib/url-state";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { SummaryCard } from "@/components/common/SummaryCard";
@@ -95,9 +98,21 @@ export function RegistroRecebiveisPage() {
   const [itens, setItens] = useState<RecebivelParaRegistro[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [empresaFilter, setEmpresaFilter] = useState("TODAS");
   const [selecionado, setSelecionado] = useState<RecebivelParaRegistro | null>(null);
+
+  // Filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um link copiado.
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      // A lista de empresas vem dos dados, então não há enum fechado aqui.
+      emp: { codec: codecs.texto(), default: "TODAS" }
+    }),
+    []
+  );
+  const { filters, setFilter, clearFilters, hasActiveFilters } = useUrlFilters(filtrosSchema);
+
+  // A busca responde a cada tecla; a URL só é gravada depois da pausa.
+  const [searchTerm, setSearchTerm] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
 
   const podeGerar = Boolean(
     user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cobrancas.emitir_boleto")
@@ -131,6 +146,14 @@ export function RegistroRecebiveisPage() {
     const set = new Set(itens.map((item) => item.cobranca.empresa).filter(Boolean));
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [itens]);
+
+  // A empresa não tem lista fechada no codec. Se vier na URL um nome que não
+  // existe nos dados, cai em "Todas" assim que a lista real fica conhecida —
+  // em vez de deixar o select em branco e a lista vazia sem explicação.
+  const empresaFilter =
+    filters.emp !== "TODAS" && empresas.length > 0 && !empresas.includes(filters.emp)
+      ? "TODAS"
+      : filters.emp;
 
   const filtrados = useMemo(() => {
     const termo = searchTerm.trim().toLowerCase();
@@ -166,11 +189,12 @@ export function RegistroRecebiveisPage() {
     [itens]
   );
 
-  const hasFiltros = searchTerm.trim() !== "" || empresaFilter !== "TODAS";
+  // O botão acende assim que a pessoa digita, antes mesmo de a busca ir para a URL.
+  const hasFiltros = searchTerm.trim() !== "" || hasActiveFilters;
 
   const handleLimparFiltros = () => {
     setSearchTerm("");
-    setEmpresaFilter("TODAS");
+    clearFilters();
   };
 
   const handleAbrirModal = (item: RecebivelParaRegistro) => {
@@ -257,7 +281,7 @@ export function RegistroRecebiveisPage() {
         </div>
         <select
           value={empresaFilter}
-          onChange={(event) => setEmpresaFilter(event.target.value)}
+          onChange={(event) => setFilter("emp", event.target.value)}
           className={filterClass}
         >
           <option value="TODAS">Todas as empresas</option>
