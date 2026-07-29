@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -15,6 +15,9 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useAppToast } from "@/components/common/AppToast";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { listarPedidosOperacionais, atualizarFaseProducaoLista } from "./services/pedidos-producao.service";
 import { abrirPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -106,11 +109,31 @@ export function PedidosListPage() {
     void load();
   }, []);
 
-  // Search & Filter State
-  const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("TODOS");
-  const [filterVendedor, setFilterVendedor] = useState("TODOS");
-  const [filterEmpresa, setFilterEmpresa] = useState("TODOS");
+  // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
+  // histórico do navegador e a um link copiado. A filtragem é em memória sobre a
+  // lista já carregada — nada aqui muda a consulta.
+  // Padrão oficial: docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      status: { codec: codecs.texto(), default: "TODOS" },
+      vend: { codec: codecs.texto(), default: "TODOS" },
+      emp: { codec: codecs.texto(), default: "TODOS" }
+    }),
+    []
+  );
+
+  // Sem pageKey: esta tela não tem paginação.
+  const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema);
+
+  // Nomes locais preservados: o restante da tela continua lendo estas variáveis.
+  const filterStatus = filters.status;
+  const filterVendedor = filters.vend;
+  const filterEmpresa = filters.emp;
+
+  // A filtragem é em memória, então continua respondendo a cada tecla; o que
+  // espera a pausa é apenas a gravação na URL.
+  const [search, setSearch] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
 
   const getStatusTone = (status: string) => {
     if (status === "BOLETIM_FINALIZADO") return "info";
@@ -318,7 +341,7 @@ export function PedidosListPage() {
             />
           </label>
 
-          <select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)} className={filterClass}>
+          <select value={filterStatus} onChange={(event) => setFilter("status", event.target.value)} className={filterClass}>
             <option value="TODOS">Todos Status</option>
             {statusOptions.map((option) => (
               <option key={option} value={option}>
@@ -327,7 +350,7 @@ export function PedidosListPage() {
             ))}
           </select>
 
-          <select value={filterVendedor} onChange={(event) => setFilterVendedor(event.target.value)} className={filterClass}>
+          <select value={filterVendedor} onChange={(event) => setFilter("vend", event.target.value)} className={filterClass}>
             <option value="TODOS">Todos Vendedores</option>
             {vendedorOptions.map((option) => (
               <option key={option} value={option}>
@@ -336,7 +359,7 @@ export function PedidosListPage() {
             ))}
           </select>
 
-          <select value={filterEmpresa} onChange={(event) => setFilterEmpresa(event.target.value)} className={filterClass}>
+          <select value={filterEmpresa} onChange={(event) => setFilter("emp", event.target.value)} className={filterClass}>
             <option value="TODOS">Todas Empresas</option>
             {empresaOptions.map((option) => (
               <option key={option} value={option.toLowerCase().replace(" ", "")}>
@@ -348,10 +371,9 @@ export function PedidosListPage() {
           <button
             type="button"
             onClick={() => {
+              // Volta todos os filtros ao padrão, o que os remove da URL.
+              setFilters({ q: "", status: "TODOS", vend: "TODOS", emp: "TODOS" });
               setSearch("");
-              setFilterStatus("TODOS");
-              setFilterVendedor("TODOS");
-              setFilterEmpresa("TODOS");
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
           >
