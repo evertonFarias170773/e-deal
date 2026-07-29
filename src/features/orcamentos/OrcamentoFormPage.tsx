@@ -4,6 +4,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { codecs } from "@/lib/url-state";
 import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
@@ -166,6 +168,22 @@ function getShipmentKey(
   return `${pesoTotal.toFixed(3)}_${volumes}_${itemsStr}`;
 }
 
+/**
+ * Abas do editor. O parâmetro conserva o nome legado `tab`, porque links
+ * antigos (e o retorno da resolução de pendência) já apontam para ele.
+ * "geral" é o padrão e, por isso, não aparece na URL.
+ */
+const ABAS_EDITOR = [
+  "geral",
+  "produtos",
+  "fretes",
+  "pagamentos",
+  "artes",
+  "pedido",
+  "boletim",
+  "historico"
+] as const;
+
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
   const { getCobrancasByProposta } = useCobrancas();
   const targetIdInt = idInt ?? proposta?.id_int;
@@ -285,16 +303,24 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [isConsolidating, setIsConsolidating] = useState(false);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
   const [isDeletingProduct, setIsDeletingProduct] = useState(false);
-  type EditTabType = "geral" | "produtos" | "fretes" | "pagamentos" | "artes" | "pedido" | "boletim" | "historico";
-  const [activeFormTab, setActiveFormTab] = useState<EditTabType>("geral");
-  const [saveSuccessModal, setSaveSuccessModal] = useState<{ isOpen: boolean; finalIdInt: number | string }>({ isOpen: false, finalIdInt: "" });
+  type EditTabType = (typeof ABAS_EDITOR)[number];
 
-  useEffect(() => {
-    const tabParam = searchParams?.get("tab");
-    if (tabParam) {
-      setActiveFormTab(tabParam as EditTabType);
-    }
-  }, [searchParams]);
+  // A aba vive na URL, nos dois sentidos: o link define qual abre, e trocar de
+  // aba atualiza o endereço. Aba desconhecida cai em "geral".
+  const abaSchema = useMemo(
+    () => ({ tab: { codec: codecs.enumOf(ABAS_EDITOR), default: "geral" as const } }),
+    []
+  );
+  const { filters: filtrosAba, setFilter: setFiltroAba } = useUrlFilters(abaSchema);
+  const activeFormTab: EditTabType = filtrosAba.tab;
+  const setActiveFormTab = useCallback(
+    (aba: EditTabType) => {
+      setFiltroAba("tab", aba);
+    },
+    [setFiltroAba]
+  );
+
+  const [saveSuccessModal, setSaveSuccessModal] = useState<{ isOpen: boolean; finalIdInt: number | string }>({ isOpen: false, finalIdInt: "" });
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
 
@@ -497,7 +523,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         window.history.replaceState({}, "", url.toString());
       }
     }
-  }, [searchParams, pendenciaRevisaoAberta, proposta, getCobrancasByProposta]);
+    // `setActiveFormTab` acompanha a query, a mesma origem de `searchParams`:
+    // entra nas dependências sem criar disparo novo deste efeito.
+  }, [searchParams, pendenciaRevisaoAberta, proposta, getCobrancasByProposta, setActiveFormTab]);
 
   // — Histórico de movimentos financeiros da proposta —
   const [historicoMovimentos, setHistoricoMovimentos] = useState<any[]>([]);
