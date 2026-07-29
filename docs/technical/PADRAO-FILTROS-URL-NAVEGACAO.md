@@ -1,6 +1,6 @@
 # PADRAO-FILTROS-URL-NAVEGACAO.md
 
-Versão: 1.2  
+Versão: 1.3  
 Status: Oficial  
 Última atualização: 29/07/2026  
 Projeto: ERP Ideal
@@ -47,6 +47,7 @@ Toda tela usa o mesmo hook. Não criar solução paralela.
 | `src/lib/url-state.ts` | Camada pura, sem React: codecs e conversão entre URL e valores |
 | `src/hooks/useUrlFilters.ts` | Hook principal: lê a URL, escreve a URL, zera a página |
 | `src/hooks/useDebouncedValue.ts` | `useDebouncedValue` e `useDebouncedInput`, para campos de busca |
+| `src/hooks/useSessionState.ts` | `useSessionState`, para a preferência visual que não vai para a URL |
 
 ## 3.1 Codecs disponíveis
 
@@ -95,6 +96,20 @@ Pontos de atenção:
 ```
 
 Sem isso o build falha com erro explícito.
+
+## 3.4 Estado visual fora da URL
+
+Modo compacto, tela cheia e grupos recolhidos são preferência de quem está olhando, não descrição do que está sendo visto. Em um link compartilhado eles atrapalhariam: o colega receberia a tela no modo do remetente. Esse tipo de estado usa `useSessionState`, que guarda o valor na sessão do navegador.
+
+```ts
+const [compacto, setCompacto] = useSessionState("ui:/expedicao:compacto", false);
+```
+
+A chave segue a convenção `ui:<rota>:<nome>`. O valor vale enquanto a aba estiver aberta, sobrevive ao F5 e não viaja em um link copiado.
+
+A leitura usa `useSyncExternalStore`, então servidor e hidratação partem do valor inicial e só depois assumem o que está guardado, sem divergência de marcação. Se o `sessionStorage` estiver indisponível, a preferência simplesmente não persiste — a tela continua funcionando.
+
+Filtro de dados nunca entra aqui.
 
 ---
 
@@ -157,6 +172,9 @@ Houve um período em que essa remoção precisou ser feita fora do hook, porque 
 | Orçamentos | Migrada em 28/07/2026 |
 | Cadastros (lista e sub-lista do detalhe) | Migrada em 29/07/2026 |
 | Produtos | Migrada em 29/07/2026 |
+| Conferência (Cobranças) | Migrada em 29/07/2026 |
+| Pedidos (Painel Geral) | Migrada em 29/07/2026 |
+| Expedição | Migrada em 29/07/2026; modo compacto em `useSessionState` |
 | Demais listas | Ainda em `useState` local |
 
 Telas novas já nascem com o padrão. Telas existentes são migradas uma por vez, em tarefas separadas, sem refatoração ampla.

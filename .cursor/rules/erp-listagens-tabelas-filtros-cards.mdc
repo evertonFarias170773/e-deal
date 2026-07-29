@@ -89,7 +89,7 @@ Antes de criar qualquer listagem, defina: nome da listagem, objetivo operacional
 - Campo de busca usa `useDebouncedInput`: responde a cada tecla e grava na URL depois da pausa.
 - Valor igual ao padrão não entra na URL; valor inválido cai no padrão seguro; "Limpar filtros" remove os parâmetros; mudar filtro volta para a primeira página.
 - A rota precisa de `<Suspense>` no `page.tsx`, exigência do `useSearchParams`.
-- `sessionStorage` só para estado visual não compartilhável (modo compacto, tela cheia, grupos recolhidos). Nunca dado sensível na URL.
+- Estado visual não compartilhável (modo compacto, tela cheia, grupos recolhidos) usa `useSessionState` (`src/hooks/useSessionState.ts`), com chave `ui:<rota>:<nome>` — fora da URL. Nunca dado sensível na URL.
 - Padrão completo, nomes de parâmetros e checklist: `docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md`.
 
 ## Diretriz Final
