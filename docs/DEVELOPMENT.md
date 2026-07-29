@@ -80,6 +80,12 @@ Durante a implementação:
 
 Evite alterações fora do escopo.
 
+## Tela nova com lista ou filtro
+
+Filtros, busca, ordenação, paginação, período e aba ficam na URL, pelo hook compartilhado `useUrlFilters` — nunca só em `useState`. Estado apenas visual (modo compacto, tela cheia, grupos recolhidos) vai para `useSessionState`. Não crie mecanismo próprio de persistência.
+
+O padrão completo, os nomes canônicos de parâmetro e o checklist de aceite estão em [`technical/PADRAO-FILTROS-URL-NAVEGACAO.md`](./technical/PADRAO-FILTROS-URL-NAVEGACAO.md). Todas as listagens existentes já seguem esse padrão.
+
 ---
 
 # Escopo

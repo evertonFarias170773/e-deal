@@ -106,6 +106,16 @@ Hooks reutilizáveis.
 
 Evite duplicações.
 
+Hooks compartilhados em uso, obrigatórios em telas novas com lista ou filtro:
+
+| Arquivo | Papel |
+|---|---|
+| `src/hooks/useUrlFilters.ts` | Estado funcional da tela na URL: filtros, busca, ordenação, paginação, período e aba |
+| `src/hooks/useDebouncedValue.ts` | `useDebouncedInput`, para o campo de busca responder por tecla e gravar na URL depois da pausa |
+| `src/hooks/useSessionState.ts` | Preferência visual na sessão (modo compacto, tela cheia, grupos recolhidos), fora da URL |
+
+A camada de codecs que sustenta o primeiro fica em `src/lib/url-state.ts`, sem React. Padrão completo em `../technical/PADRAO-FILTROS-URL-NAVEGACAO.md`.
+
 ---
 
 # services
