@@ -12,13 +12,16 @@
  * Leitura é direta com RLS (sem RPC), reaproveitando conta-corrente.service.ts.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SummaryCard } from "@/components/common/SummaryCard";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
+import { codecs } from "@/lib/url-state";
 import {
   listAllPendencias,
   listAjustesManuais,
@@ -47,6 +50,10 @@ const MOTIVO_LABEL: Record<string, string> = {
 
 type ModoAcao = "DEVOLUCAO" | "BONIFICACAO" | "BAIXA" | "CANCELAMENTO" | "ESTORNO";
 
+/** Filtros da tela, na ordem em que aparecem no select. */
+const STATUS_FILTRO = ["TODAS", "ABERTA", "PARCIALMENTE_RESOLVIDA", "RESOLVIDA", "CANCELADA"] as const;
+const SENTIDO_FILTRO = ["TODAS", "FAVOR_CLIENTE", "FAVOR_EMPRESA"] as const;
+
 /**
  * Linha unificada do extrato da Conta Corrente. Reúne, para exibição, dois
  * tipos de lançamento que hoje coexistem na mesma conta do cliente:
@@ -63,7 +70,16 @@ function formatCurrency(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function ContaCorrentePage() {
+export default function ContaCorrenteRoute() {
+  return (
+    // A tela lê os filtros da URL (useSearchParams), que exige limite de Suspense.
+    <Suspense fallback={null}>
+      <ContaCorrentePage />
+    </Suspense>
+  );
+}
+
+function ContaCorrentePage() {
   const { user } = useAuth();
   const { showToast } = useAppToast();
 
@@ -74,9 +90,21 @@ export default function ContaCorrentePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFiltro, setStatusFiltro] = useState<"TODAS" | ContaCorrentePendenciaStatus>("TODAS");
-  const [direcaoFiltro, setDirecaoFiltro] = useState<"TODAS" | "FAVOR_CLIENTE" | "FAVOR_EMPRESA">("TODAS");
+  // Filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um link copiado.
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      status: { codec: codecs.enumOf(STATUS_FILTRO), default: "TODAS" as const },
+      sentido: { codec: codecs.enumOf(SENTIDO_FILTRO), default: "TODAS" as const }
+    }),
+    []
+  );
+  const { filters, setFilter } = useUrlFilters(filtrosSchema);
+
+  const statusFiltro = filters.status;
+  const direcaoFiltro = filters.sentido;
+  // O campo responde a cada tecla; a URL só é gravada depois da pausa.
+  const [searchTerm, setSearchTerm] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
 
   const [modal, setModal] = useState<{ pendencia: ContaCorrentePendencia; modo: ModoAcao } | null>(null);
   const [modalValor, setModalValor] = useState("");
@@ -276,11 +304,11 @@ export default function ContaCorrentePage() {
             className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm"
           />
         </div>
-        <select value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value as any)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+        <select value={statusFiltro} onChange={(e) => setFilter("status", e.target.value as (typeof STATUS_FILTRO)[number])} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
           <option value="TODAS">Todos os status</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select value={direcaoFiltro} onChange={(e) => setDirecaoFiltro(e.target.value as any)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+        <select value={direcaoFiltro} onChange={(e) => setFilter("sentido", e.target.value as (typeof SENTIDO_FILTRO)[number])} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
           <option value="TODAS">Crédito e débito</option>
           <option value="FAVOR_CLIENTE">Só crédito (favor cliente)</option>
           <option value="FAVOR_EMPRESA">Só débito (favor empresa)</option>
