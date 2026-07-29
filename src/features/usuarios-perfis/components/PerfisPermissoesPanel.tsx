@@ -5,6 +5,16 @@ import { useAppToast } from "@/components/common/AppToast";
 import { listPerfisDoCatalogo, updatePermissoesPerfil } from "../services/usuarios-perfis.service";
 import type { PerfilDoCatalogo } from "../types";
 import { ConfirmacaoDiffModal } from "./ConfirmacaoDiffModal";
+import { useSessionState } from "@/hooks/useSessionState";
+
+/**
+ * Quais grupos do catálogo estão recolhidos. É preferência visual de quem está
+ * editando — não descreve perfil nem permissão, então não entra na URL.
+ */
+const CHAVE_GRUPOS_RECOLHIDOS = "ui:/configuracoes/perfis:grupos-recolhidos";
+
+/** Identidade estável: o hook usa este valor enquanto a sessão estiver vazia. */
+const GRUPOS_RECOLHIDOS_INICIAIS: Record<string, boolean> = {};
 
 interface PermissionDefinition {
   key: string;
@@ -199,7 +209,12 @@ export function PerfisPermissoesPanel() {
   const [loading, setLoading] = useState(true);
   const [perfilSelecionado, setPerfilSelecionado] = useState<PerfilDoCatalogo | null>(null);
   const [editedPermissoes, setEditedPermissoes] = useState<string[]>([]);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  // Grupos recolhidos ficam na sessão: sobrevivem ao F5 e à ida e volta entre
+  // rotas, mas não viajam em um link copiado nem afetam perfil ou permissões.
+  const [collapsedGroups, setCollapsedGroups] = useSessionState(
+    CHAVE_GRUPOS_RECOLHIDOS,
+    GRUPOS_RECOLHIDOS_INICIAIS
+  );
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
