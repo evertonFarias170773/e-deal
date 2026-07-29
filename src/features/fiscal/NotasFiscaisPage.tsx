@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
+import { codecs } from "@/lib/url-state";
 import { AlertTriangle, Copy, ExternalLink, FileText, Play, Send, Loader2, CheckCircle2, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -91,6 +94,39 @@ function getFormaPagamentoLabel(forma: string) {
 }
 
 type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
+
+/**
+ * Filtros na URL. NF-e (produto) e NFS-e (serviço) têm conjuntos próprios, com
+ * prefixo, para não sobrescreverem um ao outro — os dois convivem na mesma URL.
+ * Vazio significa "todos" e, por ser o padrão, não entra na URL.
+ */
+const ABAS = ["FILA_FATURAMENTO", "HISTORICO_FISCAL"] as const;
+const EMPRESAS_EMITENTES = ["", "1", "2", "3"] as const;
+const STATUS_NFE = [
+  "",
+  "PENDENTE",
+  "PRONTA_PARA_ENVIO",
+  "PROCESSANDO",
+  "AUTORIZADA",
+  "ERRO_ENVIO",
+  "ERRO_AUTORIZACAO",
+  "REJEITADA",
+  "CANCELADA",
+  "DENEGADA",
+  "FALHA_INTEGRACAO",
+  "RETORNO_FOCUS",
+  "NAO_ENCONTRADA_FOCUS"
+] as const;
+const STATUS_NFSE = [
+  "",
+  "PENDENTE",
+  "PRONTA_PARA_ENVIO",
+  "PROCESSANDO",
+  "AUTORIZADA",
+  "ERRO_ENVIO",
+  "REJEITADA",
+  "CANCELADA"
+] as const;
 type TrackingStep = "IDLE" | "SENDING" | "SENT_WAITING" | "QUERYING" | "AUTHORIZED" | "STILL_PROCESSING" | "ERROR";
 
 export function NotasFiscaisPage() {
@@ -100,7 +136,23 @@ export function NotasFiscaisPage() {
   const canEmitNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
   const canEmitNfse = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfse");
   const canCancelNf = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.cancel_nf");
-  const [activeTab, setActiveTab] = useState<ActiveTab>("FILA_FATURAMENTO");
+  // Aba e filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um
+  // link copiado. Modais e fluxos fiscais continuam em estado local.
+  const filtrosSchema = useMemo(
+    () => ({
+      aba: { codec: codecs.enumOf(ABAS), default: "FILA_FATURAMENTO" as const },
+      "nfe-q": { codec: codecs.texto(), default: "" },
+      "nfe-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
+      "nfe-status": { codec: codecs.enumOf(STATUS_NFE), default: "" as const },
+      "nfse-q": { codec: codecs.texto(), default: "" },
+      "nfse-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
+      "nfse-status": { codec: codecs.enumOf(STATUS_NFSE), default: "" as const }
+    }),
+    []
+  );
+  const { filters, setFilter, setFilters } = useUrlFilters(filtrosSchema);
+
+  const activeTab: ActiveTab = filters.aba;
   const [isFaturando, setIsFaturando] = useState(false);
   const [focusConfirmNote, setFocusConfirmNote] = useState<NfeReadModel | null>(null);
   const [isSendingToFocus, setIsSendingToFocus] = useState(false);
@@ -147,14 +199,28 @@ export function NotasFiscaisPage() {
     };
   }, []);
 
-  // States para filtros e buscas
-  const [nfeSearch, setNfeSearch] = useState("");
-  const [nfeStatus, setNfeStatus] = useState("");
-  const [nfeEmpresa, setNfeEmpresa] = useState("");
+  // Filtros vindos da URL. As buscas respondem a cada tecla e só gravam na URL
+  // depois da pausa; os selects gravam na hora.
+  const nfeStatus = filters["nfe-status"];
+  const nfeEmpresa = filters["nfe-emp"];
+  const nfseStatus = filters["nfse-status"];
+  const nfseEmpresa = filters["nfse-emp"];
 
-  const [nfseSearch, setNfseSearch] = useState("");
-  const [nfseStatus, setNfseStatus] = useState("");
-  const [nfseEmpresa, setNfseEmpresa] = useState("");
+  const [nfeSearch, setNfeSearch] = useDebouncedInput(filters["nfe-q"], (valor) =>
+    setFilter("nfe-q", valor)
+  );
+  const [nfseSearch, setNfseSearch] = useDebouncedInput(filters["nfse-q"], (valor) =>
+    setFilter("nfse-q", valor)
+  );
+
+  /**
+   * Trocar de aba limpa os filtros de NF-e, como já era antes da migração — os
+   * de NFS-e continuam intocados de propósito. Tudo numa escrita só.
+   */
+  const trocarAba = (aba: ActiveTab) => {
+    setNfeSearch("");
+    setFilters({ aba, "nfe-q": "", "nfe-emp": "", "nfe-status": "" });
+  };
 
   // Hooks de leitura original do banco
   const nfeData = useNfeReadOnlyData();
@@ -1178,7 +1244,7 @@ export function NotasFiscaisPage() {
     } else {
       setSimulatedNfses((prev) => [simulatedNota as NfseReadModel, ...prev]);
     }
-    setActiveTab("HISTORICO_FISCAL");
+    setFilter("aba", "HISTORICO_FISCAL");
 
     setSelectedFaturavel(null);
   }
@@ -1633,12 +1699,7 @@ export function NotasFiscaisPage() {
         <div className="flex gap-2 overflow-x-auto">
           <button
             type="button"
-            onClick={() => {
-              setActiveTab("FILA_FATURAMENTO");
-              setNfeSearch("");
-              setNfeEmpresa("");
-              setNfeStatus("");
-            }}
+            onClick={() => trocarAba("FILA_FATURAMENTO")}
             className={`shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
               activeTab === "FILA_FATURAMENTO" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
             }`}
@@ -1647,12 +1708,7 @@ export function NotasFiscaisPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setActiveTab("HISTORICO_FISCAL");
-              setNfeSearch("");
-              setNfeEmpresa("");
-              setNfeStatus("");
-            }}
+            onClick={() => trocarAba("HISTORICO_FISCAL")}
             className={`shrink-0 rounded-2xl px-5 py-3 text-sm font-semibold transition ${
               activeTab === "HISTORICO_FISCAL" ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
             }`}
@@ -1678,7 +1734,7 @@ export function NotasFiscaisPage() {
             <div>
               <select
                 value={nfeEmpresa}
-                onChange={(e) => setNfeEmpresa(e.target.value)}
+                onChange={(e) => setFilter("nfe-emp", e.target.value as (typeof EMPRESAS_EMITENTES)[number])}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todas as Empresas Emitentes</option>
@@ -1815,7 +1871,7 @@ export function NotasFiscaisPage() {
             <div>
               <select
                 value={nfseEmpresa}
-                onChange={(e) => setNfseEmpresa(e.target.value)}
+                onChange={(e) => setFilter("nfse-emp", e.target.value as (typeof EMPRESAS_EMITENTES)[number])}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todas as Empresas Emitentes</option>
@@ -1953,7 +2009,7 @@ export function NotasFiscaisPage() {
             <div>
               <select
                 value={nfeEmpresa}
-                onChange={(e) => setNfeEmpresa(e.target.value)}
+                onChange={(e) => setFilter("nfe-emp", e.target.value as (typeof EMPRESAS_EMITENTES)[number])}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todas as Empresas Emitentes</option>
@@ -1965,7 +2021,7 @@ export function NotasFiscaisPage() {
             <div>
               <select
                 value={nfeStatus}
-                onChange={(e) => setNfeStatus(e.target.value)}
+                onChange={(e) => setFilter("nfe-status", e.target.value as (typeof STATUS_NFE)[number])}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todos os Status</option>
@@ -2125,7 +2181,7 @@ export function NotasFiscaisPage() {
             <div>
               <select
                 value={nfseEmpresa}
-                onChange={(e) => setNfseEmpresa(e.target.value)}
+                onChange={(e) => setFilter("nfse-emp", e.target.value as (typeof EMPRESAS_EMITENTES)[number])}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todas as Empresas Emitentes</option>
@@ -2137,7 +2193,7 @@ export function NotasFiscaisPage() {
             <div>
               <select
                 value={nfseStatus}
-                onChange={(e) => setNfseStatus(e.target.value)}
+                onChange={(e) => setFilter("nfse-status", e.target.value as (typeof STATUS_NFSE)[number])}
                 className="w-full rounded-2xl border border-[#d7e5e8] bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-[#0b2f4a] focus:bg-white"
               >
                 <option value="">Todos os Status</option>
