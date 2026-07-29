@@ -1,8 +1,8 @@
 # PADRAO-FILTROS-URL-NAVEGACAO.md
 
-Versão: 1.1  
+Versão: 1.2  
 Status: Oficial  
-Última atualização: 28/07/2026  
+Última atualização: 29/07/2026  
 Projeto: ERP Ideal
 
 ---
@@ -114,6 +114,7 @@ Minúsculas, sem acento, um valor por parâmetro. Enums usam as constantes inter
 | `periodo` | Mês, no formato `AAAA-MM` |
 | `ini` / `fim` | Intervalo de datas |
 | `card` | Cartão-filtro em destaque |
+| `variacoes`, `fotos`, `estoque` | Filtros de sim/não/todos do catálogo de produtos |
 
 Listas aninhadas usam prefixo curto com hífen, para não colidir com os filtros da própria página: `prop-q`, `prop-status`, `prop-pag`.
 
@@ -154,6 +155,8 @@ Houve um período em que essa remoção precisou ser feita fora do hook, porque 
 |---|---|
 | Contas a Receber | Migrada (piloto), publicada em 28/07/2026 |
 | Orçamentos | Migrada em 28/07/2026 |
+| Cadastros (lista e sub-lista do detalhe) | Migrada em 29/07/2026 |
+| Produtos | Migrada em 29/07/2026 |
 | Demais listas | Ainda em `useState` local |
 
 Telas novas já nascem com o padrão. Telas existentes são migradas uma por vez, em tarefas separadas, sem refatoração ampla.
