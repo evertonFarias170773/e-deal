@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Boxes, ImageIcon, Package, Search, SlidersHorizontal } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
@@ -12,11 +12,17 @@ import { SummaryCard } from "@/components/common/SummaryCard";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { useProdutosReadOnlyData } from "@/features/produtos/hooks/useProdutosReadOnlyData";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { codecs } from "@/lib/url-state";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import type { Produto, ProdutoCategoria } from "@/features/produtos/types";
 
-type StatusFilter = "TODOS" | "ATIVO" | "INATIVO";
-type BooleanFilter = "TODOS" | "SIM" | "NAO";
+const STATUS_FILTROS = ["TODOS", "ATIVO", "INATIVO"] as const;
+const FILTROS_BOOLEANOS = ["TODOS", "SIM", "NAO"] as const;
+
+type StatusFilter = (typeof STATUS_FILTROS)[number];
+type BooleanFilter = (typeof FILTROS_BOOLEANOS)[number];
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 
@@ -53,12 +59,35 @@ export function ProdutosListPage() {
   const { showToast } = useAppToast();
   const { user } = useAuth();
   const { produtos, source, warnings, resumo, categorias, isLoading, error } = useProdutosReadOnlyData();
-  const [search, setSearch] = useState("");
-  const [categoria, setCategoria] = useState<"TODAS" | ProdutoCategoria>("TODAS");
-  const [status, setStatus] = useState<StatusFilter>("TODOS");
-  const [hasVariacoes, setHasVariacoes] = useState<BooleanFilter>("TODOS");
-  const [hasFotos, setHasFotos] = useState<BooleanFilter>("TODOS");
-  const [isEstoque, setIsEstoque] = useState<BooleanFilter>("TODOS");
+
+  // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
+  // histórico do navegador e a um link copiado.
+  // Padrão oficial: docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      cat: { codec: codecs.texto(), default: "TODAS" },
+      status: { codec: codecs.enumOf(STATUS_FILTROS), default: "TODOS" as StatusFilter },
+      variacoes: { codec: codecs.enumOf(FILTROS_BOOLEANOS), default: "TODOS" as BooleanFilter },
+      fotos: { codec: codecs.enumOf(FILTROS_BOOLEANOS), default: "TODOS" as BooleanFilter },
+      estoque: { codec: codecs.enumOf(FILTROS_BOOLEANOS), default: "TODOS" as BooleanFilter }
+    }),
+    []
+  );
+
+  // Sem pageKey: esta tela não tem paginação.
+  const { filters, setFilter, clearFilters: limparFiltrosNaUrl } = useUrlFilters(filtrosSchema);
+
+  // Nomes locais preservados: o restante da tela continua lendo estas variáveis.
+  const categoria = filters.cat as "TODAS" | ProdutoCategoria;
+  const status = filters.status;
+  const hasVariacoes = filters.variacoes;
+  const hasFotos = filters.fotos;
+  const isEstoque = filters.estoque;
+
+  // A filtragem é em memória, então continua acontecendo a cada tecla — o que
+  // espera a pausa é apenas a gravação na URL, para não escrevê-la por caractere.
+  const [search, setSearch] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
 
   const categoriaOptions = useMemo(
     () => Array.from(new Set([...categorias, ...produtos.map((produto) => produto.categoria)])).filter(Boolean),
@@ -100,12 +129,9 @@ export function ProdutosListPage() {
   ].filter(Boolean);
 
   function clearFilters() {
+    // Volta todos os filtros ao padrão, o que os remove da URL.
+    limparFiltrosNaUrl();
     setSearch("");
-    setCategoria("TODAS");
-    setStatus("TODOS");
-    setHasVariacoes("TODOS");
-    setHasFotos("TODOS");
-    setIsEstoque("TODOS");
   }
 
   function showMockAction(title: string) {
@@ -211,7 +237,7 @@ export function ProdutosListPage() {
             />
           </label>
 
-          <select value={categoria} onChange={(event) => setCategoria(event.target.value as "TODAS" | ProdutoCategoria)} className={filterClass}>
+          <select value={categoria} onChange={(event) => setFilter("cat", event.target.value)} className={filterClass}>
             <option value="TODAS">Todas categorias</option>
             {categoriaOptions.map((option) => (
               <option key={option} value={option}>
@@ -220,25 +246,25 @@ export function ProdutosListPage() {
             ))}
           </select>
 
-          <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)} className={filterClass}>
+          <select value={status} onChange={(event) => setFilter("status", event.target.value as StatusFilter)} className={filterClass}>
             <option value="TODOS">Todos status</option>
             <option value="ATIVO">Ativos</option>
             <option value="INATIVO">Inativos</option>
           </select>
 
-          <select value={hasVariacoes} onChange={(event) => setHasVariacoes(event.target.value as BooleanFilter)} className={filterClass}>
+          <select value={hasVariacoes} onChange={(event) => setFilter("variacoes", event.target.value as BooleanFilter)} className={filterClass}>
             <option value="TODOS">Variacoes</option>
             <option value="SIM">Com variacoes</option>
             <option value="NAO">Sem variacoes</option>
           </select>
 
-          <select value={hasFotos} onChange={(event) => setHasFotos(event.target.value as BooleanFilter)} className={filterClass}>
+          <select value={hasFotos} onChange={(event) => setFilter("fotos", event.target.value as BooleanFilter)} className={filterClass}>
             <option value="TODOS">Fotos</option>
             <option value="SIM">Com fotos</option>
             <option value="NAO">Sem fotos</option>
           </select>
 
-          <select value={isEstoque} onChange={(event) => setIsEstoque(event.target.value as BooleanFilter)} className={filterClass}>
+          <select value={isEstoque} onChange={(event) => setFilter("estoque", event.target.value as BooleanFilter)} className={filterClass}>
             <option value="TODOS">Estoque</option>
             <option value="SIM">Produto de estoque</option>
             <option value="NAO">Sob demanda</option>
