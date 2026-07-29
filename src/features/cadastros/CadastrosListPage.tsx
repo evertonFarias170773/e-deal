@@ -13,7 +13,11 @@ import { formatDate } from "@/lib/formatters/date";
 import { formatDocument } from "@/lib/formatters/document";
 import { useCadastrosDashboardResumo } from "@/features/cadastros/hooks/useCadastrosDashboardResumo";
 import { useCadastrosReadOnlyData } from "@/features/cadastros/hooks/useCadastrosReadOnlyData";
-import type { CadastrosListaItem } from "@/features/cadastros/services/cadastros-read.service";
+import {
+  CADASTRO_TIPOS,
+  type CadastroTipo,
+  type CadastrosListaItem
+} from "@/features/cadastros/services/cadastros-read.service";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
@@ -26,10 +30,28 @@ import { inativarCadastro } from "@/features/cadastros/services/cadastros.servic
 // id_cliente desc, que é a ordem de criação). Páginas seguintes sob demanda.
 const PAGE_SIZE = 100;
 
+/**
+ * Filtros de tipo e "Mostrar inativos" exigem public.vw_cadastros_lista_completa
+ * (migration 20260729_vw_cadastros_lista_completa.sql). Enquanto ela não estiver
+ * aplicada, a lista lê a view compartilhada — que só entrega clientes ativos — e
+ * os controles ficam ocultos. Virar para true quando a migration subir.
+ */
+const FILTROS_AVANCADOS_DISPONIVEIS = false;
+
+/** Valores aceitos no filtro de tipo. "" = todos. */
+const TIPOS_FILTRO = ["", ...CADASTRO_TIPOS] as const;
+
+const TIPO_ROTULOS: Record<string, string> = {
+  CLIENTE: "Clientes",
+  TRANSPORTADORA: "Transportadoras"
+};
+
 type SearchState = {
   pageIndex: number;
   pageSize: number;
   search: string;
+  tipo: CadastroTipo | "";
+  mostrarInativos: boolean;
   /** Muda para forçar releitura da lista (ex.: depois de inativar um cadastro). */
   recarga: number;
 };
@@ -152,6 +174,9 @@ export function CadastrosListPage() {
       // `qid` continua no schema por compatibilidade: links antigos com o filtro
       // de ID separado seguem funcionando, agora alimentando a busca única.
       qid: { codec: codecs.texto(), default: "" },
+      // Padrões ("" e false) não vão para a URL — só o que foge do default.
+      tipo: { codec: codecs.enumOf(TIPOS_FILTRO), default: "" as const },
+      inativos: { codec: codecs.booleano(), default: false },
       pag: { codec: codecs.numero({ min: 1 }), default: 1 }
     }),
     []
@@ -181,9 +206,12 @@ export function CadastrosListPage() {
       pageIndex,
       pageSize: PAGE_SIZE,
       search,
+      // Só chegam ao service quando a view que os suporta existir.
+      tipo: FILTROS_AVANCADOS_DISPONIVEIS ? filters.tipo : "",
+      mostrarInativos: FILTROS_AVANCADOS_DISPONIVEIS ? filters.inativos : false,
       recarga
     }),
-    [pageIndex, search, recarga]
+    [pageIndex, search, filters.tipo, filters.inativos, recarga]
   );
 
   const {
@@ -197,11 +225,17 @@ export function CadastrosListPage() {
   } = useCadastrosReadOnlyData(query);
   const resumo = useCadastrosDashboardResumo();
 
-  const activeFilters = [search ? `Busca: ${search}` : null].filter(Boolean) as string[];
+  const activeFilters = [
+    search ? `Busca: ${search}` : null,
+    FILTROS_AVANCADOS_DISPONIVEIS && filters.tipo
+      ? `Tipo: ${TIPO_ROTULOS[filters.tipo] ?? filters.tipo}`
+      : null,
+    FILTROS_AVANCADOS_DISPONIVEIS && filters.inativos ? "Incluindo inativos" : null
+  ].filter(Boolean) as string[];
 
   function clearFilters() {
     // Volta os filtros ao padrão, o que os remove da URL.
-    setFilters({ q: "", qid: "", pag: 1 });
+    setFilters({ q: "", qid: "", tipo: "", inativos: false, pag: 1 });
     setBuscaDigitada("");
   }
 
@@ -251,7 +285,7 @@ export function CadastrosListPage() {
     <div className="space-y-6" data-cadastros-source={source}>
       <PageHeader
         title="Cadastros"
-        subtitle="Clientes ativos com busca por ID e filtros gerais, em páginas de 200 registros."
+        subtitle="Busca por ID, documento, nome fantasia ou nome, com filtro de tipo, em páginas de 100 registros."
         context="Cadastros / Comercial"
         action={
           <button
@@ -303,6 +337,41 @@ export function CadastrosListPage() {
             </label>
           </div>
 
+          {/* "Tipo" e "Mostrar inativos" dependem da view
+              vw_cadastros_lista_completa, cuja migration ainda não foi aplicada.
+              Ficam ocultos até lá — a fonte atual só entrega clientes ativos, e
+              exibir os controles sugeriria um filtro que não tem efeito.
+              Reativar: trocar FILTROS_AVANCADOS_DISPONIVEIS para true. */}
+          {FILTROS_AVANCADOS_DISPONIVEIS && (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</span>
+                <select
+                  value={filters.tipo}
+                  onChange={(event) => setFilter("tipo", event.target.value as CadastroTipo | "")}
+                  className="bg-transparent text-sm font-semibold text-slate-800 outline-none"
+                >
+                  <option value="">Todos</option>
+                  {CADASTRO_TIPOS.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {TIPO_ROTULOS[tipo] ?? tipo}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex cursor-pointer select-none items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={filters.inativos}
+                  onChange={(event) => setFilter("inativos", event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-[#0f9f9a] focus:ring-[#0f9f9a]"
+                />
+                <span className="text-sm font-semibold text-slate-700">Mostrar inativos</span>
+              </label>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={clearFilters}
@@ -314,7 +383,9 @@ export function CadastrosListPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-[#f1f7f9] px-3 py-1 text-xs font-semibold text-slate-600">
-            Clientes ativos disponíveis para atendimento
+            {FILTROS_AVANCADOS_DISPONIVEIS && filters.inativos
+              ? "Cadastros ativos e inativos"
+              : "Somente cadastros ativos"}
           </span>
           {activeFilters.map((filter) => (
             <span key={filter} className="rounded-full bg-[#dff8f6] px-3 py-1 text-xs font-semibold text-[#0b7774]">
@@ -341,7 +412,19 @@ export function CadastrosListPage() {
             header: "Cliente",
             cell: (cadastro) => (
               <div>
-                <p className="font-medium text-slate-900">{cadastro.nome}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-slate-900">{cadastro.nome}</p>
+                  {!cadastro.ativo && (
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-600 ring-1 ring-red-200">
+                      Inativo
+                    </span>
+                  )}
+                  {cadastro.categoria && cadastro.categoria !== "CLIENTE" && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ring-1 ring-slate-200">
+                      {TIPO_ROTULOS[cadastro.categoria] ?? cadastro.categoria}
+                    </span>
+                  )}
+                </div>
                 {cadastro.fantasia || cadastro.apelido ? (
                   <p className="text-xs text-slate-500">{cadastro.fantasia || cadastro.apelido}</p>
                 ) : null}
@@ -415,7 +498,19 @@ export function CadastrosListPage() {
           <article key={cadastro.id} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">ID {cadastro.idClienteText}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">ID {cadastro.idClienteText}</p>
+                  {!cadastro.ativo && (
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-600 ring-1 ring-red-200">
+                      Inativo
+                    </span>
+                  )}
+                  {cadastro.categoria && cadastro.categoria !== "CLIENTE" && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ring-1 ring-slate-200">
+                      {TIPO_ROTULOS[cadastro.categoria] ?? cadastro.categoria}
+                    </span>
+                  )}
+                </div>
                 <h3 className="mt-2 font-semibold text-slate-950">{cadastro.nome}</h3>
                 {cadastro.fantasia || cadastro.apelido ? (
                   <p className="mt-1 text-sm text-slate-500">{cadastro.fantasia || cadastro.apelido}</p>

@@ -99,6 +99,10 @@ export type SupabaseCadastrosClientesListaRow = {
   documento?: SupabaseNullableValue;
   documento_numeros?: SupabaseNullableValue;
   tipo_pessoa?: SupabaseNullableValue;
+  // Só a view vw_cadastros_lista_completa projeta estes dois; na compartilhada
+  // eles não são selecionados, por isso seguem opcionais.
+  categoria?: SupabaseNullableValue;
+  ativo?: SupabaseNullableValue;
   cidade_uf?: SupabaseNullableValue;
   nome_vendedor?: SupabaseNullableValue;
   whatsapp_1?: SupabaseNullableValue;

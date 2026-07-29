@@ -19,6 +19,9 @@ export type CadastrosListaItem = {
   documento: string;
   documentoNumeros: string;
   tipoPessoa: string;
+  /** public.clientes.categoria — CLIENTE, TRANSPORTADORA… */
+  categoria: string;
+  ativo: boolean;
   cidadeUf: string;
   nomeVendedor: string;
   whatsapp1?: string;
@@ -34,11 +37,19 @@ export type CadastrosListaItem = {
   buscaGeral: string;
 };
 
+/** Tipos de cadastro existentes em public.clientes.categoria. */
+export const CADASTRO_TIPOS = ["CLIENTE", "TRANSPORTADORA"] as const;
+export type CadastroTipo = (typeof CADASTRO_TIPOS)[number];
+
 export type CadastrosListQuery = {
   pageIndex: number;
   pageSize?: number;
   search?: string;
   idClienteSearch?: string;
+  /** Vazio = todos os tipos. */
+  tipo?: CadastroTipo | "";
+  /** Falso (padrão) = só ativos. */
+  mostrarInativos?: boolean;
 };
 
 export type CadastrosReadResult = {
@@ -182,6 +193,9 @@ function mapClienteListaRow(row: SupabaseCadastrosClientesListaRow): CadastrosLi
     documento: toText(row.documento) || documentoNumeros,
     documentoNumeros,
     tipoPessoa: toText(row.tipo_pessoa) || "",
+    categoria: toText(row.categoria) || "",
+    // A view compartilhada não expõe `ativo` na projeção antiga; ausente = ativo.
+    ativo: row.ativo === undefined || row.ativo === null ? true : normalizeBool(row.ativo),
     cidadeUf: toText(row.cidade_uf) || "Não informado",
     nomeVendedor: toText(row.nome_vendedor) || "Não informado",
     whatsapp1: toText(row.whatsapp_1) || undefined,
@@ -297,9 +311,17 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
   const idClienteDigits = normalizeSearchTerm(query.idClienteSearch ?? "").replace(/\D/g, "");
 
   try {
+    // Fonte: public.vw_cadastros_clientes_lista, a view que existe no banco.
+    //
+    // A view fixa `categoria = 'CLIENTE' AND ativo = true` na própria definição,
+    // então inativos já ficam ocultos aqui. Os filtros de tipo e "Mostrar
+    // inativos" dependem de vw_cadastros_lista_completa, cuja migration
+    // (20260729_vw_cadastros_lista_completa.sql) ainda NÃO foi aplicada — por
+    // isso `query.tipo` e `query.mostrarInativos` não são usados: apontar para a
+    // view inexistente derrubava a lista inteira com 42P01.
     let request = client
       .from("vw_cadastros_clientes_lista")
-      .select("id,id_cliente,id_cliente_text,nome,fantasia,apelido,documento,documento_numeros,tipo_pessoa,cidade_uf,nome_vendedor,whatsapp_1,whatsapp_2,telefone_fixo,credito,limite_credito,risco_credito,data_fundacao,aniversariante_hoje,qtd_pedidos,data_ult_pedido,busca_geral", {
+      .select("id,id_cliente,id_cliente_text,nome,fantasia,apelido,documento,documento_numeros,tipo_pessoa,categoria,ativo,cidade_uf,nome_vendedor,whatsapp_1,whatsapp_2,telefone_fixo,credito,limite_credito,risco_credito,data_fundacao,aniversariante_hoje,qtd_pedidos,data_ult_pedido,busca_geral", {
         count: "exact"
       })
       // nullsFirst: false — em DESC o Postgres põe NULL primeiro, e um cadastro
