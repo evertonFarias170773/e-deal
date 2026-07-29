@@ -1,8 +1,8 @@
 # DOCUMENTATION_INDEX.md
 
-Versão: 3.2  
+Versão: 3.3  
 Status: Oficial  
-Última atualização: 28/07/2026  
+Última atualização: 29/07/2026  
 Projeto: ERP Ideal
 
 ---
@@ -154,7 +154,7 @@ Padrões visuais, responsividade, acessibilidade e componentes.
 
 ## [`technical/PADRAO-FILTROS-URL-NAVEGACAO.md`](./technical/PADRAO-FILTROS-URL-NAVEGACAO.md)
 
-Persistência de filtros, busca, período, paginação e abas na URL, e estado visual na sessão. Obrigatório em listas novas.
+Persistência de filtros, busca, período, paginação e abas na URL, e estado visual na sessão. Obrigatório em listas novas. Traz o estado final da migração das telas existentes.
 
 ---
 

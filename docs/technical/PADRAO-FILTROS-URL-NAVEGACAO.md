@@ -1,7 +1,7 @@
 # PADRAO-FILTROS-URL-NAVEGACAO.md
 
-Versão: 1.4  
-Status: Oficial  
+Versão: 2.0  
+Status: Oficial — migração encerrada  
 Última atualização: 29/07/2026  
 Projeto: ERP Ideal
 
@@ -107,6 +107,16 @@ const [compacto, setCompacto] = useSessionState("ui:/expedicao:compacto", false)
 
 A chave segue a convenção `ui:<rota>:<nome>`. O valor vale enquanto a aba estiver aberta, sobrevive ao F5 e não viaja em um link copiado.
 
+Chaves em uso hoje:
+
+| Chave | Tela |
+|---|---|
+| `ui:/expedicao:compacto` | Expedição |
+| `ui:/pedidos/impressao:compacto` | Fila de impressão |
+| `ui:/pedidos/impressao:tela-cheia` | Fila de impressão |
+| `ui:/pendencias:filtros-avancados` | Pendências |
+| `ui:/configuracoes/perfis:grupos-recolhidos` | Configurações → Perfis |
+
 A leitura usa `useSyncExternalStore`, então servidor e hidratação partem do valor inicial e só depois assumem o que está guardado, sem divergência de marcação. Se o `sessionStorage` estiver indisponível, a preferência simplesmente não persiste — a tela continua funcionando.
 
 Filtro de dados nunca entra aqui.
@@ -130,11 +140,17 @@ Minúsculas, sem acento, um valor por parâmetro. Enums usam as constantes inter
 | `periodo` | Mês, no formato `AAAA-MM` |
 | `ini` / `fim` | Intervalo de datas |
 | `card` | Cartão-filtro em destaque |
+| `urg` | Somente urgentes (`1`) |
+| `mat` | Material |
+| `prio` | Prioridade |
+| `perfil` / `origem` | Perfil e origem do perfil (Configurações → Usuários) |
 | `variacoes`, `fotos`, `estoque` | Filtros de sim/não/todos do catálogo de produtos |
 
-Listas aninhadas usam prefixo curto com hífen, para não colidir com os filtros da própria página: `prop-q`, `prop-status`, `prop-pag`.
+Listas aninhadas e conjuntos paralelos usam prefixo curto com hífen, para não colidir entre si: `prop-q`, `prop-status`, `prop-pag` na sub-lista de Cadastros; `nfe-*` e `nfse-*` nos dois conjuntos de Notas Fiscais.
 
-Nomes reservados, que já têm significado no sistema e não devem ser reaproveitados: `id`, `id_int`, `modo`, `tab`, `search`, `autoRegister`, `resolver-pendencia`, `next`, `t`.
+Nomes reservados, que já têm significado no sistema e não devem ser reaproveitados: `id`, `id_int`, `modo`, `search`, `autoRegister`, `next`, `t`.
+
+Dois nomes legados seguem em uso, de propósito, porque links antigos apontam para eles: `tab`, a aba do editor de orçamento (hoje bidirecional, pelo hook), e `resolver-pendencia`, comando de uso único do mesmo editor.
 
 ---
 
@@ -161,26 +177,46 @@ Nem todo parâmetro é filtro. `autoRegister` é um comando: a preparação de b
 
 O tratamento é o mesmo dos filtros: declare no schema (`codecs.booleano()`, padrão `false`), proteja o consumo com um `ref` para não repetir e remova com `setFilter("autoRegister", false)`.
 
-Houve um período em que essa remoção precisou ser feita fora do hook, porque a navegação de router era descartada. Isso deixou de valer quando a escrita passou a usar `history.replaceState`. **Hoje não existe exceção: toda escrita de URL passa pelo `useUrlFilters`.**
+Houve um período em que essa remoção precisou ser feita fora do hook, porque a navegação de router era descartada. Isso deixou de valer quando a escrita passou a usar `history.replaceState`. **Para comandos novos não existe exceção: declare no schema e remova pelo hook.**
+
+Uma exceção herdada permanece: `resolver-pendencia`, no editor de orçamento, se autolimpa pela History API dentro do próprio efeito que o consome, fora do schema. Funciona porque a limpeza apaga apenas aquele parâmetro — a aba sobrevive — e porque a escrita seguinte do hook parte de `window.location.search`, já sem o comando. Não foi reescrita para não mexer num fluxo financeiro sensível.
 
 ---
 
 # 7. Estado da migração
 
-| Tela | Situação |
-|---|---|
-| Contas a Receber | Migrada (piloto), publicada em 28/07/2026 |
-| Orçamentos | Migrada em 28/07/2026 |
-| Cadastros (lista e sub-lista do detalhe) | Migrada em 29/07/2026 |
-| Produtos | Migrada em 29/07/2026 |
-| Conferência (Cobranças) | Migrada em 29/07/2026 |
-| Pedidos (Painel Geral) | Migrada em 29/07/2026 |
-| Expedição | Migrada em 29/07/2026; modo compacto em `useSessionState` |
-| Conta Corrente | Migrada em 29/07/2026 |
-| Pendências | Migrada em 29/07/2026; painel avançado em `useSessionState`, limite de "carregar mais" local |
-| Demais listas | Ainda em `useState` local |
+**Encerrada em 29/07/2026.** Dezesseis telas migradas, uma por commit, cada uma publicada e validada em produção antes da seguinte.
 
-Telas novas já nascem com o padrão. Telas existentes são migradas uma por vez, em tarefas separadas, sem refatoração ampla.
+| Tela | Parâmetros | Fora da URL |
+|---|---|---|
+| Contas a Receber (piloto) | `q` (aceita `search`), `aba`, `emp`, `tipo`, `status`, `ini`, `fim` | — |
+| Orçamentos | `q`, `status`, `modelo`, `vend`, `cob`, `card`, `periodo`, `pag` | — |
+| Cadastros (lista) | `q`, `qid`, `pag` | — |
+| Cadastros (sub-lista do detalhe) | `prop-q`, `prop-status`, `prop-pag` | — |
+| Produtos | `q`, `cat`, `status`, `variacoes`, `fotos`, `estoque` | — |
+| Conferência (Cobranças) | `q`, `tipo`, `emp`, `vend`, `aba`, `ini`, `fim` | mês exibido (derivado) |
+| Pedidos (Painel Geral) | `q`, `status`, `vend`, `emp` | — |
+| Expedição | `q`, `status` | modo compacto (sessão) |
+| Conta Corrente | `q`, `status`, `sentido` | — |
+| Pendências | `q`, `status`, `prio`, `cat`, `setor`, `emp`, `aba` | painel avançado (sessão), limite do "carregar mais" (local) |
+| Registro de Recebíveis | `q`, `emp` | modal de preparação (local) |
+| Configurações → Usuários | `q`, `perfil`, `origem` | usuário selecionado (local) |
+| Fila de impressão | `status`, `urg`, `setor`, `mat` | compacto e tela cheia (sessão) |
+| Configurações → Perfis | nenhum (a tela não tem filtro) | grupos recolhidos (sessão) |
+| Notas Fiscais | `aba`, `nfe-q`, `nfe-emp`, `nfe-status`, `nfse-q`, `nfse-emp`, `nfse-status` | modais e fluxo fiscal (local) |
+| Editor de orçamento | `tab` (bidirecional), `resolver-pendencia` (one-shot) | demais estados do editor (local) |
+
+## 7.1 Fora do escopo e pendências
+
+| Item | Situação |
+|---|---|
+| Kanban de Pedidos (`/pedidos/kanban`, `/os-producao`) | **Descontinuado.** Não migrar. |
+| Banco de Variações (`/produtos/variacoes`) | Ainda em `useState` local (`search`, `statusFilter`). Não entrou na última onda. |
+| Abas internas do detalhe de NF-e (`/notas-fiscais/[id]`) | Ainda locais. Não entraram na última onda. |
+| Fila de impressão — conferência com carga real | Pendente: a fila estava vazia nos dois ambientes na data da migração, então a equivalência de resultados não pôde ser medida. |
+| Editor — `resolver-pendencia` ponta a ponta | Pendente: nenhuma proposta elegível (pendência de revisão aberta **com** cobranças) disponível para exercitar a abertura do modal. A autolimpeza e a convivência com a escrita da aba foram validadas. |
+
+Telas novas já nascem com o padrão. Telas existentes que ainda não usam o hook são migradas uma por vez, em tarefas separadas, sem refatoração ampla.
 
 ---
 

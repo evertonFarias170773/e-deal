@@ -32,6 +32,20 @@ Quando houver divergência, prevalece a fonte oficial atual do domínio. A decis
 
 ---
 
+## Encerramento da migração de filtros na URL (29/07/2026)
+
+Decisão: a migração das listagens para o padrão de URL está **encerrada** com dezesseis telas migradas. O Kanban de Pedidos (`/pedidos/kanban` e `/os-producao`) fica **de fora, por estar descontinuado**, e não deve ser migrado nem refatorado.
+
+Motivo:
+
+- o Kanban não é tela ativa do produto: os handlers de mutação são funções vazias e os filtros de prazo comparam com uma data fixa no código, então migrar filtros ali seria investir em código que não opera;
+- as telas restantes com filtro — Banco de Variações (`/produtos/variacoes`) e as abas internas do detalhe de NF-e — não entraram na última onda e seguem em `useState` local, sem prejuízo funcional; ficam registradas como escopo futuro, não como dívida da iniciativa.
+
+Consequências:
+
+- se o Kanban voltar a ser desenvolvido, a migração dele entra como tarefa nova, com o padrão já pronto;
+- duas validações ficaram pendentes por falta de dado elegível, não por defeito conhecido: a equivalência da Fila de impressão com itens reais (a fila estava vazia nos dois ambientes) e a abertura do modal de `resolver-pendencia` ponta a ponta (nenhuma proposta com pendência de revisão aberta e cobranças disponível). Ambas estão registradas em `technical/PADRAO-FILTROS-URL-NAVEGACAO.md` §7.1.
+
 ## Estado de lista na URL, escrito com `router.replace` (28/07/2026)
 
 Decisão: filtros, busca, ordenação, paginação, período e aba das listagens ficam em query params, lidos e escritos por um hook compartilhado (`useUrlFilters`), e a escrita usa `router.replace(url, { scroll: false })`.
