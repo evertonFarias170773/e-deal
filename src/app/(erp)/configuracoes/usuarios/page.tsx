@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { UsuariosPerfisList } from "@/features/usuarios-perfis/components/UsuariosPerfisList";
@@ -50,7 +50,10 @@ export default function ConfigUsuariosPage() {
       </div>
 
       {/* Componente Principal de Listagem e Gestão */}
-      <UsuariosPerfisList />
+      {/* A lista lê os filtros da URL (useSearchParams), que exige limite de Suspense. */}
+      <Suspense fallback={null}>
+        <UsuariosPerfisList />
+      </Suspense>
     </div>
   );
 }

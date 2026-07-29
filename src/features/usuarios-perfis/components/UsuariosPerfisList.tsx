@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Users, 
   Database, 
@@ -15,7 +15,12 @@ import { AlterarPerfilModal } from "./AlterarPerfilModal";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useDebouncedInput } from "@/hooks/useDebouncedValue";
+import { codecs } from "@/lib/url-state";
 
+/** Origem do perfil. Vazio significa "todas", e por isso não vai para a URL. */
+const ORIGEM_FILTROS = ["", "banco", "fallback"] as const;
 
 export function UsuariosPerfisList() {
   const { user } = useAuth();
@@ -33,12 +38,33 @@ export function UsuariosPerfisList() {
   // Estados do Modal
   const [selectedUser, setSelectedUser] = useState<UsuarioComPerfil | null>(null);
 
-  // Estado dos Filtros
-  const [filtros, setFiltros] = useState<FiltrosUsuariosPerfis>({
-    busca: "",
-    perfilSlug: "",
-    origem: ""
-  });
+  // Filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um link
+  // copiado. O usuário selecionado continua local — é um detalhe de edição, não
+  // uma descrição do que está sendo visto.
+  const filtrosSchema = useMemo(
+    () => ({
+      q: { codec: codecs.texto(), default: "" },
+      // O catálogo de perfis vem do banco, então não há enum fechado aqui.
+      perfil: { codec: codecs.texto(), default: "" },
+      origem: { codec: codecs.enumOf(ORIGEM_FILTROS), default: "" as const }
+    }),
+    []
+  );
+  const { filters, setFilter } = useUrlFilters(filtrosSchema);
+
+  // A busca responde a cada tecla; a URL só é gravada depois da pausa.
+  const [busca, definirBusca] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
+
+  const filtros: FiltrosUsuariosPerfis = {
+    busca,
+    // Slug que não existe no catálogo cai em "todos os perfis" assim que o
+    // catálogo chega — em vez de deixar o select em branco e a lista vazia.
+    perfilSlug:
+      filters.perfil !== "" && perfis.length > 0 && !perfis.some((p) => p.slug === filters.perfil)
+        ? ""
+        : filters.perfil,
+    origem: filters.origem
+  };
 
   // Trigger para recarregar dados do useEffect de forma compatível com o linter
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -265,7 +291,7 @@ export function UsuariosPerfisList() {
               type="text"
               placeholder="Buscar por nome ou e-mail..."
               value={filtros.busca}
-              onChange={(e) => setFiltros({ ...filtros, busca: e.target.value })}
+              onChange={(e) => definirBusca(e.target.value)}
               className="w-full rounded-xl border pl-10 pr-4 py-2.5 text-sm bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               style={{ borderColor: "var(--border)" }}
             />
@@ -274,7 +300,7 @@ export function UsuariosPerfisList() {
           {/* Filtro por Perfil */}
           <select
             value={filtros.perfilSlug}
-            onChange={(e) => setFiltros({ ...filtros, perfilSlug: e.target.value })}
+            onChange={(e) => setFilter("perfil", e.target.value)}
             className="w-full rounded-xl border px-3 py-2.5 text-sm bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             style={{ borderColor: "var(--border)" }}
             disabled={perfis.length === 0}
@@ -290,7 +316,7 @@ export function UsuariosPerfisList() {
           {/* Filtro por Origem */}
           <select
             value={filtros.origem}
-            onChange={(e) => setFiltros({ ...filtros, origem: e.target.value as "" | "banco" | "fallback" })}
+            onChange={(e) => setFilter("origem", e.target.value as (typeof ORIGEM_FILTROS)[number])}
             className="w-full rounded-xl border px-3 py-2.5 text-sm bg-transparent text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             style={{ borderColor: "var(--border)" }}
           >
