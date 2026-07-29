@@ -1,6 +1,6 @@
 # PADRAO-FILTROS-URL-NAVEGACAO.md
 
-Versão: 1.3  
+Versão: 1.4  
 Status: Oficial  
 Última atualização: 29/07/2026  
 Projeto: ERP Ideal
@@ -123,6 +123,7 @@ Minúsculas, sem acento, um valor por parâmetro. Enums usam as constantes inter
 | `qid` | Busca por identificador numérico |
 | `pag` | Página, começando em 1 |
 | `ord` / `dir` | Campo de ordenação e sentido (`asc` / `desc`) |
+| `sentido` | Direção do lançamento na Conta Corrente (crédito ou débito) — nome distinto de `dir`, que é ordenação |
 | `aba` | Aba principal da tela |
 | `status`, `tipo`, `cat`, `prio`, `setor` | Filtros de domínio |
 | `emp` / `vend` | Empresa e vendedor |
@@ -175,6 +176,8 @@ Houve um período em que essa remoção precisou ser feita fora do hook, porque 
 | Conferência (Cobranças) | Migrada em 29/07/2026 |
 | Pedidos (Painel Geral) | Migrada em 29/07/2026 |
 | Expedição | Migrada em 29/07/2026; modo compacto em `useSessionState` |
+| Conta Corrente | Migrada em 29/07/2026 |
+| Pendências | Migrada em 29/07/2026; painel avançado em `useSessionState`, limite de "carregar mais" local |
 | Demais listas | Ainda em `useState` local |
 
 Telas novas já nascem com o padrão. Telas existentes são migradas uma por vez, em tarefas separadas, sem refatoração ampla.
