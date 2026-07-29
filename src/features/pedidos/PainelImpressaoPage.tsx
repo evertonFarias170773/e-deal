@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useUrlFilters } from "@/hooks/useUrlFilters";
+import { useSessionState } from "@/hooks/useSessionState";
+import { codecs } from "@/lib/url-state";
 import { PropostaOperacionalListItem, ModeloMock, ProducaoStatus } from "./types";
 import { listarPedidosOperacionais, listarModelosImpressao } from "./services/pedidos-producao.service";
 import { useAppToast } from "@/components/common/AppToast";
@@ -18,6 +21,13 @@ import {
   Layers,
   RefreshCw
 } from "lucide-react";
+
+/** Filtro de status da fila. "todos" é o padrão e não vai para a URL. */
+const STATUS_FILTROS = ["todos", "prontos", "rodando", "aguardando_arte", "bloqueados", "atrasados"] as const;
+
+/** Preferências visuais desta rota: não descrevem o que está sendo visto. */
+const CHAVE_COMPACTO = "ui:/pedidos/impressao:compacto";
+const CHAVE_TELA_CHEIA = "ui:/pedidos/impressao:tela-cheia";
 
 export function PainelImpressaoPage() {
   const router = useRouter();
@@ -45,15 +55,31 @@ export function PainelImpressaoPage() {
   }, []);
 
   const [currentTime, setCurrentTime] = useState("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [filterUrgente, setFilterUrgente] = useState(false);
   const [isPauseModalOpen, setIsPauseModalOpen] = useState(false);
   const [selectedPedidoId, setSelectedPedidoId] = useState<number | null>(null);
   const [pauseReason, setPauseReason] = useState("");
-  const [isCompact, setIsCompact] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<"todos" | "prontos" | "rodando" | "aguardando_arte" | "bloqueados" | "atrasados">("todos");
-  const [filterSetor, setFilterSetor] = useState<string>("todos");
-  const [filterMaterial, setFilterMaterial] = useState<string>("todos");
+
+  // Filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um link
+  // copiado — útil para deixar um painel de galpão já filtrado num atalho.
+  const filtrosSchema = useMemo(
+    () => ({
+      status: { codec: codecs.enumOf(STATUS_FILTROS), default: "todos" as const },
+      urg: { codec: codecs.booleano(), default: false },
+      // Setor e material vêm dos dados, então não há enum fechado aqui.
+      setor: { codec: codecs.texto(), default: "todos" },
+      mat: { codec: codecs.texto(), default: "todos" }
+    }),
+    []
+  );
+  const { filters, setFilter } = useUrlFilters(filtrosSchema);
+
+  const filterStatus = filters.status;
+  const filterUrgente = filters.urg;
+
+  // Modo compacto e tela cheia são preferência de quem está olhando: ficam na
+  // sessão, com chave própria da rota, e não viajam em um link copiado.
+  const [isCompact, setIsCompact] = useSessionState(CHAVE_COMPACTO, false);
+  const [isFullscreen, setIsFullscreen] = useSessionState(CHAVE_TELA_CHEIA, false);
 
   const resetLocalStorage = () => {
     if (typeof window !== "undefined") {
@@ -95,7 +121,8 @@ export function PainelImpressaoPage() {
       } else if (key === "k") {
         router.push("/pedidos/kanban");
       } else if (key === "u") {
-        setFilterUrgente((prev) => !prev);
+        // Mesmo filtro do checkbox: uma única gravação, direto na URL.
+        setFilter("urg", !filterUrgente);
         showToast({
           type: "info",
           title: "Filtro de Urgência",
@@ -108,7 +135,7 @@ export function PainelImpressaoPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [router, isFullscreen, showToast]);
+  }, [router, isFullscreen, showToast, filterUrgente, setFilter, setIsFullscreen]);
 
   const handleStartPrint = (_idInt: number, _modeloId: string) => {};
   const handleFinishPrint = (_idInt: number, _modeloId: string) => {};
@@ -172,6 +199,18 @@ export function PainelImpressaoPage() {
   // Dynamic filter collections
   const sectors = Array.from(new Set(allItems.map(i => i.modelo.setor))).filter(Boolean);
   const materials = Array.from(new Set(allItems.map(i => i.modelo.corMaterial))).filter(Boolean);
+
+  // Setor e material não têm lista fechada no codec. Se vier na URL um valor que
+  // não existe nos dados, cai em "todos" assim que a lista real fica conhecida —
+  // em vez de deixar o select em branco e a fila vazia sem explicação.
+  const filterSetor =
+    filters.setor !== "todos" && sectors.length > 0 && !sectors.includes(filters.setor)
+      ? "todos"
+      : filters.setor;
+  const filterMaterial =
+    filters.mat !== "todos" && materials.length > 0 && !materials.includes(filters.mat)
+      ? "todos"
+      : filters.mat;
 
   // Filter items
   const filteredItems = allItems.filter(({ pedido: p, modelo: m }) => {
@@ -642,7 +681,7 @@ export function PainelImpressaoPage() {
                 <button
                   key={st}
                   type="button"
-                  onClick={() => setFilterStatus(st)}
+                  onClick={() => setFilter("status", st)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border ${
                     isActive
                       ? "bg-slate-900 dark:bg-slate-50 text-white dark:text-slate-900 border-slate-900"
@@ -672,7 +711,7 @@ export function PainelImpressaoPage() {
               <span className="text-slate-400 font-bold uppercase text-[9px]">Setor:</span>
               <select
                 value={filterSetor}
-                onChange={(e) => setFilterSetor(e.target.value)}
+                onChange={(e) => setFilter("setor", e.target.value)}
                 className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none"
               >
                 <option value="todos">Todos os Setores</option>
@@ -687,7 +726,7 @@ export function PainelImpressaoPage() {
               <span className="text-slate-400 font-bold uppercase text-[9px]">Material:</span>
               <select
                 value={filterMaterial}
-                onChange={(e) => setFilterMaterial(e.target.value)}
+                onChange={(e) => setFilter("mat", e.target.value)}
                 className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-955 text-xs font-bold text-slate-700 dark:text-slate-350 focus:outline-none"
               >
                 <option value="todos">Todos os Materiais</option>
@@ -704,7 +743,7 @@ export function PainelImpressaoPage() {
               <input
                 type="checkbox"
                 checked={filterUrgente}
-                onChange={(e) => setFilterUrgente(e.target.checked)}
+                onChange={(e) => setFilter("urg", e.target.checked)}
                 className="h-4 w-4 rounded border-slate-300 dark:border-slate-800 text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-950"
               />
               <Flame className="h-4 w-4 text-red-500" />
