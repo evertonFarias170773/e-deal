@@ -538,6 +538,65 @@ Caminhos do ERP já ajustados: `launchBoletosForNfe`
 (`src/features/cobrancas/CobrancasProvider.tsx`), `PrepararBoletosModal`,
 prorrogação em `ContasReceberPage` e `RevisarGeracaoBancariaModal`.
 
+### PDF interno do boleto — contrato e persistência
+
+A Edge Function `gerar-boleto-pdf` monta o PDF do boleto com o template da
+empresa e devolve o arquivo já salvo no Storage. Ela **não grava** em
+`public.boletos`: quem chama é que precisa persistir o retorno.
+
+Contrato observado (Supabase Storage, bucket `boletos`):
+
+```text
+POST {SUPABASE_URL}/functions/v1/gerar-boleto-pdf
+headers: Authorization: Bearer <key>, Content-Type: application/json
+body:    { "id": "<uuid de public.boletos>", "template_url": "<empresas.url_boleto_base>" }
+
+200 -> { "url": "https://<proj>.supabase.co/storage/v1/object/public/boletos/<id_int>/parcela_<n>.pdf",
+         "path": "<id_int>/parcela_<n>.pdf" }
+500 -> falha de renderização; observada com "bwip-js: bar code text not specified"
+        quando o boleto está sem codigo_barras
+```
+
+Note que `path` vem **sem o bucket** — o bucket é sempre `boletos`. Guardar
+`path` cru e usá-lo como href gera link quebrado; ver
+`src/lib/boletos/pdf-url.ts`, que é o único normalizador desses dois campos.
+
+Mapeamento obrigatório de quem persiste:
+
+```text
+public.boletos.url_pdf     <- resposta.url    (URL absoluta)
+public.boletos.pdf_storage <- resposta.path   (caminho relativo ao bucket boletos)
+```
+
+#### Pendência: workflow n8n "BOLETO A VISTA E3 e IDEAL - VIBE" não persiste o PDF
+
+O workflow (webhook `boleto-vibe`) já chama `gerar-boleto-pdf` nos nós
+`HTTP Request ideal` e `HTTP Request e3`, logo após `Create a row boleto
+id_empresa=1` / `=3`, passando `{ id: {{ $('Create a row').item.json.id }},
+template_url: <template da empresa> }`.
+
+O que falta: **não existe nó de update depois dessas chamadas**, então o `url` e o
+`path` retornados são descartados. Evidência: a auditoria de `public.boletos`
+cobre a base inteira (desde 28/03/2026) e registra apenas 12 escritas em
+`url_pdf`/`pdf_storage`, todas rastreáveis a sessões humanas — se o fluxo
+automático gravasse, seriam centenas. Em 30/07/2026, de 272 boletos com PDF, só 5
+tinham o PDF interno; os outros 267 têm o link público do C6, gravado no INSERT.
+
+Ajuste a aplicar no n8n (não versionado neste repositório):
+
+1. após `HTTP Request ideal`, adicionar um nó Supabase **Update** em `boletos`
+   com `id = {{ $('Create a row boleto id_empresa=1').item.json.id }}` e os campos
+   `url_pdf = {{ $json.url }}` e `pdf_storage = {{ $json.path }}`;
+2. idem após `HTTP Request e3`, referenciando `Create a row boleto id_empresa=3`;
+3. idempotência: usar o `id` da linha criada no próprio fluxo (nunca `id_int`, que
+   se repete entre parcelas) e condicionar a chamada a `url_pdf IS NULL`, para um
+   reprocessamento do webhook não gerar o PDF de novo;
+4. tratar o 500 como falha não bloqueante — o boleto no C6 já está emitido, e a
+   ação manual "Gerar/Regerar PDF do Boleto" no ERP continua sendo o fallback.
+
+Enquanto isso não for feito, o PDF interno só existe quando alguém aciona a ação
+manual em Financeiro → Carteira. Ela deve ser preservada.
+
 #### Pendência: workflow n8n de contas a receber por NF
 
 Existe um processo **fora deste repositório** que insere em `public.boletos` via
