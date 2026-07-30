@@ -1352,10 +1352,20 @@ export function ContasReceberPage() {
         )
       );
 
+      // O PDF resultante é aberto pela própria ação: o toast de sucesso leva ao
+      // arquivo recém-gerado, usando o mesmo url_pdf/pdf_storage e o mesmo
+      // resolver (openPdf -> getResolvedPdfUrl) do restante da tela. Abrir aqui
+      // e não direto com window.open porque, depois do await da Edge Function, o
+      // gesto do usuário já expirou e o bloqueador de pop-up barraria a aba.
+      const destinoPdf = res.url || res.path;
       showToast({
         type: "success",
         title: "PDF atualizado!",
-        description: "O PDF interno do boleto foi criado e salvo com sucesso."
+        description: destinoPdf
+          ? "O PDF interno do boleto foi criado e salvo. Clique aqui para abrir."
+          : "O PDF interno do boleto foi criado e salvo com sucesso.",
+        duration: destinoPdf ? 10000 : undefined,
+        onClick: destinoPdf ? () => openPdf(destinoPdf) : undefined
       });
 
       setRefreshTrigger((prev) => prev + 1);
@@ -1435,20 +1445,20 @@ export function ContasReceberPage() {
             <option value="NAO_REGISTRADO">Boletos não registrados</option>
           </select>
 
-          <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 xl:col-span-2">
-            <span className="text-xs font-semibold text-slate-500 shrink-0">Emissão</span>
+          <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 xl:col-span-3">
+            <span className="shrink-0 text-xs font-semibold text-slate-500">Emissão</span>
             <input
               type="date"
               value={emissaoInicial}
               onChange={(event) => setFilter("emiIni", event.target.value)}
-              className="w-full bg-transparent text-sm text-slate-900 outline-none"
+              className="w-full min-w-0 bg-transparent text-sm text-slate-900 outline-none"
               aria-label="Emissão inicial"
             />
             <input
               type="date"
               value={emissaoFinal}
               onChange={(event) => setFilter("emiFim", event.target.value)}
-              className="w-full bg-transparent text-sm text-slate-900 outline-none"
+              className="w-full min-w-0 bg-transparent text-sm text-slate-900 outline-none"
               aria-label="Emissão final"
             />
           </label>
@@ -1496,22 +1506,23 @@ export function ContasReceberPage() {
             ))}
           </div>
 
-          {/* Período de VENCIMENTO (filtros ini/fim), ao lado das abas. */}
-          <div className="flex items-center gap-2 px-2">
+          {/* Período de VENCIMENTO (filtros ini/fim), ao lado das abas. Campos
+              compactos para caber na mesma linha da aba "Previsão de recebimento". */}
+          <div className="flex shrink-0 items-center gap-1.5 px-2">
             <CalendarDays className="h-4 w-4 shrink-0 text-[#0f9f9a]" />
-            <span className="hidden text-xs font-semibold text-slate-500 sm:inline">Vencimento</span>
+            <span className="hidden text-xs font-semibold text-slate-500 xl:inline">Vencimento</span>
             <input
               type="date"
               value={dataInicial}
               onChange={(event) => setFilter("ini", event.target.value)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
+              className="w-[134px] rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-900 outline-none"
               aria-label="Vencimento inicial"
             />
             <input
               type="date"
               value={dataFinal}
               onChange={(event) => setFilter("fim", event.target.value)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
+              className="w-[134px] rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-900 outline-none"
               aria-label="Vencimento final"
             />
           </div>
