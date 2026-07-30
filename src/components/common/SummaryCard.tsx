@@ -28,6 +28,8 @@ type SummaryCardProps = {
   tone?: StatusTone;
   trend?: string;
   icon?: LucideIcon;
+  /** Quando informado, o card vira um atalho de filtro (clique e Enter/Espaço). */
+  onClick?: () => void;
 };
 
 export function SummaryCard({
@@ -36,15 +38,34 @@ export function SummaryCard({
   description,
   tone = "neutral",
   trend,
-  icon: Icon
+  icon: Icon,
+  onClick
 }: SummaryCardProps) {
+  const interativo = typeof onClick === "function";
+
   return (
     <article
-      className="rounded-2xl p-5 shadow-sm transition hover:shadow-md"
+      className={cn(
+        "rounded-2xl p-5 shadow-sm transition hover:shadow-md",
+        interativo && "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+      )}
       style={{
         background: "var(--card)",
         border: "1px solid var(--border)"
       }}
+      role={interativo ? "button" : undefined}
+      tabIndex={interativo ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        interativo
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
     >
       <div className="flex items-start justify-between gap-4">
         <div>

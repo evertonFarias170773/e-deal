@@ -146,6 +146,10 @@ export function ContasReceberPage() {
         codec: codecs.dataIsoOuTodas(),
         default: veioDeLinkLegadoComBusca ? "" : lastDayOfMonth
       },
+      // Período de EMISSÃO (boletos.created_at). Independente de ini/fim, que
+      // continuam filtrando por vencimento. Padrão vazio = sem recorte.
+      emiIni: { codec: codecs.dataIsoOuTodas(), default: "" },
+      emiFim: { codec: codecs.dataIsoOuTodas(), default: "" },
       autoRegister: { codec: codecs.booleano(), default: false }
     }),
     [firstDayOfMonth, lastDayOfMonth, veioDeLinkLegadoComBusca]
@@ -160,6 +164,8 @@ export function ContasReceberPage() {
   const status = filters.status;
   const dataInicial = filters.ini;
   const dataFinal = filters.fim;
+  const emissaoInicial = filters.emiIni;
+  const emissaoFinal = filters.emiFim;
 
   // O campo responde a cada tecla; a URL (e a filtragem) só depois da pausa.
   const [buscaDigitada, setBuscaDigitada] = useDebouncedInput(search, (valor) =>
@@ -313,9 +319,11 @@ export function ContasReceberPage() {
     status,
     dataInicial,
     dataFinal,
+    emissaoInicial,
+    emissaoFinal,
     isAvulso: isAvulsoFilter,
     isFaturado: isFaturadoFilter
-  }), [search, empresa, tipo, status, dataInicial, dataFinal, isAvulsoFilter, isFaturadoFilter]);
+  }), [search, empresa, tipo, status, dataInicial, dataFinal, emissaoInicial, emissaoFinal, isAvulsoFilter, isFaturadoFilter]);
 
   const filteredRecebiveis = useMemo(
     () => filterVisibleRows(recebiveis, filterState, status, today),
@@ -327,13 +335,15 @@ export function ContasReceberPage() {
     [boletosDepositos, filterState, status, today]
   );
 
+  // "SemData" = sem NENHUM recorte de período (vencimento e emissão). É o que
+  // alimenta os cards de Vencidas / a Receber, que somam a carteira inteira.
   const filteredRecebiveisSemData = useMemo(
-    () => filterVisibleRows(recebiveis, { ...filterState, dataInicial: "", dataFinal: "" }, status, today),
+    () => filterVisibleRows(recebiveis, { ...filterState, dataInicial: "", dataFinal: "", emissaoInicial: "", emissaoFinal: "" }, status, today),
     [recebiveis, filterState, status, today]
   );
 
   const filteredBoletosSemData = useMemo(
-    () => filterVisibleRows(boletosDepositos, { ...filterState, dataInicial: "", dataFinal: "" }, status, today),
+    () => filterVisibleRows(boletosDepositos, { ...filterState, dataInicial: "", dataFinal: "", emissaoInicial: "", emissaoFinal: "" }, status, today),
     [boletosDepositos, filterState, status, today]
   );
 
@@ -367,6 +377,17 @@ export function ContasReceberPage() {
 
     return empresas.sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [recebiveis]);
+
+  // Atalhos dos cards: filtram por status e zeram os DOIS períodos (vencimento e
+  // emissão), para a lista mostrar a carteira inteira — o mesmo universo que o
+  // card soma. A aba atual é preservada, como já era em "Limpar filtros".
+  function verTodasVencidas() {
+    setFilters({ status: "VENCIDOS", ini: "", fim: "", emiIni: "", emiFim: "" });
+  }
+
+  function verTodasAReceber() {
+    setFilters({ status: "A_VENCER", ini: "", fim: "", emiIni: "", emiFim: "" });
+  }
 
   function confirmRecebimento(id: string) {
     const item =
@@ -1364,29 +1385,24 @@ export function ContasReceberPage() {
         context="Financeiro / Gestão de recebíveis"
       />
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="flex flex-col gap-2 rounded-3xl border border-[#d7e5e8] bg-white p-6 shadow-sm">
-          <span className="text-sm font-semibold text-slate-500 flex items-center gap-2">Período de consulta</span>
-          <div className="flex gap-2 w-full mt-2">
-            <input
-              type="date"
-              value={dataInicial}
-              onChange={(event) => setFilter("ini", event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
-              aria-label="Data inicial"
-            />
-            <input
-              type="date"
-              value={dataFinal}
-              onChange={(event) => setFilter("fim", event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
-              aria-label="Data final"
-            />
-          </div>
-        </div>
-        <SummaryCard title="Vencidos reais" value={formatCurrency(resumo.vencidos)} description="Cobranças vencidas reais (A Receber expirado / Vencido)." tone="danger" icon={AlertTriangle} />
-        <SummaryCard title="Previsão futura" value={formatCurrency(resumo.previsaoFutura)} description="Previsões financeiras e recebíveis futuros de caixa." tone="info" icon={Wallet} />
-        <SummaryCard title="Pagos" value={formatCurrency(resumo.pagos)} description="Cobranças e premissas quitadas no período." tone="success" icon={TrendingUp} />
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <SummaryCard
+          title="Cobranças Vencidas"
+          value={formatCurrency(resumo.vencidos)}
+          description="Todas as cobranças vencidas. Clique para listar, ignorando os períodos."
+          tone="danger"
+          icon={AlertTriangle}
+          onClick={verTodasVencidas}
+        />
+        <SummaryCard
+          title="Cobranças a Receber"
+          value={formatCurrency(resumo.previsaoFutura)}
+          description="Todos os títulos a vencer. Clique para listar, ignorando os períodos."
+          tone="info"
+          icon={Wallet}
+          onClick={verTodasAReceber}
+        />
+        <SummaryCard title="Pagos" value={formatCurrency(resumo.pagos)} description="Cobranças pagas no período" tone="success" icon={TrendingUp} />
       </section>
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-4 shadow-sm">
@@ -1419,6 +1435,24 @@ export function ContasReceberPage() {
             <option value="NAO_REGISTRADO">Boletos não registrados</option>
           </select>
 
+          <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 xl:col-span-2">
+            <span className="text-xs font-semibold text-slate-500 shrink-0">Emissão</span>
+            <input
+              type="date"
+              value={emissaoInicial}
+              onChange={(event) => setFilter("emiIni", event.target.value)}
+              className="w-full bg-transparent text-sm text-slate-900 outline-none"
+              aria-label="Emissão inicial"
+            />
+            <input
+              type="date"
+              value={emissaoFinal}
+              onChange={(event) => setFilter("emiFim", event.target.value)}
+              className="w-full bg-transparent text-sm text-slate-900 outline-none"
+              aria-label="Emissão final"
+            />
+          </label>
+
           <button
             type="button"
             onClick={() => {
@@ -1429,7 +1463,9 @@ export function ContasReceberPage() {
                 emp: "TODAS",
                 status: "TODOS",
                 ini: firstDayOfMonth,
-                fim: lastDayOfMonth
+                fim: lastDayOfMonth,
+                emiIni: "",
+                emiFim: ""
               });
               setBuscaDigitada("");
               setTipo("TODOS");
@@ -1444,19 +1480,41 @@ export function ContasReceberPage() {
       </section>
 
       <section className="rounded-3xl border border-[#d7e5e8] bg-white p-2 shadow-sm">
-        <div className="flex gap-2 overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setFilter("aba", tab.id)}
-              className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
-                activeTab === tab.id ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex gap-2 overflow-x-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setFilter("aba", tab.id)}
+                className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                  activeTab === tab.id ? "bg-[#0b2f4a] text-white" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Período de VENCIMENTO (filtros ini/fim), ao lado das abas. */}
+          <div className="flex items-center gap-2 px-2">
+            <CalendarDays className="h-4 w-4 shrink-0 text-[#0f9f9a]" />
+            <span className="hidden text-xs font-semibold text-slate-500 sm:inline">Vencimento</span>
+            <input
+              type="date"
+              value={dataInicial}
+              onChange={(event) => setFilter("ini", event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
+              aria-label="Vencimento inicial"
+            />
+            <input
+              type="date"
+              value={dataFinal}
+              onChange={(event) => setFilter("fim", event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none"
+              aria-label="Vencimento final"
+            />
+          </div>
         </div>
       </section>
 
@@ -2239,7 +2297,7 @@ function GroupedSection({
   onLifecycle
 }: {
   title: string;
-  tone: "danger" | "warning" | "info" | "success" | "neutral";
+  tone: "danger" | "warning" | "info" | "blue" | "success" | "neutral";
   items: BoletoDepositoMock[];
   today: string;
   onConfirm: (id: string) => void;
@@ -2266,6 +2324,9 @@ function GroupedSection({
     danger: { bg: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50", dot: "bg-red-500" },
     warning: { bg: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/50", dot: "bg-amber-500" },
     info: { bg: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/20 dark:text-sky-400 dark:border-sky-900/50", dot: "bg-sky-500" },
+    // Azul exclusivo da seção "Previsão futura / E-Faturado". Tom próprio para
+    // não mexer no `info`, usado por outros badges da tela.
+    blue: { bg: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/50", dot: "bg-blue-500" },
     success: { bg: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/50", dot: "bg-emerald-500" },
     neutral: { bg: "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/20 dark:text-slate-400 dark:border-slate-800/50", dot: "bg-slate-500" }
   };
@@ -2293,6 +2354,7 @@ function GroupedSection({
             { header: "Cliente", cell: (item) => item.cliente },
             { header: "Empresa", cell: (item) => item.empresa },
             { header: "Tipo", cell: (item) => getTipoRecebivelLabel(item.tipo) },
+            { header: "Emissão", cell: (item) => formatPaidAtDate(item.created_at), align: "center" },
             { header: "Venc.", cell: (item) => formatLocalDate(item.vencimento), align: "center" },
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
             { header: "Status", cell: (item) => <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />, align: "center" },
@@ -2334,6 +2396,7 @@ function GroupedSection({
               { header: "Dt. Pagto", cell: (item: BoletoDepositoMock) => item.paid_at ? formatPaidAtDate(item.paid_at) : "-", align: "center" as const }
             ] : []),
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
+            { header: "Emissão", cell: (item) => formatPaidAtDate(item.created_at), align: "center" },
             { header: "Venc.", cell: (item) => formatLocalDate(item.vencimento), align: "center" },
             { header: "Conf.", cell: (item) => <StatusBadge status={item.confirmado ? "CONFIRMADO" : "NAO_CONFIRMADO"} tone={item.confirmado ? "success" : "neutral"} />, align: "center" },
             { header: "Ações", cell: (item) => {
@@ -2410,7 +2473,7 @@ function CarteiraTab({
   return (
     <div className="space-y-2">
       <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="blue" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
       <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
       <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
     </div>
@@ -2473,7 +2536,7 @@ function BoletosDepositosTab({
   return (
     <div className="space-y-2">
       <GroupedSection title="Vencidos" tone="danger" items={vencidos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
-      <GroupedSection title="Previsão futura / E-Faturado" tone="info" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
+      <GroupedSection title="Previsão futura / E-Faturado" tone="blue" items={previsaoFutura} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
       <GroupedSection title="Pagos" tone="success" items={pagos} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
       <GroupedSection title="Cancelados" tone="neutral" items={cancelados} today={today} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} isBoletoTab onProrrogar={onProrrogar} onLifecycle={onLifecycle} onRegister={onRegister} onDeleteFromBank={onDeleteFromBank} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} />
     </div>
@@ -2609,12 +2672,13 @@ function PrevisaoCaixaTab({ items, itemsSemData, boletos, today, dataInicial, da
   );
 }
 
+// onCopy/onPdf continuam no contrato (GroupedSection ainda os repassa), mas não
+// são desestruturados: as ações "Copiar linha digitável" e "Abrir PDF Boleto"
+// saíram do menu. Manter o contrato evita mexer na cadeia de props da tela.
 function RecebivelActions({
   item,
   onConfirm,
   onCancel,
-  onCopy,
-  onPdf,
   onDetail,
   onNavigate,
   onRegister,
@@ -2648,13 +2712,12 @@ function RecebivelActions({
     disabled?: boolean;
     destructive?: boolean;
   }> = [
-    { label: "Ver detalhe recebível", onClick: () => onDetail(item) },
-    { label: "Abrir proposta", onClick: () => onNavigate(`/orcamentos/${item.id_int}`) },
-    { label: "Ver cliente", onClick: () => onNavigate(`/cadastros/${item.id_cliente}`) },
+    { label: "Detalhe da Cobrança", onClick: () => onDetail(item) },
+    { label: "Cadastro do Cliente", onClick: () => onNavigate(`/cadastros/${item.id_cliente}`) },
   ];
 
   if (item.tipo === "BOLETO" && onRegister) {
-    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Revisar geração bancária";
+    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Alterar Cobrança";
     actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
   }
 
@@ -2675,11 +2738,6 @@ function RecebivelActions({
     });
   }
 
-  actionItems.push(
-    { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) }
-  );
-
   if (canBaixa) {
     actionItems.push({ label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) });
   }
@@ -2696,15 +2754,14 @@ function RecebivelActions({
   );
 }
 
+// Mesmo caso de RecebivelActions: onCopy/onPdf/onNavigate seguem no contrato,
+// sem desestruturar, porque as ações que os usavam saíram do menu.
 function BoletoActions({
   item,
   onConfirm,
   onCancel,
-  onCopy,
-  onPdf,
   onProrrogar,
   onDetail,
-  onNavigate,
   onRegister,
   onDeleteFromBank,
   onConsultaC6,
@@ -2745,12 +2802,11 @@ function BoletoActions({
     disabled?: boolean;
     destructive?: boolean;
   }> = [
-    { label: "Ver detalhe boleto", onClick: () => onDetail(item) },
-    { label: "Abrir proposta", onClick: () => onNavigate(`/orcamentos/${item.id_int}`) },
+    { label: "Detalhe da Cobrança", onClick: () => onDetail(item) },
   ];
 
   if (item.tipo === "BOLETO" && onRegister) {
-    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Revisar geração bancária";
+    const labelReg = (!item.id_boleto_c6 && !item.linha_digitavel) ? "Registrar boleto no banco" : "Alterar Cobrança";
     actionItems.push({ label: labelReg, onClick: () => onRegister(item) });
   }
 
@@ -2778,11 +2834,6 @@ function BoletoActions({
       onClick: () => onGerarPdfBoleto(item)
     });
   }
-
-  actionItems.push(
-    { label: "Copiar linha digitável", disabled: !item.linha_digitavel, onClick: () => void onCopy(item.linha_digitavel) },
-    { label: "Abrir PDF Boleto", disabled: !item.url_pdf && !item.pdf_storage, onClick: () => onPdf(item.url_pdf || item.pdf_storage) }
-  );
 
   if (canBaixa) {
     actionItems.push({ label: "Confirmar recebimento", disabled: item.status === "PAID" || item.status === "CANCELADO", onClick: () => onConfirm(item.id) });
@@ -2849,6 +2900,7 @@ function RecebivelCard({
             <p className="text-red-650">Atraso: <strong>{effectiveDias} dia(s)</strong></p>
           ) : null;
         })()}
+        <p>Emissão: {formatPaidAtDate(item.created_at)}</p>
         <p>Venc.: {formatLocalDate(item.vencimento)}</p>
         {(item.status === "PAID" || item.paid_at) && (
           <p>Pagto: {item.paid_at ? formatPaidAtDate(item.paid_at) : "-"}</p>
@@ -3206,8 +3258,10 @@ function filterVisibleRows(
     empresa: string; 
     tipo: TipoFilter; 
     status: StatusFilter; 
-    dataInicial: string; 
+    dataInicial: string;
     dataFinal: string;
+    emissaoInicial: string;
+    emissaoFinal: string;
     isAvulso: "TODOS" | "SIM" | "NAO";
     isFaturado: "TODOS" | "SIM" | "NAO";
   },
@@ -3227,7 +3281,10 @@ function filterVisibleRows(
     const matchesTipo = filters.tipo === "TODOS" || item.tipo === filters.tipo;
     const matchesStatus = matchesVisibleStatus(item, filters.status, today);
     const matchesPeriodo = isDateInRange(item.vencimento, filters.dataInicial, filters.dataFinal);
-    
+    // Emissão = boletos.created_at (timestamptz). Compara só a parte da data.
+    // Sem created_at, o título fica de fora quando há recorte de emissão.
+    const matchesEmissao = isDateInRange((item.created_at || "").slice(0, 10), filters.emissaoInicial, filters.emissaoFinal);
+
     let matchesAvulso = true;
     if (filters.isAvulso === "SIM") {
       matchesAvulso = item.is_avulso === true;
@@ -3242,7 +3299,7 @@ function filterVisibleRows(
       matchesFaturado = item.is_faturado !== true;
     }
 
-    return matchesSearch && matchesEmpresa && matchesTipo && matchesStatus && matchesPeriodo && matchesAvulso && matchesFaturado;
+    return matchesSearch && matchesEmpresa && matchesTipo && matchesStatus && matchesPeriodo && matchesEmissao && matchesAvulso && matchesFaturado;
   });
 
   if (status === "VENCIDOS" || status === "VENCIDO") {
