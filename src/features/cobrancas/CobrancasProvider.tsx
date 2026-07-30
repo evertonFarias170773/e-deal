@@ -80,6 +80,36 @@ function normalizarNome(value: string): string {
 
 type VendedorProposta = { user_id: string; nome_usuario: string; email: string };
 
+/** Retorno de public.cobranca_reprovar_condicao (migration 20260730). */
+type ReprovarCondicaoRpcResult = {
+  ok?: boolean;
+  already_cancelled?: boolean;
+  id_int?: number;
+  pagamento_status?: string;
+  proposta_status?: string;
+  proposta_status_anterior?: string;
+  motivo?: string;
+  obs_v2?: string;
+};
+
+/**
+ * Traduz o erro da RPC de reprovação para o operador.
+ *
+ * A RPC falha fechada: em qualquer erro nenhuma das duas escritas persiste,
+ * então a mensagem pode ser exibida sem ressalva de estado parcial.
+ */
+function traduzirErroReprovacao(error: { message?: string; code?: string }): string {
+  const code = String(error.code || "");
+  const raw = String(error.message || "").trim();
+
+  if (code === "PGRST202" || code === "42883" || /could not find the function/i.test(raw)) {
+    return "Reprovação indisponível: a função cobranca_reprovar_condicao não existe no banco (migration 20260730_rpc_cobranca_reprovar_condicao.sql pendente). Nenhuma alteração foi feita.";
+  }
+
+  const semPrefixo = raw.replace(/^REPROVA(_[A-Z_]+)?:\s*/, "");
+  return semPrefixo || "Falha ao reprovar a condição.";
+}
+
 /**
  * Resolve o vendedor responsável pela proposta para receber notificação no chat.
  *
@@ -1373,71 +1403,64 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
       if (!cobranca) return { success: false, errorMessage: "Cobrança não encontrada no front-end." };
 
-      // Mantém a cobrança, apenas atualiza a observação e (opcionalmente) volta pra pendente se estava aprovada.
-      // Mas a cobrança de Faturado começa pendente.
-      const obsPrefix = cobranca.obs_v2 ? cobranca.obs_v2 + ` | ` : "";
-      const newObsV2 = `${obsPrefix}[Reprovado em ${new Date().toLocaleDateString('pt-BR')}] ${motivo.trim()}`;
-      const { error } = await client
-        .from("pagamentos_v2")
-        .update({
-          status: "CANCELADO",
-          motivo_cancela: motivo.trim(),
-          obs_v2: newObsV2
-        })
-        .eq("id", id);
-
-      if (error) {
-        return { success: false, errorMessage: error.message };
+      const motivoFinal = motivo.trim();
+      if (!motivoFinal) {
+        return { success: false, errorMessage: "Motivo da reprovação é obrigatório." };
       }
 
-      // A cobrança já está CANCELADO no banco: reflete no estado local antes de
-      // qualquer retorno, para a lista não continuar mostrando a fila antiga.
+      // Transação única no banco (public.cobranca_reprovar_condicao, migration
+      // 20260730): cancela a cobrança em pagamentos_v2 E devolve
+      // propostas.status_interno para NOVO no mesmo corpo de função, além de
+      // recusar propostas em status operacional protegido.
+      //
+      // Os dois passos precisam ser atômicos porque a trigger
+      // trg_sync_status_proposta (atualizar_status_financeiro_proposta) grava
+      // CANCELADO na proposta durante o cancelamento da cobrança — o retorno para
+      // NOVO é a correção logo em seguida. Feitos como dois updates separados do
+      // frontend, uma falha entre eles deixava a proposta CANCELADA.
+      const { data, error } = await client.rpc("cobranca_reprovar_condicao", {
+        p_id_pagamento: id,
+        p_motivo: motivoFinal
+      });
+
+      if (error) {
+        return { success: false, errorMessage: traduzirErroReprovacao(error) };
+      }
+
+      const resultado = (data || {}) as ReprovarCondicaoRpcResult;
+
+      // A cobrança está CANCELADO no banco: reflete no estado local. obs_v2 vem da
+      // RPC, que é quem compôs o histórico.
       const updateList = (list: Cobranca[]) =>
         list.map((item) =>
           item.id === id
-            ? { ...item, status: "CANCELADO" as const, motivo_cancela: motivo.trim(), obs_v2: newObsV2 }
+            ? {
+                ...item,
+                status: "CANCELADO" as const,
+                motivo_cancela: resultado.motivo || motivoFinal,
+                obs_v2: resultado.obs_v2 ?? item.obs_v2
+              }
             : item
         );
       setCobrancas(updateList);
       setCobrancasStats(updateList);
 
-      // Proposta volta para NOVO.
-      // A trigger `trg_sync_status_proposta` (pagamentos_v2 -> atualizar_status_financeiro_proposta)
-      // acabou de gravar CANCELADO em propostas.status_interno, porque todas as
-      // cobranças da proposta ficaram CANCELADO. Reprovar a condição não cancela a
-      // proposta: devolve o pedido ao comercial para uma nova solicitação. Por isso
-      // esta escrita vem DEPOIS do update em pagamentos_v2 — antes, a trigger a
-      // sobrescreveria.
-      const { data: propostaAtualizada, error: propostaError } = await client
-        .from("propostas")
-        .update({ status_interno: "NOVO" })
-        .eq("id_int", cobranca.id_int)
-        .select("status_interno")
-        .maybeSingle();
-
-      if (propostaError || !propostaAtualizada) {
-        return {
-          success: false,
-          errorMessage: `Cobrança cancelada, mas falha ao devolver a proposta #${cobranca.id_int} para NOVO: ${propostaError?.message || "proposta não encontrada"}. Verifique a proposta manualmente.`
-        };
-      }
-
-      const statusConfirmado = String(propostaAtualizada.status_interno || "").trim().toUpperCase();
-      if (statusConfirmado !== "NOVO") {
-        return {
-          success: false,
-          errorMessage: `Cobrança cancelada, mas a proposta #${cobranca.id_int} permaneceu em [${statusConfirmado}] em vez de NOVO. Verifique a proposta manualmente.`
-        };
+      // Duplo clique: a cobrança já estava cancelada, a RPC não reprovou de novo e
+      // o vendedor já foi avisado na primeira vez. Não notifica outra vez.
+      if (resultado.already_cancelled) {
+        return { success: true };
       }
 
       // Reprovação concluída com sucesso. Só a partir daqui a notificação é enviada,
       // uma única vez (uma mensagem + uma menção), em regime best-effort: a timeline
       // não pode desfazer uma reprovação já efetivada no banco.
+      // O id_int vem da RPC, que o leu da própria cobrança no banco.
+      const idIntProposta = resultado.id_int ?? cobranca.id_int;
       const condicaoSolicitada = cobranca.forma_pgto || cobranca.forma_fatu || "Não informada";
-      const mensagemChat = `Condição de pagamento REPROVADA pelo Financeiro.\nProposta: #${cobranca.id_int}\nCliente: ${cobranca.cliente || "Não informado"}\nCondição solicitada: ${condicaoSolicitada}\nMotivo: ${motivo.trim()}\nA cobrança atual foi cancelada e a proposta voltou para NOVO para permitir que uma nova solicitação seja criada.`;
+      const mensagemChat = `Condição de pagamento REPROVADA pelo Financeiro.\nProposta: #${idIntProposta}\nCliente: ${cobranca.cliente || "Não informado"}\nCondição solicitada: ${condicaoSolicitada}\nMotivo: ${motivoFinal}\nA cobrança atual foi cancelada e a proposta voltou para NOVO para permitir que uma nova solicitação seja criada.`;
 
       const chatResult = await registrarMensagemSistemaProposta({
-        idInt: cobranca.id_int,
+        idInt: idIntProposta,
         idCliente: cobranca.id_cliente,
         mensagem: mensagemChat,
         setor: "Financeiro"
@@ -1447,24 +1470,24 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       });
 
       if (chatResult.success && chatResult.data?.id) {
-        const vendedor = await resolverVendedorProposta(client, cobranca.id_int);
+        const vendedor = await resolverVendedorProposta(client, idIntProposta);
         if (vendedor) {
           const { data: sessionData } = await client.auth.getSession();
           const mentionResult = await createPropostaChatMentions(
             Number(chatResult.data.id),
-            cobranca.id_int,
+            idIntProposta,
             [vendedor],
             { id: sessionData?.session?.user?.id ?? null, name: operador }
           );
           if (!mentionResult.success) {
             console.warn(
-              `[CobrancasProvider] Reprovação registrada, mas falha ao notificar o vendedor da proposta #${cobranca.id_int}: ${mentionResult.errorMessage}`
+              `[CobrancasProvider] Reprovação registrada, mas falha ao notificar o vendedor da proposta #${idIntProposta}: ${mentionResult.errorMessage}`
             );
           }
         }
       } else {
         console.warn(
-          `[CobrancasProvider] Reprovação registrada, mas a mensagem da timeline falhou — vendedor da proposta #${cobranca.id_int} não foi notificado.`
+          `[CobrancasProvider] Reprovação registrada, mas a mensagem da timeline falhou — vendedor da proposta #${idIntProposta} não foi notificado.`
         );
       }
 
