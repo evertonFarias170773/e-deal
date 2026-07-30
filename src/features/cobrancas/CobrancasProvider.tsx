@@ -1284,7 +1284,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         url_pdf: resJson.integration?.url_pdf || null,
         status: "A_VENCER",
         nosso_numero: resJson.integration?.nosso_numero || null,
-        id_boleto_c6: resJson.integration?.id_boleto_c6 || null
+        id_boleto_c6: resJson.integration?.id_boleto_c6 || null,
+        // Encargos sempre explícitos: omitir estas colunas fazia o título herdar o
+        // DEFAULT antigo da tabela (multa 2% / mora 0,033% ao dia) e acumular
+        // encargo no vencimento, sem ninguém ter pedido.
+        multa: 0,
+        juros_dia: 0
       };
 
       const { error: insertError } = await client

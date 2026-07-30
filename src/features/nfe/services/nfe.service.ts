@@ -921,6 +921,11 @@ export async function launchBoletosForNfe(
       ext_reference: nfe.ref,
       descricao: `Vencimento fiscal ${pg.numero_parcela}/${pg.total_parcelas} - Ref: ${nfe.ref}`,
       is_faturado: true,
+      // Encargos sempre explícitos: omitir estas colunas fazia o título herdar o
+      // DEFAULT antigo da tabela (multa 2% / mora 0,033% ao dia) e acumular
+      // encargo no vencimento, sem ninguém ter pedido.
+      multa: 0,
+      juros_dia: 0,
       id_pagamento: null // Sempre nulo neste fluxo, conforme ressalva obrigatória
     };
   });

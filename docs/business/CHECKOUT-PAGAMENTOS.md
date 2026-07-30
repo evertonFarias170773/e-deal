@@ -511,6 +511,63 @@ Devem preservar:
 - respostas de erro;
 - compatibilidade com o ERP.
 
+### Encargos em `public.boletos` — obrigação de enviar zero explícito
+
+Regra vigente desde 30/07/2026.
+
+Todo processo que insere em `public.boletos` deve enviar **explicitamente**:
+
+```text
+multa = 0
+juros_dia = 0
+```
+
+Multa e mora são opt-in: só devem vir preenchidas quando houver decisão comercial
+registrada para aquele título. Nunca por omissão.
+
+Motivo: as colunas tinham `DEFAULT 2` (multa %) e `DEFAULT 0.033` (mora %/dia).
+Quem omitia os campos herdava os encargos. No vencimento, o job pg_cron
+`atualizar-atraso-boletos` atualiza `status`/`dias_atraso` e, por tocar `status`,
+dispara `tg_recalcular_encargos_boleto`, que materializa multa + mora em
+`valor_atualizado` — encargo cobrado sem ninguém ter pedido. A migration
+`20260730_boletos_defaults_encargos_zero.sql` zerou os defaults, mas o payload
+completo continua sendo responsabilidade de quem insere.
+
+Caminhos do ERP já ajustados: `launchBoletosForNfe`
+(`src/features/nfe/services/nfe.service.ts`), `emitirBoletoReal`
+(`src/features/cobrancas/CobrancasProvider.tsx`), `PrepararBoletosModal`,
+prorrogação em `ContasReceberPage` e `RevisarGeracaoBancariaModal`.
+
+#### Pendência: workflow n8n de contas a receber por NF
+
+Existe um processo **fora deste repositório** que insere em `public.boletos` via
+PostgREST sem JWT de usuário (chave anon/service) e **omite** `multa` e
+`juros_dia`. Ele é a origem de 248 dos 521 títulos existentes em 30/07/2026 —
+todos com `multa = 2` e `juros_dia = 0.033`.
+
+O workflow não foi identificado por nome porque os fluxos n8n não são versionados
+aqui. Para localizá-lo, esta é a assinatura dos registros que ele cria:
+
+| Evidência | Valor |
+|---|---|
+| Conexão | PostgREST (`session_user = authenticator`), sem `auth.uid()` e sem JWT |
+| `descricao` | `Parcela 1/1 - REF. <n_nf>` |
+| `contato` / `whats` | `Fulano de Tal` / `55` (placeholders fixos) |
+| `deposito_conta` | `true` em 248/248 |
+| `n_nf` | sempre preenchido (236 NFs distintas) |
+| `ext_reference`, `id_pagamento`, `id_boleto_c6` | sempre nulos |
+| `id_int` | 154/248 fora da faixa de `public.propostas` (até 999104) — recebíveis de origem legada/externa |
+| Janela observada | 08/04/2026 a 24/07/2026 |
+
+Nenhum builder deste repositório gera esse payload — o mais próximo,
+`PrepararBoletosModal`, escreve `Parcela 1/1 - Boleto E-Faturado - OS: <n>`, envia
+`deposito_conta: false` e já manda os encargos zerados.
+
+Ação pendente no n8n: incluir `multa: 0` e `juros_dia: 0` no corpo do INSERT.
+Enquanto isso não for feito, o efeito prático fica coberto pelo default zerado no
+banco, mas o payload segue incompleto e volta a cobrar encargos se o default for
+revertido.
+
 ---
 
 # Cancelamento e Exclusão
