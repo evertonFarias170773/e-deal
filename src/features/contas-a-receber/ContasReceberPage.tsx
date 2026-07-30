@@ -31,6 +31,7 @@ import type {
   BoletoDepositoMock
 } from "@/lib/mocks/contas-receber.mock";
 import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/services/contas-receber.service";
+import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 
@@ -55,24 +56,16 @@ type BoletoLifecycleOps = {
   transformarEmBoleto: (item: BoletoDepositoMock) => void;
 };
 
+/**
+ * Mantido como atalho de um argumento para os pontos que já tinham só a string.
+ * A regra vive em `@/lib/boletos/pdf-url`, compartilhada com as Cobranças.
+ *
+ * Antes, esta função tratava o primeiro segmento do caminho como bucket — com
+ * `19570/parcela_1.pdf` (formato do gerador interno) isso apontava para um
+ * bucket "19570" inexistente. O bucket correto é sempre `boletos`.
+ */
 function getResolvedPdfUrl(urlOrPath?: string): string {
-  if (!urlOrPath) return "";
-  if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
-    return urlOrPath;
-  }
-  const parts = urlOrPath.split("/");
-  if (parts.length > 1) {
-    const bucket = parts[0];
-    const path = parts.slice(1).join("/");
-    const client = getSupabaseClient();
-    if (client) {
-      const { data } = client.storage.from(bucket).getPublicUrl(path);
-      if (data?.publicUrl) {
-        return data.publicUrl;
-      }
-    }
-  }
-  return urlOrPath;
+  return resolverUrlPdfBoleto(urlOrPath, urlOrPath);
 }
 
 interface C6PaymentInfo {
@@ -1357,7 +1350,9 @@ export function ContasReceberPage() {
       // resolver (openPdf -> getResolvedPdfUrl) do restante da tela. Abrir aqui
       // e não direto com window.open porque, depois do await da Edge Function, o
       // gesto do usuário já expirou e o bloqueador de pop-up barraria a aba.
-      const destinoPdf = res.url || res.path;
+      // A Edge Function devolve `url` absoluta e `path` relativo ao bucket
+      // `boletos`; o resolver escolhe e normaliza os dois.
+      const destinoPdf = resolverUrlPdfBoleto(res.url, res.path);
       showToast({
         type: "success",
         title: "PDF atualizado!",

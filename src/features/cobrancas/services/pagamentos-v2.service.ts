@@ -4,6 +4,7 @@ import type { Cobranca } from "@/features/cobrancas/types";
 import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
 import { getEmpresaRecebedoraFixaById } from "@/features/cobrancas/cobrancas-utils";
+import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
 
 export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "id",
@@ -285,7 +286,13 @@ async function fetchBoletosPDFs(idsPagamento: string[]) {
         if (Array.isArray(data)) {
           data.forEach((row: Record<string, unknown>) => {
             if (row.id_pagamento && typeof row.id_pagamento === "string" && (row.pdf_storage || row.url_pdf)) {
-              const fileUrl = typeof row.pdf_storage === "string" ? row.pdf_storage : (typeof row.url_pdf === "string" ? row.url_pdf : "");
+              // Normaliza antes de expor: `pdf_storage` do gerador interno é
+              // caminho relativo (`<id_int>/parcela_N.pdf`) e quebrava como href
+              // nas telas que consomem `cobranca.url_pdf`.
+              const fileUrl = resolverUrlPdfBoleto(
+                typeof row.url_pdf === "string" ? row.url_pdf : null,
+                typeof row.pdf_storage === "string" ? row.pdf_storage : null
+              );
               if (fileUrl) {
                 mapping[row.id_pagamento] = fileUrl;
               }
