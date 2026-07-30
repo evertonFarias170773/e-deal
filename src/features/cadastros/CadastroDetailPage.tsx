@@ -22,7 +22,6 @@ import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { AjusteContaCorrenteModal } from "./components/AjusteContaCorrenteModal";
 import { useAuth } from "@/features/auth/AuthProvider";
-import { hasPermissao } from "@/features/auth/usuarios.service";
 
 const categoriaLabel: Record<CadastroCategoria, string> = {
   CLIENTE: "Cliente",
@@ -226,7 +225,12 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
               items={[
                 { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
                 { label: "Criar proposta", onClick: () => showMockActionToast("Criar proposta") },
-                ...(hasPermissao(user, "financeiro.ajuste_credito") ? [{ label: "Ajustar Conta Corrente", onClick: () => setAjusteModalOpen(true) }] : []),
+                // Gate alinhado ao backend (RPC mc_ajuste_avulso_criar exige
+                // is_admin/is_super_adm via cc__assert_permissao '__ADMIN__') e à
+                // lista de cadastros. Antes usava a permissão "financeiro.ajuste_credito",
+                // que nenhum perfil possui (só o Super Admin passava, via wildcard),
+                // escondendo o botão até para o perfil Administrador.
+                ...((user?.isAdmin || user?.isSuperAdmin) ? [{ label: "Ajustar Conta Corrente", onClick: () => setAjusteModalOpen(true) }] : []),
                 { label: "Abrir WhatsApp", onClick: () => showMockActionToast("Abrir WhatsApp") },
                 { label: "Ver financeiro", onClick: () => showMockActionToast("Ver financeiro") },
                 { label: "Ver notas fiscais", onClick: () => showMockActionToast("Ver notas fiscais") },
