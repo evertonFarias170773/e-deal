@@ -311,22 +311,30 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
   const idClienteDigits = normalizeSearchTerm(query.idClienteSearch ?? "").replace(/\D/g, "");
 
   try {
-    // Fonte: public.vw_cadastros_clientes_lista, a view que existe no banco.
-    //
-    // A view fixa `categoria = 'CLIENTE' AND ativo = true` na própria definição,
-    // então inativos já ficam ocultos aqui. Os filtros de tipo e "Mostrar
-    // inativos" dependem de vw_cadastros_lista_completa, cuja migration
-    // (20260729_vw_cadastros_lista_completa.sql) ainda NÃO foi aplicada — por
-    // isso `query.tipo` e `query.mostrarInativos` não são usados: apontar para a
-    // view inexistente derrubava a lista inteira com 42P01.
+    // Fonte: public.vw_cadastros_lista_completa (migration
+    // 20260729_vw_cadastros_lista_completa.sql). Mesmas colunas da view
+    // compartilhada, mas sem fixar `categoria = 'CLIENTE' AND ativo = true` na
+    // definição — é o que permite o filtro por tipo e o "Mostrar inativos". A
+    // vw_cadastros_clientes_lista segue intacta e ainda serve o dashboard aqui
+    // mesmo (contagem de ativos e aniversariantes) e o Maestro.
     let request = client
-      .from("vw_cadastros_clientes_lista")
+      .from("vw_cadastros_lista_completa")
       .select("id,id_cliente,id_cliente_text,nome,fantasia,apelido,documento,documento_numeros,tipo_pessoa,categoria,ativo,cidade_uf,nome_vendedor,whatsapp_1,whatsapp_2,telefone_fixo,credito,limite_credito,risco_credito,data_fundacao,aniversariante_hoje,qtd_pedidos,data_ult_pedido,busca_geral", {
         count: "exact"
       })
       // nullsFirst: false — em DESC o Postgres põe NULL primeiro, e um cadastro
       // sem id_cliente abria a lista dos "mais recentes".
       .order("id_cliente", { ascending: false, nullsFirst: false });
+
+    // Inativos ocultos por padrão. `eq(true)` — e não `neq(false)` — para também
+    // deixar fora quem tem `ativo` nulo, igual ao `ativo = true` da view antiga.
+    if (!query.mostrarInativos) {
+      request = request.eq("ativo", true);
+    }
+
+    if (query.tipo) {
+      request = request.eq("categoria", query.tipo);
+    }
 
     // Compatibilidade: links antigos ainda podem trazer o filtro de ID separado.
     if (idClienteDigits) {
@@ -368,7 +376,7 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
       pageSize,
       loadedCount: cadastros.length,
       warnings: [
-        `Leitura real aplicada em public.vw_cadastros_clientes_lista com paginação server-side de ${pageSize} registros.`
+        `Leitura real aplicada em public.vw_cadastros_lista_completa com paginação server-side de ${pageSize} registros.`
       ]
     };
   } catch (error) {

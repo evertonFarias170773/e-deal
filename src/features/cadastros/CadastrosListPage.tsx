@@ -32,11 +32,11 @@ const PAGE_SIZE = 100;
 
 /**
  * Filtros de tipo e "Mostrar inativos" exigem public.vw_cadastros_lista_completa
- * (migration 20260729_vw_cadastros_lista_completa.sql). Enquanto ela não estiver
- * aplicada, a lista lê a view compartilhada — que só entrega clientes ativos — e
- * os controles ficam ocultos. Virar para true quando a migration subir.
+ * (migration 20260729_vw_cadastros_lista_completa.sql), aplicada em 30/07/2026.
+ * A constante fica como interruptor: se a view for removida, virar para false
+ * devolve a tela ao estado sem os dois controles em vez de derrubar a lista.
  */
-const FILTROS_AVANCADOS_DISPONIVEIS = false;
+const FILTROS_AVANCADOS_DISPONIVEIS = true;
 
 /** Valores aceitos no filtro de tipo. "" = todos. */
 const TIPOS_FILTRO = ["", ...CADASTRO_TIPOS] as const;
@@ -206,7 +206,7 @@ export function CadastrosListPage() {
       pageIndex,
       pageSize: PAGE_SIZE,
       search,
-      // Só chegam ao service quando a view que os suporta existir.
+      // Seguem o interruptor: com ele desligado a consulta volta ao padrão.
       tipo: FILTROS_AVANCADOS_DISPONIVEIS ? filters.tipo : "",
       mostrarInativos: FILTROS_AVANCADOS_DISPONIVEIS ? filters.inativos : false,
       recarga
@@ -338,10 +338,7 @@ export function CadastrosListPage() {
           </div>
 
           {/* "Tipo" e "Mostrar inativos" dependem da view
-              vw_cadastros_lista_completa, cuja migration ainda não foi aplicada.
-              Ficam ocultos até lá — a fonte atual só entrega clientes ativos, e
-              exibir os controles sugeriria um filtro que não tem efeito.
-              Reativar: trocar FILTROS_AVANCADOS_DISPONIVEIS para true. */}
+              vw_cadastros_lista_completa, que a consulta da lista já usa. */}
           {FILTROS_AVANCADOS_DISPONIVEIS && (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
