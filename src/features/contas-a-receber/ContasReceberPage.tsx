@@ -2287,6 +2287,35 @@ export function ContasReceberPage() {
   );
 }
 
+/**
+ * Badge de status das linhas, com sobrescrita local de cor.
+ *
+ * Na seção "Previsão futura / E-Faturado" o badge acompanha o azul do cabeçalho
+ * da seção. A sobrescrita é feita por wrapper (seletor de filho), e não trocando
+ * o `tone` do StatusBadge: o componente é compartilhado com o ERP inteiro e não
+ * tem variante azul. Sem a seção azul o badge é renderizado direto, sem wrapper,
+ * então as demais seções e telas não mudam nem no DOM.
+ */
+function StatusCell({
+  item,
+  today,
+  azul = false
+}: {
+  item: BoletoDepositoMock;
+  today: string;
+  azul?: boolean;
+}) {
+  const badge = <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />;
+
+  if (!azul) return badge;
+
+  return (
+    <span className="[&>span]:border-blue-200 [&>span]:bg-blue-50 [&>span]:text-blue-700 dark:[&>span]:border-blue-800 dark:[&>span]:bg-blue-900/30 dark:[&>span]:text-blue-300">
+      {badge}
+    </span>
+  );
+}
+
 function GroupedSection({
   title,
   tone,
@@ -2330,6 +2359,9 @@ function GroupedSection({
 
   const totalSum = items.reduce((acc, item) => acc + (item.valor_atualizado ?? item.valor), 0);
   const isPaidSection = title === "Pagos";
+  // Seção azul (Previsão futura / E-Faturado): os badges das linhas seguem o
+  // mesmo tom do cabeçalho. Só esta seção usa tone="blue".
+  const badgeAzul = tone === "blue";
 
   const toneClasses = {
     danger: { bg: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50", dot: "bg-red-500" },
@@ -2368,7 +2400,7 @@ function GroupedSection({
             { header: "Emissão", cell: (item) => formatPaidAtDate(item.created_at), align: "center" },
             { header: "Venc.", cell: (item) => formatLocalDate(item.vencimento), align: "center" },
             { header: "Total", cell: (item) => formatCurrency(item.valor_atualizado ?? item.valor), align: "right" },
-            { header: "Status", cell: (item) => <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />, align: "center" },
+            { header: "Status", cell: (item) => <StatusCell item={item} today={today} azul={badgeAzul} />, align: "center" },
             ...(isPaidSection ? [
               { header: "Dt. Pagto", cell: (item: BoletoDepositoMock) => item.paid_at ? formatPaidAtDate(item.paid_at) : "-", align: "center" as const }
             ] : []),
@@ -2390,7 +2422,7 @@ function GroupedSection({
               );
             }, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} onRegister={onRegister!} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} badgeAzul={badgeAzul} onRegister={onRegister!} actions={<BoletoActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onProrrogar={onProrrogar!} onLifecycle={onLifecycle} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister!} onDeleteFromBank={onDeleteFromBank!} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
         />
       ) : (
         <ResponsiveList<BoletoDepositoMock>
@@ -2402,7 +2434,7 @@ function GroupedSection({
             { header: "Cliente", cell: (item) => <div><p className="font-medium text-slate-900">{item.cliente}</p><p className="text-xs text-slate-500">{item.documento}</p></div> },
             { header: "Empresa", cell: (item) => item.empresa },
             { header: "Tipo", cell: (item) => getTipoRecebivelLabel(item.tipo) },
-            { header: "Status", cell: (item) => <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />, align: "center" },
+            { header: "Status", cell: (item) => <StatusCell item={item} today={today} azul={badgeAzul} />, align: "center" },
             ...(isPaidSection ? [
               { header: "Dt. Pagto", cell: (item: BoletoDepositoMock) => item.paid_at ? formatPaidAtDate(item.paid_at) : "-", align: "center" as const }
             ] : []),
@@ -2427,7 +2459,7 @@ function GroupedSection({
               );
             }, align: "right" }
           ]}
-          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} onRegister={onRegister} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
+          renderCard={(item) => <RecebivelCard key={item.id} item={item} today={today} badgeAzul={badgeAzul} onRegister={onRegister} actions={<RecebivelActions item={item} onConfirm={onConfirm} onCancel={onCancel} onCopy={onCopy} onPdf={onPdf} onDetail={onDetail} onNavigate={onNavigate} onRegister={onRegister} onConsultaC6={onConsultaC6} onConsultarPdf={onConsultarPdf} onGerarPdfBoleto={onGerarPdfBoleto} label="Mais" />} />}
         />
       )}
     </div>
@@ -2883,12 +2915,14 @@ function RecebivelCard({
   item,
   today,
   actions,
-  onRegister
+  onRegister,
+  badgeAzul = false
 }: {
   item: BoletoDepositoMock;
   today: string;
   actions: ReactNode;
   onRegister?: (item: BoletoDepositoMock) => void;
+  badgeAzul?: boolean;
 }) {
   const isVisualAReceberCriado = getVisualStatus(item, today) === "A_RECEBER_CRIADO";
 
@@ -2900,7 +2934,7 @@ function RecebivelCard({
           <h3 className="mt-2 font-semibold text-slate-950">{item.cliente}</h3>
           <p className="mt-1 text-sm text-slate-500">{item.id_int} • {item.os_ideal} • {item.empresa}</p>
         </div>
-        <StatusBadge status={getVisualStatus(item, today)} tone={getVisualStatusTone(item, today)} />
+        <StatusCell item={item} today={today} azul={badgeAzul} />
       </div>
       <div className="mt-4 grid gap-2 text-sm text-slate-600">
         <p>Tipo: {getTipoRecebivelLabel(item.tipo)}</p>
