@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Cobranca, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
@@ -13,7 +14,10 @@ import {
   type CobrancasReadResult,
   type CobrancasReadSource
 } from "@/features/cobrancas/services/pagamentos-v2.service";
-import { registrarMensagemSistemaProposta } from "@/features/orcamentos/services/orcamentos.service";
+import {
+  registrarMensagemSistemaProposta,
+  createPropostaChatMentions
+} from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
 
 type CobrancasContextValue = {
@@ -64,6 +68,84 @@ function readStoredCobrancas() {
   } catch {
     return null;
   }
+}
+
+function normalizarNome(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+type VendedorProposta = { user_id: string; nome_usuario: string; email: string };
+
+/**
+ * Resolve o vendedor responsável pela proposta para receber notificação no chat.
+ *
+ * `public.propostas.user_id` é o UID de autenticação de quem lançou a proposta e
+ * corresponde ao nome exibido em `public.propostas.vendedor` (confirmado no banco).
+ * `public.propostas.id_vendedor` NÃO serve: é um UUID distinto por proposta que
+ * não referencia `public.usuarios`.
+ *
+ * O fallback por nome usa a mesma normalização de `verificarEscopoPropostaServerSide`
+ * e cobre linhas legadas sem `user_id`; só é aceito quando resolve um único usuário.
+ */
+async function resolverVendedorProposta(
+  client: SupabaseClient,
+  idInt: number
+): Promise<VendedorProposta | null> {
+  const { data: proposta, error } = await client
+    .from("propostas")
+    .select("user_id, vendedor")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  if (error || !proposta) {
+    console.warn("[CobrancasProvider] Não foi possível ler o vendedor da proposta:", error?.message);
+    return null;
+  }
+
+  if (proposta.user_id) {
+    const { data: usuario } = await client
+      .from("usuarios")
+      .select("user_id, nome_usuario, email")
+      .eq("user_id", proposta.user_id)
+      .maybeSingle();
+
+    if (usuario?.user_id) {
+      return {
+        user_id: String(usuario.user_id),
+        nome_usuario: usuario.nome_usuario || proposta.vendedor || "Vendedor",
+        email: usuario.email || ""
+      };
+    }
+  }
+
+  const nomeVendedor = String(proposta.vendedor || "").trim();
+  if (!nomeVendedor) return null;
+
+  const { data: candidatos } = await client
+    .from("usuarios")
+    .select("user_id, nome_usuario, email")
+    .ilike("nome_usuario", nomeVendedor);
+
+  const exatos = (candidatos || []).filter(
+    (u: { nome_usuario: string | null }) => normalizarNome(u.nome_usuario || "") === normalizarNome(nomeVendedor)
+  );
+
+  if (exatos.length !== 1) {
+    console.warn(
+      `[CobrancasProvider] Vendedor da proposta #${idInt} não identificado de forma única ("${nomeVendedor}").`
+    );
+    return null;
+  }
+
+  return {
+    user_id: String(exatos[0].user_id),
+    nome_usuario: exatos[0].nome_usuario || nomeVendedor,
+    email: exatos[0].email || ""
+  };
 }
 
 export function CobrancasProvider({ children }: { children: ReactNode }) {
@@ -1291,9 +1373,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
       if (!cobranca) return { success: false, errorMessage: "Cobrança não encontrada no front-end." };
 
-      // Mantém a cobrança, apenas atualiza a observação e (opcionalmente) volta pra pendente se estava aprovada. 
-      // Mas a cobrança de Faturado começa pendente. 
-      const nowStr = new Date().toISOString();
+      // Mantém a cobrança, apenas atualiza a observação e (opcionalmente) volta pra pendente se estava aprovada.
+      // Mas a cobrança de Faturado começa pendente.
       const obsPrefix = cobranca.obs_v2 ? cobranca.obs_v2 + ` | ` : "";
       const newObsV2 = `${obsPrefix}[Reprovado em ${new Date().toLocaleDateString('pt-BR')}] ${motivo.trim()}`;
       const { error } = await client
@@ -1309,16 +1390,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         return { success: false, errorMessage: error.message };
       }
 
-      const condicaoSolicitada = cobranca.forma_pgto || cobranca.forma_fatu || "Não informada";
-      const mensagemChat = `A condição de faturamento solicitada pelo vendedor (${condicaoSolicitada}) foi reprovada pelo Financeiro.\nMotivo: ${motivo.trim()}\nA cobrança atual foi cancelada para permitir que uma nova solicitação seja criada.`;
-
-      await registrarMensagemSistemaProposta({
-        idInt: cobranca.id_int,
-        idCliente: cobranca.id_cliente,
-        mensagem: mensagemChat,
-        setor: "Financeiro"
-      }).catch(err => console.warn("Falha ao registrar historico:", err));
-
+      // A cobrança já está CANCELADO no banco: reflete no estado local antes de
+      // qualquer retorno, para a lista não continuar mostrando a fila antiga.
       const updateList = (list: Cobranca[]) =>
         list.map((item) =>
           item.id === id
@@ -1327,6 +1400,73 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         );
       setCobrancas(updateList);
       setCobrancasStats(updateList);
+
+      // Proposta volta para NOVO.
+      // A trigger `trg_sync_status_proposta` (pagamentos_v2 -> atualizar_status_financeiro_proposta)
+      // acabou de gravar CANCELADO em propostas.status_interno, porque todas as
+      // cobranças da proposta ficaram CANCELADO. Reprovar a condição não cancela a
+      // proposta: devolve o pedido ao comercial para uma nova solicitação. Por isso
+      // esta escrita vem DEPOIS do update em pagamentos_v2 — antes, a trigger a
+      // sobrescreveria.
+      const { data: propostaAtualizada, error: propostaError } = await client
+        .from("propostas")
+        .update({ status_interno: "NOVO" })
+        .eq("id_int", cobranca.id_int)
+        .select("status_interno")
+        .maybeSingle();
+
+      if (propostaError || !propostaAtualizada) {
+        return {
+          success: false,
+          errorMessage: `Cobrança cancelada, mas falha ao devolver a proposta #${cobranca.id_int} para NOVO: ${propostaError?.message || "proposta não encontrada"}. Verifique a proposta manualmente.`
+        };
+      }
+
+      const statusConfirmado = String(propostaAtualizada.status_interno || "").trim().toUpperCase();
+      if (statusConfirmado !== "NOVO") {
+        return {
+          success: false,
+          errorMessage: `Cobrança cancelada, mas a proposta #${cobranca.id_int} permaneceu em [${statusConfirmado}] em vez de NOVO. Verifique a proposta manualmente.`
+        };
+      }
+
+      // Reprovação concluída com sucesso. Só a partir daqui a notificação é enviada,
+      // uma única vez (uma mensagem + uma menção), em regime best-effort: a timeline
+      // não pode desfazer uma reprovação já efetivada no banco.
+      const condicaoSolicitada = cobranca.forma_pgto || cobranca.forma_fatu || "Não informada";
+      const mensagemChat = `Condição de pagamento REPROVADA pelo Financeiro.\nProposta: #${cobranca.id_int}\nCliente: ${cobranca.cliente || "Não informado"}\nCondição solicitada: ${condicaoSolicitada}\nMotivo: ${motivo.trim()}\nA cobrança atual foi cancelada e a proposta voltou para NOVO para permitir que uma nova solicitação seja criada.`;
+
+      const chatResult = await registrarMensagemSistemaProposta({
+        idInt: cobranca.id_int,
+        idCliente: cobranca.id_cliente,
+        mensagem: mensagemChat,
+        setor: "Financeiro"
+      }).catch((err) => {
+        console.warn("Falha ao registrar historico:", err);
+        return { success: false as const, data: undefined };
+      });
+
+      if (chatResult.success && chatResult.data?.id) {
+        const vendedor = await resolverVendedorProposta(client, cobranca.id_int);
+        if (vendedor) {
+          const { data: sessionData } = await client.auth.getSession();
+          const mentionResult = await createPropostaChatMentions(
+            Number(chatResult.data.id),
+            cobranca.id_int,
+            [vendedor],
+            { id: sessionData?.session?.user?.id ?? null, name: operador }
+          );
+          if (!mentionResult.success) {
+            console.warn(
+              `[CobrancasProvider] Reprovação registrada, mas falha ao notificar o vendedor da proposta #${cobranca.id_int}: ${mentionResult.errorMessage}`
+            );
+          }
+        }
+      } else {
+        console.warn(
+          `[CobrancasProvider] Reprovação registrada, mas a mensagem da timeline falhou — vendedor da proposta #${cobranca.id_int} não foi notificado.`
+        );
+      }
 
       return { success: true };
     } catch (err: any) {
