@@ -7,6 +7,11 @@ import type {
 
 const PAGE_SIZE_MAX = 200;
 
+/** Colunas da lista. Uma constante só, para a consulta principal e a do ID exato
+ *  nunca divergirem. */
+const COLUNAS_LISTA =
+  "id,id_cliente,id_cliente_text,nome,fantasia,apelido,documento,documento_numeros,tipo_pessoa,categoria,ativo,cidade_uf,nome_vendedor,whatsapp_1,whatsapp_2,telefone_fixo,credito,limite_credito,risco_credito,data_fundacao,aniversariante_hoje,qtd_pedidos,data_ult_pedido,busca_geral";
+
 export type CadastrosReadSource = "supabase" | "mock";
 
 export type CadastrosListaItem = {
@@ -128,19 +133,25 @@ const INT4_MAX = 2147483647;
  * Termos com letras seguem na busca_geral, que já cobre nome, fantasia, apelido,
  * documento, cidade, telefones e e-mail.
  */
-function montarFiltroBusca(termo: string): { tipo: "digitos" | "texto"; expressao: string } {
+function montarFiltroBusca(termo: string): {
+  tipo: "digitos" | "texto";
+  expressao: string;
+  /** ID que o filtro busca de forma exata. Vazio quando não há cláusula de ID. */
+  idExato: string;
+} {
   const digitos = termo.replace(/\D/g, "");
   const soDigitos = digitos.length > 0 && digitos === termo;
 
   if (soDigitos) {
     const clausulas = [`documento_numeros.ilike.%${digitos}%`];
-    if (Number(digitos) <= INT4_MAX) {
+    const cabeEmInt4 = Number(digitos) <= INT4_MAX;
+    if (cabeEmInt4) {
       clausulas.unshift(`id_cliente_text.eq.${digitos}`);
     }
-    return { tipo: "digitos", expressao: clausulas.join(",") };
+    return { tipo: "digitos", expressao: clausulas.join(","), idExato: cabeEmInt4 ? digitos : "" };
   }
 
-  return { tipo: "texto", expressao: `busca_geral.ilike.%${termo.toLowerCase()}%` };
+  return { tipo: "texto", expressao: `busca_geral.ilike.%${termo.toLowerCase()}%`, idExato: "" };
 }
 
 function normalizeRankingPosicao(value: unknown, fallback = 0) {
@@ -290,8 +301,6 @@ async function fetchDashboardResumoSupabase(
 export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promise<CadastrosReadResult> {
   const pageSize = Math.min(Math.max(query.pageSize ?? PAGE_SIZE_MAX, 1), PAGE_SIZE_MAX);
   const pageIndex = Math.max(query.pageIndex, 0);
-  const from = pageIndex * pageSize;
-  const to = from + pageSize - 1;
   const client = getSupabaseClient();
 
   if (!client) {
@@ -310,6 +319,39 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
   const searchTerm = normalizeSearchTerm(query.search ?? "");
   const idClienteDigits = normalizeSearchTerm(query.idClienteSearch ?? "").replace(/\D/g, "");
 
+  const filtroBusca = searchTerm ? montarFiltroBusca(searchTerm) : null;
+
+  // Busca por dígitos: o registro de ID exato é fixado no topo da primeira
+  // página. Sem isso ele fica inalcançável — a ordem é `id_cliente` desc, então
+  // um ID curto cai no fim do conjunto (buscar "469" trazia 488 linhas com o
+  // cadastro certo na posição 484, e "8" trazia 43.089 com ele na 43.083).
+  const idExato = filtroBusca?.idExato ?? "";
+  const fixarIdExato = Boolean(idExato);
+
+  // A consulta principal exclui o registro fixado em TODAS as páginas, para ele
+  // não reaparecer na posição natural. A primeira página cede uma vaga a ele, e
+  // por isso as seguintes começam uma linha antes — nenhum registro se perde.
+  const vagaDoIdExato = fixarIdExato ? 1 : 0;
+  const from = pageIndex * pageSize - (pageIndex > 0 ? vagaDoIdExato : 0);
+  const to = from + pageSize - 1 - (pageIndex === 0 ? vagaDoIdExato : 0);
+
+  // Uma lista só de filtros, aplicada igual na consulta principal e na do ID
+  // exato — é o que garante que a linha fixada respeita ativo, tipo e o filtro
+  // de ID vindo da URL.
+  const filtrosDaLista: Array<{ op: "eq" | "ilike"; coluna: string; valor: string | boolean }> = [];
+  // Inativos ocultos por padrão. `eq(true)` — e não `neq(false)` — para também
+  // deixar fora quem tem `ativo` nulo, igual ao `ativo = true` da view antiga.
+  if (!query.mostrarInativos) {
+    filtrosDaLista.push({ op: "eq", coluna: "ativo", valor: true });
+  }
+  if (query.tipo) {
+    filtrosDaLista.push({ op: "eq", coluna: "categoria", valor: query.tipo });
+  }
+  // Compatibilidade: links antigos ainda podem trazer o filtro de ID separado.
+  if (idClienteDigits) {
+    filtrosDaLista.push({ op: "ilike", coluna: "id_cliente_text", valor: `${idClienteDigits}%` });
+  }
+
   try {
     // Fonte: public.vw_cadastros_lista_completa (migration
     // 20260729_vw_cadastros_lista_completa.sql). Mesmas colunas da view
@@ -319,59 +361,76 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
     // mesmo (contagem de ativos e aniversariantes) e o Maestro.
     let request = client
       .from("vw_cadastros_lista_completa")
-      .select("id,id_cliente,id_cliente_text,nome,fantasia,apelido,documento,documento_numeros,tipo_pessoa,categoria,ativo,cidade_uf,nome_vendedor,whatsapp_1,whatsapp_2,telefone_fixo,credito,limite_credito,risco_credito,data_fundacao,aniversariante_hoje,qtd_pedidos,data_ult_pedido,busca_geral", {
-        count: "exact"
-      })
+      .select(COLUNAS_LISTA, { count: "exact" })
       // nullsFirst: false — em DESC o Postgres põe NULL primeiro, e um cadastro
       // sem id_cliente abria a lista dos "mais recentes".
       .order("id_cliente", { ascending: false, nullsFirst: false });
 
-    // Inativos ocultos por padrão. `eq(true)` — e não `neq(false)` — para também
-    // deixar fora quem tem `ativo` nulo, igual ao `ativo = true` da view antiga.
-    if (!query.mostrarInativos) {
-      request = request.eq("ativo", true);
+    for (const filtro of filtrosDaLista) {
+      request =
+        filtro.op === "eq"
+          ? request.eq(filtro.coluna, filtro.valor)
+          : request.ilike(filtro.coluna, String(filtro.valor));
     }
 
-    if (query.tipo) {
-      request = request.eq("categoria", query.tipo);
-    }
-
-    // Compatibilidade: links antigos ainda podem trazer o filtro de ID separado.
-    if (idClienteDigits) {
-      request = request.ilike("id_cliente_text", `${idClienteDigits}%`);
-    }
-
-    const filtroBusca = searchTerm ? montarFiltroBusca(searchTerm) : null;
     if (filtroBusca) {
       request = request.or(filtroBusca.expressao);
     }
 
+    if (fixarIdExato) {
+      // Segundo or(), que o PostgREST combina com E. A cláusula `is.null` mantém
+      // os cadastros sem id_cliente, que um neq puro descartaria junto.
+      request = request.or(`id_cliente_text.is.null,id_cliente_text.neq.${idExato}`);
+    }
+
     request = request.range(from, to);
 
-    const { data, error, count } = await request.returns<SupabaseCadastrosClientesListaRow[]>();
+    // O registro exato já pertence ao conjunto da busca — o or() de
+    // montarFiltroBusca o inclui. Esta leitura de uma linha só o antecipa; roda
+    // em todas as páginas para o total continuar batendo em todas elas.
+    let requestIdExato = client
+      .from("vw_cadastros_lista_completa")
+      .select(COLUNAS_LISTA)
+      .eq("id_cliente_text", idExato);
+
+    for (const filtro of filtrosDaLista) {
+      requestIdExato =
+        filtro.op === "eq"
+          ? requestIdExato.eq(filtro.coluna, filtro.valor)
+          : requestIdExato.ilike(filtro.coluna, String(filtro.valor));
+    }
+
+    const consultaIdExato = fixarIdExato
+      ? requestIdExato.limit(1).returns<SupabaseCadastrosClientesListaRow[]>()
+      : null;
+
+    const [{ data, error, count }, resultadoIdExato] = await Promise.all([
+      request.returns<SupabaseCadastrosClientesListaRow[]>(),
+      consultaIdExato
+    ]);
+
     if (error) {
       throw error;
     }
 
     let cadastros = (data ?? []).map(mapClienteListaRow);
 
-    // Busca por dígitos: o ID exato vai para o topo da página, para o usuário não
-    // precisar caçar o cadastro certo entre os acertos por documento.
-    if (filtroBusca?.tipo === "digitos") {
-      const idExato = searchTerm.replace(/\D/g, "");
-      cadastros = [
-        ...cadastros.filter((c) => c.idClienteText === idExato),
-        ...cadastros.filter((c) => c.idClienteText !== idExato)
-      ];
+    const linhaExata = resultadoIdExato?.data?.[0];
+    if (linhaExata && pageIndex === 0) {
+      const item = mapClienteListaRow(linhaExata);
+      cadastros = [item, ...cadastros.filter((c) => c.id !== item.id)].slice(0, pageSize);
     }
 
-    const totalCount = typeof count === "number" ? count : cadastros.length;
+    const totalPrincipal = typeof count === "number" ? count : cadastros.length;
+    const totalCount = totalPrincipal + (linhaExata ? 1 : 0);
 
     return {
       source: "supabase",
       cadastros,
       totalCount,
-      hasNextPage: from + cadastros.length < totalCount,
+      // Aritmética da consulta principal: o registro fixado não entra na conta,
+      // porque ela foi excluída do conjunto paginado.
+      hasNextPage: from + (data ?? []).length < totalPrincipal,
       pageIndex,
       pageSize,
       loadedCount: cadastros.length,
