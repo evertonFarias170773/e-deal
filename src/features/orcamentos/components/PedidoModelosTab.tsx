@@ -497,12 +497,15 @@ function ModeloInlineCard({
 
 export function PedidoModelosTab({
   idInt,
+  idCliente,
   itens,
   modelos,
   onModelosChange,
   onReloadModelos,
 }: {
   idInt?: number;
+  /** propostas.id_cliente — filtra as numerações exclusivas de cliente. */
+  idCliente?: number;
   itens: PropostaItem[];
   modelos: PedidoModeloState[];
   onModelosChange: (m: PedidoModeloState[]) => void;
@@ -548,17 +551,34 @@ export function PedidoModelosTab({
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
+    // producao_numeracoes.Cli_Num delimita o dono da numeração: nulo = numeração
+    // geral, disponível como sempre foi; preenchido = exclusiva daquele cliente,
+    // só entra no drop quando bate com propostas.id_cliente. Proposta sem cliente
+    // definido (cliente não cadastrado) fica só com as gerais, porque nenhum
+    // Cli_Num pode corresponder. Os demais filtros do drop (formato, cor) seguem
+    // sendo aplicados adiante, em filteredNum.
+    const numeracoesBase = supabase
+      .from("producao_numeracoes")
+      .select("id, name, formato_id, formato_ids, id_gabarito, tipo, ticket_qtd")
+      .order("name", { ascending: true });
+    const queryNumeracoes =
+      Number.isInteger(idCliente) && (idCliente as number) > 0
+        ? numeracoesBase.or(`Cli_Num.is.null,Cli_Num.eq.${idCliente}`)
+        : numeracoesBase.is("Cli_Num", null);
+
     const [resFormatos, resCores, resNum] = await Promise.all([
       supabase.from("producao_formatos").select("id, name, id_formato_num"),
       supabase.from("producao_cores").select("id, name, formato_id, id_modelo_cor_num").order("id_modelo_cor_num", { ascending: true }),
-      supabase.from("producao_numeracoes").select("id, name, formato_id, formato_ids, id_gabarito, tipo, ticket_qtd").order("name", { ascending: true }),
+      queryNumeracoes,
     ]);
 
     if (resFormatos.data) setFormatosOpcoes(resFormatos.data);
     if (resCores.data) setCoresOpcoes(resCores.data);
     if (resNum.data) setNumeracoesOpcoes(resNum.data);
-  }, []);
+  }, [idCliente]);
 
+  // Recarrega quando o cliente da proposta muda — na edição o cliente pode ser
+  // trocado sem sair da tela, e o drop precisa acompanhar.
   useEffect(() => {
     void fetchOpcoes();
   }, [fetchOpcoes]);

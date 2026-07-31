@@ -3411,8 +3411,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       <section className={shouldShowRest ? "grid gap-6 xl:grid-cols-[1fr_380px]" : "max-w-3xl mx-auto"}>
         <div className="space-y-6">
           {activeFormTab === "pedido" && shouldShowRest && (
-            <PedidoModelosTab 
+            <PedidoModelosTab
               idInt={Number(form.id_int)}
+              idCliente={Number(form.clienteId) || undefined}
               itens={form.itens}
               modelos={form.pedidosModelos}
               onModelosChange={(newModelos) => updateField("pedidosModelos", newModelos)}
