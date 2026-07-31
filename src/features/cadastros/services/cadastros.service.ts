@@ -1992,16 +1992,25 @@ export async function listVendedores(): Promise<VendedorOption[]> {
     return [];
   }
 
+  // Atende o drop "Atendente do cliente": vendedores e super administradores.
+  // public.usuarios não tem coluna de ativo/inativo, então não há filtro de
+  // atividade a preservar aqui.
   const { data, error } = await client
     .from("usuarios")
-    .select("user_id,nome_usuario,meu_vendedor,id_vendedor,is_vendedor")
-    .eq("is_vendedor", true)
+    .select("user_id,nome_usuario,meu_vendedor,id_vendedor,is_vendedor,is_super_adm")
+    .or("is_vendedor.eq.true,is_super_adm.eq.true")
     .order("nome_usuario", { ascending: true })
     .returns<SupabaseUsuarioVendedorRow[]>();
 
   if (error) {
     return [];
   }
+
+  // Duas linhas de usuarios podem virar a mesma opção — o rótulo é meu_vendedor
+  // (ou nome_usuario) e o valor gravado é o nome, então nomes iguais com o mesmo
+  // id_vendedor são a mesma pessoa no drop. Nomes iguais com id_vendedor distinto
+  // continuam separados, para não sumir com ninguém.
+  const jaListados = new Set<string>();
 
   return (data ?? [])
     .map((item) => {
@@ -2011,6 +2020,14 @@ export async function listVendedores(): Promise<VendedorOption[]> {
       return { nome, idVendedor };
     })
     .filter((item) => Boolean(item.nome))
+    .filter((item) => {
+      const chave = `${item.nome}|${item.idVendedor ?? ""}`;
+      if (jaListados.has(chave)) {
+        return false;
+      }
+      jaListados.add(chave);
+      return true;
+    })
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 

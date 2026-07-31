@@ -148,6 +148,7 @@ export type SupabaseUsuarioVendedorRow = {
   meu_vendedor?: SupabaseNullableValue;
   id_vendedor?: SupabaseNullableValue;
   is_vendedor?: SupabaseNullableValue;
+  is_super_adm?: SupabaseNullableValue;
 };
 
 export type SupabasePropostaRow = {
