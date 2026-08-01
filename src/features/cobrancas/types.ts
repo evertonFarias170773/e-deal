@@ -238,6 +238,9 @@ export type CriarCobrancaFormValues = {
   p_intervalo?: number | null;
   id_empresa?: number;
   empresa?: string;
+  /** Fluxo de cartão escolhido no modal. Não é persistido em coluna própria:
+   *  serve só para rotear a integração. "ASAS" é a segunda opção de cartão. */
+  cartaoFluxo?: "PADRAO" | "ASAS";
   /** Dados do pagador efetivo resolvido via propostas.id_faturado.
    *  Quando ausentes, createCobranca usa fallback em proposta.cliente (propostas antigas). */
   pagadorIdCliente?: number | null;

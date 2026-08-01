@@ -178,6 +178,41 @@ async function resolverVendedorProposta(
   };
 }
 
+/** Marcador do Cartão Asas na descrição. Identifica a cobrança sem coluna nova. */
+export const MARCADOR_CARTAO_ASAS = "Cartão Asas";
+
+/** URL interna gravada na criação, antes de qualquer integração externa. */
+const PREFIXO_URL_INTERNA = "https://pay.ai-ideal.com.br/";
+
+/** Só a URL que já não é a interna comprova que o provedor gravou o checkout. */
+function urlDoProvedor(url?: string | null): boolean {
+  return Boolean(url && !url.startsWith(PREFIXO_URL_INTERNA));
+}
+
+/**
+ * Aciona o Cartão Asas para uma cobrança já existente. A rota é idempotente:
+ * se a cobrança já tem link do provedor, devolve o existente sem reacionar o n8n.
+ */
+async function acionarCartaoAsas(client: SupabaseClient, cobrancaId: string): Promise<void> {
+  const sessionResponse = await client.auth.getSession();
+  const tokenSessao = sessionResponse.data.session?.access_token || "";
+
+  const resposta = await fetch("/api/cobrancas/gerar-cartao-asas", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "Authorization": `Bearer ${tokenSessao}`
+    },
+    body: JSON.stringify({ cobrancaId })
+  });
+
+  const resultado = await resposta.json().catch(() => null);
+
+  if (!resposta.ok || !resultado?.success) {
+    throw new Error(resultado?.message || "Falha ao gerar o link de pagamento do Cartão Asas.");
+  }
+}
+
 export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [cobrancas, setCobrancas] = useState<Cobranca[]>(createInitialState);
   const [cobrancasStats, setCobrancasStats] = useState<Cobranca[]>(createInitialState);
@@ -383,6 +418,42 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error("Cliente do Supabase nao inicializado.");
       }
 
+      // Cartão Asas — antiduplicidade em nova tentativa. A linha de pagamentos_v2
+      // é criada ANTES da chamada ao n8n; se a integração falhou, a cobrança
+      // ficou pendente sem link do provedor e um novo clique criaria uma SEGUNDA
+      // linha. Reaproveita a equivalente: com link, devolve; sem link, reaciona
+      // o n8n sobre a MESMA cobrança.
+      if (values.tipoCobranca === "CARD_PARCELADO" && values.cartaoFluxo === "ASAS") {
+        const { data: candidatas } = await client
+          .from("pagamentos_v2")
+          .select("id, valor, url_cobranca")
+          .eq("id_int", proposta.id_int)
+          .eq("tipo_cobranca", "CARD_PARCELADO")
+          .eq("status", "A_RECEBER")
+          .ilike("descricao", `%${MARCADOR_CARTAO_ASAS}%`)
+          .returns<Array<{ id: string; valor: number | null; url_cobranca: string | null }>>();
+
+        const equivalente = (candidatas || []).find(
+          (item) => roundMoney(Number(item.valor ?? 0)) === roundMoney(values.valor)
+        );
+
+        if (equivalente) {
+          if (!urlDoProvedor(equivalente.url_cobranca)) {
+            await acionarCartaoAsas(client, equivalente.id);
+          }
+
+          const loadResult = await loadData();
+          const found = loadResult.cobrancas.find((item) => item.id === equivalente.id) ||
+                        loadResult.cobrancasStats.find((item) => item.id === equivalente.id);
+
+          if (!found) {
+            throw new Error("Cobrança do Cartão Asas não encontrada ao recarregar. Atualize a tela.");
+          }
+
+          return found;
+        }
+      }
+
       const empresaOption = getEmpresaRecebedoraByProposta(proposta);
       const idEmpresa = values.id_empresa ?? (empresaOption?.id ?? 1);
       const nomeEmpresa = values.empresa ?? (empresaOption?.nome ?? proposta.empresa);
@@ -547,6 +618,15 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         // Para CARTAO (CARD_PARCELADO) ou FATURADO (E-FATURADO):
         // O checkout/faturamento é gerado no backend. Não disparamos webhook externo no front.
         // Apenas recarregamos os dados e retornamos a linha correspondente.
+
+        // Exceção: o Cartão Asas aciona a rota que fala com o n8n. O cartão
+        // padrão segue exatamente como antes, sem chamada externa aqui.
+        // Se a rota falhar, o erro propaga e a cobrança NÃO é apresentada como
+        // gerada — ela fica preservada para nova tentativa sem duplicar.
+        if (values.tipoCobranca === "CARD_PARCELADO" && values.cartaoFluxo === "ASAS") {
+          await acionarCartaoAsas(client, cobrancaId);
+        }
+
         const loadResult = await loadData();
         const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
                       loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
@@ -561,7 +641,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           }
           msg = `${label} enviado para análise financeira.${condicaoText} Observações: ${values.observacao || "Nenhuma"}`;
         } else {
-          msg = `Registrada nova cobrança CARTÃO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+          const sufixoCartao = values.cartaoFluxo === "ASAS" ? " ASAS" : "";
+          msg = `Registrada nova cobrança CARTÃO${sufixoCartao}, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
         }
 
         void registrarMensagemSistemaProposta({

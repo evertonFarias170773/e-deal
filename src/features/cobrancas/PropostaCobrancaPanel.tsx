@@ -86,6 +86,19 @@ function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number
   return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
 }
 
+/**
+ * Rótulo da modalidade. Cartão padrão e Cartão Asas compartilham o mesmo
+ * tipo_cobranca (CARD_PARCELADO), então o fluxo é o que os distingue na tela.
+ * O rótulo entra na descrição gravada e é o marcador usado para reaproveitar a
+ * cobrança em nova tentativa.
+ */
+function getRotuloModalidade(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS"): string {
+  if (tipo === "CARD_PARCELADO" && fluxoCartao === "ASAS") {
+    return "Cartão Asas";
+  }
+  return getCobrancaTipoLabel(tipo);
+}
+
 export function PropostaCobrancaPanel({
   proposta,
   isModalOpen,
@@ -626,9 +639,12 @@ export function PropostaCobrancaPanel({
     setForm((current) => ({ ...current, ...patch }));
   }
 
-  function handleTipoChange(tipo: CobrancaTipo) {
+  function handleTipoChange(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS") {
     patchForm({
       tipoCobranca: tipo,
+      // Só cartão carrega fluxo. Outra modalidade limpa o campo para que uma
+      // seleção anterior de Asas não vaze para PIX/boleto/faturado.
+      cartaoFluxo: tipo === "CARD_PARCELADO" ? (fluxoCartao ?? "PADRAO") : undefined,
       parcelaSelecionada: undefined,
       condicaoPagamento: tipo === "CARD_PARCELADO" ? "Cartão de crédito" : (tipo === "E-FATURADO" ? "Faturado" : proposta.formaPagamento),
       vencimento: tipo === "BOLETO" || tipo === "E-FATURADO" ? form.vencimento || getDefaultVencimento(30) : form.vencimento
@@ -958,7 +974,7 @@ export function PropostaCobrancaPanel({
       vencimento: payloadVencimento,
       valor: valorComDebito,
       observacao: observacaoComMarcador,
-      descricao: `Cobrança ${getCobrancaTipoLabel(form.tipoCobranca)} da proposta #${proposta.id_int}`,
+      descricao: `Cobrança ${getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} da proposta #${proposta.id_int}`,
       parcelaSelecionada: undefined,
       // Pagador efetivo: id_faturado validado; fallback automático via ?? no createCobranca
       pagadorIdCliente: pagador?.idCliente,
@@ -1054,15 +1070,21 @@ export function PropostaCobrancaPanel({
     }
   }
 
+  // "CARD_ASAS" existe apenas na interface: ao submeter vira
+  // tipoCobranca CARD_PARCELADO + cartaoFluxo ASAS. O valor sintético nunca
+  // chega ao banco nem ao tipo CobrancaTipo.
   const opcoesPagamento: Array<{
-    id: CobrancaTipo;
+    id: CobrancaTipo | "CARD_ASAS";
     label: string;
     icon: typeof QrCode;
     blockedText?: string;
+    /** Legenda curta sob o rótulo, para diferenciar as duas vias de cartão. */
+    hint?: string;
   }> = [
     { id: "PIX", label: "PIX", icon: QrCode },
     { id: "BOLETO", label: "Boleto", icon: ReceiptText },
     { id: "CARD_PARCELADO", label: "Cartão de crédito", icon: CreditCard },
+    { id: "CARD_ASAS", label: "Cartão Asas", icon: CreditCard, hint: "Segunda opção de cartão" },
     { id: "E-FATURADO", label: "Faturado", icon: Landmark }
   ];
   if (saldoCredito > 0 && canUsarCredito && saldoRestante > 0) {
@@ -1132,7 +1154,7 @@ export function PropostaCobrancaPanel({
                   </select>
                 </Field>
                 <Field label="Forma de pagamento selecionada">
-                  <input readOnly value={getCobrancaTipoLabel(form.tipoCobranca)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                  <input readOnly value={getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                 </Field>
                 <Field label="OS Ideal *">
                   <input
@@ -1203,16 +1225,20 @@ export function PropostaCobrancaPanel({
                   const Icon = opcao.icon;
                   const selected = opcao.id === "E-FATURADO"
                     ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
-                    : form.tipoCobranca === opcao.id;
+                    : opcao.id === "CARD_ASAS"
+                      ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo === "ASAS")
+                      : opcao.id === "CARD_PARCELADO"
+                        ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo !== "ASAS")
+                        : form.tipoCobranca === opcao.id;
                   const available = source === "supabase"
                     ? (opcao.id === "PIX"
                         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
                         : opcao.id === "BOLETO"
                           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                          : opcao.id === "CARD_PARCELADO"
+                          : (opcao.id === "CARD_PARCELADO" || opcao.id === "CARD_ASAS")
                             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
                             : true)
-                    : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
+                    : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id);
                   const isActuallyDisabled = !available;
                   const disabledText = available
                     ? ""
@@ -1224,7 +1250,11 @@ export function PropostaCobrancaPanel({
                       type="button"
                       disabled={isActuallyDisabled}
                       onClick={() => {
-                        handleTipoChange(opcao.id);
+                        if (opcao.id === "CARD_ASAS") {
+                          handleTipoChange("CARD_PARCELADO", "ASAS");
+                        } else {
+                          handleTipoChange(opcao.id);
+                        }
                         if (!isUserEditingValor) {
                           patchForm({ valor: saldoRestante });
                         }
@@ -1237,9 +1267,12 @@ export function PropostaCobrancaPanel({
                       title={disabledText}
                     >
                       <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-slate-700" />
-                        <span className="text-sm font-semibold text-slate-900">{opcao.label}</span>
+                        <Icon className="h-4 w-4 shrink-0 text-slate-700" />
+                        <span className="text-sm font-semibold leading-tight text-slate-900">{opcao.label}</span>
                       </div>
+                      {opcao.hint && available ? (
+                        <p className="mt-1 text-[11px] leading-tight text-slate-500">{opcao.hint}</p>
+                      ) : null}
                       {!available ? (
                         <p className="mt-1 text-[11px] text-slate-500">Indisponível</p>
                       ) : null}
@@ -1328,7 +1361,7 @@ export function PropostaCobrancaPanel({
           <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <p className="text-sm font-semibold text-slate-700">
-                Proposta #{proposta.id_int} • {getCobrancaTipoLabel(form.tipoCobranca)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
+                Proposta #{proposta.id_int} • {getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
               </p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <button
@@ -1655,7 +1688,7 @@ export function PropostaCobrancaPanel({
                   </select>
                   </Field>
                   <Field label="Forma de pagamento selecionada">
-                    <input readOnly value={getCobrancaTipoLabel(form.tipoCobranca)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                    <input readOnly value={getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                   </Field>
                   <Field label="OS Ideal *">
                     <input
@@ -1725,16 +1758,20 @@ export function PropostaCobrancaPanel({
                     const Icon = opcao.icon;
                     const selected = opcao.id === "E-FATURADO"
                       ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
-                      : form.tipoCobranca === opcao.id;
+                      : opcao.id === "CARD_ASAS"
+                        ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo === "ASAS")
+                        : opcao.id === "CARD_PARCELADO"
+                          ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo !== "ASAS")
+                          : form.tipoCobranca === opcao.id;
                     const available = source === "supabase"
                       ? (opcao.id === "PIX"
                           ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
                           : opcao.id === "BOLETO"
                             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                            : opcao.id === "CARD_PARCELADO"
+                            : (opcao.id === "CARD_PARCELADO" || opcao.id === "CARD_ASAS")
                               ? (idEmpresaReal === 1 || idEmpresaReal === 3)
                               : true)
-                      : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
+                      : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id);
                     const isActuallyDisabled = !available;
                     const disabledText = available
                       ? ""
@@ -1745,7 +1782,13 @@ export function PropostaCobrancaPanel({
                         key={opcao.id}
                         type="button"
                         disabled={isActuallyDisabled}
-                        onClick={() => handleTipoChange(opcao.id)}
+                        onClick={() => {
+                          if (opcao.id === "CARD_ASAS") {
+                            handleTipoChange("CARD_PARCELADO", "ASAS");
+                          } else {
+                            handleTipoChange(opcao.id);
+                          }
+                        }}
                         className={`rounded-2xl border px-3 py-2 text-left transition ${
                           selected
                             ? "border-[#0f9f9a] bg-[#dff8f6]"
@@ -1754,9 +1797,12 @@ export function PropostaCobrancaPanel({
                         title={disabledText}
                       >
                         <div className="flex items-center gap-2">
-                          <Icon className="h-4 w-4 text-slate-700" />
-                          <span className="text-sm font-semibold text-slate-900">{opcao.label}</span>
+                          <Icon className="h-4 w-4 shrink-0 text-slate-700" />
+                          <span className="text-sm font-semibold leading-tight text-slate-900">{opcao.label}</span>
                         </div>
+                        {opcao.hint && available ? (
+                          <p className="mt-1 text-[11px] leading-tight text-slate-500">{opcao.hint}</p>
+                        ) : null}
                         {!available ? (
                           <p className="mt-1 text-[11px] text-slate-500">Indisponível</p>
                         ) : null}
@@ -1910,7 +1956,7 @@ export function PropostaCobrancaPanel({
             <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <p className="text-sm font-semibold text-slate-700">
-                  Proposta #{proposta.id_int} • {getCobrancaTipoLabel(form.tipoCobranca)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
+                  Proposta #{proposta.id_int} • {getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <button
