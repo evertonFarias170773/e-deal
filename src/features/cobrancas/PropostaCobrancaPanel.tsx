@@ -87,6 +87,17 @@ function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number
   return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
 }
 
+/**
+ * Rótulo de exibição da modalidade. Cartão e cartão Asaas compartilham o mesmo
+ * tipo_cobranca (CARD_PARCELADO), então o provedor é o que os distingue na tela.
+ */
+function getRotuloModalidade(tipo: CobrancaTipo, provedor?: "C6" | "ASAAS"): string {
+  if (tipo === "CARD_PARCELADO" && provedor === "ASAAS") {
+    return "Cartão de crédito — Asaas";
+  }
+  return getCobrancaTipoLabel(tipo);
+}
+
 export function PropostaCobrancaPanel({
   proposta,
   isModalOpen,
@@ -974,7 +985,7 @@ export function PropostaCobrancaPanel({
       vencimento: payloadVencimento,
       valor: valorComDebito,
       observacao: observacaoComMarcador,
-      descricao: `Cobrança ${getCobrancaTipoLabel(form.tipoCobranca)} da proposta #${proposta.id_int}`,
+      descricao: `Cobrança ${getRotuloModalidade(form.tipoCobranca, form.cartaoProvedor)} da proposta #${proposta.id_int}`,
       parcelaSelecionada: undefined,
       // Pagador efetivo: id_faturado validado; fallback automático via ?? no createCobranca
       pagadorIdCliente: pagador?.idCliente,
@@ -1078,6 +1089,10 @@ export function PropostaCobrancaPanel({
     label: string;
     icon: typeof QrCode;
     blockedText?: string;
+    /** Legenda curta sob o rótulo, para diferenciar provedores do mesmo meio. */
+    hint?: string;
+    /** Destaca visualmente como via alternativa, para não ser confundida com o padrão. */
+    contingencia?: boolean;
   }> = [
     { id: "PIX", label: "PIX", icon: QrCode },
     { id: "BOLETO", label: "Boleto", icon: ReceiptText },
@@ -1088,7 +1103,13 @@ export function PropostaCobrancaPanel({
   // cliente. Só aparece com a flag ligada e quando a empresa recebedora JÁ é a 1
   // — nenhum id_empresa é alterado por causa desta opção.
   if (featureFlags.CARTAO_ASAAS && source === "supabase" && idEmpresaReal === 1) {
-    opcoesPagamento.splice(3, 0, { id: "CARD_ASAAS", label: "Cartão (Asaas)", icon: CreditCard });
+    opcoesPagamento.splice(3, 0, {
+      id: "CARD_ASAAS",
+      label: "Cartão de crédito — Asaas",
+      icon: CreditCard,
+      hint: "Contingência — usar só se o cartão padrão falhar",
+      contingencia: true
+    });
   }
   if (saldoCredito > 0 && canUsarCredito && saldoRestante > 0) {
     opcoesPagamento.push({ id: "E-CREDITO", label: "E-Crédito", icon: Wallet as any });
@@ -1157,7 +1178,7 @@ export function PropostaCobrancaPanel({
                   </select>
                 </Field>
                 <Field label="Forma de pagamento selecionada">
-                  <input readOnly value={getCobrancaTipoLabel(form.tipoCobranca)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                  <input readOnly value={getRotuloModalidade(form.tipoCobranca, form.cartaoProvedor)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                 </Field>
                 <Field label="OS Ideal *">
                   <input
@@ -1266,15 +1287,20 @@ export function PropostaCobrancaPanel({
                       }}
                       className={`rounded-2xl border px-3 py-2 text-left transition ${
                         selected
-                          ? "border-[#0f9f9a] bg-[#dff8f6]"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
+                          ? (opcao.contingencia ? "border-amber-500 bg-amber-50" : "border-[#0f9f9a] bg-[#dff8f6]")
+                          : (opcao.contingencia
+                              ? "border-dashed border-amber-300 bg-white hover:bg-amber-50"
+                              : "border-slate-200 bg-white hover:bg-slate-50")
                       } disabled:cursor-not-allowed disabled:opacity-60`}
                       title={disabledText}
                     >
                       <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-slate-700" />
-                        <span className="text-sm font-semibold text-slate-900">{opcao.label}</span>
+                        <Icon className={`h-4 w-4 shrink-0 ${opcao.contingencia ? "text-amber-700" : "text-slate-700"}`} />
+                        <span className="text-sm font-semibold leading-tight text-slate-900">{opcao.label}</span>
                       </div>
+                      {opcao.hint && available ? (
+                        <p className="mt-1 text-[11px] font-medium leading-tight text-amber-700">{opcao.hint}</p>
+                      ) : null}
                       {!available ? (
                         <p className="mt-1 text-[11px] text-slate-500">Indisponível</p>
                       ) : null}
@@ -1363,7 +1389,7 @@ export function PropostaCobrancaPanel({
           <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <p className="text-sm font-semibold text-slate-700">
-                Proposta #{proposta.id_int} • {getCobrancaTipoLabel(form.tipoCobranca)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
+                Proposta #{proposta.id_int} • {getRotuloModalidade(form.tipoCobranca, form.cartaoProvedor)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
               </p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <button
@@ -1690,7 +1716,7 @@ export function PropostaCobrancaPanel({
                   </select>
                   </Field>
                   <Field label="Forma de pagamento selecionada">
-                    <input readOnly value={getCobrancaTipoLabel(form.tipoCobranca)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                    <input readOnly value={getRotuloModalidade(form.tipoCobranca, form.cartaoProvedor)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                   </Field>
                   <Field label="OS Ideal *">
                     <input
@@ -1795,15 +1821,20 @@ export function PropostaCobrancaPanel({
                         }}
                         className={`rounded-2xl border px-3 py-2 text-left transition ${
                           selected
-                            ? "border-[#0f9f9a] bg-[#dff8f6]"
-                            : "border-slate-200 bg-white hover:bg-slate-50"
+                            ? (opcao.contingencia ? "border-amber-500 bg-amber-50" : "border-[#0f9f9a] bg-[#dff8f6]")
+                            : (opcao.contingencia
+                                ? "border-dashed border-amber-300 bg-white hover:bg-amber-50"
+                                : "border-slate-200 bg-white hover:bg-slate-50")
                         } disabled:cursor-not-allowed disabled:opacity-60`}
                         title={disabledText}
                       >
                         <div className="flex items-center gap-2">
-                          <Icon className="h-4 w-4 text-slate-700" />
-                          <span className="text-sm font-semibold text-slate-900">{opcao.label}</span>
+                          <Icon className={`h-4 w-4 shrink-0 ${opcao.contingencia ? "text-amber-700" : "text-slate-700"}`} />
+                          <span className="text-sm font-semibold leading-tight text-slate-900">{opcao.label}</span>
                         </div>
+                        {opcao.hint && available ? (
+                          <p className="mt-1 text-[11px] font-medium leading-tight text-amber-700">{opcao.hint}</p>
+                        ) : null}
                         {!available ? (
                           <p className="mt-1 text-[11px] text-slate-500">Indisponível</p>
                         ) : null}
@@ -1957,7 +1988,7 @@ export function PropostaCobrancaPanel({
             <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <p className="text-sm font-semibold text-slate-700">
-                  Proposta #{proposta.id_int} • {getCobrancaTipoLabel(form.tipoCobranca)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
+                  Proposta #{proposta.id_int} • {getRotuloModalidade(form.tipoCobranca, form.cartaoProvedor)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <button

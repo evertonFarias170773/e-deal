@@ -179,6 +179,31 @@ async function resolverVendedorProposta(
   };
 }
 
+/**
+ * Aciona a rota que gera o checkout de cartão no Asaas.
+ * A rota é idempotente: se a cobrança já tem cartao_checkout_url, devolve o
+ * checkout existente sem chamar o provedor de novo.
+ */
+async function acionarCheckoutAsaas(client: SupabaseClient, cobrancaId: string): Promise<void> {
+  const sessionResponse = await client.auth.getSession();
+  const tokenSessao = sessionResponse.data.session?.access_token || "";
+
+  const resposta = await fetch("/api/cobrancas/gerar-cartao-asaas", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "Authorization": `Bearer ${tokenSessao}`
+    },
+    body: JSON.stringify({ cobrancaId })
+  });
+
+  const resultado = await resposta.json().catch(() => null);
+
+  if (!resposta.ok || !resultado?.success) {
+    throw new Error(resultado?.message || "Falha ao gerar o checkout de cartão no Asaas.");
+  }
+}
+
 export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [cobrancas, setCobrancas] = useState<Cobranca[]>(createInitialState);
   const [cobrancasStats, setCobrancasStats] = useState<Cobranca[]>(createInitialState);
@@ -384,6 +409,40 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error("Cliente do Supabase nao inicializado.");
       }
 
+      // Retry de contingência Asaas: se a rota falhou numa tentativa anterior, a
+      // linha de pagamentos_v2 ficou criada porém sem checkout. Sem esta busca,
+      // o novo clique inseriria uma SEGUNDA cobrança para a mesma proposta.
+      // Reaproveita a pendente de mesmo valor e reaciona a rota — que é
+      // idempotente e devolve o checkout existente quando já houver um.
+      if (values.tipoCobranca === "CARD_PARCELADO" && values.cartaoProvedor === "ASAAS") {
+        const { data: candidatas } = await client
+          .from("pagamentos_v2")
+          .select("id, valor")
+          .eq("id_int", proposta.id_int)
+          .eq("tipo_cobranca", "CARD_PARCELADO")
+          .eq("cartao_provedor", "ASAAS")
+          .eq("status", "A_RECEBER")
+          .returns<Array<{ id: string; valor: number | null }>>();
+
+        const reaproveitavel = (candidatas || []).find(
+          (item) => roundMoney(Number(item.valor ?? 0)) === roundMoney(values.valor)
+        );
+
+        if (reaproveitavel) {
+          await acionarCheckoutAsaas(client, reaproveitavel.id);
+
+          const loadResult = await loadData();
+          const found = loadResult.cobrancas.find((item) => item.id === reaproveitavel.id) ||
+                        loadResult.cobrancasStats.find((item) => item.id === reaproveitavel.id);
+
+          if (!found) {
+            throw new Error("Checkout gerado, mas a cobrança não foi encontrada ao recarregar. Atualize a tela.");
+          }
+
+          return found;
+        }
+      }
+
       const empresaOption = getEmpresaRecebedoraByProposta(proposta);
       const idEmpresa = values.id_empresa ?? (empresaOption?.id ?? 1);
       const nomeEmpresa = values.empresa ?? (empresaOption?.nome ?? proposta.empresa);
@@ -564,23 +623,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         // A rota recebe apenas o id da cobrança: o payload financeiro é lido do
         // banco pelo servidor e pelo n8n, nunca trafega pelo front.
         if (values.tipoCobranca === "CARD_PARCELADO" && values.cartaoProvedor === "ASAAS") {
-          const sessionResponse = await client.auth.getSession();
-          const tokenSessao = sessionResponse.data.session?.access_token || "";
-
-          const asaasResponse = await fetch("/api/cobrancas/gerar-cartao-asaas", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "Authorization": `Bearer ${tokenSessao}`
-            },
-            body: JSON.stringify({ cobrancaId })
-          });
-
-          const asaasResult = await asaasResponse.json().catch(() => null);
-
-          if (!asaasResponse.ok || !asaasResult?.success) {
-            throw new Error(asaasResult?.message || "Falha ao gerar o checkout de cartão no Asaas.");
-          }
+          await acionarCheckoutAsaas(client, cobrancaId);
         }
 
         const loadResult = await loadData();
