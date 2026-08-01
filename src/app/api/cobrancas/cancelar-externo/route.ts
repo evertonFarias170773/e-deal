@@ -4,6 +4,7 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { isPropostaStatusProtegido } from "@/features/orcamentos/services/status-protegidos";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
+import { featureFlags } from "@/lib/feature-flags";
 
 // Status de pagamentos_v2 considerados inativos: cancelamento vira no-op idempotente.
 const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
@@ -19,6 +20,10 @@ type PagamentoRow = {
   data_confirmacao: string | null;
   tipo_cobranca: string | null;
   cod_solicitacao_inter: string | null;
+  /** Adquirente do cartão: "C6" | "ASAAS". NULL = cartão anterior a 01/08/2026, tratado como C6. */
+  cartao_provedor: string | null;
+  /** Id do checkout no provedor. No Asaas é o payment id (pay_*). */
+  cartao_checkout_id: string | null;
   id_empresa: number | null;
   reserva_estado: string | null;
   id_pendencia: number | null;
@@ -171,7 +176,14 @@ export async function POST(request: Request) {
     // 3. Reconsulta o estado financeiro atual (fonte da verdade é o banco)
     const { data: pagamento, error: fetchError } = await supabase
       .from("pagamentos_v2")
-      .select("id, id_int, id_cliente, id_pagamento, status, confirmado, paid_at, data_confirmacao, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
+      // cartao_provedor só é pedido com a flag ligada: a coluna vem da migration
+      // 20260801_pagamentos_v2_cartao_provedor.sql, aplicada à mão e fora do
+      // deploy. Pedi-la antes disso derrubaria todo o cancelamento.
+      .select(
+        `id, id_int, id_cliente, id_pagamento, status, confirmado, paid_at, data_confirmacao, tipo_cobranca, cod_solicitacao_inter, cartao_checkout_id, id_empresa, reserva_estado, id_pendencia, chave_reserva${
+          featureFlags.CARTAO_ASAAS ? ", cartao_provedor" : ""
+        }`
+      )
       .eq("id", id)
       .single<PagamentoRow>();
 
@@ -395,7 +407,54 @@ export async function POST(request: Request) {
       }
       provedorResultado = "ok";
 
+    } else if (tipoNormalized === "CARD-PARCELADO" && String(pagamento.cartao_provedor ?? "").toUpperCase() === "ASAAS") {
+      // Cartão gerado no Asaas (contingência da empresa 1). O identificador do
+      // título é o payment id (pay_*) em cartao_checkout_id — não o
+      // cod_solicitacao_inter usado pelo C6.
+      const asaasCancelUrl = process.env.N8N_ASAAS_CANCELAR_URL;
+      const asaasSecret = process.env.N8N_ASAAS_CARTAO_SECRET;
+
+      if (!pagamento.cartao_checkout_id) {
+        console.log("[cancelar-externo][CARD-PARCELADO][ASAAS] Sem cartao_checkout_id. Cobrança apenas local; seguindo para cancelamento lógico.");
+      } else if (!asaasCancelUrl || !asaasSecret) {
+        // Provedor sem rota de cancelamento configurada: erro explícito e
+        // NENHUMA alteração local, conforme docs/business/CANCELAMENTO-COBRANCAS.md.
+        console.error("[cancelar-externo][CARD-PARCELADO][ASAAS] Integração de cancelamento não configurada.");
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Cancelamento de cartão Asaas ainda não está configurado neste ambiente. Nenhuma alteração local foi feita."
+          },
+          { status: 501 }
+        );
+      } else {
+        console.log("[cancelar-externo][CARD-PARCELADO][ASAAS] chamando n8n", { checkout_id: pagamento.cartao_checkout_id });
+
+        const webhookResponse = await fetch(asaasCancelUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-erp-webhook-secret": asaasSecret
+          },
+          body: JSON.stringify({ cartao_checkout_id: pagamento.cartao_checkout_id })
+        });
+
+        const responseStatus = webhookResponse.status;
+        const responseBody = await webhookResponse.text();
+        console.log("[cancelar-externo][CARD-PARCELADO][ASAAS] status n8n", responseStatus);
+
+        if (!webhookResponse.ok) {
+          console.error("[API][CancelarExterno][ASAAS] Erro HTTP no n8n:", responseStatus, responseBody.slice(0, 500));
+          return NextResponse.json(
+            { success: false, message: "A API externa recusou o cancelamento do Cartão. Nenhuma alteração local foi feita." },
+            { status: responseStatus }
+          );
+        }
+        provedorResultado = "ok";
+      }
+
     } else if (tipoNormalized === "CARD-PARCELADO") {
+      // Provedor C6: valor "C6" explícito ou NULL (cartão anterior a 01/08/2026).
       if (codC6Final) {
         if (idEmpresaCobranca == null) {
           return NextResponse.json(

@@ -27,6 +27,7 @@ import {
   roundMoney
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { featureFlags } from "@/lib/feature-flags";
 import {
   criarCobrancaInitialValues,
   getCobrancaTipoLabel,
@@ -485,7 +486,9 @@ export function PropostaCobrancaPanel({
         : form.tipoCobranca === "BOLETO"
           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
           : form.tipoCobranca === "CARD_PARCELADO"
-            ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+            ? (form.cartaoProvedor === "ASAAS"
+                ? idEmpresaReal === 1
+                : (idEmpresaReal === 1 || idEmpresaReal === 3))
             : isFaturado
               ? true
               : false)
@@ -497,7 +500,9 @@ export function PropostaCobrancaPanel({
         : form.tipoCobranca === "BOLETO"
           ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Boleto real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
           : form.tipoCobranca === "CARD_PARCELADO"
-            ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
+            ? (form.cartaoProvedor === "ASAAS"
+                ? (idEmpresaReal === 1 ? "" : "Cartão de crédito Asaas disponível apenas para a empresa Ideal Gráfica.")
+                : (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes."))
             : isFaturado
               ? ""
               : "Esta forma de pagamento está em preparação para o ambiente real.")
@@ -626,9 +631,12 @@ export function PropostaCobrancaPanel({
     setForm((current) => ({ ...current, ...patch }));
   }
 
-  function handleTipoChange(tipo: CobrancaTipo) {
+  function handleTipoChange(tipo: CobrancaTipo, provedorCartao?: "C6" | "ASAAS") {
     patchForm({
       tipoCobranca: tipo,
+      // Só cartão carrega provedor. Qualquer outra modalidade limpa o campo,
+      // para que uma seleção anterior de Asaas não vaze para PIX/boleto/faturado.
+      cartaoProvedor: tipo === "CARD_PARCELADO" ? (provedorCartao ?? "C6") : undefined,
       parcelaSelecionada: undefined,
       condicaoPagamento: tipo === "CARD_PARCELADO" ? "Cartão de crédito" : (tipo === "E-FATURADO" ? "Faturado" : proposta.formaPagamento),
       vencimento: tipo === "BOLETO" || tipo === "E-FATURADO" ? form.vencimento || getDefaultVencimento(30) : form.vencimento
@@ -855,6 +863,14 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    // Contingência Asaas é exclusiva da empresa 1. Barra o caso de trocar a
+    // empresa recebedora depois de já ter selecionado a opção — a cobrança
+    // nunca muda de empresa por causa do provedor.
+    if (source === "supabase" && form.tipoCobranca === "CARD_PARCELADO" && form.cartaoProvedor === "ASAAS" && idEmpresaReal !== 1) {
+      showToast({ type: "error", title: "Cartão de crédito Asaas disponível apenas para a empresa Ideal Gráfica." });
+      return;
+    }
+
     if (source === "supabase" && form.tipoCobranca === "BOLETO") {
       const emailCliente = proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "";
       if (!emailCliente) {
@@ -1054,8 +1070,11 @@ export function PropostaCobrancaPanel({
     }
   }
 
+  // "CARD_ASAAS" existe apenas na interface: ao submeter vira
+  // tipoCobranca "CARD_PARCELADO" + cartaoProvedor "ASAAS". O valor sintético
+  // nunca chega ao banco nem ao tipo CobrancaTipo.
   const opcoesPagamento: Array<{
-    id: CobrancaTipo;
+    id: CobrancaTipo | "CARD_ASAAS";
     label: string;
     icon: typeof QrCode;
     blockedText?: string;
@@ -1065,6 +1084,12 @@ export function PropostaCobrancaPanel({
     { id: "CARD_PARCELADO", label: "Cartão de crédito", icon: CreditCard },
     { id: "E-FATURADO", label: "Faturado", icon: Landmark }
   ];
+  // Contingência de cartão da empresa 1, para quando o checkout C6 falha no
+  // cliente. Só aparece com a flag ligada e quando a empresa recebedora JÁ é a 1
+  // — nenhum id_empresa é alterado por causa desta opção.
+  if (featureFlags.CARTAO_ASAAS && source === "supabase" && idEmpresaReal === 1) {
+    opcoesPagamento.splice(3, 0, { id: "CARD_ASAAS", label: "Cartão (Asaas)", icon: CreditCard });
+  }
   if (saldoCredito > 0 && canUsarCredito && saldoRestante > 0) {
     opcoesPagamento.push({ id: "E-CREDITO", label: "E-Crédito", icon: Wallet as any });
   }
@@ -1203,7 +1228,11 @@ export function PropostaCobrancaPanel({
                   const Icon = opcao.icon;
                   const selected = opcao.id === "E-FATURADO"
                     ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
-                    : form.tipoCobranca === opcao.id;
+                    : opcao.id === "CARD_ASAAS"
+                      ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoProvedor === "ASAAS")
+                      : opcao.id === "CARD_PARCELADO"
+                        ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoProvedor !== "ASAAS")
+                        : form.tipoCobranca === opcao.id;
                   const available = source === "supabase"
                     ? (opcao.id === "PIX"
                         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
@@ -1211,8 +1240,10 @@ export function PropostaCobrancaPanel({
                           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
                           : opcao.id === "CARD_PARCELADO"
                             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                            : true)
-                    : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
+                            : opcao.id === "CARD_ASAAS"
+                              ? idEmpresaReal === 1
+                              : true)
+                    : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id as CobrancaTipo);
                   const isActuallyDisabled = !available;
                   const disabledText = available
                     ? ""
@@ -1224,7 +1255,11 @@ export function PropostaCobrancaPanel({
                       type="button"
                       disabled={isActuallyDisabled}
                       onClick={() => {
-                        handleTipoChange(opcao.id);
+                        if (opcao.id === "CARD_ASAAS") {
+                          handleTipoChange("CARD_PARCELADO", "ASAAS");
+                        } else {
+                          handleTipoChange(opcao.id);
+                        }
                         if (!isUserEditingValor) {
                           patchForm({ valor: saldoRestante });
                         }
@@ -1725,7 +1760,11 @@ export function PropostaCobrancaPanel({
                     const Icon = opcao.icon;
                     const selected = opcao.id === "E-FATURADO"
                       ? ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(form.tipoCobranca)
-                      : form.tipoCobranca === opcao.id;
+                      : opcao.id === "CARD_ASAAS"
+                        ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoProvedor === "ASAAS")
+                        : opcao.id === "CARD_PARCELADO"
+                          ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoProvedor !== "ASAAS")
+                          : form.tipoCobranca === opcao.id;
                     const available = source === "supabase"
                       ? (opcao.id === "PIX"
                           ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
@@ -1733,8 +1772,10 @@ export function PropostaCobrancaPanel({
                             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
                             : opcao.id === "CARD_PARCELADO"
                               ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                              : true)
-                      : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id);
+                              : opcao.id === "CARD_ASAAS"
+                                ? idEmpresaReal === 1
+                                : true)
+                      : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id as CobrancaTipo);
                     const isActuallyDisabled = !available;
                     const disabledText = available
                       ? ""
@@ -1745,7 +1786,13 @@ export function PropostaCobrancaPanel({
                         key={opcao.id}
                         type="button"
                         disabled={isActuallyDisabled}
-                        onClick={() => handleTipoChange(opcao.id)}
+                        onClick={() => {
+                          if (opcao.id === "CARD_ASAAS") {
+                            handleTipoChange("CARD_PARCELADO", "ASAAS");
+                          } else {
+                            handleTipoChange(opcao.id);
+                          }
+                        }}
                         className={`rounded-2xl border px-3 py-2 text-left transition ${
                           selected
                             ? "border-[#0f9f9a] bg-[#dff8f6]"

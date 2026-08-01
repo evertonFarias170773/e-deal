@@ -8,6 +8,7 @@ import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
 import { canLiberarParaPedido, roundMoney, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { featureFlags } from "@/lib/feature-flags";
 import {
   getCobrancasReadOnlyData,
   updatePagamentoV2StatusConfirmacao,
@@ -408,6 +409,15 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
          valor: roundMoney(values.valor),
          status: isFaturadoType ? "A_VENCER" : "A_RECEBER",
          tipo_cobranca: values.tipoCobranca,
+         // Adquirente do cartão gravado explicitamente, para que NULL identifique
+         // apenas o legado anterior a 01/08/2026.
+         // Só é enviado com a flag ligada: a coluna vem da migration
+         // 20260801_pagamentos_v2_cartao_provedor.sql, e migrations não
+         // acompanham o deploy. Com a flag desligada o INSERT permanece
+         // byte-idêntico ao atual e não depende da migration ter sido aplicada.
+         ...(featureFlags.CARTAO_ASAAS && values.tipoCobranca === "CARD_PARCELADO"
+           ? { cartao_provedor: values.cartaoProvedor ?? "C6" }
+           : {}),
          empresa: nomeEmpresa,
          id_empresa: idEmpresa,
          os_ideal: values.osIdeal.trim(),
@@ -547,6 +557,32 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         // Para CARTAO (CARD_PARCELADO) ou FATURADO (E-FATURADO):
         // O checkout/faturamento é gerado no backend. Não disparamos webhook externo no front.
         // Apenas recarregamos os dados e retornamos a linha correspondente.
+
+        // Exceção: cartão com provedor ASAAS (contingência da empresa 1) aciona a
+        // rota server-side que gera o checkout. O provedor padrão (C6) continua
+        // sem chamada externa aqui — nada muda no fluxo atual.
+        // A rota recebe apenas o id da cobrança: o payload financeiro é lido do
+        // banco pelo servidor e pelo n8n, nunca trafega pelo front.
+        if (values.tipoCobranca === "CARD_PARCELADO" && values.cartaoProvedor === "ASAAS") {
+          const sessionResponse = await client.auth.getSession();
+          const tokenSessao = sessionResponse.data.session?.access_token || "";
+
+          const asaasResponse = await fetch("/api/cobrancas/gerar-cartao-asaas", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "Authorization": `Bearer ${tokenSessao}`
+            },
+            body: JSON.stringify({ cobrancaId })
+          });
+
+          const asaasResult = await asaasResponse.json().catch(() => null);
+
+          if (!asaasResponse.ok || !asaasResult?.success) {
+            throw new Error(asaasResult?.message || "Falha ao gerar o checkout de cartão no Asaas.");
+          }
+        }
+
         const loadResult = await loadData();
         const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
                       loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
@@ -561,7 +597,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           }
           msg = `${label} enviado para análise financeira.${condicaoText} Observações: ${values.observacao || "Nenhuma"}`;
         } else {
-          msg = `Registrada nova cobrança CARTÃO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+          const provedorCartao = values.cartaoProvedor === "ASAAS" ? " (Asaas)" : "";
+          msg = `Registrada nova cobrança CARTÃO${provedorCartao}, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
         }
 
         void registrarMensagemSistemaProposta({

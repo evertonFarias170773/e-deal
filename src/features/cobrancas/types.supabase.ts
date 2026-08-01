@@ -42,6 +42,8 @@ export type SupabasePagamentoV2Row = {
   cartao_taxa_percentual?: SupabaseValue;
   cartao_valor_taxa?: SupabaseValue;
   cartao_valor_final?: SupabaseValue;
+  /** Adquirente do checkout: "C6" | "ASAAS". NULL = cartão anterior a 01/08/2026 (lido como C6). */
+  cartao_provedor?: SupabaseValue;
   forma_fatu?: SupabaseValue;
   forma_pgto?: SupabaseValue;
   boleto_enviadoo?: SupabaseValue;
