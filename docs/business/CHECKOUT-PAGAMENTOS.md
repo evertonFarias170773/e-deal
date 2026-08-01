@@ -162,9 +162,10 @@ Fonte específica para:
 | `cartao_taxa_percentual` | Percentual da taxa |
 | `cartao_valor_taxa` | Valor da taxa |
 | `cartao_valor_final` | Valor final cobrado |
-| `cartao_checkout_id` | Identificador do checkout |
+| `cartao_checkout_id` | Identificador do checkout no provedor (no Asaas, o `payment id` `pay_*`) |
 | `cartao_checkout_url` | URL do checkout |
-| `cartao_status` | Status específico do fluxo de cartão |
+| `cartao_status` | Status específico do fluxo de cartão. Recebe o vocabulário do provedor e **não substitui** o status financeiro oficial |
+| `cartao_provedor` | Adquirente que gerou o checkout: `C6` ou `ASAAS`. `NULL` = cartão anterior a 01/08/2026, lido como `C6`. Criado pela migration `20260801_pagamentos_v2_cartao_provedor.sql` |
 
 ## Campos de Parcelamento ou Faturado
 
@@ -188,6 +189,12 @@ A disponibilidade de cada fluxo deve ser confirmada na implementação e na Matr
 | Faturado | Condição persistida em `pagamentos_v2.forma_pgto` e registrada na timeline da proposta |
 | Cartão | Depende da integração oficial disponível no fluxo atual |
 | Cartão parcelado | Deve ser tratado como tipo de cobrança, não como status financeiro principal |
+| Cartão — Asaas (contingência) | Segunda opção de cartão, **exclusiva da empresa 1**, para quando o checkout do provedor padrão falha no cliente. Escolha consciente do usuário: **não existe fallback automático**. Só aparece quando a empresa recebedora já é a 1 — nenhum `id_empresa` é alterado pela seleção. Gravada como `tipo_cobranca = CARD_PARCELADO` + `cartao_provedor = ASAAS`. Rota: `/api/cobrancas/gerar-cartao-asaas`. Estado em 01/08/2026: **código implementado, flag `NEXT_PUBLIC_FEATURE_CARTAO_ASAAS` desligada, workflows n8n ainda não criados e nenhuma cobrança real emitida** |
+
+O ERP nunca recebe, trafega ou armazena dado de cartão: a cobrança é criada como
+`CREDIT_CARD` sem dados do portador e o pagamento ocorre na URL segura devolvida
+pelo provedor. Capturar número de cartão no frontend do ERP mudaria o regime de
+compliance e contraria "o frontend não gera instrumentos financeiros".
 
 Não ampliar integrações para outras empresas ou provedores apenas por semelhança de fluxo.
 
