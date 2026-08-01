@@ -8,7 +8,6 @@ import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
 import { canLiberarParaPedido, roundMoney, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { featureFlags } from "@/lib/feature-flags";
 import {
   getCobrancasReadOnlyData,
   updatePagamentoV2StatusConfirmacao,
@@ -177,31 +176,6 @@ async function resolverVendedorProposta(
     nome_usuario: exatos[0].nome_usuario || nomeVendedor,
     email: exatos[0].email || ""
   };
-}
-
-/**
- * Aciona a rota que gera o checkout de cartão no Asaas.
- * A rota é idempotente: se a cobrança já tem cartao_checkout_url, devolve o
- * checkout existente sem chamar o provedor de novo.
- */
-async function acionarCheckoutAsaas(client: SupabaseClient, cobrancaId: string): Promise<void> {
-  const sessionResponse = await client.auth.getSession();
-  const tokenSessao = sessionResponse.data.session?.access_token || "";
-
-  const resposta = await fetch("/api/cobrancas/gerar-cartao-asaas", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "Authorization": `Bearer ${tokenSessao}`
-    },
-    body: JSON.stringify({ cobrancaId })
-  });
-
-  const resultado = await resposta.json().catch(() => null);
-
-  if (!resposta.ok || !resultado?.success) {
-    throw new Error(resultado?.message || "Falha ao gerar o checkout de cartão no Asaas.");
-  }
 }
 
 export function CobrancasProvider({ children }: { children: ReactNode }) {
@@ -409,40 +383,6 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error("Cliente do Supabase nao inicializado.");
       }
 
-      // Retry de contingência Asaas: se a rota falhou numa tentativa anterior, a
-      // linha de pagamentos_v2 ficou criada porém sem checkout. Sem esta busca,
-      // o novo clique inseriria uma SEGUNDA cobrança para a mesma proposta.
-      // Reaproveita a pendente de mesmo valor e reaciona a rota — que é
-      // idempotente e devolve o checkout existente quando já houver um.
-      if (values.tipoCobranca === "CARD_PARCELADO" && values.cartaoProvedor === "ASAAS") {
-        const { data: candidatas } = await client
-          .from("pagamentos_v2")
-          .select("id, valor")
-          .eq("id_int", proposta.id_int)
-          .eq("tipo_cobranca", "CARD_PARCELADO")
-          .eq("cartao_provedor", "ASAAS")
-          .eq("status", "A_RECEBER")
-          .returns<Array<{ id: string; valor: number | null }>>();
-
-        const reaproveitavel = (candidatas || []).find(
-          (item) => roundMoney(Number(item.valor ?? 0)) === roundMoney(values.valor)
-        );
-
-        if (reaproveitavel) {
-          await acionarCheckoutAsaas(client, reaproveitavel.id);
-
-          const loadResult = await loadData();
-          const found = loadResult.cobrancas.find((item) => item.id === reaproveitavel.id) ||
-                        loadResult.cobrancasStats.find((item) => item.id === reaproveitavel.id);
-
-          if (!found) {
-            throw new Error("Checkout gerado, mas a cobrança não foi encontrada ao recarregar. Atualize a tela.");
-          }
-
-          return found;
-        }
-      }
-
       const empresaOption = getEmpresaRecebedoraByProposta(proposta);
       const idEmpresa = values.id_empresa ?? (empresaOption?.id ?? 1);
       const nomeEmpresa = values.empresa ?? (empresaOption?.nome ?? proposta.empresa);
@@ -468,15 +408,6 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
          valor: roundMoney(values.valor),
          status: isFaturadoType ? "A_VENCER" : "A_RECEBER",
          tipo_cobranca: values.tipoCobranca,
-         // Adquirente do cartão gravado explicitamente, para que NULL identifique
-         // apenas o legado anterior a 01/08/2026.
-         // Só é enviado com a flag ligada: a coluna vem da migration
-         // 20260801_pagamentos_v2_cartao_provedor.sql, e migrations não
-         // acompanham o deploy. Com a flag desligada o INSERT permanece
-         // byte-idêntico ao atual e não depende da migration ter sido aplicada.
-         ...(featureFlags.CARTAO_ASAAS && values.tipoCobranca === "CARD_PARCELADO"
-           ? { cartao_provedor: values.cartaoProvedor ?? "C6" }
-           : {}),
          empresa: nomeEmpresa,
          id_empresa: idEmpresa,
          os_ideal: values.osIdeal.trim(),
@@ -616,16 +547,6 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         // Para CARTAO (CARD_PARCELADO) ou FATURADO (E-FATURADO):
         // O checkout/faturamento é gerado no backend. Não disparamos webhook externo no front.
         // Apenas recarregamos os dados e retornamos a linha correspondente.
-
-        // Exceção: cartão com provedor ASAAS (contingência da empresa 1) aciona a
-        // rota server-side que gera o checkout. O provedor padrão (C6) continua
-        // sem chamada externa aqui — nada muda no fluxo atual.
-        // A rota recebe apenas o id da cobrança: o payload financeiro é lido do
-        // banco pelo servidor e pelo n8n, nunca trafega pelo front.
-        if (values.tipoCobranca === "CARD_PARCELADO" && values.cartaoProvedor === "ASAAS") {
-          await acionarCheckoutAsaas(client, cobrancaId);
-        }
-
         const loadResult = await loadData();
         const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
                       loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
@@ -640,8 +561,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           }
           msg = `${label} enviado para análise financeira.${condicaoText} Observações: ${values.observacao || "Nenhuma"}`;
         } else {
-          const provedorCartao = values.cartaoProvedor === "ASAAS" ? " (Asaas)" : "";
-          msg = `Registrada nova cobrança CARTÃO${provedorCartao}, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
+          msg = `Registrada nova cobrança CARTÃO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
         }
 
         void registrarMensagemSistemaProposta({

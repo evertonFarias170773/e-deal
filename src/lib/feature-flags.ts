@@ -11,10 +11,4 @@ export const featureFlags = {
 
   // Ativa a capacidade de criar Múltiplas OS para a mesma proposta (Fase 2/5)
   MULTI_OS_V2: process.env.NEXT_PUBLIC_FEATURE_MULTI_OS_V2 === "true",
-
-  // Exibe a opção "Cartão de crédito (Asaas)" no modal de criação de cobrança.
-  // Contingência para quando o checkout C6 falha no cliente: o usuário escolhe
-  // conscientemente, não há fallback automático. Restrita à empresa 1.
-  // Reversão total = NEXT_PUBLIC_FEATURE_CARTAO_ASAAS=false (ou variável ausente).
-  CARTAO_ASAAS: process.env.NEXT_PUBLIC_FEATURE_CARTAO_ASAAS === "true",
 };

@@ -238,9 +238,6 @@ export type CriarCobrancaFormValues = {
   p_intervalo?: number | null;
   id_empresa?: number;
   empresa?: string;
-  /** Adquirente do checkout de cartão. Só é lido quando tipoCobranca = "CARD_PARCELADO".
-   *  Ausente equivale a "C6" (provedor padrão). "ASAAS" é a contingência da empresa 1. */
-  cartaoProvedor?: "C6" | "ASAAS";
   /** Dados do pagador efetivo resolvido via propostas.id_faturado.
    *  Quando ausentes, createCobranca usa fallback em proposta.cliente (propostas antigas). */
   pagadorIdCliente?: number | null;

@@ -5,7 +5,6 @@ import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
 import { getEmpresaRecebedoraFixaById } from "@/features/cobrancas/cobrancas-utils";
 import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
-import { featureFlags } from "@/lib/feature-flags";
 
 export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "id",
@@ -44,23 +43,10 @@ export const PAGAMENTOS_V2_SELECT_COLUMNS = [
   "n_url_pdf",
   "boleto_enviadoo",
   "forma_pgto",
-  "forma_fatu",
-  // Campos de cartão: existiam no schema desde sempre, mas nunca eram trazidos
-  // no SELECT — o mapper lia undefined e derivava um status de exibição.
-  // Passam a ser lidos com a entrada do provedor Asaas.
-  "cartao_checkout_id",
-  "cartao_checkout_url",
-  "cartao_status",
-  // cartao_provedor NÃO entra aqui: a coluna vem da migration
-  // 20260801_pagamentos_v2_cartao_provedor.sql e migrations não acompanham o
-  // deploy. Pedir uma coluna inexistente derruba a listagem inteira de
-  // cobranças, então ela só é solicitada com a flag ligada — ver abaixo.
+  "forma_fatu"
 ] as const;
 
-export const PAGAMENTOS_V2_SELECT = [
-  ...PAGAMENTOS_V2_SELECT_COLUMNS,
-  ...(featureFlags.CARTAO_ASAAS ? ["cartao_provedor"] : [])
-].join(", ");
+export const PAGAMENTOS_V2_SELECT = PAGAMENTOS_V2_SELECT_COLUMNS.join(", ");
 
 export type CobrancasReadSource = "supabase" | "mock";
 
