@@ -191,6 +191,27 @@ A disponibilidade de cada fluxo deve ser confirmada na implementação e na Matr
 | Cartão parcelado | Deve ser tratado como tipo de cobrança, não como status financeiro principal |
 | Cartão — Asaas (contingência) | Segunda opção de cartão, **exclusiva da empresa 1**, para quando o checkout do provedor padrão falha no cliente. Escolha consciente do usuário: **não existe fallback automático**. Só aparece quando a empresa recebedora já é a 1 — nenhum `id_empresa` é alterado pela seleção. Gravada como `tipo_cobranca = CARD_PARCELADO` + `cartao_provedor = ASAAS`. Rota: `/api/cobrancas/gerar-cartao-asaas`. Estado em 01/08/2026: **código implementado, flag `NEXT_PUBLIC_FEATURE_CARTAO_ASAAS` desligada, workflows n8n ainda não criados e nenhuma cobrança real emitida** |
 
+**Conta Asaas em uso — homologação, titularidade de terceiro.** Verificado em
+01/08/2026 por `GET /v3/myAccount` (HTTP 200): a conta apontada por
+`CHAVE_API_ASAAS` pertence a **LISITON DOCUMENTOS SEGUROS LTDA** (CNPJ
+`41**********00`), **não** à Ideal Gráfica. É conta de homologação e não deve
+receber cobrança de produção — o recebimento cairia em outro CNPJ, e nenhum
+teste funcional acusaria: o checkout abre, o pagamento passa, o webhook confirma
+e o `pagamentos_v2` marca `PAID`; o erro só apareceria na conciliação bancária.
+O ponto único de troca pela conta oficial da empresa 1 está documentado em
+`src/features/cobrancas/services/asaas-ambiente.server.ts`, que também registra
+no log qual ambiente está ativo (`ASAAS_AMBIENTE`).
+
+**`HOMOLOGACAO_LISITON` não é sandbox.** A conta e a chave são de **produção**
+(prefixo `$aact_prod_`, host `api.asaas.com`). Não há rede de proteção: qualquer
+chamada real a `/v3/payments` cria **cobrança real e cobrável**, com dinheiro
+real, na conta de um terceiro. O rótulo "homologação" descreve a intenção de uso,
+não o ambiente técnico. Enquanto esse for o ambiente declarado, os workflows do
+n8n permanecem desativados, a execução ocorre apenas com pin data nos nós
+externos, e o nó `Config` segue apontando para `api-sandbox.asaas.com`. Teste sem
+risco financeiro depende de uma chave de sandbox (`$aact_hmlg_`), que ainda não
+existe neste ambiente.
+
 O ERP nunca recebe, trafega ou armazena dado de cartão: a cobrança é criada como
 `CREDIT_CARD` sem dados do portador e o pagamento ocorre na URL segura devolvida
 pelo provedor. Capturar número de cartão no frontend do ERP mudaria o regime de

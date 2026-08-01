@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { logAmbienteAsaas } from "@/features/cobrancas/services/asaas-ambiente.server";
 
 /**
  * Gera o checkout de cartão de crédito no Asaas, via workflow n8n.
@@ -29,6 +30,10 @@ type WebhookCartaoAsaasResponse = {
 const STATUS_TERMINAIS = new Set(["PAID", "CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"]);
 
 export async function POST(request: Request) {
+  // Log de inicializacao: registra uma vez por processo qual ambiente Asaas
+  // esta em uso. Nao altera o fluxo e nunca imprime a chave.
+  logAmbienteAsaas("gerar-cartao-asaas");
+
   let body: GerarCartaoAsaasRequest;
 
   try {
