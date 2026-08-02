@@ -42,7 +42,16 @@ export type OrcamentosReadFilters = {
   vendedor?: string;
   filterTipoCobranca?: string;
   activeCard?: "ORCAMENTOS" | "EM_ARTE" | "LIBERADAS" | "REVISAO_ATENDENTE" | "EM_PRODUCAO" | null;
+  /**
+   * Busca ampla: há texto na pesquisa ou dropdown específico selecionado.
+   * Nesse modo o período é ignorado e a consulta varre o lote de até
+   * LOTE_BUSCA_AMPLA registros, do mais recentemente atualizado ao mais antigo.
+   */
+  ignorarPeriodo?: boolean;
 };
+
+/** Teto de registros varridos quando o período é ignorado (busca ampla). */
+const LOTE_BUSCA_AMPLA = 200;
 
 export type OrcamentosReadResult = {
   source: OrcamentoListSource;
@@ -210,12 +219,16 @@ async function fetchPropostaRows(
   const client = getSupabaseClient();
   const hasFrom = Boolean(client && typeof client.from === "function");
   const clientShape = `from:${hasFrom ? "sim" : "nao"}`;
-  const periodoFilter = buildPeriodoFilter(periodo);
+  // Busca ampla (texto ou dropdown ativo): o período deixa de recortar a consulta.
+  const buscaAmpla = filters?.ignorarPeriodo === true;
+  const periodoFilter = buscaAmpla ? null : buildPeriodoFilter(periodo);
 
   const safePageSize = Math.min(Math.max(1, pageSize), 200);
   const safePage = Math.max(1, page);
-  const from = (safePage - 1) * safePageSize;
-  const to = safePage * safePageSize - 1;
+  // Na busca ampla o resultado é sempre o lote único de até LOTE_BUSCA_AMPLA
+  // registros — não há paginação além dele.
+  const from = buscaAmpla ? 0 : (safePage - 1) * safePageSize;
+  const to = buscaAmpla ? LOTE_BUSCA_AMPLA - 1 : safePage * safePageSize - 1;
 
   const smoke: OrcamentosSmokeDiagnostics = {
     resultExists: false,
@@ -324,7 +337,15 @@ async function fetchPropostaRows(
       }
     }
 
-    query = query.order("id_int", { ascending: false });
+    if (buscaAmpla) {
+      // Da atualização mais recente para a mais antiga. `updated_at` é o campo
+      // real de última atualização (mesmo usado na ordenação da lista).
+      // nullsFirst: false mantém os registros sem updated_at no fim.
+      query = query.order("updated_at", { ascending: false, nullsFirst: false });
+      query = query.order("id_int", { ascending: false });
+    } else {
+      query = query.order("id_int", { ascending: false });
+    }
     query = query.range(from, to);
 
     const { data, error, count } = await query.returns<SupabasePropostaRow[]>();
@@ -564,7 +585,11 @@ export async function getOrcamentosReadOnlyData(
   const safePage = Math.max(1, page);
   const fetched = await fetchPropostaRows(periodo, safePage, safePageSize, filters);
   const rows = fetched.rows;
-  const totalCount = fetched.totalCount || 0;
+  // Na busca ampla o lote é único (até LOTE_BUSCA_AMPLA): o total exibido e a
+  // paginação não podem prometer páginas que a consulta não vai entregar.
+  const totalCount = filters?.ignorarPeriodo === true
+    ? Math.min(fetched.totalCount || 0, LOTE_BUSCA_AMPLA)
+    : fetched.totalCount || 0;
   const totalPages = Math.ceil(totalCount / safePageSize) || 1;
 
   const toNumber = (v: unknown) => {

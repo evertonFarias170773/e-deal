@@ -262,6 +262,19 @@ export function OrcamentosListPageReal() {
     setFilter("q", valor)
   );
 
+  // Busca ampla: pesquisa textual ou dropdown específico selecionado pelo usuário.
+  // Nesse modo o período deixa de recortar a consulta — senão não há como achar
+  // registro de outro mês. O vendedor herdado do ESCOPO não conta aqui: ele é
+  // restrição de acesso, não escolha de filtro. Os cards também não entram, pois
+  // as somas deles são declaradamente por período.
+  const ignorarPeriodo = Boolean(
+    search.trim() ||
+    status !== "TODOS" ||
+    modelo !== "TODOS_MODELOS" ||
+    vendedor !== "TODOS" ||
+    filterTipoCobranca !== "TODOS"
+  );
+
   const queryFilters = useMemo(() => {
     const escopo = user ? getDataScope(user, "propostas") : "all";
     const meuNome = user ? getNomeParaEscopo(user).trim() : "";
@@ -273,9 +286,10 @@ export function OrcamentosListPageReal() {
       modelo: modelo !== "TODOS_MODELOS" ? modelo : undefined,
       vendedor: vendedor !== "TODOS" ? vendedor : escopoVendedor,
       filterTipoCobranca: filterTipoCobranca !== "TODOS" ? filterTipoCobranca : undefined,
-      activeCard: activeCard || undefined
+      activeCard: activeCard || undefined,
+      ignorarPeriodo: ignorarPeriodo || undefined
     };
-  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, user]);
+  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, ignorarPeriodo, user]);
 
   const {
     propostas: rawPropostas,
@@ -419,7 +433,10 @@ export function OrcamentosListPageReal() {
       const matchesVendedor = vendedor === "TODOS" || item.vendedor === vendedor;
       if (!matchesVendedor) continue;
 
+      // Na busca ampla o período já não recorta a consulta; recortar aqui
+      // devolveria o bug (o registro de outro mês voltaria a sumir).
       const matchesPeriodo =
+        ignorarPeriodo ||
         periodo === "all" ||
         (() => {
           const target = new Date(item.createdAt);
@@ -447,7 +464,7 @@ export function OrcamentosListPageReal() {
       const dateB = new Date(b.updatedAt || b.createdAt).getTime();
       return dateB - dateA;
     });
-  }, [modelo, periodo, propostas, searchIndex, search, status, vendedor, activeCard, filterTipoCobranca]);
+  }, [modelo, periodo, ignorarPeriodo, propostas, searchIndex, search, status, vendedor, activeCard, filterTipoCobranca]);
 
   const visibleIdInts = useMemo(() => {
     return filteredPropostas.slice(0, 100).map((p) => p.id_int);
@@ -475,7 +492,11 @@ export function OrcamentosListPageReal() {
     };
   }, [visibleIdInts, user]);
 
-  const periodoSelecionadoLabel = useMemo(() => getSelectedPeriodLabel(periodo, periodOptions), [periodOptions, periodo]);
+  // Com o período ignorado, o rótulo das somas precisa dizer a verdade.
+  const periodoSelecionadoLabel = useMemo(
+    () => (ignorarPeriodo ? "todos os períodos" : getSelectedPeriodLabel(periodo, periodOptions)),
+    [ignorarPeriodo, periodOptions, periodo]
+  );
 
   const cardsSummary = useMemo(() => {
     let orcCnt = 0, orcTotal = 0;
