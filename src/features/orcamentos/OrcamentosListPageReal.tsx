@@ -349,13 +349,21 @@ export function OrcamentosListPageReal() {
   }
 
   const statusOptions = useMemo(() => {
-    const values = Array.from(new Set(propostas.map((item) => {
+    const doLote = propostas.map((item) => {
       if (item.status && item.status.includes("EM ARTE")) {
         return "EM ARTE";
       }
       return item.status;
-    }))).filter(Boolean);
-    
+    });
+
+    // Base fixa de status do sistema. Sem ela, o dropdown se limita ao que o
+    // período atual trouxe — e um perfil sem proposta no mês (caso comum fora
+    // de admin, cujo escopo é "all") ficava com o filtro vazio, sem conseguir
+    // nem acionar a busca ampla. CANCELADO fica de fora: a listagem padrão
+    // continua escondendo cancelados, como sempre.
+    const baseFixa = defaultStatusOrder.filter((s) => s !== "CANCELADO");
+    const values = Array.from(new Set([...baseFixa, ...doLote])).filter(Boolean);
+
     const ordered = values.sort((a, b) => {
       const indexA = defaultStatusOrder.indexOf(a as string);
       const indexB = defaultStatusOrder.indexOf(b as string);
@@ -368,10 +376,26 @@ export function OrcamentosListPageReal() {
     return ["TODOS", ...ordered];
   }, [propostas]);
 
-  const vendedorOptions = useMemo(
-    () => Array.from(new Set(propostas.map((item) => item.vendedor).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR")),
-    [propostas]
-  );
+  const vendedorOptions = useMemo(() => {
+    const nomes = propostas.map((item) => item.vendedor).filter(Boolean);
+
+    // Escopo restrito (own/team/company): o próprio nome precisa estar na lista
+    // mesmo quando o período atual não trouxe nenhuma proposta dele — senão o
+    // usuário não consegue selecionar a si mesmo e acionar a busca ampla.
+    // Não amplia acesso: o nome já é dele e o filtro de escopo segue valendo.
+    const escopo = getDataScope(user, "propostas");
+    const meuNome = getNomeParaEscopo(user).trim();
+    if (escopo !== "all" && meuNome) {
+      nomes.push(meuNome);
+    }
+
+    // Mantém o valor selecionado na lista para ele não sumir do select.
+    if (vendedor !== "TODOS") {
+      nomes.push(vendedor);
+    }
+
+    return Array.from(new Set(nomes)).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [propostas, user, vendedor]);
 
   const modeloOptions = useMemo(
     () => [

@@ -99,6 +99,24 @@ function getRotuloModalidade(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS"
   return getCobrancaTipoLabel(tipo);
 }
 
+/**
+ * Empresa recebedora habilitada para o Cartão Asaas: IDEAL GRÁFICA EXPRESSA
+ * EIRELI. Comparação sempre por ID — nunca por nome da empresa.
+ */
+const EMPRESA_CARTAO_ASAAS = 1;
+
+/**
+ * Rótulo exibido na tela. Difere de `getRotuloModalidade` de propósito: aquele
+ * é o marcador gravado na descrição (`MARCADOR_CARTAO_ASAS`) e casa cobranças
+ * já existentes — mudar o texto dele quebraria esse pareamento.
+ */
+function getRotuloModalidadeExibicao(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS"): string {
+  if (tipo === "CARD_PARCELADO" && fluxoCartao === "ASAS") {
+    return "Cartão Asaas";
+  }
+  return getRotuloModalidade(tipo, fluxoCartao);
+}
+
 export function PropostaCobrancaPanel({
   proposta,
   isModalOpen,
@@ -639,6 +657,38 @@ export function PropostaCobrancaPanel({
     setForm((current) => ({ ...current, ...patch }));
   }
 
+  /**
+   * Troca da empresa recebedora. Se o Cartão Asaas estava selecionado e a nova
+   * empresa não é a habilitada, a seleção é limpa (volta ao estado sem forma
+   * escolhida) em vez de herdar silenciosamente outra modalidade de cartão.
+   */
+  function handleEmpresaChange(selectedId: number) {
+    const matched = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === selectedId);
+    if (!matched) return;
+
+    const perdeuCartaoAsaas =
+      form.tipoCobranca === "CARD_PARCELADO" &&
+      form.cartaoFluxo === "ASAS" &&
+      matched.id !== EMPRESA_CARTAO_ASAAS;
+
+    patchForm({
+      id_empresa: matched.id,
+      empresa: matched.nome,
+      // "" = nenhuma forma selecionada; handleSubmit já barra esse estado.
+      ...(perdeuCartaoAsaas
+        ? { tipoCobranca: "" as CobrancaTipo, cartaoFluxo: undefined, parcelaSelecionada: undefined }
+        : {})
+    });
+
+    if (perdeuCartaoAsaas) {
+      showToast({
+        type: "warning",
+        title: "Cartão Asaas indisponível para esta empresa",
+        description: "A seleção foi limpa. Escolha outra forma de pagamento."
+      });
+    }
+  }
+
   function handleTipoChange(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS") {
     patchForm({
       tipoCobranca: tipo,
@@ -684,6 +734,22 @@ export function PropostaCobrancaPanel({
 
     if (!form.tipoCobranca) {
       showToast({ type: "error", title: "Selecione uma forma de pagamento." });
+      return;
+    }
+
+    // Trava do Cartão Asaas por empresa recebedora. Repetida aqui de propósito:
+    // o botão desabilitado é só apresentação e pode ser contornado (estado
+    // antigo, empresa trocada em outra aba). Nenhuma requisição sai daqui.
+    if (
+      form.tipoCobranca === "CARD_PARCELADO" &&
+      form.cartaoFluxo === "ASAS" &&
+      idEmpresaReal !== EMPRESA_CARTAO_ASAAS
+    ) {
+      showToast({
+        type: "error",
+        title: "Cartão Asaas indisponível para esta empresa",
+        description: "Essa modalidade é exclusiva da IDEAL GRÁFICA EXPRESSA EIRELI. Selecione outra forma de pagamento."
+      });
       return;
     }
 
@@ -1084,7 +1150,7 @@ export function PropostaCobrancaPanel({
     { id: "PIX", label: "PIX", icon: QrCode },
     { id: "BOLETO", label: "Boleto", icon: ReceiptText },
     { id: "CARD_PARCELADO", label: "Cartão de crédito", icon: CreditCard },
-    { id: "CARD_ASAS", label: "Cartão Asas", icon: CreditCard, hint: "Segunda opção de cartão" },
+    { id: "CARD_ASAS", label: "Cartão Asaas", icon: CreditCard, hint: "Segunda opção de cartão" },
     { id: "E-FATURADO", label: "Faturado", icon: Landmark }
   ];
   if (saldoCredito > 0 && canUsarCredito && saldoRestante > 0) {
@@ -1134,16 +1200,7 @@ export function PropostaCobrancaPanel({
                 <Field label="Empresa recebedora">
                   <select
                     value={form.id_empresa ?? 1}
-                    onChange={(event) => {
-                      const selectedId = Number(event.target.value);
-                      const matched = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === selectedId);
-                      if (matched) {
-                        patchForm({
-                          id_empresa: matched.id,
-                          empresa: matched.nome
-                        });
-                      }
-                    }}
+                    onChange={(event) => handleEmpresaChange(Number(event.target.value))}
                     className={inputClass}
                   >
                     {EMPRESAS_RECEBEDORAS_FIXAS.map((e) => (
@@ -1154,7 +1211,7 @@ export function PropostaCobrancaPanel({
                   </select>
                 </Field>
                 <Field label="Forma de pagamento selecionada">
-                  <input readOnly value={getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                  <input readOnly value={getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                 </Field>
                 <Field label="OS Ideal *">
                   <input
@@ -1235,9 +1292,11 @@ export function PropostaCobrancaPanel({
                         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
                         : opcao.id === "BOLETO"
                           ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                          : (opcao.id === "CARD_PARCELADO" || opcao.id === "CARD_ASAS")
-                            ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                            : true)
+                          : opcao.id === "CARD_ASAS"
+                            ? idEmpresaReal === EMPRESA_CARTAO_ASAAS
+                            : opcao.id === "CARD_PARCELADO"
+                              ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+                              : true)
                     : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id);
                   const isActuallyDisabled = !available;
                   const disabledText = available
@@ -1361,7 +1420,7 @@ export function PropostaCobrancaPanel({
           <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <p className="text-sm font-semibold text-slate-700">
-                Proposta #{proposta.id_int} • {getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
+                Proposta #{proposta.id_int} • {getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
               </p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <button
@@ -1668,16 +1727,7 @@ export function PropostaCobrancaPanel({
                   <Field label="Empresa recebedora">
                   <select
                     value={form.id_empresa ?? 1}
-                    onChange={(event) => {
-                      const selectedId = Number(event.target.value);
-                      const matched = EMPRESAS_RECEBEDORAS_FIXAS.find((e) => e.id === selectedId);
-                      if (matched) {
-                        patchForm({
-                          id_empresa: matched.id,
-                          empresa: matched.nome
-                        });
-                      }
-                    }}
+                    onChange={(event) => handleEmpresaChange(Number(event.target.value))}
                     className={inputClass}
                   >
                     {EMPRESAS_RECEBEDORAS_FIXAS.map((e) => (
@@ -1688,7 +1738,7 @@ export function PropostaCobrancaPanel({
                   </select>
                   </Field>
                   <Field label="Forma de pagamento selecionada">
-                    <input readOnly value={getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
+                    <input readOnly value={getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                   </Field>
                   <Field label="OS Ideal *">
                     <input
@@ -1768,9 +1818,11 @@ export function PropostaCobrancaPanel({
                           ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
                           : opcao.id === "BOLETO"
                             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                            : (opcao.id === "CARD_PARCELADO" || opcao.id === "CARD_ASAS")
-                              ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                              : true)
+                            : opcao.id === "CARD_ASAS"
+                              ? idEmpresaReal === EMPRESA_CARTAO_ASAAS
+                              : opcao.id === "CARD_PARCELADO"
+                                ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+                                : true)
                       : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id);
                     const isActuallyDisabled = !available;
                     const disabledText = available
@@ -1956,7 +2008,7 @@ export function PropostaCobrancaPanel({
             <div className="border-t border-slate-100 bg-white p-4 sm:p-5 md:p-6">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <p className="text-sm font-semibold text-slate-700">
-                  Proposta #{proposta.id_int} • {getRotuloModalidade(form.tipoCobranca, form.cartaoFluxo)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
+                  Proposta #{proposta.id_int} • {getRotuloModalidadeExibicao(form.tipoCobranca, form.cartaoFluxo)} • {formatCurrency(form.parcelaSelecionada?.valorFinal ?? form.valor)}
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <button

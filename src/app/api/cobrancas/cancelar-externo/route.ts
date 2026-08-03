@@ -8,11 +8,28 @@ import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services
 // Status de pagamentos_v2 considerados inativos: cancelamento vira no-op idempotente.
 const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
 
+/**
+ * Não existe coluna de provedor em pagamentos_v2. O cartão Asaas é reconhecido
+ * pelo prefixo que o próprio provedor usa no id da cobrança (ex.:
+ * `pay_zxchmwnbg9yhxcra`), gravado em `cod_solicitacao_inter` pelo n8n. O C6
+ * grava UUID nessa mesma coluna — os formatos não colidem.
+ */
+const PREFIXO_ID_ASAAS = "pay_";
+
+/**
+ * Marcador gravado em `pagamentos_v2.descricao` pelo fluxo do Cartão Asaas
+ * (espelha MARCADOR_CARTAO_ASAS em CobrancasProvider.tsx — não importado aqui
+ * para não puxar módulo de client para dentro da rota). Serve apenas como
+ * CONFIRMAÇÃO: é texto livre, nunca critério isolado de roteamento.
+ */
+const MARCADOR_CARTAO_ASAAS = "Cartão Asas";
+
 type PagamentoRow = {
   id: string;
   id_int: number | null;
   id_cliente: number | null;
   id_pagamento: string | null;
+  descricao: string | null;
   status: string | null;
   confirmado: boolean | null;
   paid_at: string | null;
@@ -171,7 +188,7 @@ export async function POST(request: Request) {
     // 3. Reconsulta o estado financeiro atual (fonte da verdade é o banco)
     const { data: pagamento, error: fetchError } = await supabase
       .from("pagamentos_v2")
-      .select("id, id_int, id_cliente, id_pagamento, status, confirmado, paid_at, data_confirmacao, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
+      .select("id, id_int, id_cliente, id_pagamento, descricao, status, confirmado, paid_at, data_confirmacao, tipo_cobranca, cod_solicitacao_inter, id_empresa, reserva_estado, id_pendencia, chave_reserva")
       .eq("id", id)
       .single<PagamentoRow>();
 
@@ -396,7 +413,57 @@ export async function POST(request: Request) {
       provedorResultado = "ok";
 
     } else if (tipoNormalized === "CARD-PARCELADO") {
-      if (codC6Final) {
+      // Provedor do cartão: Asaas grava id com prefixo `pay_`; C6 grava UUID.
+      // Os formatos são disjuntos — um UUID nunca começa com `pay_`. A fonte é
+      // exclusivamente o registro local (nunca o payload), para que o cliente
+      // não consiga forçar um provedor.
+      const idAsaas = String(pagamento.cod_solicitacao_inter || "").trim();
+      const ehAsaas = idAsaas.startsWith(PREFIXO_ID_ASAAS);
+      const marcadorAsaasNaDescricao = String(pagamento.descricao || "").includes(MARCADOR_CARTAO_ASAAS);
+
+      // Marcador aponta Asaas mas o id ainda não chegou (o n8n grava depois de
+      // responder) ou veio inválido. Cancelar só localmente deixaria o título
+      // vivo no provedor — bloqueia e manda tentar de novo.
+      if (marcadorAsaasNaDescricao && !ehAsaas) {
+        console.warn("[cancelar-externo][ASAAS] descrição marca Asaas mas cod_solicitacao_inter não sincronizou:", {
+          id: pagamento.id,
+          cod_solicitacao_inter: idAsaas || null
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            code: "ASAAS_SEM_ID",
+            message: "Cobrança do Cartão Asaas ainda sem identificador sincronizado. Aguarde alguns instantes e tente cancelar novamente. Nenhuma alteração foi feita."
+          },
+          { status: 409 }
+        );
+      }
+
+      if (ehAsaas) {
+        const webhookUrl = "https://10074.hostoo.net.br/webhook/asaas-del-vibe";
+        console.log("[cancelar-externo][ASAAS] chamando n8n", { id_fatura: idAsaas });
+
+        const webhookResponse = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id_fatura: idAsaas })
+        });
+
+        const responseStatus = webhookResponse.status;
+        const responseBody = await webhookResponse.text();
+        console.log("[cancelar-externo][ASAAS] status n8n", responseStatus);
+        console.log("[cancelar-externo][ASAAS] body n8n", responseBody);
+
+        if (!webhookResponse.ok) {
+          console.error("[API][CancelarExterno] Erro HTTP no n8n (Asaas):", responseStatus, responseBody);
+          return NextResponse.json(
+            { success: false, message: "A API do Asaas recusou o cancelamento do Cartão. Nenhuma alteração local foi feita." },
+            { status: responseStatus }
+          );
+        }
+        provedorResultado = "ok";
+
+      } else if (codC6Final) {
         if (idEmpresaCobranca == null) {
           return NextResponse.json(
             { success: false, message: "Cobrança sem empresa associada. Cancelamento externo não é possível." },
