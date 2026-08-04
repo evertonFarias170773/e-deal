@@ -1029,11 +1029,6 @@ export function PropostaCobrancaPanel({
       return;
     }
 
-    if (isFaturado && !form.observacao?.trim()) {
-      showToast({ type: "error", title: "A observação do faturamento (condição desejada) é obrigatória." });
-      return;
-    }
-
     if (!shouldBypass && isFaturado && analiseCredito.qtdAtrasados > 0) {
       setShowPendingAlert(true);
       return;
@@ -1109,11 +1104,23 @@ export function PropostaCobrancaPanel({
 
       const isFaturadoPayload = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(payload.tipoCobranca);
       if (isFaturadoPayload && !created?.paid_at) {
-        showToast({
-          type: "warning",
-          title: "Faturamento em análise",
-          description: "Solicitação enviada para avaliação do financeiro."
-        });
+        // `confirmado_por` no domínio já é o fallback de `aprovado_por` (ver
+        // mappers.ts). Preenchido = liberado, seja pelo financeiro ou pela
+        // regra automática de limite operacional.
+        const liberado = Boolean(created?.confirmado_por);
+        showToast(
+          liberado
+            ? {
+                type: "success",
+                title: "Faturamento liberado",
+                description: "Crédito disponível e sem faturamentos vencidos. Enviado para a Conferência."
+              }
+            : {
+                type: "warning",
+                title: "Faturamento em análise",
+                description: "Solicitação enviada para avaliação do financeiro."
+              }
+        );
       } else if (payload.tipoCobranca === "BOLETO") {
         showToast({
           type: "success",
@@ -1308,12 +1315,12 @@ export function PropostaCobrancaPanel({
                   </Field>
                 ) : null}
                 <div className="md:col-span-2">
-                  <Field label={isFaturado ? "Observações (Condição comercial solicitada) *" : "Observações"}>
+                  <Field label={isFaturado ? "Observações (Condição comercial solicitada)" : "Observações"}>
                     <textarea
                       value={form.observacao}
                       onChange={(event) => patchForm({ observacao: event.target.value })}
-                      className={`${inputClass} min-h-24 resize-y ${isFaturado && !form.observacao?.trim() ? "border-red-300 focus:border-red-500 focus:ring-red-100" : ""}`}
-                      placeholder={isFaturado ? "Informe a condição desejada, ex.: 14/28 dias (obrigatório)" : "Observação opcional"}
+                      className={`${inputClass} min-h-24 resize-y`}
+                      placeholder={isFaturado ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
                     />
                   </Field>
                 </div>
@@ -1824,12 +1831,12 @@ export function PropostaCobrancaPanel({
                     </Field>
                   ) : null}
                   <div className="md:col-span-2">
-                    <Field label={isFaturado ? "Observações (Condição comercial solicitada) *" : "Observações"}>
+                    <Field label={isFaturado ? "Observações (Condição comercial solicitada)" : "Observações"}>
                       <textarea
                         value={form.observacao}
                         onChange={(event) => patchForm({ observacao: event.target.value })}
-                        className={`${inputClass} min-h-24 resize-y ${isFaturado && !form.observacao?.trim() ? "border-red-300 focus:border-red-500 focus:ring-red-100" : ""}`}
-                        placeholder={isFaturado ? "Informe a condição desejada, ex.: 14/28 dias (obrigatório)" : "Observação opcional"}
+                        className={`${inputClass} min-h-24 resize-y`}
+                        placeholder={isFaturado ? "Observação opcional, ex.: 14/28 dias" : "Observação opcional"}
                       />
                     </Field>
                   </div>

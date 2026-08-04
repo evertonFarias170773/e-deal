@@ -239,6 +239,44 @@ function montarPayloadBoletoAVista(params: {
   return payload;
 }
 
+/**
+ * Pede ao servidor a avaliação de liberação automática do E-FATURADO.
+ *
+ * Best-effort de propósito: a decisão é do backend, e qualquer falha aqui
+ * (rede, sessão, indisponibilidade) deixa a cobrança PENDENTE — que é o estado
+ * seguro e o comportamento atual. Nunca lança: uma falha de liberação não pode
+ * derrubar a criação da cobrança, que já foi persistida.
+ *
+ * Retorna true apenas quando o servidor confirma a liberação.
+ */
+async function acionarAprovacaoAutomaticaFaturado(client: SupabaseClient, cobrancaId: string): Promise<boolean> {
+  try {
+    const sessionResponse = await client.auth.getSession();
+    const tokenSessao = sessionResponse.data.session?.access_token || "";
+
+    const resposta = await fetch("/api/cobrancas/aprovar-faturado-automatico", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Authorization": `Bearer ${tokenSessao}`
+      },
+      body: JSON.stringify({ cobrancaId })
+    });
+
+    const resultado = await resposta.json().catch(() => null);
+
+    if (!resposta.ok || !resultado?.success) {
+      console.warn("[CobrancasProvider] Avaliacao automatica do faturado sem efeito:", resultado?.message);
+      return false;
+    }
+
+    return resultado.aprovadoAutomaticamente === true;
+  } catch (erro) {
+    console.warn("[CobrancasProvider] Falha ao avaliar liberacao automatica do faturado:", erro);
+    return false;
+  }
+}
+
 /** Marcador do Cartão Asas na descrição. Identifica a cobrança sem coluna nova. */
 export const MARCADOR_CARTAO_ASAS = "Cartão Asas";
 
@@ -724,6 +762,16 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           await acionarCartaoAsas(client, cobrancaId);
         }
 
+        // E-FATURADO: o servidor avalia se o cliente está elegível e, em caso
+        // positivo, grava `aprovado_por` — o que encaminha a cobrança direto
+        // para a Fila de Conferência. Roda DEPOIS do INSERT de propósito: a
+        // cobrança recém-criada precisa entrar no comprometido pendente.
+        // Falha aqui mantém a cobrança em análise, sem interromper a criação.
+        let liberadoAutomaticamente = false;
+        if (values.tipoCobranca === "E-FATURADO") {
+          liberadoAutomaticamente = await acionarAprovacaoAutomaticaFaturado(client, cobrancaId);
+        }
+
         const loadResult = await loadData();
         const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
                       loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
@@ -736,7 +784,10 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           if (values.forma_fatu) {
             condicaoText = ` - Condição solicitada pelo vendedor: ${values.forma_fatu}. Sujeita à aprovação do Financeiro.`;
           }
-          msg = `${label} enviado para análise financeira.${condicaoText} Observações: ${values.observacao || "Nenhuma"}`;
+          const observacoesText = ` Observações: ${values.observacao || "Nenhuma"}`;
+          msg = liberadoAutomaticamente
+            ? `${label} liberado automaticamente por limite operacional (sem faturamentos vencidos e com crédito disponível). Enviado para a Conferência.${condicaoText}${observacoesText}`
+            : `${label} enviado para análise financeira.${condicaoText}${observacoesText}`;
         } else {
           const sufixoCartao = values.cartaoFluxo === "ASAS" ? " ASAS" : "";
           msg = `Registrada nova cobrança CARTÃO${sufixoCartao}, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
