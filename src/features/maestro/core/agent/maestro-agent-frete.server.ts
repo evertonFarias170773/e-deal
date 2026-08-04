@@ -21,6 +21,7 @@ import {
   solicitarCotacaoVeppo,
 } from '@/features/orcamentos/services/frete.service';
 import type { PropostaFrete } from '@/features/orcamentos/types';
+import { resolverCepViaCep } from '../simple/maestro-cep-resolver.server';
 
 export interface EnderecoFrete {
   id: string;
@@ -115,27 +116,28 @@ function mapearOpcao(f: PropostaFrete): OpcaoFrete | null {
 }
 
 /**
- * Cota as opções de frete para o cliente (endereço resolvido no servidor).
- * `valorTotal` (subtotal dos itens) alimenta seguro/valor declarado das
- * cotações que o exigem, como no fluxo de orçamentos.
+ * Cota as opções de frete para um ENDEREÇO arbitrário (do cadastro do
+ * cliente OU derivado de um CEP digitado). `valorTotal` (subtotal dos itens)
+ * alimenta seguro/valor declarado das cotações que o exigem.
+ * Transportadoras locais e VEPPO exigem cidade+UF (endereço parcial de CEP
+ * com ViaCEP indisponível cota só SEDEX/Azul — mesma política do legado).
  */
-export async function cotarOpcoesFrete(
-  supabase: SupabaseClient,
-  idCliente: number,
+export async function cotarOpcoesFretePorEndereco(
+  endereco: EnderecoFrete | null,
   params: { pesoGramas: number; valorTotal: number },
 ): Promise<CotacaoFreteResult> {
   const pesoGramas = Math.max(0, Math.round(params.pesoGramas));
   const avisos: string[] = [];
   const opcoes: OpcaoFrete[] = [];
-  const endereco = await resolverEnderecoFrete(supabase, idCliente);
 
-  if (!endereco) {
+  if (!endereco || endereco.cep.replace(/\D/g, '').length !== 8) {
     avisos.push(
-      'Cliente sem endereço utilizável para cotação (CEP + cidade + UF). Apenas "Retira no Balcão" disponível — o endereço pode ser cadastrado no ERP.',
+      'Sem endereço utilizável para cotação (CEP + cidade + UF). Apenas "Retira no Balcão" disponível — o endereço pode ser cadastrado no ERP.',
     );
   } else if (pesoGramas <= 0) {
     avisos.push('Itens sem peso cadastrado — não foi possível cotar frete por transportadora. Apenas "Retira no Balcão" disponível.');
   } else {
+    const temCidadeUf = Boolean(endereco.cidade && endereco.uf);
     const volumes = Math.max(1, Math.ceil(pesoGramas / GRAMAS_POR_VOLUME));
     const cotacoes: Promise<PropostaFrete[]>[] = [
       solicitarCotacaoSedex({ peso: pesoGramas, vol: volumes, cep: endereco.cep }),
@@ -143,8 +145,12 @@ export async function cotarOpcoesFrete(
     if (endereco.uf !== 'RS') {
       cotacoes.push(solicitarCotacaoAzulCargo({ peso: pesoGramas, cep: endereco.cep, valorTotal: params.valorTotal }));
     }
-    cotacoes.push(solicitarCotacaoTransportadoras({ peso: pesoGramas, cidade: endereco.cidade, uf: endereco.uf }));
-    cotacoes.push(solicitarCotacaoVeppo({ peso: pesoGramas, valor: params.valorTotal, cidade: endereco.cidade, uf: endereco.uf }));
+    if (temCidadeUf) {
+      cotacoes.push(solicitarCotacaoTransportadoras({ peso: pesoGramas, cidade: endereco.cidade, uf: endereco.uf }));
+      cotacoes.push(solicitarCotacaoVeppo({ peso: pesoGramas, valor: params.valorTotal, cidade: endereco.cidade, uf: endereco.uf }));
+    } else {
+      avisos.push('Cidade/UF do CEP indisponíveis no momento — transportadoras locais não foram cotadas (SEDEX/PAC seguem pelo CEP).');
+    }
 
     const resultados = await Promise.allSettled(cotacoes);
     for (const r of resultados) {
@@ -173,6 +179,60 @@ export async function cotarOpcoesFrete(
     avisos,
     source: 'frete.service (SEDEX/PAC, Azul Cargo, transportadoras, VEPPO) + Retira no Balcão',
   };
+}
+
+/**
+ * Cota as opções de frete para o cliente (endereço resolvido no servidor).
+ */
+export async function cotarOpcoesFrete(
+  supabase: SupabaseClient,
+  idCliente: number,
+  params: { pesoGramas: number; valorTotal: number },
+): Promise<CotacaoFreteResult> {
+  const endereco = await resolverEnderecoFrete(supabase, idCliente);
+  const result = await cotarOpcoesFretePorEndereco(endereco, params);
+  if (!endereco) {
+    // Mensagem específica do fluxo por cliente (a genérica fala em "endereço")
+    result.avisos = [
+      'Cliente sem endereço utilizável para cotação (CEP + cidade + UF). Apenas "Retira no Balcão" disponível — o endereço pode ser cadastrado no ERP.',
+    ];
+  }
+  return result;
+}
+
+/**
+ * Constrói um EnderecoFrete a partir de um CEP digitado (ViaCEP) — política
+ * de erros do motor legado: CEP inexistente/ inválido → erro explícito (nada
+ * é cotado; NUNCA inventar cidade/frete); ViaCEP fora do ar → endereço
+ * parcial (só CEP) com aviso, cotando apenas o que depende só do CEP.
+ */
+export async function enderecoFreteDeCep(
+  cep: string,
+): Promise<{ endereco: EnderecoFrete | null; erroCep?: 'inexistente' | 'indisponivel' | 'formato'; mensagem?: string }> {
+  const res = await resolverCepViaCep(cep);
+  const cepLimpo = cep.replace(/\D/g, '');
+  if (res.valido) {
+    const cidade = (res.cidade ?? '').trim();
+    const uf = (res.uf ?? '').trim().toUpperCase();
+    return {
+      endereco: {
+        id: '',
+        cep: cepLimpo,
+        bairro: (res.bairro ?? '').trim(),
+        cidade,
+        uf,
+        enderecoFull: `CEP ${cepLimpo} - ${cidade}/${uf}`,
+      },
+    };
+  }
+  if (res.erroType === 'indisponivel') {
+    return {
+      endereco: { id: '', cep: cepLimpo, bairro: '', cidade: '', uf: '', enderecoFull: `CEP ${cepLimpo}` },
+      erroCep: 'indisponivel',
+      mensagem: res.mensagem,
+    };
+  }
+  return { endereco: null, erroCep: res.erroType ?? 'inexistente', mensagem: res.mensagem };
 }
 
 export type EscolhaFrete =

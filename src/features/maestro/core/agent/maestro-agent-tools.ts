@@ -50,7 +50,7 @@ import {
 } from '../simple/maestro-simple-pagamentos.server';
 import { buscarBoletosCliente } from '../simple/maestro-simple-boletos.server';
 import { simularOrcamentoAvulsoDb, listarProdutosCatalogo, buscarFotosProduto } from '../simple/maestro-simple-produtos.server';
-import { cotarOpcoesFrete } from './maestro-agent-frete.server';
+import { cotarOpcoesFrete, cotarOpcoesFretePorEndereco, enderecoFreteDeCep } from './maestro-agent-frete.server';
 import { gerarPdfPropostaServer } from './maestro-agent-pdf.server';
 import { buscarNomeUsuario } from '../simple/maestro-simple-vendedores.server';
 import { intervaloDiaSaoPaulo } from '../simple/maestro-simple-tempo';
@@ -1460,6 +1460,128 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         pesoGramas: Math.round(pesoGramas),
         valorTotal: Number(subtotal.toFixed(2)),
       });
+    },
+  },
+
+  cotacao_avulsa_cep: {
+    schema: {
+      type: 'function',
+      function: {
+        name: 'cotacao_avulsa_cep',
+        description:
+          'Orçamento AVULSO por CEP em UMA chamada, SEM exigir cliente ativo: produto(s) + quantidade + CEP → ' +
+          'subtotal calculado no servidor (quantidade × valorUnt + valorFixo), endereço do CEP (bairro/cidade/UF ' +
+          'via ViaCEP) e opções REAIS de frete para o CEP (SEDEX/PAC, Azul Cargo, transportadoras, VEPPO + Retira ' +
+          'no Balcão), cada uma com totalComFrete pronto. Use quando o usuário informar CEP na mensagem (ex.: ' +
+          '"100 tribands cep 91520120") — mesmo com cliente ativo, o CEP explícito vale para ESTA cotação. ' +
+          'Nada é salvo; para salvar depois é preciso identificar o cliente (resolver_cliente) e usar ' +
+          'salvar_cotacao_como_proposta. Se vier cep_invalido, peça para conferir o CEP — NUNCA estime frete, ' +
+          'prazo ou cidade por conta própria.',
+        parameters: {
+          type: 'object',
+          properties: {
+            itens: {
+              type: 'array',
+              description: 'Itens do orçamento (produto e quantidade).',
+              items: {
+                type: 'object',
+                properties: {
+                  quantidade: { type: 'number' },
+                  termo: { type: 'string' },
+                },
+                required: ['quantidade', 'termo'],
+                additionalProperties: false,
+              },
+            },
+            cep: { type: 'string', description: 'CEP de entrega informado pelo usuário (8 dígitos, com ou sem pontuação).' },
+          },
+          required: ['itens', 'cep'],
+          additionalProperties: false,
+        },
+      },
+    },
+    handler: async (args, ctx) => {
+      const itensRaw: unknown[] = Array.isArray(args.itens) ? args.itens : [];
+      const itens = itensRaw
+        .map(raw => {
+          const i = raw as { quantidade?: unknown; termo?: unknown } | null;
+          return { quantidade: Number(i?.quantidade), termo: String(i?.termo ?? '').trim() };
+        })
+        .filter(i => Number.isFinite(i.quantidade) && i.quantidade > 0 && i.termo.length > 0)
+        .slice(0, 20);
+      const cep = String(args.cep ?? '').trim();
+      if (itens.length === 0) return { found: false, motivo: 'Informe os itens (produto e quantidade).' };
+      if (!cep) return { found: false, motivo: 'Informe o CEP de entrega.' };
+
+      // 1. Subtotal 100% do servidor (singularização e valorFixo embutidos)
+      const sim = await simularOrcamentoAvulsoDb(ctx.supabase, itens);
+      const problemas: string[] = [];
+      let pesoGramas = 0;
+      let subtotal = 0;
+      const itensDetalhados: Array<Record<string, unknown>> = [];
+      for (const item of sim.itens) {
+        if (item.status !== 'sucesso' || item.produtosEncontrados.length !== 1) {
+          problemas.push(`"${item.termo}": ${item.status}`);
+          continue;
+        }
+        const p = item.produtosEncontrados[0];
+        const catalogo = resolverTermoCatalogo(item.termo);
+        pesoGramas += (p.pesoUnitario ?? 0) * item.quantidade;
+        subtotal += item.subtotalCalculado ?? 0;
+        itensDetalhados.push({
+          id_produto: p.id_produto,
+          nomeComercialOficial: (p.nomeReal && p.nomeReal.trim()) || catalogo.nomeComercial || p.descricao || item.termo,
+          formato: p.formato ?? null,
+          prazoProducao: p.prazo ?? null,
+          quantidade: item.quantidade,
+          valorUnt: p.valorUnt,
+          valorFixo: p.valorFixo ?? 0,
+          subtotalCalculado: item.subtotalCalculado,
+        });
+      }
+      if (problemas.length > 0) {
+        return {
+          found: false,
+          motivo: `Itens não prontos para o orçamento: ${problemas.join('; ')}.`,
+          atencao:
+            'Resolva o produto primeiro (buscar_produto traz sugestões para termo não encontrado/ambíguo) e chame esta ferramenta de novo.',
+        };
+      }
+
+      // 2. Endereço do CEP — política do legado: inexistente/inválido = erro
+      //    explícito, NADA é cotado; ViaCEP fora = cota só o que depende do CEP
+      const end = await enderecoFreteDeCep(cep);
+      if (!end.endereco) {
+        return {
+          found: false,
+          cep_invalido: true,
+          motivo: end.mensagem ?? `O CEP ${cep} não foi localizado.`,
+          atencao: 'Peça para o usuário conferir o CEP digitado — NUNCA estime frete, prazo ou cidade por conta própria.',
+        };
+      }
+
+      // 3. Fretes reais para o CEP
+      const cotacao = await cotarOpcoesFretePorEndereco(end.endereco, {
+        pesoGramas: Math.round(pesoGramas),
+        valorTotal: Number(subtotal.toFixed(2)),
+      });
+
+      return {
+        found: true,
+        cep: end.endereco.cep,
+        endereco: { bairro: end.endereco.bairro, cidade: end.endereco.cidade, uf: end.endereco.uf },
+        itens: itensDetalhados,
+        subtotal: Number(subtotal.toFixed(2)),
+        pesoGramas: Math.round(pesoGramas),
+        opcoes: cotacao.opcoes,
+        avisos: [...cotacao.avisos, ...(end.mensagem ? [end.mensagem] : [])],
+        atencao:
+          'Apresente no FORMATO DE ORÇAMENTO oficial com a linha 📌 usando bairro/cidade/UF deste retorno. ' +
+          'Frete SOMENTE das opções retornadas (sem transportadora disponível → diga claramente; Retira no Balcão sempre existe). ' +
+          'Para SALVAR como proposta: identifique o cliente primeiro (resolver_cliente) e use salvar_cotacao_como_proposta — ' +
+          'avise que o frete final considera o endereço do cadastro do cliente.',
+        source: 'public.produtos + ViaCEP + frete.service',
+      };
     },
   },
 

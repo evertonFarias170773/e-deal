@@ -9,6 +9,8 @@ export interface CepResolverResult {
   valido: boolean;
   cidade?: string;
   uf?: string;
+  /** Bairro do ViaCEP (aditivo — usado no layout 📌 bairro | cidade/UF do agente) */
+  bairro?: string;
   erroType?: 'inexistente' | 'indisponivel' | 'formato';
   mensagem?: string;
 }
@@ -55,17 +57,19 @@ export async function resolverCepViaCep(cep: string, timeoutMs = 2000): Promise<
     return {
       valido: true,
       cidade: data.localidade,
-      uf: data.uf
+      uf: data.uf,
+      bairro: typeof data.bairro === 'string' && data.bairro.trim() ? data.bairro.trim() : undefined,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timeoutId);
-    const isTimeout = err.name === 'AbortError';
+    const e = err instanceof Error ? err : null;
+    const isTimeout = e?.name === 'AbortError';
     return {
       valido: false,
       erroType: 'indisponivel',
-      mensagem: isTimeout 
-        ? 'Timeout na consulta do CEP.' 
-        : (err.message || 'Erro de conexão no serviço de CEP.')
+      mensagem: isTimeout
+        ? 'Timeout na consulta do CEP.'
+        : (e?.message || 'Erro de conexão no serviço de CEP.')
     };
   }
 }

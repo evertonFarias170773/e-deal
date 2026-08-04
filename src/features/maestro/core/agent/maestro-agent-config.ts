@@ -18,7 +18,6 @@
  */
 
 import type { MaestroV2Context } from '../simple/maestro-v2-context-manager';
-import { extrairCepDaQueryEstruturado } from '../simple/maestro-cep-resolver.server';
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -95,18 +94,11 @@ export function temEstadoDeEscritaAtivo(v2Ctx: MaestroV2Context): boolean {
  * Decide se o turno atual deve usar o agent loop.
  *   - flag OFF → legado;
  *   - flag ON com estado de cotação/escrita ativo → legado (preserva UX de escrita);
- *   - flag ON com CEP na mensagem e SEM cliente ativo → legado (orçamento
- *     avulso por CEP: só o motor legado extrai o CEP, resolve o endereço e
- *     cota o frete — o agente não tem tool de frete por CEP e acaba
- *     apresentando orçamento montado pelo modelo, sem o valor fixo);
- *   - flag ON e pergunta livre de leitura → agent loop.
- * `query` é opcional para retrocompatibilidade (sem ela, comportamento antigo).
+ *   - flag ON e pergunta livre de leitura → agent loop (inclusive orçamento
+ *     avulso por CEP — a tool cotacao_avulsa_cep cobre o fluxo sem cliente;
+ *     o legado fica apenas como fallback técnico de erro na rota).
  */
-export function deveUsarAgentLoop(v2Ctx: MaestroV2Context, query?: string): boolean {
+export function deveUsarAgentLoop(v2Ctx: MaestroV2Context): boolean {
   if (!isAgentLoopEnabled()) return false;
-  if (temEstadoDeEscritaAtivo(v2Ctx)) return false;
-  if (query && v2Ctx.activeEntities?.clientInternalId == null && extrairCepDaQueryEstruturado(query)) {
-    return false;
-  }
-  return true;
+  return !temEstadoDeEscritaAtivo(v2Ctx);
 }
