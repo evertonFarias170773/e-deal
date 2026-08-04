@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     let result;
 
     const v2CtxProbe = deserializeV2Context(context.v2ContextJson);
-    if (deveUsarAgentLoop(v2CtxProbe)) {
+    if (deveUsarAgentLoop(v2CtxProbe, query)) {
       try {
         result = await runMaestroAgentLoop({
           query,

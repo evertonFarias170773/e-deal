@@ -1251,10 +1251,18 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     },
     handler: async (args, ctx) => {
       const termo = typeof args.termo === 'string' ? args.termo : undefined;
-      return await listarProdutosCatalogo(ctx.supabase, {
+      const res = await listarProdutosCatalogo(ctx.supabase, {
         termo,
         incluirInativos: args.incluir_inativos === true,
       });
+      // Preço de catálogo nunca sai sem a regra do valor fixo — orçamento
+      // com valor calculado pelo modelo (sem o valorFixo) sai ERRADO.
+      return {
+        ...res,
+        regra_valor:
+          'orçamento = quantidade × valorUnt + valorFixo (valorFixo soma UMA vez por item); ' +
+          'valores de orçamento SÓ via simular_orcamento_avulso (subtotalCalculado do servidor)',
+      };
     },
   },
 
@@ -1296,10 +1304,15 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         description:
           'Buscar produto do catálogo por apelido, descrição ou id (preço unitário, valor fixo, ativo) — busca PONTUAL ' +
           'para cotação. Para listas por família ("todas as pulseiras") use listar_produtos. ' +
-          'Não exige cliente ativo. Passe o termo EXATO digitado pelo usuário.',
+          'Não exige cliente ativo. Passe o termo EXATO digitado pelo usuário e, quando o usuário informou quantidade, ' +
+          'passe quantidade — o retorno traz subtotalCalculado PRONTO (quantidade × valorUnt + valorFixo). ' +
+          'NUNCA calcule valor por conta própria a partir de valorUnt.',
         parameters: {
           type: 'object',
-          properties: { termo: { type: 'string' } },
+          properties: {
+            termo: { type: 'string' },
+            quantidade: { type: 'number', description: 'Opcional — quantidade pedida pelo usuário; o servidor devolve subtotalCalculado pronto.' },
+          },
           required: ['termo'],
           additionalProperties: false,
         },
@@ -1308,7 +1321,9 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
     handler: async (args, ctx) => {
       const termo = String(args.termo ?? '').trim();
       if (!termo) return { found: false, reason: 'termo_vazio' };
-      const res = await simularOrcamentoAvulsoDb(ctx.supabase, [{ quantidade: 1, termo }]);
+      const qtdArg = Number(args.quantidade);
+      const quantidade = Number.isFinite(qtdArg) && qtdArg > 0 ? qtdArg : 1;
+      const res = await simularOrcamentoAvulsoDb(ctx.supabase, [{ quantidade, termo }]);
       const item = res.itens[0];
       const status = item?.status ?? 'nao_encontrado';
 
@@ -1356,7 +1371,25 @@ export const AGENT_TOOLS: Record<string, AgentToolDefinition> = {
         };
       }
 
-      return { termo, status, produtos: item?.produtosEncontrados ?? [], source: 'public.produtos' };
+      // Preço NUNCA sai cru: cada produto leva a regra e, quando houve
+      // quantidade, o subtotal já vem calculado pelo servidor (com o
+      // valorFixo somado — o modelo não faz aritmética de orçamento).
+      const REGRA_VALOR =
+        'orçamento = quantidade × valorUnt + valorFixo (valorFixo soma UMA vez por item); ' +
+        'para valores use SEMPRE o subtotalCalculado do servidor (simular_orcamento_avulso)';
+      return {
+        termo,
+        status,
+        produtos: (item?.produtosEncontrados ?? []).map(p => ({ ...p, regra_valor: REGRA_VALOR })),
+        ...(quantidade > 1 && item?.subtotalCalculado != null
+          ? {
+              quantidade,
+              subtotalCalculado: item.subtotalCalculado,
+              atencao: `Subtotal para ${quantidade} unidades JÁ CALCULADO (inclui o valor fixo): use subtotalCalculado, nunca multiplique por conta própria.`,
+            }
+          : {}),
+        source: 'public.produtos',
+      };
     },
   },
 

@@ -231,6 +231,38 @@ export async function buscarFotosProduto(
   return { ...base, found: true, produtos };
 }
 
+/** Singular ingênuo por palavra ("tribands"→"triband", "ingressos mobi"→"ingresso mobi"). */
+function singularizarTermo(termo: string): string {
+  return termo
+    .split(/\s+/)
+    .map(p => (p.length >= 4 && /s$/i.test(p) && !/ss$/i.test(p) ? p.slice(0, -1) : p))
+    .join(' ');
+}
+
+/** Busca textual em apelidos, descrição e nome comercial (dedup por id). */
+async function buscarProdutosTextual(
+  supabase: SupabaseClient,
+  termo: string,
+): Promise<OrcamentoAvulsoProdutoDb[]> {
+  const [resApelido, resDesc, resNome] = await Promise.all([
+    supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('apelidos', `%${termo}%`),
+    supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('descricao', `%${termo}%`),
+    supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('nomeReal', `%${termo}%`),
+  ]);
+
+  const map = new Map<number, OrcamentoAvulsoProdutoDb>();
+  if (resApelido.data) {
+    for (const p of resApelido.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
+  }
+  if (resDesc.data) {
+    for (const p of resDesc.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
+  }
+  if (resNome.data) {
+    for (const p of resNome.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
+  }
+  return Array.from(map.values());
+}
+
 export async function simularOrcamentoAvulsoDb(
   supabase: SupabaseClient,
   itensReq: OrcamentoAvulsoItemReq[]
@@ -245,8 +277,6 @@ export async function simularOrcamentoAvulsoDb(
   for (const req of itensReq) {
     const termoOriginal = req.termo.trim();
     if (!termoOriginal) continue;
-
-    const termoNorm = normalizeText(termoOriginal);
 
     let data: OrcamentoAvulsoProdutoDb[] = [];
 
@@ -268,25 +298,21 @@ export async function simularOrcamentoAvulsoDb(
 
     // Fallback: busca textual normal se não encontrou por ID (apelidos,
     // descrição e nome comercial — "Ingresso MOBI" precisa achar por nomeReal)
+    let termoBusca = termoOriginal;
     if (data.length === 0) {
-      const [resApelido, resDesc, resNome] = await Promise.all([
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('apelidos', `%${termoOriginal}%`),
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('descricao', `%${termoOriginal}%`),
-        supabase.from('produtos').select('id_produto, descricao, apelidos, "valorUnt", "valorFixo", ativo, peso, formato, prazo, "nomeReal"').ilike('nomeReal', `%${termoOriginal}%`)
-      ]);
-
-      const map = new Map<number, OrcamentoAvulsoProdutoDb>();
-      if (resApelido.data) {
-        for (const p of resApelido.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
+      data = await buscarProdutosTextual(supabase, termoOriginal);
+      // Plural não cadastrado ("tribands") → tenta o singular ("triband").
+      // Sem isso a simulação falha e o modelo cai em tools que entregam preço
+      // cru sem subtotal — origem do orçamento sem o valor fixo (04/08).
+      if (data.length === 0) {
+        const singular = singularizarTermo(termoOriginal);
+        if (singular !== termoOriginal) {
+          data = await buscarProdutosTextual(supabase, singular);
+          if (data.length > 0) termoBusca = singular;
+        }
       }
-      if (resDesc.data) {
-        for (const p of resDesc.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
-      }
-      if (resNome.data) {
-        for (const p of resNome.data) map.set(p.id_produto, { ...p, pesoUnitario: p.peso } as OrcamentoAvulsoProdutoDb);
-      }
-      data = Array.from(map.values());
     }
+    const termoNorm = normalizeText(termoBusca);
     let rankedProducts: OrcamentoAvulsoProdutoDb[] = [];
 
     if (data.length > 0) {
