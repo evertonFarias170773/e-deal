@@ -975,7 +975,48 @@ function isValidEmail(email: string): boolean {
   return EMAIL_REGEX.test(email);
 }
 
+/**
+ * Chama uma rota server-side de título faturado. O servidor relê `id_empresa`
+ * no banco e decide o provedor — o cliente não escolhe.
+ *
+ * `delegarLegado: true` significa empresa 1 ou 3: o chamador segue no fluxo
+ * antigo, sem nenhuma alteração de comportamento.
+ */
+async function chamarRotaBoletoFaturado(rota: string, corpo: Record<string, unknown>) {
+  const client = getSupabaseClient();
+  if (!client) throw new Error("Supabase client not initialized");
+
+  const sessao = await client.auth.getSession();
+  const token = sessao.data.session?.access_token || "";
+
+  const resposta = await fetch(rota, {
+    method: "POST",
+    headers: { "content-type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify(corpo)
+  });
+
+  const resultado = await resposta.json().catch(() => null);
+
+  if (!resposta.ok || !resultado?.success) {
+    throw new Error(resultado?.message || "Falha na operação bancária do título faturado.");
+  }
+
+  return resultado as { success: true; delegarLegado?: boolean; data?: Record<string, unknown> };
+}
+
 export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEmail?: string) {
+  // Roteamento por empresa, decidido no servidor com o id_empresa do banco.
+  // Empresa 2 (Ideal Birô) emite pelo Inter e retorna aqui; 1 e 3 caem no
+  // `delegarLegado` e seguem exatamente o fluxo abaixo, inalterado.
+  const roteamento = await chamarRotaBoletoFaturado("/api/cobrancas/registrar-boleto-faturado", {
+    boletoId: boleto.id,
+    overrideEmail
+  });
+
+  if (!roteamento.delegarLegado) {
+    return { success: true, data: roteamento.data || {} };
+  }
+
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client not initialized");
 
@@ -1149,7 +1190,23 @@ export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEm
   return { success: true, data: resData };
 }
 
-export async function deleteBoletoFromBankViaN8n(boletoId: string, idBoletoC6: string, idEmpresa: number) {
+export async function deleteBoletoFromBankViaN8n(
+  boletoId: string,
+  idBoletoC6: string,
+  idEmpresa: number,
+  motivo?: string
+) {
+  // Mesmo roteamento server-side do registro. O `idEmpresa` recebido aqui é
+  // apenas informativo: quem decide é o servidor, relendo do banco.
+  const roteamento = await chamarRotaBoletoFaturado("/api/cobrancas/cancelar-boleto-faturado", {
+    boletoId,
+    motivo: String(motivo || "").trim() || "Cancelamento solicitado no Registro de Recebiveis."
+  });
+
+  if (!roteamento.delegarLegado) {
+    return { success: true, data: roteamento as Record<string, unknown> };
+  }
+
   const response = await fetch("https://10074.hostoo.net.br/webhook/del-boleto-vibe", {
     method: "POST",
     headers: {

@@ -165,7 +165,7 @@ export function PropostaCobrancaPanel({
   onPagamentoIntegralConcluido
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
-  const { createCobranca, getCobrancasByProposta, source, cobrancas } = useCobrancas();
+  const { createCobranca, getCobrancasByProposta, source, cobrancas, refreshCobrancas } = useCobrancas();
   const { user } = useAuth();
   
   const [saldoCredito, setSaldoCredito] = useState<number>(0);
@@ -349,7 +349,10 @@ export function PropostaCobrancaPanel({
   }
 
   function buildInitialFormState(): CriarCobrancaFormValues {
-    const cobrancaComOs = cobrancasDaProposta.find((item) => item.os_ideal && item.os_ideal.trim() !== "");
+    // Só reaproveita OS numérica: `Cobranca.os_ideal` cai para `id_pagamento`
+    // ("20130-A") quando a coluna está nula, e esse texto contornava a máscara
+    // do input e quebrava o insert (`os_ideal` é integer no banco).
+    const cobrancaComOs = cobrancasDaProposta.find((item) => /^\d+$/.test((item.os_ideal || "").trim()));
     const defaultOsIdeal = cobrancaComOs ? cobrancaComOs.os_ideal.trim() : "";
     const initialEmp = getInitialEmpresaFromProposta(proposta);
 
@@ -955,9 +958,27 @@ export function PropostaCobrancaPanel({
             }
         }
 
+        // Recarrega as cobranças ANTES de fechar o modal — vale tanto para o
+        // sucesso total quanto para o parcial (o E-Crédito já foi gravado mesmo
+        // quando a segunda parte falha). Sem isso, `cobrancasStats` continuava
+        // sem as cobranças recém-criadas: a lista não aparecia, o saldo seguia
+        // cheio e o botão "Gerar cobrança" permanecia como se nada tivesse
+        // acontecido até um F5.
+        const recarga = await refreshCobrancas();
+        if (recarga?.errorMessage) {
+          // Estado anterior foi preservado (o provider não substitui por mock).
+          // A cobrança FOI gravada — o que falhou foi só a releitura.
+          showToast({
+            type: "warning",
+            title: "Cobrança criada, mas a lista não recarregou",
+            description: "Atualize a página para ver as cobranças mais recentes."
+          });
+        }
         if (onRefreshProposta) onRefreshProposta();
         await fetchSaldo();
 
+        // Garante a LISTA visível (e não um detalhe aberto) com os dados novos.
+        setSelectedCobrancaId(null);
         setForm(buildInitialFormState());
         closeModal();
       } catch (err: unknown) {

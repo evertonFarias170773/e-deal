@@ -333,6 +333,15 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       console.info("[Cobrancas][Supabase]", result.warnings);
     }
 
+    // Falha de consulta: preserva o último estado válido em vez de zerar a tela
+    // ou trocar cobranças reais por mock. Sem isso, uma recarga que falhasse
+    // (ex.: logo após cancelar uma cobrança) fazia os pagamentos existentes
+    // sumirem até o usuário dar F5.
+    if (result.errorMessage) {
+      console.error("[CobrancasProvider] Recarga de cobranças falhou; estado anterior preservado:", result.errorMessage);
+      return result;
+    }
+
     if (result.source === "supabase") {
       setCobrancas(result.cobrancas);
       setCobrancasStats(result.cobrancasStats);
@@ -489,7 +498,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       if (proposta.clienteNaoCadastrado || proposta.cliente.idCliente === null || proposta.cliente.idCliente === undefined || Number(proposta.cliente.idCliente) === 0) {
         throw new Error("Cadastre ou vincule um cliente antes de gerar cobrança.");
       }
-      const cobrancasDaProposta = cobrancas.filter((item) => item.id_int === proposta.id_int && item.status !== "CANCELADO");
+      // Conjunto COMPLETO (cobrancasStats), não a fatia de 500 de `cobrancas`:
+      // cobrança nova e pendente não tem paid_at nem data_confirmacao, então
+      // fica no fim da ordenação e pode cair fora da fatia — o saldo aqui
+      // divergia do que a aba Pagamentos mostra.
+      const cobrancasDaProposta = cobrancasStats.filter((item) => item.id_int === proposta.id_int && item.status !== "CANCELADO");
       const totalPropostaRounded = roundMoney(proposta.resumo.valorTotal);
       const totalCobradoReal = cobrancasDaProposta.reduce((total, item) => total + (item.cartao_valor_final ?? item.valor), 0);
       const totalCobradoRealRounded = roundMoney(totalCobradoReal);
@@ -628,6 +641,14 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
          }
        }
 
+       // `pagamentos_v2.os_ideal` é INTEGER: só número entra, nunca texto.
+       // O mapper preenche `Cobranca.os_ideal` com `id_pagamento` quando a
+       // coluna está nula, e esse valor ("20130-A") chegava aqui pelo
+       // pré-preenchimento do formulário, derrubando o insert com
+       // `invalid input syntax for type integer`.
+       const osIdealTexto = values.osIdeal.trim();
+       const osIdealNumero = /^\d+$/.test(osIdealTexto) ? Number(osIdealTexto) : null;
+
        // 1. Criar registro inicial em pagamentos_v2
        // Usa dados do pagador efetivo (id_faturado) quando disponíveis; fallback para cliente principal (propostas antigas)
        const payloadInicial = {
@@ -640,7 +661,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
          tipo_cobranca: values.tipoCobranca,
          empresa: nomeEmpresa,
          id_empresa: idEmpresa,
-         os_ideal: values.osIdeal.trim(),
+         os_ideal: osIdealNumero,
          atendente: proposta.vendedor || proposta.cliente.vendedor || "Sistema",
          descricao: values.descricao || `Cobrança ${values.tipoCobranca} da proposta #${proposta.id_int}`,
          vencimento: values.vencimento || null,
@@ -918,7 +939,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setCobrancas((current) => [next, ...current]);
     setCobrancasStats((current) => [next, ...current]);
     return next;
-  }, [source, loadData, cobrancas]);
+  }, [source, loadData, cobrancas, cobrancasStats]);
 
 
   const checkAndRevertPropostaStatus = useCallback(async (idInt: number) => {

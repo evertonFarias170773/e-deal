@@ -55,6 +55,13 @@ export type CobrancasReadResult = {
   cobrancas: Cobranca[];
   cobrancasStats: Cobranca[];
   warnings: string[];
+  /**
+   * Preenchido quando a consulta ao banco FALHOU. Nesse caso os arrays não
+   * representam o estado real e não devem substituir o que já está em tela —
+   * o provider preserva o último estado válido. Lista vazia sem `errorMessage`
+   * significa consulta bem-sucedida e realmente sem cobranças.
+   */
+  errorMessage?: string;
 };
 
 export type UpdatePagamentoV2EmpresaResult = {
@@ -318,11 +325,25 @@ export async function getCobrancasReadOnlyData(filters?: {
   const rows = await fetchPagamentosV2Rows(filters);
 
   if (!rows) {
+    // Sem Supabase configurado: modo mock legítimo (demo), como sempre foi.
+    if (!getSupabaseClient()) {
+      return {
+        source: "mock",
+        cobrancas: cloneMockResult(),
+        cobrancasStats: cloneMockResult(),
+        warnings: getFallbackReason("em `public.pagamentos_v2` indisponível, bloqueada ou sem configuração Supabase")
+      };
+    }
+
+    // Supabase configurado e a consulta falhou: NÃO devolve mock. Substituir
+    // cobranças reais por dados fictícios fazia pagamentos existentes sumirem
+    // da tela até um F5. O provider preserva o último estado válido.
     return {
-      source: "mock",
-      cobrancas: cloneMockResult(),
-      cobrancasStats: cloneMockResult(),
-      warnings: getFallbackReason("em `public.pagamentos_v2` indisponível, bloqueada ou sem configuração Supabase")
+      source: "supabase",
+      cobrancas: [],
+      cobrancasStats: [],
+      warnings: getFallbackReason("em `public.pagamentos_v2` — falha ao consultar"),
+      errorMessage: "Não foi possível carregar as cobranças no banco de dados."
     };
   }
 
@@ -351,12 +372,15 @@ export async function getCobrancasReadOnlyData(filters?: {
   const cobrancasStats = sortByConferenceRecency(mappedCobrancas);
   const cobrancas = cobrancasStats.slice(0, 500);
 
+  // Consulta concluiu com sucesso e não há cobranças: isso é um resultado
+  // legítimo (ex.: filtro sem correspondência). Antes caía em mock e a tela
+  // passava a exibir dados fictícios como se fossem reais.
   if (cobrancasStats.length === 0) {
     return {
-      source: "mock",
-      cobrancas: cloneMockResult(),
-      cobrancasStats: cloneMockResult(),
-      warnings: getFallbackReason("em `public.pagamentos_v2` vazio ou incompatível com o mapper")
+      source: "supabase",
+      cobrancas: [],
+      cobrancasStats: [],
+      warnings: []
     };
   }
 
