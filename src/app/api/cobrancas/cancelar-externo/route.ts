@@ -24,6 +24,19 @@ const PREFIXO_ID_ASAAS = "pay_";
  */
 const MARCADOR_CARTAO_ASAAS = "Cartão Asas";
 
+/**
+ * Webhook de cancelamento de boleto, por empresa recebedora.
+ *
+ * A empresa 2 (Ideal Birô) emite pelo Banco Inter e tem fluxo de cancelamento
+ * próprio. As empresas 1 e 3 seguem no C6, com o mesmo endpoint e o mesmo
+ * comportamento de antes — inclusive quando `id_empresa` vier nulo.
+ */
+export function resolverWebhookCancelamentoBoleto(idEmpresa: number | null | undefined): string {
+  return Number(idEmpresa) === 2
+    ? "https://10074.hostoo.net.br/webhook/cancela-boleto-inter-biro"
+    : "https://10074.hostoo.net.br/webhook/del-boleto-av-vibe";
+}
+
 type PagamentoRow = {
   id: string;
   id_int: number | null;
@@ -389,8 +402,13 @@ export async function POST(request: Request) {
         );
       }
 
-      const webhookUrl = "https://10074.hostoo.net.br/webhook/del-boleto-av-vibe";
-      console.log("[cancelar-externo][BOLETO] chamando n8n", { cod_C6: codC6Final, id_empresa: idEmpresaCobranca });
+      const webhookUrl = resolverWebhookCancelamentoBoleto(idEmpresaCobranca);
+      console.log("[cancelar-externo][BOLETO] chamando n8n", {
+        cod_C6: codC6Final,
+        id_empresa: idEmpresaCobranca,
+        provedor: Number(idEmpresaCobranca) === 2 ? "Inter (Biro)" : "C6",
+        webhookUrl
+      });
 
       const webhookResponse = await fetch(webhookUrl, {
         method: "POST",
