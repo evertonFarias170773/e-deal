@@ -117,6 +117,42 @@ function getRotuloModalidadeExibicao(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" 
   return getRotuloModalidade(tipo, fluxoCartao);
 }
 
+/** Empresas recebedoras conhecidas, para as quais vale a regra por ID. */
+const EMPRESAS_COM_REGRA_POR_ID = new Set([1, 2, 3]);
+
+/**
+ * Formas de pagamento habilitadas por empresa recebedora.
+ *
+ * Depende SOMENTE do id da empresa — nunca do estado de carregamento da lista
+ * de cobranças. Antes esta decisão era feita por `source === "supabase"`, que é
+ * estado de carga, não regra de negócio: enquanto as ~6 páginas de
+ * `pagamentos_v2` não terminavam de carregar, `source` valia "mock" e a
+ * disponibilidade caía na tabela de mock — indexada por nomes fictícios
+ * ("Ideal Grafica") que nunca casam com o texto real gravado em
+ * `propostas.empresa` ("IDEAL GRÁFICA EXPRESSA EIRELI"), bloqueando TODAS as
+ * formas de pagamento.
+ *
+ * O fallback por nome fica só para empresa fora da lista conhecida.
+ */
+function isFormaPagamentoDisponivel(
+  opcaoId: CobrancaTipo | "CARD_ASAS",
+  idEmpresa: number,
+  empresaNomeFallback: string
+): boolean {
+  if (!EMPRESAS_COM_REGRA_POR_ID.has(idEmpresa)) {
+    return isTipoDisponivelParaEmpresa(
+      empresaNomeFallback,
+      opcaoId === "CARD_ASAS" ? "CARD_PARCELADO" : opcaoId
+    );
+  }
+
+  if (opcaoId === "PIX") return idEmpresa === 1 || idEmpresa === 2 || idEmpresa === 3;
+  if (opcaoId === "BOLETO") return idEmpresa === 1 || idEmpresa === 2 || idEmpresa === 3;
+  if (opcaoId === "CARD_ASAS") return idEmpresa === EMPRESA_CARTAO_ASAAS;
+  if (opcaoId === "CARD_PARCELADO") return idEmpresa === 1 || idEmpresa === 3;
+  return true;
+}
+
 export function PropostaCobrancaPanel({
   proposta,
   isModalOpen,
@@ -508,13 +544,15 @@ export function PropostaCobrancaPanel({
     };
   }, [isFaturado, proposta.cliente.idCliente, source]);
 
-  const tipoDisponivel = source === "supabase"
+  // Mesma correção do bloco de opções: a disponibilidade segue o id da empresa,
+  // nunca o estado de carregamento (`source`). Ver isFormaPagamentoDisponivel.
+  const tipoDisponivel = EMPRESAS_COM_REGRA_POR_ID.has(idEmpresaReal)
     ? (form.tipoCobranca === "E-CREDITO"
         ? true
         : form.tipoCobranca === "PIX"
         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
         : form.tipoCobranca === "BOLETO"
-          ? (idEmpresaReal === 1 || idEmpresaReal === 3)
+          ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
           : form.tipoCobranca === "CARD_PARCELADO"
             ? (idEmpresaReal === 1 || idEmpresaReal === 3)
             : isFaturado
@@ -522,11 +560,11 @@ export function PropostaCobrancaPanel({
               : false)
     : isTipoDisponivelParaEmpresa(proposta.empresa, form.tipoCobranca);
 
-  const indisponibilidadeMensagem = source === "supabase"
+  const indisponibilidadeMensagem = EMPRESAS_COM_REGRA_POR_ID.has(idEmpresaReal)
     ? (form.tipoCobranca === "PIX"
         ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3 ? "" : "PIX real disponível apenas para as empresas Ideal Gráfica, Ideal Birô e E3 Brindes.")
         : form.tipoCobranca === "BOLETO"
-          ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Boleto real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
+          ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3 ? "" : "Boleto real não disponível para esta empresa.")
           : form.tipoCobranca === "CARD_PARCELADO"
             ? (idEmpresaReal === 1 || idEmpresaReal === 3 ? "" : "Cartão de crédito real disponível apenas para as empresas Ideal Gráfica e E3 Brindes.")
             : isFaturado
@@ -727,6 +765,20 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    // As opções de pagamento já não esperam o carregamento da lista de cobranças
+    // (ver isFormaPagamentoDisponivel), mas `createCobranca` ainda decide
+    // real x mock por `source`. Com o Supabase configurado e `source` ainda em
+    // "mock", a lista não terminou de carregar: submeter agora gravaria uma
+    // cobrança mockada. Bloqueia e pede para repetir em seguida.
+    if (getSupabaseClient() && source !== "supabase") {
+      showToast({
+        type: "warning",
+        title: "Carregando cobranças da proposta",
+        description: "Aguarde alguns instantes e clique em gerar novamente."
+      });
+      return;
+    }
+
     if (!form.osIdeal.trim()) {
       showToast({ type: "error", title: "Informe a OS Ideal temporária para gerar a cobrança." });
       return;
@@ -924,11 +976,6 @@ export function PropostaCobrancaPanel({
 
     if (source === "supabase" && idEmpresaReal !== 1 && idEmpresaReal !== 2 && idEmpresaReal !== 3) {
       showToast({ type: "error", title: "Criação de cobrança real disponível apenas para as empresas Ideal Gráfica, Ideal Birô e E3 Brindes nesta etapa." });
-      return;
-    }
-
-    if (source === "supabase" && form.tipoCobranca === "BOLETO" && idEmpresaReal === 2) {
-      showToast({ type: "error", title: "Geração de boleto real não disponível para a empresa Ideal Birô." });
       return;
     }
 
@@ -1287,17 +1334,7 @@ export function PropostaCobrancaPanel({
                       : opcao.id === "CARD_PARCELADO"
                         ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo !== "ASAS")
                         : form.tipoCobranca === opcao.id;
-                  const available = source === "supabase"
-                    ? (opcao.id === "PIX"
-                        ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
-                        : opcao.id === "BOLETO"
-                          ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                          : opcao.id === "CARD_ASAS"
-                            ? idEmpresaReal === EMPRESA_CARTAO_ASAAS
-                            : opcao.id === "CARD_PARCELADO"
-                              ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                              : true)
-                    : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id);
+                  const available = isFormaPagamentoDisponivel(opcao.id, idEmpresaReal, proposta.empresa);
                   const isActuallyDisabled = !available;
                   const disabledText = available
                     ? ""
@@ -1813,17 +1850,7 @@ export function PropostaCobrancaPanel({
                         : opcao.id === "CARD_PARCELADO"
                           ? (form.tipoCobranca === "CARD_PARCELADO" && form.cartaoFluxo !== "ASAS")
                           : form.tipoCobranca === opcao.id;
-                    const available = source === "supabase"
-                      ? (opcao.id === "PIX"
-                          ? (idEmpresaReal === 1 || idEmpresaReal === 2 || idEmpresaReal === 3)
-                          : opcao.id === "BOLETO"
-                            ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                            : opcao.id === "CARD_ASAS"
-                              ? idEmpresaReal === EMPRESA_CARTAO_ASAAS
-                              : opcao.id === "CARD_PARCELADO"
-                                ? (idEmpresaReal === 1 || idEmpresaReal === 3)
-                                : true)
-                      : isTipoDisponivelParaEmpresa(proposta.empresa, opcao.id === "CARD_ASAS" ? "CARD_PARCELADO" : opcao.id);
+                    const available = isFormaPagamentoDisponivel(opcao.id, idEmpresaReal, proposta.empresa);
                     const isActuallyDisabled = !available;
                     const disabledText = available
                       ? ""

@@ -18,7 +18,6 @@ import {
   getDataReferenciaCobranca,
   getDataHoraListaCobranca,
   getEmpresaExibicao,
-  getEmpresaGrupoKey,
   getEmpresaRecebedoraFixaById,
   getLocalDateKey,
   getLocalDateInSaoPaulo,
@@ -216,7 +215,10 @@ export function CobrancasList() {
 
   // Nomes locais preservados: o restante da tela continua lendo estas variáveis.
   const tipo = filters.tipo;
-  const empresa = filters.emp;
+  // O filtro de empresa trafega como ID numérico ("1", "2", "3") ou "TODAS".
+  // Link legado com a chave textual antiga (ex.: `emp=E3_BRINDES`) cai para
+  // "TODAS": o select não fica em branco e a consulta não recebe NaN.
+  const empresa = getEmpresaRecebedoraFixaById(Number(filters.emp)) ? filters.emp : "TODAS";
   const vendedor = filters.vend;
   const statusFilter = filters.aba;
   const dataInicial = filters.ini;
@@ -392,12 +394,24 @@ export function CobrancasList() {
     const entries = new Map<string, string>();
 
     cobrancasStats.filter(isEmpresaValida).forEach((cobranca) => {
-      const value = getEmpresaGrupoKey(cobranca);
-      if (!value || entries.has(value)) {
+      // O value é o ID numérico — é ele que vai para a URL e para a consulta
+      // (`.eq("id_empresa", ...)`). O nome amigável fica só como rótulo.
+      // Antes o value era a chave textual (`E3_BRINDES`), que virava NaN em
+      // Number(empresa) e fazia o filtro ser descartado silenciosamente.
+      const idEmpresa = Number(cobranca.id_empresa);
+      const fixa = getEmpresaRecebedoraFixaById(idEmpresa);
+      if (!fixa) {
+        return; // ID fora do catálogo oficial não vira opção
+      }
+
+      const value = String(idEmpresa);
+      if (entries.has(value)) {
         return;
       }
 
-      entries.set(value, getEmpresaExibicao(cobranca));
+      // Rótulo derivado do ID (não do texto do registro), para não variar
+      // conforme a primeira cobrança encontrada.
+      entries.set(value, getEmpresaExibicao({ id_empresa: idEmpresa, empresa: fixa.nome }));
     });
 
     return Array.from(entries.entries())

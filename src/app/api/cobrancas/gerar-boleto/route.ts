@@ -13,12 +13,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const webhookUrl = "https://10074.hostoo.net.br/webhook/boleto-avista-vibe";
+  // Roteamento por empresa recebedora. A empresa 2 (Ideal Birô) emite pelo
+  // Banco Inter; as demais seguem no C6, com o webhook e o comportamento
+  // exatamente como estavam.
+  const empresaBoleto = String(webhookBody.empresa ?? "").trim();
+  const isBiroInter = empresaBoleto === "2";
 
-  console.info(`[API][GerarBoleto] Chamando webhook Boleto C6...`, {
+  const webhookUrl = isBiroInter
+    ? "https://10074.hostoo.net.br/webhook/boleto-inter-biro"
+    : "https://10074.hostoo.net.br/webhook/boleto-avista-vibe";
+
+  const rotuloProvedor = isBiroInter ? "Inter (Biro)" : "C6";
+
+  console.info(`[API][GerarBoleto] Chamando webhook Boleto ${rotuloProvedor}...`, {
     external_reference_id: webhookBody.external_reference_id,
     id_pagamento: webhookBody.id_pagamento,
     valor_total: webhookBody.valor_total,
+    empresa: empresaBoleto,
     webhookUrl
   });
 
@@ -35,7 +46,7 @@ export async function POST(request: Request) {
       const errorText = await webhookResponse.text();
       console.error("[API][GerarBoleto] Webhook retornou erro:", webhookResponse.status, errorText);
       return NextResponse.json(
-        { success: false, message: `Erro no processamento do Boleto C6: ${errorText}` },
+        { success: false, message: `Erro no processamento do Boleto ${rotuloProvedor}: ${errorText}` },
         { status: webhookResponse.status }
       );
     }

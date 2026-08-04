@@ -178,6 +178,67 @@ async function resolverVendedorProposta(
   };
 }
 
+const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g, "");
+
+/**
+ * Payload do boleto à vista. Extraído do fluxo do C6 sem alterar nenhum campo,
+ * para que a criação e a rechamada (empresa 2) usem exatamente a mesma
+ * montagem e não possam divergir.
+ *
+ * Roteamento por empresa fica na rota /api/cobrancas/gerar-boleto: empresa 2
+ * (Ideal Birô) vai para o Inter, as demais seguem no C6.
+ */
+function montarPayloadBoletoAVista(params: {
+  proposta: Proposta;
+  valor: number;
+  idPagamento: string;
+  idEmpresa: number;
+}): Record<string, unknown> {
+  const { proposta, valor, idPagamento, idEmpresa } = params;
+
+  const payload: Record<string, unknown> = {
+    external_reference_id: String(proposta.id_int),
+    valor_total: roundMoney(valor),
+    name: proposta.cliente.nome,
+    id_pagamento: idPagamento,
+    documento: proposta.cliente.documento,
+    email: proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "",
+    logradouro: proposta.enderecoEntrega?.endereco || "",
+    numero: proposta.enderecoEntrega?.numero || "S/N",
+    complemento: proposta.enderecoEntrega?.complemento || "",
+    cidade: proposta.enderecoEntrega?.cidade || "",
+    UF: proposta.enderecoEntrega?.uf || "",
+    zip_code: proposta.enderecoEntrega?.cep || "",
+    qtd_parcelas: 1,
+    intervalo: 0,
+    inicia_em: 0,
+    multa: 0,
+    juros: 0,
+    descricao: "O Pedido entrará em produção após a confirmação do pagamento.",
+    id_cliente: proposta.cliente.idCliente,
+    nf: "",
+    status: "A_RECEBER",
+    "e-faturado": false,
+    contato: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+    whats: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
+    enviar_whats: false,
+    avulso: false,
+    empresa: String(idEmpresa),
+    is_prorrogado: false
+  };
+
+  // O Inter recusa campos com máscara. O C6 continua recebendo os valores
+  // exatamente como recebia antes.
+  if (idEmpresa === 2) {
+    payload.documento = soDigitos(payload.documento);
+    payload.zip_code = soDigitos(payload.zip_code);
+    payload.contato = soDigitos(payload.contato);
+    payload.whats = soDigitos(payload.whats);
+  }
+
+  return payload;
+}
+
 /** Marcador do Cartão Asas na descrição. Identifica a cobrança sem coluna nova. */
 export const MARCADOR_CARTAO_ASAS = "Cartão Asas";
 
@@ -458,6 +519,66 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const idEmpresa = values.id_empresa ?? (empresaOption?.id ?? 1);
       const nomeEmpresa = values.empresa ?? (empresaOption?.nome ?? proposta.empresa);
 
+      // Boleto Inter (empresa 2) — antiduplicidade em nova tentativa. A linha de
+      // pagamentos_v2 é criada ANTES da chamada ao webhook; se a integração
+      // falhar, a cobrança fica pendente e um novo clique criaria um SEGUNDO
+      // pagamento. Reaproveita a equivalente em vez de inserir outra. O fluxo do
+      // C6 (empresas 1 e 3) não passa por aqui.
+      if (values.tipoCobranca === "BOLETO" && idEmpresa === 2) {
+        const { data: pendentes } = await client
+          .from("pagamentos_v2")
+          .select("id, id_pagamento, valor, linha_digitavel")
+          .eq("id_int", proposta.id_int)
+          .eq("tipo_cobranca", "BOLETO")
+          .eq("id_empresa", 2)
+          .eq("status", "A_RECEBER")
+          .returns<Array<{ id: string; id_pagamento: string | null; valor: number | null; linha_digitavel: string | null }>>();
+
+        const equivalente = (pendentes || []).find(
+          (item) => roundMoney(Number(item.valor ?? 0)) === roundMoney(values.valor)
+        );
+
+        if (equivalente) {
+          // Sem linha digitável, o webhook não concluiu: reaciona sobre a MESMA
+          // cobrança. Com linha digitável, apenas devolve a existente.
+          if (!equivalente.linha_digitavel && equivalente.id_pagamento) {
+            const sessionResponse = await client.auth.getSession();
+            const tokenSessao = sessionResponse.data.session?.access_token || "";
+
+            const retry = await fetch("/api/cobrancas/gerar-boleto", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "Authorization": `Bearer ${tokenSessao}`
+              },
+              body: JSON.stringify(
+                montarPayloadBoletoAVista({
+                  proposta,
+                  valor: values.valor,
+                  idPagamento: equivalente.id_pagamento,
+                  idEmpresa
+                })
+              )
+            });
+
+            const retryResult = await retry.json().catch(() => null);
+            if (!retry.ok || !retryResult?.success) {
+              throw new Error(retryResult?.message || "Falha ao gerar o boleto no Banco Inter.");
+            }
+          }
+
+          const loadResult = await loadData();
+          const found = loadResult.cobrancas.find((item) => item.id === equivalente.id) ||
+                        loadResult.cobrancasStats.find((item) => item.id === equivalente.id);
+
+          if (!found) {
+            throw new Error("Boleto encontrado, mas a cobrança não foi localizada ao recarregar. Atualize a tela.");
+          }
+
+          return found;
+        }
+      }
+
        const isFaturadoType = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(values.tipoCobranca);
 
        if (isFaturadoType) {
@@ -544,36 +665,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           due_date = date.toISOString().split("T")[0];
         }
 
-        const webhookPayload = {
-          external_reference_id: String(proposta.id_int),
-          valor_total: roundMoney(values.valor),
-          name: proposta.cliente.nome,
-          id_pagamento: createdRow.id_pagamento || String(proposta.id_int),
-          documento: proposta.cliente.documento,
-          email: proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "",
-          logradouro: proposta.enderecoEntrega?.endereco || "",
-          numero: proposta.enderecoEntrega?.numero || "S/N",
-          complemento: proposta.enderecoEntrega?.complemento || "",
-          cidade: proposta.enderecoEntrega?.cidade || "",
-          UF: proposta.enderecoEntrega?.uf || "",
-          zip_code: proposta.enderecoEntrega?.cep || "",
-          qtd_parcelas: 1,
-          intervalo: 0,
-          inicia_em: 0,
-          multa: 0,
-          juros: 0,
-          descricao: "O Pedido entrará em produção após a confirmação do pagamento.",
-          id_cliente: proposta.cliente.idCliente,
-          nf: "",
-          status: "A_RECEBER",
-          "e-faturado": false,
-          contato: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
-          whats: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
-          enviar_whats: false,
-          avulso: false,
-          empresa: String(idEmpresa),
-          is_prorrogado: false
-        };
+        const webhookPayload = montarPayloadBoletoAVista({
+          proposta,
+          valor: values.valor,
+          idPagamento: createdRow.id_pagamento || String(proposta.id_int),
+          idEmpresa
+        });
 
         const sessionResponse = await client.auth.getSession();
         const token = sessionResponse.data.session?.access_token || "";
