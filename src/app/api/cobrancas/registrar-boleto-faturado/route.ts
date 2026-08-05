@@ -153,6 +153,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, message: "Título cancelado não pode ser registrado." }, { status: 400 });
   }
 
+  // `ext_reference` é o que o workflow usa (com `id_pagamento`) para achar esta
+  // linha e gravar os dados do banco. Sem ela o UPDATE não casa com nada: o
+  // boleto sairia real no Inter e ficaria órfão, igual à execução 111333. Barrar
+  // aqui é o único ponto em que ainda dá para impedir isso — depois do POST no
+  // Inter não há volta. Medido em produção: 2 dos 6 títulos da empresa 2 estão
+  // sem referência, então o caso é real, não hipotético.
+  const referencia = texto(boleto.ext_reference);
+  if (!referencia) {
+    const esperada = `P${boleto.parcela ?? 1}${boleto.total_parcelas ?? 1}${boleto.id_int ?? ""}`;
+    console.error(
+      `[RegistrarBoletoFaturado] Boleto ${boleto.id} sem ext_reference; emissao bloqueada antes do Inter.`
+    );
+    return NextResponse.json(
+      {
+        success: false,
+        code: "SEM_REFERENCIA",
+        message:
+          "Este título está sem a referência que vincula o boleto de volta ao registro. Corrija a referência antes de registrar — emitir agora criaria um boleto real sem vínculo.",
+        data: { referencia_esperada: esperada }
+      },
+      { status: 400 }
+    );
+  }
+
   const documento = soDigitos(boleto.documento);
   if (documento.length !== 11 && documento.length !== 14) {
     return NextResponse.json(
@@ -215,7 +239,11 @@ export async function POST(request: Request) {
     : 3;
 
   const payload = {
-    external_reference_id: texto(boleto.ext_reference) || texto(boleto.id_pagamento) || String(boleto.id_int ?? ""),
+    // Sem fallback de propósito: o workflow casa esta referência com
+    // `boletos.ext_reference` para achar a linha. Mandar `id_pagamento` no lugar
+    // faria o UPDATE não encontrar nada, com o boleto já emitido no banco.
+    // A guarda acima garante que aqui a referência nunca é vazia.
+    external_reference_id: referencia,
     valor_total: valor,
     name: texto(boleto.nome_cliente),
     id_pagamento: texto(boleto.id_pagamento),
