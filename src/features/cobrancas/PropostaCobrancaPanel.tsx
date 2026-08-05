@@ -15,7 +15,9 @@ import type { Cobranca, CobrancaTipo, CriarCobrancaFormValues, CreditAnalysisRes
 import type { Proposta } from "@/features/orcamentos/types";
 import { CobrancaDetail } from "@/features/cobrancas/CobrancaDetail";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
+import { CorrigirTelefonePagadorModal } from "./CorrigirTelefonePagadorModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
 import {
   getLiberacaoPedidoLabel,
   getLiberacaoPedidoStatus,
@@ -115,6 +117,18 @@ function getRotuloModalidadeExibicao(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" 
     return "Cartão Asaas";
   }
   return getRotuloModalidade(tipo, fluxoCartao);
+}
+
+/**
+ * Modalidades que mandam o telefone do pagador para o provedor: cartão (C6 e
+ * Asaas, ambos `CARD_PARCELADO`) e boleto. PIX e faturado não entram.
+ *
+ * No checkout do C6 os dados do pagador ficam BLOQUEADOS na tela — telefone
+ * errado deixa o cliente sem conseguir pagar, e o vendedor só descobre quando
+ * ele reclama. Por isso o gate é aqui, antes de a cobrança existir.
+ */
+function exigeTelefoneValido(tipo: CobrancaTipo): boolean {
+  return tipo === "CARD_PARCELADO" || tipo === "BOLETO";
 }
 
 /** Empresas recebedoras conhecidas, para as quais vale a regra por ID. */
@@ -412,6 +426,21 @@ export function PropostaCobrancaPanel({
     idModeloCobranca?: string;
   } | null>(null);
 
+  /**
+   * Telefones do PAGADOR, lidos do cadastro. É o mesmo cadastro que o n8n
+   * consulta na hora de abrir o checkout (`pagamentos_v2.id_cliente` → clientes),
+   * então a checagem aqui e a de lá enxergam exatamente o mesmo dado.
+   */
+  const [fonesPagador, setFonesPagador] = useState<{
+    /** Dono dos telefones. Trocando o pagador, o lote anterior deixa de valer. */
+    idCliente: number;
+    whatsapp1: string | null;
+    whatsapp2: string | null;
+    telefoneFixo: string | null;
+  } | null>(null);
+  const [telefoneModalOpen, setTelefoneModalOpen] = useState(false);
+  const [modalidadeBloqueada, setModalidadeBloqueada] = useState("");
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setNowTime(Date.now());
@@ -486,6 +515,47 @@ export function PropostaCobrancaPanel({
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen, proposta.id_faturado, proposta.cliente.idCliente]);
+
+  // Telefones do pagador. Busca sempre no banco (e não em proposta.cliente):
+  // a proposta carrega um telefone só, e a regra do provedor percorre
+  // whatsapp_1 → whatsapp_2 → telefone_fixo. Ler campo diferente do que o n8n lê
+  // faria a tela aprovar o que o checkout depois recusa.
+  useEffect(() => {
+    const idCliente = pagador?.idCliente;
+    if (!modalOpen || !idCliente) return;
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    let cancelado = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("whatsapp_1, whatsapp_2, telefone_fixo")
+        .eq("id_cliente", idCliente)
+        .maybeSingle();
+
+      if (cancelado) return;
+
+      if (error || !data) {
+        // Sem leitura confiável não se afirma que o telefone está errado: o
+        // gate só bloqueia com dado em mãos (ver bloqueiaPorTelefone).
+        console.error("[PropostaCobrancaPanel] Falha ao ler telefones do pagador:", error?.message);
+        return;
+      }
+
+      setFonesPagador({
+        idCliente,
+        whatsapp1: data.whatsapp_1 ?? null,
+        whatsapp2: data.whatsapp_2 ?? null,
+        telefoneFixo: data.telefone_fixo ?? null
+      });
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [modalOpen, pagador?.idCliente]);
 
   // Pré-seleciona tipoCobranca baseado no padrao_pagamento do pagador
   useEffect(() => {
@@ -730,7 +800,35 @@ export function PropostaCobrancaPanel({
     }
   }
 
+  /**
+   * Telefone do pagador pela MESMA cadeia e regra do n8n. Enquanto a leitura do
+   * cadastro não terminou (`fonesPagador === null`), não se afirma nada: sem
+   * dado em mãos o gate não bloqueia, e o n8n segue como rede de segurança.
+   */
+  const fonesDoPagadorAtual =
+    fonesPagador && fonesPagador.idCliente === pagador?.idCliente ? fonesPagador : null;
+
+  const telefonePagador = fonesDoPagadorAtual ? resolverTelefonePagador(fonesDoPagadorAtual) : null;
+
+  /**
+   * Abre o modal de correção e devolve `true` quando a modalidade escolhida não
+   * pode seguir. Usado nos dois pontos: na escolha da forma (avisa cedo) e no
+   * submit (o estado pode ter mudado depois da escolha).
+   */
+  function bloqueiaPorTelefone(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS"): boolean {
+    if (!exigeTelefoneValido(tipo)) return false;
+    if (!telefonePagador || telefonePagador.valido) return false;
+
+    setModalidadeBloqueada(getRotuloModalidadeExibicao(tipo, fluxoCartao));
+    setTelefoneModalOpen(true);
+    return true;
+  }
+
   function handleTipoChange(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS") {
+    // Avisa no momento da escolha, com o vendedor ainda no contexto e sem nada
+    // criado. A seleção é mantida: corrigido o telefone, ele segue de onde parou.
+    bloqueiaPorTelefone(tipo, fluxoCartao);
+
     patchForm({
       tipoCobranca: tipo,
       // Só cartão carrega fluxo. Outra modalidade limpa o campo para que uma
@@ -805,6 +903,14 @@ export function PropostaCobrancaPanel({
         title: "Cartão Asaas indisponível para esta empresa",
         description: "Essa modalidade é exclusiva da IDEAL GRÁFICA EXPRESSA EIRELI. Selecione outra forma de pagamento."
       });
+      return;
+    }
+
+    // Telefone do pagador. Repetido aqui de propósito, como a trava do Asaas: o
+    // aviso na escolha da forma é só apresentação e o cadastro pode ter mudado
+    // no meio do caminho. Nenhuma cobrança é criada com telefone que o provedor
+    // vai recusar — o modal de correção abre no lugar.
+    if (bloqueiaPorTelefone(form.tipoCobranca, form.cartaoFluxo)) {
       return;
     }
 
@@ -2196,6 +2302,28 @@ export function PropostaCobrancaPanel({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {telefoneModalOpen ? (
+      <CorrigirTelefonePagadorModal
+        isOpen={true}
+        onClose={() => setTelefoneModalOpen(false)}
+        pagador={pagador ? { idCliente: pagador.idCliente, nome: pagador.nome } : null}
+        fontes={fonesDoPagadorAtual ?? { whatsapp1: null, whatsapp2: null, telefoneFixo: null }}
+        modalidade={modalidadeBloqueada}
+        onSalvo={(whatsapp1Normalizado) => {
+          // Reflete a gravação no estado local para o gate liberar na hora, sem
+          // depender de reabrir o modal ou reler o cadastro.
+          setFonesPagador((atual) =>
+            atual ? { ...atual, whatsapp1: whatsapp1Normalizado } : atual
+          );
+          showToast({
+            type: "success",
+            title: "Telefone atualizado no cadastro",
+            description: "Pode gerar a cobrança."
+          });
+        }}
+      />
       ) : null}
     </div>
   );
