@@ -127,6 +127,22 @@ export async function POST(request: Request) {
     });
   }
 
+  // Cobrança já emitida no banco, mas sem o QR capturado (o webhook leu a
+  // cobrança de volta antes de o PIX ficar pronto). Reemitir criaria OUTRA
+  // cobrança real no emissor — a idempotência acima não cobre este caso porque
+  // depende de `pix_copia_cola`, que é justamente o que faltou.
+  if (cobranca.cod_solicitacao_inter) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "PIX_EMITIDO_SEM_QR",
+        message:
+          "Esta cobrança já foi emitida no banco, mas o QR do PIX não foi capturado. Não gere outra para a mesma cobrança: consulte o financeiro para recuperar o código, ou cancele esta cobrança e crie uma nova."
+      },
+      { status: 409 }
+    );
+  }
+
   const idEmpresaReal = Number(cobranca.id_empresa);
   if (!idEmpresaReal) {
     return NextResponse.json(
@@ -152,9 +168,17 @@ export async function POST(request: Request) {
   });
 
   if (!resPix.success) {
+    // 409 quando a cobrança já existe no emissor: é conflito de estado, não
+    // falha transitória, e o front não pode sugerir "tente novamente".
+    // 502 segue para falha de comunicação, onde repetir é legítimo.
+    const jaEmitida = resPix.cobrancaEmitida === true;
     return NextResponse.json(
-      { success: false, message: resPix.error || "Erro de processamento no Banco Inter." },
-      { status: 502 }
+      {
+        success: false,
+        ...(jaEmitida ? { code: "PIX_EMITIDO_SEM_QR" } : {}),
+        message: resPix.error || "Erro de processamento no Banco Inter."
+      },
+      { status: jaEmitida ? 409 : 502 }
     );
   }
 

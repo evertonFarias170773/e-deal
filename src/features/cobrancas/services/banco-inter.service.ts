@@ -30,7 +30,16 @@ function roundMoney(value: number): number {
 export async function gerarPixBancoInter(
   supabase: SupabaseClient,
   params: GerarPixParams
-): Promise<{ success: boolean; error?: string; data?: unknown }> {
+): Promise<{
+  success: boolean;
+  error?: string;
+  data?: unknown;
+  /**
+   * `true` quando a cobrança JÁ EXISTE no banco emissor apesar da falha. Quem
+   * chama NÃO pode oferecer nova tentativa: reemitir cria outra cobrança real.
+   */
+  cobrancaEmitida?: boolean;
+}> {
   const {
     cobrancaId,
     idEmpresa,
@@ -132,9 +141,41 @@ export async function gerarPixBancoInter(
       const boletoObj = webhookResult.boleto as Record<string, unknown> | undefined;
       linhaDigitavel = boletoObj?.linhaDigitavel as string | undefined;
 
-      if (!codSolicitacao || !pCopiaCola) {
-        return { success: false, error: "Resposta do Banco Inter incompleta para empresa 2." };
+      if (!codSolicitacao) {
+        return { success: false, error: "Resposta do Banco Inter sem código de solicitação." };
       }
+
+      // A partir do `codigoSolicitacao` a cobrança JÁ EXISTE no Inter, mesmo sem
+      // o QR: o webhook lê a cobrança de volta poucos segundos após criá-la e o
+      // `pixCopiaECola` às vezes ainda não ficou pronto.
+      //
+      // O código antigo devolvia falha e DESCARTAVA o `codigoSolicitacao`. A
+      // cobrança ficava órfã no banco (sem rastro no ERP, sem como cancelar) e
+      // cada nova tentativa emitia outra cobrança real — foi o que produziu 4
+      // cobranças de R$ 188,98 para a proposta 19768 em 05/08/2026.
+      //
+      // Agora o código é gravado antes de reportar a falha, e quem chama recebe
+      // `cobrancaEmitida` para NÃO oferecer nova tentativa.
+      if (!pCopiaCola) {
+        const { error: updateCodErr } = await supabase
+          .from("pagamentos_v2")
+          .update({ cod_solicitacao_inter: codSolicitacao })
+          .eq("id", cobrancaId);
+
+        if (updateCodErr) {
+          console.error(
+            `[BancoInter] Cobrança ${codSolicitacao} emitida no Inter mas o código NÃO foi gravado em ${cobrancaId}: ${updateCodErr.message}`
+          );
+        }
+
+        return {
+          success: false,
+          cobrancaEmitida: true,
+          error:
+            "A cobrança foi emitida no Banco Inter, mas o QR do PIX ainda não estava disponível. O código da cobrança foi registrado — não gere outra para esta mesma cobrança."
+        };
+      }
+
       codSolicitacaoInter = codSolicitacao;
       pixCopiaCola = pCopiaCola;
     } else {

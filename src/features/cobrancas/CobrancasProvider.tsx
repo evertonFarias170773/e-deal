@@ -867,8 +867,22 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Erro ao gerar ${values.tipoCobranca}: ${errorText}`);
+        // Nunca jogar o corpo cru na tela: quando a resposta não vem da nossa
+        // API (erro de proxy/plataforma), o corpo é uma PÁGINA HTML inteira, e
+        // ela ia parar dentro do toast. Só a `message` da nossa API é exibível;
+        // qualquer outra coisa vira mensagem curta e vai para o console.
+        const bruto = await response.text();
+        let mensagem = "";
+        try {
+          mensagem = String((JSON.parse(bruto) as { message?: unknown })?.message ?? "");
+        } catch {
+          console.error(
+            `[CobrancasProvider] Resposta não-JSON ao gerar ${values.tipoCobranca}. status=${response.status} preview=${JSON.stringify(bruto.slice(0, 300))}`
+          );
+        }
+        throw new Error(
+          mensagem || `Não foi possível gerar o ${values.tipoCobranca} agora (HTTP ${response.status}). Tente novamente em instantes.`
+        );
       }
 
       const result = await response.json();
