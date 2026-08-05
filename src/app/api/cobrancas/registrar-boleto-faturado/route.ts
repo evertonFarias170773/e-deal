@@ -16,6 +16,15 @@ const WEBHOOK_BIRO_FATURADO = "https://10074.hostoo.net.br/webhook/biro-faturado
 
 const EMPRESA_BIRO = 2;
 
+/**
+ * O Inter devolve a cobrança como EM_PROCESSAMENTO por alguns segundos antes de
+ * emitir o boleto, então o workflow reconsulta até o código de barras existir —
+ * até 25s de espera, além do próprio tempo das chamadas ao banco. Com o padrão
+ * da plataforma esta rota expiraria no meio, e o pior é que o n8n terminaria o
+ * registro depois: sucesso no banco, erro na tela.
+ */
+export const maxDuration = 60;
+
 type RegistrarRequest = {
   boletoId: string;
   /** E-mail informado na tela quando o cadastro do cliente não tem um válido. */

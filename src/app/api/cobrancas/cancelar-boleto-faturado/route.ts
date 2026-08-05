@@ -41,9 +41,7 @@ type BoletoRow = {
 type PagamentoRow = {
   id: string;
   status: string | null;
-  confirmado: boolean | null;
   paid_at: string | null;
-  data_confirmacao: string | null;
 };
 
 export async function POST(request: Request) {
@@ -129,21 +127,22 @@ export async function POST(request: Request) {
   if (boleto.id_pagamento) {
     const { data: pagamento } = await supabase
       .from("pagamentos_v2")
-      .select("id, status, confirmado, paid_at, data_confirmacao")
+      .select("id, status, paid_at")
       .eq("id_pagamento", boleto.id_pagamento)
       .maybeSingle<PagamentoRow>();
 
     if (pagamento) {
+      // O que bloqueia é LIQUIDAÇÃO, não conferência. Num faturado, `confirmado`
+      // e `data_confirmacao` são preenchidos quando a cobrança passa pela
+      // Conferência — ela segue em aberto, e é exatamente aí que cancelar o
+      // boleto faz sentido. Medido em produção: o 20084, pago de verdade, tem
+      // `status = PAID` e `paid_at`; o 20200 e o 20101, em aberto, têm
+      // `confirmado = true` com `paid_at` nulo. Tratar `confirmado` como quitação
+      // travava o cancelamento de todo título já conferido.
       const statusPagamento = String(pagamento.status ?? "").toUpperCase();
-      if (statusPagamento === "PAID" || pagamento.confirmado === true) {
+      if (statusPagamento === "PAID" || pagamento.paid_at != null) {
         return NextResponse.json(
-          { success: false, code: "PAGAMENTO_QUITADO", message: "Cobrança paga ou confirmada. Cancelamento não permitido." },
-          { status: 409 }
-        );
-      }
-      if (pagamento.paid_at != null || pagamento.data_confirmacao != null) {
-        return NextResponse.json(
-          { success: false, code: "PAGAMENTO_QUITADO", message: "Cobrança com baixa ou confirmação registrada. Cancelamento não permitido." },
+          { success: false, code: "PAGAMENTO_QUITADO", message: "Cobrança liquidada. Cancelamento não permitido." },
           { status: 409 }
         );
       }
