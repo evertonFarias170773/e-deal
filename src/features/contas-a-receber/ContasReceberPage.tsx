@@ -934,6 +934,16 @@ export function ContasReceberPage() {
   const cancelIsDeposito = cancelTarget?.tipo === "DEPOSITO";
   const cancelRegistradoBanco = Boolean(cancelTarget && !cancelIsDeposito && cancelTarget.id_boleto_c6);
   const cancelBloqueado = Boolean(cancelTarget && (cancelTarget.status === "PAID" || cancelTarget.paid_at));
+  // A empresa 2 (Ideal Birô) emite e cancela pelo Banco Inter; as demais seguem
+  // no C6. O texto dizia C6 para todas — nomear o banco errado numa confirmação
+  // de operação bancária faz o operador duvidar se está cancelando a coisa certa.
+  const cancelBanco = Number(cancelTarget?.id_empresa) === 2 ? "Banco Inter" : "C6 Bank";
+  // O desfecho tambem difere: no fluxo da Birô o workflow exclui a linha do
+  // título, enquanto o legado a mantém marcada como CANCELADO.
+  const cancelDesfecho =
+    Number(cancelTarget?.id_empresa) === 2
+      ? "o título sai da lista do Contas a Receber"
+      : "o título será marcado como CANCELADO no Contas a Receber";
 
   const confirmIsDeposito = confirmTarget?.tipo === "DEPOSITO";
   const confirmRegistradoBanco = Boolean(confirmTarget && !confirmIsDeposito && confirmTarget.id_boleto_c6);
@@ -2062,7 +2072,7 @@ export function ContasReceberPage() {
                     : cancelIsDeposito
                       ? "O título de depósito em conta será marcado como CANCELADO no Contas a Receber. Não há registro bancário envolvido e o histórico é preservado pela auditoria."
                       : cancelRegistradoBanco
-                        ? "O boleto será cancelado no C6 Bank pela integração oficial. Somente após a confirmação do banco o título será marcado como CANCELADO no Contas a Receber. Em caso de falha bancária, nada é alterado."
+                        ? `O boleto será cancelado no ${cancelBanco} pela integração oficial. Somente após a confirmação do banco ${cancelDesfecho}. Em caso de falha bancária, nada é alterado.`
                         : "Este boleto ainda não possui registro bancário. O título será marcado como CANCELADO apenas no Contas a Receber, com histórico preservado pela auditoria."}
                 </p>
               </div>

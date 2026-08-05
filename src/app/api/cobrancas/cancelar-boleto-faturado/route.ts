@@ -176,8 +176,22 @@ export async function POST(request: Request) {
   if (!webhookResponse.ok) {
     const detalhe = await webhookResponse.text().catch(() => "");
     console.error(`[CancelarBoletoFaturado] Webhook retornou ${webhookResponse.status}: ${detalhe.slice(0, 300)}`);
+    // O workflow responde { success:false, message } com o motivo que o banco deu.
+    // Sem repassar, o operador lê apenas "recusou" e não descobre o que fazer —
+    // "a cobrança está EM_PROCESSAMENTO" pede esperar, não abrir chamado.
+    let motivoBanco = "";
+    try {
+      motivoBanco = String((JSON.parse(detalhe) as { message?: string }).message ?? "").trim();
+    } catch {
+      motivoBanco = "";
+    }
     return NextResponse.json(
-      { success: false, message: "O Banco Inter recusou o cancelamento. Nenhuma alteração local foi feita." },
+      {
+        success: false,
+        message: motivoBanco
+          ? `${motivoBanco} Nenhuma alteração local foi feita.`
+          : "O Banco Inter recusou o cancelamento. Nenhuma alteração local foi feita."
+      },
       { status: webhookResponse.status }
     );
   }

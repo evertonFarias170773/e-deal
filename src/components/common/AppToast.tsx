@@ -63,7 +63,14 @@ export function AppToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 top-4 z-[80] flex justify-center px-4 sm:justify-end">
+      {/*
+        Acima de QUALQUER modal. Os diálogos da aplicação vão até z-[10000], e com
+        z-[80] o toast renderizava atrás do backdrop: o erro era disparado, o
+        usuário não via nada e a ação parecia morrer sem resposta — foi o que
+        aconteceu na recusa de cancelamento do Banco Inter. Toast é a camada de
+        aviso; se fica atrás de algo, ele não existe.
+      */}
+      <div className="pointer-events-none fixed inset-x-0 top-4 z-[10100] flex justify-center px-4 sm:justify-end">
         <div className="flex w-full max-w-md flex-col gap-3">
           {toasts.map((toast) => {
             const Icon = toastIcons[toast.type];
