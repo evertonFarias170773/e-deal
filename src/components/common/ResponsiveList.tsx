@@ -17,6 +17,13 @@ type ResponsiveListProps<T> = {
   emptyTitle?: string;
   emptyDescription?: string;
   onRowClick?: (item: T) => void;
+  /**
+   * Destaque de fundo por linha (desktop). Precisa vir por prop, e não por
+   * classe: o hover da linha é aplicado em `style` inline, que venceria
+   * qualquer classe e apagaria o destaque assim que o mouse saísse.
+   * Retorne `null` para deixar a linha com o fundo padrão.
+   */
+  getRowHighlight?: (item: T) => { base: string; hover: string } | null;
 };
 
 const alignClass = {
@@ -46,7 +53,8 @@ export function ResponsiveList<T>({
   isLoading,
   emptyTitle,
   emptyDescription,
-  onRowClick
+  onRowClick,
+  getRowHighlight
 }: ResponsiveListProps<T>) {
   if (isLoading) {
     return (
@@ -94,7 +102,7 @@ export function ResponsiveList<T>({
               <tr
                 key={getKey(item)}
                 className={`transition ${onRowClick ? "cursor-pointer" : ""}`}
-                style={{ borderBottom: "1px solid var(--border)" }}
+                style={{ borderBottom: "1px solid var(--border)", background: getRowHighlight?.(item)?.base }}
                 // Acessibilidade: linha clicável é focável e responde a Enter/Espaço.
                 {...(onRowClick
                   ? {
@@ -117,10 +125,14 @@ export function ResponsiveList<T>({
                   if (onRowClick) onRowClick(item);
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLTableRowElement).style.background = "var(--card-hover)";
+                  (e.currentTarget as HTMLTableRowElement).style.background =
+                    getRowHighlight?.(item)?.hover ?? "var(--card-hover)";
                 }}
                 onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLTableRowElement).style.background = "transparent";
+                  // Volta ao destaque da linha, não ao transparente: sem isso o
+                  // hover apagaria a marcação ao tirar o mouse.
+                  (e.currentTarget as HTMLTableRowElement).style.background =
+                    getRowHighlight?.(item)?.base ?? "transparent";
                 }}
               >
                 {columns.map((column) => (

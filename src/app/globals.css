@@ -14,6 +14,14 @@
   --card:                #ffffff;
   --card-hover:          #f4f7fa;
 
+  /* --- Destaque de linha em lista ---
+     Amarelo suave para marcar linhas que pedem atenção sem competir com o
+     texto. --foreground sobre #fefce8 → ratio ~15:1 ✅
+     Hoje usado na Conferência de pagamentos para cobranças E-Faturado.
+  */
+  --row-highlight:       #fefce8;
+  --row-highlight-hover: #fef9c3;
+
   /* --- Texto ---
      foreground: #0d1b2a sobre #ffffff → ratio ~16:1 ✅
      muted: #3d5166 sobre #ffffff → ratio ~7.8:1 ✅ (era #4e6278 ~6.2:1)
@@ -108,6 +116,13 @@
   --background:          #080f18;
   --card:                #0f1e2e;
   --card-hover:          #162435;
+
+  /* --- Destaque de linha em lista ---
+     Mesma função do light, como tinta quente sobre o card escuro: mantém a
+     leitura do texto claro em vez de inverter a linha para amarelo.
+  */
+  --row-highlight:       color-mix(in srgb, #facc15 10%, var(--card));
+  --row-highlight-hover: color-mix(in srgb, #facc15 16%, var(--card));
 
   /* --- Texto ---
      foreground: #ddeaf6 sobre #0f1e2e → ratio ~11:1 ✅

@@ -421,6 +421,17 @@ export function getTipoCobrancaLabel(tipo: string) {
   );
 }
 
+/**
+ * Identifica cobrança E-Faturado.
+ *
+ * A comparação é normalizada porque `pagamentos_v2.tipo_cobranca` guarda duas
+ * grafias da MESMA modalidade — "E-Faturado" e "E-FATURADO" —, exatamente como
+ * `getTipoCobrancaLabel` acima já trata. Não abrange outros tipos.
+ */
+export function isCobrancaEFaturado(tipo: string | null | undefined) {
+  return (tipo || "").trim().toUpperCase().replace(/_/g, "-") === "E-FATURADO";
+}
+
 export function isPagamentoAprovado(cobranca: Cobranca) {
   return cobranca.status === "PAID" || (cobranca.status === "A_VENCER" && cobranca.confirmado);
 }

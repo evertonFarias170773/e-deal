@@ -26,6 +26,7 @@ import {
   getLiberacaoPedidoLabel,
   getLiberacaoPedidoStatus,
   getTipoCobrancaLabel,
+  isCobrancaEFaturado,
   isPendenteAprovacao
 } from "@/features/cobrancas/cobrancas-utils";
 import type { Cobranca } from "@/features/cobrancas/types";
@@ -791,6 +792,13 @@ export function CobrancasList() {
         getKey={(cobranca) => cobranca.id}
         emptyTitle="Nenhuma cobrança encontrada"
         emptyDescription="Nenhum resultado com os filtros atuais. Ajuste a fila, os filtros ou a busca."
+        // Destaque de E-Faturado — vale nas duas abas (Fila e Confirmadas),
+        // em qualquer empresa, e não interfere em filtros nem em ações.
+        getRowHighlight={(cobranca) =>
+          isCobrancaEFaturado(cobranca.tipo_cobranca)
+            ? { base: "var(--row-highlight)", hover: "var(--row-highlight-hover)" }
+            : null
+        }
         columns={[
           {
             header: "N°",
@@ -856,7 +864,14 @@ export function CobrancasList() {
           }
         ]}
         renderCard={(cobranca) => (
-          <article key={cobranca.id} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
+          <article
+            key={cobranca.id}
+            // `bg-white` sai do card destacado de propósito: a regra
+            // `.dark article.rounded-3xl.bg-white` do globals.css usa !important
+            // e venceria o style inline no tema escuro.
+            className={`rounded-3xl border border-[#d7e5e8] p-5 shadow-sm ${isCobrancaEFaturado(cobranca.tipo_cobranca) ? "" : "bg-white"}`}
+            style={isCobrancaEFaturado(cobranca.tipo_cobranca) ? { background: "var(--row-highlight)" } : undefined}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{getNumeroCobranca(cobranca)}</p>
