@@ -3,7 +3,7 @@ import { clonePagamentosMock } from "@/lib/mocks/pagamentos.mock";
 import type { Cobranca } from "@/features/cobrancas/types";
 import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
-import { getEmpresaRecebedoraFixaById } from "@/features/cobrancas/cobrancas-utils";
+import { getDataReferenciaCobranca, getEmpresaRecebedoraFixaById } from "@/features/cobrancas/cobrancas-utils";
 import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
 
 export const PAGAMENTOS_V2_SELECT_COLUMNS = [
@@ -197,16 +197,22 @@ function parseDateValue(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * Ordem única da Conferência de pagamentos, para as duas abas.
+ *
+ * A chave é a data oficial da tela (`data_confirmacao -> paid_at -> created_at`,
+ * via `getDataReferenciaCobranca`), NÃO `paid_at` puro. Com `paid_at` na frente,
+ * qualquer modalidade sem liquidação bancária colapsava para 0 em
+ * `parseDateValue` e caía em bloco no fim da lista — era o caso de E-Faturado,
+ * com `paid_at` nulo em 234 das 237 cobranças, aparecendo abaixo de PIX
+ * confirmados dias antes. Nenhum tipo de cobrança é tratado à parte aqui.
+ */
 function sortByConferenceRecency(items: Cobranca[]) {
   return [...items].sort((a, b) => {
-    const paidDiff = parseDateValue(b.paid_at) - parseDateValue(a.paid_at);
-    if (paidDiff !== 0) {
-      return paidDiff;
-    }
-
-    const confirmDiff = parseDateValue(b.data_confirmacao) - parseDateValue(a.data_confirmacao);
-    if (confirmDiff !== 0) {
-      return confirmDiff;
+    const refDiff =
+      parseDateValue(getDataReferenciaCobranca(b)) - parseDateValue(getDataReferenciaCobranca(a));
+    if (refDiff !== 0) {
+      return refDiff;
     }
 
     return parseDateValue(b.created_at) - parseDateValue(a.created_at);
