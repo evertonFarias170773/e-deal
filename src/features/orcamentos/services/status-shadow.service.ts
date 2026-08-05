@@ -32,6 +32,20 @@ export async function validarStatusProposta(
     // /api/cobrancas/confirmar e /api/orcamentos/editar-paga.
     const situacao = await calcularSituacaoQuitacaoProposta(supabase, numericIdInt);
 
+    // ALERTA DE DADO INCONSISTENTE (não altera a regra da engine).
+    // A guarda `totalCents > 0` do status-engine é proposital: proposta sem
+    // valor nunca pode ser dada como quitada. Mas total 0/nulo COM pagamento
+    // confirmado é dado corrompido, não fluxo normal — e antes disso passava
+    // silencioso, indistinguível de "nada a fazer" (caso #18792, avulsa paga
+    // com `propostas.valor_total` nulo, parada em AGUARDANDO por ~1 mês).
+    if (situacao.valorTotalProposta <= 0 && situacao.valorQuitadoAtual > 0) {
+      console.error(
+        `[StatusEngine][DADO INCONSISTENTE] Proposta #${numericIdInt}: pagamento confirmado de R$ ${situacao.valorQuitadoAtual.toFixed(2)} ` +
+        `com valor_total = ${situacao.valorTotalProposta}. O status NÃO será promovido enquanto o total não for corrigido ` +
+        `(is_avulso=${isAvulso}, status atual=${statusInternoAtual}).`
+      );
+    }
+
     // Buscar modelos/produtos físicos
     const { data: modelos, error: errModelos } = await supabase
       .from("pedidos_modelos")

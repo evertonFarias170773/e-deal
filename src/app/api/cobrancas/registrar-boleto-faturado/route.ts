@@ -114,6 +114,41 @@ export async function POST(request: Request) {
     });
   }
 
+  // Segunda barreira: a cobrança pode já ter identificador bancário mesmo com a
+  // linha de `boletos` ainda sem ele. Foi exatamente o que aconteceu na execução
+  // 111333 — o boleto saiu no Inter, `pagamentos_v2` foi atualizado e o vínculo
+  // com `boletos` falhou. Sem esta checagem, uma nova tentativa emitiria OUTRO
+  // boleto real para a mesma parcela.
+  if (boleto.id_pagamento) {
+    const { data: pagamento } = await supabase
+      .from("pagamentos_v2")
+      .select("id, cod_solicitacao_inter, linha_digitavel, url_pdf")
+      .eq("id_pagamento", boleto.id_pagamento)
+      .maybeSingle<{ id: string; cod_solicitacao_inter: string | null; linha_digitavel: string | null; url_pdf: string | null }>();
+
+    const codBancario = String(pagamento?.cod_solicitacao_inter ?? "").trim();
+
+    if (codBancario) {
+      console.error(
+        `[RegistrarBoletoFaturado] Inconsistente: pagamento ${boleto.id_pagamento} ja tem cod_solicitacao_inter ${codBancario}, mas o boleto ${boleto.id} nao foi vinculado.`
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          code: "BOLETO_JA_EMITIDO",
+          message:
+            "Já existe boleto emitido no banco para esta cobrança, mas ele não está vinculado a este título. Regularize o vínculo antes de emitir de novo — uma nova emissão criaria um segundo boleto real.",
+          data: {
+            cod_solicitacao_inter: codBancario,
+            linha_digitavel: pagamento?.linha_digitavel ?? null,
+            url_pdf: pagamento?.url_pdf ?? null
+          }
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   if (String(boleto.status ?? "").toUpperCase() === "CANCELADO") {
     return NextResponse.json({ success: false, message: "Título cancelado não pode ser registrado." }, { status: 400 });
   }
