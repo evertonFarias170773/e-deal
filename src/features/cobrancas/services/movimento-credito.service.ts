@@ -106,6 +106,9 @@ export type SaldoGlobalContaCorrente = {
   totalDebito: number;
   clientesComCredito: number;
   clientesComDebito: number;
+  /** Crédito avulso já consumido como pagamento (USO_PEDIDO sem pendência). */
+  totalUsos: number;
+  qtdUsos: number;
   /** true quando o teto de linhas foi atingido e o total pode estar incompleto. */
   truncado: boolean;
 };
@@ -120,13 +123,17 @@ export type SaldoGlobalContaCorrente = {
  * cliente fecha o próprio saldo e só então os positivos e os negativos são
  * totalizados em separado.
  *
- * Complementa — não substitui — os totais de `conta_corrente_pendencias` da
- * tela: aqueles falam de pendências em aberto, este fala do saldo real que o
- * vendedor enxerga no modal de cobrança.
+ * COBERTURA: `movimento_credito` é a razão COMPLETA da conta corrente, não
+ * uma fonte paralela. Toda pendência grava seu movimento de ABERTURA em
+ * `cc_abrir_pendencia` (FAVOR_CLIENTE→CREDITO, FAVOR_EMPRESA→DEBITO), e as
+ * resoluções/cancelamentos gravam a contrapartida. Somado a ajustes manuais
+ * e usos, o saldo daqui já contempla tudo — por isso ele pode alimentar os
+ * cards sem contar nada duas vezes com `conta_corrente_pendencias`.
  */
 export async function getSaldoGlobalContaCorrente(options?: { limit?: number }): Promise<SaldoGlobalContaCorrente> {
   const vazio: SaldoGlobalContaCorrente = {
-    totalCredito: 0, totalDebito: 0, clientesComCredito: 0, clientesComDebito: 0, truncado: false,
+    totalCredito: 0, totalDebito: 0, clientesComCredito: 0, clientesComDebito: 0,
+    totalUsos: 0, qtdUsos: 0, truncado: false,
   };
   const client = getSupabaseClient();
   if (!client) return vazio;
@@ -134,7 +141,7 @@ export async function getSaldoGlobalContaCorrente(options?: { limit?: number }):
   const limite = options?.limit ?? 20000;
   const { data, error } = await client
     .from("movimento_credito")
-    .select("id_cliente, valor, tipo")
+    .select("id_cliente, valor, tipo, tipo_evento, id_pendencia")
     .eq("cancelado", false)
     .limit(limite);
 
@@ -144,12 +151,21 @@ export async function getSaldoGlobalContaCorrente(options?: { limit?: number }):
   }
 
   const porCliente = new Map<number, number>();
+  let totalUsos = 0;
+  let qtdUsos = 0;
   for (const row of data || []) {
     const idCliente = Number(row.id_cliente);
     if (!idCliente) continue;
     const v = Number(row.valor) || 0;
     const atual = porCliente.get(idCliente) ?? 0;
     porCliente.set(idCliente, row.tipo === "CREDITO" ? atual + v : row.tipo === "DEBITO" ? atual - v : atual);
+
+    // Mesmo recorte de listUsosDeCredito: uso vindo de pendência fica de fora
+    // porque a própria pendência já o representa.
+    if (row.tipo_evento === "USO_PEDIDO" && row.tipo === "DEBITO" && row.id_pendencia === null) {
+      totalUsos += v;
+      qtdUsos += 1;
+    }
   }
 
   let totalCredito = 0;
@@ -167,6 +183,8 @@ export async function getSaldoGlobalContaCorrente(options?: { limit?: number }):
     totalDebito: Math.round(totalDebito * 100) / 100,
     clientesComCredito,
     clientesComDebito,
+    totalUsos: Math.round(totalUsos * 100) / 100,
+    qtdUsos,
     truncado: (data || []).length >= limite,
   };
 }

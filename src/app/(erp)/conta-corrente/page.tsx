@@ -319,25 +319,54 @@ function ContaCorrentePage() {
     <div className="p-4 sm:p-6 space-y-6">
       <PageHeader
         title="Conta Corrente"
-        subtitle="Pendências financeiras — diferenças pós-pagamento. Não é Contas a Receber; nunca bloqueia novos pedidos."
+        subtitle="Saldo do cliente: pendências pós-pagamento, ajustes manuais e usos do crédito. Não é Contas a Receber; nunca bloqueia novos pedidos."
       />
 
+      {/*
+        Os dois primeiros cards saem de movimento_credito, a razão COMPLETA da
+        conta corrente (pendências gravam ABERTURA lá; ajustes e usos também).
+        Antes eles somavam só conta_corrente_pendencias e por isso ignoravam
+        ajuste manual e uso de crédito — anunciavam crédito que já tinha sido
+        gasto. O saldo é fechado cliente a cliente antes de somar: crédito de
+        um cliente não abate débito de outro.
+
+        O terceiro card deixou de ser "Reservado" (era R$ 0,00 desde sempre —
+        reserva é mecanismo raro) e passou a ser a fila de pendências, com o
+        reservado descrito na linha de baixo quando existir.
+      */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard title="Crédito em aberto (a favor do cliente)" value={formatCurrency(totais.totalCredito)} description="Disponível para uso em novo pedido" icon={TrendingUp} tone="success" />
-        <SummaryCard title="Débito em aberto (a favor da empresa)" value={formatCurrency(totais.totalDebito)} description="Reservável em nova cobrança" icon={TrendingDown} tone="warning" />
-        <SummaryCard title="Reservado em cobranças pendentes" value={formatCurrency(totais.reservado)} description={`${totais.qtdAbertas} pendência(s) em aberto`} icon={Wallet} tone="info" />
-        {/* Os três cards acima falam de PENDÊNCIAS. Este fala do saldo real da
-            conta corrente — já descontados os usos —, que é o número que o
-            vendedor vê no modal de cobrança. Sem ele, a tela somava créditos
-            e nunca mostrava o que já tinha sido gasto. */}
         <SummaryCard
-          title="Saldo real em conta corrente"
+          title="Crédito a favor dos clientes"
           value={formatCurrency(saldoGlobal?.totalCredito ?? 0)}
           description={
             saldoGlobal
-              ? `${saldoGlobal.clientesComCredito} cliente(s) com crédito disponível${saldoGlobal.totalDebito > 0 ? ` · ${formatCurrency(saldoGlobal.totalDebito)} devedor em ${saldoGlobal.clientesComDebito}` : ""}${saldoGlobal.truncado ? " · parcial" : ""}`
+              ? `${saldoGlobal.clientesComCredito} cliente(s) com saldo positivo — já descontados os usos${saldoGlobal.truncado ? " · parcial" : ""}`
               : "Calculando..."
           }
+          icon={TrendingUp}
+          tone="success"
+        />
+        <SummaryCard
+          title="Débito a favor da empresa"
+          value={formatCurrency(saldoGlobal?.totalDebito ?? 0)}
+          description={saldoGlobal ? `${saldoGlobal.clientesComDebito} cliente(s) com saldo negativo` : "Calculando..."}
+          icon={TrendingDown}
+          tone="warning"
+        />
+        <SummaryCard
+          title="Pendências em aberto"
+          value={formatCurrency(totais.totalCredito + totais.totalDebito)}
+          description={
+            `${totais.qtdAbertas} pendência(s) — ${formatCurrency(totais.totalCredito)} ao cliente, ${formatCurrency(totais.totalDebito)} à empresa` +
+            (totais.reservado > 0 ? ` · ${formatCurrency(totais.reservado)} reservado` : "")
+          }
+          icon={Wallet}
+          tone="info"
+        />
+        <SummaryCard
+          title="Crédito aplicado em pagamentos"
+          value={formatCurrency(saldoGlobal?.totalUsos ?? 0)}
+          description={saldoGlobal ? `${saldoGlobal.qtdUsos} uso(s) já abatido(s) em propostas` : "Calculando..."}
           icon={Coins}
           tone="special"
         />
