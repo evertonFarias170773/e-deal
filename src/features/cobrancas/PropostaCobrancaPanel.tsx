@@ -1340,6 +1340,19 @@ export function PropostaCobrancaPanel({
 
   const hasCobrancas = cobrancasAtivas.length > 0;
 
+  /**
+   * `getCobrancasByProposta` filtra `cobrancasStats`, que nasce com o mock e só
+   * vira dado real quando o provider conclui a leitura (`source === "supabase"`).
+   * Enquanto isso, a lista desta proposta vem vazia — e vazio NÃO é o mesmo que
+   * "não existe cobrança".
+   *
+   * Tratar os dois como iguais fazia a aba Pagamentos anunciar "Nenhuma cobrança
+   * criada" e oferecer "Gerar cobrança" para propostas que já tinham cobrança
+   * emitida, convidando à duplicidade — e a lista "aparecia sozinha" quando a
+   * carga terminava, dando a impressão de bug intermitente.
+   */
+  const cobrancasIndefinidas = Boolean(getSupabaseClient()) && source !== "supabase";
+
   if (onlyModal) {
     return (
       <>
@@ -1745,7 +1758,22 @@ export function PropostaCobrancaPanel({
         title="Cobranças já geradas"
         description="A cobrança continua nascendo dentro da proposta. O modal de criação foi simplificado para um fluxo rápido e operacional."
       >
-        {!hasCobrancas ? (
+        {cobrancasIndefinidas ? (
+          // Sem dado real ainda: não afirma que a proposta está sem cobrança e
+          // não oferece "Gerar cobrança" — criar aqui poderia duplicar uma
+          // cobrança já existente que simplesmente não terminou de carregar.
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center flex flex-col items-center justify-center gap-3">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-[#0b2f4a]" />
+            <p className="text-sm font-medium text-slate-600">Carregando as cobranças desta proposta...</p>
+            <button
+              type="button"
+              onClick={() => void refreshCobrancas()}
+              className="text-xs font-semibold text-slate-500 underline underline-offset-4 hover:text-slate-700"
+            >
+              Demorando? Tentar novamente
+            </button>
+          </div>
+        ) : !hasCobrancas ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center flex flex-col items-center justify-center gap-4">
             <p className="text-sm font-medium text-slate-600">
               Nenhuma cobrança criada para esta proposta ainda.
