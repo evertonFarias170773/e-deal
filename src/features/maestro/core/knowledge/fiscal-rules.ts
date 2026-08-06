@@ -1,6 +1,6 @@
 /**
  * fiscal-rules.ts
- * Regras fiscais canônicas do ERP Ideal para o Maestro.
+ * Regras fiscais canônicas do Vibe para o Maestro.
  *
  * Cobre: NF-e, NFS-e, libera_nf, o que o Maestro pode e não pode.
  * Nunca contém dados dinâmicos — apenas regras estruturais fixas.

@@ -21,7 +21,7 @@ Este arquivo é preservado apenas para rastreabilidade da evolução do Maestro.
 # MAESTRO — Arquitetura de Dados: Fase Cliente 100%
 
 > **Fase 1 do Maestro Simple v1.**
-> Documentação oficial do mapa de relacionamentos do cliente no ERP Ideal para consumo do Maestro.
+> Documentação oficial do mapa de relacionamentos do cliente no Vibe para consumo do Maestro.
 > Nenhuma tabela de pedidos ou propostas é acessada nesta fase.
 
 ---

@@ -3,13 +3,13 @@
 Versão: 1.3
 Status: Oficial
 Última atualização: 19/07/2026
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Conta Corrente e E-Crédito
 
-Este documento registra o estado oficial da Conta Corrente do cliente e do pagamento por E-Crédito no ERP Ideal.
+Este documento registra o estado oficial da Conta Corrente do cliente e do pagamento por E-Crédito no Vibe.
 
 Ele separa, de forma explícita:
 

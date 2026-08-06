@@ -24,7 +24,7 @@ interface PermissionDefinition {
 }
 
 // ---------------------------------------------------------------------------
-// CATÁLOGO DE PERMISSÕES V2.1 — ERP Ideal
+// CATÁLOGO DE PERMISSÕES V2.1 — Vibe
 // Fase 1: expansão puramente visual do Editor de Perfis.
 // Nenhuma permissão nova está conectada a telas operacionais nesta fase.
 // A implementação operacional das novas permissões ocorre nas Fases 2 a 5.

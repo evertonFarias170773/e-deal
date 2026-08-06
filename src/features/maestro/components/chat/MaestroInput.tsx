@@ -1,6 +1,7 @@
 'use client';
 import { Send, Mic } from 'lucide-react';
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { APP_NAME } from '@/constants/brand';
 
 interface Props {
   value: string;
@@ -353,7 +354,7 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
         </div>
 
         <p className="text-center text-[11px] text-[var(--muted)]/60 dark:text-white/20 mt-2 font-medium">
-          Maestro ERP Ideal · Inteligência Assistida
+          Maestro {APP_NAME} · Inteligência Assistida
         </p>
       </div>
     </div>

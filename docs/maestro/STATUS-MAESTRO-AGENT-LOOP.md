@@ -3,7 +3,7 @@
 Versão: 1.0
 Status: Oficial — fonte única do estado atual do Maestro V2
 Última atualização: 26/07/2026
-Projeto: ERP Ideal
+Projeto: Vibe
 
 > Este documento substitui `STATUS-MAESTRO-V2.md` (movido para
 > `docs/_archive/maestro/` em 26/07/2026 — cobria o motor simples/legado até

@@ -3,13 +3,13 @@
 Versão: 3.0
 Status: Oficial
 Última atualização: 18/07/2026
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Regras Oficiais de Negócio
 
-Este documento define as regras permanentes do ERP Ideal.
+Este documento define as regras permanentes do Vibe.
 
 As implementações podem evoluir.
 

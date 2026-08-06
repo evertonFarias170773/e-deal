@@ -35,6 +35,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { APP_NAME } from '@/constants/brand';
 import type { SimpleClientContext, SimpleMaestroContext } from './maestro-simple-context';
 import { FORBIDDEN_LLM_PATTERNS, turnsToPromptBlock, type RecentTurn } from './maestro-recent-turns';
 
@@ -44,7 +45,7 @@ import { FORBIDDEN_LLM_PATTERNS, turnsToPromptBlock, type RecentTurn } from './m
 // edite docs/MAESTRO-PROMPT-BASE.md e reinicie o servidor de desenvolvimento.
 
 const MAESTRO_SYSTEM_PROMPT = `
-Você é o Maestro, assistente inteligente do ERP Ideal (Ideal Gráfica).
+Você é o Maestro, assistente inteligente do ${APP_NAME} (Ideal Gráfica).
 Trabalha para a equipe interna: vendedores, gestores, operadores de produção e financeiro.
 Seu papel é responder perguntas reais do dia a dia de forma rápida, precisa e humana.
 

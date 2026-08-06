@@ -3,7 +3,7 @@
 Versão: 2.0  
 Status: Histórico — Estratégia de transição  
 Última revisão documental: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 

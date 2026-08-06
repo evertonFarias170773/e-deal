@@ -1,5 +1,5 @@
 /**
- * index.ts — Knowledge Base Canônica do Maestro ERP Ideal
+ * index.ts — Knowledge Base Canônica do Maestro Vibe
  *
  * Exporta a estrutura unificada ERP_IDEAL_KNOWLEDGE_BASE e todos os módulos.
  * Use este arquivo para consumir o conhecimento no Prompt Builder, Planner e Context Engine.

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LockKeyhole } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { APP_NAME } from "@/constants/brand";
 
 export default function AtualizarSenhaPage() {
   const router = useRouter();
@@ -124,7 +125,7 @@ export default function AtualizarSenhaPage() {
       <section className="hidden flex-col justify-between bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-12 text-white lg:flex">
         <div>
           <div className="mb-16 inline-flex items-center rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm text-blue-100">
-            ERP Ideal
+            {APP_NAME}
           </div>
           <h1 className="max-w-2xl text-5xl font-bold tracking-tight">
             Operacao comercial, fiscal e financeira em uma interface moderna.

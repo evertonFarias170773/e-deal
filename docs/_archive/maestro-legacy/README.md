@@ -1,7 +1,7 @@
 # Maestro Legacy
 
 Status: Arquivo histórico  
-Projeto: ERP Ideal  
+Projeto: Vibe  
 Última organização documental: 19/07/2026
 
 ---

@@ -1,6 +1,6 @@
 # Contrato de Comportamento Maestro V2
 
-Este documento estabelece as regras formais e invariantes para a resolução de intenções, prioridades de domínio e gerenciamento de contexto no **Maestro V2** do ERP Ideal.
+Este documento estabelece as regras formais e invariantes para a resolução de intenções, prioridades de domínio e gerenciamento de contexto no **Maestro V2** do Vibe.
 
 ---
 

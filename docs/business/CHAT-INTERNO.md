@@ -3,13 +3,13 @@
 Versão: 2.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Chat Interno — Timeline Operacional
 
-Este documento descreve a arquitetura, a estrutura de dados, os fluxos de integração, as regras de negócio e o estado atual do módulo de Chat Interno do ERP Ideal.
+Este documento descreve a arquitetura, a estrutura de dados, os fluxos de integração, as regras de negócio e o estado atual do módulo de Chat Interno do Vibe.
 
 O Chat Interno é uma timeline operacional vinculada às propostas por `id_int`. Ele centraliza comunicação interna, mensagens automáticas, anexos, menções e pendências entre setores.
 
@@ -30,7 +30,7 @@ O módulo não substitui regras comerciais, financeiras, produtivas ou fiscais. 
 
 ---
 
-Esta documentação descreve a arquitetura, estrutura de dados, fluxos de integração e regras de negócio do módulo **Chat Interno** (Timeline Operacional) do ERP Ideal.
+Esta documentação descreve a arquitetura, estrutura de dados, fluxos de integração e regras de negócio do módulo **Chat Interno** (Timeline Operacional) do Vibe.
 
 ---
 
@@ -239,7 +239,7 @@ Use este checklist para testar a integridade operacional do módulo de Chat Inte
 
 ## 12. Balão do Chat Global (Fase 6C)
 
-Na Fase 6C, o ERP Ideal foi equipado com uma **Central Flutuante de Chat Unificada** (`GlobalChatBubble`), que oferece acesso rápido ao chat de qualquer módulo do sistema.
+Na Fase 6C, o Vibe foi equipado com uma **Central Flutuante de Chat Unificada** (`GlobalChatBubble`), que oferece acesso rápido ao chat de qualquer módulo do sistema.
 
 ### Funcionamento e Arquitetura:
 1. **Contexto Unificado**: O layout principal (`AppLayout`) monta o `GlobalChatProvider` que renderiza uma única instância do `PropostaChatDrawer` na raiz da página. Isso evita a inicialização de múltiplos listeners realtime e economiza conexões com o Supabase.
@@ -425,7 +425,7 @@ Esta seção consolida a arquitetura técnica, regras operacionais e o escopo fu
 
 # Fonte da Verdade
 
-Este documento representa a referência oficial do módulo de Chat Interno, Menções e Pendências do ERP Ideal.
+Este documento representa a referência oficial do módulo de Chat Interno, Menções e Pendências do Vibe.
 
 As tabelas `public.propostas_chat`, `public.propostas_chat_mentions` e `public.propostas_pendencias` devem continuar isoladas pelo contexto oficial da proposta e protegidas pelas políticas de acesso vigentes.
 

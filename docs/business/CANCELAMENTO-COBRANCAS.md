@@ -3,13 +3,13 @@
 Versão: 2.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Padrão Unificado de Cancelamento de Cobranças
 
-Este documento define as regras funcionais e técnicas para interromper cobranças no ERP Ideal sem romper a sincronização entre o banco local e integrações externas.
+Este documento define as regras funcionais e técnicas para interromper cobranças no Vibe sem romper a sincronização entre o banco local e integrações externas.
 
 Aplica-se a cobranças relacionadas a PIX, boleto, cartão e demais meios registrados em `public.pagamentos_v2`.
 

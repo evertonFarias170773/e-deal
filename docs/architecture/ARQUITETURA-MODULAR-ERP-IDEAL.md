@@ -3,13 +3,13 @@
 Versão: 3.0
 Status: Oficial
 Última atualização: 18/07/2026
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
-# Arquitetura Modular do ERP Ideal
+# Arquitetura Modular do Vibe
 
-Este documento define a arquitetura oficial do ERP Ideal.
+Este documento define a arquitetura oficial do Vibe.
 
 Toda nova funcionalidade deve respeitar esta organização.
 

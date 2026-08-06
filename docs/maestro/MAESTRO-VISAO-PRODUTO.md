@@ -3,7 +3,7 @@
 Versão: 2.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
@@ -17,7 +17,7 @@ Ele não substitui a base de conhecimento técnica, o status de implementação 
 
 # Quem é o Maestro
 
-O Maestro é o copiloto inteligente do ERP Ideal.
+O Maestro é o copiloto inteligente do Vibe.
 
 Ele é um assistente interno especializado no ciclo operacional da empresa: clientes, propostas, orçamentos, produtos, frete, pagamentos, pedidos, produção, expedição e fiscal.
 
@@ -53,7 +53,7 @@ Quando o recurso ainda não estiver disponível, ele informa a limitação sem i
 
 ## Uso atual
 
-O Maestro é destinado à equipe interna do ERP Ideal:
+O Maestro é destinado à equipe interna do Vibe:
 
 - atendimento e vendedores;
 - gerentes;
@@ -395,7 +395,7 @@ O Maestro será bem-sucedido quando:
 
 | Característica | Chat genérico | Maestro |
 |---|---|---|
-| Conhecimento | Assuntos gerais | Operação do ERP Ideal |
+| Conhecimento | Assuntos gerais | Operação do Vibe |
 | Dados | Pode responder por conhecimento geral | Usa fontes reais conectadas |
 | Regras | Geradas pelo modelo | Definidas pelo ERP |
 | Permissões | Sem contexto empresarial | Sessão, perfil, escopo e RLS |
@@ -409,7 +409,7 @@ O Maestro será bem-sucedido quando:
 
 # Resumo do Produto
 
-> O Maestro é o copiloto inteligente do ERP Ideal: compreende a linguagem da equipe, consulta fontes reais, aplica regras oficiais, auxilia na operação e evolui para ações controladas sem inventar dados, burlar permissões ou criar fluxos paralelos.
+> O Maestro é o copiloto inteligente do Vibe: compreende a linguagem da equipe, consulta fontes reais, aplica regras oficiais, auxilia na operação e evolui para ações controladas sem inventar dados, burlar permissões ou criar fluxos paralelos.
 
 ---
 

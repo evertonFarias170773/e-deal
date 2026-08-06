@@ -7,6 +7,7 @@ import { LockKeyhole, Mail } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { sanitizeInternalNext } from "@/features/auth/redirect-utils";
+import { APP_NAME } from "@/constants/brand";
 
 /** Destino pós-login sanitizado (?next=), lido no momento do clique (client-only). */
 function obterDestinoPosLogin(): string {
@@ -129,7 +130,7 @@ export function LoginForm() {
           disabled={isSubmitting || isGoogleLoading}
           className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
         >
-          {isSubmitting ? "Entrando..." : "Entrar no ERP"}
+          {isSubmitting ? "Entrando..." : `Entrar no ${APP_NAME}`}
         </button>
       </form>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { Fragment, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight, UserRound, ChevronDown } from "lucide-react";
@@ -8,6 +9,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { navigationItems } from "@/constants/navigation";
 import { cn } from "@/lib/utils";
 import { ThemedLogo } from "@/components/app-shell/ThemedLogo";
+import { APP_ICON_SRC, APP_NAME } from "@/constants/brand";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 
 type SidebarProps = {
@@ -69,15 +71,13 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
           </>
         ) : (
           <>
-            <div
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold"
-              style={{
-                background: "var(--primary)",
-                color: "var(--primary-foreground)"
-              }}
-            >
-              ID
-            </div>
+            <Image
+              src={APP_ICON_SRC}
+              alt={APP_NAME}
+              width={44}
+              height={44}
+              className="h-11 w-11 shrink-0 rounded-2xl object-contain"
+            />
             <button
               type="button"
               onClick={onToggleCollapse}

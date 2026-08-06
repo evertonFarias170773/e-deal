@@ -1,8 +1,9 @@
 import { MaestroPage } from "@/features/maestro/MaestroPage";
+import { APP_NAME } from "@/constants/brand";
 
 export const metadata = {
-  title: "Maestro — Centro Inteligente | ERP Ideal",
-  description: "Centro de inteligência do ERP Ideal — consultas, análises e assistência comercial",
+  title: `Maestro — Centro Inteligente | ${APP_NAME}`,
+  description: `Centro de inteligência do ${APP_NAME} — consultas, análises e assistência comercial`,
 };
 
 /**

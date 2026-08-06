@@ -1,6 +1,6 @@
 /**
  * finance-rules.ts
- * Regras financeiras canônicas do ERP Ideal para o Maestro.
+ * Regras financeiras canônicas do Vibe para o Maestro.
  *
  * Cobre: pagamentos_v2, boletos, status de cobrança, tipos E-*, aprovação.
  * Nunca contém dados dinâmicos — apenas regras estruturais fixas.

@@ -3,13 +3,13 @@
 Versão: 2.0  
 Status: Oficial — Implementação parcial e evolução controlada  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Pedidos e Produção
 
-Este documento define o funcionamento atual, os limites e a evolução planejada do módulo de Pedidos e Produção do ERP Ideal.
+Este documento define o funcionamento atual, os limites e a evolução planejada do módulo de Pedidos e Produção do Vibe.
 
 Ele substitui a antiga classificação de “modelagem sem tabelas”, porque o projeto já possui estruturas reais para Boletim/OS, modelos e artes.
 

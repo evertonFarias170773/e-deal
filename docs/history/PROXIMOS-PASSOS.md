@@ -3,13 +3,13 @@
 Versão documental: 2.0  
 Status: Histórico — Backlog acumulado  
 Última revisão documental: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Próximos Passos — Registro Histórico
 
-Este arquivo preserva pendências e sugestões registradas durante diferentes fases do ERP Ideal.
+Este arquivo preserva pendências e sugestões registradas durante diferentes fases do Vibe.
 
 Ele não representa automaticamente o backlog atual e não autoriza alterações de banco, schema, RLS, triggers, RPCs, views, Auth, integrações financeiras ou escritas em produção.
 

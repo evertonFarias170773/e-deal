@@ -3,13 +3,13 @@
 Versão: 1.0  
 Status: Histórico e propostas de banco  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Arquivos de Migration
 
-Esta pasta preserva scripts SQL criados durante diferentes fases do ERP Ideal.
+Esta pasta preserva scripts SQL criados durante diferentes fases do Vibe.
 
 A presença de um arquivo não comprova que ele foi aplicado.
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { APP_NAME } from "@/constants/brand";
 
 const MIN_TEXT_CHARS = 50;
 const MAX_TEXT_CHARS = 10000;
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 4. Prompt para extração estruturada
-  const systemPrompt = `Você é um agente de cadastro do ERP Ideal. Receberá um texto bruto copiado de um sistema antigo e deve extrair dados cadastrais para JSON.
+  const systemPrompt = `Você é um agente de cadastro do ${APP_NAME}. Receberá um texto bruto copiado de um sistema antigo e deve extrair dados cadastrais para JSON.
 
 Regras de Mapeamento e Limpeza:
 - Nunca invente dados.

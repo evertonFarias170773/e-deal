@@ -22,13 +22,13 @@ confirmados no código antes de qualquer uso.
 ---
 
 # MAESTRO — Blueprint Técnico
-> ERP Ideal · Branch: `erp-ideal-preview` · Versão: 0.2-blueprint · Data: 2026-07-03
+> Vibe · Branch: `erp-ideal-preview` · Versão: 0.2-blueprint · Data: 2026-07-03
 
 ---
 
 ## 1. Visão Geral
 
-O **Maestro** é o **núcleo inteligente do ERP Ideal** — um copiloto que observa, interpreta e auxilia quem usa o sistema. Ele nasce como uso **interno**, para funcionários logados, mas sua arquitetura é projetada para evoluir de forma segura para atendimento **externo** futuro a clientes, representantes e parceiros.
+O **Maestro** é o **núcleo inteligente do Vibe** — um copiloto que observa, interpreta e auxilia quem usa o sistema. Ele nasce como uso **interno**, para funcionários logados, mas sua arquitetura é projetada para evoluir de forma segura para atendimento **externo** futuro a clientes, representantes e parceiros.
 
 O Maestro não é um chat genérico. É um orquestrador com camadas de planejamento, especialização, ferramentas e controle de permissão. Cada resposta cita fontes. Cada ação é autorizada antes de executada.
 
@@ -73,7 +73,7 @@ O Maestro atende dois públicos distintos com escopos, permissões e interfaces 
 
 ### 3.1 Maestro Interno (Fases 1 a 7)
 
-Destinado a **funcionários logados no ERP Ideal**: vendedores, gerentes, administradores e equipes de produção, expedição e financeiro.
+Destinado a **funcionários logados no Vibe**: vendedores, gerentes, administradores e equipes de produção, expedição e financeiro.
 
 - Acesso via autenticação Supabase Auth com sessão JWT
 - Escopo filtrado por perfil, empresa e setor
@@ -346,7 +346,7 @@ Este componente é mockado na Fase 1 e conectado a dados reais a partir da Fase 
 
 ## 7. Arquitetura Proposta — `src/features/maestro`
 
-A estrutura segue o padrão modular do ERP Ideal (vide `ARQUITETURA-MODULAR-ERP-IDEAL.md`).
+A estrutura segue o padrão modular do Vibe (vide `ARQUITETURA-MODULAR-ERP-IDEAL.md`).
 
 ```
 src/features/maestro/
@@ -771,5 +771,5 @@ Para iniciar: solicite explicitamente **"Iniciar Fase 1 do Maestro — UI Mockad
 
 > **Governança:** Todas as decisions arquiteturais deste documento estão sujeitas às regras definidas em [MAESTRO-SEGURANCA-E-GOVERNANCA.md](../../maestro/MAESTRO-SEGURANCA-E-GOVERNANCA.md), que atua como Constituição de Segurança do Maestro.
 
-*Documento atualizado por Antigravity · ERP Ideal · 2026-07-03 · Versão 0.2*
+*Documento atualizado por Antigravity · Vibe · 2026-07-03 · Versão 0.2*
 *Nenhuma alteração de banco de dados foi realizada nesta etapa.*

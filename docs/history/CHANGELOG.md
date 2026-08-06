@@ -3,13 +3,13 @@
 Versão documental: 2.0  
 Status: Histórico — Registro de alterações  
 Última revisão documental: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Histórico de Alterações
 
-Este arquivo registra mudanças relevantes realizadas ao longo do desenvolvimento do ERP Ideal.
+Este arquivo registra mudanças relevantes realizadas ao longo do desenvolvimento do Vibe.
 
 Os registros descrevem o estado do projeto na data indicada. Eles não substituem a documentação oficial vigente, o código atual, a Matriz de Segurança ou as regras de negócio.
 

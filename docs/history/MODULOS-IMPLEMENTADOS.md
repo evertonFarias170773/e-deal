@@ -3,7 +3,7 @@
 Versão documental: 2.0  
 Status: Histórico — Inventário acumulado  
 Última revisão documental: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 

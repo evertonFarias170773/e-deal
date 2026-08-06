@@ -10,6 +10,7 @@
  * - Sem caminhos de escrita.
  */
 
+import { APP_NAME } from '@/constants/brand';
 import type { LastAnswerRecord, SimpleClientContext } from './maestro-simple-context';
 import type { MaestroV2Context } from './maestro-v2-context-manager';
 import {
@@ -790,7 +791,7 @@ export async function routeToolSimple(
   );
 
   const cabecalhoRouter = `
-Você é o Router Semântico do Maestro V2 (ERP Ideal).
+Você é o Router Semântico do Maestro V2 (${APP_NAME}).
 DATA REFERÊNCIA DO SERVIDOR: ${currentDateIso}
 
 ${estadoReal}

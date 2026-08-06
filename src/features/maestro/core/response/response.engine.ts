@@ -1,3 +1,4 @@
+import { APP_NAME } from '@/constants/brand';
 import type { ConversationContext } from '../../types';
 import type { ResponseModel, ResponseMetadata } from './response.types';
 import {
@@ -172,7 +173,7 @@ function presenterGenericoAmigavel(
     ? `${context.clientName}${context.clientDisplayCode ? ` (${context.clientDisplayCode})` : ''}`
     : context.clientDisplayCode || undefined;
 
-  const source = toolResult?.sourceLabel || toolResult?.source || 'ERP Ideal';
+  const source = toolResult?.sourceLabel || toolResult?.source || APP_NAME;
   const data = toolResult?.data;
   const count = toolResult?.count || 0;
 

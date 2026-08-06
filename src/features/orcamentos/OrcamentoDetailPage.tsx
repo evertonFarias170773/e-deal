@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Copy, CreditCard, FileText, Package, Truck, Paperclip } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { APP_NAME } from "@/constants/brand";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -430,7 +431,7 @@ export function OrcamentoDetailPage({ idInt }: OrcamentoDetailPageProps) {
               {isClienteNaoCadastrado ? (
                 <>
                   <InfoBox label="Cliente" value={proposta.cliente.nome} detail="Orçamento rápido (sem cadastro)" />
-                  <InfoBox label="Vendedor responsável" value={proposta.vendedor} detail="ERP Ideal" />
+                  <InfoBox label="Vendedor responsável" value={proposta.vendedor} detail={APP_NAME} />
                   <InfoBox label="CEP de entrega" value={proposta.enderecoEntrega.cep} detail="Logística rápida" />
                 </>
               ) : (

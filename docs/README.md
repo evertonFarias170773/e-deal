@@ -1,6 +1,6 @@
-# Documentação Oficial do ERP Ideal
+# Documentação Oficial do Vibe
 
-Esta pasta contém a documentação oficial do ERP Ideal.
+Esta pasta contém a documentação oficial do Vibe.
 
 Toda alteração deve considerar o código atual, as regras de negócio, a segurança e a documentação do módulo.
 

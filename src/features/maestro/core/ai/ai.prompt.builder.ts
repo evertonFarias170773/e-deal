@@ -1,3 +1,4 @@
+import { APP_NAME } from '@/constants/brand';
 import type { ConversationContext } from '../../types';
 import type { AIRequest } from './ai.types';
 import type { ResponseModel, ResponseMetadata } from '../response/response.types';
@@ -88,7 +89,7 @@ export function buildSystemPrompt(context: ConversationContext): string {
   }
 
   // ── Bloco de identidade e diretrizes gerais ─────────────────────────────────
-  let prompt = `Você é o Maestro, assistente inteligente do ERP Ideal (Ideal Gráfica).
+  let prompt = `Você é o Maestro, assistente inteligente do ${APP_NAME} (Ideal Gráfica).
 Papel: copiloto do ERP — não um chatbot genérico.
 Especialista Ativo: [${specialistId.toUpperCase()}]
 Domínio: [${domain.toUpperCase()}]${clienteInfo}

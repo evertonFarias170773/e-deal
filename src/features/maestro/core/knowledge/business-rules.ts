@@ -1,6 +1,6 @@
 /**
  * business-rules.ts
- * Regras de negócio canônicas do ERP Ideal para o Maestro.
+ * Regras de negócio canônicas do Vibe para o Maestro.
  *
  * Cobre: orçamento → proposta → aprovação → pedido real → OS → modelos → produção.
  * Nunca contém dados dinâmicos — apenas regras estruturais fixas.

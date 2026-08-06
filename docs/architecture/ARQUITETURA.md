@@ -3,15 +3,15 @@
 Versão: 3.0  
 Status: Referência Histórica  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
-# Arquitetura do ERP Ideal
+# Arquitetura do Vibe
 
 Este documento foi mantido apenas por compatibilidade com referências existentes.
 
-A arquitetura oficial do ERP Ideal está documentada em:
+A arquitetura oficial do Vibe está documentada em:
 
 - `ARQUITETURA-MODULAR-ERP-IDEAL.md`
 

@@ -3,13 +3,13 @@
 Versão: 2.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Checkout, Cobranças e Pagamentos
 
-Este documento define o fluxo oficial de criação, geração, acompanhamento e confirmação de cobranças no ERP Ideal.
+Este documento define o fluxo oficial de criação, geração, acompanhamento e confirmação de cobranças no Vibe.
 
 Seu objetivo é separar claramente as responsabilidades entre proposta, cobrança, boleto, pagamento, frontend, backend, n8n, Edge Functions e integrações externas.
 
@@ -697,7 +697,7 @@ Antes de concluir uma alteração valide:
 
 # Fonte da Verdade
 
-Este documento representa a referência oficial do fluxo de checkout, cobranças e pagamentos do ERP Ideal.
+Este documento representa a referência oficial do fluxo de checkout, cobranças e pagamentos do Vibe.
 
 A Matriz de Segurança define quais operações de escrita estão liberadas.
 

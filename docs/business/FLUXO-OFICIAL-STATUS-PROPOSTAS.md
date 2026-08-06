@@ -3,13 +3,13 @@
 Versão: 3.2  
 Status: Oficial  
 Última atualização: 23/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Fluxo Oficial de Status das Propostas
 
-Este documento define o fluxo oficial de evolução de `public.propostas.status_interno` no ERP Ideal.
+Este documento define o fluxo oficial de evolução de `public.propostas.status_interno` no Vibe.
 
 Ele organiza a relação entre:
 

@@ -3,13 +3,13 @@
 Versão: 3.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Política de Segurança
 
-Este documento define as diretrizes de segurança para qualquer alteração realizada no ERP Ideal.
+Este documento define as diretrizes de segurança para qualquer alteração realizada no Vibe.
 
 Seu objetivo é preservar a integridade dos dados, da arquitetura, das regras de negócio e da operação da empresa.
 

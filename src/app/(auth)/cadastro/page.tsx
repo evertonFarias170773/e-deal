@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { LockKeyhole, Mail, User, CheckCircle2 } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { APP_LOGO_SRC, APP_NAME } from "@/constants/brand";
 
 export default function CadastroPage() {
   const router = useRouter();
@@ -76,14 +77,17 @@ export default function CadastroPage() {
 
         <div className="relative z-10">
           <div className="mb-12">
-            <Image 
-              src="/logos/logo-dark.png" 
-              alt="Logo Ideal" 
-              width={160} 
-              height={50} 
-              className="object-contain"
-              priority
-            />
+            {/* Wordmark navy — precisa de fundo claro sobre o painel escuro */}
+            <div className="inline-flex items-center rounded-xl bg-white px-3 py-2">
+              <Image
+                src={APP_LOGO_SRC}
+                alt={APP_NAME}
+                width={160}
+                height={59}
+                className="object-contain"
+                priority
+              />
+            </div>
           </div>
           <h1 className="max-w-2xl text-5xl font-bold tracking-tight leading-tight">
             Gestão inteligente e segura para sua empresa.
@@ -98,11 +102,11 @@ export default function CadastroPage() {
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5 relative z-10">
           
           <div className="mb-6 flex justify-center lg:hidden">
-            <Image 
-              src="/logos/ingressoideal.png" 
-              alt="Logo Ideal" 
-              width={140} 
-              height={45} 
+            <Image
+              src={APP_LOGO_SRC}
+              alt={APP_NAME}
+              width={140}
+              height={52}
               className="object-contain"
             />
           </div>
@@ -118,7 +122,7 @@ export default function CadastroPage() {
               </p>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 mb-8 text-left">
                 <p className="text-xs text-amber-800">
-                  Após a confirmação do e-mail, seu acesso ficará aguardando liberação do administrador do ERP Ideal.
+                  Após a confirmação do e-mail, seu acesso ficará aguardando liberação do administrador do {APP_NAME}.
                 </p>
               </div>
               <Link

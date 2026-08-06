@@ -1,6 +1,6 @@
 /**
  * security-rules.ts
- * Regras de segurança canônicas do Maestro ERP Ideal.
+ * Regras de segurança canônicas do Maestro Vibe.
  *
  * Define o que o Maestro pode, deve mascarar, deve negar e deve logar.
  * Segurança funciona como TRILHO DE LIBERAÇÃO, não bloqueio permanente:

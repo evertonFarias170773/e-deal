@@ -3,13 +3,13 @@
 Versão: 2.0  
 Status: Oficial — migração encerrada  
 Última atualização: 29/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Persistência de Filtros e Estado de Navegação
 
-Este documento define como as telas de listagem do ERP Ideal guardam filtros, pesquisa, ordenação, paginação, período e aba.
+Este documento define como as telas de listagem do Vibe guardam filtros, pesquisa, ordenação, paginação, período e aba.
 
 A regra vale para **toda lista nova**: o estado funcional da tela fica na URL, não em `useState` local.
 
@@ -246,7 +246,7 @@ Telas novas já nascem com o padrão. Telas existentes que ainda não usam o hoo
 
 # Fonte da Verdade
 
-Este documento define o padrão oficial de persistência de filtros e estado de navegação do ERP Ideal.
+Este documento define o padrão oficial de persistência de filtros e estado de navegação do Vibe.
 
 Toda lista nova deve usar o hook compartilhado. Criar mecanismo próprio de persistência de filtros não é permitido.
 

@@ -2,6 +2,12 @@
 
 import Image from "next/image";
 import { useSyncExternalStore } from "react";
+import {
+  APP_LOGO_HEIGHT,
+  APP_LOGO_SRC,
+  APP_LOGO_WIDTH,
+  APP_NAME
+} from "@/constants/brand";
 
 // ── Store reativa — observa mudanças na classe .dark do <html> ───────────────
 // Usa MutationObserver para detectar qualquer alteração no tema,
@@ -39,18 +45,17 @@ type ThemedLogoProps = {
 };
 
 /**
- * Exibe a logo correta conforme o tema ativo:
- * - Light → /logos/ingressoideal.png  (logo original, tons escuros)
- * - Dark  → /logos/logo-dark.png      (versão vibrante para fundo escuro)
+ * Exibe a logo do software (marca definida em @/constants/brand) conforme o tema:
+ * - Light → logo direta (wordmark navy sobre fundo transparente)
+ * - Dark  → logo dentro de container branco arredondado, pois o wordmark navy
+ *           seria ilegível sobre fundo escuro
  *
  * Reage automaticamente a mudanças de tema via MutationObserver no <html>.
- * No dark mode envolve a logo em um container branco arredondado para garantir
- * que as cores originais da logo sejam preservadas independente do fundo.
  */
 export function ThemedLogo({
   className = "h-14 w-full object-contain object-left",
-  width = 943,
-  height = 280
+  width = APP_LOGO_WIDTH,
+  height = APP_LOGO_HEIGHT
 }: ThemedLogoProps) {
   const isDark = useSyncExternalStore(
     subscribeTheme,
@@ -65,8 +70,8 @@ export function ThemedLogo({
         style={{ background: "#ffffff" }}
       >
         <Image
-          src="/logos/logo-dark.png"
-          alt="Ingresso Ideal"
+          src={APP_LOGO_SRC}
+          alt={APP_NAME}
           width={width}
           height={height}
           className={className}
@@ -78,8 +83,8 @@ export function ThemedLogo({
 
   return (
     <Image
-      src="/logos/ingressoideal.png"
-      alt="Ingresso Ideal"
+      src={APP_LOGO_SRC}
+      alt={APP_NAME}
       width={width}
       height={height}
       className={className}

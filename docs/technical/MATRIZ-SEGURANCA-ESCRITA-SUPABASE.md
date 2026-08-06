@@ -3,13 +3,13 @@
 Versão: 3.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Matriz Oficial de Segurança de Escrita no Supabase
 
-Este documento define quais operações de leitura e escrita no Supabase estão autorizadas, bloqueadas, planejadas ou em validação no ERP Ideal.
+Este documento define quais operações de leitura e escrita no Supabase estão autorizadas, bloqueadas, planejadas ou em validação no Vibe.
 
 Ele é a referência oficial para qualquer alteração envolvendo `READ`, `INSERT`, `UPDATE` ou `DELETE`.
 
@@ -37,7 +37,7 @@ Este documento complementa:
 
 ---
 
-Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `EM TESTE` no caminho de escrita real do ERP Ideal.
+Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `EM TESTE` no caminho de escrita real do Vibe.
 
 > Atualize este arquivo sempre que uma nova fase de escrita for validada.
 
@@ -202,7 +202,7 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
 
 # Fonte da Verdade
 
-Esta matriz representa a autorização oficial de leitura e escrita do ERP Ideal no Supabase.
+Esta matriz representa a autorização oficial de leitura e escrita do Vibe no Supabase.
 
 Sempre que uma nova operação de `INSERT`, `UPDATE` ou `DELETE` for liberada, bloqueada, colocada em teste ou transferida para fase futura, este documento deve ser atualizado junto com a implementação correspondente.
 

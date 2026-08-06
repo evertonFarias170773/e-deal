@@ -1,3 +1,4 @@
+import { APP_NAME } from '@/constants/brand';
 import type { ResponseModel } from './response.types';
 import type { ConversationContext } from '../../types';
 
@@ -232,7 +233,7 @@ export function templateConsultaFallback(
 export function templateContextoAbstrato(): ResponseModel {
   return {
     title: 'Como posso ajudar?',
-    summary: 'Olá! Sou o Maestro, assistente do ERP Ideal. Para começar, me informe o cliente ou o que você quer consultar.',
+    summary: `Olá! Sou o Maestro, assistente do ${APP_NAME}. Para começar, me informe o cliente ou o que você quer consultar.`,
     explanation: [
       '**Para consultar um cliente**, diga:',
       '• `cliente 8469` — pelo código',

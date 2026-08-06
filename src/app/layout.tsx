@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "@/components/app-shell/AppProviders";
+import { APP_DESCRIPTION, APP_NAME } from "@/constants/brand";
 
 // next/font/google — sem warning de lint, otimizado e auto-hospedado pelo Next.js
 const inter = Inter({
@@ -13,8 +14,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ERP Ideal",
-  description: "Sistema ERP Ideal — Painel operacional"
+  title: APP_NAME,
+  description: APP_DESCRIPTION
 };
 
 // Script anti-flash extraído como constante para evitar bug de geração do

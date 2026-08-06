@@ -5,6 +5,7 @@
  * Executa somente no servidor (Node.js/Edge).
  */
 
+import { APP_NAME } from '@/constants/brand';
 import type { ExternalIntentPayload, ExternalIntentResponse } from './maestro-external-intent.types';
 
 const TIMEOUT_MS = 3000;
@@ -82,7 +83,7 @@ async function callOpenAIDirectly(payload: ExternalIntentPayload, signal: AbortS
   const temperature = parseFloat(process.env.MAESTRO_AGENT_TEMPERATURE || '0.2');
 
   const systemPrompt = `
-Você é a Camada de Interpretação Externa (Agent Service) do ERP Ideal.
+Você é a Camada de Interpretação Externa (Agent Service) do ${APP_NAME}.
 Seu papel é analisar a requisição do usuário baseada no estado atual e retornar um JSON rígido estruturado.
 NÃO execute ações, APENAS classifique a intenção do usuário.
 

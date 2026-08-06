@@ -1,5 +1,6 @@
 import { LoginForm } from "@/features/auth/LoginForm";
 import Image from "next/image";
+import { APP_LOGO_SRC, APP_NAME } from "@/constants/brand";
 
 export default function LoginPage() {
   return (
@@ -11,14 +12,17 @@ export default function LoginPage() {
 
         <div className="relative z-10">
           <div className="mb-12">
-            <Image 
-              src="/logos/logo-dark.png" 
-              alt="Logo Ideal" 
-              width={160} 
-              height={50} 
-              className="object-contain"
-              priority
-            />
+            {/* Wordmark navy — precisa de fundo claro sobre o painel escuro */}
+            <div className="inline-flex items-center rounded-xl bg-white px-3 py-2">
+              <Image
+                src={APP_LOGO_SRC}
+                alt={APP_NAME}
+                width={160}
+                height={59}
+                className="object-contain"
+                priority
+              />
+            </div>
           </div>
           <h1 className="max-w-2xl text-5xl font-bold tracking-tight leading-tight">
             Operação comercial, fiscal e financeira em uma interface moderna.
@@ -48,15 +52,15 @@ export default function LoginPage() {
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5 relative z-10">
           <div className="mb-8 text-center lg:text-left">
             <div className="mb-6 flex justify-center lg:hidden">
-              <Image 
-                src="/logos/ingressoideal.png" 
-                alt="Logo Ideal" 
-                width={140} 
-                height={45} 
+              <Image
+                src={APP_LOGO_SRC}
+                alt={APP_NAME}
+                width={140}
+                height={52}
                 className="object-contain"
               />
             </div>
-            <h2 className="text-3xl font-bold text-slate-950">Acesso ao ERP</h2>
+            <h2 className="text-3xl font-bold text-slate-950">Acesso ao {APP_NAME}</h2>
             <p className="mt-2 text-sm text-slate-500">
               Entre com suas credenciais para acessar o sistema.
             </p>

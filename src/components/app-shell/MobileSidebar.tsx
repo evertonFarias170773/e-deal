@@ -2,6 +2,7 @@ import { useEffect, Fragment, useState } from "react";
 import Link from "next/link";
 import { X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { APP_NAME } from "@/constants/brand";
 import { navigationItems } from "@/constants/navigation";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -60,7 +61,7 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
               className="text-xs font-semibold uppercase tracking-[0.24em]"
               style={{ color: "var(--sidebar-text-muted)" }}
             >
-              ERP Ideal
+              {APP_NAME}
             </p>
             <h2
               className="mt-1 text-lg font-bold"

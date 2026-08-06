@@ -4,7 +4,7 @@ Versão: 2.0
 Status: Implementado  
 Data da implementação: 04/07/2026  
 Última revisão documental: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 

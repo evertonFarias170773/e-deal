@@ -3,7 +3,7 @@
 Versão: 2.2  
 Status: Oficial — Implementado com homologações pendentes  
 Última atualização: 22/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 

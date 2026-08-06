@@ -3,13 +3,13 @@
 Versão: 2.0  
 Status: Histórico — Registro de decisões  
 Última atualização documental: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
-# Decisões Técnicas do ERP Ideal
+# Decisões Técnicas do Vibe
 
-Este documento preserva decisões tomadas durante diferentes fases do desenvolvimento do ERP Ideal.
+Este documento preserva decisões tomadas durante diferentes fases do desenvolvimento do Vibe.
 
 Ele possui valor histórico e ajuda a compreender a origem de padrões, limitações, transições e débitos técnicos.
 
@@ -495,7 +495,7 @@ Motivo:
 
 ### Catálogo Centralizado em `public.perfis`
 
-Decisão: Padronizar a tabela existente `public.perfis` como o catálogo oficial de perfis de acesso do ERP Ideal.
+Decisão: Padronizar a tabela existente `public.perfis` como o catálogo oficial de perfis de acesso do Vibe.
 
 Motivo:
 - **Reaproveitamento de Estrutura**: A tabela já existia no banco com dados legados sem uso ativo. Em vez de criar tabelas com novos nomes (ex: `perfis_acesso`), foi realizada uma higienização segura (backup de segurança, drop de 15 colunas legadas e remoção de 5 constraints legadas de chaves primárias e estrangeiras incompatíveis).

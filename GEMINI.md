@@ -1,4 +1,4 @@
-# ERP Ideal
+# Vibe
 
 Siga integralmente as diretrizes de [AGENTS.md](AGENTS.md) — em especial a seção
 "Fluxo de commit, push e deploy", que é OBRIGATÓRIA para qualquer agente de IA

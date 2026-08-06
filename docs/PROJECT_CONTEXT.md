@@ -3,13 +3,13 @@
 Versão: 2.0
 Status: Oficial
 Última atualização: 18/07/2026
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Contexto do Projeto
 
-O ERP Ideal é um sistema de gestão empresarial desenvolvido para atender a operação completa de uma gráfica, integrando processos comerciais, financeiros, produtivos, fiscais e administrativos em uma única plataforma.
+O Vibe é um sistema de gestão empresarial desenvolvido para atender a operação completa de uma gráfica, integrando processos comerciais, financeiros, produtivos, fiscais e administrativos em uma única plataforma.
 
 O sistema representa a operação real da empresa. Sempre que existir diferença entre uma simplificação técnica e o processo operacional, prevalecem as regras de negócio.
 
@@ -277,6 +277,6 @@ Exemplos:
 
 # Fonte da Verdade
 
-Este documento apresenta a visão geral do ERP Ideal.
+Este documento apresenta a visão geral do Vibe.
 
 Quando houver dúvidas sobre regras específicas, consulte a documentação oficial do domínio correspondente antes de modificar qualquer comportamento do sistema.

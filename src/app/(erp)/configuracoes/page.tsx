@@ -15,6 +15,7 @@ import {
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { AcessoNegado } from "@/features/usuarios-perfis/components/AcessoNegado";
+import { APP_NAME } from "@/constants/brand";
 
 interface ConfigHubCardProps {
   title: string;
@@ -126,7 +127,7 @@ export default function ConfiguracoesHubPage() {
               Configurações
             </h1>
             <p className="text-sm mt-0.5 text-muted-foreground">
-              Painel administrativo para controle e parametrização do ERP Ideal.
+              Painel administrativo para controle e parametrização do {APP_NAME}.
             </p>
           </div>
         </div>

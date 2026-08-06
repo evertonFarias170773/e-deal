@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LoadingSkeleton } from "@/components/common/LoadingSkeleton";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { LogOut, ShieldAlert, Clock } from "lucide-react";
+import { APP_NAME } from "@/constants/brand";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -42,9 +43,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             {isPending ? "Acesso Pendente" : "Acesso não configurado"}
           </h2>
           <p className="mb-8 text-sm leading-relaxed text-slate-600">
-            {isPending 
-              ? "Sua conta foi autenticada, mas o seu acesso ainda está pendente. Aguarde a aprovação do administrador do ERP Ideal." 
-              : "Sua conta foi autenticada, mas ainda não possui cadastro ativo ou perfil de acesso configurado no ERP Ideal. Entre em contato com o administrador do sistema."}
+            {isPending
+              ? `Sua conta foi autenticada, mas o seu acesso ainda está pendente. Aguarde a aprovação do administrador do ${APP_NAME}.`
+              : `Sua conta foi autenticada, mas ainda não possui cadastro ativo ou perfil de acesso configurado no ${APP_NAME}. Entre em contato com o administrador do sistema.`}
           </p>
           <button
             onClick={async () => {

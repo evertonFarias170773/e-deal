@@ -3,13 +3,13 @@
 Versão: 3.0
 Status: Oficial
 Última atualização: 18/07/2026
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Processo Oficial de Desenvolvimento
 
-Este documento define o processo oficial para análise, implementação, validação e entrega de alterações no ERP Ideal.
+Este documento define o processo oficial para análise, implementação, validação e entrega de alterações no Vibe.
 
 Toda implementação deve seguir este fluxo.
 

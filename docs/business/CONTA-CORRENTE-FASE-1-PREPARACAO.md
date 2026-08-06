@@ -3,7 +3,7 @@
 Versão: 1.0
 Status: **PREPARADA — NÃO APLICADA**
 Última atualização: 21/07/2026
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 

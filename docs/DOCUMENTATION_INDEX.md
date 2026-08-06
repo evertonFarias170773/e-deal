@@ -3,11 +3,11 @@
 Versão: 3.3  
 Status: Oficial  
 Última atualização: 29/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
-# Índice da Documentação Oficial do ERP Ideal
+# Índice da Documentação Oficial do Vibe
 
 Este arquivo orienta a leitura da pasta `docs`.
 

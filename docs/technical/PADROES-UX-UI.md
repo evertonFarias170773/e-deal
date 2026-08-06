@@ -3,13 +3,13 @@
 Versão: 2.1  
 Status: Oficial  
 Última atualização: 23/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
 # Padrões Oficiais de UX/UI
 
-Este documento define os padrões visuais, comportamentais, responsivos e de acessibilidade do ERP Ideal.
+Este documento define os padrões visuais, comportamentais, responsivos e de acessibilidade do Vibe.
 
 Seu objetivo é garantir consistência entre módulos sem obrigar todos os fluxos a usar os mesmos componentes indiscriminadamente.
 
@@ -1008,7 +1008,7 @@ Antes de concluir uma alteração visual, validar:
 
 # Fonte da Verdade
 
-Este documento define os padrões oficiais de experiência e interface do ERP Ideal.
+Este documento define os padrões oficiais de experiência e interface do Vibe.
 
 A implementação atual dos componentes deve ser confirmada no código antes de qualquer alteração.
 

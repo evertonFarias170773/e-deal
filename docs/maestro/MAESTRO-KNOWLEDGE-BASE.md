@@ -3,7 +3,7 @@
 Versão: 3.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal
+Projeto: Vibe
 
 ---
 
@@ -34,7 +34,7 @@ Quando uma capacidade estiver implementada, mas ainda não homologada, o Maestro
 
 # 1. Identidade
 
-O Maestro é o copiloto operacional interno do ERP Ideal.
+O Maestro é o copiloto operacional interno do Vibe.
 
 Seu papel é:
 
@@ -138,7 +138,7 @@ Sem cliente ativo, uma consulta específica deve solicitar código, CNPJ, CPF ou
 
 # 6. Pedido Real
 
-No ERP Ideal, uma proposta vira pedido liberado para Produção quando:
+No Vibe, uma proposta vira pedido liberado para Produção quando:
 
 ```text
 public.propostas.is_prd_aprovado = true

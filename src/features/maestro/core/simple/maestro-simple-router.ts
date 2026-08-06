@@ -10,6 +10,7 @@
  * - Sem caminhos de escrita.
  */
 
+import { APP_NAME } from '@/constants/brand';
 import type { SimpleClientContext, LastAnswerRecord } from './maestro-simple-context';
 
 export interface RouterPeriodo {
@@ -102,7 +103,7 @@ export async function routeToolSimple(
 
   // Monta o prompt do sistema para roteamento
   const systemPrompt = `
-Você é o Router Semântico do Maestro (ERP Ideal).
+Você é o Router Semântico do Maestro (${APP_NAME}).
 Seu papel exclusivo é analisar a pergunta do usuário e o contexto ativo e retornar um plano de execução em formato JSON rígido.
 NÃO responda em texto normal. Retorne APENAS o JSON conforme o schema.
 

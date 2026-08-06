@@ -1,6 +1,6 @@
-# ERP Ideal — Diretrizes para Agentes de IA
+# Vibe — Diretrizes para Agentes de IA
 
-Este arquivo contém as diretrizes gerais e obrigatórias para atuação de agentes de IA no ERP Ideal.
+Este arquivo contém as diretrizes gerais e obrigatórias para atuação de agentes de IA no Vibe.
 
 ## Princípios básicos
 

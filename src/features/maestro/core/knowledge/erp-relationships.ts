@@ -1,6 +1,6 @@
 /**
  * erp-relationships.ts
- * Mapa canônico de relacionamentos entre entidades do ERP Ideal.
+ * Mapa canônico de relacionamentos entre entidades do Vibe.
  *
  * Define como as tabelas se conectam via id_cliente e id_int.
  * Usado pelo Planner e pelo Context Engine para entender contexto cross-domínio.

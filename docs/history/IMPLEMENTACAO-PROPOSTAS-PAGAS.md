@@ -23,7 +23,7 @@ Fonte vigente relacionada:
 
 # IMPLEMENTACAO-PROPOSTAS-PAGAS.md
 
-> **Projeto:** ERP Ideal  
+> **Projeto:** Vibe  
 > **Feature:** Edição controlada de propostas com pagamento confirmado  
 > **Início:** 2026-07-16  
 > **Status:** 100% Homologado e Testado em Produção Simulada  

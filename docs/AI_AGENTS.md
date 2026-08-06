@@ -3,14 +3,14 @@
 Versão: 3.0  
 Status: Oficial  
 Última atualização: 18/07/2026  
-Projeto: ERP Ideal  
+Projeto: Vibe  
 Responsável: Everton Farias
 
 ---
 
 # Guia Oficial para Agentes de IA
 
-Este documento define o comportamento esperado de qualquer agente de IA que atue no ERP Ideal.
+Este documento define o comportamento esperado de qualquer agente de IA que atue no Vibe.
 
 Ele estabelece princípios, responsabilidades e limites de atuação.
 

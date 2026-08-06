@@ -1,5 +1,5 @@
 /**
- * Centralizador de Feature Flags do ERP Ideal.
+ * Centralizador de Feature Flags do Vibe.
  * As flags podem ser definidas via .env.local para ativação sem deploy,
  * mas por padrão nascem desligadas (false) para garantir a integridade do sistema atual.
  * Se precisar usar no frontend, deve utilizar NEXT_PUBLIC_.

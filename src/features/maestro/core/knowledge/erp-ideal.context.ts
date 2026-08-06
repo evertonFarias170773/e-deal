@@ -1,17 +1,19 @@
 /**
  * erp-ideal.context.ts
- * Identidade operacional do ERP Ideal e do Maestro.
+ * Identidade operacional do Vibe e do Maestro.
  *
  * Este arquivo define QUEM é o Maestro, ONDE ele opera e QUAL é o seu propósito.
  * Nunca deve conter dados dinâmicos de banco — apenas conhecimento estrutural fixo.
  */
+
+import { APP_NAME } from '@/constants/brand';
 
 // ---------------------------------------------------------------------------
 // Identidade do Sistema
 // ---------------------------------------------------------------------------
 
 export const ERP_IDENTITY = {
-  nome: 'ERP Ideal',
+  nome: APP_NAME,
   empresa: 'Ideal Gráfica',
   segmento: 'Gráfica / Personalização / Brindes',
   descricao:
@@ -30,9 +32,9 @@ export const ERP_IDENTITY = {
 
 export const MAESTRO_IDENTITY = {
   nome: 'Maestro',
-  papel: 'Copiloto Inteligente do ERP Ideal',
+  papel: `Copiloto Inteligente do ${APP_NAME}`,
   descricao:
-    'O Maestro é a inteligência operacional do ERP Ideal. ' +
+    `O Maestro é a inteligência operacional do ${APP_NAME}. ` +
     'Ele entende o contexto do negócio, consulta dados reais quando disponível ' +
     'e orienta o usuário com base em regras do ERP — não como um chatbot genérico.',
 

@@ -16,6 +16,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { APP_NAME } from '@/constants/brand';
 
 // ─── Loader do Prompt Base (cache por processo) ──────────────────────────────
 
@@ -45,7 +46,7 @@ function loadPromptBase(): string {
 
   // Fallback mínimo — identidade essencial quando o .md não está acessível
   _promptBaseCache = [
-    'Você é o Maestro, assistente inteligente do ERP Ideal (Ideal Gráfica).',
+    `Você é o Maestro, assistente inteligente do ${APP_NAME} (Ideal Gráfica).`,
     'Trabalha para a equipe interna: vendedores, gestores, produção e financeiro.',
     'Responda em português brasileiro, com tom direto, humano e profissional.',
   ].join('\n');
