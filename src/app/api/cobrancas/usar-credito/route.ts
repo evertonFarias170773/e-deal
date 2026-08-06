@@ -41,7 +41,13 @@
  * RASTREABILIDADE:
  * - Cada slice FIFO grava um lançamento USO_PEDIDO em movimento_credito, com
  *   id_pendencia e id_pagamento_destino.
- * - E-CREDITO em pagamentos_v2 (PAID, confirmado=true)
+ * - E-CREDITO em pagamentos_v2 (PAID, confirmado=false — ver abaixo)
+ *
+ * CONFERÊNCIA:
+ * - O E-CREDITO nasce PAID (o crédito foi de fato consumido da razão do
+ *   cliente e abate a proposta) mas NÃO nasce confirmado. Quem aplica é o
+ *   vendedor; confirmar é ato do Financeiro. Nascer confirmado fazia o
+ *   pagamento pular a Conferência sem ninguém ter conferido nada.
  * - Mensagens automáticas na timeline (propostas_chat), via cc__timeline (RPC).
  */
 
@@ -290,14 +296,16 @@ export async function POST(request: NextRequest) {
       id_empresa: idEmpresa ?? null,
       atendente: atendente ?? user.email,
       descricao: descricao ?? `Crédito aplicado — Proposta #${idInt}`,
-      confirmado: true,
+      // PAID sim (o crédito saiu da razão do cliente e abate a proposta),
+      // confirmado NÃO: a conferência é do Financeiro, e quem aplica o
+      // crédito é o vendedor. Sem confirmado_por/data_confirmacao pelo mesmo
+      // motivo — são o rastro de uma conferência que ainda não aconteceu.
+      confirmado: false,
       paid_at: agora,
       vencimento: vencimento ?? agora.split("T")[0],
       token_publico: tokenPublico,
       url_cobranca: `https://pay.ai-ideal.com.br/i/${tokenPublico}`,
       obs_v2: obsBase,
-      data_confirmacao: agora,
-      confirmado_por: user.email,
     })
     .select("id")
     .single();

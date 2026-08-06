@@ -227,9 +227,10 @@ export async function POST(request: NextRequest) {
       valor: valorCreditoArredondado,
       status: "PAID",
       tipo_cobranca: "E-CREDITO",
-      confirmado: true,
-      confirmado_por: atendente || "Sistema",
-      data_confirmacao: new Date().toISOString(),
+      // PAID sim, confirmado NÃO: o crédito já saiu da razão do cliente e
+      // abate a proposta, mas conferir é ato do Financeiro — quem aplica é o
+      // vendedor. Sem confirmado_por/data_confirmacao pelo mesmo motivo.
+      confirmado: false,
       paid_at: new Date().toISOString(),
       descricao: `Uso parcial de crédito via pagamento combinado`,
       empresa: empresa || "IDEAL",
