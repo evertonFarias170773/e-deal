@@ -2467,6 +2467,11 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                   <StatusBadge status="AGUARDANDO_CREDITO" />
                 ) : cobranca.status === "A_VENCER" ? (
                   <StatusBadge status="A_VENCER" />
+                ) : cobranca.status === "PAID" ? (
+                  // Pago e aguardando conferência. A lista caía no genérico
+                  // "Não confirmado" enquanto o detalhe da mesma cobrança já
+                  // dizia "Pago / A liberar" — o vendedor lia como não pago.
+                  <StatusBadge status="PAGO_A_LIBERAR" />
                 ) : (
                   <StatusBadge status="NAO_CONFIRMADO" />
                 )}
@@ -2633,6 +2638,9 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                     <StatusBadge status="AGUARDANDO_CREDITO" />
                   ) : cobranca.status === "A_VENCER" ? (
                     <StatusBadge status="A_VENCER" />
+                  ) : cobranca.status === "PAID" ? (
+                    // Mesma regra do bloco acima e do detalhe da cobrança.
+                    <StatusBadge status="PAGO_A_LIBERAR" />
                   ) : (
                     <StatusBadge status="NAO_CONFIRMADO" />
                   )}

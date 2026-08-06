@@ -63,6 +63,9 @@ const toneByStatus: Record<string, StatusTone> = {
   DENEGADA: "neutral",
   RASCUNHO: "neutral",
   NAO_CONFIRMADO: "neutral",
+  // Mesmo tom do detalhe da cobrança (getConferenciaStatusTone): pago aguardando
+  // conferência é informação, não pendência do cliente.
+  PAGO_A_LIBERAR: "info",
   OBRIGATORIA: "danger",
   OPCIONAL: "neutral",
   MULTIPLA: "info",

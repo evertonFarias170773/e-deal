@@ -59,6 +59,9 @@ export function humanizeStatus(status: string) {
     RASCUNHO: "Rascunho",
     CONFIRMADO: "Confirmado",
     NAO_CONFIRMADO: "Não confirmado",
+    // Dinheiro já entrou; falta só a conferência do financeiro. Distinguir de
+    // NAO_CONFIRMADO evita o vendedor ler "não confirmado" como "não pago".
+    PAGO_A_LIBERAR: "Pago / A liberar",
     OBRIGATORIA: "Obrigatória",
     OPCIONAL: "Opcional",
     MULTIPLA: "Múltipla",
