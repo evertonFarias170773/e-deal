@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useSyncExternalStore } from "react";
 import {
   APP_LOGO_HEIGHT,
+  APP_LOGO_NEGATIVE_SRC,
   APP_LOGO_SRC,
   APP_LOGO_WIDTH,
   APP_NAME
@@ -46,9 +47,8 @@ type ThemedLogoProps = {
 
 /**
  * Exibe a logo do software (marca definida em @/constants/brand) conforme o tema:
- * - Light → logo direta (wordmark navy sobre fundo transparente)
- * - Dark  → logo dentro de container branco arredondado, pois o wordmark navy
- *           seria ilegível sobre fundo escuro
+ * - Light → wordmark navy sobre fundo transparente
+ * - Dark  → variante negativa (wordmark branco) sobre fundo transparente
  *
  * Reage automaticamente a mudanças de tema via MutationObserver no <html>.
  */
@@ -63,27 +63,9 @@ export function ThemedLogo({
     getThemeServerSnapshot
   );
 
-  if (isDark) {
-    return (
-      <div
-        className="inline-flex items-center rounded-xl px-2 py-0.5"
-        style={{ background: "#ffffff" }}
-      >
-        <Image
-          src={APP_LOGO_SRC}
-          alt={APP_NAME}
-          width={width}
-          height={height}
-          className={className}
-          priority
-        />
-      </div>
-    );
-  }
-
   return (
     <Image
-      src={APP_LOGO_SRC}
+      src={isDark ? APP_LOGO_NEGATIVE_SRC : APP_LOGO_SRC}
       alt={APP_NAME}
       width={width}
       height={height}

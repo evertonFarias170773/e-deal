@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { CheckCircle2, Clock, LogOut } from "lucide-react";
-import { APP_LOGO_SRC, APP_NAME } from "@/constants/brand";
+import { APP_LOGO_NEGATIVE_SRC, APP_LOGO_SRC, APP_NAME } from "@/constants/brand";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useRouter } from "next/navigation";
 
@@ -23,17 +23,14 @@ export default function BoasVindasPage() {
 
         <div className="relative z-10">
           <div className="mb-12">
-            {/* Wordmark navy — precisa de fundo claro sobre o painel escuro */}
-            <div className="inline-flex items-center rounded-xl bg-white px-3 py-2">
-              <Image
-                src={APP_LOGO_SRC}
-                alt={APP_NAME}
-                width={160}
-                height={59}
-                className="object-contain"
-                priority
-              />
-            </div>
+            <Image
+              src={APP_LOGO_NEGATIVE_SRC}
+              alt={APP_NAME}
+              width={160}
+              height={59}
+              className="object-contain"
+              priority
+            />
           </div>
           <h1 className="max-w-2xl text-5xl font-bold tracking-tight leading-tight">
             Seja bem-vindo(a) ao {APP_NAME}.

@@ -12,6 +12,9 @@ export const APP_DESCRIPTION = `${APP_NAME} — Painel operacional`;
 /** Logo horizontal (wordmark) — texto navy sobre fundo transparente; usar sobre fundo claro. */
 export const APP_LOGO_SRC = "/logos/vibe-logo.png";
 
+/** Variante negativa do wordmark — texto branco sobre fundo transparente; usar sobre fundo escuro. */
+export const APP_LOGO_NEGATIVE_SRC = "/logos/vibe-logo-negativo.png";
+
 /** Dimensões nativas de vibe-logo.png (proporção ~2,71:1). */
 export const APP_LOGO_WIDTH = 732;
 export const APP_LOGO_HEIGHT = 270;
