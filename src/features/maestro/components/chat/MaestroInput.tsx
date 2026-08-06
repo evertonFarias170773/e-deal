@@ -345,15 +345,15 @@ export function MaestroInput({ value, onChange, onSend, isLoading }: Props) {
               type="button"
               onClick={handleSendClick}
               disabled={!value.trim() || isLoading}
-              className="flex items-center justify-center w-8 h-8 rounded-full text-white disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95 transition-all shadow-md"
-              style={{ background: 'var(--secondary)' }}
+              className="flex items-center justify-center w-8 h-8 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95 transition-all shadow-md"
+              style={{ background: 'var(--secondary)', color: 'var(--secondary-foreground)' }}
             >
               <Send size={14} className="ml-0.5" />
             </button>
           </div>
         </div>
 
-        <p className="text-center text-[11px] text-[var(--muted)]/60 dark:text-white/20 mt-2 font-medium">
+        <p className="text-center text-[11px] text-[var(--muted-subtle)] mt-2 font-medium">
           Maestro {APP_NAME} · Inteligência Assistida
         </p>
       </div>

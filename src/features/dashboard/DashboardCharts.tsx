@@ -16,6 +16,7 @@ import {
   YAxis
 } from "recharts";
 import type { ReactNode } from "react";
+import { useSyncExternalStore } from "react";
 
 type DashboardChartsProps = {
   salesByMonth: Array<{ month: string; vendas: number }>;
@@ -24,7 +25,48 @@ type DashboardChartsProps = {
   salesByCompany: Array<{ empresa: string; vendas: number }>;
 };
 
-const chartColors = ["#0f9f9a", "#0b2f4a", "#f28c28", "#ef4444", "#64748b"];
+// Recharts pinta SVG com cores inline — CSS externo (tokens/overrides) não
+// alcança. O tema entra via JS, observando a classe .dark do <html>
+// (mesmo mecanismo do ThemedLogo).
+function subscribeTheme(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const observer = new MutationObserver(callback);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  return () => observer.disconnect();
+}
+
+function getThemeSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  return document.documentElement.classList.contains("dark");
+}
+
+const CHART_THEME = {
+  light: {
+    series: ["#0f9f9a", "#0b2f4a", "#f28c28", "#ef4444", "#64748b"],
+    grid: "#e7eef0",
+    axis: "#64748b",
+    accent: "#0f9f9a",
+    accentStrong: "#0b2f4a",
+    tooltipBg: "#ffffff",
+    tooltipBorder: "#d7e5e8",
+    text: "#0d1b2a"
+  },
+  dark: {
+    series: ["#2dbfb0", "#4a9de8", "#f59e0b", "#f87171", "#94a3b8"],
+    grid: "#1e3a54",
+    axis: "#8ab0cc",
+    accent: "#2dbfb0",
+    accentStrong: "#4a9de8",
+    tooltipBg: "#0f1e2e",
+    tooltipBorder: "#1e3a54",
+    text: "#ddeaf6"
+  }
+} as const;
+
+function useChartTheme() {
+  const isDark = useSyncExternalStore(subscribeTheme, getThemeSnapshot, () => false);
+  return CHART_THEME[isDark ? "dark" : "light"];
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -40,21 +82,32 @@ export function DashboardCharts({
   proposalsByStatus,
   salesByCompany
 }: DashboardChartsProps) {
+  const t = useChartTheme();
+  const tooltipProps = {
+    contentStyle: {
+      backgroundColor: t.tooltipBg,
+      border: `1px solid ${t.tooltipBorder}`,
+      borderRadius: 12,
+      color: t.text
+    },
+    labelStyle: { color: t.text }
+  };
+
   return (
     <section className="grid gap-6 xl:grid-cols-2">
       <ChartCard title="Vendas por mes" description="Evolucao comercial mockada por periodo.">
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={salesByMonth} margin={{ left: 0, right: 12, top: 10, bottom: 0 }}>
-            <CartesianGrid stroke="#e7eef0" strokeDasharray="4 4" />
-            <XAxis dataKey="month" stroke="#64748b" fontSize={12} />
-            <YAxis stroke="#64748b" fontSize={12} tickFormatter={(value) => `${Number(value) / 1000}k`} />
-            <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+            <CartesianGrid stroke={t.grid} strokeDasharray="4 4" />
+            <XAxis dataKey="month" stroke={t.axis} fontSize={12} />
+            <YAxis stroke={t.axis} fontSize={12} tickFormatter={(value) => `${Number(value) / 1000}k`} />
+            <Tooltip {...tooltipProps} formatter={(value) => formatCurrency(Number(value))} />
             <Line
               type="monotone"
               dataKey="vendas"
-              stroke="#0f9f9a"
+              stroke={t.accent}
               strokeWidth={3}
-              dot={{ r: 4, fill: "#0b2f4a" }}
+              dot={{ r: 4, fill: t.accentStrong }}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -74,11 +127,11 @@ export function DashboardCharts({
               paddingAngle={3}
             >
               {receivablesByStatus.map((entry, index) => (
-                <Cell key={entry.status} fill={chartColors[index % chartColors.length]} />
+                <Cell key={entry.status} fill={t.series[index % t.series.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-            <Legend />
+            <Tooltip {...tooltipProps} formatter={(value) => formatCurrency(Number(value))} />
+            <Legend wrapperStyle={{ color: t.text }} />
           </PieChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -86,11 +139,11 @@ export function DashboardCharts({
       <ChartCard title="Propostas por status" description="Volume de propostas em cada etapa comercial.">
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={proposalsByStatus} margin={{ left: 0, right: 12, top: 10, bottom: 0 }}>
-            <CartesianGrid stroke="#e7eef0" strokeDasharray="4 4" />
-            <XAxis dataKey="status" stroke="#64748b" fontSize={12} />
-            <YAxis stroke="#64748b" fontSize={12} />
-            <Tooltip />
-            <Bar dataKey="total" radius={[12, 12, 0, 0]} fill="#0b2f4a" />
+            <CartesianGrid stroke={t.grid} strokeDasharray="4 4" />
+            <XAxis dataKey="status" stroke={t.axis} fontSize={12} />
+            <YAxis stroke={t.axis} fontSize={12} />
+            <Tooltip {...tooltipProps} />
+            <Bar dataKey="total" radius={[12, 12, 0, 0]} fill={t.accentStrong} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -98,11 +151,11 @@ export function DashboardCharts({
       <ChartCard title="Vendas por empresa" description="Comparativo gerencial por contexto de empresa.">
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={salesByCompany} layout="vertical" margin={{ left: 20, right: 16, top: 10, bottom: 0 }}>
-            <CartesianGrid stroke="#e7eef0" strokeDasharray="4 4" />
-            <XAxis type="number" stroke="#64748b" fontSize={12} tickFormatter={(value) => `${Number(value) / 1000}k`} />
-            <YAxis dataKey="empresa" type="category" stroke="#64748b" fontSize={12} width={64} />
-            <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-            <Bar dataKey="vendas" radius={[0, 12, 12, 0]} fill="#0f9f9a" />
+            <CartesianGrid stroke={t.grid} strokeDasharray="4 4" />
+            <XAxis type="number" stroke={t.axis} fontSize={12} tickFormatter={(value) => `${Number(value) / 1000}k`} />
+            <YAxis dataKey="empresa" type="category" stroke={t.axis} fontSize={12} width={64} />
+            <Tooltip {...tooltipProps} formatter={(value) => formatCurrency(Number(value))} />
+            <Bar dataKey="vendas" radius={[0, 12, 12, 0]} fill={t.accent} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -120,10 +173,10 @@ function ChartCard({
   children: ReactNode;
 }) {
   return (
-    <article className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
+    <article className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-sm">
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
-        <p className="mt-1 text-sm text-slate-500">{description}</p>
+        <h2 className="text-lg font-semibold text-[var(--foreground)]">{title}</h2>
+        <p className="mt-1 text-sm text-[var(--muted-subtle)]">{description}</p>
       </div>
       {children}
     </article>

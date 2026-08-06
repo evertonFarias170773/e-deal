@@ -67,13 +67,14 @@ function MaestroLayout() {
       <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-[var(--border)] shrink-0" style={{ background: 'var(--card)' }}>
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-lg overflow-hidden flex items-center justify-center shadow-sm shrink-0">
-            <img src="/agent_maestro_light_mode.png" alt="Maestro" className="w-full h-full object-contain" />
+            <img src="/agent_maestro_light_mode.png" alt="Maestro" className="w-full h-full object-contain dark:hidden" />
+            <img src="/agent_maestro_dark_mode.png" alt="Maestro" className="w-full h-full object-contain hidden dark:block" />
           </div>
-          <span className="text-[13px] font-bold text-slate-800 tracking-tight">Maestro</span>
+          <span className="text-[13px] font-bold text-[var(--foreground)] tracking-tight">Maestro</span>
         </div>
         <button
           onClick={startNewChat}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-slate-500 hover:bg-slate-100 hover:text-blue-600 transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-[var(--primary)] transition-all"
           title="Nova Conversa"
           aria-label="Nova Conversa"
         >

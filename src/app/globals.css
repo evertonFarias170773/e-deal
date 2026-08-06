@@ -396,6 +396,104 @@ button:disabled {
   --tw-shadow-color: rgba(0, 0, 0, 0.6) !important;
 }
 
+/* ── Superfícies claras COM opacidade (bg-slate-N/opacidade escapa dos
+   overrides sólidos acima). Viram um véu claro sutil sobre qualquer fundo
+   escuro. Obs.: bg-white/3..25 NÃO entram aqui — são efeito "glass"
+   proposital sobre painéis escuros (login, Maestro). ── */
+.dark .bg-slate-50\/20,
+.dark .bg-slate-50\/30,
+.dark .bg-slate-50\/40,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/70,
+.dark .bg-slate-100\/50,
+.dark .bg-slate-100\/60,
+.dark .bg-slate-100\/80 {
+  background-color: color-mix(in srgb, var(--foreground) 6%, transparent) !important;
+}
+
+.dark .hover\:bg-slate-50\/30:hover,
+.dark .hover\:bg-slate-50\/40:hover,
+.dark .hover\:bg-slate-50\/50:hover,
+.dark .hover\:bg-slate-50\/55:hover,
+.dark .hover\:bg-slate-50\/80:hover,
+.dark .hover\:bg-slate-100\/50:hover,
+.dark .hover\:bg-slate-200\/50:hover {
+  background-color: color-mix(in srgb, var(--foreground) 10%, transparent) !important;
+}
+
+.dark .bg-slate-200 {
+  background-color: var(--card-hover) !important;
+}
+
+/* Escala neutral usada em configurações e usuários/perfis */
+.dark .bg-neutral-50,
+.dark .bg-neutral-100,
+.dark .bg-neutral-200 {
+  background-color: var(--card-hover) !important;
+}
+
+.dark .bg-neutral-50\/50 {
+  background-color: color-mix(in srgb, var(--foreground) 6%, transparent) !important;
+}
+
+.dark .border-slate-300 {
+  border-color: var(--border-strong) !important;
+}
+
+.dark .text-slate-400 {
+  color: var(--muted-subtle) !important;
+}
+
+/* ── Badges/pills semânticos claros (bg-X-50/100 + text-X-700/800 +
+   border-X-100/200) → tinta translúcida do matiz sobre fundo escuro.
+   Cobre tabelas, filtros e modais de todas as features de uma vez. ── */
+.dark .bg-teal-50, .dark .bg-teal-100 { background-color: color-mix(in srgb, #2dd4bf 16%, transparent) !important; }
+.dark .text-teal-700, .dark .text-teal-800 { color: #5eead4 !important; }
+.dark .border-teal-100, .dark .border-teal-200 { border-color: color-mix(in srgb, #2dd4bf 35%, transparent) !important; }
+
+.dark .bg-sky-50, .dark .bg-sky-100 { background-color: color-mix(in srgb, #38bdf8 16%, transparent) !important; }
+.dark .text-sky-700, .dark .text-sky-800 { color: #7dd3fc !important; }
+.dark .border-sky-200 { border-color: color-mix(in srgb, #38bdf8 35%, transparent) !important; }
+
+.dark .bg-blue-50, .dark .bg-blue-100 { background-color: color-mix(in srgb, #60a5fa 16%, transparent) !important; }
+.dark .text-blue-700, .dark .text-blue-800 { color: #93c5fd !important; }
+.dark .border-blue-100, .dark .border-blue-200 { border-color: color-mix(in srgb, #60a5fa 35%, transparent) !important; }
+
+.dark .bg-red-50, .dark .bg-red-100 { background-color: color-mix(in srgb, #f87171 16%, transparent) !important; }
+.dark .text-red-700, .dark .text-red-800 { color: #fca5a5 !important; }
+.dark .border-red-200 { border-color: color-mix(in srgb, #f87171 35%, transparent) !important; }
+
+.dark .bg-rose-50, .dark .bg-rose-100 { background-color: color-mix(in srgb, #fb7185 16%, transparent) !important; }
+.dark .text-rose-700, .dark .text-rose-800 { color: #fda4af !important; }
+.dark .border-rose-100, .dark .border-rose-200 { border-color: color-mix(in srgb, #fb7185 35%, transparent) !important; }
+
+.dark .bg-amber-50, .dark .bg-amber-100, .dark .bg-amber-200 { background-color: color-mix(in srgb, #fbbf24 16%, transparent) !important; }
+.dark .text-amber-700, .dark .text-amber-800 { color: #fcd34d !important; }
+.dark .border-amber-100, .dark .border-amber-200 { border-color: color-mix(in srgb, #fbbf24 35%, transparent) !important; }
+
+.dark .bg-yellow-50, .dark .bg-yellow-100 { background-color: color-mix(in srgb, #facc15 16%, transparent) !important; }
+.dark .text-yellow-800 { color: #fde047 !important; }
+
+.dark .bg-orange-50, .dark .bg-orange-100 { background-color: color-mix(in srgb, #fb923c 16%, transparent) !important; }
+.dark .text-orange-700, .dark .text-orange-800 { color: #fdba74 !important; }
+.dark .border-orange-200 { border-color: color-mix(in srgb, #fb923c 35%, transparent) !important; }
+
+.dark .bg-emerald-50, .dark .bg-emerald-100 { background-color: color-mix(in srgb, #34d399 16%, transparent) !important; }
+.dark .text-emerald-700, .dark .text-emerald-800 { color: #6ee7b8 !important; }
+.dark .border-emerald-100, .dark .border-emerald-200 { border-color: color-mix(in srgb, #34d399 35%, transparent) !important; }
+
+.dark .bg-green-50, .dark .bg-green-100 { background-color: color-mix(in srgb, #4ade80 16%, transparent) !important; }
+.dark .text-green-700 { color: #86efac !important; }
+.dark .border-green-200 { border-color: color-mix(in srgb, #4ade80 35%, transparent) !important; }
+
+.dark .bg-purple-50, .dark .bg-purple-100 { background-color: color-mix(in srgb, #c084fc 16%, transparent) !important; }
+.dark .text-purple-700 { color: #d8b4fe !important; }
+.dark .border-purple-200 { border-color: color-mix(in srgb, #c084fc 35%, transparent) !important; }
+
+.dark .bg-indigo-50, .dark .bg-indigo-100 { background-color: color-mix(in srgb, #818cf8 16%, transparent) !important; }
+.dark .text-indigo-700 { color: #a5b4fc !important; }
+.dark .border-indigo-200 { border-color: color-mix(in srgb, #818cf8 35%, transparent) !important; }
+
 /* ============================================================
    DARK MODE — OVERRIDES PARA CORES HARDCODED DOS FEATURES
    Cobre bg-[#0b2f4a], text-[#0b2f4a], border-[#d7e5e8] etc.

@@ -566,7 +566,7 @@ export function CobrancasList() {
           <button
             type="button"
             onClick={() => router.push("/orcamentos")}
-            className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
+            className="btn-primary rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm"
           >
             Abrir propostas
           </button>
@@ -902,7 +902,7 @@ export function CobrancasList() {
                 <button
                   type="button"
                   onClick={() => router.push(`/cobrancas/${cobranca.id}`)}
-                  className="rounded-2xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white"
+                  className="btn-primary rounded-2xl px-4 py-2 text-sm font-semibold"
                 >
                   Ver cobrança
                 </button>
@@ -974,7 +974,7 @@ export function CobrancasList() {
                 type="button"
                 onClick={() => void confirmarEdicaoEmpresa()}
                 disabled={!empresaDestinoSelecionada || isSavingEmpresa}
-                className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary rounded-2xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSavingEmpresa ? "Salvando..." : "Salvar empresa"}
               </button>

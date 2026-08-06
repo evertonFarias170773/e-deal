@@ -58,16 +58,16 @@ export function MaestroMessage({ message, onSend }: Props) {
       <div className="flex justify-end mb-5 group animate-in fade-in slide-in-from-bottom-2 duration-300">
         <div className="flex items-start gap-2.5 max-w-[68%]">
           <div
-            className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed text-white shadow-sm"
-            style={{ background: 'var(--primary)' }}
+            className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed shadow-sm"
+            style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
           >
             {message.content}
           </div>
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow transition-transform group-hover:scale-105"
-            style={{ background: 'var(--primary)' }}
+            style={{ background: 'var(--primary)', color: 'var(--primary-foreground)' }}
           >
-            <User size={14} className="text-white" />
+            <User size={14} />
           </div>
         </div>
       </div>

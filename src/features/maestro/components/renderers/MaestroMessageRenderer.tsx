@@ -12,7 +12,7 @@ export function MaestroMessageRenderer({ message }: MaestroMessageRendererProps)
 
   if (!isMaestro) {
     return (
-      <div className="flex gap-3 px-4 py-3 bg-[var(--background)]">
+      <div className="flex gap-3 px-4 py-3 bg-[var(--card)] border-y border-[var(--border)]">
         <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
           <User size={14} className="text-blue-500" />
         </div>

@@ -612,7 +612,7 @@ function ContaCorrentePage() {
               <button
                 disabled={busy === modal.pendencia.id}
                 onClick={() => void executarAcao()}
-                className="rounded-xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#123f61] disabled:opacity-50"
+                className="btn-primary rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50"
               >
                 {busy === modal.pendencia.id ? "Processando..." : "Confirmar"}
               </button>
