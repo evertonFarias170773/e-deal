@@ -397,11 +397,25 @@ async function fetchPropostaRows(
     );
 
     const paymentMap = new Map<string, string[]>();
+    /**
+     * Propostas com dinheiro JÁ recebido e ainda sem conferência do financeiro.
+     *
+     * `propostas.status_interno` não distingue isso: a regra do banco
+     * (`atualizar_status_financeiro_proposta`) mantém AGUARDANDO tanto para
+     * "cliente ainda não pagou" quanto para "pagou, falta o financeiro
+     * confirmar". Um pagamento às 18h com o financeiro já fora da empresa fica
+     * horas indistinguível de uma proposta não paga — e o vendedor mexe na
+     * proposta achando que o dinheiro não entrou.
+     *
+     * O status não é alterado aqui de propósito: só publicamos o sinal para a
+     * lista exibir ao lado dele.
+     */
+    const pagoAConfirmarSet = new Set<string>();
 
     if (proposalIds.length) {
       const { data: paymentData, error: paymentError } = await client
         .from("pagamentos_v2")
-        .select("id_int,tipo_cobranca,status")
+        .select("id_int,tipo_cobranca,status,confirmado")
         .in("id_int", proposalIds)
         .returns<SupabasePagamentoTipoCobrancaRow[]>();
 
@@ -413,8 +427,18 @@ async function fetchPropostaRows(
           }
 
           const idInt = row.id_int === null || row.id_int === undefined ? "" : String(row.id_int);
+          if (!idInt) {
+            return;
+          }
+
+          // Só PAID: A_VENCER não confirmado é faturamento a vencer, não
+          // dinheiro em caixa, e sinalizar como pago seria pior que não sinalizar.
+          if (rawStatus === "PAID" && row.confirmado !== true) {
+            pagoAConfirmarSet.add(idInt);
+          }
+
           const tipo = normalizeTipoCobranca(row.tipo_cobranca);
-          if (!idInt || !tipo) {
+          if (!tipo) {
             return;
           }
 
@@ -429,6 +453,7 @@ async function fetchPropostaRows(
     const enrichedRows = proposalRows.map((row) => ({
       ...row,
       tipos_cobranca: paymentMap.get(String(row.id_int ?? "")) ?? [],
+      pago_a_confirmar: pagoAConfirmarSet.has(String(row.id_int ?? "")),
       em_arte: row.em_arte === true
     }));
 

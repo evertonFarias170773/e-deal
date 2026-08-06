@@ -35,6 +35,12 @@ export type OrcamentoListItem = {
   total: number;
   tiposCobranca: string[];
   tipoCobrancaLabel: string;
+  /**
+   * Cobrança PAID ainda sem conferência do financeiro. `status` continua
+   * "Aguardando" — este sinal existe justamente porque o status não distingue
+   * "não pagou" de "pagou e falta confirmar".
+   */
+  pagoAConfirmar: boolean;
   modelo: "AVULSO" | "PROPOSTA";
   source: OrcamentoListSource;
   rawColumns?: string[];
@@ -341,6 +347,7 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     total,
     tiposCobranca,
     tipoCobrancaLabel: getTipoCobrancaLabel(tiposCobranca),
+    pagoAConfirmar: (row as { pago_a_confirmar?: unknown }).pago_a_confirmar === true,
     modelo,
     source: "supabase",
     rawColumns: Object.keys(row),

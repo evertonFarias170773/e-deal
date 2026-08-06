@@ -36,6 +36,7 @@ export type SupabasePagamentoTipoCobrancaRow = {
   id_int?: SupabaseValue;
   tipo_cobranca?: SupabaseValue;
   status?: SupabaseValue;
+  confirmado?: SupabaseValue;
 };
 
 export type SupabaseProdutoPropostaRow = {

@@ -1093,7 +1093,19 @@ export function OrcamentosListPageReal() {
           { header: "Tipo cobrança", cell: (proposta) => proposta.tipoCobrancaLabel, align: "center" },
           { header: "Data / Hora", cell: (proposta) => <span>{(proposta.updatedAt || proposta.createdAt) ? formatDateTime(proposta.updatedAt || proposta.createdAt) : "-"}</span>, align: "center" },
           { header: "Atendente", cell: (proposta) => proposta.vendedor },
-          { header: "Status", cell: (proposta) => <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />, align: "center" },
+          {
+            header: "Status",
+            cell: (proposta) => (
+              <div className="flex flex-col items-center gap-1">
+                <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                {/* O status do banco não separa "não pagou" de "pagou e falta o
+                    financeiro confirmar" — sem este selo o vendedor lê
+                    "Aguardando" e mexe na proposta com o dinheiro já em caixa. */}
+                {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
+              </div>
+            ),
+            align: "center"
+          },
           { header: "Valor total", cell: (proposta) => formatCurrency(proposta.total), align: "right" },
           { header: "Modelo", cell: (proposta) => proposta.modelo, align: "center" },
           {
@@ -1169,7 +1181,11 @@ export function OrcamentosListPageReal() {
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">{proposta.vendedor}</p>
               </div>
-              <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+              <div className="flex flex-col items-end gap-1">
+                <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
+                {/* Mesmo sinal do layout de tabela (card do mobile). */}
+                {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
+              </div>
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
               <p>Tipo cobrança: {proposta.tipoCobrancaLabel}</p>
