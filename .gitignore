@@ -20,6 +20,10 @@ pnpm-debug.log*
 *.backup
 *.sql
 !supabase/migrations/**/*.sql
+# Registros de manutencao de dados (o que foi executado + rollback). Precisam
+# ser versionados: movimento_credito e conta_corrente_pendencias nao tem
+# trigger de auditoria, entao estes arquivos sao o unico rastro da operacao.
+!supabase/manutencao/**/*.sql
 BACKUPS_SUPABASE/
 
 # development scratch directories and build info
