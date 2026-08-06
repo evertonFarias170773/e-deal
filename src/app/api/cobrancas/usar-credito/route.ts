@@ -323,17 +323,29 @@ export async function POST(request: NextRequest) {
   });
 
   if (chaveError) {
-    console.warn(`[usar-credito] Corrida de idempotência detectada (chave=${chaveIdempotencia}): ${chaveError.message}`);
-    await supabase.from("pagamentos_v2").update({
-      status: "CANCELADO",
-      motivo_cancela: "Requisição duplicada (mesma chave de idempotência já registrada por outro pagamento).",
-    }).eq("id", novoPagamento.id);
-
+    // A RPC falha por dois motivos bem diferentes: corrida real (outro
+    // pagamento já registrou esta chave — índice único) ou erro de banco.
+    // Descobrir QUAL antes de escrever o motivo do cancelamento: gravar
+    // "requisição duplicada" num erro que não é duplicidade planta pista
+    // falsa na auditoria. Aconteceu em 06/08/2026 — o pagamento 658fdabf
+    // ficou marcado como duplicado, quando o erro real era o cast quebrado
+    // de perfis.permissoes em cc__assert_permissao.
     const { data: pagamentoVencedor } = await supabase
       .from("pagamentos_v2")
       .select("id")
       .eq("chave_idempotencia", chaveIdempotencia)
       .maybeSingle();
+
+    console.warn(
+      `[usar-credito] Falha ao registrar chave ${chaveIdempotencia} (corrida=${Boolean(pagamentoVencedor)}): ${chaveError.message}`
+    );
+    await supabase.from("pagamentos_v2").update({
+      status: "CANCELADO",
+      motivo_cancela: pagamentoVencedor
+        ? "Requisição duplicada (mesma chave de idempotência já registrada por outro pagamento)."
+        : `Falha ao registrar a chave de idempotência: ${chaveError.message}`,
+    }).eq("id", novoPagamento.id);
+
     if (pagamentoVencedor) {
       const situacaoConcorrente = await calcularSituacaoQuitacaoProposta(supabase, idInt);
       return NextResponse.json({

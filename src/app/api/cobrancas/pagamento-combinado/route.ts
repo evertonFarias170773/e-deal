@@ -263,17 +263,25 @@ export async function POST(request: NextRequest) {
     });
 
     if (chaveError) {
-      console.warn(`[pagamento-combinado] Corrida de idempotência detectada (chave=${chaveIdempotencia}): ${chaveError.message}`);
-      await supabaseUser.from("pagamentos_v2").update({
-        status: "CANCELADO",
-        motivo_cancela: "Requisição duplicada (mesma chave de idempotência já registrada por outro pagamento).",
-      }).eq("id", insertedCredito.id);
-
+      // Só é corrida se existir mesmo um pagamento com esta chave. Caso
+      // contrário é erro de banco, e gravar "requisição duplicada" no
+      // motivo esconde a causa real na auditoria (ver usar-credito).
       const { data: concorrente } = await supabaseUser
         .from("pagamentos_v2")
         .select("id")
         .eq("chave_idempotencia", chaveIdempotencia)
         .maybeSingle();
+
+      console.warn(
+        `[pagamento-combinado] Falha ao registrar chave ${chaveIdempotencia} (corrida=${Boolean(concorrente)}): ${chaveError.message}`
+      );
+      await supabaseUser.from("pagamentos_v2").update({
+        status: "CANCELADO",
+        motivo_cancela: concorrente
+          ? "Requisição duplicada (mesma chave de idempotência já registrada por outro pagamento)."
+          : `Falha ao registrar a chave de idempotência: ${chaveError.message}`,
+      }).eq("id", insertedCredito.id);
+
       if (concorrente) {
         return NextResponse.json({ success: true, idempotente: true, message: "Pagamento combinado já foi processado (repetição idempotente)." });
       }
