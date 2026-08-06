@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 
 const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
@@ -113,12 +114,27 @@ export async function POST(request: Request) {
       );
     }
 
+    // Escopo pela PROPOSTA, não pela empresa recebedora — mesma correção e
+    // mesmo motivo do /api/cobrancas/cancelar-externo: a empresa recebedora é
+    // escolha do modal de criação, não fronteira de acesso, e pinar nela fazia
+    // o vendedor criar uma cobrança que depois não conseguia cancelar.
     if (!usuarioRow.is_super_adm) {
-      const empresaUsuario = usuarioRow.id_empresa != null ? Number(usuarioRow.id_empresa) : null;
-      const empresaCobranca = pagamento.id_empresa != null ? Number(pagamento.id_empresa) : null;
-      if (empresaUsuario == null || empresaCobranca == null || empresaUsuario !== empresaCobranca) {
-        console.warn("[API][CancelarBoleto] Escopo de empresa negado", {
-          userId: authData.user.id, empresaUsuario, empresaCobranca
+      const { data: propostaDoPagamento } = await supabase
+        .from("propostas")
+        .select("empresa, vendedor")
+        .eq("id_int", pagamento.id_int)
+        .maybeSingle();
+
+      const escopoOk = propostaDoPagamento
+        ? await verificarEscopoPropostaServerSide(supabase, authData.user.id, {
+            empresa: propostaDoPagamento.empresa,
+            vendedor: propostaDoPagamento.vendedor
+          })
+        : false;
+
+      if (!escopoOk) {
+        console.warn("[API][CancelarBoleto] Escopo de proposta negado", {
+          userId: authData.user.id, idInt: pagamento.id_int
         });
         return NextResponse.json(
           { success: false, message: "Acesso negado a esta cobrança." },

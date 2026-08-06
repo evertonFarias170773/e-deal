@@ -229,20 +229,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // Cobranças locais sem integração externa podem não ter id_empresa;
-    // nesse caso o escopo é validado apenas pelo vínculo com a proposta.
     const tipoNormalized = String(pagamento.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
-    const exigeEmpresa = ["BOLETO", "PIX", "CARD-PARCELADO"].includes(tipoNormalized) && !!pagamento.cod_solicitacao_inter;
 
+    // Escopo de acesso pela PROPOSTA, não pela empresa recebedora da cobrança.
+    //
+    // A regra anterior comparava `usuarios.id_empresa` com `pagamentos_v2.id_empresa`.
+    // Só que a empresa recebedora é uma escolha comercial feita no modal de
+    // criação — qualquer usuário pode emitir para a empresa 1, 2 ou 3. O efeito
+    // era um vendedor conseguir CRIAR a cobrança e não conseguir cancelá-la:
+    // caso 20242-B, vendedor da empresa 1 emitindo para a empresa 3, com
+    // `cobrancas.cancel` no perfil e ainda assim recebendo "Acesso negado".
+    //
+    // Passa a valer o mesmo escopo já usado no modo restrito abaixo e em
+    // /api/orcamentos/cancelar-proposta: super admin e `propostas.view_all`
+    // passam; `view_company` exige mesma empresa da PROPOSTA; `view_own` exige
+    // ser o vendedor responsável. Continua negando cobrança de terceiros.
     if (!usuarioRow.is_super_adm) {
-      const empresaUsuario = usuarioRow.id_empresa != null ? Number(usuarioRow.id_empresa) : null;
-      const empresaCobranca = pagamento.id_empresa != null ? Number(pagamento.id_empresa) : null;
-      const empresaOk = empresaCobranca != null
-        ? (empresaUsuario != null && empresaUsuario === empresaCobranca)
-        : !exigeEmpresa; // cobrança emitida externamente sem empresa é inconsistente: nega
-      if (!empresaOk) {
-        console.warn("[API][CancelarExterno] Escopo de empresa negado", {
-          userId: authData.user.id, empresaUsuario, empresaCobranca
+      const { data: propostaDoPagamento } = await supabase
+        .from("propostas")
+        .select("empresa, vendedor")
+        .eq("id_int", pagamento.id_int)
+        .maybeSingle();
+
+      const escopoOk = propostaDoPagamento
+        ? await verificarEscopoPropostaServerSide(supabase, authData.user.id, {
+            empresa: propostaDoPagamento.empresa,
+            vendedor: propostaDoPagamento.vendedor
+          })
+        : false;
+
+      if (!escopoOk) {
+        console.warn("[API][CancelarExterno] Escopo de proposta negado", {
+          userId: authData.user.id, idInt: pagamento.id_int
         });
         return NextResponse.json(
           { success: false, message: "Acesso negado a esta cobrança." },
