@@ -35,6 +35,8 @@ interface CorrigirTelefonePagadorModalProps {
   fontes: Fontes;
   /** Rótulo da modalidade que disparou o bloqueio ("Cartão de crédito", "Boleto"...). */
   modalidade: string;
+  /** Cartão: o campo do checkout do provedor é "Celular" e recusa fixo na tela. */
+  somenteCelular?: boolean;
   /** Recebe o novo número já normalizado, para o painel revalidar sem reler o banco. */
   onSalvo: (whatsapp1Normalizado: string) => void;
 }
@@ -45,6 +47,7 @@ export function CorrigirTelefonePagadorModal({
   pagador,
   fontes,
   modalidade,
+  somenteCelular = false,
   onSalvo
 }: CorrigirTelefonePagadorModalProps) {
   // Começa sempre vazio de propósito: preencher com o número errado convida a
@@ -55,14 +58,15 @@ export function CorrigirTelefonePagadorModal({
   const [isSaving, setIsSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  const opcoes = useMemo(() => ({ somenteCelular }), [somenteCelular]);
   const digitos = soDigitos(valor);
-  const normalizado = normalizarTelefoneBR(valor);
+  const normalizado = normalizarTelefoneBR(valor, opcoes);
   const podeSalvar = Boolean(normalizado) && !isSaving && Boolean(pagador);
   const criticaDigitacao = useMemo(() => {
     if (!digitos) return null;
     if (normalizado) return null;
-    return diagnosticarTelefone(digitos);
-  }, [digitos, normalizado]);
+    return diagnosticarTelefone(digitos, opcoes);
+  }, [digitos, normalizado, opcoes]);
 
   const linhasCadastro = useMemo(
     () =>
@@ -70,8 +74,8 @@ export function CorrigirTelefonePagadorModal({
         { rotulo: "WhatsApp 1", valor: fontes.whatsapp1 },
         { rotulo: "WhatsApp 2", valor: fontes.whatsapp2 },
         { rotulo: "Telefone fixo", valor: fontes.telefoneFixo }
-      ].map((linha) => ({ ...linha, problema: diagnosticarTelefone(linha.valor) })),
-    [fontes]
+      ].map((linha) => ({ ...linha, problema: diagnosticarTelefone(linha.valor, opcoes) })),
+    [fontes, opcoes]
   );
 
   async function handleSalvar() {
@@ -145,7 +149,7 @@ export function CorrigirTelefonePagadorModal({
 
           <div className="space-y-2">
             <label htmlFor="telefone-pagador" className="text-sm font-semibold text-slate-800">
-              Telefone correto (com DDD)
+              {somenteCelular ? "Celular correto (com DDD)" : "Telefone correto (com DDD)"}
             </label>
             <input
               id="telefone-pagador"
@@ -164,8 +168,10 @@ export function CorrigirTelefonePagadorModal({
               </p>
             ) : (
               <p className="text-xs text-slate-500">
-                Celular com 11 dígitos (DDD + 9 + número) ou fixo com 10. Confirme o número com o cliente — o sistema
-                não completa dígito que falta.
+                {somenteCelular
+                  ? "Celular com 11 dígitos (DDD + 9 + número). O checkout do cartão recusa telefone fixo na tela, e o cliente não consegue corrigir por lá."
+                  : "Celular com 11 dígitos (DDD + 9 + número) ou fixo com 10."}{" "}
+                Confirme o número com o cliente — o sistema não completa dígito que falta.
               </p>
             )}
           </div>

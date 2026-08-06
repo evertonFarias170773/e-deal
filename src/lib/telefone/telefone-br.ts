@@ -25,17 +25,30 @@ export function soDigitos(valor: unknown): string {
   return String(valor ?? "").replace(/\D/g, "");
 }
 
+export type OpcoesTelefone = {
+  /**
+   * Recusa telefone fixo. Usar nos fluxos de CARTÃO: o campo do checkout do
+   * provedor é "Celular" e rejeita fixo na tela — mesmo o fixo passando no
+   * regex da API (`^[0-9]{1,11}$`), o cliente fica travado sem poder corrigir.
+   * Comprovado em 06/08/2026: `51 37192870` (fixo válido) gerou checkout e a
+   * tela do C6 marcou "Celular inválido".
+   */
+  somenteCelular?: boolean;
+};
+
 /**
  * Celular: 11 dígitos, DDD 11-99 e nono dígito obrigatório na 3ª posição.
- * Fixo: 10 dígitos, DDD 11-99 e prefixo entre 2 e 5.
+ * Fixo: 10 dígitos, DDD 11-99 e prefixo entre 2 e 5 — aceito só quando
+ * `somenteCelular` não é exigido.
  */
-export function telefoneBRValido(digitos: string): boolean {
+export function telefoneBRValido(digitos: string, opcoes?: OpcoesTelefone): boolean {
   if (digitos.length !== 10 && digitos.length !== 11) return false;
 
   const ddd = Number(digitos.slice(0, 2));
   if (!(ddd >= DDD_MIN && ddd <= DDD_MAX)) return false;
 
   if (digitos.length === 11) return digitos[2] === "9";
+  if (opcoes?.somenteCelular) return false;
   return digitos[2] >= "2" && digitos[2] <= "5";
 }
 
@@ -44,17 +57,17 @@ export function telefoneBRValido(digitos: string): boolean {
  * número confiável. Nunca completa dígito que falta — um celular sem o nono
  * dígito é recusado, não "consertado": só o cliente sabe o número certo.
  */
-export function normalizarTelefoneBR(valor: unknown): string {
+export function normalizarTelefoneBR(valor: unknown, opcoes?: OpcoesTelefone): string {
   const digitos = soDigitos(valor);
   if (!digitos) return "";
 
   // 1) Como está cadastrado tem precedência: já sendo válido, nada é removido.
-  if (telefoneBRValido(digitos)) return digitos;
+  if (telefoneBRValido(digitos, opcoes)) return digitos;
 
   // 2) DDI 55 só sai quando o que sobra é estruturalmente válido.
   if (digitos.startsWith("55")) {
     const semDDI = digitos.slice(2);
-    if (telefoneBRValido(semDDI)) return semDDI;
+    if (telefoneBRValido(semDDI, opcoes)) return semDDI;
   }
 
   return "";
@@ -81,7 +94,10 @@ export type TelefonePagadorResolvido = {
  * WhatsApp 2 → telefone fixo, ficando com a PRIMEIRA fonte que resulta válida
  * (e não com a primeira preenchida).
  */
-export function resolverTelefonePagador(fontes: FontesTelefonePagador): TelefonePagadorResolvido {
+export function resolverTelefonePagador(
+  fontes: FontesTelefonePagador,
+  opcoes?: OpcoesTelefone
+): TelefonePagadorResolvido {
   const candidatos: Array<{ origem: string; valor: string | null | undefined }> = [
     { origem: "Contato da cobrança", valor: fontes.whatsContato },
     { origem: "WhatsApp 1", valor: fontes.whatsapp1 },
@@ -90,7 +106,7 @@ export function resolverTelefonePagador(fontes: FontesTelefonePagador): Telefone
   ];
 
   for (const candidato of candidatos) {
-    const telefone = normalizarTelefoneBR(candidato.valor);
+    const telefone = normalizarTelefoneBR(candidato.valor, opcoes);
     if (telefone) return { telefone, origem: candidato.origem, valido: true };
   }
 
@@ -102,13 +118,17 @@ export function resolverTelefonePagador(fontes: FontesTelefonePagador): Telefone
  * no modal — precisa dizer o que está errado, não só que está errado.
  * Devolve null quando o número é válido.
  */
-export function diagnosticarTelefone(valor: unknown): string | null {
+export function diagnosticarTelefone(valor: unknown, opcoes?: OpcoesTelefone): string | null {
   const digitos = soDigitos(valor);
 
-  if (!digitos) return "não preenchido";
-  if (telefoneBRValido(digitos)) return null;
+  if (!digitos) {
+    const texto = String(valor ?? "").trim();
+    // Cadastro antigo às vezes traz nome ou texto no campo de telefone.
+    return texto ? "não tem números" : "não preenchido";
+  }
+  if (telefoneBRValido(digitos, opcoes)) return null;
 
-  if (digitos.startsWith("55") && telefoneBRValido(digitos.slice(2))) return null;
+  if (digitos.startsWith("55") && telefoneBRValido(digitos.slice(2), opcoes)) return null;
 
   if (digitos.length < 10) {
     return `tem ${digitos.length} dígito${digitos.length === 1 ? "" : "s"} — falta o DDD ou faltam dígitos do número`;
@@ -118,6 +138,7 @@ export function diagnosticarTelefone(valor: unknown): string | null {
     const ddd = Number(digitos.slice(0, 2));
     if (!(ddd >= DDD_MIN && ddd <= DDD_MAX)) return `DDD ${digitos.slice(0, 2)} não existe`;
     if (digitos[2] >= "6") return "é um celular antigo, sem o nono dígito";
+    if (opcoes?.somenteCelular) return "é um telefone fixo, e o checkout do cartão só aceita celular";
     return "não é um fixo nem um celular válido";
   }
 

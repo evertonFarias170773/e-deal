@@ -131,6 +131,15 @@ function exigeTelefoneValido(tipo: CobrancaTipo): boolean {
   return tipo === "CARD_PARCELADO" || tipo === "BOLETO";
 }
 
+/**
+ * Cartão exige CELULAR, não só telefone válido: o campo do checkout do provedor
+ * é "Celular" e recusa fixo na tela, mesmo o fixo passando no regex da API.
+ * Boleto segue aceitando fixo — lá o telefone não passa por tela de validação.
+ */
+function exigeCelular(tipo: CobrancaTipo): boolean {
+  return tipo === "CARD_PARCELADO";
+}
+
 /** Empresas recebedoras conhecidas, para as quais vale a regra por ID. */
 const EMPRESAS_COM_REGRA_POR_ID = new Set([1, 2, 3]);
 
@@ -440,6 +449,8 @@ export function PropostaCobrancaPanel({
   } | null>(null);
   const [telefoneModalOpen, setTelefoneModalOpen] = useState(false);
   const [modalidadeBloqueada, setModalidadeBloqueada] = useState("");
+  /** Cartão só aceita celular; boleto aceita fixo. Define o rigor do modal. */
+  const [somenteCelularNoModal, setSomenteCelularNoModal] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -808,8 +819,6 @@ export function PropostaCobrancaPanel({
   const fonesDoPagadorAtual =
     fonesPagador && fonesPagador.idCliente === pagador?.idCliente ? fonesPagador : null;
 
-  const telefonePagador = fonesDoPagadorAtual ? resolverTelefonePagador(fonesDoPagadorAtual) : null;
-
   /**
    * Abre o modal de correção e devolve `true` quando a modalidade escolhida não
    * pode seguir. Usado nos dois pontos: na escolha da forma (avisa cedo) e no
@@ -817,8 +826,12 @@ export function PropostaCobrancaPanel({
    */
   function bloqueiaPorTelefone(tipo: CobrancaTipo, fluxoCartao?: "PADRAO" | "ASAS"): boolean {
     if (!exigeTelefoneValido(tipo)) return false;
-    if (!telefonePagador || telefonePagador.valido) return false;
+    if (!fonesDoPagadorAtual) return false;
 
+    const somenteCelular = exigeCelular(tipo);
+    if (resolverTelefonePagador(fonesDoPagadorAtual, { somenteCelular }).valido) return false;
+
+    setSomenteCelularNoModal(somenteCelular);
     setModalidadeBloqueada(getRotuloModalidadeExibicao(tipo, fluxoCartao));
     setTelefoneModalOpen(true);
     return true;
@@ -2339,6 +2352,7 @@ export function PropostaCobrancaPanel({
         pagador={pagador ? { idCliente: pagador.idCliente, nome: pagador.nome } : null}
         fontes={fonesDoPagadorAtual ?? { whatsapp1: null, whatsapp2: null, telefoneFixo: null }}
         modalidade={modalidadeBloqueada}
+        somenteCelular={somenteCelularNoModal}
         onSalvo={(whatsapp1Normalizado) => {
           // Reflete a gravação no estado local para o gate liberar na hora, sem
           // depender de reabrir o modal ou reler o cadastro.
