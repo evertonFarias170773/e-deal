@@ -25,11 +25,17 @@ import { codecs } from "@/lib/url-state";
 import {
   listAllPendencias,
   listAjustesManuais,
+  listUsosDeCredito,
   type ContaCorrentePendencia,
   type ContaCorrentePendenciaStatus,
   type AjusteManualConta,
+  type UsoCreditoConta,
 } from "@/features/cobrancas/services/conta-corrente.service";
-import { Wallet, TrendingUp, TrendingDown, Search, Loader2, X } from "lucide-react";
+import {
+  getSaldoGlobalContaCorrente,
+  type SaldoGlobalContaCorrente,
+} from "@/features/cobrancas/services/movimento-credito.service";
+import { Wallet, TrendingUp, TrendingDown, Coins, Search, Loader2, X } from "lucide-react";
 import Link from "next/link";
 
 const STATUS_LABEL: Record<ContaCorrentePendenciaStatus, string> = {
@@ -64,7 +70,10 @@ const SENTIDO_FILTRO = ["TODAS", "FAVOR_CLIENTE", "FAVOR_EMPRESA"] as const;
  */
 type LinhaExtrato =
   | { kind: "PENDENCIA"; created_at: string; direcao: "FAVOR_CLIENTE" | "FAVOR_EMPRESA"; pendencia: ContaCorrentePendencia }
-  | { kind: "AJUSTE"; created_at: string; direcao: "FAVOR_CLIENTE" | "FAVOR_EMPRESA"; ajuste: AjusteManualConta };
+  | { kind: "AJUSTE"; created_at: string; direcao: "FAVOR_CLIENTE" | "FAVOR_EMPRESA"; ajuste: AjusteManualConta }
+  // USO: consumo do crédito avulso (movimento_credito USO_PEDIDO sem
+  // pendência). Sempre saída da conta do cliente, por isso FAVOR_EMPRESA.
+  | { kind: "USO"; created_at: string; direcao: "FAVOR_EMPRESA"; uso: UsoCreditoConta };
 
 function formatCurrency(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -85,6 +94,8 @@ function ContaCorrentePage() {
 
   const [pendencias, setPendencias] = useState<ContaCorrentePendencia[]>([]);
   const [ajustes, setAjustes] = useState<AjusteManualConta[]>([]);
+  const [usos, setUsos] = useState<UsoCreditoConta[]>([]);
+  const [saldoGlobal, setSaldoGlobal] = useState<SaldoGlobalContaCorrente | null>(null);
   const [nomesCliente, setNomesCliente] = useState<Record<number, string>>({});
   const [nomesAutor, setNomesAutor] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -119,19 +130,31 @@ function ContaCorrentePage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: pends }, ajustesManuais] = await Promise.all([
+      const [{ data: pends }, ajustesManuais, usosCredito, saldo] = await Promise.all([
         listAllPendencias({ limit: 500 }),
         listAjustesManuais({ limit: 500 }),
+        listUsosDeCredito({ limit: 500 }),
+        getSaldoGlobalContaCorrente(),
       ]);
       setPendencias(pends);
       setAjustes(ajustesManuais);
+      setUsos(usosCredito);
+      setSaldoGlobal(saldo);
 
-      // Resolve nomes de cliente (pendências + ajustes) e autor (ajustes) em lote.
+      // Resolve nomes de cliente e autor (ajustes + usos) em lote.
       const client = getSupabaseClient();
       const idsCliente = Array.from(
-        new Set([...pends.map((p) => p.id_cliente), ...ajustesManuais.map((a) => a.id_cliente)].filter(Boolean))
+        new Set(
+          [
+            ...pends.map((p) => p.id_cliente),
+            ...ajustesManuais.map((a) => a.id_cliente),
+            ...usosCredito.map((u) => u.id_cliente),
+          ].filter(Boolean)
+        )
       );
-      const uidsAutor = Array.from(new Set(ajustesManuais.map((a) => a.created_by).filter(Boolean))) as string[];
+      const uidsAutor = Array.from(
+        new Set([...ajustesManuais.map((a) => a.created_by), ...usosCredito.map((u) => u.created_by)].filter(Boolean))
+      ) as string[];
 
       if (client && idsCliente.length > 0) {
         const { data: cli } = await client.from("clientes").select("id_cliente, nome").in("id_cliente", idsCliente);
@@ -173,6 +196,12 @@ function ContaCorrentePage() {
         direcao: a.tipo === "CREDITO" ? "FAVOR_CLIENTE" : "FAVOR_EMPRESA",
         ajuste: a,
       })),
+      ...usos.map((u): LinhaExtrato => ({
+        kind: "USO",
+        created_at: u.created_at,
+        direcao: "FAVOR_EMPRESA",
+        uso: u,
+      })),
     ];
 
     return linhas
@@ -186,18 +215,23 @@ function ContaCorrentePage() {
         if (direcaoFiltro !== "TODAS" && linha.direcao !== direcaoFiltro) return false;
         if (searchTerm.trim()) {
           const t = searchTerm.trim().toLowerCase();
-          const idCliente = linha.kind === "PENDENCIA" ? linha.pendencia.id_cliente : linha.ajuste.id_cliente;
+          const idCliente =
+            linha.kind === "PENDENCIA" ? linha.pendencia.id_cliente
+            : linha.kind === "AJUSTE" ? linha.ajuste.id_cliente
+            : linha.uso.id_cliente;
           const nomeCliente = nomesCliente[idCliente] ?? "";
           const alvo =
             linha.kind === "PENDENCIA"
               ? `${linha.pendencia.id_int} ${linha.pendencia.id_cliente} ${nomeCliente} ${linha.pendencia.motivo} ${linha.pendencia.observacao ?? ""}`
-              : `ajuste manual ${linha.ajuste.id_cliente} ${nomeCliente} ${linha.ajuste.observacao ?? ""}`;
+              : linha.kind === "AJUSTE"
+                ? `ajuste manual ${linha.ajuste.id_cliente} ${nomeCliente} ${linha.ajuste.observacao ?? ""}`
+                : `uso de credito ${linha.uso.id_int_destino ?? ""} ${linha.uso.id_cliente} ${nomeCliente} ${linha.uso.observacao ?? ""}`;
           if (!alvo.toLowerCase().includes(t)) return false;
         }
         return true;
       })
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [pendencias, ajustes, nomesCliente, statusFiltro, direcaoFiltro, searchTerm]);
+  }, [pendencias, ajustes, usos, nomesCliente, statusFiltro, direcaoFiltro, searchTerm]);
 
   const totais = useMemo(() => {
     const abertas = pendencias.filter(p => p.status === "ABERTA" || p.status === "PARCIALMENTE_RESOLVIDA");
@@ -288,10 +322,25 @@ function ContaCorrentePage() {
         subtitle="Pendências financeiras — diferenças pós-pagamento. Não é Contas a Receber; nunca bloqueia novos pedidos."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Crédito em aberto (a favor do cliente)" value={formatCurrency(totais.totalCredito)} description="Disponível para uso em novo pedido" icon={TrendingUp} tone="success" />
         <SummaryCard title="Débito em aberto (a favor da empresa)" value={formatCurrency(totais.totalDebito)} description="Reservável em nova cobrança" icon={TrendingDown} tone="warning" />
         <SummaryCard title="Reservado em cobranças pendentes" value={formatCurrency(totais.reservado)} description={`${totais.qtdAbertas} pendência(s) em aberto`} icon={Wallet} tone="info" />
+        {/* Os três cards acima falam de PENDÊNCIAS. Este fala do saldo real da
+            conta corrente — já descontados os usos —, que é o número que o
+            vendedor vê no modal de cobrança. Sem ele, a tela somava créditos
+            e nunca mostrava o que já tinha sido gasto. */}
+        <SummaryCard
+          title="Saldo real em conta corrente"
+          value={formatCurrency(saldoGlobal?.totalCredito ?? 0)}
+          description={
+            saldoGlobal
+              ? `${saldoGlobal.clientesComCredito} cliente(s) com crédito disponível${saldoGlobal.totalDebito > 0 ? ` · ${formatCurrency(saldoGlobal.totalDebito)} devedor em ${saldoGlobal.clientesComDebito}` : ""}${saldoGlobal.truncado ? " · parcial" : ""}`
+              : "Calculando..."
+          }
+          icon={Coins}
+          tone="special"
+        />
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -340,6 +389,55 @@ function ContaCorrentePage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtradas.map((linha) => {
+                // ── Uso do crédito (USO_PEDIDO sem pendência) ─────────────────
+                // Contrapartida do ajuste: mostra onde o crédito foi gasto.
+                if (linha.kind === "USO") {
+                  const u = linha.uso;
+                  const nomeCliente = nomesCliente[u.id_cliente] ?? `Cliente #${u.id_cliente}`;
+                  const autor = u.created_by ? (nomesAutor[u.created_by] ?? "Usuário") : "—";
+                  return (
+                    <tr key={`uso-${u.id}`} className="hover:bg-slate-50/50">
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                          Uso de crédito
+                        </span>
+                        <p className="mt-1 font-semibold text-slate-700">{nomeCliente}</p>
+                        <p className="text-[10px] text-slate-400">Cliente #{u.id_cliente}</p>
+                        {u.observacao ? (
+                          <p className="mt-1 max-w-[260px] truncate text-[11px] text-slate-500" title={u.observacao}>{u.observacao}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">
+                          Saiu da conta do cliente
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {u.id_int_destino ? (
+                          <>
+                            Aplicado na proposta{" "}
+                            <Link href={`/orcamentos/${u.id_int_destino}?chat=open`} className="font-semibold text-sky-700 hover:underline">
+                              #{u.id_int_destino}
+                            </Link>
+                          </>
+                        ) : (
+                          "Aplicado em pagamento"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-rose-700">- {formatCurrency(u.valor)}</td>
+                      <td className="px-4 py-3 text-slate-500">—</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">Aplicado</span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                        {new Date(u.created_at).toLocaleDateString("pt-BR")}
+                        <span className="block text-[10px] text-slate-400">por {autor}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-[10px] text-slate-400">Automático</td>
+                    </tr>
+                  );
+                }
+
                 // ── Lançamento manual avulso (origem=AJUSTE) ──────────────────
                 if (linha.kind === "AJUSTE") {
                   const a = linha.ajuste;
@@ -366,7 +464,12 @@ function ContaCorrentePage() {
                       <td className="px-4 py-3 font-semibold">{formatCurrency(a.valor)}</td>
                       <td className="px-4 py-3 text-slate-500">—</td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700">Ativo</span>
+                        {/* "Lançado", não "Ativo": esta linha é o MOVIMENTO de
+                            entrada, com o valor original — não o saldo que
+                            restou. "Ativo" (verde) se lia como "disponível" e
+                            continuava verde depois do crédito ter sido gasto.
+                            O saldo que sobrou está no card "Saldo real". */}
+                        <span className="inline-flex rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">Lançado</span>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
                         {new Date(a.created_at).toLocaleDateString("pt-BR")}

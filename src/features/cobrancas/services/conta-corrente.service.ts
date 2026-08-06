@@ -146,6 +146,70 @@ export async function listAjustesManuais(options?: { limit?: number }): Promise<
   }));
 }
 
+/**
+ * Consumo de crédito avulso (movimento_credito com tipo_evento=USO_PEDIDO e
+ * SEM pendência vinculada) — o débito gravado por `mc_usar_credito_avulso`
+ * quando o vendedor aplica crédito como pagamento (E-Crédito ou pagamento
+ * combinado).
+ *
+ * POR QUE EXISTE: `listAjustesManuais` filtra `origem = 'AJUSTE'`, e este
+ * débito nasce com `origem = 'SISTEMA'`. Resultado: o crédito aparecia na
+ * Conta Corrente e o uso dele, não — a linha do ajuste seguia exibindo o
+ * valor cheio para sempre. Medido em 06/08/2026: 9 usos, R$ 6.441,11
+ * invisíveis, com 5 clientes exibindo crédito disponível e saldo real zero.
+ *
+ * Quando o crédito consumido vem de uma PENDÊNCIA, o uso já é visível pela
+ * própria pendência (valor_saldo cai, status vira PARCIALMENTE_RESOLVIDA) —
+ * por isso o filtro `id_pendencia is null`, que evita contar o mesmo uso
+ * duas vezes na tela.
+ */
+export type UsoCreditoConta = {
+  id: number;
+  id_cliente: number;
+  valor: number;
+  /** Proposta onde o crédito foi aplicado. */
+  id_int_destino: number | null;
+  /** Cobrança E-CREDITO gerada pela aplicação. */
+  id_pagamento_destino: string | null;
+  observacao: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+/** Usos de crédito avulso (USO_PEDIDO sem pendência), não cancelados. */
+export async function listUsosDeCredito(options?: { limit?: number }): Promise<UsoCreditoConta[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+  let query = client
+    .from("movimento_credito")
+    .select("id, id_cliente, valor, id_int_destino, id_pagamento_destino, observacao, created_at, created_by")
+    .eq("tipo_evento", "USO_PEDIDO")
+    // Consumo é sempre DEBITO. Explícito de propósito: um USO_PEDIDO do tipo
+    // CREDITO (estorno de uso) não pode ser desenhado como se fosse saída.
+    .eq("tipo", "DEBITO")
+    .is("id_pendencia", null)
+    .eq("cancelado", false)
+    .order("created_at", { ascending: false });
+  if (options?.limit !== undefined) {
+    query = query.limit(options.limit);
+  }
+  const { data, error } = await query;
+  if (error) {
+    console.warn("[ContaCorrenteService] Erro ao listar usos de crédito:", error.message);
+    return [];
+  }
+  return (data || []).map((r) => ({
+    id: Number(r.id),
+    id_cliente: Number(r.id_cliente),
+    valor: Number(r.valor) || 0,
+    id_int_destino: r.id_int_destino === null || r.id_int_destino === undefined ? null : Number(r.id_int_destino),
+    id_pagamento_destino: r.id_pagamento_destino ?? null,
+    observacao: r.observacao ?? null,
+    created_at: r.created_at,
+    created_by: r.created_by ?? null,
+  }));
+}
+
 /** Fila financeira: todas as pendências (para a tela dedicada de Conta Corrente). */
 export async function listAllPendencias(options?: { limit?: number; offset?: number }): Promise<{
   data: ContaCorrentePendencia[];

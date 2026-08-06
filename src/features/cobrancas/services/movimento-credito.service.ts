@@ -99,6 +99,78 @@ export async function getSaldoContaCorrente(idCliente: number): Promise<number> 
   return Math.round(saldo * 100) / 100;
 }
 
+export type SaldoGlobalContaCorrente = {
+  /** Σ dos saldos POSITIVOS, cliente a cliente. */
+  totalCredito: number;
+  /** Σ dos saldos NEGATIVOS (em módulo), cliente a cliente. */
+  totalDebito: number;
+  clientesComCredito: number;
+  clientesComDebito: number;
+  /** true quando o teto de linhas foi atingido e o total pode estar incompleto. */
+  truncado: boolean;
+};
+
+/**
+ * Saldo agregado da conta corrente de TODOS os clientes, pela mesma conta do
+ * `getSaldoContaCorrente` — só que rodada por cliente e depois somada.
+ *
+ * POR QUE POR CLIENTE, E NÃO UM SOMATÓRIO ÚNICO: crédito de um cliente não
+ * abate débito de outro. Somar a razão inteira de uma vez daria um número
+ * sem significado financeiro (devedores cancelando credores). Aqui cada
+ * cliente fecha o próprio saldo e só então os positivos e os negativos são
+ * totalizados em separado.
+ *
+ * Complementa — não substitui — os totais de `conta_corrente_pendencias` da
+ * tela: aqueles falam de pendências em aberto, este fala do saldo real que o
+ * vendedor enxerga no modal de cobrança.
+ */
+export async function getSaldoGlobalContaCorrente(options?: { limit?: number }): Promise<SaldoGlobalContaCorrente> {
+  const vazio: SaldoGlobalContaCorrente = {
+    totalCredito: 0, totalDebito: 0, clientesComCredito: 0, clientesComDebito: 0, truncado: false,
+  };
+  const client = getSupabaseClient();
+  if (!client) return vazio;
+
+  const limite = options?.limit ?? 20000;
+  const { data, error } = await client
+    .from("movimento_credito")
+    .select("id_cliente, valor, tipo")
+    .eq("cancelado", false)
+    .limit(limite);
+
+  if (error) {
+    console.warn("[MovimentoCreditoService] Erro ao calcular saldo global:", error.message);
+    return vazio;
+  }
+
+  const porCliente = new Map<number, number>();
+  for (const row of data || []) {
+    const idCliente = Number(row.id_cliente);
+    if (!idCliente) continue;
+    const v = Number(row.valor) || 0;
+    const atual = porCliente.get(idCliente) ?? 0;
+    porCliente.set(idCliente, row.tipo === "CREDITO" ? atual + v : row.tipo === "DEBITO" ? atual - v : atual);
+  }
+
+  let totalCredito = 0;
+  let totalDebito = 0;
+  let clientesComCredito = 0;
+  let clientesComDebito = 0;
+  for (const saldo of porCliente.values()) {
+    const arredondado = Math.round(saldo * 100) / 100;
+    if (arredondado > 0) { totalCredito += arredondado; clientesComCredito += 1; }
+    else if (arredondado < 0) { totalDebito += -arredondado; clientesComDebito += 1; }
+  }
+
+  return {
+    totalCredito: Math.round(totalCredito * 100) / 100,
+    totalDebito: Math.round(totalDebito * 100) / 100,
+    clientesComCredito,
+    clientesComDebito,
+    truncado: (data || []).length >= limite,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Consultas
 // ---------------------------------------------------------------------------
