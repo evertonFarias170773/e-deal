@@ -21,17 +21,23 @@ export function PageHeader({ title, subtitle, context, action }: PageHeaderProps
           <span
             className="mb-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide"
             style={{
-              background: "rgba(255,255,255,0.15)",
-              color: "rgba(255,255,255,0.9)"
+              background: "color-mix(in srgb, var(--primary-foreground) 15%, transparent)",
+              color: "color-mix(in srgb, var(--primary-foreground) 90%, transparent)"
             }}
           >
             {context}
           </span>
         ) : null}
-        <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+        <h1
+          className="text-2xl font-bold tracking-tight md:text-3xl"
+          style={{ color: "var(--primary-foreground)" }}
+        >
           {title}
         </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6" style={{ color: "rgba(255,255,255,0.72)" }}>
+        <p
+          className="mt-2 max-w-3xl text-sm leading-6"
+          style={{ color: "color-mix(in srgb, var(--primary-foreground) 78%, transparent)" }}
+        >
           {subtitle}
         </p>
       </div>

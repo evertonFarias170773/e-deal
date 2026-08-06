@@ -155,8 +155,8 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
                   </>
                 ) : (
                   <span
-                    className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-xl group-hover:block"
-                    style={{ background: "var(--sidebar-active-bg)" }}
+                    className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold shadow-xl group-hover:block"
+                    style={{ background: "var(--sidebar-active-bg)", color: "var(--sidebar-active-text)" }}
                   >
                     {item.label}
                   </span>
@@ -212,8 +212,8 @@ export function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
                   </>
                 ) : (
                   <span
-                    className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold text-white shadow-xl group-hover:block"
-                    style={{ background: "var(--sidebar-active-bg)" }}
+                    className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 rounded-xl px-3 py-2 text-xs font-semibold shadow-xl group-hover:block"
+                    style={{ background: "var(--sidebar-active-bg)", color: "var(--sidebar-active-text)" }}
                   >
                     {item.label}
                   </span>

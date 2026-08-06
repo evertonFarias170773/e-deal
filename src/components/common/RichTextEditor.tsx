@@ -49,7 +49,7 @@ export function RichTextEditor({ label, value, onChange, placeholder }: RichText
     <button
       type="button"
       onClick={() => execCommand(command, arg)}
-      className="p-1.5 text-slate-700 hover:bg-slate-200 rounded transition-colors"
+      className="p-1.5 text-[var(--muted)] hover:bg-[var(--border)] rounded transition-colors"
       title={command}
     >
       {icon}
@@ -57,35 +57,35 @@ export function RichTextEditor({ label, value, onChange, placeholder }: RichText
   );
 
   return (
-    <div className="w-full rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
+    <div className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-sm flex flex-col">
       {/* TOOLBAR (Cabeçalho) */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 p-2 sm:px-3 sm:py-2 rounded-t-xl">
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-3 text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--background)] p-2 sm:px-3 sm:py-2 rounded-t-xl">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-3 text-[var(--muted-subtle)]">
           {/* Drag Handle & Collapse Toggle */}
           <div className="flex items-center gap-1">
-            <GripVertical className="w-4 h-4 cursor-grab hover:text-slate-700" />
-            <button type="button" onClick={() => setIsOpen(!isOpen)} className="p-1 hover:bg-slate-200 rounded text-slate-700 transition">
+            <GripVertical className="w-4 h-4 cursor-grab hover:text-[var(--foreground)]" />
+            <button type="button" onClick={() => setIsOpen(!isOpen)} className="p-1 hover:bg-[var(--border)] rounded text-[var(--muted)] transition">
               {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
 
           {/* Nome do Bloco */}
-          <div className="border border-dashed border-slate-300 bg-white/50 px-3 py-1 rounded text-sm text-slate-500 truncate max-w-[150px] sm:max-w-xs">
+          <div className="border border-dashed border-[var(--border-strong)] bg-[var(--card)]/50 px-3 py-1 rounded text-sm text-[var(--muted-subtle)] truncate max-w-[150px] sm:max-w-xs">
             Ref: {label}
           </div>
 
           {/* Font Dropdowns */}
           <div className="hidden lg:flex items-center gap-2">
-            <select className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer">
+            <select className="bg-transparent text-sm font-medium text-[var(--muted)] outline-none cursor-pointer">
               <option>Sans Serif</option>
             </select>
-            <select className="bg-transparent text-sm font-medium text-slate-700 outline-none cursor-pointer">
+            <select className="bg-transparent text-sm font-medium text-[var(--muted)] outline-none cursor-pointer">
               <option>Normal</option>
             </select>
           </div>
 
           {/* Separator */}
-          <div className="hidden sm:block w-px h-5 bg-slate-200 mx-1" />
+          <div className="hidden sm:block w-px h-5 bg-[var(--border)] mx-1" />
 
           {/* Formatting */}
           <div className="flex items-center gap-0.5">
@@ -96,7 +96,7 @@ export function RichTextEditor({ label, value, onChange, placeholder }: RichText
           </div>
 
           {/* Separator */}
-          <div className="hidden sm:block w-px h-5 bg-slate-200 mx-1" />
+          <div className="hidden sm:block w-px h-5 bg-[var(--border)] mx-1" />
 
           {/* Colors */}
           <div className="flex items-center gap-0.5">
@@ -105,7 +105,7 @@ export function RichTextEditor({ label, value, onChange, placeholder }: RichText
           </div>
 
           {/* Separator */}
-          <div className="hidden sm:block w-px h-5 bg-slate-200 mx-1" />
+          <div className="hidden sm:block w-px h-5 bg-[var(--border)] mx-1" />
 
           {/* Lists & Clear */}
           <div className="flex items-center gap-0.5">
@@ -120,7 +120,7 @@ export function RichTextEditor({ label, value, onChange, placeholder }: RichText
           <button
             type="button"
             onClick={() => setIsOpen(false)}
-            className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-100 hover:text-slate-800"
+            className="rounded border border-[var(--border)] bg-[var(--card)] px-3 py-1 text-xs font-bold text-[var(--muted)] shadow-sm transition hover:bg-[var(--card-hover)] hover:text-[var(--foreground)]"
           >
             Fechar
           </button>
@@ -134,7 +134,7 @@ export function RichTextEditor({ label, value, onChange, placeholder }: RichText
             ref={editorRef}
             contentEditable
             onInput={handleInput}
-            className="min-h-[120px] max-h-[400px] overflow-y-auto rounded border border-slate-200 p-4 text-sm text-slate-800 outline-none transition focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/20"
+            className="min-h-[120px] max-h-[400px] overflow-y-auto rounded border border-[var(--border)] p-4 text-sm text-[var(--foreground)] outline-none transition focus-within:border-[var(--input-focus-border)] focus-within:ring-2 focus-within:ring-[var(--input-focus-ring)]"
             data-placeholder={placeholder}
           />
         </div>

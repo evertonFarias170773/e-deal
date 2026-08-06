@@ -1,10 +1,20 @@
 @import "tailwindcss";
 
 /* ============================================================
+   VARIANTE DARK DO TAILWIND v4 — ligada à classe .dark
+   Sem esta linha, todas as utilitárias `dark:*` respondem ao
+   prefers-color-scheme do SO, e NÃO ao ThemeToggle do app.
+   ============================================================ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
    TOKENS DE TEMA — LIGHT MODE (padrão)
    Paleta calibrada para WCAG AA (contraste mínimo 4.5:1 em texto normal)
    ============================================================ */
 :root {
+  /* Controles nativos (scrollbar, select, date picker) seguem o tema */
+  color-scheme: light;
+
   /* --- Superfícies ---
      background: fundo da página (cinza azulado suave)
      card: branco puro para cards/containers
@@ -103,12 +113,26 @@
   --input-placeholder:   #5c7489;
   --input-focus-border:  #0a7a6e;
   --input-focus-ring:    rgba(10, 122, 110, 0.15);
+
+  /* --- Tokens complementares ---
+     Referenciados por componentes existentes; os aliases resolvem no <html>,
+     então acompanham automaticamente a troca de tema.
+  */
+  --secondary-rgb:       10, 122, 110;          /* trio RGB de --secondary p/ rgba() */
+  --muted-foreground:    var(--muted-subtle);
+  --card-foreground:     var(--foreground);
+  --input:               var(--input-bg);
+  --card-footer:         #fafafa;               /* rodapé de modais */
+  --success:             #047857;               /* verde ok — 4.8:1 sobre card claro */
 }
 
 /* ============================================================
    TOKENS DE TEMA — DARK MODE (classe .dark no <html>)
    ============================================================ */
 .dark {
+  /* Controles nativos escuros (scrollbar, select, date picker) */
+  color-scheme: dark;
+
   /* --- Superfícies ---
      Escalonamento claro entre background → card → card-hover
      para separação visual real entre áreas
@@ -203,6 +227,14 @@
   --input-placeholder:   #5a7d98;
   --input-focus-border:  #2dbfb0;
   --input-focus-ring:    rgba(45, 191, 176, 0.18);
+
+  /* --- Tokens complementares (par escuro) ---
+     Os aliases (--muted-foreground etc.) definidos no :root já acompanham
+     o tema; aqui só entram os valores que mudam de fato.
+  */
+  --secondary-rgb:       45, 191, 176;
+  --card-footer:         #0c1a29;
+  --success:             #34d399;
 }
 
 /* ============================================================
@@ -240,6 +272,25 @@ button {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* ============================================================
+   COMPONENTES COMPARTILHADOS
+   ============================================================ */
+
+/* Botão primário — par de cores oficial (tema claro E escuro).
+   Cuida SÓ das cores; tamanho/raio continuam via utilitárias.
+   Substitui progressivamente o padrão copiado
+   "bg-[#0b2f4a] text-white hover:bg-[#123f61]". */
+@layer components {
+  .btn-primary {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    transition: background-color 150ms ease;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+  }
 }
 
 /* ============================================================
@@ -426,9 +477,17 @@ button:disabled {
   background-color: var(--card) !important;
 }
 
-/* Abas com fundo primário selecionado hardcoded */
+/* Botões/abas com fundo primário hardcoded.
+   No dark, --primary vira azul CLARO — o texto branco fixo dessas
+   118 ocorrências ficaria ilegível; forçamos o par correto. */
 .dark .bg-\[\#0b2f4a\] {
   background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+
+.dark .hover\:bg-\[\#123f61\]:hover,
+.dark .hover\:bg-\[\#0a2740\]:hover {
+  background-color: var(--primary-hover) !important;
 }
 
 /* Scrollbar em dark */
