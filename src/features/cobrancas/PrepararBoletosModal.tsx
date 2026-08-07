@@ -322,13 +322,28 @@ export function PrepararBoletosModal({
     });
   };
 
-  const checkDuplicateBoletos = async (list: GeneratedInstallment[]) => {
+  /** Parcela já ocupada por um boleto ATIVO — cancelado não ocupa. */
+  type ParcelaOcupada = { parcela: number; status: string };
+
+  /*
+   * Espelha o índice `boletos_unico_parcela_ativo`, que é UNIQUE (id_int, parcela)
+   * restrito a `upper(status) is distinct from 'CANCELADO'`.
+   *
+   * A normalização aqui tem de ser idêntica à do predicado do índice, inclusive
+   * para status nulo (que conta como ativo dos dois lados). Divergir foi o que
+   * gerou o bug anterior: a tela liberava o lançamento e o INSERT estourava no
+   * Postgres com a mensagem crua da constraint.
+   *
+   * Boleto cancelado permanece como histórico e NÃO ocupa a parcela — a mesma
+   * parcela pode ser refaturada.
+   */
+  const checkDuplicateBoletos = async (list: GeneratedInstallment[]): Promise<ParcelaOcupada | null> => {
     const client = getSupabaseClient();
-    if (!client) return false;
+    if (!client) return null;
 
     const { data: existing, error } = await client
       .from("boletos")
-      .select("parcela, total_parcelas, status, ext_reference")
+      .select("parcela, status")
       .eq("id_int", cobranca.id_int);
 
     if (error) {
@@ -336,28 +351,20 @@ export function PrepararBoletosModal({
       throw new Error(`Erro ao verificar duplicidade no banco: ${error.message}`);
     }
 
-    if (!existing || existing.length === 0) return false;
+    if (!existing || existing.length === 0) return null;
 
     for (const item of list) {
-      const expectedExtRef = hasNfe
-        ? extReference
-        : `P${item.parcela}${item.total_parcelas}${cobranca.id_int}`;
-
-      const isDuplicate = existing.some((eb) => {
-        const statusStr = String(eb.status || "").toUpperCase();
-        return (
-          Number(eb.parcela) === item.parcela &&
-          Number(eb.total_parcelas) === item.total_parcelas &&
-          String(eb.ext_reference || "").trim() === expectedExtRef &&
-          statusStr !== "CANCELADO"
-        );
-      });
-      if (isDuplicate) {
-        return true;
+      const ocupada = existing.find(
+        (eb) =>
+          Number(eb.parcela) === Number(item.parcela) &&
+          String(eb.status || "").toUpperCase() !== "CANCELADO"
+      );
+      if (ocupada) {
+        return { parcela: Number(item.parcela), status: String(ocupada.status || "").toUpperCase() };
       }
     }
 
-    return false;
+    return null;
   };
 
   const handleConfirmarFaturamento = async () => {
@@ -405,10 +412,10 @@ export function PrepararBoletosModal({
     setIsSaving(true);
     try {
       // 3. Validar duplicidade
-      const hasDuplicate = await checkDuplicateBoletos(installments);
-      if (hasDuplicate) {
+      const parcelaOcupada = await checkDuplicateBoletos(installments);
+      if (parcelaOcupada) {
         setValidationError(
-          `Duplicidade detectada! Já existem parcelas registradas para a referência "${extReference}" no Contas a Receber.`
+          `Duplicidade detectada! A parcela ${parcelaOcupada.parcela} desta origem já possui um boleto ativo no Contas a Receber (status ${parcelaOcupada.status}). Cancele o boleto atual antes de refaturar a parcela.`
         );
         setIsSaving(false);
         return;
