@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { PeriodSelector } from "@/components/common/PeriodSelector";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { useCompany } from "@/features/companies/CompanyProvider";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { codecs } from "@/lib/url-state";
@@ -18,6 +20,7 @@ import {
 } from "@/lib/period";
 import { useDashboardExecutivo } from "@/features/dashboard/hooks/useDashboardExecutivo";
 import { AlertasBanner } from "@/features/dashboard/sections/AlertasBanner";
+import { RankingVendedoresSection } from "@/features/dashboard/sections/RankingVendedoresSection";
 import { KpiCardsSection } from "@/features/dashboard/sections/KpiCardsSection";
 import { FinanceiroSection } from "@/features/dashboard/sections/FinanceiroSection";
 import { ComercialSection } from "@/features/dashboard/sections/ComercialSection";
@@ -27,7 +30,18 @@ import { ClientesSection } from "@/features/dashboard/sections/ClientesSection";
 import { WidgetsSection } from "@/features/dashboard/sections/WidgetsSection";
 
 export function DashboardPage() {
+  const router = useRouter();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const { activeCompany, companies } = useCompany();
+
+  // A home do vendedor é o próprio painel: qualquer chegada ao Dashboard
+  // executivo (pós-login, raiz ou URL direta) é redirecionada.
+  const isVendedor = user?.perfilSlug === "vendedor";
+  useEffect(() => {
+    if (!isAuthLoading && isVendedor) router.replace("/meu-desempenho");
+  }, [isAuthLoading, isVendedor, router]);
+
+  const isAdminView = Boolean(user?.isAdmin || user?.isSuperAdmin);
 
   const hoje = hojeSP();
 
@@ -71,6 +85,9 @@ export function DashboardPage() {
     }
     setFilters({ per: valor.preset, ini: "", fim: "" });
   };
+
+  // Vendedor não permanece nesta página (redirect acima em andamento).
+  if (isVendedor) return null;
 
   return (
     <div className="space-y-6">
@@ -141,6 +158,7 @@ export function DashboardPage() {
           <ProducaoSection prod={data.producao} />
           <FiscalSection fiscal={data.fiscal} range={range} />
           <ClientesSection cli={data.clientes} range={range} />
+          {isAdminView ? <RankingVendedoresSection range={range} /> : null}
         </>
       )}
 

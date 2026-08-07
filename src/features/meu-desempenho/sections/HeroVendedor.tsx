@@ -43,6 +43,7 @@ const chipNeutro =
  */
 export function HeroVendedor({ data, preset, range, action }: HeroVendedorProps) {
   const { nome } = data.vendedor;
+  const emConsulta = data.modo === "consulta";
   const atual = data.faturamento.proprio.atual.valor;
   const anterior = data.faturamento.proprio.anterior.valor;
   const participacao = data.faturamento.participacao_pct.atual;
@@ -77,13 +78,13 @@ export function HeroVendedor({ data, preset, range, action }: HeroVendedorProps)
               color: "color-mix(in srgb, var(--primary-foreground) 90%, transparent)"
             }}
           >
-            Meu desempenho · {PERIOD_PRESET_LABELS[preset]}
+            {emConsulta ? "Modo consulta" : "Meu desempenho"} · {PERIOD_PRESET_LABELS[preset]}
           </span>
           <h1
             className="text-2xl font-bold tracking-tight md:text-3xl"
             style={{ color: "var(--primary-foreground)" }}
           >
-            Olá, {nome} 👋
+            {emConsulta ? `Desempenho de ${nome}` : `Olá, ${nome} 👋`}
           </h1>
           <p className="mt-1 text-sm leading-6" style={textoSuave}>
             Seus resultados com dados reais · {formatRangeLabel(range)} · consolidado de todas as
@@ -97,7 +98,7 @@ export function HeroVendedor({ data, preset, range, action }: HeroVendedorProps)
         {/* Faturamento próprio + evolução */}
         <div>
           <p className="text-sm font-medium" style={textoSuave}>
-            Você faturou neste período
+            {emConsulta ? "Faturamento no período" : "Você faturou neste período"}
           </p>
           <p
             className="mt-1 text-4xl font-extrabold tracking-tight md:text-5xl"
@@ -128,12 +129,14 @@ export function HeroVendedor({ data, preset, range, action }: HeroVendedorProps)
               </span>
             ) : null}
           </div>
-          <p
-            className="mt-4 text-base font-semibold"
-            style={{ color: "color-mix(in srgb, var(--primary-foreground) 92%, transparent)" }}
-          >
-            {mensagemDinamica(atual, anterior)}
-          </p>
+          {!emConsulta ? (
+            <p
+              className="mt-4 text-base font-semibold"
+              style={{ color: "color-mix(in srgb, var(--primary-foreground) 92%, transparent)" }}
+            >
+              {mensagemDinamica(atual, anterior)}
+            </p>
+          ) : null}
         </div>
 
         {/* Participação no faturamento total */}

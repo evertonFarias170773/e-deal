@@ -8,6 +8,7 @@ const ALLOWED_NEXT_PREFIXES = [
   "/pedidos",
   "/orcamentos",
   "/dashboard",
+  "/meu-desempenho",
   "/atualizar-senha",
   "/boas-vindas"
 ];

@@ -8,9 +8,23 @@ export type ParQtdValor = { qtd: number; valor: number };
 
 export type ParComparativo = { atual: ParQtdValor; anterior: ParQtdValor };
 
+export type ClasseAbc = "A" | "B" | "C";
+
+export type AbcCliente = {
+  id_cliente: number | null;
+  cliente: string;
+  valor: number;
+  pedidos: number;
+  pct: number;
+  pct_acum: number;
+  classe: ClasseAbc;
+};
+
 export type DashboardVendedorPayload = {
   periodo: { inicio: string; fim: string; inicio_prev: string; fim_prev: string };
   vendedor: { nome: string };
+  /** "proprio" = vendedor autenticado; "consulta" = admin visualizando. */
+  modo: "proprio" | "consulta";
   faturamento: {
     proprio: {
       atual: { valor: number; pedidos: number };
@@ -22,6 +36,11 @@ export type DashboardVendedorPayload = {
   };
   serie: Array<{ ref: string; total: number }>;
   serie_bucket: "dia" | "mes";
+  abc: {
+    /** Até 60 maiores clientes do período, já classificados. */
+    clientes: AbcCliente[];
+    resumo: Partial<Record<ClasseAbc, { qtd: number; valor: number; pct: number }>>;
+  };
   propostas: {
     criadas: ParComparativo;
     ganhas: ParComparativo;

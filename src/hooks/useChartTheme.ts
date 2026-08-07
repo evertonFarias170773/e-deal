@@ -34,6 +34,8 @@ export const CHART_THEME = {
     // Trio de status da carteira (vencido/hoje/a vencer) — validado com
     // scripts/validate_palette.js da skill dataviz sobre o card #ffffff.
     status: { vencido: "#ef4444", hoje: "#f28c28", aVencer: "#0f9f9a" },
+    // Rampa ordinal da Curva ABC (A>B>C, um matiz) — validada com --ordinal.
+    abc: { A: "#0a5d57", B: "#0f9f9a", C: "#5db5ae" },
     tooltipBg: "#ffffff",
     tooltipBorder: "#d7e5e8",
     text: "#0d1b2a"
@@ -48,6 +50,7 @@ export const CHART_THEME = {
     warning: "#f59e0b",
     // Validado sobre o card escuro #0f1e2e (banda de luminosidade + CVD + contraste).
     status: { vencido: "#c73e3e", hoje: "#c28418", aVencer: "#2aa89e" },
+    abc: { A: "#7ee0d6", B: "#2aa89e", C: "#155e57" },
     tooltipBg: "#0f1e2e",
     tooltipBorder: "#1e3a54",
     text: "#ddeaf6"

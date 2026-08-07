@@ -32,7 +32,10 @@ export type DashboardExecutivoPayload = {
     criadas: KpiComparativo;
     ganho: KpiComparativo;
     perdido: KpiComparativo;
+    /** LIBERADO já vem unificado como APROVADO (decisão de 08/08). */
     por_status: Array<{ status: string; qtd: number; valor: number }>;
+    /** Valores das propostas aprovadas do período por tipo_cobranca dos pagamentos válidos. */
+    aprovadas_por_tipo: Array<{ tipo: string; valor: number; qtd: number }>;
     tempo_aprovacao: { atual: TempoAprovacaoBloco; anterior: TempoAprovacaoBloco };
   };
   financeiro: {
@@ -63,6 +66,19 @@ export type DashboardExecutivoPayload = {
       aprovado_em: string;
     }>;
   };
+};
+
+/** Payload da RPC rpc_ranking_vendedores (exclusiva de perfis administrativos). */
+export type RankingVendedores = {
+  total: number;
+  ranking: Array<{
+    posicao: number;
+    vendedor: string;
+    valor: number;
+    pedidos: number;
+    ticket: number | null;
+    participacao_pct: number | null;
+  }>;
 };
 
 /** Linha do widget "Próximos boletos a vencer" (tabela public.boletos). */

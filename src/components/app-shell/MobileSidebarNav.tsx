@@ -104,11 +104,13 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
     hasPermissao(user, "admin.usuarios.edit");
 
   const isVendedor = user?.perfilSlug === "vendedor";
+  // Admins também veem as seções de vendedor (modo consulta do Meu desempenho).
+  const podeVerSecaoVendedor = isVendedor || Boolean(user?.isAdmin || user?.isSuperAdmin);
 
   const visibleSections = navigationSections.filter(
     (section) =>
       !(section.requiresConfigPerm && !canViewConfig) &&
-      !(section.sellerOnly && !isVendedor) &&
+      !(section.sellerOnly && !podeVerSecaoVendedor) &&
       !(section.hiddenForSeller && isVendedor)
   );
 

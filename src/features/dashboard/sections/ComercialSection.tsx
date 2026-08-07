@@ -48,6 +48,17 @@ function TrendPill({ chip }: { chip?: TrendChip }) {
 
 type BarClickState = { activePayload?: Array<{ payload?: { status?: string } }> };
 
+/** Rótulos amigáveis para tipo_cobranca (fallback: valor cru do banco). */
+const TIPO_COBRANCA_LABELS: Record<string, string> = {
+  PIX: "PIX",
+  BOLETO: "Boleto",
+  CREDIT_CARD: "Cartão de crédito",
+  CARD_PARCELADO: "Cartão parcelado",
+  "E-FATURADO": "Faturado",
+  "E-CREDITO": "Crédito",
+  "SEM TIPO": "Sem tipo"
+};
+
 export function ComercialSection({ com, companyId }: ComercialSectionProps) {
   const t = useChartTheme();
   const router = useRouter();
@@ -55,6 +66,12 @@ export function ComercialSection({ com, companyId }: ComercialSectionProps) {
 
   const porStatus = com.por_status;
   const alturaStatus = Math.max(200, porStatus.length * 44 + 60);
+
+  const aprovadasPorTipo = com.aprovadas_por_tipo.map((linha) => ({
+    ...linha,
+    rotulo: TIPO_COBRANCA_LABELS[linha.tipo] ?? linha.tipo
+  }));
+  const alturaTipos = Math.max(140, aprovadasPorTipo.length * 40 + 40);
 
   const ganhoPerdido = [
     { label: "Ganho", valor: com.ganho.atual.valor, qtd: com.ganho.atual.qtd, cor: t.accent },
@@ -118,6 +135,44 @@ export function ComercialSection({ com, companyId }: ComercialSectionProps) {
               <Bar dataKey="qtd" fill={t.accentStrong} radius={[0, 6, 6, 0]} maxBarSize={26} cursor="pointer" />
             </BarChart>
           </ResponsiveContainer>
+
+          {aprovadasPorTipo.length > 0 ? (
+            <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+              <h4 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                Valores aprovados por tipo de cobrança
+              </h4>
+              <p className="mt-0.5 text-xs" style={{ color: "var(--muted-subtle)" }}>
+                Pagamentos válidos (pagos ou confirmados) das propostas aprovadas do período.
+              </p>
+              <ResponsiveContainer width="100%" height={alturaTipos}>
+                <BarChart
+                  data={aprovadasPorTipo}
+                  layout="vertical"
+                  margin={{ left: 8, right: 16, top: 12, bottom: 0 }}
+                >
+                  <CartesianGrid stroke={t.grid} strokeDasharray="4 4" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    stroke={t.axis}
+                    fontSize={12}
+                    tickLine={false}
+                    tickFormatter={(valor) =>
+                      Math.abs(Number(valor)) >= 1000 ? `${Math.round(Number(valor) / 1000)}k` : String(valor)
+                    }
+                  />
+                  <YAxis dataKey="rotulo" type="category" stroke={t.axis} fontSize={12} tickLine={false} width={128} />
+                  <Tooltip
+                    {...tooltip}
+                    formatter={(value, _name, item) => {
+                      const qtd = (item?.payload as { qtd?: number } | undefined)?.qtd ?? 0;
+                      return [`${formatCurrency(Number(value))} · ${qtd} cobrança(s)`, "Aprovado"];
+                    }}
+                  />
+                  <Bar dataKey="valor" fill={t.accent} radius={[0, 6, 6, 0]} maxBarSize={22} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : null}
         </ChartCard>
 
         <div className="space-y-6">

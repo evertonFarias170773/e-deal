@@ -18,9 +18,15 @@ export type MeuDesempenhoResult = {
   accessDenied: boolean;
 };
 
+/**
+ * @param vendedorConsultado Somente para perfil administrativo (modo consulta).
+ *   Para o vendedor autenticado passe null — e mesmo que algo seja enviado, o
+ *   banco IGNORA o parâmetro e devolve apenas os dados do próprio vendedor.
+ */
 export async function fetchMeuDesempenho(
   range: DateRange,
-  prevRange: DateRange
+  prevRange: DateRange,
+  vendedorConsultado: string | null
 ): Promise<MeuDesempenhoResult> {
   const client = getSupabaseClient();
   if (!client) return { data: null, error: "Supabase não configurado.", accessDenied: false };
@@ -29,7 +35,8 @@ export async function fetchMeuDesempenho(
     p_inicio: range.inicio,
     p_fim: range.fim,
     p_inicio_prev: prevRange.inicio,
-    p_fim_prev: prevRange.fim
+    p_fim_prev: prevRange.fim,
+    p_vendedor: vendedorConsultado
   });
 
   if (error) {
@@ -43,4 +50,34 @@ export async function fetchMeuDesempenho(
   }
 
   return { data: data as DashboardVendedorPayload, error: null, accessDenied: false };
+}
+
+export type VendedorConsulta = {
+  nomeComercial: string;
+};
+
+/**
+ * Lista de vendedores para o seletor do modo consulta (admins).
+ * Nome comercial = meu_vendedor ?? nome_usuario (o que casa com propostas).
+ */
+export async function fetchVendedoresConsulta(): Promise<VendedorConsulta[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from("usuarios")
+    .select("nome_usuario, meu_vendedor")
+    .eq("is_vendedor", true)
+    .order("nome_usuario");
+
+  if (error) {
+    console.warn("[MeuDesempenho] Erro ao listar vendedores:", error.message);
+    return [];
+  }
+
+  return (data ?? [])
+    .map((row) => ({
+      nomeComercial: String(row.meu_vendedor ?? "").trim() || String(row.nome_usuario ?? "").trim()
+    }))
+    .filter((v) => v.nomeComercial !== "");
 }

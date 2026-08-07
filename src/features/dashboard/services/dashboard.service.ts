@@ -34,6 +34,7 @@ import type { DateRange } from "@/lib/period";
 import type {
   DashboardExecutivoPayload,
   ProximoBoleto,
+  RankingVendedores,
   UltimoPagamento
 } from "@/features/dashboard/types";
 
@@ -61,6 +62,32 @@ export async function fetchDashboardExecutivo(
   }
 
   return { data: data as DashboardExecutivoPayload, error: null };
+}
+
+/**
+ * Ranking de vendedores — RPC exclusiva de perfis administrativos; o gate é no
+ * banco (42501 para os demais). O front só a chama quando o usuário é admin e
+ * oculta a seção em caso de negativa.
+ */
+export async function fetchRankingVendedores(
+  range: DateRange
+): Promise<ServiceResult<RankingVendedores>> {
+  const client = getSupabaseClient();
+  if (!client) return { data: null, error: "Supabase não configurado." };
+
+  const { data, error } = await client.rpc("rpc_ranking_vendedores", {
+    p_inicio: range.inicio,
+    p_fim: range.fim
+  });
+
+  if (error) {
+    if (!error.message.includes("ACESSO_NEGADO_RANKING")) {
+      console.warn("[Dashboard] Erro na RPC rpc_ranking_vendedores:", error.message);
+    }
+    return { data: null, error: error.message };
+  }
+
+  return { data: data as RankingVendedores, error: null };
 }
 
 const PROXIMOS_BOLETOS_LIMIT = 5;
