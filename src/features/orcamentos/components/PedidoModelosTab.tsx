@@ -10,6 +10,8 @@ import {
   excluirModelo,
 } from "@/features/orcamentos/services/pedidos-modelos.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { StatusBadge } from "@/components/common/StatusBadge";
+import type { StatusTone } from "@/lib/types";
 import type { PropostaItem, PedidoModeloState } from "@/features/orcamentos/types";
 import {
   TIPO_CAMAROTE,
@@ -26,6 +28,63 @@ import {
 
 const inputClass = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition";
 const labelClass = "text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1";
+
+// ─── Arte do modelo ──────────────────────────────────────────────────────────
+
+/**
+ * Estados em que a arte conta como aprovada. Mesma lista usada pela engine de
+ * status (status-engine.service.ts) — aqui só muda a apresentação do card,
+ * a regra de aprovação continua sendo dela.
+ */
+const STATUS_ARTE_APROVADA = [
+  "APROVADA",
+  "APROVADO",
+  "APROVADA_CLIENTE",
+  "LIBERADA",
+  "IMPRESSA",
+  "NAO_NECESSARIA",
+];
+
+function isArteAprovada(status?: string): boolean {
+  return !!status && STATUS_ARTE_APROVADA.includes(status.toUpperCase());
+}
+
+function getArteStatusTone(status?: string): StatusTone {
+  const normalizado = (status || "PENDENTE").toUpperCase();
+  if (isArteAprovada(normalizado)) return "success";
+  if (normalizado === "REPROVADA_CLIENTE") return "danger";
+  if (normalizado === "AGUARDANDO_CLIENTE" || normalizado === "AGUARDANDO") return "warning";
+  if (normalizado === "EM_CRIACAO" || normalizado === "EM_REVISAO_INTERNA") return "info";
+  return "neutral";
+}
+
+/** Aceita tanto data URL completa quanto base64 puro gravado na coluna. */
+function toImageSrc(base64: string): string {
+  return base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
+}
+
+/**
+ * Remove o prefixo numérico de ordenação gravado no nome da variação
+ * ("1 TAMANHO" → "TAMANHO"). É um código interno, sem utilidade na tela.
+ */
+function limparNomeVariacao(nome: string): string {
+  return nome.replace(/^\s*\d+[\s.\-)]*/, "").trim();
+}
+
+/**
+ * Texto consolidado das variações do item, na ordem em que foram salvas.
+ * Ex.: "TAMANHO: 120 cm • ACABAMENTO: Mosquete Metal Ponta Dupla".
+ */
+function formatVariacoesItem(item: PropostaItem): string {
+  return (item.variacoesEscolhidas || [])
+    .map((escolha) => {
+      const nomeBruto = escolha.variacao?.nome?.trim() || "";
+      const nome = limparNomeVariacao(nomeBruto) || nomeBruto || "Variação";
+      const valor = escolha.tipo?.variacao?.trim() || "-";
+      return `${nome}: ${valor}`;
+    })
+    .join(" • ");
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -635,6 +694,9 @@ export function PedidoModelosTab({
       id: undefined,
       tempId: newId,
       isPersisted: false,
+      // A amostra pertence à linha original em pedidos_modelos; a cópia ainda
+      // não existe no banco e não deve exibir a arte do outro modelo.
+      amostra_arte_base64: null,
     };
     onModelosChange([...modelos, newModel]);
     setOpenModelos((prev) => ({ ...prev, [newId]: true }));
@@ -788,8 +850,18 @@ export function PedidoModelosTab({
                     );
                   }
 
+                  const arteAprovada = isArteAprovada(m.status_arte);
+                  const variacoesDoItem = formatVariacoesItem(item);
+
                   return (
-                    <div key={modId} className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300">
+                    <div
+                      key={modId}
+                      className={`relative rounded-2xl border p-5 shadow-sm transition ${
+                        arteAprovada
+                          ? "border-blue-400 bg-blue-50 hover:border-blue-500 dark:border-blue-500/60 dark:bg-blue-950/30"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
                       <div className="mb-3 pr-24">
                         <h4 className="text-base font-bold text-[#0b2f4a]">{m.nome_modelo || "Modelo sem nome"}</h4>
                         <div className="mt-2 flex flex-wrap gap-2 text-sm font-medium text-slate-600">
@@ -803,7 +875,37 @@ export function PedidoModelosTab({
                           <span className="rounded bg-slate-100 px-2.5 py-1">Numerador: {m.gabarito_operacional || "-"}</span>
                         </div>
                       </div>
-                      
+
+                      {/* Variações do item ao qual este modelo pertence */}
+                      {variacoesDoItem && (
+                        <div className="mb-3">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Variações:</p>
+                          <p className="mt-1 text-sm font-medium text-slate-700">{variacoesDoItem}</p>
+                        </div>
+                      )}
+
+                      {/* Status da arte + amostra renderizada (quando existir) */}
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Arte:</span>
+                          <StatusBadge
+                            status={m.status_arte || "PENDENTE"}
+                            tone={getArteStatusTone(m.status_arte)}
+                          />
+                        </div>
+                        {m.amostra_arte_base64 ? (
+                          <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={toImageSrc(m.amostra_arte_base64)}
+                              alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
+                              className="max-h-64 w-full object-contain"
+                              loading="lazy"
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+
                       <div className="absolute right-4 top-4 flex gap-2">
                         <div className="flex items-center gap-2">
                           {m.padrao && (

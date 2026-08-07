@@ -364,6 +364,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             verso_tipo: m.verso_tipo as string | null,
             status_arte: String(m.status_arte || "PENDENTE"),
             status_producao: String(m.status_producao || "PENDENTE"),
+            amostra_arte_base64: m.amostra_arte_base64 ? String(m.amostra_arte_base64) : null,
             ordem: Number(m.ordem || 0),
             gabarito_operacional: m.gabarito_operacional as string | null,
             bloco: m.bloco as string | null,

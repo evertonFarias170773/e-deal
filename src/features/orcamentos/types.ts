@@ -49,6 +49,13 @@ export type PedidoModeloState = {
   gabarito_operacional?: string | null;
   status_arte?: string;
   status_producao?: string;
+  /**
+   * pedidos_modelos.amostra_arte_base64 — amostra renderizada da arte.
+   * Somente leitura no formulário da proposta: é exibida no card do modelo,
+   * mas nenhuma rotina de save a envia de volta (o upload/alteração da arte
+   * continua sendo feito pelo fluxo de produção).
+   */
+  amostra_arte_base64?: string | null;
   ordem?: number;
   /** Camarote (producao_numeracoes.tipo = CAMAROTE): quantidade total de camarotes */
   Q_CAM?: number | null;
