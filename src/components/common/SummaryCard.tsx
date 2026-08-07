@@ -27,6 +27,8 @@ type SummaryCardProps = {
   description: ReactNode;
   tone?: StatusTone;
   trend?: string;
+  /** Tom do chip de tendência quando difere do tom do card (↑ verde, ↓ vermelho). */
+  trendTone?: StatusTone;
   icon?: LucideIcon;
   /** Quando informado, o card vira um atalho de filtro (clique e Enter/Espaço). */
   onClick?: () => void;
@@ -38,6 +40,7 @@ export function SummaryCard({
   description,
   tone = "neutral",
   trend,
+  trendTone,
   icon: Icon,
   onClick
 }: SummaryCardProps) {
@@ -104,8 +107,8 @@ export function SummaryCard({
         <span
           className={cn(
             "mt-4 inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1",
-            toneStyles[tone],
-            toneStylesDark[tone]
+            toneStyles[trendTone ?? tone],
+            toneStylesDark[trendTone ?? tone]
           )}
         >
           {trend}
