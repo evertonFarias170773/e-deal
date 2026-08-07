@@ -8,7 +8,6 @@ type ProductSearchSelectorProps = {
   produtos: Produto[];
   loadingProdutos: boolean;
   onAddProduct: (productId: string) => void;
-  showToast: (msg: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
   itensAtuais: PropostaItem[];
 };
 
@@ -69,7 +68,6 @@ export function ProductSearchSelector({
   produtos,
   loadingProdutos,
   onAddProduct,
-  showToast,
   itensAtuais
 }: ProductSearchSelectorProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -117,16 +115,8 @@ export function ProductSearchSelector({
   }, [produtos, searchQuery, activePreset]);
 
   const handleSelectProduct = (product: Produto) => {
-    const isDuplicate = itensAtuais.some((item) => item.id_produto === product.id_produto);
-    if (isDuplicate) {
-      showToast({
-        type: "warning",
-        title: "Produto já adicionado",
-        description: `O produto "${product.nomeReal}" (#${product.id_produto}) já está no orçamento. Ajuste a quantidade diretamente no item.`
-      });
-      setIsOpen(false);
-      return;
-    }
+    // Produto repetido é permitido: quem decide entre atualizar a linha
+    // existente ou criar outra é o formulário (modal de produto repetido).
     onAddProduct(product.id_produto.toString());
     setSearchQuery("");
     setActivePreset(null);

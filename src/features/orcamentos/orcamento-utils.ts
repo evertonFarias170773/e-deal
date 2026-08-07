@@ -188,6 +188,19 @@ export function calculateItemWeight(item: Pick<PropostaItem, "quantidade" | "pes
   return item.quantidade * item.pesoUnitario + variationWeight;
 }
 
+/**
+ * ID temporário único de item da proposta.
+ *
+ * A proposta aceita o mesmo id_produto em mais de uma linha (variações/
+ * configurações diferentes), e o id é usado como chave de render e como
+ * vínculo com os modelos do pedido (item_temp_id). Só o timestamp colidiria
+ * ao duplicar itens no mesmo milissegundo — daí o sufixo aleatório.
+ */
+export function novoItemId(idProduto: number): string {
+  const sufixo = Math.random().toString(36).slice(2, 8);
+  return `item_${idProduto}_${Date.now()}_${sufixo}`;
+}
+
 export function createItemFromProduto(
   produto: Produto, 
   quantidade = 1000, 
@@ -200,7 +213,7 @@ export function createItemFromProduto(
   const precoBaseReal = precoFixoBase !== undefined ? precoFixoBase : produto.valorUnt;
 
   const baseItem = {
-    id: `item_${produto.id_produto}_${Date.now()}`,
+    id: novoItemId(produto.id_produto),
     id_produto: produto.id_produto,
     produto,
     nome: produto.nomeReal,

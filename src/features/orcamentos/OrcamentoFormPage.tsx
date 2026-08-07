@@ -39,6 +39,7 @@ import {
   createItemFromProduto,
   getClienteBonusPercent,
   getClienteVendedorPadrao,
+  novoItemId,
   sortEnderecosPorPrioridade
 } from "@/features/orcamentos/orcamento-utils";
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
@@ -107,6 +108,20 @@ const areFreightsEqual = (f1: PropostaFrete, f2: PropostaFrete) => {
 
 const getStableFreightKey = (f: PropostaFrete): string => {
   return normalizeFreteKey(f);
+};
+
+/** SEDEX (Correios) — modalidade padrão de novas cotações. */
+const isSedexFrete = (f: PropostaFrete): boolean => {
+  const alvo = removeAccents(`${f.transportadora || ""} ${f.servico || ""}`).toUpperCase();
+  return alvo.includes("SEDEX");
+};
+
+/**
+ * Opção pré-selecionada de uma cotação nova: SEDEX quando disponível,
+ * senão a primeira da lista (comportamento anterior).
+ */
+const escolherFretePadrao = (fretes: PropostaFrete[]): PropostaFrete | undefined => {
+  return fretes.find(isSedexFrete) ?? fretes[0];
 };
 
 type OrcamentoFormPageProps = {
@@ -588,6 +603,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }, [cliente?.idCliente, form.clienteId]);
 
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
+  const [duplicateProductPrompt, setDuplicateProductPrompt] = useState<{
+    productId: string;
+    nomeProduto: string;
+    idProduto: number;
+    existingItemId: string;
+    totalLinhas: number;
+  } | null>(null);
   const [clientSearch, setClientSearch] = useState(() => proposta?.cliente ? `${proposta.cliente.idCliente} - ${proposta.cliente.nome}` : (mode === "new" ? "#" : ""));
   const [showClientResults, setShowClientResults] = useState(false);
   const [clientResults, setClientResults] = useState<Cadastro[]>([]);
@@ -1405,10 +1427,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }
         }
 
-        // Auto-select first option only if there was no previous choice and destination did not change
+        // Cotação nova (sem escolha anterior e mesmo destino): pré-seleciona o
+        // SEDEX quando disponível; sem SEDEX, mantém a primeira opção.
         if (!currentChosen && !isDestChanged && updatedResults.length > 0) {
-          updatedResults[0].escolhido = true;
-          nextEscolhidoId = updatedResults[0].id;
+          const padrao = escolherFretePadrao(updatedResults);
+          if (padrao) {
+            padrao.escolhido = true;
+            nextEscolhidoId = padrao.id;
+          }
         }
 
         const merged = [...updatedResults, ...manualFretes, ...preservedFretes];
@@ -1903,6 +1929,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
+  /**
+   * Produto repetido é permitido (mesmo produto com variações/configurações
+   * diferentes na mesma proposta). Quando o id_produto já existe, o usuário
+   * decide no modal: ajustar o item existente ou criar uma nova linha.
+   */
   async function addProduct(productId: string) {
     const produto = produtos.find((item) => item.id_produto.toString() === productId.toString());
 
@@ -1910,14 +1941,30 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return;
     }
 
-    // Validação de duplicidade
-    const isDuplicate = form.itens.some((item) => item.id_produto === produto.id_produto);
-    if (isDuplicate) {
-      showToast({
-        type: "warning",
-        title: "Produto já adicionado",
-        description: `O produto "${produto.nomeReal}" (#${produto.id_produto}) já está no orçamento. Ajuste a quantidade diretamente no item.`
+    const itensDoProduto = form.itens.filter(
+      (item) => item.id_produto === produto.id_produto && item.statusItem !== "REMOVIDO"
+    );
+
+    if (itensDoProduto.length > 0) {
+      // Alvo de "Atualizar quantidade": a última linha do produto na proposta.
+      setDuplicateProductPrompt({
+        productId: produto.id_produto.toString(),
+        nomeProduto: produto.nomeReal,
+        idProduto: produto.id_produto,
+        existingItemId: itensDoProduto[itensDoProduto.length - 1].id,
+        totalLinhas: itensDoProduto.length
       });
+      return;
+    }
+
+    await addProductLine(productId);
+  }
+
+  /** Insere de fato uma nova linha do produto no orçamento. */
+  async function addProductLine(productId: string) {
+    const produto = produtos.find((item) => item.id_produto.toString() === productId.toString());
+
+    if (!produto) {
       return;
     }
 
@@ -2205,6 +2252,45 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     setOpenItemIds((prev) => ({ ...prev, [itemId]: true }));
   }
 
+  /**
+   * Duplica um item mantendo quantidade, preços, descontos, observações e
+   * variações; a cópia entra logo abaixo do original.
+   *
+   * A cópia NÃO herda id_produto_proposta_origem/id_int (vínculo com a linha
+   * já persistida no banco) nem os modelos do pedido do original — é uma
+   * linha nova, que o usuário ajusta em seguida.
+   */
+  function handleDuplicateItem(itemId: string) {
+    const index = form.itens.findIndex((it) => it.id === itemId);
+    if (index === -1) return;
+
+    const original = form.itens[index];
+    const {
+      id: _id,
+      id_produto_proposta_origem: _origem,
+      id_int: _idInt,
+      ...rest
+    } = original;
+
+    const copia: PropostaItem = {
+      ...rest,
+      id: novoItemId(original.id_produto),
+      statusItem: "PENDENTE",
+      variacoesEscolhidas: original.variacoesEscolhidas.map((escolha) => ({ ...escolha }))
+    };
+
+    const proximosItens = [...form.itens];
+    proximosItens.splice(index + 1, 0, copia);
+    updateField("itens", proximosItens);
+    setOpenItemIds((prev) => ({ ...prev, [copia.id]: true }));
+
+    showToast({
+      type: "success",
+      title: "Produto duplicado",
+      description: `Nova linha de "${original.nome}" criada. Ajuste o que precisar.`
+    });
+  }
+
   async function handleCotarFretes() {
     const cep = form.clienteNaoCadastrado ? form.cepLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.cep;
     const cidade = form.clienteNaoCadastrado ? form.cidadeLivre : combinedAddresses.find((e) => e.id === form.enderecoId)?.cidade;
@@ -2423,10 +2509,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       }
     }
 
-    // Auto-select first option only if there was no previous choice and destination did not change
+    // Cotação nova (sem escolha anterior e mesmo destino): pré-seleciona o
+    // SEDEX quando disponível; sem SEDEX, mantém a primeira opção.
     if (!currentChosen && !isDestChanged && updatedResults.length > 0) {
-      updatedResults[0].escolhido = true;
-      nextEscolhidoId = updatedResults[0].id;
+      const padrao = escolherFretePadrao(updatedResults);
+      if (padrao) {
+        padrao.escolhido = true;
+        nextEscolhidoId = padrao.id;
+      }
     }
 
     const merged = [...updatedResults, ...manualFretes, ...preservedFretes];
@@ -3329,7 +3419,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       <div className="sticky top-4 z-[45] mb-6 flex w-full justify-start gap-3 overflow-x-auto rounded-3xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur hide-scrollbar">
           {[
             { id: "geral", label: "Geral" },
-            { id: "produtos", label: "Produtos" },
+            { id: "produtos", label: "Orçamento" },
             { id: "fretes", label: "Fretes" },
             { id: "pedido", label: "Pedido" },
             { id: "artes", label: "Artes" },
@@ -4153,7 +4243,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   produtos={produtos}
                   loadingProdutos={loadingProdutos}
                   onAddProduct={addProduct}
-                  showToast={showToast}
                   itensAtuais={form.itens}
                 />
 
@@ -4242,6 +4331,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           item={item}
                           isRemoveAllowed={isRemoveAllowed}
                           onEdit={() => handleEditItem(item.id)}
+                          onDuplicate={
+                            isFormBloqueadoPorCobranca ? undefined : () => handleDuplicateItem(item.id)
+                          }
                           onRemove={() => handleRemoveProductClick(item.id)}
                         />
                       );
@@ -4675,6 +4767,54 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           </div>
         </Modal>
       )}
+      {duplicateProductPrompt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md scale-100 rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-4 text-amber-600">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">Este produto já foi adicionado nesta proposta.</h3>
+            </div>
+            <p className="mb-6 text-sm text-slate-600">
+              <strong>{duplicateProductPrompt.nomeProduto}</strong> (#{duplicateProductPrompt.idProduto}) já está no
+              orçamento
+              {duplicateProductPrompt.totalLinhas > 1 ? ` em ${duplicateProductPrompt.totalLinhas} linhas` : ""}. Você
+              pode ajustar a quantidade do item existente ou incluir uma nova linha com outra configuração/variação.
+            </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => {
+                  handleEditItem(duplicateProductPrompt.existingItemId);
+                  setDuplicateProductPrompt(null);
+                }}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Atualizar quantidade
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const alvo = duplicateProductPrompt.productId;
+                  setDuplicateProductPrompt(null);
+                  void addProductLine(alvo);
+                }}
+                className="btn-primary flex-1 rounded-2xl px-4 py-3 font-semibold"
+              >
+                Adicionar novo item
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDuplicateProductPrompt(null)}
+              className="mt-3 w-full rounded-2xl px-4 py-2 text-sm font-semibold text-slate-500 transition hover:text-slate-700"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
       {deleteProductConfirmOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md scale-100 rounded-3xl bg-white p-6 shadow-2xl">
@@ -4867,11 +5007,13 @@ function ProductItemSummary({
   item,
   isRemoveAllowed,
   onEdit,
+  onDuplicate,
   onRemove
 }: {
   item: PropostaItem;
   isRemoveAllowed?: boolean;
   onEdit: () => void;
+  onDuplicate?: () => void;
   onRemove: () => void;
 }) {
   const selectedVariationsText = item.variacoesEscolhidas.length > 0
@@ -4906,6 +5048,16 @@ function ProductItemSummary({
             >
               Editar
             </button>
+            {onDuplicate ? (
+              <button
+                type="button"
+                onClick={onDuplicate}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-[#0b2f4a] hover:bg-slate-50 hover:border-[#d7e5e8] transition-all"
+                title="Duplicar item (mesma configuração em uma nova linha)"
+              >
+                Duplicar
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onRemove}
