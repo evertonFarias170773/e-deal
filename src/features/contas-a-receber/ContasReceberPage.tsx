@@ -1314,8 +1314,18 @@ export function ContasReceberPage() {
       return;
     }
 
-    // A ação Gerar/Regerar PDF do Boleto só deve aparecer se o boleto já tiver: linha_digitavel, codigo_barras, id_boleto_c6
-    // Se faltar qualquer um desses campos, bloquear com mensagem clara.
+    // PDF já salvo abre direto — sem gerar de novo e sem toast intermediário.
+    // A abertura acontece ANTES de qualquer await, então o gesto do usuário
+    // ainda vale e o bloqueador de pop-up não barra a aba. O resolver recebe os
+    // dois campos porque `pdf_storage` costuma vir como caminho relativo.
+    const pdfSalvo = resolverUrlPdfBoleto(boleto.url_pdf, boleto.pdf_storage);
+    if (pdfSalvo) {
+      window.open(pdfSalvo, "_blank");
+      return;
+    }
+
+    // Daqui para baixo é geração. A Edge Function exige estes três campos; sem
+    // eles não há o que gerar, e também não havia PDF salvo para abrir.
     if (!boleto.linha_digitavel || !boleto.codigo_barras || !boleto.id_boleto_c6) {
       showToast({
         type: "error",
@@ -1355,22 +1365,26 @@ export function ContasReceberPage() {
         )
       );
 
-      // O PDF resultante é aberto pela própria ação: o toast de sucesso leva ao
-      // arquivo recém-gerado, usando o mesmo url_pdf/pdf_storage e o mesmo
-      // resolver (openPdf -> getResolvedPdfUrl) do restante da tela. Abrir aqui
-      // e não direto com window.open porque, depois do await da Edge Function, o
-      // gesto do usuário já expirou e o bloqueador de pop-up barraria a aba.
       // A Edge Function devolve `url` absoluta e `path` relativo ao bucket
       // `boletos`; o resolver escolhe e normaliza os dois.
       const destinoPdf = resolverUrlPdfBoleto(res.url, res.path);
+
+      // Abre sozinho ao concluir. Depois do await o gesto do usuário já expirou,
+      // então o bloqueador de pop-up pode barrar a aba — nesse caso window.open
+      // devolve null e o toast clicável entra como saída, em vez de o usuário
+      // ficar sem o arquivo.
+      const abriu = destinoPdf ? window.open(destinoPdf, "_blank") : null;
+
       showToast({
         type: "success",
-        title: "PDF atualizado!",
-        description: destinoPdf
-          ? "O PDF interno do boleto foi criado e salvo. Clique aqui para abrir."
-          : "O PDF interno do boleto foi criado e salvo com sucesso.",
-        duration: destinoPdf ? 10000 : undefined,
-        onClick: destinoPdf ? () => openPdf(destinoPdf) : undefined
+        title: "PDF gerado!",
+        description: abriu
+          ? "O PDF do boleto foi criado, salvo e aberto em outra aba."
+          : destinoPdf
+            ? "O PDF do boleto foi criado e salvo. Clique aqui para abrir."
+            : "O PDF do boleto foi criado e salvo com sucesso.",
+        duration: !abriu && destinoPdf ? 10000 : undefined,
+        onClick: !abriu && destinoPdf ? () => openPdf(destinoPdf) : undefined
       });
 
       setRefreshTrigger((prev) => prev + 1);
@@ -2777,13 +2791,19 @@ function RecebivelActions({
     actionItems.push({ label: "Consultar PDF no C6", onClick: () => onConsultarPdf(item) });
   }
 
-  // A ação Gerar/Regerar PDF do Boleto só deve aparecer se o boleto já tiver: linha_digitavel, codigo_barras, id_boleto_c6
-  if (item.tipo === "BOLETO" && onGerarPdfBoleto && item.linha_digitavel && item.codigo_barras && item.id_boleto_c6) {
+  // Visualizar não depende de dado bancário: havendo PDF salvo, há o que abrir.
+  // Gerar depende — a Edge Function exige linha digitável, código de barras e
+  // identificador no banco. Por isso as duas condições são separadas: antes, um
+  // boleto com PDF e sem esses campos não oferecia nem a visualização.
+  if (item.tipo === "BOLETO" && onGerarPdfBoleto) {
     const temPdf = !!(item.url_pdf || item.pdf_storage);
-    actionItems.push({
-      label: temPdf ? "Regerar PDF do Boleto" : "Gerar PDF do Boleto",
-      onClick: () => onGerarPdfBoleto(item)
-    });
+    const podeGerar = !!(item.linha_digitavel && item.codigo_barras && item.id_boleto_c6);
+    if (temPdf || podeGerar) {
+      actionItems.push({
+        label: temPdf ? "Visualizar Boleto" : "Gerar PDF do Boleto",
+        onClick: () => onGerarPdfBoleto(item)
+      });
+    }
   }
 
   if (canBaixa) {
@@ -2874,13 +2894,19 @@ function BoletoActions({
     actionItems.push({ label: "Consultar PDF no C6", onClick: () => onConsultarPdf(item) });
   }
 
-  // A ação Gerar/Regerar PDF do Boleto só deve aparecer se o boleto já tiver: linha_digitavel, codigo_barras, id_boleto_c6
-  if (item.tipo === "BOLETO" && onGerarPdfBoleto && item.linha_digitavel && item.codigo_barras && item.id_boleto_c6) {
+  // Visualizar não depende de dado bancário: havendo PDF salvo, há o que abrir.
+  // Gerar depende — a Edge Function exige linha digitável, código de barras e
+  // identificador no banco. Por isso as duas condições são separadas: antes, um
+  // boleto com PDF e sem esses campos não oferecia nem a visualização.
+  if (item.tipo === "BOLETO" && onGerarPdfBoleto) {
     const temPdf = !!(item.url_pdf || item.pdf_storage);
-    actionItems.push({
-      label: temPdf ? "Regerar PDF do Boleto" : "Gerar PDF do Boleto",
-      onClick: () => onGerarPdfBoleto(item)
-    });
+    const podeGerar = !!(item.linha_digitavel && item.codigo_barras && item.id_boleto_c6);
+    if (temPdf || podeGerar) {
+      actionItems.push({
+        label: temPdf ? "Visualizar Boleto" : "Gerar PDF do Boleto",
+        onClick: () => onGerarPdfBoleto(item)
+      });
+    }
   }
 
   if (canBaixa) {
