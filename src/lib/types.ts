@@ -84,6 +84,8 @@ export type NavigationSection = {
   requiresConfigPerm?: boolean;
   /** Visível apenas para o perfil vendedor (user.perfilSlug === "vendedor"). */
   sellerOnly?: boolean;
+  /** Oculta do perfil vendedor (ex.: Dashboard executivo da gestão). */
+  hiddenForSeller?: boolean;
   /** Quando definido, a seção é um link direto (sem acordeão) e `items` fica vazio. */
   href?: string;
   items: NavigationItem[];

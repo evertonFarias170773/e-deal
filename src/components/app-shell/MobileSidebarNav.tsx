@@ -108,7 +108,8 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
   const visibleSections = navigationSections.filter(
     (section) =>
       !(section.requiresConfigPerm && !canViewConfig) &&
-      !(section.sellerOnly && !isVendedor)
+      !(section.sellerOnly && !isVendedor) &&
+      !(section.hiddenForSeller && isVendedor)
   );
 
   const renderItem = (item: NavigationItem) => {

@@ -92,6 +92,7 @@ export const navigationSections: NavigationSection[] = [
     label: "Dashboard",
     icon: Gauge,
     href: "/dashboard",
+    hiddenForSeller: true,
     items: []
   },
   {
