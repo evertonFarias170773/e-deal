@@ -56,6 +56,13 @@ export type PedidoModeloState = {
    * continua sendo feito pelo fluxo de produção).
    */
   amostra_arte_base64?: string | null;
+  /**
+   * pedidos_modelos.variacoes_texto — texto consolidado das variações do item
+   * de origem ("TAMANHO: 120 cm • ACABAMENTO: ..."). Recalculado a partir do
+   * item específico da proposta (nunca por id_produto) ao criar, duplicar ou
+   * alterar variações.
+   */
+  variacoes_texto?: string | null;
   ordem?: number;
   /** Camarote (producao_numeracoes.tipo = CAMAROTE): quantidade total de camarotes */
   Q_CAM?: number | null;

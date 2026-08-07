@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, Image as ImageIcon, AlertOctagon, ChevronDown } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
@@ -10,6 +10,7 @@ import {
   excluirModelo,
 } from "@/features/orcamentos/services/pedidos-modelos.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { formatVariacoesItem } from "@/features/orcamentos/orcamento-utils";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import type { StatusTone } from "@/lib/types";
 import type { PropostaItem, PedidoModeloState } from "@/features/orcamentos/types";
@@ -105,26 +106,16 @@ function toImageSrc(valor: string): string | null {
 }
 
 /**
- * Remove o prefixo numérico de ordenação gravado no nome da variação
- * ("1 TAMANHO" → "TAMANHO"). É um código interno, sem utilidade na tela.
+ * Texto de variações exibido no card: o persistido em
+ * pedidos_modelos.variacoes_texto é a fonte principal; o cálculo a partir do
+ * item só entra quando o modelo ainda não tem o valor gravado (modelo novo,
+ * ou registro anterior à coluna).
  */
-function limparNomeVariacao(nome: string): string {
-  return nome.replace(/^\s*\d+[\s.\-)]*/, "").trim();
-}
-
-/**
- * Texto consolidado das variações do item, na ordem em que foram salvas.
- * Ex.: "TAMANHO: 120 cm • ACABAMENTO: Mosquete Metal Ponta Dupla".
- */
-function formatVariacoesItem(item: PropostaItem): string {
-  return (item.variacoesEscolhidas || [])
-    .map((escolha) => {
-      const nomeBruto = escolha.variacao?.nome?.trim() || "";
-      const nome = limparNomeVariacao(nomeBruto) || nomeBruto || "Variação";
-      const valor = escolha.tipo?.variacao?.trim() || "-";
-      return `${nome}: ${valor}`;
-    })
-    .join(" • ");
+function resolverVariacoesTexto(modelo: PedidoModeloState, item: PropostaItem): string {
+  const persistido = modelo.variacoes_texto?.trim();
+  if (persistido) return persistido;
+  if (modelo.variacoes_texto === "") return "";
+  return formatVariacoesItem(item);
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -621,31 +612,6 @@ export function PedidoModelosTab({
   const [collapsedItems, setCollapsedItems] = useState<Record<string, boolean>>({});
   const [openModelos, setOpenModelos] = useState<Record<string, boolean>>({});
 
-  const [previewModalOpen, setPreviewModalOpen] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewBase64, setPreviewBase64] = useState<string | null>(null);
-
-  async function openPreview(corName: string) {
-    if (!corName) {
-      showToast({ type: "error", title: "Erro", description: "O modelo não possui cor definida." });
-      return;
-    }
-    setPreviewModalOpen(true);
-    setPreviewLoading(true);
-    setPreviewBase64(null);
-    try {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        const { data } = await supabase.from("producao_cores").select("pdf_base64").eq("name", corName).single();
-        if (data && data.pdf_base64) {
-          setPreviewBase64(data.pdf_base64);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    }
-    setPreviewLoading(false);
-  }
 
   const fetchOpcoes = useCallback(async () => {
     const supabase = getSupabaseClient();
@@ -718,6 +684,8 @@ export function PedidoModelosTab({
       verso_tipo: "SÓ FRENTE",
       bloco: "50",
       gabarito_operacional: defaultNumName || null,
+      // Texto consolidado das variações do item de origem (não do produto).
+      variacoes_texto: formatVariacoesItem(item),
       Q_CAM: null,
       L_CAM: null,
       C_INI: null,
@@ -892,7 +860,7 @@ export function PedidoModelosTab({
                   }
 
                   const arteAprovada = isArteAprovada(m.status_arte);
-                  const variacoesDoItem = formatVariacoesItem(item);
+                  const variacoesDoItem = resolverVariacoesTexto(m, item);
                   const arteSrc = m.amostra_arte_base64 ? toImageSrc(m.amostra_arte_base64) : null;
 
                   return (
@@ -936,12 +904,16 @@ export function PedidoModelosTab({
                           />
                         </div>
                         {arteSrc ? (
-                          <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                          // Prévia compacta: largura ajustada ao conteúdo (w-fit),
+                          // limitada a ~metade do card e alinhada à esquerda, para
+                          // não dominar o modelo. h-auto + object-contain preservam
+                          // a proporção original da imagem.
+                          <div className="mt-3 w-fit max-w-[70%] overflow-hidden rounded-xl border border-slate-200 bg-white sm:max-w-[50%]">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={arteSrc}
                               alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
-                              className="max-h-64 w-full object-contain"
+                              className="block h-auto max-h-32 w-auto max-w-full object-contain"
                               loading="lazy"
                               onError={(e) => {
                                 // Conteúdo inválido/inacessível: esconde em vez de
@@ -955,16 +927,6 @@ export function PedidoModelosTab({
 
                       <div className="absolute right-4 top-4 flex gap-2">
                         <div className="flex items-center gap-2">
-                          {m.padrao && (
-                            <button
-                              type="button"
-                              onClick={() => openPreview(m.padrao || "")}
-                              className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                              title="Visualizar Arte"
-                            >
-                              <ImageIcon className="h-4 w-4" />
-                            </button>
-                          )}
                           <button
                             type="button"
                             onClick={() => setOpenModelos((prev) => ({ ...prev, [modId]: true }))}
@@ -1028,35 +990,6 @@ export function PedidoModelosTab({
         </div>
       )}
 
-      {previewModalOpen && (
-        <div className="fixed inset-0 z-[99] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-4xl scale-100 rounded-3xl bg-white p-6 shadow-2xl text-center flex flex-col max-h-[90vh]">
-            <h3 className="text-lg font-bold text-slate-800 mb-4">Pré-visualização da Arte</h3>
-            <div className="flex-1 min-h-[400px] mb-6 bg-slate-100 rounded-xl overflow-hidden flex items-center justify-center relative">
-              {previewLoading ? (
-                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-[#0b2f4a]"></div>
-              ) : previewBase64 ? (
-                 <iframe 
-                   src={previewBase64.startsWith("data:") ? previewBase64 : `data:application/pdf;base64,${previewBase64}`} 
-                   className="w-full h-full border-0 absolute inset-0"
-                   title="PDF Preview"
-                 />
-              ) : (
-                 <div className="flex flex-col items-center text-slate-400">
-                    <ImageIcon className="h-10 w-10 mb-2 opacity-50" />
-                    <p className="text-sm">Arte não encontrada para este papel.</p>
-                 </div>
-              )}
-            </div>
-            <button
-              onClick={() => setPreviewModalOpen(false)}
-              className="w-full rounded-2xl bg-[#0b2f4a] px-4 py-3 font-semibold text-white transition hover:bg-[#123f61]"
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -16,7 +16,7 @@ import {
 import { getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.service";
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
-import { buildPropostaInformalText, getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
+import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
 import { parseCurrencyBR } from "@/lib/formatters/currency";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
@@ -1785,9 +1785,13 @@ export async function saveProposta(
         }
 
         // C. Gravar modelos novos atrelados a este produto
+        // Texto consolidado das variações DESTE item (não do produto): o mesmo
+        // produto pode aparecer em várias linhas com variações diferentes.
+        const variacoesTextoItem = formatVariacoesItem(item) || null;
+
         if (formState.pedidosModelos) {
-          const modelosNovos = formState.pedidosModelos.filter(m => 
-            !m.isPersisted && 
+          const modelosNovos = formState.pedidosModelos.filter(m =>
+            !m.isPersisted &&
             (
               (m.id_produto_proposta_origem && m.id_produto_proposta_origem === parsedItemId) ||
               (m.item_temp_id && m.item_temp_id === item.id)
@@ -1807,6 +1811,7 @@ export async function saveProposta(
               verso_tipo: m.verso_tipo || null,
               bloco: m.bloco || null,
               gabarito_operacional: m.gabarito_operacional || null,
+              variacoes_texto: variacoesTextoItem,
               Q_CAM: m.Q_CAM ?? null,
               L_CAM: m.L_CAM ?? null,
               C_INI: m.C_INI ?? null,
@@ -1818,12 +1823,27 @@ export async function saveProposta(
             const { error: insertModelosError } = await client
               .from("pedidos_modelos")
               .insert(modelosToInsert);
-            
+
             if (insertModelosError) {
               console.error(`[OrcamentosService] Erro ao gravar modelos novos do item #${dbItemId}:`, insertModelosError);
               throw new Error(`Erro ao gravar modelos do item #${dbItemId}: ${insertModelosError.message}`);
             }
           }
+        }
+
+        // C2. Ressincroniza o texto de variações de TODOS os modelos deste item.
+        // Cobre o caso de as variações terem sido alteradas em uma proposta que
+        // já possuía modelos gravados. Não-fatal: falha aqui não impede o save.
+        const { error: syncVariacoesError } = await client
+          .from("pedidos_modelos")
+          .update({ variacoes_texto: variacoesTextoItem })
+          .eq("id_produto_proposta_origem", dbItemId);
+
+        if (syncVariacoesError) {
+          console.error(
+            `[OrcamentosService] Erro ao sincronizar variacoes_texto do item #${dbItemId}:`,
+            syncVariacoesError
+          );
         }
       }
 

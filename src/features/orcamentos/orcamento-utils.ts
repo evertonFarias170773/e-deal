@@ -189,6 +189,39 @@ export function calculateItemWeight(item: Pick<PropostaItem, "quantidade" | "pes
 }
 
 /**
+ * Remove o prefixo numérico de ordenação gravado no nome da variação
+ * ("1 TAMANHO" → "TAMANHO"). É código interno, sem utilidade na tela.
+ *
+ * Exige um separador depois do número justamente para não mutilar nomes que
+ * começam com dígito de forma legítima ("3D TEXTURIZADO" continua inteiro).
+ * O backfill em supabase/migrations/20260809_pedidos_modelos_variacoes_texto.sql
+ * usa o equivalente POSIX desta regex — mudar aqui exige mudar lá.
+ */
+export function limparNomeVariacao(nome: string): string {
+  return nome.replace(/^\s*\d+[\s.\-)]+/, "").trim();
+}
+
+/**
+ * Texto consolidado das variações de UM item da proposta, na ordem salva.
+ * Ex.: "TAMANHO: 120 cm • ACABAMENTO: Mosquete Metal Ponta Dupla".
+ *
+ * Fonte única do formato: alimenta tanto o card da aba Pedidos quanto o valor
+ * persistido em pedidos_modelos.variacoes_texto. Item sem variação → "".
+ */
+export function formatVariacoesItem(
+  item: Pick<PropostaItem, "variacoesEscolhidas">
+): string {
+  return (item.variacoesEscolhidas || [])
+    .map((escolha) => {
+      const nomeBruto = escolha.variacao?.nome?.trim() || "";
+      const nome = limparNomeVariacao(nomeBruto) || nomeBruto || "Variação";
+      const valor = escolha.tipo?.variacao?.trim() || "-";
+      return `${nome}: ${valor}`;
+    })
+    .join(" • ");
+}
+
+/**
  * ID temporário único de item da proposta.
  *
  * A proposta aceita o mesmo id_produto em mais de uma linha (variações/

@@ -18,6 +18,7 @@ export interface PedidoModeloRow {
   especificacao_dados?: string | null;
   verso_tipo: string | null;
   bloco?: string | null;
+  variacoes_texto?: string | null;
   status_arte: string;
   status_producao: string;
   ordem: number;
@@ -58,6 +59,8 @@ export interface ModeloInput {
   verso_tipo: string | null;
   bloco?: string | null;
   gabarito_operacional?: string | null;
+  /** Texto consolidado das variações do item de origem. */
+  variacoes_texto?: string | null;
   /** Camarote: quantidade total de camarotes */
   Q_CAM?: number | null;
   /** Camarote: lugares por camarote */
@@ -173,7 +176,7 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
         nome_modelo, padrao, quantidade,
         tipo_numeracao, numeracao_inicio, numeracao_fim,
         frente_verso, rfid_nfc, gabarito_operacional, especificacao_dados,
-        status_arte, status_producao, ordem,
+        variacoes_texto, status_arte, status_producao, ordem,
         created_at, updated_at
       `)
       .eq("id_int", idInt)
@@ -196,6 +199,7 @@ export async function listarItensComModelos(idInt: number): Promise<ServiceResul
       numeracao_fim: m.numeracao_fim !== null ? Number(m.numeracao_fim) : null,
       verso_tipo: m.verso_tipo as string | null,
       bloco: m.bloco as string | null,
+      variacoes_texto: m.variacoes_texto as string | null,
       status_arte: String(m.status_arte || "PENDENTE"),
       status_producao: String(m.status_producao || "PENDENTE"),
       ordem: Number(m.ordem || 0),
@@ -330,6 +334,7 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       verso_tipo: input.verso_tipo?.trim() || null,
       bloco: input.bloco?.trim() || null,
       gabarito_operacional: input.gabarito_operacional?.trim() || null,
+      variacoes_texto: input.variacoes_texto?.trim() || null,
       Q_CAM: input.Q_CAM ?? null,
       L_CAM: input.L_CAM ?? null,
       C_INI: input.C_INI ?? null,
@@ -388,6 +393,7 @@ export async function atualizarModelo(id: number, input: ModeloInput): Promise<S
       verso_tipo: input.verso_tipo?.trim() || null,
       bloco: input.bloco?.trim() || null,
       gabarito_operacional: input.gabarito_operacional?.trim() || null,
+      variacoes_texto: input.variacoes_texto?.trim() || null,
       Q_CAM: input.Q_CAM ?? null,
       L_CAM: input.L_CAM ?? null,
       C_INI: input.C_INI ?? null,
@@ -441,6 +447,7 @@ export async function atualizarModeloParcial(id: number, partialInput: Partial<M
     if (partialInput.verso_tipo !== undefined) payload.verso_tipo = partialInput.verso_tipo?.trim() || null;
     if (partialInput.bloco !== undefined) payload.bloco = partialInput.bloco?.trim() || null;
     if (partialInput.gabarito_operacional !== undefined) payload.gabarito_operacional = partialInput.gabarito_operacional?.trim() || null;
+    if (partialInput.variacoes_texto !== undefined) payload.variacoes_texto = partialInput.variacoes_texto?.trim() || null;
     if (partialInput.Q_CAM !== undefined) payload.Q_CAM = partialInput.Q_CAM ?? null;
     if (partialInput.L_CAM !== undefined) payload.L_CAM = partialInput.L_CAM ?? null;
     if (partialInput.C_INI !== undefined) payload.C_INI = partialInput.C_INI ?? null;

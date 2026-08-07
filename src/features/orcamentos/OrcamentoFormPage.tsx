@@ -37,6 +37,7 @@ import {
   calculateResumo,
   createFretesMock,
   createItemFromProduto,
+  formatVariacoesItem,
   getClienteBonusPercent,
   getClienteVendedorPadrao,
   novoItemId,
@@ -365,6 +366,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             status_arte: String(m.status_arte || "PENDENTE"),
             status_producao: String(m.status_producao || "PENDENTE"),
             amostra_arte_base64: m.amostra_arte_base64 ? String(m.amostra_arte_base64) : null,
+            variacoes_texto: m.variacoes_texto !== null && m.variacoes_texto !== undefined ? String(m.variacoes_texto) : null,
             ordem: Number(m.ordem || 0),
             gabarito_operacional: m.gabarito_operacional as string | null,
             bloco: m.bloco as string | null,
@@ -2170,7 +2172,30 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     );
   }
 
+  /**
+   * Propaga o texto consolidado de variações do item para os modelos ligados a
+   * ele (aba Pedidos). O vínculo é o do próprio fluxo — id_produto_proposta_origem
+   * para item já persistido, item_temp_id para item novo — nunca id_produto,
+   * porque o mesmo produto pode ter várias linhas com variações diferentes.
+   * A gravação em si acontece no saveProposta; aqui é só o estado da tela.
+   */
+  function syncVariacoesTextoDosModelos(item: PropostaItem) {
+    const texto = formatVariacoesItem(item);
+    setForm((prev) => ({
+      ...prev,
+      pedidosModelos: prev.pedidosModelos.map((m) => {
+        const pertenceAoItem =
+          (m.id_produto_proposta_origem && item.id_produto_proposta_origem
+            && m.id_produto_proposta_origem === item.id_produto_proposta_origem) ||
+          (m.item_temp_id && m.item_temp_id === item.id);
+        return pertenceAoItem ? { ...m, variacoes_texto: texto } : m;
+      })
+    }));
+  }
+
   function updateItemVariation(itemId: string, id_variacao: number, tipoId: string) {
+    let itemAtualizado: PropostaItem | null = null;
+
     updateItem(itemId, (item) => {
       const vinculo = item.produto.variacoes.find((variacao) => variacao.id_variacao === id_variacao);
       const tipo = vinculo?.tipos.find((tipoVariacao) => tipoVariacao.id === tipoId);
@@ -2190,11 +2215,17 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         nextVariacoes = [...item.variacoesEscolhidas.filter((c) => c.id_variacao !== id_variacao), newChoice];
       }
 
-      return {
+      itemAtualizado = {
         ...item,
         variacoesEscolhidas: nextVariacoes
       };
+      return itemAtualizado;
     });
+
+    // Mantém o card da aba Pedidos coerente com a variação recém-escolhida.
+    if (itemAtualizado) {
+      syncVariacoesTextoDosModelos(itemAtualizado);
+    }
   }
 
   function handleSaveItem(itemId: string) {
