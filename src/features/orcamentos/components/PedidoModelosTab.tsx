@@ -58,9 +58,50 @@ function getArteStatusTone(status?: string): StatusTone {
   return "neutral";
 }
 
-/** Aceita tanto data URL completa quanto base64 puro gravado na coluna. */
-function toImageSrc(base64: string): string {
-  return base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
+/**
+ * Resolve o src exibível de pedidos_modelos.amostra_arte_base64.
+ *
+ * A coluna não guarda só base64: o gerador da OS
+ * (api/pedidos/imprimir-os) já a trata como candidata a URL, fazendo fetch
+ * quando não é data URI. Por isso os quatro casos abaixo. Retorna null quando
+ * o conteúdo não é renderizável em <img> (PDF/vetor), para não exibir imagem
+ * quebrada.
+ */
+function toImageSrc(valor: string): string | null {
+  const bruto = valor.trim();
+  if (!bruto) return null;
+
+  // 1. Já é data URI — não duplicar o prefixo.
+  if (bruto.startsWith("data:")) {
+    return bruto.startsWith("data:image/") ? bruto : null;
+  }
+
+  // 2. URL absoluta ou protocolo-relativa.
+  if (/^(https?:)?\/\//i.test(bruto)) {
+    return /\.(pdf|ai|eps|cdr)(\?|$)/i.test(bruto) ? null : bruto;
+  }
+
+  // 3. Base64 puro: mime pela assinatura do conteúdo. Vem ANTES do caminho
+  //    relativo porque base64 de JPEG começa com "/9j/".
+  const base64 = bruto.replace(/\s/g, "");
+  if (!base64) return null;
+
+  if (base64.startsWith("JVBER")) return null; // %PDF — não renderiza em <img>
+  if (base64.startsWith("/9j/")) return `data:image/jpeg;base64,${base64}`;
+  if (base64.startsWith("iVBORw0KGgo")) return `data:image/png;base64,${base64}`;
+  if (base64.startsWith("R0lGOD")) return `data:image/gif;base64,${base64}`;
+  if (base64.startsWith("UklGR")) return `data:image/webp;base64,${base64}`;
+  if (base64.startsWith("PHN2Zy") || base64.startsWith("PD94bW")) {
+    return `data:image/svg+xml;base64,${base64}`;
+  }
+
+  // 4. Caminho do próprio site.
+  if (bruto.startsWith("/")) {
+    return /\.(pdf|ai|eps|cdr)(\?|$)/i.test(bruto) ? null : bruto;
+  }
+
+  // 5. Base64 sem assinatura reconhecida: assume PNG.
+  return `data:image/png;base64,${base64}`;
 }
 
 /**
@@ -852,6 +893,7 @@ export function PedidoModelosTab({
 
                   const arteAprovada = isArteAprovada(m.status_arte);
                   const variacoesDoItem = formatVariacoesItem(item);
+                  const arteSrc = m.amostra_arte_base64 ? toImageSrc(m.amostra_arte_base64) : null;
 
                   return (
                     <div
@@ -893,14 +935,19 @@ export function PedidoModelosTab({
                             tone={getArteStatusTone(m.status_arte)}
                           />
                         </div>
-                        {m.amostra_arte_base64 ? (
+                        {arteSrc ? (
                           <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={toImageSrc(m.amostra_arte_base64)}
+                              src={arteSrc}
                               alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
                               className="max-h-64 w-full object-contain"
                               loading="lazy"
+                              onError={(e) => {
+                                // Conteúdo inválido/inacessível: esconde em vez de
+                                // deixar o ícone de imagem quebrada no card.
+                                e.currentTarget.parentElement?.classList.add("hidden");
+                              }}
                             />
                           </div>
                         ) : null}
