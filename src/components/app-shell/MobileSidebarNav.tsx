@@ -103,8 +103,12 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
     hasPermissao(user, "admin.usuarios.view") ||
     hasPermissao(user, "admin.usuarios.edit");
 
+  const isVendedor = user?.perfilSlug === "vendedor";
+
   const visibleSections = navigationSections.filter(
-    (section) => !(section.requiresConfigPerm && !canViewConfig)
+    (section) =>
+      !(section.requiresConfigPerm && !canViewConfig) &&
+      !(section.sellerOnly && !isVendedor)
   );
 
   const renderItem = (item: NavigationItem) => {

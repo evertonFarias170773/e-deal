@@ -21,6 +21,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  TrendingUp,
   Truck,
   UserCog,
   Users,
@@ -91,6 +92,14 @@ export const navigationSections: NavigationSection[] = [
     label: "Dashboard",
     icon: Gauge,
     href: "/dashboard",
+    items: []
+  },
+  {
+    id: "meu-desempenho",
+    label: "Meu desempenho",
+    icon: TrendingUp,
+    href: "/meu-desempenho",
+    sellerOnly: true,
     items: []
   },
   {
