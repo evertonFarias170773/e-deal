@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
@@ -611,6 +611,18 @@ export function PedidoModelosTab({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [collapsedItems, setCollapsedItems] = useState<Record<string, boolean>>({});
   const [openModelos, setOpenModelos] = useState<Record<string, boolean>>({});
+  // Arte ampliada: guarda o src já resolvido pelo card, então abrir o modal não
+  // refaz nenhuma consulta — é a mesma imagem, sem limite de tamanho.
+  const [arteAmpliada, setArteAmpliada] = useState<{ src: string; nome: string } | null>(null);
+
+  useEffect(() => {
+    if (!arteAmpliada) return;
+    const fecharComEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setArteAmpliada(null);
+    };
+    window.addEventListener("keydown", fecharComEsc);
+    return () => window.removeEventListener("keydown", fecharComEsc);
+  }, [arteAmpliada]);
 
 
   const fetchOpcoes = useCallback(async () => {
@@ -907,15 +919,26 @@ export function PedidoModelosTab({
                           // Prévia sem caixa: a borda abraça a própria imagem. Com
                           // largura e altura automáticas, o navegador respeita a
                           // proporção original e para no primeiro limite atingido —
-                          // 90% da largura / 120px de altura no mobile, 50% / 200px
+                          // 90% da largura / 200px de altura no mobile, 70% / 300px
                           // de tablet para cima (md). Sem object-fit: as dimensões
                           // são intrínsecas, então não há como esticar nem cortar.
+                          // Clique (ou Enter/Espaço) abre a arte ampliada.
                           /* eslint-disable-next-line @next/next/no-img-element */
                           <img
                             src={arteSrc}
                             alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
-                            className="mt-3 block h-auto max-h-[120px] w-auto max-w-[90%] rounded-xl border border-slate-200 bg-white md:max-h-[200px] md:max-w-[50%]"
+                            className="mt-3 block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[300px] md:max-w-[70%]"
                             loading="lazy"
+                            role="button"
+                            tabIndex={0}
+                            title="Clique para ampliar"
+                            onClick={() => setArteAmpliada({ src: arteSrc, nome: m.nome_modelo || "" })}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setArteAmpliada({ src: arteSrc, nome: m.nome_modelo || "" });
+                              }
+                            }}
                             onError={(e) => {
                               // Conteúdo inválido/inacessível: esconde em vez de
                               // deixar o ícone de imagem quebrada no card.
@@ -987,6 +1010,32 @@ export function PedidoModelosTab({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Arte ampliada: ocupa quase toda a viewport para dar a ver o detalhe.
+          Fecha no fundo, no X ou no Esc; o clique na imagem não fecha. */}
+      {arteAmpliada && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm"
+          onClick={() => setArteAmpliada(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setArteAmpliada(null)}
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-lg transition hover:bg-white"
+            title="Fechar (Esc)"
+            aria-label="Fechar arte ampliada"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={arteAmpliada.src}
+            alt={`Arte ampliada do modelo ${arteAmpliada.nome}`}
+            className="max-h-[90vh] max-w-[95vw] rounded-xl bg-white object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
 
