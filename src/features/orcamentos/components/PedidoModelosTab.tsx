@@ -904,24 +904,24 @@ export function PedidoModelosTab({
                           />
                         </div>
                         {arteSrc ? (
-                          // Prévia compacta: largura ajustada ao conteúdo (w-fit),
-                          // limitada a ~metade do card e alinhada à esquerda, para
-                          // não dominar o modelo. h-auto + object-contain preservam
-                          // a proporção original da imagem.
-                          <div className="mt-3 w-fit max-w-[70%] overflow-hidden rounded-xl border border-slate-200 bg-white sm:max-w-[50%]">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={arteSrc}
-                              alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
-                              className="block h-auto max-h-32 w-auto max-w-full object-contain"
-                              loading="lazy"
-                              onError={(e) => {
-                                // Conteúdo inválido/inacessível: esconde em vez de
-                                // deixar o ícone de imagem quebrada no card.
-                                e.currentTarget.parentElement?.classList.add("hidden");
-                              }}
-                            />
-                          </div>
+                          // Prévia sem caixa: a borda abraça a própria imagem. Com
+                          // largura e altura automáticas, o navegador respeita a
+                          // proporção original e para no primeiro limite atingido —
+                          // 90% da largura / 120px de altura no mobile, 50% / 200px
+                          // de tablet para cima (md). Sem object-fit: as dimensões
+                          // são intrínsecas, então não há como esticar nem cortar.
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={arteSrc}
+                            alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
+                            className="mt-3 block h-auto max-h-[120px] w-auto max-w-[90%] rounded-xl border border-slate-200 bg-white md:max-h-[200px] md:max-w-[50%]"
+                            loading="lazy"
+                            onError={(e) => {
+                              // Conteúdo inválido/inacessível: esconde em vez de
+                              // deixar o ícone de imagem quebrada no card.
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
                         ) : null}
                       </div>
 
