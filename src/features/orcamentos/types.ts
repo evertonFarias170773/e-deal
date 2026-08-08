@@ -57,6 +57,12 @@ export type PedidoModeloState = {
    */
   amostra_arte_base64?: string | null;
   /**
+   * pedidos_modelos.verso_amostra_arte_base64 — amostra do verso da arte.
+   * Mesmas regras do campo da frente: somente leitura no formulário da
+   * proposta, exibida na visualização ampliada quando houver conteúdo.
+   */
+  verso_amostra_arte_base64?: string | null;
+  /**
    * pedidos_modelos.variacoes_texto — texto consolidado das variações do item
    * de origem ("TAMANHO: 120 cm • ACABAMENTO: ..."). Recalculado a partir do
    * item específico da proposta (nunca por id_produto) ao criar, duplicar ou

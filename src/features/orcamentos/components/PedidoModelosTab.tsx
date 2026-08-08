@@ -836,9 +836,14 @@ export function PedidoModelosTab({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [collapsedItems, setCollapsedItems] = useState<Record<string, boolean>>({});
   const [openModelos, setOpenModelos] = useState<Record<string, boolean>>({});
-  // Arte ampliada: guarda o src já resolvido pelo card, então abrir o modal não
-  // refaz nenhuma consulta — é a mesma imagem, sem limite de tamanho.
-  const [arteAmpliada, setArteAmpliada] = useState<{ src: string; nome: string } | null>(null);
+  // Arte ampliada: guarda os srcs já resolvidos pelo card, então abrir o modal
+  // não refaz nenhuma consulta. `verso` só vem preenchido quando o modelo tem
+  // verso_amostra_arte_base64 com conteúdo renderizável.
+  const [arteAmpliada, setArteAmpliada] = useState<{
+    frente: string;
+    verso: string | null;
+    nome: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!arteAmpliada) return;
@@ -945,6 +950,7 @@ export function PedidoModelosTab({
       // A amostra pertence à linha original em pedidos_modelos; a cópia ainda
       // não existe no banco e não deve exibir a arte do outro modelo.
       amostra_arte_base64: null,
+      verso_amostra_arte_base64: null,
       // A cópia é um modelo novo: entra no status inicial do fluxo. Herdar o
       // status do original fazia a duplicata de um modelo aprovado nascer
       // aprovada, sem nunca ter passado pela aprovação.
@@ -1118,6 +1124,12 @@ export function PedidoModelosTab({
                   const arteAprovada = isArteAprovada(m.status_arte);
                   const variacoesDoItem = resolverVariacoesTexto(m, item);
                   const arteSrc = m.amostra_arte_base64 ? toImageSrc(m.amostra_arte_base64) : null;
+                  // Verso resolvido pelo mesmo tratamento da frente (data URI,
+                  // URL ou base64 puro). Null quando a coluna está vazia ou o
+                  // conteúdo não é renderizável em <img>.
+                  const versoSrc = m.verso_amostra_arte_base64 ? toImageSrc(m.verso_amostra_arte_base64) : null;
+                  const abrirArte = () =>
+                    arteSrc && setArteAmpliada({ frente: arteSrc, verso: versoSrc, nome: m.nome_modelo || "" });
 
                   return (
                     <div
@@ -1166,29 +1178,47 @@ export function PedidoModelosTab({
                           // 90% da largura / 200px de altura no mobile, 70% / 260px
                           // de tablet para cima (md). Sem object-fit: as dimensões
                           // são intrínsecas, então não há como esticar nem cortar.
-                          // Clique (ou Enter/Espaço) abre a arte ampliada.
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img
-                            src={arteSrc}
-                            alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
-                            className="mt-3 block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[260px] md:max-w-[70%]"
-                            loading="lazy"
-                            role="button"
-                            tabIndex={0}
-                            title="Clique para ampliar"
-                            onClick={() => setArteAmpliada({ src: arteSrc, nome: m.nome_modelo || "" })}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                setArteAmpliada({ src: arteSrc, nome: m.nome_modelo || "" });
-                              }
-                            }}
-                            onError={(e) => {
-                              // Conteúdo inválido/inacessível: esconde em vez de
-                              // deixar o ícone de imagem quebrada no card.
-                              e.currentTarget.style.display = "none";
-                            }}
-                          />
+                          // Verso, quando existir, entra logo abaixo da frente com
+                          // as mesmas regras. Clique (ou Enter/Espaço) em qualquer
+                          // uma abre a arte ampliada com as duas.
+                          <div className="mt-3 space-y-2">
+                            {[
+                              { src: arteSrc, lado: "Frente" as const },
+                              ...(versoSrc ? [{ src: versoSrc, lado: "Verso" as const }] : []),
+                            ].map(({ src, lado }) => (
+                              <div key={lado}>
+                                {/* Rótulo só quando há os dois lados: com uma
+                                    imagem só ele não acrescenta informação. */}
+                                {versoSrc && (
+                                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    {lado}
+                                  </p>
+                                )}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={src}
+                                  alt={`${lado} da arte do modelo ${m.nome_modelo || ""}`}
+                                  className="block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[260px] md:max-w-[70%]"
+                                  loading="lazy"
+                                  role="button"
+                                  tabIndex={0}
+                                  title="Clique para ampliar"
+                                  onClick={abrirArte}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      abrirArte();
+                                    }
+                                  }}
+                                  onError={(e) => {
+                                    // Conteúdo inválido/inacessível: esconde a imagem
+                                    // e o rótulo dela, sem afetar o outro lado.
+                                    e.currentTarget.parentElement?.style.setProperty("display", "none");
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         ) : null}
                       </div>
 
@@ -1273,13 +1303,47 @@ export function PedidoModelosTab({
           >
             <X className="h-5 w-5" />
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={arteAmpliada.src}
-            alt={`Arte ampliada do modelo ${arteAmpliada.nome}`}
-            className="max-h-[90vh] max-w-[95vw] rounded-xl bg-white object-contain shadow-2xl"
+          {/* Frente e verso na mesma área de visualização: uma coluna, verso
+              logo abaixo da frente. Cada imagem mantém a proporção original
+              (object-contain, sem largura/altura forçadas) e a área rola
+              quando as duas juntas passam da altura da tela. */}
+          <div
+            className="flex max-h-[92vh] w-full max-w-[95vw] flex-col items-center gap-5 overflow-y-auto py-2"
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <figure className="flex flex-col items-center gap-1.5">
+              <figcaption className="text-[11px] font-bold uppercase tracking-wider text-white/80">
+                Frente
+              </figcaption>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={arteAmpliada.frente}
+                alt={`Frente da arte do modelo ${arteAmpliada.nome}`}
+                className={`max-w-[95vw] rounded-xl bg-white object-contain shadow-2xl ${
+                  arteAmpliada.verso ? "max-h-[40vh]" : "max-h-[85vh]"
+                }`}
+              />
+            </figure>
+
+            {arteAmpliada.verso && (
+              <figure className="flex flex-col items-center gap-1.5">
+                <figcaption className="text-[11px] font-bold uppercase tracking-wider text-white/80">
+                  Verso
+                </figcaption>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={arteAmpliada.verso}
+                  alt={`Verso da arte do modelo ${arteAmpliada.nome}`}
+                  className="max-h-[40vh] max-w-[95vw] rounded-xl bg-white object-contain shadow-2xl"
+                  onError={(e) => {
+                    // Verso inacessível: some em vez de deixar imagem quebrada,
+                    // sem afetar a exibição da frente.
+                    e.currentTarget.parentElement?.style.setProperty("display", "none");
+                  }}
+                />
+              </figure>
+            )}
+          </div>
         </div>
       )}
 
