@@ -666,6 +666,50 @@ Antes de avançar de `LIBERADO / EM ARTE` para `REVISAO ATENDENTE`, confirmar:
 
 O fluxo atual de arte precisa respeitar as permissões da Matriz de Segurança.
 
+## 8.1 Arte dispensada — produto de prateleira
+
+Vigente desde 10/08/2026.
+
+Produto de prateleira é vendido pronto: não existe arte para criar, revisar ou
+aprovar. O indicador é:
+
+```text
+public.produtos.is_estoque = true
+```
+
+congelado no item da proposta no momento do save:
+
+```text
+public.produtos_proposta.is_estoque
+```
+
+A dispensa vale quando a proposta **não é avulsa**, tem **ao menos um item
+ativo** (`status_item <> 'CANCELADO'`) e **todos** os itens ativos são de
+prateleira. Uma única linha sem o flag mantém o fluxo de arte integral.
+
+Nesse caso a transição `LIBERADO → REVISAO ATENDENTE` ocorre sem passar por
+arte — é a materialização do "ou dispensada" já previsto em §6.6 e na matriz da
+§13. Não há status novo.
+
+A dispensa **não** altera:
+
+- a exigência financeira (cobertura integral pela regra oficial de quitação);
+- a revisão do atendente;
+- a liberação manual para Produção (`is_prd_aprovado`, §9.1).
+
+Aplicada em dois pontos, para não depender da interface:
+
+```text
+src/features/orcamentos/services/status-engine.service.ts   (evidência arteDispensada)
+public.check_and_promote_proposta                            (garantia no banco)
+```
+
+Ocultar a aba "Artes" na proposta é apenas apresentação.
+
+Nenhuma pendência de arte fictícia é criada: sem modelos, `propostas.em_arte`
+permanece `false` pelo próprio trigger existente, e `public.pedidos_artes` só
+recebe linha quando a aba Artes é usada.
+
 ---
 
 # 9. Entrada e Retirada da Produção
@@ -817,7 +861,7 @@ Não permitir:
 | `AGUARDANDO` | `LIBERADO` | Condição financeira aceita | Controlada |
 | `AGUARDANDO / EM ARTE` | `LIBERADO / EM ARTE` | Condição financeira aceita | Controlada |
 | `LIBERADO` | `LIBERADO / EM ARTE` | Arte ainda necessária | Controlada |
-| `LIBERADO` | `REVISAO ATENDENTE` | Arte concluída ou dispensada | Controlada |
+| `LIBERADO` | `REVISAO ATENDENTE` | Arte concluída ou dispensada (§8.1 — produto de prateleira) | Controlada |
 | `LIBERADO / EM ARTE` | `REVISAO ATENDENTE` | Artes concluídas | Controlada |
 | `REVISAO ATENDENTE` | `REVISAO PRODUCAO` | Revisão final aprovada | Manual |
 | `REVISAO PRODUCAO` | `EM PRODUCAO` | Produção iniciada | Manual |

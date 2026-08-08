@@ -102,6 +102,12 @@ export type PropostaItem = {
   pesoTotal: number;
   variacoesEscolhidas: PropostaVariacaoEscolhida[];
   statusItem?: string;
+  /**
+   * produtos_proposta.is_estoque — produto de prateleira, dispensa arte.
+   * Snapshot congelado no save: alterar o cadastro do produto depois não muda
+   * proposta já fechada. Ao montar um item novo vem de produto.is_estoque.
+   */
+  isEstoque?: boolean;
 };
 
 export type PropostaFrete = {

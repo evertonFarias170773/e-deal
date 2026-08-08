@@ -259,6 +259,41 @@ export function novoModeloTempId(): string {
  */
 export const STATUS_INICIAL_MODELO = "PENDENTE";
 
+// ─── Produto de prateleira ───────────────────────────────────────────────────
+
+/**
+ * Produto de prateleira: vendido pronto, dispensa o fluxo de arte.
+ *
+ * A flag mora em `produtos.is_estoque` — coluna que já existia e estava
+ * dormente, reaproveitada em 10/08/2026 em vez de criar um segundo campo com
+ * significado parecido. Este helper é o ÚNICO ponto do frontend que sabe disso;
+ * o resto do código pergunta "é de prateleira?", não "is_estoque".
+ */
+export function isProdutoPrateleira(produto?: Pick<Produto, "is_estoque"> | null): boolean {
+  return produto?.is_estoque === true;
+}
+
+/** Prateleira do item: o snapshot da proposta manda; sem ele, o cadastro atual. */
+export function isItemPrateleira(item: Pick<PropostaItem, "isEstoque" | "produto">): boolean {
+  if (typeof item.isEstoque === "boolean") return item.isEstoque;
+  return isProdutoPrateleira(item.produto);
+}
+
+/**
+ * Arte dispensada: a proposta tem pelo menos um item ativo e TODOS são de
+ * prateleira. Proposta sem itens, ou com um único item normal, nunca dispensa —
+ * o padrão seguro é exigir arte.
+ *
+ * Mesma definição usada na engine de status e em check_and_promote_proposta
+ * (banco). Itens cancelados não entram na conta.
+ */
+export function propostaDispensaArte(
+  itens: Pick<PropostaItem, "isEstoque" | "produto" | "statusItem">[]
+): boolean {
+  const ativos = itens.filter((i) => (i.statusItem || "PENDENTE").toUpperCase() !== "CANCELADO");
+  return ativos.length > 0 && ativos.every(isItemPrateleira);
+}
+
 export function createItemFromProduto(
   produto: Produto, 
   quantidade = 1000, 
@@ -282,7 +317,10 @@ export function createItemFromProduto(
     valorFixo: precoFixoBase !== undefined ? 0 : produto.valorFixo,
     prazo: produto.prazo,
     pesoUnitario: produto.peso,
-    variacoesEscolhidas
+    variacoesEscolhidas,
+    // Snapshot da decisão de prateleira no momento em que o item entra na
+    // proposta — o save leva este valor para produtos_proposta.is_estoque.
+    isEstoque: isProdutoPrateleira(produto)
   };
   const totals = calculateItemSubtotal(baseItem, bonusPercent);
 

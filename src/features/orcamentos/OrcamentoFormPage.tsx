@@ -27,7 +27,10 @@ import type {
   PropostaFrete,
   PedidoModeloState
 } from "@/features/orcamentos/types";
-import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
+import {
+  buildPropostaInformalText,
+  propostaDispensaArte
+} from "@/features/orcamentos/orcamento-utils";
 import { formatCurrency, parseCurrencyBR, formatCurrencyWithoutPrefix } from "@/lib/formatters/currency";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
@@ -3517,7 +3520,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             { id: "artes", label: "Artes" },
             { id: "pagamentos", label: "Pagamentos" },
             { id: "historico", label: "Histórico" }
-          ].filter(tab => form.isAvulso ? (tab.id !== "pedido" && tab.id !== "artes") : true).map((tab) => (
+          ].filter(tab => {
+            // Avulsa nao tem pedido nem arte.
+            if (form.isAvulso) return tab.id !== "pedido" && tab.id !== "artes";
+            // Proposta 100% de prateleira nao passa por arte: a aba some para
+            // nao sugerir uma etapa que nao existe. A dispensa de verdade esta
+            // na engine de status e em check_and_promote_proposta (banco) —
+            // esconder a aba e so apresentacao.
+            if (tab.id === "artes" && propostaDispensaArte(form.itens)) return false;
+            return true;
+          }).map((tab) => (
             <button
               key={tab.id}
               type="button"

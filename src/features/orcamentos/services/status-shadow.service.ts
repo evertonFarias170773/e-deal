@@ -57,13 +57,34 @@ export async function validarStatusProposta(
       return null;
     }
 
+    // Produto de prateleira: dispensa arte quando a proposta tem ao menos um
+    // item ativo e TODOS são de prateleira. Mesma definição de
+    // check_and_promote_proposta no banco — item cancelado fora da conta, zero
+    // itens nunca dispensa. A fonte é o snapshot do item (produtos_proposta),
+    // não o cadastro atual do produto.
+    const { data: itens, error: errItens } = await supabase
+      .from("produtos_proposta")
+      .select("is_estoque, status_item")
+      .eq("id_int", numericIdInt);
+
+    if (errItens) {
+      console.error("Erro ao buscar itens para engine de status", errItens);
+      return null;
+    }
+
+    const itensAtivos = (itens || []).filter(
+      (i) => String(i.status_item || "PENDENTE").toUpperCase() !== "CANCELADO"
+    );
+    const arteDispensada = itensAtivos.length > 0 && itensAtivos.every((i) => i.is_estoque === true);
+
     const evidencias: EvidenciaStatus = {
       statusInternoAtual,
       valorTotalProposta: situacao.valorTotalProposta,
       valorPagoConfirmado: situacao.valorQuitadoAtual,
       temCobrancaAtiva: situacao.cobrancasAtivas.length > 0,
       modelos: modelos || [],
-      isAvulso
+      isAvulso,
+      arteDispensada
     };
 
     // Chamar engine pura sem efeitos colaterais

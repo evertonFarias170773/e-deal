@@ -58,6 +58,8 @@ export type SupabaseProdutoPropostaRow = {
   ncm?: string | null;
   cfop?: string | null;
   status_item?: string | null;
+  /** Produto de prateleira congelado no item — dispensa o fluxo de arte. */
+  is_estoque?: boolean | null;
 };
 
 export type SupabaseProdutoPropostaVariacaoRow = {

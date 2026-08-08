@@ -818,7 +818,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           <Field label="Prazo">
             <input value={form.prazo} onChange={(event) => updateField("prazo", event.target.value)} className={getInputClass(errorFields.includes("prazo"))} placeholder="3 dias uteis" />
           </Field>
-          <Toggle label="Produto de estoque" checked={form.is_estoque} onChange={(value) => updateField("is_estoque", value)} />
+          <Toggle label="Produto de prateleira" checked={form.is_estoque} onChange={(value) => updateField("is_estoque", value)} />
           <Toggle label="Possui variacoes" checked={form.is_variacao} onChange={(value) => updateField("is_variacao", value)} />
         </div>
       </FormSection>

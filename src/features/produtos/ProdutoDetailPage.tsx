@@ -51,7 +51,7 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
         action={
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={produto.ativo ? "ATIVO" : "INATIVO"} tone={produto.ativo ? "success" : "neutral"} />
-            {produto.is_estoque ? <StatusBadge status="ESTOQUE" tone="info" /> : null}
+            {produto.is_estoque ? <StatusBadge status="PRATELEIRA" tone="info" /> : null}
             {produto.is_variacao ? <StatusBadge status="COM VARIACOES" tone="special" /> : null}
             <ActionsMenu
               items={[
@@ -101,7 +101,7 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
                 ["Categoria", produto.categoria],
                 ["Formato", produto.formato],
                 ["Custo interno", formatCurrency(produto.valor_custo)],
-                ["Produto de estoque", produto.is_estoque ? "Sim" : "Nao"],
+                ["Produto de prateleira", produto.is_estoque ? "Sim" : "Nao"],
                 ["Possui variacoes", produto.is_variacao ? "Sim" : "Nao"],
                 ["Status", produto.ativo ? "Ativo" : "Inativo"]
               ]}

@@ -221,7 +221,7 @@ export function ProdutosListPage() {
           <SummaryCard title="Produtos ativos" value={resumo.ativos.toString()} description="Itens disponiveis para uso comercial." tone="success" icon={Package} />
           <SummaryCard title="Com variacoes" value={resumo.comVariacoes.toString()} description="Produtos marcados com variações no Supabase." tone="info" icon={SlidersHorizontal} />
           <SummaryCard title="Com fotos" value={resumo.comFotos.toString()} description="Itens com fotos cadastradas em public.fotosProdutos." tone="special" icon={ImageIcon} />
-          <SummaryCard title="Produtos de estoque" value={resumo.estoque.toString()} description="Itens marcados para controle futuro de estoque." tone="neutral" icon={Boxes} />
+          <SummaryCard title="Produtos de prateleira" value={resumo.estoque.toString()} description="Vendidos prontos: dispensam o fluxo de arte." tone="neutral" icon={Boxes} />
         </section>
       )}
 
@@ -265,8 +265,8 @@ export function ProdutosListPage() {
           </select>
 
           <select value={isEstoque} onChange={(event) => setFilter("estoque", event.target.value as BooleanFilter)} className={filterClass}>
-            <option value="TODOS">Estoque</option>
-            <option value="SIM">Produto de estoque</option>
+            <option value="TODOS">Prateleira</option>
+            <option value="SIM">Produto de prateleira</option>
             <option value="NAO">Sob demanda</option>
           </select>
 
@@ -349,7 +349,7 @@ export function ProdutosListPage() {
               <div className="flex flex-wrap justify-center gap-1">
                 <StatusBadge status={produto.ativo ? "ATIVO" : "INATIVO"} tone={produto.ativo ? "success" : "neutral"} />
                 {produto.is_variacao ? <StatusBadge status="COM VARIACOES" tone="info" /> : null}
-                {produto.is_estoque ? <StatusBadge status="ESTOQUE" tone="special" /> : null}
+                {produto.is_estoque ? <StatusBadge status="PRATELEIRA" tone="special" /> : null}
               </div>
             ),
             align: "center"
@@ -378,7 +378,7 @@ export function ProdutosListPage() {
               </p>
               <p>Fixo: {formatCurrency(produto.valorFixo)}</p>
               <p>Prazo: {produto.prazo}</p>
-              <p>Fotos: {produto.fotos.length} | Variacoes: {produto.is_variacao ? "Sim" : "Nao"} | Estoque: {produto.is_estoque ? "Sim" : "Nao"}</p>
+              <p>Fotos: {produto.fotos.length} | Variacoes: {produto.is_variacao ? "Sim" : "Nao"} | Prateleira: {produto.is_estoque ? "Sim" : "Nao"}</p>
             </div>
             <div className="mt-4 flex items-center justify-between gap-3">
               <button

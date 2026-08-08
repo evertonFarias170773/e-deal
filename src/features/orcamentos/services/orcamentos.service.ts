@@ -16,7 +16,7 @@ import {
 import { getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.service";
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
-import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent, STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
+import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent, isItemPrateleira, STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
 import { parseCurrencyBR } from "@/lib/formatters/currency";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
@@ -1050,6 +1050,9 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
         id_int: Number(item.id_int),
         id_produto: Number(item.id_produto),
         produto: finalProduct,
+        // Snapshot gravado; propostas anteriores a coluna vem false (default),
+        // ou seja, seguem exigindo arte — padrao seguro.
+        isEstoque: item.is_estoque === true,
         nome: item.nome_produto || finalProduct.nomeReal,
         nome_produto: item.nome_produto || finalProduct.nomeReal,
         formato: finalProduct.formato || "",
@@ -1740,7 +1743,11 @@ export async function saveProposta(
           valor_extra: valorExtra,
           ncm: item.produto.ncm || null,
           cfop: item.produto.cfop_interno || null,
-          status_item: item.statusItem || "PENDENTE"
+          status_item: item.statusItem || "PENDENTE",
+          // Produto de prateleira congelado no item (mesmo espirito de ncm/cfop):
+          // desmarcar o produto depois nao pode reabrir exigencia de arte em
+          // proposta ja fechada. Item ja gravado mantem o que veio do banco.
+          is_estoque: isItemPrateleira(item)
         };
 
         let dbItemId: number;

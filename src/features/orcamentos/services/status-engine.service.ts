@@ -33,6 +33,14 @@ export interface EvidenciaStatus {
     status_producao: string;
   }[];
   isAvulso: boolean;
+  /**
+   * Produto de prateleira: todos os itens ativos da proposta são vendidos
+   * prontos, então não há arte a criar nem a aprovar. Equivale ao "arte
+   * dispensada" da matriz de transições (FLUXO-OFICIAL §13) — não é um status
+   * novo, apenas a condição que libera LIBERADO → REVISAO ATENDENTE sem passar
+   * por arte. Falso por padrão: na dúvida, exige arte.
+   */
+  arteDispensada?: boolean;
 }
 
 export interface EngineStatusResult {
@@ -52,7 +60,7 @@ function baseStatus(status: string): string {
 }
 
 export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineStatusResult {
-  const { statusInternoAtual, valorTotalProposta, valorPagoConfirmado, temCobrancaAtiva, modelos, isAvulso } = evidencias;
+  const { statusInternoAtual, valorTotalProposta, valorPagoConfirmado, temCobrancaAtiva, modelos, isAvulso, arteDispensada } = evidencias;
 
   let statusRecomendado = statusInternoAtual || "NOVO";
   const bloqueios: string[] = [];
@@ -96,6 +104,37 @@ export function calcularStatusRecomendado(evidencias: EvidenciaStatus): EngineSt
       nivelConfianca = "ALTO";
       podeGravarAutomaticamente = true;
     }
+  }
+
+  // PRODUTO DE PRATELEIRA — arte dispensada.
+  // Proposta 100% prateleira não tem arte a aprovar, então a etapa é pulada:
+  // assim que a cobertura financeira fecha (LIBERADO), segue direto para a
+  // conferência do atendente. Não antecipa produção — a entrada na fila
+  // continua dependendo de is_prd_aprovado, por ação manual (§9.1).
+  //
+  // Vem antes do bloco de arte de propósito: se a proposta é toda de
+  // prateleira, modelos porventura existentes não representam trabalho de arte
+  // e não devem segurar a transição.
+  if (!isAvulso && arteDispensada === true) {
+    const financeiramenteLiberado = statusRecomendado === "APROVADO" || statusRecomendado === "LIBERADO";
+    if (financeiramenteLiberado) {
+      statusRecomendado = "REVISAO ATENDENTE";
+      motivo = "Liberado financeiramente e arte dispensada (todos os itens são produtos de prateleira)";
+      nivelConfianca = "ALTO";
+    }
+
+    const mudariaStatusPrateleira = (statusInternoAtual || "NOVO") !== statusRecomendado;
+    return {
+      statusAtual: statusInternoAtual || "NOVO",
+      statusRecomendado,
+      mudariaStatus: mudariaStatusPrateleira,
+      motivo,
+      bloqueios,
+      evidenciasUsadas: evidencias,
+      nivelConfianca,
+      podeGravarAutomaticamente,
+      emArte: false
+    };
   }
 
   // REGRAS DE ARTE / PRODUCAO (inalteradas na semântica; passam a reconhecer LIBERADO

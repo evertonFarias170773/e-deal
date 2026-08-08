@@ -358,15 +358,29 @@ O Maestro deve usar este campo para reconhecer produtos mesmo quando o vendedor 
 
 ### `is_estoque`
 
-Tipo: `boolean`
+Tipo: `boolean` (default `false`)
 
-Indica se o produto é controlado como estoque.
+**Produto de prateleira.** Desde 10/08/2026 este campo indica que o produto é
+vendido pronto e, por isso, **dispensa o fluxo de arte**. Rótulo na interface:
+"Produto de prateleira".
 
 Uso:
 
-- diferenciar produto sob demanda de produto físico em estoque;
-- futura integração com módulo de estoque;
-- controle de disponibilidade.
+- diferenciar produto sob demanda de produto vendido pronto;
+- quando **todos** os itens ativos de uma proposta apontam para produtos com
+  este flag, a proposta pula a etapa de Artes: com o pagamento integral
+  confirmado, vai de `LIBERADO` direto para `REVISAO ATENDENTE`;
+- basta **um** item sem o flag para a proposta seguir o fluxo normal de Artes.
+
+Regras associadas:
+
+- a decisão é congelada no item da proposta (`produtos_proposta.is_estoque`) no
+  momento do save — alterar o cadastro depois não muda proposta já fechada;
+- a dispensa é aplicada na engine de status e em
+  `public.check_and_promote_proposta`; ocultar a aba Artes é só apresentação;
+- não dispensa a confirmação financeira nem a liberação manual para produção
+  (`is_prd_aprovado`);
+- não existe controle de saldo/quantidade de estoque associado a este campo.
 
 ---
 
@@ -980,7 +994,7 @@ Não calcula frete sozinho.
 
 Não emite nota.
 
-Não controla estoque completo, salvo indicações básicas por `is_estoque`.
+Não controla estoque (saldo/quantidade). `is_estoque` significa produto de prateleira, e seu único efeito é dispensar o fluxo de arte.
 
 Não deve apagar produto já usado historicamente.
 
