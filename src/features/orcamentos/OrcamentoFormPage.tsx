@@ -2173,6 +2173,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   /**
+   * Único ponto de escrita de form.pedidosModelos vindo da aba Pedido.
+   *
+   * Recebe um atualizador e o aplica sobre o estado corrente. A aba não entrega
+   * mais o array pronto: montado a partir do array capturado no render, ele
+   * desfazia alterações concorrentes (vários modelos abertos ao mesmo tempo,
+   * respostas de gravação chegando depois).
+   */
+  const aplicarPatchModelos = useCallback(
+    (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => {
+      setForm((prev) => ({ ...prev, pedidosModelos: atualizar(prev.pedidosModelos) }));
+      setErrorFields((current) => current.filter((item) => item !== "pedidosModelos"));
+    },
+    []
+  );
+
+  /**
    * Propaga o texto consolidado de variações do item para os modelos ligados a
    * ele (aba Pedidos). O vínculo é o do próprio fluxo — id_produto_proposta_origem
    * para item já persistido, item_temp_id para item novo — nunca id_produto,
@@ -3058,8 +3074,51 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const res = await saveProposta(formToSave);
 
       if (res.success) {
+        // Itens recém-inseridos: recebem o id real de produtos_proposta. Sem
+        // isto o save seguinte não reconhece o item, insere outra linha e o
+        // diff do serviço apaga a original — que leva junto, por cascade, os
+        // modelos e as variações. O id local (item.id) é preservado: é a chave
+        // de render e o vínculo item_temp_id dos modelos.
+        const itensSync = res.itensSincronizados || [];
+        const aplicarSyncItens = (lista: PropostaItem[]): PropostaItem[] =>
+          itensSync.length === 0
+            ? lista
+            : lista.map((it) => {
+                if (it.id_produto_proposta_origem) return it;
+                const sync = itensSync.find((s) => s.itemId === it.id);
+                return sync ? { ...it, id_produto_proposta_origem: sync.id } : it;
+              });
+
+        // Modelos recém-inseridos: passam a valer como persistidos, com o id do
+        // banco. Sem isto eles continuariam marcados como novos e um segundo
+        // save inseriria as mesmas linhas de novo em pedidos_modelos.
+        const sincronizados = res.modelosSincronizados || [];
+        const aplicarSync = (lista: PedidoModeloState[]): PedidoModeloState[] =>
+          sincronizados.length === 0
+            ? lista
+            : lista.map((m) => {
+                const sync = m.tempId ? sincronizados.find((s) => s.tempId === m.tempId) : undefined;
+                if (!sync) return m;
+                // item_temp_id é mantido de propósito: enquanto o item novo não
+                // recebe o próprio id_produto_proposta_origem no estado, é por
+                // ele que a aba Pedido continua ligando o modelo ao item.
+                return {
+                  ...m,
+                  id: sync.id,
+                  isPersisted: true,
+                  id_produto_proposta_origem: sync.idProdutoPropostaOrigem,
+                };
+              });
+
+        // O snapshot precisa refletir o estado já sincronizado, senão a tela
+        // ficaria marcada como "alterações não salvas" logo após salvar.
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { fretes: _f, ...savedSnap } = { ...formToSave, deletedProdutoPropostaIds: [] };
+        const { fretes: _f, ...savedSnap } = {
+          ...formToSave,
+          itens: aplicarSyncItens(formToSave.itens),
+          pedidosModelos: aplicarSync(formToSave.pedidosModelos),
+          deletedProdutoPropostaIds: [],
+        };
         initialFormSnapshot.current = JSON.stringify(savedSnap);
 
         if (process.env.NODE_ENV === "development") {
@@ -3069,9 +3128,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         const finalIdInt = res.id_int || formToSave.id_int;
         if (formToSave.id_int === "NOVO") {
           window.history.replaceState(null, "", `/orcamentos/${finalIdInt}/editar`);
-          setForm(prev => ({ ...prev, id_int: String(finalIdInt), deletedProdutoPropostaIds: [] }));
+          setForm(prev => ({ ...prev, id_int: String(finalIdInt), deletedProdutoPropostaIds: [], itens: aplicarSyncItens(prev.itens), pedidosModelos: aplicarSync(prev.pedidosModelos) }));
         } else {
-          setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [] }));
+          setForm(prev => ({ ...prev, deletedProdutoPropostaIds: [], itens: aplicarSyncItens(prev.itens), pedidosModelos: aplicarSync(prev.pedidosModelos) }));
         }
 
         // Vinculação de cliente manual → cadastrado: histórico + limpeza do
@@ -3538,8 +3597,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               idCliente={Number(form.clienteId) || undefined}
               itens={form.itens}
               modelos={form.pedidosModelos}
-              onModelosChange={(newModelos) => updateField("pedidosModelos", newModelos)}
-              onReloadModelos={loadModelos}
+              autoSaveHabilitado={!hasActiveCobranca && !isFormBloqueadoPorCobranca}
+              onModelosChange={aplicarPatchModelos}
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (

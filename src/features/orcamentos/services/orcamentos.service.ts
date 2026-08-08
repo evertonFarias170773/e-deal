@@ -16,7 +16,7 @@ import {
 import { getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { getProdutoByIdProduto } from "@/features/produtos/services/produtos.service";
 import { listVariacoesGlobais } from "@/features/produtos/services/produto-variacoes.service";
-import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent } from "@/features/orcamentos/orcamento-utils";
+import { buildPropostaInformalText, formatVariacoesItem, getClienteBonusPercent, STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
 import { listarCotacoesFrete } from "@/features/orcamentos/services/frete.service";
 import { parseCurrencyBR } from "@/lib/formatters/currency";
 import type { Cadastro, CadastroEndereco } from "@/features/cadastros/types";
@@ -1273,6 +1273,21 @@ export async function saveProposta(
   id_int?: number;
   valor_total?: number;
   errorMessage?: string;
+  /**
+   * Modelos do pedido que foram inseridos agora: o tempId que a tela usa, o id
+   * gerado no banco e o item ao qual ficaram vinculados. Quem chamou precisa
+   * aplicar isso no estado (id + isPersisted) — sem essa devolução, o modelo
+   * continua marcado como novo e um segundo save insere a mesma linha outra vez.
+   */
+  modelosSincronizados?: Array<{ tempId: string; id: number; idProdutoPropostaOrigem: number }>;
+  /**
+   * Itens que foram inseridos agora: o id local da tela (PropostaItem.id) e o id
+   * gerado em produtos_proposta. Mesma razão dos modelos — sem devolver isto, o
+   * item continua sem id_produto_proposta_origem no estado e o save seguinte o
+   * trata como novo: insere outra linha e, no diff do passo 5b, apaga a linha
+   * original (FK com ON DELETE CASCADE, levando modelos e variações junto).
+   */
+  itensSincronizados?: Array<{ itemId: string; id: number }>;
 }> {
   const client = injectedClient ?? getSupabaseClient();
   if (!client) {
@@ -1660,6 +1675,11 @@ export async function saveProposta(
       }
     }
 
+    // Modelos inseridos nesta gravação (tempId da tela -> id do banco).
+    const modelosSincronizados: Array<{ tempId: string; id: number; idProdutoPropostaOrigem: number }> = [];
+    // Itens inseridos nesta gravação (id local da tela -> produtos_proposta.id).
+    const itensSincronizados: Array<{ itemId: string; id: number }> = [];
+
     // 3. RECONCILE ITEMS in public.produtos_proposta
     if (formState.isAvulso) {
       // Deletar qualquer item existente se houver
@@ -1751,6 +1771,10 @@ export async function saveProposta(
 
           dbItemId = newItem.id;
           incomingItemIds.push(dbItemId);
+          // Devolve o id real para a tela casar com a linha local. O id local
+          // (item.id) não é alterado: ele continua sendo a chave de render e o
+          // vínculo item_temp_id dos modelos ainda não sincronizados.
+          itensSincronizados.push({ itemId: item.id, id: dbItemId });
         }
 
         // 4. PERSIST VARIATIONS for this item in public.produtos_proposta_variacao
@@ -1790,43 +1814,91 @@ export async function saveProposta(
         const variacoesTextoItem = formatVariacoesItem(item) || null;
 
         if (formState.pedidosModelos) {
-          const modelosNovos = formState.pedidosModelos.filter(m =>
-            !m.isPersisted &&
-            (
-              (m.id_produto_proposta_origem && m.id_produto_proposta_origem === parsedItemId) ||
-              (m.item_temp_id && m.item_temp_id === item.id)
-            )
+          const modelosDoItem = formState.pedidosModelos.filter(m =>
+            (m.id_produto_proposta_origem && m.id_produto_proposta_origem === parsedItemId) ||
+            (m.item_temp_id && m.item_temp_id === item.id)
           );
 
-          if (modelosNovos.length > 0) {
-            const modelosToInsert = modelosNovos.map((m, index) => ({
-              id_int: id_int!,
-              id_produto_proposta_origem: dbItemId,
-              nome_modelo: m.nome_modelo,
-              padrao: m.padrao || null,
-              quantidade: m.quantidade,
-              tipo_numeracao: m.tipo_numeracao || null,
-              numeracao_inicio: m.numeracao_inicio || null,
-              numeracao_fim: m.numeracao_fim || null,
-              verso_tipo: m.verso_tipo || null,
-              bloco: m.bloco || null,
-              gabarito_operacional: m.gabarito_operacional || null,
-              variacoes_texto: variacoesTextoItem,
-              Q_CAM: m.Q_CAM ?? null,
-              L_CAM: m.L_CAM ?? null,
-              C_INI: m.C_INI ?? null,
-              status_arte: m.status_arte || "PENDENTE",
-              status_producao: m.status_producao || "PENDENTE",
-              ordem: m.ordem || (index + 1)
-            }));
+          const modelosNovos = modelosDoItem.filter(m => !m.isPersisted);
+          const modelosExistentes = modelosDoItem.filter(m => m.isPersisted && m.id && m.id > 0);
 
-            const { error: insertModelosError } = await client
+          // C.1 Modelos já gravados: o save da proposta precisa levar as edições
+          // feitas na aba Pedido. Antes só os novos eram inseridos, então mudar
+          // a cor ou a quantidade de um modelo existente e salvar a proposta não
+          // gravava nada — a alteração revertia no recarregamento.
+          for (const m of modelosExistentes) {
+            const { error: updateModeloError } = await client
               .from("pedidos_modelos")
-              .insert(modelosToInsert);
+              .update({
+                nome_modelo: m.nome_modelo,
+                padrao: m.padrao || null,
+                quantidade: m.quantidade,
+                tipo_numeracao: m.tipo_numeracao || null,
+                numeracao_inicio: m.numeracao_inicio || null,
+                numeracao_fim: m.numeracao_fim || null,
+                verso_tipo: m.verso_tipo || null,
+                bloco: m.bloco || null,
+                gabarito_operacional: m.gabarito_operacional || null,
+                Q_CAM: m.Q_CAM ?? null,
+                L_CAM: m.L_CAM ?? null,
+                C_INI: m.C_INI ?? null,
+                // status_arte, status_producao e amostra_arte_base64 ficam de
+                // fora de propósito: pertencem ao fluxo de arte/produção, não
+                // ao formulário da proposta.
+              })
+              .eq("id", m.id!);
 
-            if (insertModelosError) {
-              console.error(`[OrcamentosService] Erro ao gravar modelos novos do item #${dbItemId}:`, insertModelosError);
-              throw new Error(`Erro ao gravar modelos do item #${dbItemId}: ${insertModelosError.message}`);
+            if (updateModeloError) {
+              console.error(`[OrcamentosService] Erro ao atualizar modelo #${m.id} do item #${dbItemId}:`, updateModeloError);
+              throw new Error(`Erro ao atualizar modelo #${m.id}: ${updateModeloError.message}`);
+            }
+          }
+
+          // C.2 Modelos novos: inseridos um a um para poder devolver o id de cada
+          // um casado com o tempId da tela (o insert em lote não garante a
+          // correspondência por posição).
+          let proximaOrdem = modelosExistentes.length;
+          for (const m of modelosNovos) {
+            proximaOrdem += 1;
+            const { data: novoModelo, error: insertModeloError } = await client
+              .from("pedidos_modelos")
+              .insert({
+                id_int: id_int!,
+                id_produto_proposta_origem: dbItemId,
+                nome_modelo: m.nome_modelo,
+                padrao: m.padrao || null,
+                quantidade: m.quantidade,
+                tipo_numeracao: m.tipo_numeracao || null,
+                numeracao_inicio: m.numeracao_inicio || null,
+                numeracao_fim: m.numeracao_fim || null,
+                verso_tipo: m.verso_tipo || null,
+                bloco: m.bloco || null,
+                gabarito_operacional: m.gabarito_operacional || null,
+                variacoes_texto: variacoesTextoItem,
+                Q_CAM: m.Q_CAM ?? null,
+                L_CAM: m.L_CAM ?? null,
+                C_INI: m.C_INI ?? null,
+                // Modelo novo entra no status inicial do fluxo, igual ao que o
+                // criarModelo() grava. Herdar o status do modelo copiado fazia a
+                // duplicata de um modelo aprovado nascer aprovada.
+                status_arte: STATUS_INICIAL_MODELO,
+                status_producao: STATUS_INICIAL_MODELO,
+                ordem: m.ordem || proximaOrdem
+              })
+              .select("id")
+              .single();
+
+            if (insertModeloError || !novoModelo) {
+              console.error(`[OrcamentosService] Erro ao gravar modelo novo do item #${dbItemId}:`, insertModeloError);
+              throw new Error(`Erro ao gravar modelos do item #${dbItemId}: ${insertModeloError?.message || "Sem ID de retorno"}`);
+            }
+
+            if (m.tempId) {
+              modelosSincronizados.push({
+                tempId: m.tempId,
+                id: Number(novoModelo.id),
+                idProdutoPropostaOrigem: dbItemId,
+              });
             }
           }
         }
@@ -2052,7 +2124,7 @@ export async function saveProposta(
       }
     }
 
-    return { success: true, id_int: id_int!, valor_total: persistedValorTotal };
+    return { success: true, id_int: id_int!, valor_total: persistedValorTotal, modelosSincronizados, itensSincronizados };
   } catch (err) {
     console.error("[OrcamentosService] Falha ao salvar proposta:", err);
     if (!isUpdate && id_int) {

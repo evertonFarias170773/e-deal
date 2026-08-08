@@ -10,7 +10,11 @@ import {
   excluirModelo,
 } from "@/features/orcamentos/services/pedidos-modelos.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { formatVariacoesItem } from "@/features/orcamentos/orcamento-utils";
+import {
+  formatVariacoesItem,
+  novoModeloTempId,
+  STATUS_INICIAL_MODELO,
+} from "@/features/orcamentos/orcamento-utils";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import type { StatusTone } from "@/lib/types";
 import type { PropostaItem, PedidoModeloState } from "@/features/orcamentos/types";
@@ -118,6 +122,88 @@ function resolverVariacoesTexto(modelo: PedidoModeloState, item: PropostaItem): 
   return formatVariacoesItem(item);
 }
 
+// ─── Identidade do modelo no estado ──────────────────────────────────────────
+
+/**
+ * Chave estável de um modelo dentro de form.pedidosModelos.
+ *
+ * O modelo criado na tela nasce só com tempId e ganha id ao ser gravado, mas
+ * mantém o tempId — por isso o tempId tem precedência: a chave não muda no meio
+ * da edição. Modelo carregado do banco só tem id. Retorna "" quando não há
+ * identidade (não deve acontecer); quem usa precisa ignorar esse caso em vez de
+ * casar com todos.
+ */
+function modeloKey(m: Pick<PedidoModeloState, "tempId" | "id">): string {
+  if (m.tempId) return `tmp:${m.tempId}`;
+  if (m.id) return `id:${m.id}`;
+  return "";
+}
+
+// ─── Auto-save ───────────────────────────────────────────────────────────────
+
+/** Espera antes de gravar campos digitados. Curto o bastante para não parecer manual. */
+const DEBOUNCE_MS = 600;
+
+/**
+ * Campos do modelo que o auto-save envia. São exatamente os editáveis no card —
+ * status de arte/produção, amostra e variacoes_texto ficam de fora porque
+ * pertencem a outros fluxos e nunca devem ser reescritos daqui.
+ */
+const CAMPOS_AUTOSAVE = [
+  "nome_modelo",
+  "padrao",
+  "quantidade",
+  "tipo_numeracao",
+  "numeracao_inicio",
+  "numeracao_fim",
+  "verso_tipo",
+  "bloco",
+  "gabarito_operacional",
+  "Q_CAM",
+  "L_CAM",
+  "C_INI",
+] as const;
+
+type CampoAutoSave = (typeof CAMPOS_AUTOSAVE)[number];
+
+/** Monta o payload com SOMENTE os campos alterados — nunca sobrescreve o resto. */
+function montarPayloadParcial(mod: PedidoModeloState, campos: Set<CampoAutoSave>): Partial<ModeloInput> {
+  const p: Partial<ModeloInput> = {};
+  if (campos.has("nome_modelo")) p.nome_modelo = mod.nome_modelo;
+  if (campos.has("padrao")) p.padrao = mod.padrao || null;
+  if (campos.has("quantidade")) {
+    p.quantidade = mod.quantidade;
+    // Não é gravado pelo update: vai junto para o saldo ser validado contra o
+    // item certo (o mesmo produto pode ocupar várias linhas da proposta).
+    p.id_produto_proposta_origem = mod.id_produto_proposta_origem ?? undefined;
+  }
+  if (campos.has("tipo_numeracao")) p.tipo_numeracao = mod.tipo_numeracao || null;
+  if (campos.has("numeracao_inicio")) p.numeracao_inicio = mod.numeracao_inicio ?? null;
+  if (campos.has("numeracao_fim")) p.numeracao_fim = mod.numeracao_fim ?? null;
+  if (campos.has("verso_tipo")) p.verso_tipo = mod.verso_tipo || null;
+  if (campos.has("bloco")) p.bloco = mod.bloco || null;
+  if (campos.has("gabarito_operacional")) p.gabarito_operacional = mod.gabarito_operacional || null;
+  if (campos.has("Q_CAM")) p.Q_CAM = mod.Q_CAM ?? null;
+  if (campos.has("L_CAM")) p.L_CAM = mod.L_CAM ?? null;
+  if (campos.has("C_INI")) p.C_INI = mod.C_INI ?? null;
+  return p;
+}
+
+/**
+ * Mínimo para o modelo novo virar linha no banco — os três campos marcados com
+ * asterisco no formulário. Enquanto não estiverem preenchidos o modelo vive só
+ * no estado local; nada é gravado pela metade.
+ */
+function temDadosMinimos(mod: PedidoModeloState, idInt?: number): boolean {
+  return Boolean(
+    idInt &&
+    mod.id_produto_proposta_origem &&
+    mod.nome_modelo?.trim() &&
+    mod.padrao?.trim() &&
+    mod.quantidade > 0
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 function ModeloInlineCard({
@@ -130,10 +216,10 @@ function ModeloInlineCard({
   numeracoesOpcoes,
   formatosOpcoes,
   idInt,
+  autoSaveHabilitado,
   onRemove,
   onClose,
   onUpdateParent,
-  onReloadModelos,
 }: {
   modelo: PedidoModeloState;
   maxQtd: number;
@@ -144,14 +230,15 @@ function ModeloInlineCard({
   numeracoesOpcoes: any[];
   formatosOpcoes: any[];
   idInt?: number;
+  /** Desligado em proposta paga/bloqueada — lá a gravação continua manual. */
+  autoSaveHabilitado: boolean;
   onRemove: () => void;
   onClose: () => void;
   onUpdateParent: (partial: Partial<PedidoModeloState>) => void;
-  onReloadModelos?: () => void;
 }) {
-  const { showToast } = useAppToast();
   const isNew = !modelo.isPersisted;
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [erroSalvar, setErroSalvar] = useState<string | null>(null);
   const isCustomInit = modelo.bloco ? !["10", "15", "20", "25", "40", "50", "75", "100"].includes(modelo.bloco) : false;
   const [showCustomBloco, setShowCustomBloco] = useState(isCustomInit);
 
@@ -161,6 +248,189 @@ function ModeloInlineCard({
     latestModelo.current = modelo;
   }, [modelo]);
 
+  // ─── Estado do auto-save ───────────────────────────────────────────────────
+  // sujosRef: campos alterados desde a última gravação bem-sucedida. É a fonte
+  //   do payload — o que não está aqui não é enviado, então nada é sobrescrito.
+  // salvandoRef/pendenteRef: fila serial por modelo. Enquanto há requisição em
+  //   voo, a alteração seguinte fica pendente e dispara ao terminar; nunca duas
+  //   requisições simultâneas do mesmo modelo, nem ordem invertida.
+  // criandoRef: trava o INSERT — um modelo novo é criado uma única vez.
+  const sujosRef = useRef<Set<CampoAutoSave>>(new Set());
+  const salvandoRef = useRef(false);
+  const pendenteRef = useRef(false);
+  const criandoRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const montadoRef = useRef(true);
+  const okTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setStatusSeMontado = (s: typeof saveStatus, erro: string | null = null) => {
+    if (!montadoRef.current) return;
+    setSaveStatus(s);
+    setErroSalvar(erro);
+    if (s === "saved") {
+      if (okTimerRef.current) clearTimeout(okTimerRef.current);
+      okTimerRef.current = setTimeout(() => { if (montadoRef.current) setSaveStatus("idle"); }, 2000);
+    }
+  };
+
+  /** Impedimentos verificáveis sem ida ao servidor. Null = pode gravar. */
+  const motivoBloqueio = (mod: PedidoModeloState): string | null => {
+    const numeracaoSel = findNumeracaoByName(numeracoesOpcoes, mod.gabarito_operacional);
+    const tipoSel = normalizarTipoNumeracao(numeracaoSel?.tipo);
+
+    if (tipoSel === TIPO_CAMAROTE) {
+      const qtdCamarote = calcularQtdCamarote(mod.Q_CAM, mod.L_CAM);
+      if (qtdCamarote === null) return "Informe Q CAM e L CAM (maiores que zero) para o numerador do tipo Camarote.";
+      if (Number(mod.quantidade) !== qtdCamarote) return `A QTD (${mod.quantidade}) deve ser igual a Q CAM × L CAM (${qtdCamarote}).`;
+      // A QTD do camarote é calculada, não digitada: não passa pelo clamp do input
+      if (qtdCamarote > maxQtd) return `A QTD calculada (${qtdCamarote}) excede o saldo disponível do item (${maxQtd}).`;
+    }
+
+    if (tipoSel === TIPO_TICKET) {
+      const { erro } = resolverMultiplicadorNumeracao(numeracaoSel);
+      if (erro) return erro;
+    }
+
+    return null;
+  };
+
+  const executarSave = async (forcado = false) => {
+    if (!autoSaveHabilitado && !forcado) return;
+
+    // Requisição em voo: enfileira e sai. O próprio término reprocessa.
+    if (salvandoRef.current) {
+      pendenteRef.current = true;
+      return;
+    }
+
+    const mod = latestModelo.current;
+
+    const bloqueio = motivoBloqueio(mod);
+    if (bloqueio) {
+      setStatusSeMontado("error", bloqueio);
+      return;
+    }
+
+    if (!mod.isPersisted && !criandoRef.current) {
+      // Sem os dados mínimos o modelo permanece só no estado local.
+      if (!temDadosMinimos(mod, idInt)) {
+        setStatusSeMontado("idle");
+        return;
+      }
+
+      criandoRef.current = true;
+      salvandoRef.current = true;
+      setStatusSeMontado("saving");
+      sujosRef.current.clear();
+
+      const res = await criarModelo({
+        id_int: idInt!,
+        id_produto_proposta_origem: mod.id_produto_proposta_origem!,
+        nome_modelo: mod.nome_modelo,
+        padrao: mod.padrao || null,
+        quantidade: mod.quantidade,
+        tipo_numeracao: "SEQUENCIAL",
+        numeracao_inicio: mod.numeracao_inicio || null,
+        numeracao_fim: mod.numeracao_fim || null,
+        verso_tipo: mod.verso_tipo || null,
+        bloco: mod.bloco || null,
+        gabarito_operacional: mod.gabarito_operacional || null,
+        // Snapshot das variações do item de origem.
+        variacoes_texto: mod.variacoes_texto ?? null,
+        Q_CAM: mod.Q_CAM ?? null,
+        L_CAM: mod.L_CAM ?? null,
+        C_INI: mod.C_INI ?? null,
+      }).catch((e) => ({ success: false as const, data: undefined, errorMessage: String(e?.message || e) }));
+
+      salvandoRef.current = false;
+      criandoRef.current = false;
+
+      if (res.success && res.data) {
+        const sincronizado = {
+          id: res.data.id,
+          isPersisted: true,
+          ordem: res.data.ordem,
+          status_arte: res.data.status_arte,
+          status_producao: res.data.status_producao,
+          variacoes_texto: res.data.variacoes_texto ?? null,
+        };
+        // A ref precisa refletir a persistência ANTES de qualquer reprocesso da
+        // fila: o re-render do pai chega depois, e sem isto a alteração pendente
+        // veria isPersisted=false e criaria a mesma linha de novo.
+        latestModelo.current = { ...latestModelo.current, ...sincronizado };
+        // O tempId é mantido de propósito: é a chave que identifica este modelo
+        // no estado e não pode mudar no meio da edição.
+        onUpdateParent(sincronizado);
+        setStatusSeMontado("saved");
+      } else {
+        setStatusSeMontado("error", res.errorMessage || "Falha ao criar modelo.");
+      }
+    } else if (mod.isPersisted && mod.id && mod.id > 0) {
+      const campos = new Set(sujosRef.current);
+      if (campos.size === 0) {
+        if (forcado) setStatusSeMontado("saved");
+        return;
+      }
+
+      sujosRef.current.clear();
+      salvandoRef.current = true;
+      setStatusSeMontado("saving");
+
+      const res = await atualizarModeloParcial(mod.id, montarPayloadParcial(mod, campos))
+        .catch((e) => ({ success: false as const, errorMessage: String(e?.message || e) }));
+
+      salvandoRef.current = false;
+
+      if (res.success) {
+        setStatusSeMontado("saved");
+      } else {
+        // Falha (inclusive de rede): devolve os campos à fila e NÃO toca no
+        // estado local — o que o usuário digitou continua na tela.
+        campos.forEach((c) => sujosRef.current.add(c));
+        setStatusSeMontado("error", res.errorMessage || "Falha ao salvar o modelo.");
+      }
+    } else {
+      return;
+    }
+
+    if (pendenteRef.current) {
+      pendenteRef.current = false;
+      await executarSave(forcado);
+    }
+  };
+
+  // A limpeza do efeito de desmontagem captura a função do primeiro render;
+  // esta ref garante que ela chame sempre a versão atual.
+  const saveRef = useRef(executarSave);
+  useEffect(() => {
+    saveRef.current = executarSave;
+  });
+
+  const agendarSave = (imediato: boolean) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (imediato) {
+      void saveRef.current();
+      return;
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      void saveRef.current();
+    }, DEBOUNCE_MS);
+  };
+
+  // Fecha o card ou troca de aba com alteração pendente: grava antes de sumir.
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+      if (okTimerRef.current) clearTimeout(okTimerRef.current);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        void saveRef.current();
+      }
+    };
+  }, []);
+
   // Default numeracao_inicio to 1 if new and not set
   useEffect(() => {
     if (isNew && modelo.numeracao_inicio == null) {
@@ -168,7 +438,12 @@ function ModeloInlineCard({
     }
   }, [isNew, modelo.numeracao_inicio, onUpdateParent]);
 
-  const handleChange = (partial: Partial<PedidoModeloState>) => {
+  /**
+   * @param imediato true para selects e toggles (valor discreto, não existe
+   * estado intermediário inválido); false para texto/número, que passam pelo
+   * debounce e são liberados também no blur.
+   */
+  const handleChange = (partial: Partial<PedidoModeloState>, imediato = false) => {
     const atual = latestModelo.current;
 
     // QTD (tipo CAMAROTE) e Nº Final (NI + QTD × ticket_qtd - 1 no tipo TICKET)
@@ -179,106 +454,20 @@ function ModeloInlineCard({
     // Atualiza a ref imediatamente para o onBlur capturar caso dispare antes do render
     latestModelo.current = { ...atual, ...updated };
     onUpdateParent(updated);
+
+    // Marca o que mudou (inclusive os derivados) e agenda a gravação.
+    for (const campo of CAMPOS_AUTOSAVE) {
+      if (campo in updated) sujosRef.current.add(campo);
+    }
+    agendarSave(imediato);
   };
 
-  const handleSaveModelo = () => {
-    const mod = latestModelo.current;
-    if (!mod.quantidade || mod.quantidade <= 0) {
-      showToast({ type: "warning", title: "Atenção", description: "A quantidade deve ser maior que zero para salvar." });
-      return;
-    }
-
-    const numeracaoSel = findNumeracaoByName(numeracoesOpcoes, mod.gabarito_operacional);
-    const tipoSel = normalizarTipoNumeracao(numeracaoSel?.tipo);
-
-    if (tipoSel === TIPO_CAMAROTE) {
-      const qtdCamarote = calcularQtdCamarote(mod.Q_CAM, mod.L_CAM);
-      if (qtdCamarote === null) {
-        showToast({ type: "warning", title: "Atenção", description: "Informe Q CAM e L CAM (maiores que zero) para numerador do tipo Camarote." });
-        return;
-      }
-      if (Number(mod.quantidade) !== qtdCamarote) {
-        showToast({ type: "warning", title: "Atenção", description: `A QTD (${mod.quantidade}) deve ser igual a Q CAM × L CAM (${qtdCamarote}).` });
-        return;
-      }
-      // A QTD do camarote é calculada, não digitada: não passa pelo clamp do input
-      if (qtdCamarote > maxQtd) {
-        showToast({ type: "warning", title: "Atenção", description: `A QTD calculada (${qtdCamarote}) excede o saldo disponível do item (${maxQtd}).` });
-        return;
-      }
-    }
-
-    if (tipoSel === TIPO_TICKET) {
-      const { erro } = resolverMultiplicadorNumeracao(numeracaoSel);
-      if (erro) {
-        showToast({ type: "error", title: "Numerador inválido", description: erro });
-        return;
-      }
-    }
-
-    if (isNew) {
-      if (!mod.nome_modelo) return; // Não salva modelo vazio
-      if (!idInt || !mod.id_produto_proposta_origem) {
-        showToast({ type: "warning", title: "Atenção", description: "Salve o orçamento principal antes de configurar modelos persistentes." });
-        return;
-      }
-
-      setSaveStatus("saving");
-      criarModelo({
-         id_int: idInt,
-         id_produto_proposta_origem: mod.id_produto_proposta_origem,
-         nome_modelo: mod.nome_modelo,
-         padrao: mod.padrao || null,
-         quantidade: mod.quantidade,
-         tipo_numeracao: "SEQUENCIAL",
-         numeracao_inicio: mod.numeracao_inicio || null,
-         numeracao_fim: mod.numeracao_fim || null,
-         verso_tipo: mod.verso_tipo || null,
-         bloco: mod.bloco || null,
-         gabarito_operacional: mod.gabarito_operacional || null,
-         Q_CAM: mod.Q_CAM ?? null,
-         L_CAM: mod.L_CAM ?? null,
-         C_INI: mod.C_INI ?? null,
-      }).then(res => {
-         if (res.success && res.data) {
-           setSaveStatus("saved");
-           onUpdateParent({ id: res.data.id, isPersisted: true });
-           setTimeout(() => setSaveStatus("idle"), 2000);
-           // Mantemos o reload ao criar para puxar datas e IDs defaults caso existam
-           if (onReloadModelos) onReloadModelos();
-         } else {
-           setSaveStatus("error");
-           showToast({ type: "error", title: "Erro", description: res.errorMessage || "Falha ao criar modelo" });
-         }
-      });
-    } else {
-      const draftId = mod.id;
-      if (draftId && draftId > 0) {
-         setSaveStatus("saving");
-         atualizarModeloParcial(draftId, {
-           nome_modelo: mod.nome_modelo,
-           padrao: mod.padrao || null,
-           quantidade: mod.quantidade,
-           tipo_numeracao: "SEQUENCIAL",
-           numeracao_inicio: mod.numeracao_inicio || null,
-           numeracao_fim: mod.numeracao_fim || null,
-           verso_tipo: mod.verso_tipo || null,
-           bloco: mod.bloco || null,
-           gabarito_operacional: mod.gabarito_operacional || null,
-           Q_CAM: mod.Q_CAM ?? null,
-           L_CAM: mod.L_CAM ?? null,
-           C_INI: mod.C_INI ?? null,
-         }).then(res => {
-           if(res.success) {
-             setSaveStatus("saved");
-             setTimeout(() => setSaveStatus("idle"), 2000);
-             // Sem reload automático aqui para evitar race conditions com edições locais
-           } else {
-             setSaveStatus("error");
-           }
-         });
-      }
-    }
+  /** Libera o debounce pendente (usado no blur dos campos digitados). */
+  const flushSave = () => {
+    if (!timerRef.current) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+    void saveRef.current();
   };
 
   const hasConfig = Boolean(itemIdFormato);
@@ -323,14 +512,12 @@ function ModeloInlineCard({
           <h4 className="text-sm font-bold text-teal-800">
             {isNew ? "Novo modelo" : `Modelo #${modelo.id}`}
           </h4>
-          {!isNew && (
-            <div className="flex items-center gap-1.5 text-[11px] font-bold">
-              {saveStatus === "idle" && <span className="flex h-2 w-2 rounded-full bg-slate-300" title="Sem alterações pendentes"></span>}
-              {saveStatus === "saving" && <span className="text-amber-600">Salvando...</span>}
-              {saveStatus === "saved" && <span className="text-teal-600">Salvo</span>}
-              {saveStatus === "error" && <span className="text-red-500">Erro ao salvar</span>}
-            </div>
-          )}
+          <div className="flex items-center gap-1.5 text-[11px] font-bold">
+            {saveStatus === "idle" && <span className="flex h-2 w-2 rounded-full bg-slate-300" title="Sem alterações pendentes"></span>}
+            {saveStatus === "saving" && <span className="text-amber-600">Salvando...</span>}
+            {saveStatus === "saved" && <span className="text-teal-600">Salvo</span>}
+            {saveStatus === "error" && <span className="text-red-500">Erro ao salvar</span>}
+          </div>
         </div>
         <div className="flex gap-2">
           <button
@@ -339,13 +526,17 @@ function ModeloInlineCard({
           >
             Fechar
           </button>
-          <button
-            onClick={handleSaveModelo}
-            disabled={saveStatus === "saving"}
-            className="flex items-center gap-2 rounded-xl border border-teal-500 bg-teal-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-teal-700 disabled:opacity-50"
-          >
-            {saveStatus === "saving" ? "Salvando..." : "Salvar modelo"}
-          </button>
+          {/* Em proposta paga/bloqueada o auto-save não age: a gravação manual
+              continua sendo o único caminho, então o botão permanece lá. */}
+          {!autoSaveHabilitado && (
+            <button
+              onClick={() => { void executarSave(true); }}
+              disabled={saveStatus === "saving"}
+              className="flex items-center gap-2 rounded-xl border border-teal-500 bg-teal-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-teal-700 disabled:opacity-50"
+            >
+              {saveStatus === "saving" ? "Salvando..." : "Salvar modelo"}
+            </button>
+          )}
           <button
             onClick={onRemove}
             className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100"
@@ -354,10 +545,26 @@ function ModeloInlineCard({
           </button>
         </div>
       </div>
-      
-      <p className="mb-4 text-[11px] font-medium text-amber-600">
-        Alterações neste modelo só são gravadas ao clicar em &quot;Salvar modelo&quot;.
-      </p>
+
+      {/* Motivo da recusa no próprio contexto do modelo — saldo estourado,
+          camarote divergente, numerador inválido, falha de rede. */}
+      {erroSalvar && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-700">
+          {erroSalvar}
+        </div>
+      )}
+
+      {!erroSalvar && (
+        <p className="mb-4 text-[11px] font-medium text-slate-500">
+          {!autoSaveHabilitado
+            ? "Proposta com cobrança: use “Salvar modelo” para gravar."
+            : !hasConfig
+              ? "Produto sem formato configurado: cor e numerador indisponíveis, o modelo não pode ser gravado."
+              : isNew && !temDadosMinimos(modelo, idInt)
+                ? "Preencha Modelo, Qtd e Cor do papel — a gravação é automática a partir daí."
+                : "As alterações são gravadas automaticamente."}
+        </p>
+      )}
 
       <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
         <div className="flex-[2] min-w-[110px]">
@@ -368,6 +575,7 @@ function ModeloInlineCard({
             placeholder="Ex: Talão"
             value={modelo.nome_modelo}
             onChange={(e) => handleChange({ nome_modelo: e.target.value })}
+            onBlur={flushSave}
           />
         </div>
 
@@ -387,6 +595,7 @@ function ModeloInlineCard({
                 handleChange({ quantidade: Math.min(val, maxQtd) });
               }
             }}
+            onBlur={flushSave}
           />
         </div>
 
@@ -402,6 +611,7 @@ function ModeloInlineCard({
                 title="Quantidade total de camarotes"
                 value={modelo.Q_CAM ?? ""}
                 onChange={(e) => handleChange({ Q_CAM: parseNumeroOpcional(e.target.value) })}
+                onBlur={flushSave}
               />
             </div>
 
@@ -415,6 +625,7 @@ function ModeloInlineCard({
                 title="Lugares por camarote"
                 value={modelo.L_CAM ?? ""}
                 onChange={(e) => handleChange({ L_CAM: parseNumeroOpcional(e.target.value) })}
+                onBlur={flushSave}
               />
             </div>
 
@@ -427,6 +638,7 @@ function ModeloInlineCard({
                 title="Número inicial do camarote"
                 value={modelo.C_INI ?? ""}
                 onChange={(e) => handleChange({ C_INI: parseNumeroOpcional(e.target.value) })}
+                onBlur={flushSave}
               />
             </div>
           </>
@@ -440,6 +652,7 @@ function ModeloInlineCard({
             placeholder="Ex: 1"
             value={modelo.numeracao_inicio ?? ""}
             onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
+            onBlur={flushSave}
           />
         </div>
 
@@ -459,7 +672,7 @@ function ModeloInlineCard({
             <select
               className={inputClass}
               value={modelo.padrao || ""}
-              onChange={(e) => handleChange({ padrao: e.target.value })}
+              onChange={(e) => handleChange({ padrao: e.target.value }, true)}
               disabled={!hasConfig}
             >
               {!hasConfig ? (
@@ -485,12 +698,13 @@ function ModeloInlineCard({
                 placeholder="Ex: 50x2"
                 value={modelo.bloco || ""}
                 onChange={(e) => handleChange({ bloco: e.target.value || null })}
+                onBlur={flushSave}
               />
               <button 
                 type="button" 
                 onClick={() => {
                   setShowCustomBloco(false);
-                  handleChange({ bloco: null });
+                  handleChange({ bloco: null }, true);
                 }}
                 className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-slate-500 hover:bg-slate-50"
                 title="Voltar para opções fixas"
@@ -505,9 +719,9 @@ function ModeloInlineCard({
               onChange={(e) => {
                 if (e.target.value === "Outro") {
                   setShowCustomBloco(true);
-                  handleChange({ bloco: null });
+                  handleChange({ bloco: null }, true);
                 } else {
-                  handleChange({ bloco: e.target.value || null });
+                  handleChange({ bloco: e.target.value || null }, true);
                 }
               }}
             >
@@ -530,7 +744,7 @@ function ModeloInlineCard({
           <select
             className={inputClass}
             value={modelo.verso_tipo || ""}
-            onChange={(e) => handleChange({ verso_tipo: e.target.value })}
+            onChange={(e) => handleChange({ verso_tipo: e.target.value }, true)}
           >
             <option value="SÓ FRENTE">SÓ FRENTE</option>
             <option value="FRENTE E VERSO">FRENTE E VERSO</option>
@@ -546,7 +760,7 @@ function ModeloInlineCard({
             value={modelo.gabarito_operacional || ""}
             onChange={(e) => {
               const val = e.target.value;
-              handleChange({ gabarito_operacional: val || null, tipo_numeracao: "SEQUENCIAL" });
+              handleChange({ gabarito_operacional: val || null, tipo_numeracao: "SEQUENCIAL" }, true);
             }}
             disabled={!hasConfig}
           >
@@ -591,16 +805,27 @@ export function PedidoModelosTab({
   idCliente,
   itens,
   modelos,
+  autoSaveHabilitado = true,
   onModelosChange,
-  onReloadModelos,
 }: {
   idInt?: number;
   /** propostas.id_cliente — filtra as numerações exclusivas de cliente. */
   idCliente?: number;
   itens: PropostaItem[];
   modelos: PedidoModeloState[];
-  onModelosChange: (m: PedidoModeloState[]) => void;
-  onReloadModelos?: () => void;
+  /**
+   * Auto-save dos modelos. Desligado em proposta com cobrança ativa ou form
+   * bloqueado — nesse caso o card volta a exibir o botão "Salvar modelo".
+   */
+  autoSaveHabilitado?: boolean;
+  /**
+   * Só aceita atualizador funcional: a lista é montada a partir do estado
+   * corrente, nunca do array capturado no render. Com vários modelos abertos ao
+   * mesmo tempo (o caso de duplicar várias vezes) e com respostas assíncronas
+   * chegando depois, montar a partir do array capturado fazia uma alteração
+   * descartar a outra.
+   */
+  onModelosChange: (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => void;
 }) {
   const { showToast } = useAppToast();
   const [loading, setLoading] = useState(false);
@@ -681,11 +906,13 @@ export function PedidoModelosTab({
     );
     const defaultNumName = defaultNum ? defaultNum.name : null;
 
-    const newId = `new_${Date.now()}`;
+    const newId = novoModeloTempId();
     const newModel: PedidoModeloState = {
       tempId: newId,
       item_temp_id: item.id_produto_proposta_origem ? undefined : item.id,
       isPersisted: false,
+      status_arte: STATUS_INICIAL_MODELO,
+      status_producao: STATUS_INICIAL_MODELO,
       id_produto_proposta_origem: item.id_produto_proposta_origem || null,
       nome_modelo: "",
       padrao: defaultCorName || null,
@@ -703,13 +930,13 @@ export function PedidoModelosTab({
       C_INI: null,
     };
 
-    onModelosChange([...modelos, newModel]);
+    onModelosChange((prev) => [...prev, newModel]);
     setCollapsedItems((prev) => ({ ...prev, [item.id]: false }));
     setOpenModelos((prev) => ({ ...prev, [newId]: true }));
   }
 
   function startCopy(modelo: PedidoModeloState) {
-    const newId = `new_${Date.now()}`;
+    const newId = novoModeloTempId();
     const newModel: PedidoModeloState = {
       ...modelo,
       id: undefined,
@@ -718,27 +945,40 @@ export function PedidoModelosTab({
       // A amostra pertence à linha original em pedidos_modelos; a cópia ainda
       // não existe no banco e não deve exibir a arte do outro modelo.
       amostra_arte_base64: null,
+      // A cópia é um modelo novo: entra no status inicial do fluxo. Herdar o
+      // status do original fazia a duplicata de um modelo aprovado nascer
+      // aprovada, sem nunca ter passado pela aprovação.
+      status_arte: STATUS_INICIAL_MODELO,
+      status_producao: STATUS_INICIAL_MODELO,
+      // A ordem é atribuída na gravação; herdar a do original empilhava
+      // duplicatas na mesma posição.
+      ordem: undefined,
     };
-    onModelosChange([...modelos, newModel]);
+    onModelosChange((prev) => [...prev, newModel]);
     setOpenModelos((prev) => ({ ...prev, [newId]: true }));
   }
 
   async function handleDeleteConfirm() {
     if (!deletingModelo) return;
-    
+
+    // Remove pela chave do modelo, não por id/tempId soltos: a mesma chave que
+    // identifica o modelo na edição identifica ele aqui.
+    const chave = modeloKey(deletingModelo);
+
     if (deletingModelo.isPersisted && deletingModelo.id) {
       const result = await excluirModelo(deletingModelo.id);
       if (result.success) {
         showToast({ type: "success", title: "Excluído", description: "Modelo removido com sucesso." });
-        onModelosChange(modelos.filter((m) => m.id !== deletingModelo.id));
-        if (onReloadModelos) onReloadModelos();
+        // Sem recarregar a lista: o filtro local já remove a linha excluída, e
+        // o reload descartaria os modelos novos ainda não gravados.
+        onModelosChange((prev) => prev.filter((m) => modeloKey(m) !== chave));
       } else {
         showToast({ type: "error", title: "Erro", description: result.errorMessage || "Falha ao excluir." });
       }
     } else {
-      onModelosChange(modelos.filter((m) => m.tempId !== deletingModelo.tempId));
+      onModelosChange((prev) => prev.filter((m) => modeloKey(m) !== chave));
     }
-    
+
     setDeleteConfirmOpen(false);
     setDeletingModelo(null);
   }
@@ -858,15 +1098,19 @@ export function PedidoModelosTab({
                         }}
                         onClose={() => setOpenModelos((prev) => ({ ...prev, [modId]: false }))}
                         onUpdateParent={(partial) => {
-                           const updated = modelos.map(mod => {
-                             if (m.tempId && mod.tempId === m.tempId) return { ...mod, ...partial };
-                             if (m.id && mod.id === m.id) return { ...mod, ...partial };
-                             return mod;
-                           });
-                           onModelosChange(updated);
+                           // Patch sobre o estado corrente, atingindo só a linha
+                           // desta chave. Antes o array era remontado a partir do
+                           // `modelos` capturado no render, então uma resposta
+                           // assíncrona (ou outro card editado em seguida)
+                           // reescrevia por cima do que já havia mudado.
+                           const chave = modeloKey(m);
+                           if (!chave) return;
+                           onModelosChange((prev) =>
+                             prev.map((mod) => (modeloKey(mod) === chave ? { ...mod, ...partial } : mod))
+                           );
                         }}
                         idInt={idInt}
-                        onReloadModelos={onReloadModelos}
+                        autoSaveHabilitado={autoSaveHabilitado}
                       />
                     );
                   }

@@ -234,6 +234,31 @@ export function novoItemId(idProduto: number): string {
   return `item_${idProduto}_${Date.now()}_${sufixo}`;
 }
 
+/**
+ * ID temporário único de modelo do pedido (pedidos_modelos ainda não gravado).
+ *
+ * Mesma razão do novoItemId: é a chave que identifica o modelo no estado do
+ * formulário enquanto ele não tem id do banco, e duplicar um modelo várias
+ * vezes seguidas colidiria se dependesse só do timestamp — duas linhas com o
+ * mesmo tempId passam a ser editadas juntas. O prefixo "new_" é preservado
+ * por compatibilidade com os registros em memória do fluxo antigo.
+ */
+export function novoModeloTempId(): string {
+  const sufixo = Math.random().toString(36).slice(2, 8);
+  return `new_${Date.now()}_${sufixo}`;
+}
+
+/**
+ * Status inicial de arte/produção de um modelo recém-criado.
+ *
+ * É o default da própria coluna em public.pedidos_modelos ('PENDENTE'::text),
+ * e é o valor que o restante do sistema usa ao criar modelos
+ * (pedidos-detalhe.service, boletim-propostas.service). Existe aqui para que
+ * os dois caminhos de criação — criarModelo() e saveProposta() — não produzam
+ * estados iniciais divergentes.
+ */
+export const STATUS_INICIAL_MODELO = "PENDENTE";
+
 export function createItemFromProduto(
   produto: Produto, 
   quantidade = 1000, 

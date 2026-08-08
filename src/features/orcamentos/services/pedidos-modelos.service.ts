@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { STATUS_INICIAL_MODELO } from "@/features/orcamentos/orcamento-utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -338,8 +339,11 @@ export async function criarModelo(input: ModeloInput): Promise<ServiceResult<Ped
       Q_CAM: input.Q_CAM ?? null,
       L_CAM: input.L_CAM ?? null,
       C_INI: input.C_INI ?? null,
-      status_arte: "AGUARDANDO",
-      status_producao: "AGUARDANDO",
+      // Mesmo status inicial que o saveProposta grava ao inserir modelo novo —
+      // os dois caminhos de criação não podem divergir. É também o default da
+      // coluna em public.pedidos_modelos.
+      status_arte: STATUS_INICIAL_MODELO,
+      status_producao: STATUS_INICIAL_MODELO,
       ordem: nextOrdem,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
