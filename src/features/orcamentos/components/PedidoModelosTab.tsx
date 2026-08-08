@@ -919,7 +919,7 @@ export function PedidoModelosTab({
                           // Prévia sem caixa: a borda abraça a própria imagem. Com
                           // largura e altura automáticas, o navegador respeita a
                           // proporção original e para no primeiro limite atingido —
-                          // 90% da largura / 200px de altura no mobile, 70% / 300px
+                          // 90% da largura / 200px de altura no mobile, 70% / 260px
                           // de tablet para cima (md). Sem object-fit: as dimensões
                           // são intrínsecas, então não há como esticar nem cortar.
                           // Clique (ou Enter/Espaço) abre a arte ampliada.
@@ -927,7 +927,7 @@ export function PedidoModelosTab({
                           <img
                             src={arteSrc}
                             alt={`Amostra da arte do modelo ${m.nome_modelo || ""}`}
-                            className="mt-3 block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[300px] md:max-w-[70%]"
+                            className="mt-3 block h-auto max-h-[200px] w-auto max-w-[90%] cursor-zoom-in rounded-xl border border-slate-200 bg-white transition hover:border-blue-400 md:max-h-[260px] md:max-w-[70%]"
                             loading="lazy"
                             role="button"
                             tabIndex={0}
