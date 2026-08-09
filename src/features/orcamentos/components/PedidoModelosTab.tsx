@@ -259,13 +259,14 @@ function PreviaCorPapel({ nomeCor }: { nomeCor: string | null | undefined }) {
               : { height: 300 }
           }
         >
-          {/* Alguns milímetros a mais de largura empurram a barra de rolagem
-              do visualizador para fora da área visível — o overflow-hidden do
-              contêiner corta o resto. `scrollbar=0` sozinho não é respeitado. */}
+          {/* O visualizador desenha a página sobre um fundo escuro próprio, que
+              nenhum CSS externo alcança. Ampliar o embed e cortar no contêiner
+              (overflow-hidden) joga essa moldura para fora da área visível —
+              inclusive a barra de rolagem, que `scrollbar=0` não remove. */}
           <embed
             src={`${arquivo.src}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
             type="application/pdf"
-            className="block h-full w-[calc(100%+20px)]"
+            className="block h-[calc(100%+12px)] w-[calc(100%+28px)] -ml-[6px] -mt-[6px]"
           />
         </div>
       )}
@@ -1345,15 +1346,22 @@ export function PedidoModelosTab({
                     >
                       <div className="mb-3 pr-24">
                         <h4 className="text-base font-bold text-[#0b2f4a]">{m.nome_modelo || "Modelo sem nome"}</h4>
-                        <div className="mt-2 flex flex-wrap gap-2 text-sm font-medium text-slate-600">
-                          {m.id && m.id > 0 ? (
-                            <span className="rounded bg-slate-100 px-2.5 py-1">N°: {m.id}</span>
-                          ) : (
-                            <span className="rounded bg-slate-100 px-2.5 py-1">N°: novo</span>
+                        {/* O número do modelo saiu: é identificador interno e
+                            competia com a informação que o usuário procura.
+                            A quantidade fica no peso do título; cor e numerador
+                            ficam em segundo plano. */}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-slate-100 px-2.5 py-1 text-base font-bold text-[#0b2f4a]">
+                            Qtd: {m.quantidade}
+                          </span>
+                          {m.padrao && (
+                            <span className="rounded bg-slate-100 px-2.5 py-1 text-sm font-medium text-slate-500">
+                              Cor: {m.padrao}
+                            </span>
                           )}
-                          <span className="rounded bg-slate-100 px-2.5 py-1">Qtd: {m.quantidade}</span>
-                          {m.padrao && <span className="rounded bg-slate-100 px-2.5 py-1">Cor: {m.padrao}</span>}
-                          <span className="rounded bg-slate-100 px-2.5 py-1">Numerador: {m.gabarito_operacional || "-"}</span>
+                          <span className="rounded bg-slate-100 px-2.5 py-1 text-sm font-medium text-slate-500">
+                            Numerador: {m.gabarito_operacional || "-"}
+                          </span>
                         </div>
                       </div>
 
