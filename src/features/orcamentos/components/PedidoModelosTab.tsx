@@ -5,14 +5,18 @@ import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronD
 import { useAppToast } from "@/components/common/AppToast";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
+  buscarArquivoCorPapel,
   criarModelo,
   atualizarModeloParcial,
   excluirModelo,
 } from "@/features/orcamentos/services/pedidos-modelos.service";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import {
   formatVariacoesItem,
+  isItemPrateleira,
   novoModeloTempId,
+  propostaDispensaArte,
   STATUS_INICIAL_MODELO,
 } from "@/features/orcamentos/orcamento-utils";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -122,6 +126,153 @@ function resolverVariacoesTexto(modelo: PedidoModeloState, item: PropostaItem): 
   return formatVariacoesItem(item);
 }
 
+// ─── Prévia da cor do papel (produto de prateleira) ──────────────────────────
+
+/**
+ * Classifica o conteúdo de producao_cores.pdf_base64.
+ *
+ * Apesar do nome, a coluna guarda hoje PDF (`data:application/pdf;base64,...`
+ * em todas as linhas preenchidas), mas aceita qualquer conteúdo — por isso a
+ * detecção é pelo que está lá, não pelo nome da coluna. Base64 puro (sem
+ * prefixo Data URI) é identificado pela assinatura, igual ao toImageSrc.
+ */
+function classificarArquivoCor(valor: string): { tipo: "imagem" | "pdf"; mime: string; base64: string } | null {
+  const bruto = valor.trim();
+  if (!bruto) return null;
+
+  if (bruto.startsWith("data:")) {
+    // Sem a flag /s (o target de compilação não a aceita): [\s\S] cobre o
+    // conteúdo inteiro, inclusive quebras de linha dentro do base64.
+    const casamento = bruto.match(/^data:([^;]+);base64,([\s\S]*)$/);
+    if (!casamento) return null;
+    const [, mime, base64] = casamento;
+    if (mime.startsWith("image/")) return { tipo: "imagem", mime, base64 };
+    if (mime === "application/pdf") return { tipo: "pdf", mime, base64 };
+    return null;
+  }
+
+  const base64 = bruto.replace(/\s/g, "");
+  if (!base64) return null;
+  if (base64.startsWith("JVBER")) return { tipo: "pdf", mime: "application/pdf", base64 };
+  if (base64.startsWith("iVBORw0KGgo")) return { tipo: "imagem", mime: "image/png", base64 };
+  if (base64.startsWith("/9j/")) return { tipo: "imagem", mime: "image/jpeg", base64 };
+  if (base64.startsWith("R0lGOD")) return { tipo: "imagem", mime: "image/gif", base64 };
+  if (base64.startsWith("UklGR")) return { tipo: "imagem", mime: "image/webp", base64 };
+  return null;
+}
+
+/** Blob URL a partir do base64 — `data:application/pdf` não renderiza em frame. */
+function base64ParaBlobUrl(base64: string, mime: string): string | null {
+  try {
+    const binario = atob(base64);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch (err) {
+    console.error("[PedidoModelos] base64 da cor inválido:", err);
+    return null;
+  }
+}
+
+/**
+ * Prévia do papel da cor selecionada, exibida apenas em item de prateleira.
+ *
+ * A imagem continua vindo de producao_cores a cada consulta — nada é copiado
+ * para pedidos_modelos. Sem conteúdo, ou com conteúdo não renderizável, não
+ * desenha nada: nem imagem quebrada, nem placeholder.
+ */
+function PreviaCorPapel({ nomeCor }: { nomeCor: string | null | undefined }) {
+  const [arquivo, setArquivo] = useState<{
+    tipo: "imagem" | "pdf";
+    src: string;
+    /** Proporção da página (mm), quando o cadastro informa. */
+    proporcao: number | null;
+  } | null>(null);
+
+  // O componente é remontado a cada cor (key no uso), então o estado já começa
+  // vazio — não há reset a fazer aqui dentro.
+  useEffect(() => {
+    let ativo = true;
+    let urlCriada: string | null = null;
+
+    const cor = nomeCor?.trim();
+    if (!cor) return;
+
+    // Sem visualizador de PDF (navegador móvel, WebView, ambiente sem plugin) o
+    // <embed> desenharia uma caixa de erro. Melhor não mostrar nada do que
+    // mostrar "Couldn't load plugin". Imagem não depende disso.
+    const suportaPdf = typeof navigator !== "undefined" && navigator.pdfViewerEnabled !== false;
+
+    void buscarArquivoCorPapel(cor).then((arq) => {
+      if (!ativo || !arq) return;
+      const classificado = classificarArquivoCor(arq.conteudo);
+      if (!classificado) return;
+
+      const proporcao =
+        arq.larguraMm && arq.alturaMm && arq.alturaMm > 0 ? arq.larguraMm / arq.alturaMm : null;
+
+      if (classificado.tipo === "imagem") {
+        setArquivo({
+          tipo: "imagem",
+          src: `data:${classificado.mime};base64,${classificado.base64}`,
+          proporcao,
+        });
+        return;
+      }
+      if (!suportaPdf) return;
+      urlCriada = base64ParaBlobUrl(classificado.base64, classificado.mime);
+      if (urlCriada) setArquivo({ tipo: "pdf", src: urlCriada, proporcao });
+    });
+
+    return () => {
+      ativo = false;
+      if (urlCriada) URL.revokeObjectURL(urlCriada);
+    };
+  }, [nomeCor]);
+
+  if (!arquivo) return null;
+
+  return (
+    <div className="mt-4 border-t border-teal-100 pt-3">
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        Papel · {nomeCor}
+      </p>
+      {arquivo.tipo === "imagem" ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={arquivo.src}
+          alt={`Papel ${nomeCor}`}
+          className="block h-auto max-h-[200px] w-auto max-w-full rounded-xl border border-slate-200 bg-white object-contain"
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+        />
+      ) : (
+        // PDF: a caixa recebe a proporção real da página (producao_cores
+        // width_mm × height_mm) e o visualizador ajusta à largura. Sem isso
+        // sobrava o fundo escuro do visualizador — as pulseiras são tiras de
+        // 245×20 mm (12,25:1) dentro de uma caixa quase quadrada.
+        // Sem dimensões cadastradas, cai numa altura fixa.
+        <div
+          className="w-full max-w-[630px] overflow-hidden rounded-xl border border-slate-200 bg-white"
+          style={
+            arquivo.proporcao
+              ? { aspectRatio: String(arquivo.proporcao), maxHeight: 300 }
+              : { height: 300 }
+          }
+        >
+          {/* Alguns milímetros a mais de largura empurram a barra de rolagem
+              do visualizador para fora da área visível — o overflow-hidden do
+              contêiner corta o resto. `scrollbar=0` sozinho não é respeitado. */}
+          <embed
+            src={`${arquivo.src}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+            type="application/pdf"
+            className="block h-full w-[calc(100%+20px)]"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Identidade do modelo no estado ──────────────────────────────────────────
 
 /**
@@ -217,6 +368,8 @@ function ModeloInlineCard({
   formatosOpcoes,
   idInt,
   autoSaveHabilitado,
+  itemPrateleira,
+  simplificado,
   onRemove,
   onClose,
   onUpdateParent,
@@ -232,6 +385,19 @@ function ModeloInlineCard({
   idInt?: number;
   /** Desligado em proposta paga/bloqueada — lá a gravação continua manual. */
   autoSaveHabilitado: boolean;
+  /**
+   * Item de prateleira: mostra a prévia do papel da cor selecionada. É por
+   * ITEM, não por proposta — numa proposta mista só o item de prateleira
+   * ganha a prévia.
+   */
+  itemPrateleira: boolean;
+  /**
+   * Proposta 100% de prateleira: o formulário mostra só Cor papel, Qtd, Verso e
+   * Numerador. Modelo, Nº Inicial, Nº Final e Bloco continuam no estado e no
+   * banco com os defaults — apenas somem da tela, porque produto vendido pronto
+   * não tem nome de modelo nem blocagem a definir.
+   */
+  simplificado: boolean;
   onRemove: () => void;
   onClose: () => void;
   onUpdateParent: (partial: Partial<PedidoModeloState>) => void;
@@ -438,6 +604,19 @@ function ModeloInlineCard({
     }
   }, [isNew, modelo.numeracao_inicio, onUpdateParent]);
 
+  // Modelo novo que já nasce completo — o caso da duplicata, que herda nome,
+  // cor e quantidade do original — é gravado sem esperar uma edição. Sem isto a
+  // cópia ficava só no estado local até o usuário mexer em algum campo.
+  // O modelo em branco não entra aqui: nasce com quantidade 0.
+  const criacaoInicialRef = useRef(false);
+  useEffect(() => {
+    if (criacaoInicialRef.current) return;
+    if (!isNew || !temDadosMinimos(modelo, idInt)) return;
+    // Só a primeira vez: depois quem agenda é o handleChange.
+    criacaoInicialRef.current = true;
+    agendarSave(false);
+  }, [isNew, modelo, idInt]);
+
   /**
    * @param imediato true para selects e toggles (valor discreto, não existe
    * estado intermediário inválido); false para texto/número, que passam pelo
@@ -561,25 +740,29 @@ function ModeloInlineCard({
             : !hasConfig
               ? "Produto sem formato configurado: cor e numerador indisponíveis, o modelo não pode ser gravado."
               : isNew && !temDadosMinimos(modelo, idInt)
-                ? "Preencha Modelo, Qtd e Cor do papel — a gravação é automática a partir daí."
+                ? simplificado
+                  ? "Preencha Qtd e Cor do papel — a gravação é automática a partir daí."
+                  : "Preencha Modelo, Qtd e Cor do papel — a gravação é automática a partir daí."
                 : "As alterações são gravadas automaticamente."}
         </p>
       )}
 
       <div className="flex flex-wrap xl:flex-nowrap xl:items-end gap-3">
-        <div className="flex-[2] min-w-[110px]">
-          <label className={labelClass}>Modelo *</label>
-          <input
-            type="text"
-            className={inputClass}
-            placeholder="Ex: Talão"
-            value={modelo.nome_modelo}
-            onChange={(e) => handleChange({ nome_modelo: e.target.value })}
-            onBlur={flushSave}
-          />
-        </div>
+        {!simplificado && (
+          <div className="flex-[2] min-w-[110px]">
+            <label className={labelClass}>Modelo *</label>
+            <input
+              type="text"
+              className={inputClass}
+              placeholder="Ex: Talão"
+              value={modelo.nome_modelo}
+              onChange={(e) => handleChange({ nome_modelo: e.target.value })}
+              onBlur={flushSave}
+            />
+          </div>
+        )}
 
-        <div className="flex-[0.8] min-w-[60px]">
+        <div className={cn("flex-[0.8] min-w-[60px]", simplificado && "order-2")}>
           <label className={labelClass}>Qtd *</label>
           <input
             type="number"
@@ -644,30 +827,34 @@ function ModeloInlineCard({
           </>
         )}
 
-        <div className="flex-[0.8] min-w-[70px]">
-          <label className={labelClass}>Nº Inicial</label>
-          <input
-            type="number"
-            className={inputClass}
-            placeholder="Ex: 1"
-            value={modelo.numeracao_inicio ?? ""}
-            onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
-            onBlur={flushSave}
-          />
-        </div>
+        {!simplificado && (
+          <>
+            <div className="flex-[0.8] min-w-[70px]">
+              <label className={labelClass}>Nº Inicial</label>
+              <input
+                type="number"
+                className={inputClass}
+                placeholder="Ex: 1"
+                value={modelo.numeracao_inicio ?? ""}
+                onChange={(e) => handleChange({ numeracao_inicio: Number(e.target.value) || null })}
+                onBlur={flushSave}
+              />
+            </div>
 
-        <div className="flex-[0.8] min-w-[70px]">
-          <label className={labelClass}>Nº Final</label>
-          <input
-            type="number"
-            className={`${inputClass} bg-slate-50`}
-            placeholder="Auto"
-            value={modelo.numeracao_fim ?? ""}
-            readOnly
-          />
-        </div>
+            <div className="flex-[0.8] min-w-[70px]">
+              <label className={labelClass}>Nº Final</label>
+              <input
+                type="number"
+                className={`${inputClass} bg-slate-50`}
+                placeholder="Auto"
+                value={modelo.numeracao_fim ?? ""}
+                readOnly
+              />
+            </div>
+          </>
+        )}
 
-        <div className="flex-[1.5] min-w-[100px]">
+        <div className={cn("flex-[1.5] min-w-[100px]", simplificado && "order-1")}>
           <label className={labelClass}>Cor papel *</label>
             <select
               className={inputClass}
@@ -688,58 +875,60 @@ function ModeloInlineCard({
             </select>
         </div>
 
-        <div className="flex-[1.2] min-w-[90px]">
-          <label className={labelClass}>Bloco</label>
-          {showCustomBloco ? (
-            <div className="flex gap-1">
-              <input
-                type="text"
+        {!simplificado && (
+          <div className="flex-[1.2] min-w-[90px]">
+            <label className={labelClass}>Bloco</label>
+            {showCustomBloco ? (
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  className={inputClass}
+                  placeholder="Ex: 50x2"
+                  value={modelo.bloco || ""}
+                  onChange={(e) => handleChange({ bloco: e.target.value || null })}
+                  onBlur={flushSave}
+                />
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowCustomBloco(false);
+                    handleChange({ bloco: null }, true);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-slate-500 hover:bg-slate-50"
+                  title="Voltar para opções fixas"
+                >
+                  X
+                </button>
+              </div>
+            ) : (
+              <select
                 className={inputClass}
-                placeholder="Ex: 50x2"
                 value={modelo.bloco || ""}
-                onChange={(e) => handleChange({ bloco: e.target.value || null })}
-                onBlur={flushSave}
-              />
-              <button 
-                type="button" 
-                onClick={() => {
-                  setShowCustomBloco(false);
-                  handleChange({ bloco: null }, true);
+                onChange={(e) => {
+                  if (e.target.value === "Outro") {
+                    setShowCustomBloco(true);
+                    handleChange({ bloco: null }, true);
+                  } else {
+                    handleChange({ bloco: e.target.value || null }, true);
+                  }
                 }}
-                className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-slate-500 hover:bg-slate-50"
-                title="Voltar para opções fixas"
               >
-                X
-              </button>
-            </div>
-          ) : (
-            <select
-              className={inputClass}
-              value={modelo.bloco || ""}
-              onChange={(e) => {
-                if (e.target.value === "Outro") {
-                  setShowCustomBloco(true);
-                  handleChange({ bloco: null }, true);
-                } else {
-                  handleChange({ bloco: e.target.value || null }, true);
-                }
-              }}
-            >
-              <option value="">Nenhum</option>
-              <option value="10">10</option>
-              <option value="15">15</option>
-              <option value="20">20</option>
-              <option value="25">25</option>
-              <option value="40">40</option>
-              <option value="50">50</option>
-              <option value="75">75</option>
-              <option value="100">100</option>
-              <option value="Outro">Outro</option>
-            </select>
-          )}
-        </div>
+                <option value="">Nenhum</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="25">25</option>
+                <option value="40">40</option>
+                <option value="50">50</option>
+                <option value="75">75</option>
+                <option value="100">100</option>
+                <option value="Outro">Outro</option>
+              </select>
+            )}
+          </div>
+        )}
 
-        <div className="flex-[1.2] min-w-[100px]">
+        <div className={cn("flex-[1.2] min-w-[100px]", simplificado && "order-3")}>
           <label className={labelClass}>Verso</label>
           <select
             className={inputClass}
@@ -753,7 +942,7 @@ function ModeloInlineCard({
           </select>
         </div>
 
-        <div className="flex-[1.5] min-w-[100px]">
+        <div className={cn("flex-[1.5] min-w-[100px]", simplificado && "order-4")}>
           <label className={labelClass}>Numerador</label>
           <select
             className={inputClass}
@@ -796,6 +985,10 @@ function ModeloInlineCard({
           </p>
         )
       )}
+
+      {/* Produto de prateleira: papel da cor escolhida, direto de producao_cores.
+          Troca de cor troca a prévia porque a chave é o próprio `padrao`. */}
+      {itemPrateleira && <PreviaCorPapel key={modelo.padrao || "sem-cor"} nomeCor={modelo.padrao} />}
     </div>
   );
 }
@@ -828,6 +1021,10 @@ export function PedidoModelosTab({
   onModelosChange: (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => void;
 }) {
   const { showToast } = useAppToast();
+  // Proposta 100% de prateleira: mesma definição usada para dispensar a arte.
+  // Produto vendido pronto não tem nome de modelo, numeração nem blocagem a
+  // definir, então o formulário fica só com Cor papel, Qtd, Verso e Numerador.
+  const formularioSimplificado = propostaDispensaArte(itens);
   const [loading, setLoading] = useState(false);
   const [coresOpcoes, setCoresOpcoes] = useState<any[]>([]);
   const [numeracoesOpcoes, setNumeracoesOpcoes] = useState<any[]>([]);
@@ -919,7 +1116,11 @@ export function PedidoModelosTab({
       status_arte: STATUS_INICIAL_MODELO,
       status_producao: STATUS_INICIAL_MODELO,
       id_produto_proposta_origem: item.id_produto_proposta_origem || null,
-      nome_modelo: "",
+      // No formulário simplificado o campo Modelo não aparece, mas
+      // pedidos_modelos.nome_modelo é NOT NULL e o serviço exige o nome.
+      // O padrão passa a ser o nome do produto — nada fica em branco e o
+      // usuário não precisa preencher um campo que não vê.
+      nome_modelo: formularioSimplificado ? item.nome || "" : "",
       padrao: defaultCorName || null,
       quantidade: 0,
       tipo_numeracao: defaultNumName ? "SEQUENCIAL" : "SEM_NUMERACAO",
@@ -1117,6 +1318,8 @@ export function PedidoModelosTab({
                         }}
                         idInt={idInt}
                         autoSaveHabilitado={autoSaveHabilitado}
+                        itemPrateleira={isItemPrateleira(item)}
+                        simplificado={formularioSimplificado}
                       />
                     );
                   }

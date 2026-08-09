@@ -480,6 +480,61 @@ export async function atualizarModeloParcial(id: number, partialInput: Partial<M
 }
 
 /**
+ * Arquivo da cor do papel (producao_cores.pdf_base64) para a prévia do modelo.
+ *
+ * Correspondência: producao_cores.name = pedidos_modelos.padrao. É o mesmo par
+ * que o dropdown "Cor papel" já usa (`<option value={c.name}>` grava `padrao`),
+ * então a comparação é exata — não há normalização a fazer.
+ *
+ * Buscado SOB DEMANDA, uma cor por vez: as linhas vão de 73 KB a 3,8 MB, e
+ * incluir a coluna na listagem de cores traria dezenas de MB a cada abertura da
+ * proposta. O cache evita refazer a consulta ao alternar entre cores já vistas.
+ */
+export type ArquivoCorPapel = {
+  conteudo: string;
+  /** Dimensões da página em mm — dão a proporção exata da prévia. */
+  larguraMm: number | null;
+  alturaMm: number | null;
+};
+
+const cacheArquivoCor = new Map<string, ArquivoCorPapel | null>();
+
+export async function buscarArquivoCorPapel(nomeCor: string): Promise<ArquivoCorPapel | null> {
+  const chave = nomeCor.trim();
+  if (!chave) return null;
+  if (cacheArquivoCor.has(chave)) return cacheArquivoCor.get(chave) ?? null;
+
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from("producao_cores")
+      .select("pdf_base64, width_mm, height_mm")
+      .eq("name", chave)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[PedidosModelosService] buscarArquivoCorPapel:", error);
+      return null; // sem cache: erro transitório merece nova tentativa
+    }
+
+    const conteudo = data?.pdf_base64 ? String(data.pdf_base64).trim() : "";
+    const resultado: ArquivoCorPapel | null = conteudo
+      ? {
+          conteudo,
+          larguraMm: Number.isFinite(Number(data?.width_mm)) ? Number(data?.width_mm) : null,
+          alturaMm: Number.isFinite(Number(data?.height_mm)) ? Number(data?.height_mm) : null,
+        }
+      : null;
+    cacheArquivoCor.set(chave, resultado);
+    return resultado;
+  } catch (err) {
+    console.error("[PedidosModelosService] buscarArquivoCorPapel:", err);
+    return null;
+  }
+}
+
+/**
  * Exclui um modelo pelo id.
  */
 export async function excluirModelo(id: number): Promise<ServiceResult> {
