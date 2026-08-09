@@ -242,7 +242,7 @@ function PreviaCorPapel({ nomeCor }: { nomeCor: string | null | undefined }) {
         <img
           src={arquivo.src}
           alt={`Papel ${nomeCor}`}
-          className="block h-auto max-h-[200px] w-auto max-w-full rounded-xl border border-slate-200 bg-white object-contain"
+          className="block h-auto max-h-[300px] w-auto max-w-full rounded-xl border border-slate-200 bg-white object-contain sm:max-w-[630px]"
           onError={(e) => { e.currentTarget.style.display = "none"; }}
         />
       ) : (

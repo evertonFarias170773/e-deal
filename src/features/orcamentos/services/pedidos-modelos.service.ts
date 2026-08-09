@@ -480,15 +480,20 @@ export async function atualizarModeloParcial(id: number, partialInput: Partial<M
 }
 
 /**
- * Arquivo da cor do papel (producao_cores.pdf_base64) para a prévia do modelo.
+ * Arquivo da cor do papel para a prévia do modelo.
  *
  * Correspondência: producao_cores.name = pedidos_modelos.padrao. É o mesmo par
  * que o dropdown "Cor papel" já usa (`<option value={c.name}>` grava `padrao`),
  * então a comparação é exata — não há normalização a fazer.
  *
- * Buscado SOB DEMANDA, uma cor por vez: as linhas vão de 73 KB a 3,8 MB, e
- * incluir a coluna na listagem de cores traria dezenas de MB a cada abertura da
- * proposta. O cache evita refazer a consulta ao alternar entre cores já vistas.
+ * Prefere `preview_base64` — o JPEG rasterizado da primeira página do PDF —
+ * porque imagem renderiza em qualquer navegador, inclusive móvel, onde o
+ * visualizador de PDF não existe. `pdf_base64` fica como retaguarda para cor
+ * ainda não convertida.
+ *
+ * Buscado SOB DEMANDA, uma cor por vez: mesmo com o JPEG (2 KB a 289 KB),
+ * incluir a coluna na listagem traria megabytes a cada abertura da proposta.
+ * O cache evita refazer a consulta ao alternar entre cores já vistas.
  */
 export type ArquivoCorPapel = {
   conteudo: string;
@@ -508,7 +513,7 @@ export async function buscarArquivoCorPapel(nomeCor: string): Promise<ArquivoCor
     const client = getClient();
     const { data, error } = await client
       .from("producao_cores")
-      .select("pdf_base64, width_mm, height_mm")
+      .select("preview_base64, pdf_base64, width_mm, height_mm")
       .eq("name", chave)
       .limit(1)
       .maybeSingle();
@@ -518,7 +523,8 @@ export async function buscarArquivoCorPapel(nomeCor: string): Promise<ArquivoCor
       return null; // sem cache: erro transitório merece nova tentativa
     }
 
-    const conteudo = data?.pdf_base64 ? String(data.pdf_base64).trim() : "";
+    const previa = data?.preview_base64 ? String(data.preview_base64).trim() : "";
+    const conteudo = previa || (data?.pdf_base64 ? String(data.pdf_base64).trim() : "");
     const resultado: ArquivoCorPapel | null = conteudo
       ? {
           conteudo,
