@@ -1326,6 +1326,7 @@ export function PedidoModelosTab({
                   }
 
                   const arteAprovada = isArteAprovada(m.status_arte);
+                  const itemPrateleira = isItemPrateleira(item);
                   const variacoesDoItem = resolverVariacoesTexto(m, item);
                   const arteSrc = m.amostra_arte_base64 ? toImageSrc(m.amostra_arte_base64) : null;
                   // Verso resolvido pelo mesmo tratamento da frente (data URI,
@@ -1373,15 +1374,20 @@ export function PedidoModelosTab({
                         </div>
                       )}
 
-                      {/* Status da arte + amostra renderizada (quando existir) */}
+                      {/* Status da arte + amostra renderizada (quando existir).
+                          Produto de prateleira é vendido pronto e não passa pelo
+                          fluxo de arte — mostrar "Arte: PENDENTE" ali seria uma
+                          pendência que não existe. */}
                       <div className="mt-3 border-t border-slate-100 pt-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Arte:</span>
-                          <StatusBadge
-                            status={m.status_arte || "PENDENTE"}
-                            tone={getArteStatusTone(m.status_arte)}
-                          />
-                        </div>
+                        {!itemPrateleira && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Arte:</span>
+                            <StatusBadge
+                              status={m.status_arte || "PENDENTE"}
+                              tone={getArteStatusTone(m.status_arte)}
+                            />
+                          </div>
+                        )}
                         {arteSrc ? (
                           // Prévia sem caixa: a borda abraça a própria imagem. Com
                           // largura e altura automáticas, o navegador respeita a

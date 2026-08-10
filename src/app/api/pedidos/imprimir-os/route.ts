@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import type { DocumentProps } from "@react-pdf/renderer";
@@ -14,6 +15,7 @@ import type { OsPdfArteRef, OsPdfModelo } from "@/features/pedidos/services/os-v
 import { OsPdfDocument } from "@/features/pedidos/pdf/OsPdfDocument";
 import { EMPRESA_LOGO_FILES } from "@/features/pedidos/pdf/os-pdf-assets";
 import { carregarImagemComoDataUrl } from "@/features/pedidos/pdf/os-pdf-images";
+import { nomeArquivoOs } from "@/features/pedidos/services/os-nome-arquivo";
 import { osQrFlagAtiva, obterOuEmitirTokenOsQr } from "@/features/pedidos/services/os-qr-token.server";
 
 export const runtime = "nodejs";
@@ -109,51 +111,69 @@ async function preencherImagensDosModelos(modelos: OsPdfModelo[]): Promise<void>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Erro legível na aba quando o PDF é aberto por navegação (o popup do "Imprimir
+ * OS"), em vez do JSON cru. Chamadas programáticas seguem recebendo JSON.
+ */
+function respostaErro(request: Request, message: string, status: number) {
+  const aceitaHtml = (request.headers.get("accept") || "").includes("text/html");
+  if (!aceitaHtml) {
+    return NextResponse.json({ success: false, message }, { status });
+  }
+  const escapado = message.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+  return new NextResponse(
+    `<!doctype html><meta charset="utf-8"><title>OS - ${status}</title>` +
+      `<div style="font-family:system-ui,sans-serif;color:#0b2f4a;padding:32px;max-width:520px">` +
+      `<h1 style="font-size:18px;margin:0 0 8px">Nao foi possivel abrir a OS</h1>` +
+      `<p style="color:#475569;margin:0">${escapado}</p></div>`,
+    { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
+  );
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const idIntRaw = searchParams.get("id_int");
   const idInt = Number(idIntRaw);
   if (!idIntRaw || !Number.isInteger(idInt) || idInt <= 0) {
-    return NextResponse.json({ success: false, message: "Parâmetro id_int inválido." }, { status: 400 });
+    return respostaErro(request, "Parâmetro id_int inválido.", 400);
   }
 
   // Boletim a imprimir (pedidos_artes.id). Sem ele, mantém o comportamento
   // legado: boletim mais recente da proposta e nenhum filtro por setor.
   const idBoletim = (searchParams.get("boletim") || "").trim() || null;
   if (idBoletim && !UUID_RE.test(idBoletim)) {
-    return NextResponse.json({ success: false, message: "Parâmetro boletim inválido." }, { status: 400 });
+    return respostaErro(request, "Parâmetro boletim inválido.", 400);
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
     console.error("[imprimir-os] ENV Supabase ausente");
-    return NextResponse.json({ success: false, message: "Erro interno no servidor de banco de dados." }, { status: 500 });
+    return respostaErro(request, "Erro interno no servidor de banco de dados.", 500);
   }
 
+  // Duas formas de sessão, mesmo usuário e mesma RLS:
+  //  - Bearer: chamadas programáticas (fetch do app);
+  //  - cookie: a aba abre a rota direto, que é o que faz o navegador salvar o
+  //    PDF com o nome do Content-Disposition em vez do UUID de um blob.
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-  if (!token) {
-    return NextResponse.json({ success: false, message: "Sessão não encontrada." }, { status: 401 });
-  }
-
-  const supabase = createSupabaseClient(url, anonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const supabase = token
+    ? createSupabaseClient(url, anonKey, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+    : await createServerSupabaseClient();
 
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
-    return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+    return respostaErro(request, "Sessão não encontrada ou expirada. Faça login novamente.", 401);
   }
 
   // Permissão única, sem fallback.
   const temPermissao = await verificarPermissaoServerSide(supabase, authData.user.id, "pedidos.print_os");
   if (!temPermissao) {
-    return NextResponse.json(
-      { success: false, message: "Sem permissão para imprimir OS (pedidos.print_os)." },
-      { status: 403 }
-    );
+    return respostaErro(request, "Sem permissão para imprimir OS (pedidos.print_os).", 403);
   }
 
   const { data: proposta, error: propostaErr } = await supabase
@@ -163,13 +183,14 @@ export async function GET(request: Request) {
     .maybeSingle();
 
   if (propostaErr || !proposta) {
-    return NextResponse.json({ success: false, message: "Proposta não encontrada." }, { status: 404 });
+    return respostaErro(request, "Proposta não encontrada.", 404);
   }
 
   if (proposta.is_prd_aprovado !== true) {
-    return NextResponse.json(
-      { success: false, message: "Proposta não liberada para produção — OS não pode ser impressa." },
-      { status: 409 }
+    return respostaErro(
+      request,
+      "Proposta não liberada para produção — OS não pode ser impressa.",
+      409
     );
   }
 
@@ -178,12 +199,12 @@ export async function GET(request: Request) {
     vendedor: proposta.vendedor,
   });
   if (!escopoOk) {
-    return NextResponse.json({ success: false, message: "Acesso negado a esta proposta." }, { status: 403 });
+    return respostaErro(request, "Acesso negado a esta proposta.", 403);
   }
 
   const resultado = await montarOsPdfViewModel(supabase, idInt, { incluirValores: false, idBoletim });
   if (!resultado.success) {
-    return NextResponse.json({ success: false, message: resultado.error }, { status: resultado.status });
+    return respostaErro(request, resultado.error, resultado.status);
   }
   const { vm } = resultado;
 
@@ -240,12 +261,12 @@ export async function GET(request: Request) {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="OS-${idInt}.pdf"`,
+        "Content-Disposition": `inline; filename="${nomeArquivoOs(idInt, vm.boletim.setor)}"`,
         "Cache-Control": "no-store",
       },
     });
   } catch (e) {
     console.error("[imprimir-os] Erro ao renderizar PDF:", e);
-    return NextResponse.json({ success: false, message: "Erro ao gerar o PDF da OS." }, { status: 500 });
+    return respostaErro(request, "Erro ao gerar o PDF da OS.", 500);
   }
 }

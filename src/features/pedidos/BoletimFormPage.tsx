@@ -277,7 +277,10 @@ export function BoletimFormPage() {
             nome: p.nome,
             quantidade: p.quantidade,
             quantidadeOriginal: p.quantidade,
-            setor: p.setor || "IMPRESSÃO",
+            // O setor vem do cadastro do produto (produtos.setor_pcp); o lote
+            // pode ter o seu próprio, gravado na abertura do boletim.
+            setor: p.modelos.find((m) => m.setor)?.setor || p.setor || "IMPRESSÃO",
+            isEstoque: p.isEstoque === true,
             modelos: p.modelos.map((m) => ({
               id: m.id,
               nomeModelo: m.nomeModelo,
@@ -477,6 +480,8 @@ export function BoletimFormPage() {
     quantidade: number;
     quantidadeOriginal?: number;
     setor?: string;
+    /** Produto de prateleira: sem arte, numeração, gabarito ou frente/verso. */
+    isEstoque?: boolean;
     observacoes_item?: string;
     modelos: ModeloMock[];
   }
@@ -605,16 +610,21 @@ export function BoletimFormPage() {
 
         // Mapear produtos
         const mapped = details.itens.map((item, index) => {
-          let sector = "IMPRESSÃO";
-          const nameUpper = item.nome.toUpperCase();
-          const catUpper = (item.produto?.categoria || "").toUpperCase();
-          
-          if (nameUpper.includes("TEX") || catUpper.includes("TEX") || nameUpper.includes("CORDÃO") || nameUpper.includes("FITA") || nameUpper.includes("TECIDO")) {
-            sector = "TEXTIL";
-          } else if (nameUpper.includes("FLEXO") || catUpper.includes("FLEXO") || nameUpper.includes("RÓTULO") || nameUpper.includes("ETIQUETA")) {
-            sector = "FLEXO";
-          } else if (nameUpper.includes("PVP") || catUpper.includes("PVP")) {
-            sector = "PVP";
+          // Setor PCP é cadastro do produto. A adivinhação por nome/categoria
+          // continua só como rede quando o produto não tem setor definido.
+          const setorCadastrado = (item.produto?.setor_pcp || "").trim().toUpperCase();
+          let sector = setorCadastrado || "IMPRESSÃO";
+          if (!setorCadastrado) {
+            const nameUpper = item.nome.toUpperCase();
+            const catUpper = (item.produto?.categoria || "").toUpperCase();
+
+            if (nameUpper.includes("TEX") || catUpper.includes("TEX") || nameUpper.includes("CORDÃO") || nameUpper.includes("FITA") || nameUpper.includes("TECIDO")) {
+              sector = "TEXTIL";
+            } else if (nameUpper.includes("FLEXO") || catUpper.includes("FLEXO") || nameUpper.includes("RÓTULO") || nameUpper.includes("ETIQUETA")) {
+              sector = "FLEXO";
+            } else if (nameUpper.includes("PVP") || catUpper.includes("PVP")) {
+              sector = "PVP";
+            }
           }
 
           const dbIdMatch = item.id.match(/^item_(\d+)$/);
@@ -629,6 +639,7 @@ export function BoletimFormPage() {
             quantidade: item.quantidade,
             quantidadeOriginal: item.quantidade, // Store fixed original total
             setor: sector,
+            isEstoque: item.isEstoque === true,
             observacoes_item: (item as any).descricaoOriginal || "",
             modelos: [
               {
@@ -1214,7 +1225,7 @@ export function BoletimFormPage() {
                   if (isPrintingOs || !idIntParam) return;
                   setIsPrintingOs(true);
                   // Imprime o boletim aberto: o PDF é do setor, não da proposta.
-                  const result = await abrirPdfOs(Number(idIntParam), boletimId);
+                  const result = await abrirPdfOs(Number(idIntParam), boletimId, boletimSetor);
                   setIsPrintingOs(false);
                   if (!result.success) {
                     showToast({
@@ -1780,7 +1791,11 @@ export function BoletimFormPage() {
                               </div>
                             </div>
 
-                            {/* Linha 2: Checkboxes Frente/Verso, RFID e Numeração */}
+                            {/* Linha 2: Checkboxes Frente/Verso, RFID e Numeração.
+                                Produto de prateleira é vendido pronto: não tem
+                                arte, numeração, gabarito nem frente/verso, então
+                                esta linha e a seguinte saem do card. */}
+                            {!p.isEstoque && (
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                               <div className="flex items-center gap-3.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
                                 <div className="flex items-center gap-2">
@@ -1829,8 +1844,10 @@ export function BoletimFormPage() {
                                 </div>
                               </div>
                             </div>
-                            
+                            )}
+
                             {/* Linha 3: Gabarito e Faixas / CSV */}
+                            {!p.isEstoque && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                               {/* Gabarito Combobox */}
                               <div className="space-y-1.5 relative">
@@ -2013,6 +2030,7 @@ export function BoletimFormPage() {
                                 )}
                               </div>
                             </div>
+                            )}
                           </div>
                         );
                       })}

@@ -1739,7 +1739,12 @@ export async function saveProposta(
           peso_uni: pesoUni,
           peso_base: pesoBase,
           peso_extra: pesoExtra,
-          valor_base: item.valorUnitario - valorExtra,
+          // valor_base = preço unitário SEM variações. item.valorUnitario já é o
+          // preço base (calculateItemSubtotal soma os acréscimos por fora), então
+          // subtrair valorExtra aqui zerava o acréscimo: o trigger
+          // calcular_valor_sub_total refaz valor_unt = valor_base + valor_extra e
+          // o item voltava ao preço base ao recarregar.
+          valor_base: item.valorUnitario,
           valor_extra: valorExtra,
           ncm: item.produto.ncm || null,
           cfop: item.produto.cfop_interno || null,

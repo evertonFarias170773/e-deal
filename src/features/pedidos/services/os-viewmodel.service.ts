@@ -49,6 +49,12 @@ export interface OsPdfProduto {
   setor?: string;
   /** produtos_proposta.peso_total, em gramas. */
   pesoTotalGramas: number | null;
+  /**
+   * Produto de prateleira (produtos_proposta.is_estoque). Vendido pronto: o card
+   * do PDF esconde numeração, gabarito e frente/verso, e a imagem é a prévia da
+   * cor do papel — a mesma que a aba Pedido mostra.
+   */
+  isEstoque: boolean;
   modelos: OsPdfModelo[];
 }
 
@@ -251,6 +257,33 @@ export async function montarOsPdfViewModel(
       console.warn("[os-viewmodel] Falha ao buscar arte_url dos modelos (não-fatal):", e);
     }
 
+    // Prévia da cor do papel: mesma fonte que a aba Pedido usa no card do
+    // modelo (producao_cores.preview_base64, casando por `name`). Só interessa a
+    // produto de prateleira, que não tem arte — a cor é o que se vê.
+    const previaPorCor = new Map<string, string>();
+    try {
+      const coresDeEstoque = Array.from(
+        new Set(
+          (pedido.produtos || [])
+            .filter((prod) => prod.isEstoque === true)
+            .flatMap((prod) => (prod.modelos || []).map((m) => (m.corMaterial || "").trim()))
+            .filter((cor) => cor !== "")
+        )
+      );
+      if (coresDeEstoque.length > 0) {
+        const { data: coresRows } = await client
+          .from("producao_cores")
+          .select("name, preview_base64")
+          .in("name", coresDeEstoque);
+        for (const row of coresRows || []) {
+          const previa = row.preview_base64 ? String(row.preview_base64).trim() : "";
+          if (previa) previaPorCor.set(String(row.name), previa);
+        }
+      }
+    } catch (e) {
+      console.warn("[os-viewmodel] Falha ao buscar prévia da cor do papel (não-fatal):", e);
+    }
+
     // Peso total por produto (produtos_proposta.peso_total, em gramas).
     const pesoPorProduto = new Map<number, number>();
     try {
@@ -300,6 +333,7 @@ export async function montarOsPdfViewModel(
       quantidade: prod.quantidade,
       setor: prod.setor,
       pesoTotalGramas: prod.db_id !== undefined ? pesoPorProduto.get(prod.db_id) ?? null : null,
+      isEstoque: prod.isEstoque === true,
       modelos: (prod.modelos || []).filter((m) => pertenceAoBoletim(String(m.id))).map((m) => {
         const imagens = imagemPorModelo.get(String(m.id));
         const artes: OsPdfArteRef[] = [];
@@ -307,10 +341,12 @@ export async function montarOsPdfViewModel(
           const nome = imagens.url.split("/").pop() || "arte";
           artes.push({ nomeArquivo: nome, mimeType: mimeFromNome(nome), publicUrl: imagens.url });
         }
+        // Prateleira não tem arte: a imagem do card é a prévia da cor do papel.
+        const previaCor = prod.isEstoque === true ? previaPorCor.get((m.corMaterial || "").trim()) : undefined;
         return {
           codigo: /^\d+$/.test(String(m.id)) ? String(m.id) : null,
-          imagemUrl: imagens?.url ?? null,
-          imagemFallbackUrl: imagens?.fallback ?? null,
+          imagemUrl: previaCor ?? imagens?.url ?? null,
+          imagemFallbackUrl: previaCor ? imagens?.url ?? null : imagens?.fallback ?? null,
           nomeModelo: m.nomeModelo,
           quantidade: m.quantidade,
           tipoNumeracao: m.configImpressao?.tipoNumeracao || "SEM_NUMERACAO",

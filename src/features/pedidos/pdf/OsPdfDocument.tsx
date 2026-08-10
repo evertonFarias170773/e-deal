@@ -380,8 +380,14 @@ function LinhaCampos({ esquerda, direita }: { esquerda: React.ReactNode; direita
   );
 }
 
-/** Card de um modelo: imagem grande da arte + campos + checklist fixo. */
-function ModeloCard({ modelo }: { modelo: OsPdfModelo }) {
+/**
+ * Card de um modelo: imagem grande da arte + campos + checklist fixo.
+ *
+ * `isEstoque` marca produto de prateleira: vendido pronto, sem arte, numeração,
+ * gabarito ou frente/verso. Nesse caso o card fica só com o que a produção usa
+ * — lote, quantidade, cor e código —, e a imagem é a prévia da cor do papel.
+ */
+function ModeloCard({ modelo, isEstoque }: { modelo: OsPdfModelo; isEstoque?: boolean }) {
   return (
     <View style={styles.modeloCard}>
       {modelo.imagemDataUrl ? (
@@ -389,7 +395,9 @@ function ModeloCard({ modelo }: { modelo: OsPdfModelo }) {
         <Image style={styles.modeloImagem} src={modelo.imagemDataUrl} />
       ) : (
         <View style={styles.modeloImagemVazia}>
-          <Text style={styles.modeloImagemVaziaTexto}>Sem imagem{"\n"}da arte</Text>
+          <Text style={styles.modeloImagemVaziaTexto}>
+            {isEstoque ? `Sem imagem${"\n"}da cor` : `Sem imagem${"\n"}da arte`}
+          </Text>
         </View>
       )}
 
@@ -397,44 +405,57 @@ function ModeloCard({ modelo }: { modelo: OsPdfModelo }) {
         esquerda={<CampoModelo label="SETOR:" valor={modelo.nomeModelo} />}
         direita={<CampoModelo label="QUANT.:" valor={formatarQuantidade(modelo.quantidade)} />}
       />
-      <LinhaCampos
-        esquerda={<CampoModelo label="COR:" valor={modelo.corMaterial || "-"} />}
-        direita={<CampoModelo label="INICIAL/FINAL:" valor={faixaNumeracao(modelo)} />}
-      />
-      <LinhaCampos
-        esquerda={<CampoModelo label="NUM.:" valor={modelo.gabarito || "-"} />}
-        direita={<CampoModelo label="MODELO:" valor={modelo.codigo || "-"} />}
-      />
-      <LinhaCampos
-        esquerda={<CampoModelo label="IMPRESSAO:" valor={modelo.frenteVerso ? "FxV" : "Frente"} />}
-        direita={<CampoModelo label="NUMERACAO:" valor={modelo.tipoNumeracao || "-"} />}
-      />
+      {isEstoque ? (
+        <LinhaCampos
+          esquerda={<CampoModelo label="COR:" valor={modelo.corMaterial || "-"} />}
+          direita={<CampoModelo label="MODELO:" valor={modelo.codigo || "-"} />}
+        />
+      ) : (
+        <>
+          <LinhaCampos
+            esquerda={<CampoModelo label="COR:" valor={modelo.corMaterial || "-"} />}
+            direita={<CampoModelo label="INICIAL/FINAL:" valor={faixaNumeracao(modelo)} />}
+          />
+          <LinhaCampos
+            esquerda={<CampoModelo label="NUM.:" valor={modelo.gabarito || "-"} />}
+            direita={<CampoModelo label="MODELO:" valor={modelo.codigo || "-"} />}
+          />
+          <LinhaCampos
+            esquerda={<CampoModelo label="IMPRESSAO:" valor={modelo.frenteVerso ? "FxV" : "Frente"} />}
+            direita={<CampoModelo label="NUMERACAO:" valor={modelo.tipoNumeracao || "-"} />}
+          />
+        </>
+      )}
 
       {modelo.obsTecnicas ? (
         <Text style={styles.modeloObs}>Obs: {truncar(modelo.obsTecnicas, 90)}</Text>
       ) : null}
 
-      <View style={styles.checklistLinha}>
-        {CHECKLIST_CARD.map((etapa) => (
-          <View key={etapa} style={styles.checklistItem}>
-            <View style={styles.checklistCaixa} />
-            <Text style={styles.checklistTexto}>{etapa}</Text>
-          </View>
-        ))}
-        <View style={styles.checklistAssinatura} />
-      </View>
+      {/* Checklist de etapas só faz sentido no que é produzido: produto de
+          prateleira sai do estoque pronto, sem impressão nem acabamento. */}
+      {isEstoque ? null : (
+        <View style={styles.checklistLinha}>
+          {CHECKLIST_CARD.map((etapa) => (
+            <View key={etapa} style={styles.checklistItem}>
+              <View style={styles.checklistCaixa} />
+              <Text style={styles.checklistTexto}>{etapa}</Text>
+            </View>
+          ))}
+          <View style={styles.checklistAssinatura} />
+        </View>
+      )}
     </View>
   );
 }
 
 /** Uma linha da grade de modelos (até 3 cards), com espaçadores de largura. */
-function ModelosLinha({ modelos }: { modelos: OsPdfModelo[] }) {
+function ModelosLinha({ modelos, isEstoque }: { modelos: OsPdfModelo[]; isEstoque?: boolean }) {
   return (
     <View style={styles.modelosLinha} wrap={false}>
       {modelos.map((modelo, j) => (
         <React.Fragment key={j}>
           {j > 0 ? <View style={styles.modeloGap} /> : null}
-          <ModeloCard modelo={modelo} />
+          <ModeloCard modelo={modelo} isEstoque={isEstoque} />
         </React.Fragment>
       ))}
       {/* Espaçadores mantêm a largura dos cards na última linha incompleta. */}
@@ -477,10 +498,10 @@ function ProdutoCard({ produto }: { produto: OsPdfProduto }) {
       {/* Barra + primeira linha de cards no mesmo bloco: a barra nunca fica órfã. */}
       <View wrap={false}>
         {barra}
-        {linhas.length > 0 ? <ModelosLinha modelos={linhas[0]} /> : null}
+        {linhas.length > 0 ? <ModelosLinha modelos={linhas[0]} isEstoque={produto.isEstoque} /> : null}
       </View>
       {linhas.slice(1).map((linha, i) => (
-        <ModelosLinha key={i} modelos={linha} />
+        <ModelosLinha key={i} modelos={linha} isEstoque={produto.isEstoque} />
       ))}
     </View>
   );
@@ -552,6 +573,13 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
     ? [vm.frete.servico, vm.frete.transportadora].filter(Boolean).join(" - ")
     : null;
 
+  // OS 100% de prateleira: produto pronto, sem arte e sem briefing de evento —
+  // EVENTO e DESIGNER não têm o que informar. Basta um item normal no boletim
+  // para os dois voltarem, porque aí existe arte a rastrear.
+  const produtosDoBoletim = vm.produtos.filter((produto) => produto.modelos.length > 0);
+  const somenteEstoque =
+    produtosDoBoletim.length > 0 && produtosDoBoletim.every((produto) => produto.isEstoque);
+
   return (
     <Document
       title={`OS ${vm.idInt}`}
@@ -604,21 +632,19 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
         <View style={styles.bloco} wrap={false}>
           <View style={styles.linha}>
             <Campo label="CLIENTE" valor={vm.cliente.nome} />
-            <Campo label="EVENTO" valor={vm.boletim.evento} />
+            {somenteEstoque ? null : <Campo label="EVENTO" valor={vm.boletim.evento} />}
           </View>
           <View style={styles.linha}>
             <Campo label="VENDEDOR" valor={vm.vendedor} />
-            <Campo label="DESIGNER" valor={vm.designer} />
+            {somenteEstoque ? null : <Campo label="DESIGNER" valor={vm.designer} />}
           </View>
         </View>
 
         {/* Um card por produto, com os modelos DESTE boletim (setor). Produtos sem
             modelos no setor pertencem a outro boletim e saem do corpo do PDF. */}
-        {vm.produtos
-          .filter((produto) => produto.modelos.length > 0)
-          .map((produto, i) => (
-            <ProdutoCard key={i} produto={produto} />
-          ))}
+        {produtosDoBoletim.map((produto, i) => (
+          <ProdutoCard key={i} produto={produto} />
+        ))}
 
         {/* O que os demais boletins da proposta produzem */}
         <ResumoDemaisSetores setores={vm.boletim.outrosSetores} />

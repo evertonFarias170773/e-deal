@@ -1,11 +1,18 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { nomeArquivoOs } from "./os-nome-arquivo";
 
 /**
  * Abre o PDF da OS gerado on-demand pela rota autenticada /api/pedidos/imprimir-os.
  *
- * Popup-safe: a janela é aberta SINCRONAMENTE no clique (antes de qualquer await),
- * evitando bloqueio de popup. Em erro, a janela placeholder é fechada e o Blob URL
- * revogado — nenhum caminho deixa janela órfã.
+ * A aba é aberta SINCRONAMENTE no clique (antes de qualquer await), evitando
+ * bloqueio de popup, e navega direto para a rota. A rota autentica pelo cookie
+ * de sessão, então nada precisa ser buscado antes.
+ *
+ * Por que navegar em vez de baixar via fetch + Blob: o visualizador de PDF do
+ * navegador nomeia o arquivo pela URL. Num `blob:` isso é o UUID do object URL
+ * (`aeb0fc11-97a2-...`), e nem o nome de um `File` nem o título da aba mudam
+ * isso. Vindo de uma resposta HTTP, ele usa o `Content-Disposition` da rota —
+ * que é exatamente `os_{id_int}_{setor}.pdf`.
  */
 
 export interface AbrirPdfOsResult {
@@ -16,76 +23,61 @@ export interface AbrirPdfOsResult {
 /**
  * Abre o PDF da OS. `idBoletim` (pedidos_artes.id) seleciona o boletim do setor;
  * sem ele, mantém o comportamento legado do boletim mais recente da proposta.
+ * `setor` entra no nome do arquivo (os_{id_int}_{setor}.pdf).
  */
-export async function abrirPdfOs(idInt: number, idBoletim?: string | null): Promise<AbrirPdfOsResult> {
+export async function abrirPdfOs(
+  idInt: number,
+  idBoletim?: string | null,
+  setor?: string | null
+): Promise<AbrirPdfOsResult> {
+  const nomeArquivo = nomeArquivoOs(idInt, setor);
+
+  const params = new URLSearchParams({ id_int: String(idInt) });
+  if (idBoletim) params.set("boletim", idBoletim);
+  const url = `/api/pedidos/imprimir-os?${params.toString()}`;
+
   // Aberta de forma síncrona no gesto do usuário — não move para depois de um await.
-  const win = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
-  if (win) {
+  const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;
+
+  if (!win) {
+    // Popup bloqueado: cai no download programático, que também respeita o nome.
     try {
-      win.document.title = `OS #${idInt} - gerando PDF...`;
-      win.document.body.innerHTML =
-        '<p style="font-family:sans-serif;color:#334155;padding:24px">Gerando PDF da OS...</p>';
-    } catch {
-      // Sem acesso ao documento do popup — segue sem placeholder.
-    }
-  }
-
-  let objectUrl: string | null = null;
-
-  try {
-    const client = getSupabaseClient();
-    const sessionResult = client ? await client.auth.getSession() : null;
-    const token = sessionResult?.data?.session?.access_token;
-    if (!token) {
-      if (win && !win.closed) win.close();
-      return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
-    }
-
-    const url = idBoletim
-      ? `/api/pedidos/imprimir-os?id_int=${idInt}&boletim=${encodeURIComponent(idBoletim)}`
-      : `/api/pedidos/imprimir-os?id_int=${idInt}`;
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    if (!response.ok) {
-      let message = `Falha ao gerar o PDF (HTTP ${response.status}).`;
-      try {
-        const body = await response.json();
-        if (body?.message) message = String(body.message);
-      } catch {
-        // resposta sem JSON — mantém a mensagem genérica
+      const client = getSupabaseClient();
+      const sessionResult = client ? await client.auth.getSession() : null;
+      const token = sessionResult?.data?.session?.access_token;
+      if (!token) {
+        return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
       }
-      if (win && !win.closed) win.close();
-      return { success: false, errorMessage: message };
-    }
 
-    const blob = await response.blob();
-    objectUrl = URL.createObjectURL(blob);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) {
+        let message = `Falha ao gerar o PDF (HTTP ${response.status}).`;
+        try {
+          const body = await response.json();
+          if (body?.message) message = String(body.message);
+        } catch {
+          // resposta sem JSON — mantém a mensagem genérica
+        }
+        return { success: false, errorMessage: message };
+      }
 
-    if (win && !win.closed) {
-      win.location.href = objectUrl;
-      // Revogação adiada: revogar imediatamente quebraria o carregamento no popup.
-      const urlParaRevogar = objectUrl;
-      window.setTimeout(() => URL.revokeObjectURL(urlParaRevogar), 60_000);
-    } else {
-      // Popup bloqueado → fallback de download programático.
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = `OS-${idInt}.pdf`;
+      anchor.download = nomeArquivo;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
+      return { success: true };
+    } catch (e) {
+      return {
+        success: false,
+        errorMessage: e instanceof Error ? e.message : "Erro inesperado ao gerar o PDF da OS."
+      };
     }
-
-    return { success: true };
-  } catch (e) {
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-    if (win && !win.closed) win.close();
-    return {
-      success: false,
-      errorMessage: e instanceof Error ? e.message : "Erro inesperado ao gerar o PDF da OS."
-    };
   }
+
+  return { success: true };
 }

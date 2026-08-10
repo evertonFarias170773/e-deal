@@ -100,6 +100,12 @@ export interface ProdutoMock {
   pesoEstimado: number; // em kg
   quantidadeOriginal?: number; // Qtd total da proposta
   setor?: string;
+  /**
+   * Produto de prateleira (produtos_proposta.is_estoque, congelado na venda).
+   * Vendido pronto: não tem arte, numeração, gabarito nem frente/verso, então o
+   * boletim e o PDF da OS escondem esses campos.
+   */
+  isEstoque?: boolean;
   modelos: ModeloMock[];
 }
 
