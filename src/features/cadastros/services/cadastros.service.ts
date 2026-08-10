@@ -1,5 +1,5 @@
 import { cadastrosMock, getCadastroById } from "@/lib/mocks/cadastros.mock";
-import type { Cadastro, CadastroPropostaListItem } from "@/features/cadastros/types";
+import type { Cadastro, CadastroPropostaListItem, CadastroVinculoComercial } from "@/features/cadastros/types";
 import type { CadastroCategoria } from "@/features/cadastros/types";
 import type {
   SupabaseClienteRow,
@@ -12,6 +12,7 @@ import type {
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   mapSupabaseClienteRowToCadastro,
+  mapSupabaseSocioRowToCadastroVinculoWithRelated,
   mergeSupabaseRelacionamentos
 } from "@/features/cadastros/mappers";
 
@@ -2092,4 +2093,89 @@ export async function searchCadastroVinculoByDocumento(documento: string): Promi
     nome: toText(data.nome),
     documento: normalizeDocumento(data.documento)
   };
+}
+
+/**
+ * Um cadastro pelo id_cliente, no formato usado pelo seletor de vínculos.
+ * Serve ao retorno de "criar cadastro novo a partir do vínculo": ao voltar para
+ * o cliente de origem só temos o id do cadastro recém-criado.
+ */
+export async function getCadastroVinculoById(idCliente: number): Promise<SearchCadastroVinculoItem | null> {
+  const client = getSupabaseClient();
+  if (!client || !idCliente) {
+    return null;
+  }
+
+  const { data, error } = await client
+    .from("clientes")
+    .select("id_cliente,nome,documento")
+    .eq("id_cliente", idCliente)
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return {
+    idCliente: Number(data.id_cliente) || 0,
+    nome: toText(data.nome),
+    documento: normalizeDocumento(data.documento)
+  };
+}
+
+/**
+ * Só os vínculos comerciais do cliente, já com nome/documento do relacionado.
+ * Mesma leitura que `getCadastroDetailReadOnly` faz, isolada para a tela poder
+ * atualizar a lista depois de gravar sem recarregar o cadastro inteiro.
+ */
+export async function listCadastroVinculosComerciais(
+  idCliente: string | number
+): Promise<CadastroVinculoComercial[]> {
+  const client = getSupabaseClient();
+  const idNumerico = Number(idCliente);
+  if (!client || !idNumerico) {
+    return [];
+  }
+
+  const { data: socios, error } = await client
+    .from("clientes_socios")
+    .select("id,id_cliente_principal,id_cliente_socio,tipo_relacao")
+    .eq("id_cliente_principal", idNumerico)
+    .limit(100);
+
+  if (error || !socios) {
+    return [];
+  }
+
+  const relatedIds = Array.from(
+    new Set(
+      socios
+        .map((row) => normalizeIdCliente(row.id_cliente_socio))
+        .filter((value): value is number => value !== null)
+    )
+  );
+
+  const relatedLookup = new Map<number, ReturnType<typeof normalizeRelatedCadastro>>();
+  if (relatedIds.length > 0) {
+    const { data: relatedRows } = await client
+      .from("clientes")
+      .select("id,id_cliente,nome,documento")
+      .in("id_cliente", relatedIds)
+      .limit(relatedIds.length);
+
+    (relatedRows ?? []).forEach((row) => {
+      const normalizedId = normalizeIdCliente(row.id_cliente);
+      if (normalizedId !== null) {
+        relatedLookup.set(normalizedId, normalizeRelatedCadastro(row));
+      }
+    });
+  }
+
+  return socios.map((row) =>
+    mapSupabaseSocioRowToCadastroVinculoWithRelated(
+      row,
+      relatedLookup.get(normalizeIdCliente(row.id_cliente_socio) ?? -1) ?? null
+    )
+  );
 }

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Plus, Trash2 } from "lucide-react";
 import { PrecoFixoPanel } from "./components/PrecoFixoPanel";
 import { useAppToast } from "@/components/common/AppToast";
@@ -27,17 +27,13 @@ import {
   deleteCadastroEndereco,
   updateCadastroVinculoComercial,
   validateCadastroInitialStep,
-  searchCadastroVinculoByDocumento,
   updateCadastroReceita,
-  checkVinculoRemovability,
-  deleteVinculoComercial,
   getModelosCobranca,
   type CadastroContatoInsertPayload,
   type CadastroUpdatePayload,
   type CadastroEnderecoInsertPayload,
   type CadastroInsertPayload,
   type CadastroVinculoComercialInsertPayload,
-  type SearchCadastroVinculoItem,
   type VendedorOption
 } from "@/features/cadastros/services/cadastros.service";
 import { normalizeDocumentDigits, validateDocumentByTipo, isValidCpf } from "@/features/cadastros/utils/documento";
@@ -47,9 +43,9 @@ import type {
   CadastroContato,
   CadastroEndereco,
   CadastroFormState,
-  CadastroVinculoComercial,
   TipoClienteDocumento
 } from "@/features/cadastros/types";
+import { VinculosNotaFiscalCard } from "./components/VinculosNotaFiscalCard";
 import { ImportSistemaAntigoModal } from "./components/ImportSistemaAntigoModal";
 import type { ExtractedData } from "./components/ImportSistemaAntigoModal";
 
@@ -136,7 +132,16 @@ function validateEnderecos(enderecos: CadastroEndereco[]): { isValid: boolean; m
 export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const router = useRouter();
   const { user } = useAuth();
-  
+
+  // ── Fluxo "criar cadastro novo a partir do vínculo" ────────────────────────
+  // Ida:   /cadastros/novo?documento=…&origemVinculo=<idCliente>&tipoRelacao=…
+  // Volta: /cadastros/<origem>/editar?novoVinculo=<idCriado>&tipoRelacao=…
+  const searchParams = useSearchParams();
+  const documentoInicial = normalizeDocumentDigits(searchParams.get("documento") || "");
+  const origemVinculo = searchParams.get("origemVinculo") || "";
+  const tipoRelacaoParam = searchParams.get("tipoRelacao") || "";
+  const novoVinculoParam = Number(searchParams.get("novoVinculo") || 0) || undefined;
+
   const canViewCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.view_credito");
   const canEditCredito = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.edit_credito");
   const canCreate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.create");
@@ -148,7 +153,9 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const { showToast } = useAppToast();
   const [isInitialValidated, setIsInitialValidated] = useState(mode === "edit");
   const [message, setMessage] = useState<FormMessage | null>(null);
-  const [form, setForm] = useState<CadastroFormState>(() => createInitialState(cadastro));
+  const [form, setForm] = useState<CadastroFormState>(() =>
+    createInitialState(cadastro, mode === "new" ? documentoInicial : "")
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [isInitialChecking, setIsInitialChecking] = useState(false);
   const [errorFields, setErrorFields] = useState<string[]>([]);
@@ -162,6 +169,15 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const [hasImportedApiData, setHasImportedApiData] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const originalDocument = cadastro?.documento ?? "";
+
+  const limparParamVinculo = useCallback(() => {
+    if (!novoVinculoParam) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("novoVinculo");
+    params.delete("tipoRelacao");
+    const query = params.toString();
+    router.replace(query ? `?${query}` : window.location.pathname, { scroll: false });
+  }, [novoVinculoParam, searchParams, router]);
 
   const title = mode === "new" ? "Novo cadastro" : `Editar cadastro #${cadastro?.idCliente}`;
   const subtitle =
@@ -1041,8 +1057,16 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
 
     setIsSaving(false);
 
+    // Veio do card de vínculos de outro cliente: volta para lá com o cadastro
+    // recém-criado já escolhido, em vez de cair no detalhe deste novo cadastro.
+    const destino = origemVinculo
+      ? `/cadastros/${origemVinculo}/editar?novoVinculo=${result.cadastro.idCliente}${
+          tipoRelacaoParam ? `&tipoRelacao=${encodeURIComponent(tipoRelacaoParam)}` : ""
+        }`
+      : `/cadastros/${result.cadastro.idCliente}`;
+
     window.setTimeout(() => {
-      router.push(`/cadastros/${result.cadastro.idCliente}`);
+      router.push(destino);
     }, 1000);
   }
 
@@ -1331,6 +1355,9 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
           onToast={showToast}
           canViewCredito={canViewCredito}
           canEditCredito={canEditCredito}
+          vinculoInicialId={mode === "edit" ? novoVinculoParam : undefined}
+          tipoRelacaoInicial={tipoRelacaoParam || undefined}
+          onConsumirVinculoInicial={limparParamVinculo}
         />
       )}
 
@@ -1479,7 +1506,10 @@ function CompleteForm({
   onReconsultar,
   onToast,
   canViewCredito,
-  canEditCredito
+  canEditCredito,
+  vinculoInicialId,
+  tipoRelacaoInicial,
+  onConsumirVinculoInicial
 }: {
   form: CadastroFormState;
   formattedDocument: string;
@@ -1500,6 +1530,10 @@ function CompleteForm({
   onToast: (toast: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
   canViewCredito: boolean;
   canEditCredito: boolean;
+  /** Cadastro recém-criado que volta pré-selecionado no card de vínculos. */
+  vinculoInicialId?: number;
+  tipoRelacaoInicial?: string;
+  onConsumirVinculoInicial?: () => void;
 }) {
   const { user } = useAuth();
   const canCreate = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "cadastros.create");
@@ -1520,9 +1554,6 @@ function CompleteForm({
   const inputClassGeneral = !isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
   const inputClassFiscal = (!isEditAllowed || isFiscalBlocked) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass;
   const inputClassCredito = !canEditCredito ? "w-full rounded-2xl border border-slate-300 bg-slate-100 text-slate-500 px-4 py-3 text-sm outline-none transition-shadow cursor-not-allowed" : inputClass;
-  const [vinculoBusca, setVinculoBusca] = useState<Record<string, string>>({});
-  const [vinculoResultados, setVinculoResultados] = useState<Record<string, SearchCadastroVinculoItem[]>>({});
-  const [vinculoLoadingId, setVinculoLoadingId] = useState<string | null>(null);
   const [cepLoadingIndex, setCepLoadingIndex] = useState<number | null>(null);
 
   function updateEndereco(index: number, field: keyof CadastroEndereco, value: string) {
@@ -1576,102 +1607,6 @@ function CompleteForm({
     onUpdate("contatos", contatos);
   }
 
-  function updateVinculo(index: number, field: keyof CadastroVinculoComercial, value: string) {
-    const vinculos = form.vinculosComerciais.map((vinculo, currentIndex) =>
-      currentIndex === index
-        ? {
-            ...vinculo,
-            [field]: field === "idClienteRelacionado" ? Number(value) : value
-          }
-        : vinculo
-    );
-    onUpdate("vinculosComerciais", vinculos);
-  }
-
-  async function handleRemoverVinculo(index: number) {
-    const vinculo = form.vinculosComerciais[index];
-    if (isTemporaryId(vinculo.id)) {
-      onUpdate("vinculosComerciais", form.vinculosComerciais.filter((_, itemIndex) => itemIndex !== index));
-      onToast({ type: "warning", title: "Vínculo removido", description: "Vínculo removido do formulário." });
-      return;
-    }
-    if (vinculo.idClienteRelacionado) {
-      const { blocked, reason, errorMessage } = await checkVinculoRemovability(vinculo.idClienteRelacionado);
-      if (blocked) {
-        const message = reason || errorMessage || "Este vínculo não pode ser removido.";
-        if (reason === "Este vínculo possui histórico financeiro.") {
-          onToast({ type: "error", title: "Remoção bloqueada", description: "Este vínculo possui histórico financeiro. A desativação exige campo próprio em fase futura." });
-        } else {
-          onToast({ type: "error", title: "Remoção bloqueada", description: message });
-        }
-        return;
-      }
-    }
-    const deleteResult = await deleteVinculoComercial(vinculo.id);
-    if (!deleteResult.success) {
-      onToast({ type: "error", title: "Erro ao excluir", description: deleteResult.errorMessage || "Não foi possível excluir o vínculo." });
-      return;
-    }
-    onUpdate("vinculosComerciais", form.vinculosComerciais.filter((_, itemIndex) => itemIndex !== index));
-    onToast({ type: "success", title: "Vínculo excluído", description: "Vínculo removido com sucesso do banco de dados." });
-  }
-
-  async function handleSearchVinculo(vinculoId: string) {
-    const term = (vinculoBusca[vinculoId] ?? "").trim();
-    if (!term) {
-      setVinculoResultados((current) => ({ ...current, [vinculoId]: [] }));
-      return;
-    }
-
-    setVinculoLoadingId(vinculoId);
-    const encontrado = await searchCadastroVinculoByDocumento(term);
-    setVinculoLoadingId(null);
-    setVinculoResultados((current) => ({ ...current, [vinculoId]: encontrado ? [encontrado] : [] }));
-  }
-
-  function handleSelectVinculo(index: number, candidato: SearchCadastroVinculoItem) {
-    const idClienteAtual = Number(form.idCliente);
-    if (candidato.idCliente === idClienteAtual) {
-      onToast({
-        type: "warning",
-        title: "Vínculo inválido",
-        description: "Não é permitido criar vínculo com o próprio cadastro."
-      });
-      return;
-    }
-
-    const duplicado = form.vinculosComerciais.some(
-      (item, itemIndex) => itemIndex !== index && item.idClienteRelacionado === candidato.idCliente
-    );
-    if (duplicado) {
-      onToast({
-        type: "warning",
-        title: "Vínculo duplicado",
-        description: "Esse cadastro já está selecionado em outro vínculo."
-      });
-      return;
-    }
-
-    const vinculos = form.vinculosComerciais.map((item, itemIndex) =>
-      itemIndex === index
-        ? {
-            ...item,
-            idClienteRelacionado: candidato.idCliente,
-            nome: candidato.nome,
-            documento: candidato.documento,
-            tipoRelacao: item.tipoRelacao || "vinculo_comercial"
-          }
-        : item
-    );
-    onUpdate("vinculosComerciais", vinculos);
-    const vinculoId = form.vinculosComerciais[index].id;
-    setVinculoBusca((current) => ({ ...current, [vinculoId]: "" }));
-    setVinculoResultados((current) => {
-      const next = { ...current };
-      delete next[vinculoId];
-      return next;
-    });
-  }
 
   return (
     <div className="space-y-6">
@@ -1967,108 +1902,18 @@ function CompleteForm({
         </div>
       </FormSection>
 
-      <FormSection
-        title="Dados da Nota Fiscal"
-        description="Cadastros autorizados ou relacionados comercialmente a este cliente."
-        action={isEditAllowed ? (
-          <AddButton
-            label="Adicionar vínculo"
-            onClick={() => {
-              onUpdate("vinculosComerciais", [...form.vinculosComerciais, createBlankVinculo()]);
-              onToast({ type: "info", title: "Vinculo comercial adicionado", description: "Vinculo incluido no formulario." });
-            }}
-          />
-        ) : null}
-      >
-        <div className="space-y-4">
-          {form.vinculosComerciais.map((vinculo, index) => (
-            <div key={vinculo.id} className="space-y-3 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                <Field label="Buscar cadastro existente (informe o CPF ou CNPJ)">
-                  <div className="flex gap-2">
-                    <input
-                      value={vinculoBusca[vinculo.id] ?? ""}
-                      readOnly={!isEditAllowed}
-                      onChange={(event) =>
-                        setVinculoBusca((current) => ({ ...current, [vinculo.id]: event.target.value }))
-                      }
-                      className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}
-                    />
-                    {isEditAllowed && (
-                      <button
-                        type="button"
-                        onClick={() => void handleSearchVinculo(vinculo.id)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
-                      >
-                        {vinculoLoadingId === vinculo.id ? "Buscando..." : "Buscar"}
-                      </button>
-                    )}
-                  </div>
-                </Field>
-                {isEditAllowed && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoverVinculo(index)}
-                    className="self-end rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600"
-                  >
-                    Remover vínculo
-                  </button>
-                )}
-              </div>
-
-              {vinculoResultados[vinculo.id]?.length ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resultados</p>
-                  <ul className="mt-2 space-y-2">
-                    {vinculoResultados[vinculo.id].map((item) => (
-                      <li key={`${vinculo.id}-${item.idCliente}`}>
-                        <button
-                          type="button"
-                          onClick={() => handleSelectVinculo(index, item)}
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
-                        >
-                          #{item.idCliente} - {item.nome} ({formatDocument(item.documento)})
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : vinculoBusca[vinculo.id] && !vinculo.idClienteRelacionado && vinculoResultados[vinculo.id] && vinculoResultados[vinculo.id].length === 0 ? (
-                <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-center">
-                  <p className="text-sm font-medium text-orange-800">Nenhum cadastro encontrado para o documento informado.</p>
-                  {isEditAllowed && (
-                    <Link href={`/cadastros/novo?documento=${vinculoBusca[vinculo.id].replace(/\D/g, "")}`} className="mt-3 inline-block rounded-xl bg-white px-4 py-2 text-sm font-semibold text-orange-900 shadow-sm transition hover:bg-orange-100">
-                      + Novo Cadastro
-                    </Link>
-                  )}
-                </div>
-              ) : null}
-
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field label="ID relacionado">
-                  <input value={vinculo.idClienteRelacionado || ""} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
-                </Field>
-                <Field label="Nome">
-                  <input value={vinculo.nome} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
-                </Field>
-                <Field label="Documento">
-                  <input value={formatDocument(vinculo.documento)} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
-                </Field>
-              </div>
-
-              <Field label="Tipo de relacao">
-                <input
-                  value={vinculo.tipoRelacao}
-                  readOnly={!isEditAllowed}
-                  onChange={(event) => updateVinculo(index, "tipoRelacao", event.target.value)}
-                  className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}
-                  placeholder="autorizado"
-                />
-              </Field>
-            </div>
-          ))}
-        </div>
-      </FormSection>
+      <VinculosNotaFiscalCard
+        idClienteOrigem={form.idCliente}
+        vinculos={form.vinculosComerciais}
+        onChange={(lista) => onUpdate("vinculosComerciais", lista)}
+        persistirImediato={mode === "edit"}
+        isEditAllowed={isEditAllowed}
+        onToast={onToast}
+        inputClass={inputClass}
+        vinculoInicialId={vinculoInicialId}
+        tipoRelacaoInicial={tipoRelacaoInicial}
+        onConsumirVinculoInicial={onConsumirVinculoInicial}
+      />
 
       {canViewCredito && (
         <FormSection title="Crédito / Financeiro" description="Informacoes financeiras, comerciais e flags operacionais.">
@@ -2271,13 +2116,19 @@ function Toggle({ label, checked, disabled, onChange }: { label: string; checked
   );
 }
 
-function createInitialState(cadastro?: Cadastro): CadastroFormState {
+/**
+ * `documentoInicial` só chega no cadastro novo aberto pelo card de vínculos
+ * (`?documento=`), para o usuário não redigitar o CPF/CNPJ que acabou de buscar.
+ */
+function createInitialState(cadastro?: Cadastro, documentoInicial = ""): CadastroFormState {
+  const documentoPrefixado =
+    !cadastro && (documentoInicial.length === 11 || documentoInicial.length === 14) ? documentoInicial : "";
   return {
     idCliente: cadastro?.idCliente.toString() ?? "",
     idVendedor: cadastro?.idVendedor ? String(cadastro.idVendedor) : "",
     categoria: cadastro?.categoria ?? "CLIENTE",
-    tipoCliente: cadastro?.tipoPessoa === "FISICA" ? "CPF" : "CNPJ",
-    documento: cadastro?.documento ?? "",
+    tipoCliente: cadastro?.tipoPessoa === "FISICA" ? "CPF" : documentoPrefixado.length === 11 ? "CPF" : "CNPJ",
+    documento: cadastro?.documento ?? documentoPrefixado,
     atendente: cadastro?.vendedor ?? "",
     ativo: cadastro?.ativo ?? true,
     nome: cadastro?.nome ?? "",
@@ -2348,16 +2199,6 @@ function createBlankContato(): CadastroContato {
     cargo: "",
     whatsapp: "",
     email: ""
-  };
-}
-
-function createBlankVinculo(): CadastroVinculoComercial {
-  return {
-    id: `vinc_${Date.now()}`,
-    idClienteRelacionado: 0,
-    nome: "",
-    documento: "",
-    tipoRelacao: "vinculo_comercial"
   };
 }
 
