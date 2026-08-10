@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback, useId } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { codecs } from "@/lib/url-state";
-import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon } from "lucide-react";
+import { Copy, Search, Trash2, X, Edit2, AlertTriangle, AlertOctagon, ChevronDown } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { ContactEditModal } from "@/features/orcamentos/components/ContactEditModal";
 import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
@@ -4017,6 +4017,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           return form.contatoId === contato.id ? "!bg-[#3d9790] !border-[#3d9790] !text-white" : "";
                         }}
                         onEdit={(contato) => openEditContact(contato)}
+                        searchPlaceholder="Pesquisar contato por nome, cargo, WhatsApp ou e-mail..."
                       />
                     ) : (
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum contato cadastrado para este cliente.</p>
@@ -4051,6 +4052,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           extraClassNameForItem={(vinculo) => {
                             return (form.compradorId || cliente.id.toString()) === vinculo.id ? "!bg-[#4b78b7] !border-[#4b78b7] !text-white" : "";
                           }}
+                          searchPlaceholder="Pesquisar por nome, relação comercial ou documento..."
                         />
                         <button 
                           type="button" 
@@ -4223,6 +4225,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                             </div>
                           );
                         }}
+                        searchPlaceholder="Pesquisar endereço por responsável, rua, bairro, cidade ou CEP..."
+                        searchTextForItem={(endereco) => [
+                          endereco.recebedor,
+                          endereco.endereco,
+                          endereco.numero,
+                          endereco.complemento,
+                          endereco.bairro,
+                          endereco.cidade,
+                          endereco.uf,
+                          endereco.cep,
+                          endereco.tipo
+                        ].filter(Boolean).join(" ")}
                       />
                     ) : (
                       <p className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-4">Nenhum endereço disponível para entrega.</p>
@@ -5346,7 +5360,120 @@ function ProductItemEditor({
   );
 }
 
-function SelectorGrid<T extends { id: string }>({
+/**
+ * Acima deste número de opções a lista deixa de ser exibida inteira e vira um
+ * combobox com busca. Até aqui (inclusive) nada muda: os cards continuam todos
+ * à vista, como sempre foram.
+ */
+const MAX_OPCOES_VISIVEIS = 4;
+
+type SelectorConteudo = { title: string; subtitle: string; detail: React.ReactNode };
+
+type SelectorGridProps<T> = {
+  items: T[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  render: (item: T) => SelectorConteudo;
+  onEdit?: (item: T, event: React.MouseEvent) => void;
+  onCopy?: (item: T, event: React.MouseEvent) => void;
+  extraClassNameForItem?: (item: T) => string;
+  badgeForItem?: (item: T) => React.ReactNode;
+  /** Texto do campo de pesquisa quando a lista vira combobox. */
+  searchPlaceholder?: string;
+  /**
+   * Texto extra considerado na busca. `title` e `subtitle` já entram sempre;
+   * use isto quando houver campo pesquisável que não cabe no rótulo do card
+   * (ex.: cidade do endereço, que só aparece quando não há recebedor).
+   */
+  searchTextForItem?: (item: T) => string;
+};
+
+/** Card de uma opção — o mesmo visual na grade e dentro do combobox. */
+function SelectorCard({
+  content,
+  badge,
+  isSelected,
+  extraClass,
+  onClick,
+  onEdit,
+  onCopy,
+  destacado,
+  innerRef,
+  ...rest
+}: {
+  content: SelectorConteudo;
+  badge?: React.ReactNode;
+  isSelected: boolean;
+  extraClass?: string;
+  onClick?: () => void;
+  onEdit?: (event: React.MouseEvent) => void;
+  onCopy?: (event: React.MouseEvent) => void;
+  /** Opção sob o cursor do teclado dentro do combobox. */
+  destacado?: boolean;
+  innerRef?: React.Ref<HTMLDivElement>;
+  // `content` e `onCopy` existem em HTMLAttributes (microdata e clipboard) com
+  // outro significado; ficam de fora para não colidir com os nossos.
+} & Omit<React.HTMLAttributes<HTMLDivElement>, "content" | "onCopy" | "onClick">) {
+  return (
+    <div
+      {...rest}
+      ref={innerRef}
+      data-ativo={destacado ? "1" : undefined}
+      onClick={onClick}
+      className={`relative rounded-3xl border p-4 text-left transition flex justify-between items-start cursor-pointer ${
+        isSelected
+          ? "border-[#24665d] bg-[#24665d] text-[#86e2d5]"
+          : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+      } ${extraClass || ""} ${destacado ? "ring-2 ring-[#0f9f9a] ring-offset-1" : ""} ${rest.className || ""}`}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <p className="font-semibold truncate">{content.title}</p>
+          {badge}
+        </div>
+        <p className="text-sm opacity-80 truncate">{content.subtitle}</p>
+        <div className="mt-1 text-xs opacity-70 truncate">{content.detail}</div>
+      </div>
+      <div className="flex shrink-0 ml-2">
+        {onCopy && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopy(e);
+            }}
+            className="p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
+            title="Copiar endereço"
+            aria-label="Copiar endereço"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {onEdit && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(e);
+            }}
+            className="ml-1 p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
+            title="Editar"
+            aria-label="Editar endereço"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Mesma seleção do SelectorGrid, porém condensada: mostra só a opção escolhida
+ * e abre a lista completa com campo de busca. Usado automaticamente quando há
+ * mais de MAX_OPCOES_VISIVEIS opções, para o card não crescer sem limite.
+ */
+function SelectorCombobox<T extends { id: string }>({
   items,
   selectedId,
   onSelect,
@@ -5354,75 +5481,233 @@ function SelectorGrid<T extends { id: string }>({
   onEdit,
   onCopy,
   extraClassNameForItem,
-  badgeForItem
-}: {
-  items: T[];
-  selectedId: string;
-  onSelect: (id: string) => void;
-  render: (item: T) => { title: string; subtitle: string; detail: React.ReactNode };
-  onEdit?: (item: T, event: React.MouseEvent) => void;
-  onCopy?: (item: T, event: React.MouseEvent) => void;
-  extraClassNameForItem?: (item: T) => string;
-  badgeForItem?: (item: T) => React.ReactNode;
-}) {
+  badgeForItem,
+  searchPlaceholder,
+  searchTextForItem
+}: SelectorGridProps<T>) {
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [indiceAtivo, setIndiceAtivo] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const gatilhoRef = useRef<HTMLDivElement>(null);
+  const buscaRef = useRef<HTMLInputElement>(null);
+  const listaRef = useRef<HTMLDivElement>(null);
+  const listaId = useId();
+
+  const selecionado = items.find((item) => item.id === selectedId) || null;
+
+  const termo = busca.trim().toLowerCase();
+  const filtrados = termo
+    ? items.filter((item) => {
+        const content = render(item);
+        const extra = searchTextForItem ? searchTextForItem(item) : "";
+        const alvo = [
+          content.title,
+          content.subtitle,
+          typeof content.detail === "string" ? content.detail : "",
+          extra
+        ]
+          .join(" ")
+          .toLowerCase();
+        return termo.split(/\s+/).every((parte) => alvo.includes(parte));
+      })
+    : items;
+
+  const fechar = useCallback((devolverFoco = false) => {
+    setAberto(false);
+    setBusca("");
+    if (devolverFoco) gatilhoRef.current?.focus();
+  }, []);
+
+  const abrir = useCallback(() => {
+    const atual = items.findIndex((item) => item.id === selectedId);
+    setIndiceAtivo(atual >= 0 ? atual : 0);
+    setBusca("");
+    setAberto(true);
+  }, [items, selectedId]);
+
+  const escolher = useCallback(
+    (id: string) => {
+      onSelect(id);
+      fechar(true);
+    },
+    [onSelect, fechar]
+  );
+
+  // Clique fora fecha, como no seletor de clientes desta mesma tela.
+  useEffect(() => {
+    if (!aberto) return;
+    const handler = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) fechar();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [aberto, fechar]);
+
+  useEffect(() => {
+    if (aberto) buscaRef.current?.focus();
+  }, [aberto]);
+
+  // Mantém a opção sob o cursor do teclado visível na área rolável.
+  useEffect(() => {
+    if (!aberto) return;
+    listaRef.current?.querySelector('[data-ativo="1"]')?.scrollIntoView({ block: "nearest" });
+  }, [aberto, indiceAtivo, busca]);
+
+  const navegar = (event: React.KeyboardEvent) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setIndiceAtivo((i) => (filtrados.length ? (i + 1) % filtrados.length : 0));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setIndiceAtivo((i) => (filtrados.length ? (i - 1 + filtrados.length) % filtrados.length : 0));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setIndiceAtivo(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setIndiceAtivo(Math.max(0, filtrados.length - 1));
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const alvo = filtrados[indiceAtivo];
+      if (alvo) escolher(alvo.id);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      fechar(true);
+    } else if (event.key === "Tab") {
+      fechar();
+    }
+  };
+
+  const conteudoSelecionado: SelectorConteudo = selecionado
+    ? render(selecionado)
+    : {
+        title: "Selecione uma opção",
+        subtitle: `${items.length} opções disponíveis`,
+        detail: "Clique para pesquisar e escolher"
+      };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <SelectorCard
+        innerRef={gatilhoRef}
+        role="combobox"
+        tabIndex={0}
+        aria-expanded={aberto}
+        aria-haspopup="listbox"
+        aria-controls={listaId}
+        content={conteudoSelecionado}
+        badge={
+          <>
+            {selecionado && badgeForItem ? badgeForItem(selecionado) : null}
+            <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold opacity-70">
+              {aberto ? "Fechar" : "Trocar"}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${aberto ? "rotate-180" : ""}`} />
+            </span>
+          </>
+        }
+        isSelected={Boolean(selecionado)}
+        extraClass={selecionado && extraClassNameForItem ? extraClassNameForItem(selecionado) : ""}
+        className={selecionado ? "" : "!border-dashed !border-slate-300 !bg-white !text-slate-500"}
+        onClick={() => (aberto ? fechar() : abrir())}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+            event.preventDefault();
+            if (!aberto) abrir();
+          }
+        }}
+        onCopy={selecionado && onCopy ? (event) => onCopy(selecionado, event) : undefined}
+        onEdit={selecionado && onEdit ? (event) => onEdit(selecionado, event) : undefined}
+      />
+
+      {aberto && (
+        <div className="absolute left-0 right-0 top-full z-40 mt-2 rounded-3xl border border-[#d7e5e8] bg-white p-3 shadow-xl">
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+            <Search className="h-4 w-4 shrink-0 text-[#0f9f9a]" />
+            <input
+              ref={buscaRef}
+              value={busca}
+              onChange={(event) => {
+                setBusca(event.target.value);
+                setIndiceAtivo(0);
+              }}
+              onKeyDown={navegar}
+              className="w-full bg-transparent text-sm text-slate-900 outline-none"
+              placeholder={searchPlaceholder || "Pesquisar..."}
+              aria-label={searchPlaceholder || "Pesquisar"}
+            />
+            {busca && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBusca("");
+                  setIndiceAtivo(0);
+                  buscaRef.current?.focus();
+                }}
+                className="rounded-xl p-1 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
+                aria-label="Limpar pesquisa"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </label>
+
+          <div
+            ref={listaRef}
+            id={listaId}
+            role="listbox"
+            className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1"
+          >
+            {filtrados.length === 0 ? (
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                Nenhuma opção encontrada para “{busca.trim()}”.
+              </p>
+            ) : (
+              filtrados.map((item, indice) => (
+                <SelectorCard
+                  key={item.id}
+                  role="option"
+                  aria-selected={selectedId === item.id}
+                  content={render(item)}
+                  badge={badgeForItem ? badgeForItem(item) : null}
+                  isSelected={selectedId === item.id}
+                  extraClass={extraClassNameForItem ? extraClassNameForItem(item) : ""}
+                  destacado={indice === indiceAtivo}
+                  onClick={() => escolher(item.id)}
+                  onMouseEnter={() => setIndiceAtivo(indice)}
+                  onCopy={onCopy ? (event) => { fechar(); onCopy(item, event); } : undefined}
+                  onEdit={onEdit ? (event) => { fechar(); onEdit(item, event); } : undefined}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SelectorGrid<T extends { id: string }>(props: SelectorGridProps<T>) {
+  const { items, selectedId, onSelect, render, onEdit, onCopy, extraClassNameForItem, badgeForItem } = props;
+
+  if (items.length > MAX_OPCOES_VISIVEIS) {
+    return <SelectorCombobox {...props} />;
+  }
+
   return (
     <div className="grid gap-3 md:grid-cols-2">
-      {items.map((item) => {
-        const content = render(item);
-        const isSelected = selectedId === item.id;
-        const extraClass = extraClassNameForItem ? extraClassNameForItem(item) : "";
-        const badge = badgeForItem ? badgeForItem(item) : null;
-        return (
-          <div
-            key={item.id}
-            onClick={() => onSelect(item.id)}
-            className={`relative rounded-3xl border p-4 text-left transition flex justify-between items-start cursor-pointer ${
-              isSelected
-                ? "border-[#24665d] bg-[#24665d] text-[#86e2d5]"
-                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
-            } ${extraClass}`}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <p className="font-semibold truncate">{content.title}</p>
-                {badge}
-              </div>
-              <p className="text-sm opacity-80 truncate">{content.subtitle}</p>
-              <div className="mt-1 text-xs opacity-70 truncate">{content.detail}</div>
-            </div>
-            <div className="flex shrink-0 ml-2">
-              {onCopy && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCopy(item, e);
-                  }}
-                  className="p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
-                  title="Copiar endereço"
-                  aria-label="Copiar endereço"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {onEdit && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(item, e);
-                  }}
-                  className="ml-1 p-1.5 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition"
-                  title="Editar"
-                  aria-label="Editar endereço"
-                >
-                  <Edit2 className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {items.map((item) => (
+        <SelectorCard
+          key={item.id}
+          content={render(item)}
+          badge={badgeForItem ? badgeForItem(item) : null}
+          isSelected={selectedId === item.id}
+          extraClass={extraClassNameForItem ? extraClassNameForItem(item) : ""}
+          onClick={() => onSelect(item.id)}
+          onCopy={onCopy ? (event) => onCopy(item, event) : undefined}
+          onEdit={onEdit ? (event) => onEdit(item, event) : undefined}
+        />
+      ))}
     </div>
   );
 }
