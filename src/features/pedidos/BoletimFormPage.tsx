@@ -613,7 +613,7 @@ export function BoletimFormPage() {
           // Setor PCP é cadastro do produto. A adivinhação por nome/categoria
           // continua só como rede quando o produto não tem setor definido.
           const setorCadastrado = (item.produto?.setor_pcp || "").trim().toUpperCase();
-          let sector = setorCadastrado || "IMPRESSÃO";
+          let sector = setorCadastrado || "LASER";
           if (!setorCadastrado) {
             const nameUpper = item.nome.toUpperCase();
             const catUpper = (item.produto?.categoria || "").toUpperCase();
@@ -622,8 +622,8 @@ export function BoletimFormPage() {
               sector = "TEXTIL";
             } else if (nameUpper.includes("FLEXO") || catUpper.includes("FLEXO") || nameUpper.includes("RÓTULO") || nameUpper.includes("ETIQUETA")) {
               sector = "FLEXO";
-            } else if (nameUpper.includes("PVP") || catUpper.includes("PVP")) {
-              sector = "PVP";
+            } else if (nameUpper.includes("PVC") || catUpper.includes("PVC") || nameUpper.includes("PVP") || catUpper.includes("PVP")) {
+              sector = "PVC";
             }
           }
 
@@ -1646,18 +1646,18 @@ export function BoletimFormPage() {
                           <div className="relative w-full">
                             {isEditing && (
                               <div className="absolute inset-0 flex items-center px-3.5 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
-                                <span className="text-sm font-bold text-slate-800 truncate">{p.setor || "IMPRESSÃO"}</span>
+                                <span className="text-sm font-bold text-slate-800 truncate">{p.setor || "LASER"}</span>
                               </div>
                             )}
                             <select
                               disabled={isEditing}
-                              value={p.setor || "IMPRESSÃO"}
+                              value={p.setor || "LASER"}
                               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateProductSector(p.id, e.target.value)}
                               className={`w-full rounded-xl border border-slate-200 text-xs px-3.5 py-1.5 font-bold outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] ${isEditing ? "opacity-0 cursor-not-allowed" : "bg-white text-slate-700 cursor-pointer"}`}
                             >
-                              <option value="IMPRESSÃO">IMPRESSÃO</option>
+                              <option value="LASER">LASER</option>
                               <option value="TEXTIL">TEXTIL</option>
-                              <option value="PVP">PVP</option>
+                              <option value="PVC">PVC</option>
                               <option value="FLEXO">FLEXO</option>
                             </select>
                           </div>

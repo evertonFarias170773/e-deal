@@ -761,9 +761,9 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
               className={getInputClass(errorFields.includes("setor_pcp"))}
             >
               <option value="">Selecione o setor PCP padrão</option>
-              <option value="IMPRESSÃO">IMPRESSÃO</option>
+              <option value="LASER">LASER</option>
               <option value="TEXTIL">TEXTIL</option>
-              <option value="PVP">PVP</option>
+              <option value="PVC">PVC</option>
               <option value="FLEXO">FLEXO</option>
             </select>
           </Field>

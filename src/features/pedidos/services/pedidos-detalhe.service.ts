@@ -175,7 +175,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
           nome: p.nome_produto || "Produto",
           quantidade: Number(p.qtd || 0),
           pesoEstimado: Number(p.peso_base || 0),
-          setor: (idProduto !== null ? setorPorProduto.get(idProduto) : undefined) || "IMPRESSÃO",
+          setor: (idProduto !== null ? setorPorProduto.get(idProduto) : undefined) || "LASER",
           isEstoque: p.is_estoque === true,
           modelos: []
         };
@@ -235,7 +235,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
       quantidade: modelos.reduce((acc, curr) => acc + curr.quantidade, 0),
       pesoEstimado: 0,
       // Sem produto na proposta, o setor do grupo é o do primeiro lote.
-      setor: modelos.find((m) => m.setor)?.setor || "IMPRESSÃO",
+      setor: modelos.find((m) => m.setor)?.setor || "LASER",
       modelos: modelos
     });
   } else if (modelos.length === 0) {
