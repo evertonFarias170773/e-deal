@@ -1184,10 +1184,42 @@ export async function registerBoletoViaN8n(boleto: SupabaseBoletoRow, overrideEm
   }
 
   if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
-    throw new Error(resData.error || resData.message || "Erro retornado pelo webhook.");
+    throw new Error(
+      mensagemDoRetornoBancario(resData.error ?? resData.message, "Erro retornado pelo webhook.")
+    );
   }
 
   return { success: true, data: resData };
+}
+
+/**
+ * Mensagem legível a partir do que o webhook devolveu.
+ *
+ * O n8n responde ora `{ message }`, ora o objeto de erro cru do banco
+ * (`{ error: { message } }`). No segundo caso `new Error(objeto)` vira
+ * "[object Object]" na tela — foi o que o usuário viu quando o C6 recusou o
+ * cancelamento do título 323976692 por situação do título: erro na tela, sem
+ * uma palavra sobre o motivo.
+ *
+ * Os bancos ainda embutem o motivo real num JSON escapado dentro da própria
+ * mensagem (`400 - "{...\"detail\":\"...\"}"`), então o `detail` é extraído
+ * quando existe.
+ */
+function mensagemDoRetornoBancario(valor: unknown, padrao: string): string {
+  if (typeof valor === "string" && valor.trim()) return valor.trim();
+
+  if (valor && typeof valor === "object") {
+    const obj = valor as { message?: unknown; detail?: unknown; description?: unknown };
+    const texto = String(obj.detail ?? obj.message ?? obj.description ?? "").trim();
+    if (texto) {
+      const limpo = texto.split("\\").join("");
+      const detalhe = limpo.match(/"detail"\s*:\s*"([^"]+)"/);
+      const titulo = limpo.match(/"title"\s*:\s*"([^"]+)"/);
+      return String(detalhe?.[1] ?? titulo?.[1] ?? texto).trim().slice(0, 400);
+    }
+  }
+
+  return padrao;
 }
 
 export async function deleteBoletoFromBankViaN8n(
@@ -1221,7 +1253,13 @@ export async function deleteBoletoFromBankViaN8n(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || `Erro no processamento da exclusão do boleto: ${response.statusText}`);
+    let legivel = "";
+    try {
+      legivel = mensagemDoRetornoBancario(JSON.parse(errorText), "");
+    } catch {
+      legivel = "";
+    }
+    throw new Error(legivel || errorText || `Erro no processamento da exclusão do boleto: ${response.statusText}`);
   }
 
   let resData;
@@ -1236,7 +1274,9 @@ export async function deleteBoletoFromBankViaN8n(
   }
 
   if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
-    throw new Error(resData.error || resData.message || "Erro retornado pelo webhook.");
+    throw new Error(
+      mensagemDoRetornoBancario(resData.error ?? resData.message, "Erro retornado pelo webhook.")
+    );
   }
 
   return { success: true, data: resData };
