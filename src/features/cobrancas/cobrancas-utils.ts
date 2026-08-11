@@ -1,5 +1,7 @@
 import type { StatusTone } from "@/lib/types";
 import type { Cobranca, EmpresaRecebedoraOption, LiberacaoPedidoStatus } from "@/features/cobrancas/types";
+import { formatCurrencyWithoutPrefix } from "@/lib/formatters/currency";
+import { formatDate } from "@/lib/formatters/date";
 
 export const EMPRESAS_RECEBEDORAS_FIXAS: EmpresaRecebedoraOption[] = [
   {
@@ -419,6 +421,40 @@ export function getTipoCobrancaLabel(tipo: string) {
       .trim()
       .toLowerCase()
   );
+}
+
+/**
+ * Texto pronto para colar no sistema antigo (DetalhePedido.aspx) quando o
+ * usuário abre a OS Ideal a partir da Conferência de pagamentos. Formato
+ * definido pelo dono:
+ *
+ *   Proposta N° 20454 - Tipo: PIX - Valor: 327,90 - Data do pagamento 11/08/2026 - Empresa IDEAL GRÁFICA EXPRESSA EIRELI
+ *
+ * A empresa sai pela razão social (EMPRESAS_RECEBEDORAS_FIXAS) e não pelo rótulo
+ * curto que a tela mostra na coluna Empresa. A data usa `paid_at`; quando a
+ * cobrança ainda não tem pagamento registrado cai para a confirmação e depois
+ * para a criação, para o campo nunca sair vazio no texto colado.
+ */
+export function montarTextoConferenciaOsIdeal(
+  cobranca: Pick<
+    Cobranca,
+    "id_int" | "tipo_cobranca" | "valor" | "paid_at" | "data_confirmacao" | "created_at" | "empresa" | "id_empresa"
+  >
+): string {
+  const empresa =
+    getEmpresaRecebedoraFixaById(Number(cobranca.id_empresa))?.nome ||
+    (cobranca.empresa || "").trim() ||
+    "Nao informada";
+
+  const dataPagamento = cobranca.paid_at || cobranca.data_confirmacao || cobranca.created_at;
+
+  return [
+    `Proposta N° ${cobranca.id_int}`,
+    `Tipo: ${getTipoCobrancaLabel(cobranca.tipo_cobranca)}`,
+    `Valor: ${formatCurrencyWithoutPrefix(cobranca.valor)}`,
+    `Data do pagamento ${dataPagamento ? formatDate(dataPagamento) : "Nao informada"}`,
+    `Empresa ${empresa}`
+  ].join(" - ");
 }
 
 /**

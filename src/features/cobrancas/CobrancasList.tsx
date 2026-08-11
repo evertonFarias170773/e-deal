@@ -27,7 +27,8 @@ import {
   getLiberacaoPedidoStatus,
   getTipoCobrancaLabel,
   isCobrancaEFaturado,
-  isPendenteAprovacao
+  isPendenteAprovacao,
+  montarTextoConferenciaOsIdeal
 } from "@/features/cobrancas/cobrancas-utils";
 import type { Cobranca } from "@/features/cobrancas/types";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -507,6 +508,26 @@ export function CobrancasList() {
     }
   }
 
+  /**
+   * Copia o resumo da cobrança para colar no sistema antigo. Roda no próprio
+   * clique do link (sem preventDefault) para que a escrita na área de
+   * transferência ainda conte como gesto do usuário e a OS continue abrindo em
+   * outra aba como sempre abriu.
+   */
+  function copiarResumoParaOsIdeal(cobranca: Cobranca) {
+    const texto = montarTextoConferenciaOsIdeal(cobranca);
+
+    if (!navigator.clipboard) {
+      showToast({ type: "warning", title: "Copie o texto manualmente", description: texto });
+      return;
+    }
+
+    void navigator.clipboard
+      .writeText(texto)
+      .then(() => showToast({ type: "success", title: "Texto copiado para colar na OS", description: texto }))
+      .catch(() => showToast({ type: "warning", title: "Copie o texto manualmente", description: texto }));
+  }
+
   function renderEmpresaEditavel(cobranca: Cobranca) {
     const label = getEmpresaExibicao(cobranca);
     const editavel = source === "supabase" && isPendenteAprovacao(cobranca);
@@ -852,7 +873,9 @@ export function CobrancasList() {
                     href={`https://www.ingressoideal.com.br/sistema/restrito/DetalhePedido.aspx?pedido=${encodeURIComponent(String(cobranca.os_ideal))}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => copiarResumoParaOsIdeal(cobranca)}
                     className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                    title="Abre a OS no sistema antigo e copia o resumo da cobrança"
                   >
                     OS Ideal
                   </a>
@@ -911,7 +934,9 @@ export function CobrancasList() {
                     href={`https://www.ingressoideal.com.br/sistema/restrito/DetalhePedido.aspx?pedido=${encodeURIComponent(String(cobranca.os_ideal))}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => copiarResumoParaOsIdeal(cobranca)}
                     className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                    title="Abre a OS no sistema antigo e copia o resumo da cobrança"
                   >
                     OS Ideal
                   </a>
