@@ -89,6 +89,65 @@ function parsePrazoToDate(prazoText: string): string {
   return defaultDate.toISOString().split("T")[0];
 }
 
+function semAcento(texto: string): string {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/**
+ * Dias de produção declarados no cadastro do produto (public.produtos.prazo é
+ * texto livre: "3 dias úteis", "Produção: 1 dia útil + Frete"). Vale o primeiro
+ * número do texto; sem número não há prazo utilizável.
+ */
+function diasDoPrazoCadastrado(prazoText?: string | null): number | null {
+  const match = String(prazoText || "").match(/(\d+)/);
+  if (!match) return null;
+  const dias = Number(match[1]);
+  return Number.isFinite(dias) && dias > 0 ? dias : null;
+}
+
+/** Data de hoje + N dias. Em "dias úteis" pula sábado e domingo (feriados não entram). */
+function somarDiasDeProducao(dias: number, emDiasUteis: boolean): string {
+  const data = new Date();
+  let restantes = dias;
+  while (restantes > 0) {
+    data.setDate(data.getDate() + 1);
+    const diaDaSemana = data.getDay();
+    if (!emDiasUteis || (diaDaSemana !== 0 && diaDaSemana !== 6)) {
+      restantes -= 1;
+    }
+  }
+  // Formatação local: toISOString() joga para UTC e adiantaria um dia à noite.
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const dia = String(data.getDate()).padStart(2, "0");
+  return `${data.getFullYear()}-${mes}-${dia}`;
+}
+
+/**
+ * Data limite sugerida a partir do prazo de produção cadastrado em cada produto
+ * do pedido: vale sempre o maior. Dois produtos, um de 1 dia e outro de 3 dias,
+ * dão a data de 3 dias. O resumo da proposta não serve aqui porque leva só o
+ * prazo do primeiro item (calculateResumo). Sem prazo em nenhum produto, cai no
+ * padrão de 7 dias do formulário.
+ */
+function calcularDataLimitePorProdutos(itens: Proposta["itens"]): string {
+  let maiorData = "";
+
+  for (const item of itens) {
+    if (item.statusItem === "CANCELADO") continue;
+
+    const textoPrazo = item.produto?.prazo || item.prazo || "";
+    const dias = diasDoPrazoCadastrado(textoPrazo);
+    if (dias === null) continue;
+
+    // Compara a data resultante, não o número de dias: "2 dias úteis" pode cair
+    // depois de "3 dias" corridos quando o intervalo pega um fim de semana.
+    const data = somarDiasDeProducao(dias, /util|uteis/.test(semAcento(textoPrazo)));
+    if (!maiorData || data > maiorData) maiorData = data;
+  }
+
+  return maiorData || parsePrazoToDate("");
+}
+
 function canStartProduction(proposal: Proposta): boolean {
   // Abstração operacional de confirmação financeira
   // Futuramente a regra virá de pagamentos_v2 e confirmação financeira real.
@@ -601,9 +660,9 @@ export function BoletimFormPage() {
         // Briefing comercial relevante
         setBriefingOperacional(details.observacoes || "");
         
-        // Prazo / Data prevista de entrega
-        const deadlineDate = parsePrazoToDate(details.resumo?.prazoProducao || "");
-        setDataPrevistaEntrega(deadlineDate);
+        // Prazo / Data prevista de entrega — maior prazo de produção entre os
+        // produtos do pedido (cadastro em produtos.prazo).
+        setDataPrevistaEntrega(calcularDataLimitePorProdutos(details.itens));
         
         setObsImpressao("");
         setObsAcabamento("");
@@ -1561,7 +1620,10 @@ export function BoletimFormPage() {
                       type="time"
                       value={boletimHora}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBoletimHora(e.target.value)}
-                      className="w-full h-11 rounded-2xl border-2 border-blue-300 bg-white px-4 text-xl font-bold font-mono text-blue-950 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                      // O texto do input de hora é desenhado pelo próprio navegador e não
+                      // herda o tamanho da classe: sem estilizar o ::-webkit-datetime-edit
+                      // ele sai miúdo ao lado da Data Limite de Entrega.
+                      className="w-full h-11 rounded-2xl border-2 border-blue-300 bg-white px-4 text-xl font-bold font-mono text-blue-950 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100 [&::-webkit-datetime-edit]:text-xl [&::-webkit-datetime-edit]:font-bold [&::-webkit-datetime-edit]:font-mono [&::-webkit-datetime-edit]:text-blue-950 [&::-webkit-datetime-edit-fields-wrapper]:text-xl [&::-webkit-datetime-edit-hour-field]:text-blue-950 [&::-webkit-datetime-edit-minute-field]:text-blue-950 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100"
                     />
                   </div>
 

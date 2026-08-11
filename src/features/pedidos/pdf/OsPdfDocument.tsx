@@ -135,17 +135,17 @@ const styles = StyleSheet.create({
   },
   headerIdentidade: { width: 128, alignItems: "flex-start" },
   logo: { width: 104, height: 30, objectFit: "contain", marginBottom: 5 },
+  // Sem contorno: o numero da OS se sustenta sozinho no canto, alinhado com a
+  // logo. Sem a borda, o recuo horizontal tambem sai, senao o numero fica
+  // deslocado em relacao a logo logo acima.
   osBox: {
-    borderWidth: 1,
-    borderColor: "#3f3f42",
-    borderRadius: 5,
     paddingVertical: 3,
-    paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center"
   },
   osBoxLabel: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#5a6b7a", marginRight: 5 },
-  osBoxNumero: { fontSize: 17, fontFamily: "Helvetica-Bold" },
+  // 25.5 = 17 + 50%, conforme pedido.
+  osBoxNumero: { fontSize: 25.5, fontFamily: "Helvetica-Bold" },
   headerSetor: { flex: 1, paddingHorizontal: 10 },
   setorBox: {
     borderWidth: 1,

@@ -1440,8 +1440,17 @@ export async function saveProposta(
       cepText = selectedAddress ? selectedAddress.cep : "";
     }
 
+    // Proposta não-avulsa sem produtos itemizados: salvar é permitido (decisão
+    // do dono em 10/08/2026). Sem itens não há peso, não há cotação de frete e
+    // o subtotal é zero — as exigências de frete e de subtotal > 0 passariam a
+    // travar a gravação para sempre, que era o que prendia essas propostas no
+    // ciclo de "salvar antes de acessar Pagamentos".
+    const propostaSemItens =
+      !formState.isAvulso &&
+      formState.itens.filter((item) => item.statusItem !== "CANCELADO").length === 0;
+
     // Find the chosen freight option details
-    if (!formState.isAvulso) {
+    if (!formState.isAvulso && !propostaSemItens) {
       if (!isNonEmpty(formState.freteEscolhidoId)) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
@@ -1455,7 +1464,7 @@ export async function saveProposta(
       if (!isNonEmpty(formState.observacoesFreteManual)) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
-    } else {
+    } else if (!propostaSemItens) {
       if (!chosenFrete) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
@@ -1510,16 +1519,20 @@ export async function saveProposta(
     const subtotalProdutos = resumo.subtotalProdutos;
     const valorTotal = resumo.valorTotal;
 
-    if (subtotalProdutos <= 0) {
-      return {
-        success: false,
-        errorMessage: formState.isAvulso
-          ? "Informe o valor dos produtos antes de salvar a proposta avulsa."
-          : "O subtotal dos produtos deve ser maior que R$ 0,00."
-      };
-    }
-    if (!Number.isFinite(valorTotal) || valorTotal <= 0) {
-      return { success: false, errorMessage: "O valor total financeiro da proposta é inválido ou nulo. Verifique os valores informados." };
+    // Proposta sem itens não passa por estas duas exigências: ela vale o que já
+    // está gravado (preservado logo abaixo), não o zero calculado agora.
+    if (!propostaSemItens) {
+      if (subtotalProdutos <= 0) {
+        return {
+          success: false,
+          errorMessage: formState.isAvulso
+            ? "Informe o valor dos produtos antes de salvar a proposta avulsa."
+            : "O subtotal dos produtos deve ser maior que R$ 0,00."
+        };
+      }
+      if (!Number.isFinite(valorTotal) || valorTotal <= 0) {
+        return { success: false, errorMessage: "O valor total financeiro da proposta é inválido ou nulo. Verifique os valores informados." };
+      }
     }
 
     const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && isNonEmpty(cepText);
@@ -1587,16 +1600,27 @@ export async function saveProposta(
       empresa: formState.empresa,
       vendedor: formState.vendedor,
       status_interno: formState.status,
-      valor: subtotalProdutos,
-      valor_total: valorTotal,
       obs_proposta: formState.observacoes,
       texto_whatsapp: informalText,
-      frete_escolhido: freteNome,
-      valor_frete: freteValor,
       contato: contatoNome,
       cep: cepText,
       is_avulso: formState.isAvulso || false
     };
+
+    // Update de proposta já existente que não tem itens: preservar os valores
+    // financeiros gravados. Gravar o zero calculado mudaria o total da proposta
+    // e derrubaria o saldo restante da cobrança — justamente o que o usuário
+    // está tentando gerar. Se o usuário removeu os produtos agora, aí sim os
+    // valores são recalculados normalmente.
+    const removeuItensNesteSave = (formState.deletedProdutoPropostaIds || []).length > 0;
+    const preservarFinanceiroGravado = Boolean(isUpdate) && propostaSemItens && !removeuItensNesteSave;
+
+    if (!preservarFinanceiroGravado) {
+      propostaData.valor = subtotalProdutos;
+      propostaData.valor_total = valorTotal;
+      propostaData.frete_escolhido = freteNome;
+      propostaData.valor_frete = freteValor;
+    }
 
     let persistedValorTotal = valorTotal;
 

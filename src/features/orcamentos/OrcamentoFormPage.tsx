@@ -214,6 +214,14 @@ export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPagePr
   return <OrcamentoFormInner mode={mode} proposta={proposta} />;
 }
 
+/**
+ * Teto de espera do snapshot do guard de alterações. Passado esse tempo o
+ * snapshot é tirado mesmo com carregamento pendente — o guard nunca pode ficar
+ * desligado por causa de uma requisição travada.
+ */
+const TEMPO_MAXIMO_ESPERA_SNAPSHOT_MS = 8000;
+const INTERVALO_VERIFICACAO_SNAPSHOT_MS = 150;
+
 function OrcamentoFormLoader({ idInt }: { idInt: number }) {
   const { proposta, loading, error, reload } = useOrcamentoDetail(idInt);
 
@@ -343,10 +351,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
 
+  /**
+   * Carregamentos de inicialização que ainda vão escrever no `form` depois da
+   * montagem: modelos do pedido, engine de status e variações dos itens.
+   * Enquanto houver algum pendente o snapshot do guard de alterações não é
+   * tirado — antes ele era congelado num timer fixo de 600ms e qualquer um
+   * desses retornos chegando depois deixava o formulário "sujo" sem o usuário
+   * ter tocado em nada, o que fazia a aba Pagamentos exigir salvar a cada
+   * tentativa de gerar cobrança.
+   */
+  const inicializacoesPendentes = useRef(0);
+
+  // Espelho do form para o efeito de captura do snapshot, que roda uma vez só:
+  // sem isso ele enxergaria o form da primeira renderização.
+  const formRef = useRef(form);
+  formRef.current = form;
+
   const loadModelos = useCallback(async () => {
     if (proposta?.id_int && form.id_int !== "NOVO") {
       const client = getSupabaseClient();
       if (!client) return;
+      inicializacoesPendentes.current += 1;
+      try {
       const { data } = await client
           .from("pedidos_modelos")
           .select("*")
@@ -380,6 +406,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }));
           setForm((prev) => ({ ...prev, pedidosModelos: modelos }));
         }
+      } finally {
+        inicializacoesPendentes.current -= 1;
+      }
     }
   }, [proposta?.id_int, form.id_int]);
 
@@ -393,6 +422,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
     async function checkAndSyncStatus() {
       if (!proposta?.id_int || form.id_int === "NOVO") return;
+      inicializacoesPendentes.current += 1;
+      try {
 
       // Executa a engine com o status_interno atual do form
       const diagnostic = await validarStatusProposta(proposta.id_int, !!form.isAvulso, form.status);
@@ -432,6 +463,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         } catch (err) {
           console.error("Erro ao sincronizar status automaticamente:", err);
         }
+        }
+      } finally {
+        inicializacoesPendentes.current -= 1;
       }
     }
 
@@ -979,6 +1013,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
 
     let active = true;
+    inicializacoesPendentes.current += 1;
     void (async () => {
       try {
         const enrichedItens = await Promise.all(
@@ -1007,6 +1042,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         }
       } catch (err) {
         console.error("Erro na inicialização de variações da proposta:", err);
+      } finally {
+        inicializacoesPendentes.current -= 1;
       }
     })();
 
@@ -1160,17 +1197,33 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }, [cliente?.idCliente]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Capture initial snapshot once (after mount effects settle)
+  //
+  // A janela fixa de 600ms não bastava: modelos, engine de status e variações
+  // dos itens escrevem no form quando a rede responde, e o que chegasse depois
+  // marcava o formulário como alterado sem o usuário ter mexido em nada. Agora
+  // a captura espera esses carregamentos (`inicializacoesPendentes`), com um
+  // teto de tempo para que uma requisição travada nunca deixe o guard de
+  // alterações desligado.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!snapshotCaptured.current) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { fretes: _f, ...snap } = form;
-        initialFormSnapshot.current = JSON.stringify(snap);
-        snapshotCaptured.current = true;
-      }
-    }, 600);
-    return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const limite = Date.now() + TEMPO_MAXIMO_ESPERA_SNAPSHOT_MS;
+
+    const capturar = () => {
+      if (snapshotCaptured.current) return;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { fretes: _f, ...snap } = formRef.current;
+      initialFormSnapshot.current = JSON.stringify(snap);
+      snapshotCaptured.current = true;
+    };
+
+    const intervalo = setInterval(() => {
+      const esgotou = Date.now() >= limite;
+      if (!esgotou && inicializacoesPendentes.current > 0) return;
+      capturar();
+      clearInterval(intervalo);
+    }, INTERVALO_VERIFICACAO_SNAPSHOT_MS);
+
+    return () => clearInterval(intervalo);
+  }, []);
 
   // beforeunload — warn on tab close / refresh when dirty
   useEffect(() => {
@@ -3286,7 +3339,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           concluirVinculacaoAposSave(finalIdInt, formToSave);
         }
         if (onReload) {
-          await onReload();
+          // Silencioso: onReload() sem argumento liga o `loading` do
+          // OrcamentoFormLoader, que troca o formulário inteiro pelo spinner.
+          // Como quem chama isto é o próprio painel de cobrança
+          // (onSavePropostaRequest), o painel e o modal aberto eram desmontados
+          // no meio do fluxo — o modal "fechava sozinho" e a tela voltava ao
+          // estado inicial. Todos os outros pontos de recarga já usam (true).
+          await onReload(true);
         }
         return true;
       } else {
