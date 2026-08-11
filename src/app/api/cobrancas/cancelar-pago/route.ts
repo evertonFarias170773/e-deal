@@ -165,11 +165,17 @@ export async function POST(request: Request) {
     if (pagamento.id_int != null) {
       const autorNome = usuario.nome_usuario || authData.user.email || "Sistema";
       const destinoRotulo = DESTINOS_VALOR_CANCELADO.find((d) => d.codigo === destino)?.rotulo ?? destino;
+      // Id do movimento de credito entra no texto quando houver (destino
+      // CREDITO) — spec de design §8 item 3: a timeline precisa mostrar autor,
+      // data, motivo, destino do valor E o id do movimento de credito.
+      const creditoTrecho = idMovimentoCredito != null
+        ? ` Movimento de credito: #${idMovimentoCredito}.`
+        : "";
       const { error: errorChat } = await supabase.from("propostas_chat").insert([
         {
           id_int: pagamento.id_int,
           id_cliente: pagamento.id_cliente,
-          mensagem: `Cobranca ${pagamento.id} (ja paga) cancelada por ${autorNome} (super admin). Motivo: ${rotuloMotivo(motivo)}. Destino do valor: ${destinoRotulo}.`,
+          mensagem: `Cobranca ${pagamento.id} (ja paga) cancelada por ${autorNome} (super admin). Motivo: ${rotuloMotivo(motivo)}. Destino do valor: ${destinoRotulo}.${creditoTrecho}`,
           tipo: "SISTEMA",
           autor_nome: autorNome,
           setor: "Financeiro",
