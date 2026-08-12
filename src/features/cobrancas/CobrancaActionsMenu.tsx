@@ -8,7 +8,11 @@ import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 import { formatMesAnoPtBr, isCreditoPendente, isPendenteAprovacao } from "@/features/cobrancas/cobrancas-utils";
-import { isConfirmacaoDeMesAnterior } from "@/features/cobrancas/cancelamento-pago";
+import {
+  isCobrancaPagaParaCancelamento,
+  isConfirmacaoDeMesAnterior,
+  referenciaConfirmacaoParaMesFechado
+} from "@/features/cobrancas/cancelamento-pago";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
@@ -31,12 +35,14 @@ function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
 /**
  * "agosto/2026" quando a confirmação desta cobrança caiu em mês já fechado
  * (exige a confirmação extra no modal de cancelamento pago); null caso
- * contrário ou quando a cobrança nem está paga.
+ * contrário ou quando a cobrança nem está paga (mesmo critério de
+ * `isCobrancaPagaParaCancelamento` usado abaixo, para nunca divergir).
  */
-function getMesFechadoLabel(cobranca: Pick<Cobranca, "status" | "data_confirmacao" | "paid_at">): string | null {
-  const isPaga = cobranca.status === "PAID" || cobranca.status === "A_VENCER";
-  if (!isPaga) return null;
-  const referencia = cobranca.data_confirmacao || cobranca.paid_at;
+function getMesFechadoLabel(
+  cobranca: Pick<Cobranca, "status" | "tipo_cobranca" | "data_confirmacao" | "paid_at" | "created_at">
+): string | null {
+  if (!isCobrancaPagaParaCancelamento(cobranca)) return null;
+  const referencia = referenciaConfirmacaoParaMesFechado(cobranca);
   return isConfirmacaoDeMesAnterior(referencia) ? formatMesAnoPtBr(referencia) : null;
 }
 
@@ -61,11 +67,14 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     hasBoletoHistoryIdInts
   } = useCobrancas();
 
-  // Cobranca paga/a vencer usa o fluxo excepcional de cancelamento (rota
-  // dedicada, so super admin). A rota ja nega quem nao for super admin, mas a
-  // tela precisa negar tambem (spec de design §5): sem isso o usuario
-  // preenche o formulario inteiro so para descobrir no erro do servidor.
-  const isCobrancaPaga = cobranca.status === "PAID" || cobranca.status === "A_VENCER";
+  // Cobranca EFETIVAMENTE paga (so status PAID, nunca E-FATURADO/E-CREDITO —
+  // ver isCobrancaPagaParaCancelamento) usa o fluxo excepcional de
+  // cancelamento (rota dedicada, so super admin). A rota ja nega quem nao for
+  // super admin, mas a tela precisa negar tambem (spec de design §5): sem
+  // isso o usuario preenche o formulario inteiro so para descobrir no erro do
+  // servidor. O criterio precisa ser IDENTICO ao da rota: se divergir, a tela
+  // abre o formulario de cobranca paga e a rota recusa (ou vice-versa).
+  const isCobrancaPaga = isCobrancaPagaParaCancelamento(cobranca);
 
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
     if (!value) {

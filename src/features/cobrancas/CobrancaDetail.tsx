@@ -11,7 +11,11 @@ import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
 import { CobrancaHistoricoPanel } from "@/features/cobrancas/CobrancaHistoricoPanel";
 import { CobrancaStatusBadge } from "@/features/cobrancas/CobrancaStatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
-import { isConfirmacaoDeMesAnterior } from "@/features/cobrancas/cancelamento-pago";
+import {
+  isCobrancaPagaParaCancelamento,
+  isConfirmacaoDeMesAnterior,
+  referenciaConfirmacaoParaMesFechado
+} from "@/features/cobrancas/cancelamento-pago";
 import {
   canLiberarParaPedido,
   formatMesAnoPtBr,
@@ -87,11 +91,16 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
   const isFaturado = tipoNormalized === "E-FATURADO" || tipoNormalized === "FATURADO";
   const valorExibicao = getValorCobranca(cobrancaAtual);
 
-  // Cobranca paga (PAID/A_VENCER) passa a poder ser cancelada por aqui: rota
-  // dedicada e restrita a super admin, ver CancelCobrancaModal. mesFechadoLabel
-  // so existe quando a confirmacao caiu em mes ja fechado.
-  const isCobrancaPaga = cobrancaAtual.status === "PAID" || cobrancaAtual.status === "A_VENCER";
-  const referenciaConfirmacao = cobrancaAtual.data_confirmacao || cobrancaAtual.paid_at;
+  // Cobranca EFETIVAMENTE paga (so status PAID, nunca E-FATURADO/E-CREDITO —
+  // ver isCobrancaPagaParaCancelamento) passa a poder ser cancelada por aqui:
+  // rota dedicada e restrita a super admin, ver CancelCobrancaModal. Criterio
+  // precisa ser IDENTICO ao da rota (mesma funcao compartilhada), senao a
+  // tela e a rota divergem sobre o que conta como "paga". mesFechadoLabel so
+  // existe quando a confirmacao caiu em mes ja fechado; a referencia de data
+  // usa o mesmo fallback do dashboard financeiro (paid_at -> data_confirmacao
+  // -> created_at).
+  const isCobrancaPaga = isCobrancaPagaParaCancelamento(cobrancaAtual);
+  const referenciaConfirmacao = referenciaConfirmacaoParaMesFechado(cobrancaAtual);
   const mesFechadoLabel = isCobrancaPaga && isConfirmacaoDeMesAnterior(referenciaConfirmacao)
     ? formatMesAnoPtBr(referenciaConfirmacao)
     : null;

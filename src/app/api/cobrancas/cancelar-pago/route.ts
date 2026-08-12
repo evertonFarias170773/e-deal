@@ -18,9 +18,13 @@ import {
   isConfirmacaoDeMesAnterior,
   isDestinoValorCancelado,
   isMotivoCancelamentoPago,
+  isStatusPagoParaCancelamento,
   mensagemBloqueioProducao,
+  mensagemTipoCobrancaBloqueado,
   montarMotivoCancela,
-  rotuloMotivo
+  referenciaConfirmacaoParaMesFechado,
+  rotuloMotivo,
+  tipoCobrancaBloqueiaCancelamentoPago
 } from "@/features/cobrancas/cancelamento-pago";
 
 const STATUS_INATIVOS = ["CANCELADO", "EXTORNADO", "RECUSADO"];
@@ -65,7 +69,7 @@ export async function POST(request: Request) {
     //    tambem aprova perfil que tenha a permissao, e a decisao do dono foi
     //    restringir a super admin. nome_usuario tambem e lido aqui (alem de
     //    is_super_adm) para identificar o autor real no historico da proposta
-    //    no passo 10 — mesmo padrao de autor real usado em cancelar-externo.
+    //    no passo 11 — mesmo padrao de autor real usado em cancelar-externo.
     const { data: usuario } = await supabase
       .from("usuarios")
       .select("is_super_adm, nome_usuario")
@@ -79,7 +83,7 @@ export async function POST(request: Request) {
     // 3. Reconsulta a cobranca: o id e a unica informacao de confianca.
     const { data: pagamento, error: pagamentoError } = await supabase
       .from("pagamentos_v2")
-      .select("id, id_int, id_cliente, valor, status, confirmado, paid_at, data_confirmacao, tipo_cobranca")
+      .select("id, id_int, id_cliente, valor, status, confirmado, paid_at, data_confirmacao, created_at, tipo_cobranca")
       .eq("id", id)
       .maybeSingle();
 
@@ -94,10 +98,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, alreadyCancelled: true });
     }
 
-    // 5. Esta rota e SO para o caso excepcional da cobranca paga.
-    const estaPaga = statusAtual === "PAID" || pagamento.confirmado === true
-      || pagamento.paid_at != null || pagamento.data_confirmacao != null;
-    if (!estaPaga) {
+    // 5. Esta rota e SO para o caso excepcional da cobranca EFETIVAMENTE
+    //    paga: so status PAID conta. A_VENCER e confirmado=true NAO
+    //    qualificam mais — ver isStatusPagoParaCancelamento.
+    if (!isStatusPagoParaCancelamento(statusAtual)) {
       return erro("NAO_PAGA", "Esta cobranca nao esta paga. Use o cancelamento normal.", 409);
     }
 
@@ -115,13 +119,24 @@ export async function POST(request: Request) {
       }
     }
 
-    // 7. Faturamento ja fechado exige confirmacao explicita.
-    const referencia = pagamento.data_confirmacao || pagamento.paid_at;
+    // 7. Faturamento ja fechado exige confirmacao explicita. Mesmo fallback
+    //    de data que o dashboard financeiro usa (paid_at -> data_confirmacao
+    //    -> created_at), para as cobrancas confirmadas sem os dois primeiros
+    //    campos preenchidos ainda assim caiam no mes certo.
+    const referencia = referenciaConfirmacaoParaMesFechado(pagamento);
     if (isConfirmacaoDeMesAnterior(referencia) && !confirmaMesFechado) {
       return erro("MES_FECHADO", "Esta cobranca foi confirmada em mes anterior. Confirme que o faturamento fechado sera alterado.", 409);
     }
 
-    // 8. Credito ANTES do cancelamento: se a conta corrente falhar, nada e
+    // 8. Tipo de cobranca que nunca representa dinheiro efetivamente
+    //    recebido, mesmo com status PAID (E-CREDITO nasce PAID). Usa o
+    //    tipo_cobranca ja trazido no SELECT do passo 3.
+    const tipoBloqueado = tipoCobrancaBloqueiaCancelamentoPago(pagamento.tipo_cobranca);
+    if (tipoBloqueado) {
+      return erro("NAO_PAGA", mensagemTipoCobrancaBloqueado(tipoBloqueado), 409);
+    }
+
+    // 9. Credito ANTES do cancelamento: se a conta corrente falhar, nada e
     //    gravado e a cobranca continua paga. Nunca pode existir cobranca
     //    cancelada sem o credito prometido.
     let idMovimentoCredito: number | null = null;
@@ -145,7 +160,7 @@ export async function POST(request: Request) {
       idMovimentoCredito = typeof movimento === "number" ? movimento : null;
     }
 
-    // 9. Cancelamento local.
+    // 10. Cancelamento local.
     const motivoCancela = montarMotivoCancela(motivo, motivoTexto || null, destino);
     const { error: updateError } = await supabase
       .from("pagamentos_v2")
@@ -153,10 +168,19 @@ export async function POST(request: Request) {
       .eq("id", pagamento.id);
 
     if (updateError) {
-      return erro("NAO_ENCONTRADA", `Falha ao cancelar a cobranca: ${updateError.message}`, 409);
+      // Se o credito (passo 9) ja foi criado, ele fica orfao: a cobranca
+      // continua paga, mas o movimento de credito existe e precisa de
+      // conferencia manual — o cliente da API precisa saber disso. O texto
+      // bruto do erro do banco NUNCA vai para o cliente (pode vazar detalhe
+      // de schema/RLS); fica so no log do servidor.
+      console.error("[cancelar-pago] Falha ao atualizar pagamentos_v2 apos os passos anteriores:", updateError.message);
+      const mensagem = idMovimentoCredito != null
+        ? `Falha ao cancelar a cobranca: o movimento de credito #${idMovimentoCredito} foi criado e precisa de conferencia manual.`
+        : "Falha ao cancelar a cobranca. Tente novamente.";
+      return erro("NAO_ENCONTRADA", mensagem, 409);
     }
 
-    // 10. Historico da proposta com AUTOR REAL (mesmo padrao de cancelar-externo:
+    // 11. Historico da proposta com AUTOR REAL (mesmo padrao de cancelar-externo:
     //     so o servidor conhece o usuario autenticado de forma confiavel). O
     //     destino do valor entra no texto porque aqui nao ha devolucao pelo
     //     provedor — precisa ficar registrado o que aconteceu com o dinheiro.

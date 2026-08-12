@@ -45,6 +45,80 @@ export function isDestinoValorCancelado(valor: unknown): valor is DestinoValorCa
 }
 
 /**
+ * Status que representa dinheiro EFETIVAMENTE recebido, para efeito deste
+ * fluxo excepcional. Em producao todo A_VENCER e E-FATURADO: faturado
+ * aprovado e recebimento futuro autorizado, nao dinheiro que ja entrou
+ * (docs/business/CHECKOUT-PAGAMENTOS.md, secao faturado). `confirmado=true`
+ * tambem nao qualifica sozinho — e liberacao operacional, nao contabil.
+ * So `PAID` conta.
+ */
+export function isStatusPagoParaCancelamento(status: string | null | undefined): boolean {
+  return String(status || "").trim().toUpperCase() === "PAID";
+}
+
+export type TipoCobrancaBloqueadoCancelamentoPago = "E-FATURADO" | "E-CREDITO";
+
+/**
+ * Tipos de cobranca que nunca podem entrar neste fluxo, mesmo com status
+ * PAID:
+ * - E-FATURADO: o normal e ficar em A_VENCER, mas mesmo que o status seja
+ *   PAID o titulo em Contas a Receber (public.boletos) continua ativo e
+ *   este fluxo nao mexe nele.
+ * - E-CREDITO: nasce com status PAID porque o credito ja foi debitado da
+ *   conta corrente do cliente (`usar-credito/route.ts`) — cancelar aqui NAO
+ *   estorna esse consumo.
+ * Retorna o tipo normalizado quando bloqueia, ou null quando nao bloqueia.
+ */
+export function tipoCobrancaBloqueiaCancelamentoPago(
+  tipoCobranca: string | null | undefined
+): TipoCobrancaBloqueadoCancelamentoPago | null {
+  const normalizado = String(tipoCobranca || "").trim().toUpperCase().replace(/_/g, "-");
+  if (normalizado === "E-FATURADO") return "E-FATURADO";
+  if (normalizado === "E-CREDITO") return "E-CREDITO";
+  return null;
+}
+
+export function mensagemTipoCobrancaBloqueado(tipo: TipoCobrancaBloqueadoCancelamentoPago): string {
+  if (tipo === "E-FATURADO") {
+    return "Cobranca faturada nao entra neste fluxo: o valor pode nao ter sido recebido e o titulo em Contas a Receber continuaria ativo.";
+  }
+  return "Cobranca paga com credito do cliente nao entra neste fluxo: o cancelamento nao estorna o credito consumido.";
+}
+
+/**
+ * Criterio UNICO de "cobranca paga" para o fluxo excepcional de
+ * cancelamento — combina `isStatusPagoParaCancelamento` e
+ * `tipoCobrancaBloqueiaCancelamentoPago`. A rota aplica os dois separados
+ * (mensagens de bloqueio diferentes); as telas (CobrancaActionsMenu,
+ * CobrancaDetail) usam esta funcao combinada para decidir se mostram o
+ * fluxo de cobranca paga, e por isso nunca podem divergir do resultado
+ * final da rota.
+ */
+export function isCobrancaPagaParaCancelamento(cobranca: {
+  status: string | null | undefined;
+  tipo_cobranca?: string | null | undefined;
+}): boolean {
+  if (!isStatusPagoParaCancelamento(cobranca.status)) return false;
+  return tipoCobrancaBloqueiaCancelamentoPago(cobranca.tipo_cobranca) === null;
+}
+
+/**
+ * Referencia de data para decidir se a confirmacao caiu em mes fechado.
+ * Mesmo fallback que o dashboard financeiro usa para datar a receita
+ * (`dashboard-financeiro.service.ts:getFaturamentoReference`): paid_at,
+ * senao data_confirmacao, senao created_at — existem 74 cobrancas
+ * confirmadas com os dois primeiros campos nulos, e sem o created_at no
+ * fim da cadeia elas nunca disparariam a confirmacao de mes fechado.
+ */
+export function referenciaConfirmacaoParaMesFechado(cobranca: {
+  paid_at?: string | null;
+  data_confirmacao?: string | null;
+  created_at?: string | null;
+}): string | null {
+  return cobranca.paid_at || cobranca.data_confirmacao || cobranca.created_at || null;
+}
+
+/**
  * Status operacionais que impedem o cancelamento. E a lista protegida MENOS
  * REVISAO ATENDENTE: esse status e justamente a porta de saida — o gerente
  * devolve a proposta para la (devolverPropostaParaRevisaoAtendente, tela de
