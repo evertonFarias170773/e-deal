@@ -815,6 +815,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     return list;
   }, [dbVendedores, loadingVendedores, proposta?.vendedor]);
 
+  // Orçamento rápido: quem abre a cotação é o vendedor, então não há o que
+  // perguntar. `propostas.vendedor` guarda o NOME, e `user.name` já vem de
+  // `usuarios.nome_usuario` — então casa direto com a lista de vendedores.
+  // Procura mesmo assim para pegar a grafia canônica; se o usuário não estiver
+  // cadastrado como vendedor (um admin abrindo uma cotação, por exemplo), usa
+  // o nome da sessão em vez de deixar em branco.
+  const nomeSessaoVendedor = (user?.name ?? "").trim();
+  const vendedorDoUsuarioLogado =
+    vendedorOptions.find(
+      (opt) => opt.value.trim().toLowerCase() === nomeSessaoVendedor.toLowerCase()
+    )?.value ?? nomeSessaoVendedor;
+
   const vendedorExibido = canAlterarVendedor
     ? form.vendedor
     : (cliente && getClienteVendedorPadrao(cliente) && getClienteVendedorPadrao(cliente) !== "Não informado")
@@ -2950,7 +2962,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return;
     }
 
-    const vendedorParaSalvar = cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor;
+    // Em orçamento rápido o vendedor é sempre quem está com a tela aberta. O
+    // fallback cobre proposta rápida antiga, criada antes desta regra e salva
+    // sem vendedor: sem ele a tela mostraria um nome e o save recusaria.
+    const vendedorParaSalvar = form.clienteNaoCadastrado
+      ? (form.vendedor || vendedorDoUsuarioLogado)
+      : (cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor);
 
     if (!validateBeforeSave(vendedorParaSalvar)) {
       return;
@@ -3309,7 +3326,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return true;
     }
 
-    const vendedorParaSalvar = cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor;
+    // Em orçamento rápido o vendedor é sempre quem está com a tela aberta. O
+    // fallback cobre proposta rápida antiga, criada antes desta regra e salva
+    // sem vendedor: sem ele a tela mostraria um nome e o save recusaria.
+    const vendedorParaSalvar = form.clienteNaoCadastrado
+      ? (form.vendedor || vendedorDoUsuarioLogado)
+      : (cliente && !canAlterarVendedor ? getClienteVendedorPadrao(cliente) : form.vendedor);
 
     if (!validateBeforeSave(vendedorParaSalvar)) {
       return false;
@@ -3864,8 +3886,21 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     name="client_type"
                     checked={!!form.clienteNaoCadastrado}
                     onChange={() => {
-                      updateField("clienteNaoCadastrado", true);
-                      updateField("clienteId", "");
+                      // Já define o vendedor aqui: em orçamento rápido é sempre
+                      // quem está abrindo. setForm direto em vez de updateField
+                      // por dois motivos — o guard de updateField recusa
+                      // "vendedor" para quem não tem permissão enquanto
+                      // clienteNaoCadastrado ainda vale false, e assim os três
+                      // campos mudam num render só.
+                      setForm((current) => ({
+                        ...current,
+                        clienteNaoCadastrado: true,
+                        clienteId: "",
+                        vendedor: vendedorDoUsuarioLogado
+                      }));
+                      setErrorFields((current) =>
+                        current.filter((item) => item !== "clienteId" && item !== "vendedor")
+                      );
                       setCliente(null);
                       setClientSearch("");
                     }}
@@ -4033,7 +4068,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     </select>
                   </Field>
                   <Field label="Vendedor">
-                    {canAlterarVendedor || form.clienteNaoCadastrado ? (
+                    {form.clienteNaoCadastrado ? (
+                      // Orçamento rápido não pergunta o vendedor: é quem abriu.
+                      // Em edição mostra o vendedor gravado, para não reescrever
+                      // a autoria de uma proposta feita por outra pessoa.
+                      <input
+                        value={form.vendedor || vendedorDoUsuarioLogado}
+                        readOnly
+                        className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
+                      />
+                    ) : canAlterarVendedor ? (
                       <select value={form.vendedor} onChange={(event) => updateField("vendedor", event.target.value)} className={inputClass}>
                         <option value="">Selecione o vendedor</option>
                         {vendedorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -4041,12 +4085,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     ) : (
                       <input value={vendedorExibido} readOnly className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`} />
                     )}
-                    <p className={`text-xs ${canAlterarVendedor || form.clienteNaoCadastrado ? "text-amber-700" : "text-slate-500"}`}>
-                      {canAlterarVendedor || form.clienteNaoCadastrado
-                        ? "Selecione o vendedor responsável."
-                        : "Vendedor definido pelo cadastro do cliente (Somente leitura)."}
+                    <p className={`text-xs ${!form.clienteNaoCadastrado && canAlterarVendedor ? "text-amber-700" : "text-slate-500"}`}>
+                      {form.clienteNaoCadastrado
+                        ? "Orçamento rápido: você é o vendedor responsável."
+                        : canAlterarVendedor
+                          ? "Selecione o vendedor responsável."
+                          : "Vendedor definido pelo cadastro do cliente (Somente leitura)."}
                     </p>
-                    {!loadingVendedores && dbVendedores.length === 0 && (
+                    {!form.clienteNaoCadastrado && !loadingVendedores && dbVendedores.length === 0 && (
                       <p className="text-xs text-rose-600 mt-1 font-semibold">
                         ⚠️ Aviso: Nenhum vendedor retornado pelo banco de dados.
                       </p>
