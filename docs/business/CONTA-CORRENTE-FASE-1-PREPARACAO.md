@@ -1,17 +1,19 @@
 # CONTA-CORRENTE-FASE-1-PREPARACAO.md
 
-Versão: 1.0
-Status: **PREPARADA — NÃO APLICADA**
-Última atualização: 21/07/2026
+Versão: 1.1
+Status: **APLICADA EM PRODUÇÃO**
+Última atualização: 11/08/2026
 Projeto: Vibe
 
 ---
 
 # Fase 1 — Reformulação da Conta Corrente (Pendências Financeiras)
 
-Este documento descreve **exclusivamente os arquivos preparados** da Fase 1 (estrutura de banco + RPCs). **Nada foi aplicado** no banco: não houve `supabase db push`, SQL Editor, migration local/remota, limpeza de dados ou alteração em produção.
+Este documento descrevia originalmente **exclusivamente os arquivos preparados** da Fase 1 (estrutura de banco + RPCs), quando nada havia sido aplicado no banco.
 
-Arquivo de migration preparado: `supabase/migrations/20260721_conta_corrente_fase1.sql`.
+**Atualização (11/08/2026): a Fase 1 está aplicada em produção.** As RPCs `cc_abrir_pendencia`, `cc_usar_pendencia`, `cc_encerrar_pendencia` e os helpers `cc__assert_permissao`, `cc__assert_escopo_empresa`, `cc__status`, `cc__timeline`, `cc__valor_pago`, `cc__id_empresa_proposta`, `cc__total_soberano_proposta`, além da tabela `public.conta_corrente_pendencias`, foram confirmados existentes e em uso no banco de produção. O restante deste documento permanece como referência técnica da migration já aplicada.
+
+Arquivo de migration aplicado: `supabase/migrations/20260721_conta_corrente_fase1.sql`.
 
 A especificação conceitual aprovada está no plano de reformulação. Este documento é a referência técnica da migration.
 
@@ -29,7 +31,7 @@ A Conta Corrente representa **apenas pendências financeiras de diferença surgi
 - **Nova:** `public.conta_corrente_pendencias` (estado da pendência).
 - **Aditivo em `public.movimento_credito`:** `id_pendencia`, `tipo_evento`, `id_int_origem`, `id_int_destino`, `id_pagamento_destino`, `id_movimento_ref`, `motivo_evento` (todas NULLABLE; registros legados intactos; `cancelado*` congelados; tipo de `valor` legado **não** alterado nesta fase).
 - **Aditivo em `public.pagamentos_v2`:** `id_pendencia`, `valor_pendencia numeric(12,2)`, `reserva_estado`, `chave_reserva` (somente aditivo; nenhum fluxo existente de pagamentos_v2/boletos alterado).
-- **RPCs:** `cc_abrir_pendencia`, `cc_usar_pendencia`, `cc_encerrar_pendencia` + helpers `cc__assert_permissao`, `cc__status`, `cc__timeline`, `cc__valor_pago`.
+- **RPCs:** `cc_abrir_pendencia`, `cc_usar_pendencia`, `cc_encerrar_pendencia` + helpers `cc__assert_permissao`, `cc__assert_escopo_empresa`, `cc__status`, `cc__timeline`, `cc__valor_pago`, `cc__id_empresa_proposta`, `cc__total_soberano_proposta`.
 
 ## 3. Estados e eventos
 - **Estados (pendência):** `ABERTA` → `PARCIALMENTE_RESOLVIDA` → `RESOLVIDA` · `CANCELADA`.
@@ -67,10 +69,10 @@ Permissões por modo de encerramento: `CONFIRMAR/LIBERAR` → `credito.usar`; `D
 - RLS de leitura da nova tabela conforme escopo oficial (leitura autenticada; escopo fino permanece na aplicação, como em `propostas_pendencias`).
 
 ## 9. Pré-voo obrigatório (antes de aplicar)
-Rodar os SELECTs do topo da migration (`supabase/migrations/20260721_conta_corrente_fase1.sql`) no SQL Editor com privilégio pleno: triggers/funções anexados às tabelas do cálculo; tipos/precisão monetários; contagem real de `valor_total` nulo sem RLS; estados de `pagamentos_v2`; coluna real de item cancelado em `produtos_proposta`; políticas/grants atuais.
+Executado antes da aplicação em produção; mantido aqui como registro do checklist seguido. Rodar os SELECTs do topo da migration (`supabase/migrations/20260721_conta_corrente_fase1.sql`) no SQL Editor com privilégio pleno: triggers/funções anexados às tabelas do cálculo; tipos/precisão monetários; contagem real de `valor_total` nulo sem RLS; estados de `pagamentos_v2`; coluna real de item cancelado em `produtos_proposta`; políticas/grants atuais.
 
 ## 10. Acoplamento e riscos
-- **Acoplamento Fase 2 (crítico):** a Seção E da migration (revogar escrita direta + append-only em `movimento_credito`) **quebra** as rotas legadas (`usar-credito`, `resolver-diferenca`, `ajuste-credito`, `estorno-credito`, `confirmar`, `pagamento-combinado`) que fazem INSERT/UPDATE direto. **Aplicar somente junto ao refactor dessas rotas para as RPCs.**
+- **Acoplamento Fase 2 (crítico):** a Seção E da migration (revogar escrita direta + append-only em `movimento_credito`) **quebra** as rotas legadas (`usar-credito`, `resolver-diferenca`, `ajuste-credito`, `estorno-credito`, `confirmar`, `pagamento-combinado`) que fazem INSERT/UPDATE direto. **Aplicar somente junto ao refactor dessas rotas para as RPCs.** Confirmado em 11/08/2026: as RPCs `mc_ajuste_avulso_criar`, `mc_ajuste_avulso_estornar`, `mc_confirmar_abatimento_legado` e `mc_usar_credito_avulso` também existem em produção — indício de que o refactor dessas rotas legadas já ocorreu junto com esta fase, mas o detalhamento delas não é escopo deste documento.
 - **`produtos_proposta` sem `status_item` no dump:** o "total soberano" é calculado no servidor (`getPropostaDetailById`, que exclui itens cancelados) e **passado** à RPC; confirmar a coluna real no pré-voo.
 - **Tipos legados:** `movimento_credito.valor` é `numeric` sem escala e `propostas.valor_total` é `double precision`; **não** alterados nesta fase. Padronização de `movimento_credito.valor` para `numeric(12,2)` fica para a reinicialização (fase de limpeza separada).
 - **Limpeza de dados de teste:** **não** faz parte desta migration; é etapa separada e autorizada (backup + zeragem), que fará `DROP TRIGGER append-only → DELETE → recriar`.
@@ -84,4 +86,4 @@ Rodar os SELECTs do topo da migration (`supabase/migrations/20260721_conta_corre
 ---
 
 # Fonte da Verdade
-Enquanto o status deste documento for **PREPARADA — NÃO APLICADA**, nenhuma capacidade aqui descrita deve ser considerada disponível. A aplicação exige o pré-voo (Seção 9) e o acoplamento com a Fase 2 (Seção 10).
+A Fase 1 está **aplicada em produção** (confirmado em 11/08/2026). As capacidades descritas neste documento — RPCs `cc_*` e `public.conta_corrente_pendencias` — estão disponíveis. O pré-voo (Seção 9) e o acoplamento com a Fase 2 (Seção 10) permanecem como referência técnica do que foi necessário para a aplicação segura.

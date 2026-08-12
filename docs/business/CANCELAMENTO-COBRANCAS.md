@@ -1,8 +1,8 @@
 # CANCELAMENTO-COBRANCAS.md
 
-Versão: 2.0  
+Versão: 2.1  
 Status: Oficial  
-Última atualização: 18/07/2026  
+Última atualização: 11/08/2026  
 Projeto: Vibe
 
 ---
@@ -190,6 +190,13 @@ Também deve ser bloqueada quando:
 - `confirmado = true` representar confirmação financeira;
 - o provedor informar liquidação;
 - houver inconsistência entre o banco e o payload.
+
+## Exceção autorizada: cancelamento de cobrança já paga
+
+> **Exceção autorizada (11/08/2026): cancelamento de cobrança paga.**
+> Restrito a super admin, pela rota `POST /api/cobrancas/cancelar-pago`, com motivo de catálogo e destino definido para o valor. Não passa por provedor externo, porque cobrança paga não tem título em aberto. Bloqueado quando a proposta está em status operacional (exceto `REVISAO ATENDENTE`) e exige confirmação explícita quando a confirmação for de mês anterior. As rotas `cancelar-externo` e `cancelar-boleto` continuam recusando cobrança paga.
+
+Esta rota é o **único ponto oficial** para esse caso excepcional. Ela não enfraquece a regra geral desta seção — cobrança paga continua bloqueada em todos os demais fluxos, sem exceção — e não deve ser lida como o "cancelamento paralelo" que a seção Fonte da Verdade deste documento proíbe. Qualquer alteração de `status` ou `motivo_cancela` de uma cobrança paga fora desta rota permanece não autorizada.
 
 ---
 
