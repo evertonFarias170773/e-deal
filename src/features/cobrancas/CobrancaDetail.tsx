@@ -6,6 +6,7 @@ import { useState } from "react";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import { ArrowLeft } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
 import { CobrancaHistoricoPanel } from "@/features/cobrancas/CobrancaHistoricoPanel";
 import { CobrancaStatusBadge } from "@/features/cobrancas/CobrancaStatusBadge";
@@ -60,6 +61,7 @@ function renderShortUrl(url: string | undefined, token: string | undefined) {
 export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: CobrancaDetailProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { user } = useAuth();
   const { getCobrancaById, cancelCobranca, getCobrancasByProposta, liberarParaPedido, source, refreshCobrancas } = useCobrancas();
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const cobranca = getCobrancaById(cobrancaId) as NonNullable<ReturnType<typeof getCobrancaById>>;
@@ -389,7 +391,14 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
                 <button
                   type="button"
                   onClick={() => setIsCancelModalOpen(true)}
-                  title={isCobrancaPaga ? "Cobrança já paga: cancelamento restrito a super admin, com motivo e destino do valor." : undefined}
+                  disabled={isCobrancaPaga && !user?.isSuperAdmin}
+                  title={
+                    isCobrancaPaga
+                      ? (user?.isSuperAdmin
+                          ? "Cobrança já paga: cancelamento com motivo de catálogo e destino do valor."
+                          : "Cobrança já paga: cancelamento restrito a super administradores.")
+                      : undefined
+                  }
                   className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-50"
                 >
                   Cancelar cobrança

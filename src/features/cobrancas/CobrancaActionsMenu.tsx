@@ -61,6 +61,12 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     hasBoletoHistoryIdInts
   } = useCobrancas();
 
+  // Cobranca paga/a vencer usa o fluxo excepcional de cancelamento (rota
+  // dedicada, so super admin). A rota ja nega quem nao for super admin, mas a
+  // tela precisa negar tambem (spec de design §5): sem isso o usuario
+  // preenche o formulario inteiro so para descobrir no erro do servidor.
+  const isCobrancaPaga = cobranca.status === "PAID" || cobranca.status === "A_VENCER";
+
   async function copyValue(value: string | undefined, successTitle: string, emptyTitle: string) {
     if (!value) {
       showToast({ type: "warning", title: emptyTitle });
@@ -226,11 +232,15 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
       destructive: true,
       disabled:
         cobranca.status === "CANCELADO" ||
-        (!user?.isSuperAdmin &&
-          !user?.isAdmin &&
-          !hasPermissao(user, "cobrancas.cancel") &&
-          // Cancelamento restrito (só cobrança não paga) — a rota revalida tudo.
-          !hasPermissao(user, "propostas.cancelar_cobranca_nao_paga")),
+        (isCobrancaPaga
+          // Cobranca paga: so super admin, mesma regra da rota. Nao usa as
+          // permissoes abaixo — aquelas sao do fluxo de cobranca NAO paga.
+          ? !user?.isSuperAdmin
+          : !user?.isSuperAdmin &&
+            !user?.isAdmin &&
+            !hasPermissao(user, "cobrancas.cancel") &&
+            // Cancelamento restrito (só cobrança não paga) — a rota revalida tudo.
+            !hasPermissao(user, "propostas.cancelar_cobranca_nao_paga")),
       onClick: () => setIsCancelModalOpen(true)
     }
   ];
@@ -251,7 +261,7 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         isOpen={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}
         cobrancaId={cobranca.id}
-        isCobrancaPaga={cobranca.status === "PAID" || cobranca.status === "A_VENCER"}
+        isCobrancaPaga={isCobrancaPaga}
         mesFechadoLabel={getMesFechadoLabel(cobranca)}
       />
       <AutorizarFaturamentoModal
