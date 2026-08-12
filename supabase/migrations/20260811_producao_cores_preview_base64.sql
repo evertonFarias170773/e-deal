@@ -21,14 +21,21 @@
 --
 -- COMO E GERADO
 --   Rasterizacao da pagina 1 com pdf.js, largura alvo 1400px, JPEG qualidade
---   0,85, fundo branco. O script fica fora do repositorio (ferramenta pontual,
---   nao codigo da aplicacao) e usa apenas o Chromium do Playwright — nenhuma
+--   0,85, fundo branco, usando apenas o Chromium do Playwright — nenhuma
 --   dependencia nova entrou no projeto.
 --
+--   Desde 11/08/2026 a conversao mora no repositorio, em
+--   `scripts/gerar-preview-cores.mjs` (antes era um script pontual mantido
+--   fora). Rodar `node scripts/gerar-preview-cores.mjs --aplicar` converte toda
+--   cor que tenha PDF e ainda nao tenha previa.
+--
 -- MANUTENCAO — ATENCAO
---   Esta coluna e um SNAPSHOT. Trocar o PDF de uma cor NAO regenera o JPEG
---   automaticamente: e preciso rodar a conversao de novo para aquela cor.
---   Enquanto isso nao acontece, a previa mostra a imagem antiga.
+--   Esta coluna e um SNAPSHOT e nada a preenche sozinha: a aplicacao so LE
+--   producao_cores, e Postgres nao rasteriza PDF (por isso nao existe trigger
+--   que faca isso no banco). Cor nova cadastrada direto no Supabase nasce sem
+--   previa — e sem previa ela nao aparece no card do modelo nem no PDF do
+--   boletim. Trocar o PDF de uma cor tambem NAO regenera o JPEG: rode
+--   `--aplicar --nome "<cor>"` para aquela cor.
 --
 -- ORIGEM PRESERVADA
 --   pdf_base64 continua intacto e segue sendo a fonte. Nada e apagado, nenhuma
