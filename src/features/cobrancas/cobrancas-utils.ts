@@ -310,6 +310,26 @@ export function getLocalDateInSaoPaulo(value: string | Date | null | undefined):
   return "";
 }
 
+const NOMES_MES_PT_BR = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+];
+
+/**
+ * Formata uma data como "mês/ano" por extenso em PT-BR, minúsculo (ex.:
+ * "agosto/2026") — usado na confirmação de cancelamento de cobrança paga
+ * quando a confirmação caiu em mês já fechado (ver isConfirmacaoDeMesAnterior
+ * em cancelamento-pago.ts). Passa pelo fuso de São Paulo, igual ao resto da
+ * tela, antes de extrair o mês.
+ */
+export function formatMesAnoPtBr(value: string | Date | null | undefined): string {
+  const monthKey = getLocalMonthKey(getLocalDateInSaoPaulo(value));
+  if (!monthKey) return "";
+  const [ano, mes] = monthKey.split("-");
+  const nomeMes = NOMES_MES_PT_BR[Number(mes) - 1];
+  return nomeMes ? `${nomeMes}/${ano}` : "";
+}
+
 export function cobrancaMatchesSearch(cobranca: Cobranca, search: string) {
   const normalizedSearch = normalize(search.trim());
 

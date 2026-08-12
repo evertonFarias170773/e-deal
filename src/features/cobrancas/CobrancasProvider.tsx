@@ -19,6 +19,26 @@ import {
   createPropostaChatMentions
 } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
+import type { DestinoValorCancelado, MotivoCancelamentoPago } from "@/features/cobrancas/cancelamento-pago";
+
+/** Payload do cancelamento de cobrança JÁ PAGA — espelha o objeto que o
+ *  CancelCobrancaModal monta e o contrato de POST /api/cobrancas/cancelar-pago. */
+export type DadosCancelamentoCobrancaPaga = {
+  motivo: MotivoCancelamentoPago;
+  motivoTexto: string;
+  destino: DestinoValorCancelado;
+  confirmaMesFechado: boolean;
+};
+
+/** Códigos de erro da rota /api/cobrancas/cancelar-pago. */
+export type CancelamentoPagoErrorCode =
+  | "NEGADO"
+  | "NAO_ENCONTRADA"
+  | "NAO_PAGA"
+  | "PRODUCAO_ATIVA"
+  | "MES_FECHADO"
+  | "MOTIVO_INVALIDO"
+  | "FALHA_CREDITO";
 
 type CobrancasContextValue = {
   cobrancas: Cobranca[];
@@ -26,7 +46,11 @@ type CobrancasContextValue = {
   source: CobrancasReadSource;
   createCobranca: (values: CriarCobrancaFormValues, proposta?: Proposta) => Promise<Cobranca>;
   confirmPagamento: (id: string) => void;
-  cancelCobranca: (id: string, motivo: string) => Promise<{ success: boolean; errorMessage?: string }>;
+  cancelCobranca: (
+    id: string,
+    motivo: string,
+    dadosPago?: DadosCancelamentoCobrancaPaga
+  ) => Promise<{ success: boolean; errorMessage?: string; code?: CancelamentoPagoErrorCode }>;
   cancelarExterno: (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string) => Promise<{ success: boolean; errorMessage?: string }>;
   
   liberarParaPedido: (idInt: number) => boolean;
@@ -1082,7 +1106,74 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setCobrancasStats(updateCob);
   }, [source, cobrancas, cobrancasStats]);
 
-  const cancelCobranca = useCallback(async (id: string, motivo: string): Promise<{ success: boolean; errorMessage?: string }> => {
+  // Cancelamento de cobranca JA PAGA: rota dedicada e isolada (POST
+  // /api/cobrancas/cancelar-pago), restrita a super admin no servidor. Nao
+  // reusa cancelarExterno de proposito — cobranca paga nao tem titulo em
+  // aberto para baixar no provedor (o PIX ja caiu, o boleto ja liquidou), e a
+  // rota antiga continua intocada, protegendo as cobrancas pagas de sempre.
+  const cancelarCobrancaPaga = useCallback(async (
+    id: string,
+    dados: DadosCancelamentoCobrancaPaga
+  ): Promise<{ success: boolean; errorMessage?: string; code?: CancelamentoPagoErrorCode }> => {
+    try {
+      const client = getSupabaseClient();
+      if (!client) {
+        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+      }
+      const sessionResponse = await client.auth.getSession();
+      const token = sessionResponse.data.session?.access_token || "";
+      if (!token) {
+        return { success: false, errorMessage: "Sessão não encontrada. Faça login novamente." };
+      }
+
+      const response = await fetch("/api/cobrancas/cancelar-pago", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          id,
+          motivo: dados.motivo,
+          motivo_texto: dados.motivoTexto,
+          destino_valor: dados.destino,
+          confirma_mes_fechado: dados.confirmaMesFechado
+        })
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        return {
+          success: false,
+          errorMessage: data?.message || "Não foi possível cancelar a cobrança paga.",
+          code: data?.code as CancelamentoPagoErrorCode | undefined
+        };
+      }
+
+      // Atualiza o estado local de imediato para a UI reagir; o refreshCobrancas
+      // logo abaixo traz o motivo_cancela definitivo gravado pela rota.
+      const updateCobLocal = (list: Cobranca[]): Cobranca[] =>
+        list.map((cobranca) => (cobranca.id === id ? { ...cobranca, status: "CANCELADO" } : cobranca));
+      setCobrancas(updateCobLocal);
+      setCobrancasStats(updateCobLocal);
+
+      await refreshCobrancas();
+      const cobAlvo = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
+      if (cobAlvo?.id_int) {
+        await recalcularBoletoIdIntsLocal(cobAlvo.id_int);
+        await checkAndRevertPropostaStatus(cobAlvo.id_int);
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, errorMessage: error instanceof Error ? error.message : "Falha na comunicação com a API." };
+    }
+  }, [cobrancas, cobrancasStats, refreshCobrancas, recalcularBoletoIdIntsLocal, checkAndRevertPropostaStatus]);
+
+  const cancelCobranca = useCallback(async (
+    id: string,
+    motivo: string,
+    dadosPago?: DadosCancelamentoCobrancaPaga
+  ): Promise<{ success: boolean; errorMessage?: string; code?: CancelamentoPagoErrorCode }> => {
     const cob = cobrancasStats.find((item) => item.id === id) || cobrancas.find((item) => item.id === id);
     if (!cob) {
       return { success: false, errorMessage: "Cobrança não encontrada." };
@@ -1110,8 +1201,14 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       }
 
       const dbStatusNorm = String(dbRow.status || "").trim().toUpperCase();
+      // Cobranca paga tem fluxo proprio: rota dedicada, so super admin, motivo de
+      // catalogo e destino do valor. O guard antigo continua valendo para tudo que
+      // nao for paga.
       if (dbStatusNorm === "PAID" || dbStatusNorm === "A_VENCER") {
-        return { success: false, errorMessage: "Não é permitido cancelar cobrança paga ou com faturamento aprovado (A_VENCER)." };
+        if (!dadosPago) {
+          return { success: false, errorMessage: "Não é permitido cancelar cobrança paga ou com faturamento aprovado (A_VENCER)." };
+        }
+        return await cancelarCobrancaPaga(id, dadosPago);
       }
 
       // Toda escrita financeira de cancelamento passa pela API protegida
@@ -1170,7 +1267,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     setCobrancas(updateCob);
     setCobrancasStats(updateCob);
     return { success: true };
-  }, [source, cobrancas, cobrancasStats, refreshCobrancas, recalcularBoletoIdIntsLocal]);
+  }, [source, cobrancas, cobrancasStats, refreshCobrancas, recalcularBoletoIdIntsLocal, cancelarCobrancaPaga]);
 
   const cancelarExterno = useCallback(async (cobranca: Cobranca, acaoLocal: "DELETE" | "CANCEL", motivo?: string): Promise<{ success: boolean; errorMessage?: string }> => {
     try {

@@ -10,8 +10,10 @@ import { CobrancaActionsMenu } from "@/features/cobrancas/CobrancaActionsMenu";
 import { CobrancaHistoricoPanel } from "@/features/cobrancas/CobrancaHistoricoPanel";
 import { CobrancaStatusBadge } from "@/features/cobrancas/CobrancaStatusBadge";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { isConfirmacaoDeMesAnterior } from "@/features/cobrancas/cancelamento-pago";
 import {
   canLiberarParaPedido,
+  formatMesAnoPtBr,
   getTipoCobrancaLabel,
   isCobrancaVencida,
   isPropostaLiberadaParaPedido
@@ -82,6 +84,15 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
   const tipoNormalized = cobrancaAtual.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
   const isFaturado = tipoNormalized === "E-FATURADO" || tipoNormalized === "FATURADO";
   const valorExibicao = getValorCobranca(cobrancaAtual);
+
+  // Cobranca paga (PAID/A_VENCER) passa a poder ser cancelada por aqui: rota
+  // dedicada e restrita a super admin, ver CancelCobrancaModal. mesFechadoLabel
+  // so existe quando a confirmacao caiu em mes ja fechado.
+  const isCobrancaPaga = cobrancaAtual.status === "PAID" || cobrancaAtual.status === "A_VENCER";
+  const referenciaConfirmacao = cobrancaAtual.data_confirmacao || cobrancaAtual.paid_at;
+  const mesFechadoLabel = isCobrancaPaga && isConfirmacaoDeMesAnterior(referenciaConfirmacao)
+    ? formatMesAnoPtBr(referenciaConfirmacao)
+    : null;
 
   async function copyValue(value: string | undefined, successTitle: string) {
     if (!value) {
@@ -378,8 +389,7 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
                 <button
                   type="button"
                   onClick={() => setIsCancelModalOpen(true)}
-                  disabled={cobrancaAtual.status === "PAID" || cobrancaAtual.status === "A_VENCER"}
-                  title={(cobrancaAtual.status === "PAID" || cobrancaAtual.status === "A_VENCER") ? "Cobranças pagas ou a vencer não podem ser canceladas/excluídas." : undefined}
+                  title={isCobrancaPaga ? "Cobrança já paga: cancelamento restrito a super admin, com motivo e destino do valor." : undefined}
                   className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-50"
                 >
                   Cancelar cobrança
@@ -394,6 +404,8 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
         isOpen={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}
         cobrancaId={cobrancaAtual.id}
+        isCobrancaPaga={isCobrancaPaga}
+        mesFechadoLabel={mesFechadoLabel}
         onSuccess={() => {
           onClose?.();
           onRefreshProposta?.();

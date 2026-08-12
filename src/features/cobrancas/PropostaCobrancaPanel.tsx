@@ -2809,6 +2809,10 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
           isOpen={true}
           onClose={() => setCobrancaParaExcluir(null)}
           cobrancaId={cobrancaParaExcluir.id}
+          // Painel de Pagamentos das Propostas não é a Conferência: fluxo antigo,
+          // sem cancelamento de cobrança paga por aqui.
+          isCobrancaPaga={false}
+          mesFechadoLabel={null}
           onSuccess={() => {
             setCobrancaParaExcluir(null);
             onRefreshProposta?.();

@@ -7,7 +7,8 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
-import { isCreditoPendente, isPendenteAprovacao } from "@/features/cobrancas/cobrancas-utils";
+import { formatMesAnoPtBr, isCreditoPendente, isPendenteAprovacao } from "@/features/cobrancas/cobrancas-utils";
+import { isConfirmacaoDeMesAnterior } from "@/features/cobrancas/cancelamento-pago";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { AnaliseCreditoModal } from "./AnaliseCreditoModal";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
@@ -25,6 +26,18 @@ type CobrancaActionsMenuProps = {
 function isEmpresaValida(cobranca: Pick<Cobranca, "id_empresa">) {
   const idEmpresa = Number(cobranca.id_empresa);
   return Number.isFinite(idEmpresa) && idEmpresa !== 0;
+}
+
+/**
+ * "agosto/2026" quando a confirmação desta cobrança caiu em mês já fechado
+ * (exige a confirmação extra no modal de cancelamento pago); null caso
+ * contrário ou quando a cobrança nem está paga.
+ */
+function getMesFechadoLabel(cobranca: Pick<Cobranca, "status" | "data_confirmacao" | "paid_at">): string | null {
+  const isPaga = cobranca.status === "PAID" || cobranca.status === "A_VENCER";
+  if (!isPaga) return null;
+  const referencia = cobranca.data_confirmacao || cobranca.paid_at;
+  return isConfirmacaoDeMesAnterior(referencia) ? formatMesAnoPtBr(referencia) : null;
 }
 
 export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProps) {
@@ -238,6 +251,8 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
         isOpen={isCancelModalOpen}
         onClose={() => setIsCancelModalOpen(false)}
         cobrancaId={cobranca.id}
+        isCobrancaPaga={cobranca.status === "PAID" || cobranca.status === "A_VENCER"}
+        mesFechadoLabel={getMesFechadoLabel(cobranca)}
       />
       <AutorizarFaturamentoModal
         isOpen={isAutorizarModalOpen}
