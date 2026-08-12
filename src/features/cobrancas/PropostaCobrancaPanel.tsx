@@ -17,6 +17,7 @@ import { CobrancaDetail } from "@/features/cobrancas/CobrancaDetail";
 import { CancelCobrancaModal } from "./CancelCobrancaModal";
 import { CorrigirTelefonePagadorModal } from "./CorrigirTelefonePagadorModal";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { fetchComSessao, obterAccessToken, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { resolverTelefonePagador } from "@/lib/telefone/telefone-br";
 import {
   getLiberacaoPedidoLabel,
@@ -968,11 +969,11 @@ export function PropostaCobrancaPanel({
       const chaveIdempotencia = chaveIdempotenciaECreditoRef.current;
       let respostaDefinitivaRecebida = false;
       try {
-        const client = getSupabaseClient();
-        const session = (await client?.auth.getSession())?.data.session;
-        const token = session?.access_token;
-
-        if (!token) throw new Error("Sessão expirada. Autentique-se novamente.");
+        // Token renovado quando perto de expirar, em vez do que estiver
+        // guardado no navegador. Ver src/lib/supabase/sessao.ts: sem
+        // middleware.ts no projeto, nada renova a sessão do lado do servidor.
+        const token = await obterAccessToken();
+        if (!token) throw new SessaoExpiradaError();
 
         const isCombined = roundedValor < roundedSaldoRestante;
 
@@ -1009,12 +1010,13 @@ export function PropostaCobrancaPanel({
             };
         }
 
-        const res = await fetch(endpoint, {
+        // fetchComSessao renova e repete UMA vez se vier 401. Seguro: nestas
+        // rotas o JWT é validado antes de qualquer leitura ou escrita, então
+        // 401 significa que o servidor não fez nada — e o payload ainda leva
+        // a chave de idempotência como segunda barreira.
+        const res = await fetchComSessao(endpoint, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
         // Resposta HTTP recebida = tentativa finalizada do lado do servidor
@@ -1101,6 +1103,18 @@ export function PropostaCobrancaPanel({
         setForm(buildInitialFormState());
         closeModal();
       } catch (err: unknown) {
+        // Sessão morta é caso à parte: não é falha da operação nem do crédito,
+        // e a saída não é "tentar de novo" — é entrar de novo. Dizer só
+        // "Sessão inválida" deixava o usuário preso sem saber o que fazer.
+        if (err instanceof SessaoExpiradaError) {
+          showToast({
+            type: "error",
+            title: "Sua sessão expirou",
+            description:
+              "Nada foi cobrado e o crédito do cliente segue intacto. Saia e entre novamente no sistema para aplicar o crédito."
+          });
+          return;
+        }
         const errorMessage = err instanceof Error ? err.message : String(err);
         showToast({ type: "error", title: "Falha ao aplicar crédito", description: errorMessage });
         await fetchSaldo();
