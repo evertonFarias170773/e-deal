@@ -1901,12 +1901,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   function addContact() {
-    if (!contactDraft.nome || !contactDraft.whatsapp) {
-      showToast({ type: "warning", title: "Contato incompleto", description: "Informe nome e WhatsApp para adicionar o contato." });
+    // trim antes de validar: só espaço passava no teste de vazio e virava um
+    // contato sem nome, que depois aparece em branco na proposta.
+    const nome = contactDraft.nome.trim();
+    const whatsapp = contactDraft.whatsapp.trim();
+
+    if (!nome) {
+      showToast({ type: "warning", title: "Nome obrigatório", description: "Informe o nome do contato — ele aparece na proposta enviada ao cliente." });
+      return;
+    }
+    if (!whatsapp) {
+      showToast({ type: "warning", title: "WhatsApp obrigatório", description: "Informe o WhatsApp do contato para adicionar." });
       return;
     }
 
-    const contact: CadastroContato = { id: `cont_prop_${Date.now()}`, ...contactDraft };
+    const contact: CadastroContato = {
+      id: `cont_prop_${Date.now()}`,
+      ...contactDraft,
+      nome,
+      whatsapp,
+      cargo: contactDraft.cargo.trim(),
+      email: contactDraft.email.trim()
+    };
     setProposalContacts((current) => [...current, contact]);
     updateField("contatoId", contact.id);
     setContactDraft({ nome: "", cargo: "", whatsapp: "", email: "" });
@@ -1925,13 +1941,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   function saveEditedContact() {
-    if (!editContactDraft.nome || !editContactDraft.whatsapp) {
-      showToast({ type: "warning", title: "Contato incompleto", description: "Informe nome e WhatsApp para salvar o contato." });
+    // Mesmo cuidado do addContact: sem trim, um espaço em branco passava e
+    // apagava o nome de um contato que já estava correto.
+    const nome = editContactDraft.nome.trim();
+    const whatsapp = editContactDraft.whatsapp.trim();
+
+    if (!nome) {
+      showToast({ type: "warning", title: "Nome obrigatório", description: "Informe o nome do contato — ele aparece na proposta enviada ao cliente." });
+      return;
+    }
+    if (!whatsapp) {
+      showToast({ type: "warning", title: "WhatsApp obrigatório", description: "Informe o WhatsApp do contato para salvar." });
       return;
     }
 
     setProposalContacts((current) =>
-      current.map((c) => (c.id === editingContactId ? { ...c, ...editContactDraft } : c))
+      current.map((c) => (c.id === editingContactId ? { ...c, ...editContactDraft, nome, whatsapp } : c))
     );
 
     setEditingContactId(null);
@@ -2973,9 +2998,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return;
     }
 
-    const formToSave = vendedorParaSalvar !== form.vendedor
-      ? { ...form, vendedor: vendedorParaSalvar }
-      : form;
+    // O nome do contato sai de `proposalContacts`, que é a lista realmente
+    // exibida na tela — inclui os contatos do cadastro E os adicionados na
+    // própria proposta, que o serviço não tinha como enxergar.
+    const contatoSelecionado = proposalContacts.find((c) => c.id === form.contatoId);
+    const formToSave = {
+      ...form,
+      vendedor: vendedorParaSalvar,
+      contatoNome: contatoSelecionado?.nome?.trim() ?? ""
+    };
 
     if (process.env.NODE_ENV === "development") {
       console.log("[DEV] handleSave — deletedProdutoPropostaIds enviados:", formToSave.deletedProdutoPropostaIds);
@@ -3337,9 +3368,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return false;
     }
 
-    const formToSave = vendedorParaSalvar !== form.vendedor
-      ? { ...form, vendedor: vendedorParaSalvar }
-      : form;
+    // O nome do contato sai de `proposalContacts`, que é a lista realmente
+    // exibida na tela — inclui os contatos do cadastro E os adicionados na
+    // própria proposta, que o serviço não tinha como enxergar.
+    const contatoSelecionado = proposalContacts.find((c) => c.id === form.contatoId);
+    const formToSave = {
+      ...form,
+      vendedor: vendedorParaSalvar,
+      contatoNome: contatoSelecionado?.nome?.trim() ?? ""
+    };
 
     try {
       const res = await saveProposta(formToSave);
@@ -5915,12 +5952,24 @@ function ManualFreteModal({
 }
 
 function ContactModal({ draft, onChange, onClose, onSave }: { draft: ContactDraft; onChange: (draft: ContactDraft) => void; onClose: () => void; onSave: () => void }) {
+  // O botão nasce desabilitado: o nome do contato vai impresso na proposta que
+  // o cliente recebe, então deixar passar em branco é defeito visível para
+  // fora. Bloquear na tela evita depender só do aviso depois do clique.
+  const nomeVazio = !draft.nome.trim();
+  const whatsappVazio = !draft.whatsapp.trim();
+
   return (
-    <Modal title="Adicionar novo contato" onClose={onClose} onSave={onSave}>
+    <Modal title="Adicionar novo contato" onClose={onClose} onSave={onSave} saveDisabled={nomeVazio || whatsappVazio}>
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Nome"><input value={draft.nome} onChange={(event) => onChange({ ...draft, nome: event.target.value })} className={inputClass} /></Field>
+        <Field label="Nome *">
+          <input value={draft.nome} onChange={(event) => onChange({ ...draft, nome: event.target.value })} className={inputClass} />
+          {nomeVazio ? <p className="text-xs text-amber-700">Obrigatório — é o nome que aparece na proposta enviada ao cliente.</p> : null}
+        </Field>
         <Field label="Cargo"><input value={draft.cargo} onChange={(event) => onChange({ ...draft, cargo: event.target.value })} className={inputClass} /></Field>
-        <Field label="WhatsApp"><input value={draft.whatsapp} onChange={(event) => onChange({ ...draft, whatsapp: event.target.value })} className={inputClass} /></Field>
+        <Field label="WhatsApp *">
+          <input value={draft.whatsapp} onChange={(event) => onChange({ ...draft, whatsapp: event.target.value })} className={inputClass} />
+          {whatsappVazio ? <p className="text-xs text-amber-700">Obrigatório.</p> : null}
+        </Field>
         <Field label="E-mail"><input value={draft.email} onChange={(event) => onChange({ ...draft, email: event.target.value })} className={inputClass} /></Field>
       </div>
     </Modal>
@@ -6005,13 +6054,13 @@ function AddressModal({ draft, onChange, onClose, onSave, isSaving, mode = "crea
   );
 }
 
-function Modal({ title, children, onClose, onSave, saveLabel = "Adicionar" }: { title: string; children: ReactNode; onClose: () => void; onSave: () => void; saveLabel?: string }) {
+function Modal({ title, children, onClose, onSave, saveLabel = "Adicionar", saveDisabled = false }: { title: string; children: ReactNode; onClose: () => void; onSave: () => void; saveLabel?: string; saveDisabled?: boolean }) {
   return (
     <div className="fixed inset-0 z-[70] bg-slate-950/50 p-4" role="dialog" aria-modal="true">
       <div className="mx-auto mt-8 max-w-3xl rounded-3xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 p-5"><h2 className="text-lg font-semibold text-slate-950">{title}</h2><button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
         <div className="p-5">{children}</div>
-        <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button type="button" onClick={onSave} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white">{saveLabel}</button></div>
+        <div className="flex flex-col gap-2 border-t border-slate-100 p-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button type="button" onClick={onSave} disabled={saveDisabled} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300">{saveLabel}</button></div>
       </div>
     </div>
   );

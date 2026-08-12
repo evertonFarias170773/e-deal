@@ -1403,8 +1403,17 @@ export async function saveProposta(
       if (!isNonEmpty(formState.contatoId)) {
         return { success: false, errorMessage: "Selecione um contato antes de salvar o orçamento." };
       }
+      // Ordem: o nome resolvido pela tela primeiro (única fonte que enxerga
+      // contato adicionado na própria proposta), depois o cadastro.
+      //
+      // O fallback NUNCA é o contatoId. Era: contato novo nasce com id
+      // sintético `cont_prop_<timestamp>`, some da busca em cadastro.contatos
+      // e o ID ia parar em `propostas.contato` — foi assim que a #20560 ficou
+      // com "cont_prop_1786556302575" e a #20556 com "cont_default" no lugar
+      // do nome. Sem nome resolvido, grava vazio: melhor um campo em branco
+      // do que um identificador interno aparecendo para o cliente.
       const selectedContact = cadastro?.contatos.find((c) => c.id === formState.contatoId);
-      contatoNome = selectedContact ? selectedContact.nome : (formState.contatoId || "");
+      contatoNome = (formState.contatoNome || "").trim() || (selectedContact?.nome || "").trim();
     }
 
     // Find the address selected (searching client addresses and comprador addresses if comprador selected)

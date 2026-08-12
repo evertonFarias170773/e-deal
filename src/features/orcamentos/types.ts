@@ -177,6 +177,14 @@ export type PropostaFormState = {
   emArte?: boolean;
   clienteId: string;
   contatoId: string;
+  /**
+   * Nome do contato selecionado, resolvido pela tela na hora de salvar.
+   * Existe porque contato adicionado direto na proposta vive só no estado da
+   * tela (id sintético `cont_prop_<timestamp>`) e nunca esteve em
+   * `cadastro.contatos` — sem isto o save não achava o nome e gravava o ID em
+   * `propostas.contato`.
+   */
+  contatoNome?: string;
   enderecoId: string;
   compradorId: string;
   itens: PropostaItem[];
