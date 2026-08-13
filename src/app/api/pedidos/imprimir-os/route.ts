@@ -138,8 +138,8 @@ export async function GET(request: Request) {
     return respostaErro(request, "Parâmetro id_int inválido.", 400);
   }
 
-  // Boletim a imprimir (pedidos_artes.id). Sem ele, mantém o comportamento
-  // legado: boletim mais recente da proposta e nenhum filtro por setor.
+  // Boletim a imprimir (propostas_os_setores.id). Sem ele, mantém o
+  // comportamento legado: boletim mais recente e nenhum filtro por setor.
   const idBoletim = (searchParams.get("boletim") || "").trim() || null;
   if (idBoletim && !UUID_RE.test(idBoletim)) {
     return respostaErro(request, "Parâmetro boletim inválido.", 400);

@@ -278,6 +278,19 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   modeloImagemVaziaTexto: { fontSize: 6.5, color: "#9aa8b5", textAlign: "center" },
+  // Faixa da quantidade, acima da arte.
+  modeloQuantLinha: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    paddingHorizontal: 3,
+    paddingBottom: 2,
+    marginBottom: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#cfd8e0"
+  },
+  modeloQuantLabel: { fontSize: 6, fontFamily: "Helvetica-Bold", color: "#6b7a88" },
+  modeloQuantValor: { fontSize: 12, fontFamily: "Helvetica-Bold" },
   modeloLinhaCampos: { flexDirection: "row", alignItems: "stretch", marginBottom: 0 },
   // Rotulo e valor na mesma linha: rotulo a esquerda, valor colado a direita.
   // Empilhados, como era antes, cada valor comecava numa posicao diferente e a
@@ -288,34 +301,43 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "space-between",
     paddingHorizontal: 3,
-    paddingBottom: 1.5,
-    marginBottom: 1.5,
+    paddingBottom: 3,
+    marginBottom: 3,
     borderBottomWidth: 0.4,
     borderBottomColor: "#e6ebef"
   },
-  modeloCampoLabel: { fontSize: 5.5, fontFamily: "Helvetica-Bold", color: "#6b7a88", paddingRight: 4 },
-  modeloCampoValor: { fontSize: 7.5, fontFamily: "Helvetica-Bold", textAlign: "right", flexShrink: 1 },
+  modeloCampoLabel: { fontSize: 5.5, fontFamily: "Helvetica-Bold", color: "#6b7a88", paddingRight: 4, flexShrink: 0 },
+  modeloCampoValor: {
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "right",
+    flexShrink: 1,
+    // Uma linha so: sem isso o valor longo quebrava e invadia a linha de baixo.
+    maxLines: 1,
+    textOverflow: "ellipsis"
+  },
   modeloDivisor: { width: 0.75, backgroundColor: "#cfd8e0", alignSelf: "stretch" },
   modeloObs: { fontSize: 6, color: "#5a6b7a", marginTop: 1, marginBottom: 1 },
   checklistLinha: {
     flexDirection: "row",
     alignItems: "center",
-    borderTopWidth: 0.75,
-    borderTopColor: "#cfd8e0",
-    marginTop: 3,
-    paddingTop: 3
+    borderTopWidth: 0.5,
+    borderTopColor: "#dbe2e8",
+    marginTop: 4,
+    paddingTop: 4
   },
   checklistItem: { flexDirection: "row", alignItems: "center", marginRight: 6 },
   checklistCaixa: {
     width: 8,
     height: 8,
-    borderWidth: 0.75,
-    borderColor: "#6b7a88",
+    // Traco fino: o quadrado e so o lugar de marcar, nao um elemento de leitura.
+    borderWidth: 0.4,
+    borderColor: "#8f9daa",
     borderRadius: 1.5,
     marginRight: 2.5
   },
   checklistTexto: { fontSize: 6.5, fontFamily: "Helvetica-Bold", color: "#3f3f42" },
-  checklistAssinatura: { flex: 1, borderBottomWidth: 0.75, borderBottomColor: "#cfd8e0", height: 8 },
+  checklistAssinatura: { flex: 1, borderBottomWidth: 0.4, borderBottomColor: "#cfd8e0", height: 8 },
   // ── Resumo dos demais setores ──────────────────────────────────────────────
   resumoBarra: {
     backgroundColor: "#e9edf1",
@@ -421,11 +443,26 @@ function Campo({ label, valor }: { label: string; valor: string | null | undefin
   );
 }
 
+/**
+ * Campo do card: rotulo a esquerda, valor a direita, SEMPRE em uma linha.
+ *
+ * A coluna e estreita (menos de um sexto da pagina). Valores longos — caso do
+ * gabarito "Numeracao Esquerda - Preta 20mm" — quebravam em duas linhas e
+ * escorriam por cima da linha seguinte. Agora o corpo diminui conforme o texto
+ * cresce e `maxLines` corta com reticencias no que nao couber.
+ */
 function CampoModelo({ label, valor }: { label: string; valor: string }) {
+  const original = pdfSafe(valor) || "-";
+  // A coluna tem ~54pt uteis. O corpo cai conforme o texto cresce e, no limite,
+  // o texto e cortado — `maxLines` sozinho nao bastava: o @react-pdf mantinha a
+  // linha mais larga que a coluna e ela invadia o campo vizinho.
+  const corpo = original.length > 18 ? 5.5 : original.length > 12 ? 6.5 : 7.5;
+  const limite = corpo === 5.5 ? 18 : corpo === 6.5 ? 18 : 14;
+  const texto = original.length > limite ? `${original.slice(0, limite - 1).trimEnd()}...` : original;
   return (
     <View style={styles.modeloCampo}>
       <Text style={styles.modeloCampoLabel}>{label}</Text>
-      <Text style={styles.modeloCampoValor}>{pdfSafe(valor) || "-"}</Text>
+      <Text style={[styles.modeloCampoValor, { fontSize: corpo }]}>{texto}</Text>
     </View>
   );
 }
@@ -447,9 +484,29 @@ function LinhaCampos({ esquerda, direita }: { esquerda: React.ReactNode; direita
  * gabarito ou frente/verso. Nesse caso o card fica só com o que a produção usa
  * — lote, quantidade, cor e código —, e a imagem é a prévia da cor do papel.
  */
-function ModeloCard({ modelo, isEstoque }: { modelo: OsPdfModelo; isEstoque?: boolean }) {
+function ModeloCard({
+  modelo,
+  isEstoque,
+  nomeProduto
+}: {
+  modelo: OsPdfModelo;
+  isEstoque?: boolean;
+  nomeProduto: string;
+}) {
+  /**
+   * "MODELO" e o nome do lote (pedidos_modelos.nome_modelo) — nao o id interno.
+   * Em produto de prateleira nao ha lote desenhado: o que identifica a peca e o
+   * proprio produto, entao o nome dele ocupa o campo.
+   */
+  const rotuloModelo = isEstoque ? nomeProduto : modelo.nomeModelo;
   return (
     <View style={styles.modeloCard}>
+      {/* Quantidade acima da arte: e o numero que a producao procura primeiro. */}
+      <View style={styles.modeloQuantLinha}>
+        <Text style={styles.modeloQuantLabel}>QUANT.:</Text>
+        <Text style={styles.modeloQuantValor}>{formatarQuantidade(modelo.quantidade)}</Text>
+      </View>
+
       {modelo.imagemDataUrl ? (
         // eslint-disable-next-line jsx-a11y/alt-text
         <Image style={styles.modeloImagem} src={modelo.imagemDataUrl} />
@@ -461,14 +518,10 @@ function ModeloCard({ modelo, isEstoque }: { modelo: OsPdfModelo; isEstoque?: bo
         </View>
       )}
 
-      <LinhaCampos
-        esquerda={<CampoModelo label="SETOR:" valor={modelo.nomeModelo} />}
-        direita={<CampoModelo label="QUANT.:" valor={formatarQuantidade(modelo.quantidade)} />}
-      />
       {isEstoque ? (
         <LinhaCampos
           esquerda={<CampoModelo label="COR:" valor={modelo.corMaterial || "-"} />}
-          direita={<CampoModelo label="MODELO:" valor={modelo.codigo || "-"} />}
+          direita={<CampoModelo label="MODELO:" valor={rotuloModelo || "-"} />}
         />
       ) : (
         <>
@@ -478,11 +531,11 @@ function ModeloCard({ modelo, isEstoque }: { modelo: OsPdfModelo; isEstoque?: bo
           />
           <LinhaCampos
             esquerda={<CampoModelo label="NUM.:" valor={modelo.gabarito || "-"} />}
-            direita={<CampoModelo label="MODELO:" valor={modelo.codigo || "-"} />}
+            direita={<CampoModelo label="MODELO:" valor={rotuloModelo || "-"} />}
           />
           <LinhaCampos
             esquerda={<CampoModelo label="IMPRESSAO:" valor={modelo.frenteVerso ? "FxV" : "Frente"} />}
-            direita={<CampoModelo label="NUMERACAO:" valor={modelo.tipoNumeracao || "-"} />}
+            direita={<CampoModelo label="TIPO:" valor={modelo.tipoNumeracao || "-"} />}
           />
         </>
       )}
@@ -509,13 +562,21 @@ function ModeloCard({ modelo, isEstoque }: { modelo: OsPdfModelo; isEstoque?: bo
 }
 
 /** Uma linha da grade de modelos (até 3 cards), com espaçadores de largura. */
-function ModelosLinha({ modelos, isEstoque }: { modelos: OsPdfModelo[]; isEstoque?: boolean }) {
+function ModelosLinha({
+  modelos,
+  isEstoque,
+  nomeProduto
+}: {
+  modelos: OsPdfModelo[];
+  isEstoque?: boolean;
+  nomeProduto: string;
+}) {
   return (
     <View style={styles.modelosLinha} wrap={false}>
       {modelos.map((modelo, j) => (
         <React.Fragment key={j}>
           {j > 0 ? <View style={styles.modeloGap} /> : null}
-          <ModeloCard modelo={modelo} isEstoque={isEstoque} />
+          <ModeloCard modelo={modelo} isEstoque={isEstoque} nomeProduto={nomeProduto} />
         </React.Fragment>
       ))}
       {/* Espaçadores mantêm a largura dos cards na última linha incompleta. */}
@@ -558,10 +619,10 @@ function ProdutoCard({ produto, corSetor }: { produto: OsPdfProduto; corSetor: s
       {/* Barra + primeira linha de cards no mesmo bloco: a barra nunca fica órfã. */}
       <View wrap={false}>
         {barra}
-        {linhas.length > 0 ? <ModelosLinha modelos={linhas[0]} isEstoque={produto.isEstoque} /> : null}
+        {linhas.length > 0 ? <ModelosLinha modelos={linhas[0]} isEstoque={produto.isEstoque} nomeProduto={pdfSafe(produto.nome)} /> : null}
       </View>
       {linhas.slice(1).map((linha, i) => (
-        <ModelosLinha key={i} modelos={linha} isEstoque={produto.isEstoque} />
+        <ModelosLinha key={i} modelos={linha} isEstoque={produto.isEstoque} nomeProduto={pdfSafe(produto.nome)} />
       ))}
     </View>
   );

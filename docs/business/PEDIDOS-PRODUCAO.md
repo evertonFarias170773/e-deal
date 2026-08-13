@@ -73,7 +73,9 @@ public.propostas.id_int
 ├── public.cotacao_frete.id_int
 ├── public.propostas_chat.id_int
 ├── public.propostas_pendencias.id_int
-├── public.pedidos.id_int
+├── public.propostas_os.id_int
+│   └── public.propostas_os_setores.id_os
+├── public.propostas_os_setores.id_int
 ├── public.pedidos_modelos.id_int
 └── public.pedidos_artes.id_int
 ```
@@ -161,22 +163,68 @@ Ele não deve iniciar fabricação automaticamente.
 
 # 5. Estruturas Atuais
 
-## `public.pedidos`
+## `public.propostas_os`
+
+Era `public.pedidos` e foi renomeada — a primary key ainda se chama
+`pedidos_pkey`. Documentos que citem `public.pedidos` referem-se a esta tabela;
+`public.pedidos` não existe mais no banco.
 
 Função atual:
 
-- registro pai do Boletim/OS;
+- cabeçalho da OS: **uma linha por pedido**, nunca uma por setor;
 - vínculo com a proposta por `id_int`;
-- armazenamento de informações operacionais;
-- armazenamento controlado de observações.
+- dados do pedido inteiro: cliente, endereço, valores, rastreio, forma de envio;
+- armazenamento controlado de observações (`obs`).
 
 Operações autorizadas atualmente:
 
 - `INSERT` controlado na abertura do Boletim/OS;
-- `UPDATE` somente do campo `obs`;
+- `UPDATE` de `obs` e `data_termino`;
 - `DELETE` bloqueado.
 
 Não ampliar o payload sem atualização prévia da Matriz de Segurança.
+
+**Uma linha por pedido é premissa do código**, não convenção: duas leituras
+usam `.maybeSingle()` filtrando por `id_int` (`pedidos-detalhe.service.ts` e
+`boletim-propostas.service.ts`) e passariam a devolver erro; a Expedição resolve
+o pedido com `Map.set(id_int, …)` e passaria a depender da ordem das linhas.
+
+`status_pedido`, `status_arte`, `status_producao` e `status_expedicao` são
+gravados no `INSERT` e nunca mais atualizados (12 de 12 linhas em `BLOQUEADO`).
+Não os use como estado corrente — o status do pedido é
+`propostas.status_interno`.
+
+---
+
+## `public.propostas_os_setores`
+
+Criada em 13/08/2026. **Uma linha por setor de produção do pedido**
+(PVC, LASER, FLEXO, TEXTIL) — é o Boletim daquele setor.
+
+Função atual:
+
+- prazo e hora do setor;
+- `status_producao`: a fase daquele setor, no vocabulário de
+  `public.osqr__status_qr()` até o acabamento, mais `CONCLUIDO`;
+- conferência/revisão do setor: peso real, volumes, tipo de volume e
+  responsável.
+
+Regras:
+
+- unicidade `(id_int, setor)` garantida por constraint;
+- `id_os` liga ao cabeçalho da OS e é anulável — o vínculo obrigatório é
+  `id_int`;
+- expedição **não** é por setor: o pedido é despachado inteiro, e essa parte
+  continua em `propostas_os` e na aba Expedição do boletim;
+- `propostas.status_interno` espelha a fase do setor **menos adiantado**;
+  quando todos concluem, nada é escrito — a saída da produção segue pelo
+  caminho existente.
+
+Antes desta tabela o boletim de setor era gravado em `public.pedidos_artes`.
+Isso tinha efeito real e indesejado: cada boletim aberto criava uma linha que
+contava como evidência de arte em `check_and_promote_proposta` (que lê a linha
+mais recente) e em `liberarPropostaParaProducao` (que exige todas em
+`APROVADO`) — um boletim em `EM ARTE` travava a liberação do pedido.
 
 ---
 
@@ -208,20 +256,30 @@ Uma alteração futura de modelos salvos exige fluxo específico e nova autoriza
 
 ## `public.pedidos_artes`
 
-Função atual:
+Função atual — **somente arte e briefing**:
 
-- registrar a arte vinculada a um modelo;
-- armazenar identificação do arquivo;
+- registrar a arte e o briefing da proposta (evento, data, local, designer);
+- armazenar identificação do arquivo e a lista `arquivos` (jsonb);
 - manter vínculo com Storage;
 - registrar autor do envio;
 - preservar rastreabilidade por `id_int`.
 
-Operação atual autorizada:
+O vínculo é por `id_int`: **não existe coluna ligando a arte a um modelo**.
 
-- `INSERT` da versão 1;
-- bloqueio de novo upload quando já existir arte para o modelo;
-- `UPDATE` bloqueado;
+Operação atual:
+
+- `INSERT` do briefing e das versões de arte;
+- `UPDATE` do briefing, dos anexos e do `status` (o código atualiza — a
+  restrição "UPDATE bloqueado" de versões anteriores deste documento não
+  corresponde à implementação);
 - `DELETE` bloqueado.
+
+`status` desta tabela é evidência de ARTE e alimenta
+`check_and_promote_proposta` e `liberarPropostaParaProducao`. Nada de produção
+deve ser gravado aqui — o boletim de setor mora em
+`public.propostas_os_setores`. As colunas `setor`, `prazo` e `hora` continuam
+existindo por causa do rollback da migração de 13/08/2026, mas estão vazias e
+não devem voltar a ser usadas.
 
 Versionamento completo, reprovação, substituição e múltiplas versões ainda não estão autorizados apenas por este documento.
 

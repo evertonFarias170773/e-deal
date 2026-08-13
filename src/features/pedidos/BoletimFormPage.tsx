@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
 import { useAppToast } from "@/components/common/AppToast";
 import {
@@ -38,13 +38,16 @@ import {
   avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
-import { SETORES_PCP, SETOR_PADRAO, normalizarSetor, prazoLimiteDoPedido } from "./setores";
+import { SETORES_PCP, SETOR_PADRAO, coresDoSetor, normalizarSetor, prazoLimiteDoPedido } from "./setores";
+import { tituloEventoDoPedido } from "./titulo-evento";
+import { atribuirSetorAosModelos } from "./services/pedidos-artes.service";
 import {
   listarBoletinsDaProposta,
   salvarBoletimSetor,
-  atribuirSetorAosModelos,
-  type BoletimSetor
-} from "./services/pedidos-artes.service";
+  salvarConferenciaDosSetores,
+  type BoletimSetor,
+  type ConferenciaSetor
+} from "./services/boletim-setores.service";
 import { abrirPdfOs, baixarPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -67,37 +70,6 @@ export const SETORES_BOLETIM: readonly string[] = SETORES_PCP;
  * a mesma cor identifica o setor no cabeçalho do grupo e no chip do lote.
  * As classes são literais porque o Tailwind não resolve nome montado em runtime.
  */
-const CORES_SETOR: Record<string, { chip: string; borda: string; fundo: string; texto: string }> = {
-  PVC: {
-    chip: "bg-blue-600 text-white",
-    borda: "border-blue-300",
-    fundo: "bg-blue-50/40",
-    texto: "text-blue-900"
-  },
-  LASER: {
-    chip: "bg-amber-500 text-white",
-    borda: "border-amber-300",
-    fundo: "bg-amber-50/40",
-    texto: "text-amber-900"
-  },
-  FLEXO: {
-    chip: "bg-violet-600 text-white",
-    borda: "border-violet-300",
-    fundo: "bg-violet-50/40",
-    texto: "text-violet-900"
-  },
-  TEXTIL: {
-    chip: "bg-teal-600 text-white",
-    borda: "border-teal-300",
-    fundo: "bg-teal-50/40",
-    texto: "text-teal-900"
-  }
-};
-
-function coresDoSetor(setor: string) {
-  return CORES_SETOR[setor] ?? CORES_SETOR.LASER;
-}
-
 export const MOCK_GABARITOS: GabaritoItem[] = [
   { id: "sem_gabarito", nome: "Sem gabarito", descricao: "Sem formatação ou gabarito específico.", previewImageUrl: "" },
   { id: "001_ate_n", nome: "001 até N", descricao: "Numeração sequencial com 3 dígitos.", previewImageUrl: "/vip_gabarito.png" },
@@ -197,7 +169,6 @@ function generateUniqueId(prefix: string): string {
 }
 
 export function BoletimFormPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const modoParam = searchParams ? searchParams.get("modo") : null;
   const idIntParam = searchParams ? searchParams.get("id_int") : null;
@@ -251,6 +222,15 @@ export function BoletimFormPage() {
   const [propostaBusca, setPropostaBusca] = useState("");
   const [selectedProposta, setSelectedProposta] = useState<Proposta | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  /** Aba "Expedição" aberta: mostra o fechamento do pedido inteiro, não um setor. */
+  const [abaExpedicao, setAbaExpedicao] = useState(false);
+
+  /**
+   * Revisão/conferência de cada setor (peso real, volumes e responsável).
+   * Vive em `propostas_os_setores`, uma linha por setor — antes era texto dentro
+   * de `propostas_os.obs`.
+   */
+  const [conferenciaPorSetor, setConferenciaPorSetor] = useState<Record<string, ConferenciaSetor>>({});
 
   // Block 1 & 2: Main Info & Commercial Briefing State
   const [clienteNome, setClienteNome] = useState("");
@@ -259,7 +239,7 @@ export function BoletimFormPage() {
   const [vendedor, setVendedor] = useState("Everton Farias");
   const [dataPrevistaEntrega, setDataPrevistaEntrega] = useState("");
   // Boletins da proposta — um por setor, todos no mesmo pedido.
-  // `boletimId` é a identidade do boletim aberto (pedidos_artes.id).
+  // `boletimId` é a identidade do boletim aberto (propostas_os_setores.id).
   const [boletins, setBoletins] = useState<BoletimSetor[]>([]);
   const [boletimId, setBoletimId] = useState<string | null>(null);
   const [boletimSetor, setBoletimSetor] = useState("");
@@ -385,6 +365,7 @@ export function BoletimFormPage() {
             // pode ter o seu próprio, gravado na abertura do boletim.
             setor: normalizarSetor(p.setor || p.modelos.find((m) => m.setor)?.setor),
             isEstoque: p.isEstoque === true,
+            pesoEstimado: Number(p.pesoTotalGramas) || 0,
             modelos: p.modelos.map((m) => ({
               id: m.id,
               nomeModelo: m.nomeModelo,
@@ -465,21 +446,29 @@ export function BoletimFormPage() {
           .order("created_at", { ascending: true })
           .limit(1);
 
+        // Guarda o valor cru: o rótulo (e a ressalva de prateleira) é resolvido
+        // por `tituloEvento`, junto com os produtos já carregados.
         const evento = data && data.length > 0 ? data[0] : null;
         if (!error && evento) {
-          setDadosEventoNome(evento.nome_evento || "Evento não informado");
+          setDadosEventoNome(evento.nome_evento || "");
           setDadosEventoData(evento.data_evento || "");
         } else {
-          setDadosEventoNome("Evento não informado");
+          setDadosEventoNome("");
         }
       } catch (err) {
-        setDadosEventoNome("Evento não informado");
+        setDadosEventoNome("");
       }
     }
 
     async function loadBoletins() {
       const lista = await listarBoletinsDaProposta(Number(idIntParam));
       setBoletins(lista);
+      // A conferência vem junto: cada boletim é a linha do seu setor.
+      setConferenciaPorSetor(
+        Object.fromEntries(
+          lista.filter((b) => b.setor).map((b) => [normalizarSetor(b.setor), b.conferencia])
+        )
+      );
       const vigente = lista[0];
       if (vigente) {
         setBoletimId(vigente.id);
@@ -586,6 +575,8 @@ export function BoletimFormPage() {
     setor?: string;
     /** Produto de prateleira: sem arte, numeração, gabarito ou frente/verso. */
     isEstoque?: boolean;
+    /** produtos_proposta.peso_total, em gramas — base do peso estimado do setor. */
+    pesoEstimado?: number;
     observacoes_item?: string;
     modelos: ModeloMock[];
   }
@@ -623,6 +614,19 @@ export function BoletimFormPage() {
   ]);
 
   /**
+   * Título do evento exibido no cabeçalho. Vem de `pedidos_artes.nome_evento`;
+   * pedido só de prateleira não tem evento e usa o nome dos produtos.
+   */
+  const tituloEvento = useMemo(
+    () =>
+      tituloEventoDoPedido(
+        dadosEventoNome,
+        produtos.map((p) => ({ nome: p.nome, isPrateleira: p.isEstoque === true }))
+      ),
+    [dadosEventoNome, produtos]
+  );
+
+  /**
    * Produtos agrupados por setor, na ordem PVC → LASER → FLEXO → TEXTIL.
    * Setor sem nenhum produto no pedido não aparece.
    */
@@ -635,6 +639,31 @@ export function BoletimFormPage() {
     [produtos]
   );
 
+
+  /** Setor da aba aberta, já normalizado — chave da conferência. */
+  const setorAtivo = normalizarSetor(boletimSetor);
+
+  const conferenciaAtual: ConferenciaSetor = conferenciaPorSetor[setorAtivo] ?? {};
+
+  function atualizarConferencia(campo: keyof ConferenciaSetor, valor: string) {
+    setConferenciaPorSetor((atual) => ({
+      ...atual,
+      [setorAtivo]: { ...(atual[setorAtivo] ?? {}), [campo]: valor }
+    }));
+  }
+
+  /**
+   * Peso estimado do setor: soma do peso dos produtos daquele setor
+   * (produtos_proposta.peso_total, em gramas). Derivado — não se digita.
+   */
+  const pesoEstimadoDoSetor = useMemo(() => {
+    const grupo = gruposPorSetor.find((g) => g.setor === setorAtivo);
+    if (!grupo) return "Não calculado";
+    const gramas = grupo.produtos.reduce((soma, p) => soma + (Number(p.pesoEstimado) || 0), 0);
+    if (gramas <= 0) return "Não calculado";
+    return gramas >= 1000 ? `${(gramas / 1000).toFixed(2)} kg` : `${Math.round(gramas)} g`;
+  }, [gruposPorSetor, setorAtivo]);
+
   /** Setores com produto no pedido que ainda não têm boletim aberto. */
   const setoresSemBoletim = useMemo(
     () =>
@@ -643,6 +672,33 @@ export function BoletimFormPage() {
         .filter((setor) => !boletins.some((b) => normalizarSetor(b.setor) === setor)),
     [gruposPorSetor, boletins]
   );
+
+  /**
+   * Uma aba por setor do pedido. A lista sai dos produtos — a OS já nasce
+   * sabendo quais setores a compõem —, mais qualquer boletim já gravado num
+   * setor sem produto (legado), para nenhum boletim ficar inalcançável.
+   */
+  /**
+   * Grupos exibidos no bloco de produtos: só o da aba aberta. Fora da edição
+   * (abertura de boletim) não há abas ainda, então mostra tudo.
+   */
+  const gruposVisiveis = useMemo(() => {
+    if (!isEditing || !boletimSetor) return gruposPorSetor;
+    const setorAtivo = normalizarSetor(boletimSetor);
+    const doSetor = gruposPorSetor.filter((g) => g.setor === setorAtivo);
+    // Boletim de setor sem produto (legado): mostra tudo em vez de uma tela vazia.
+    return doSetor.length > 0 ? doSetor : gruposPorSetor;
+  }, [isEditing, boletimSetor, gruposPorSetor]);
+
+  const abasDeSetor = useMemo(() => {
+    const setores = new Set<string>(gruposPorSetor.map((g) => g.setor));
+    boletins.forEach((b) => setores.add(normalizarSetor(b.setor)));
+    return SETORES_PCP.filter((setor) => setores.has(setor)).map((setor) => ({
+      setor,
+      produtos: gruposPorSetor.find((g) => g.setor === setor)?.produtos.length ?? 0,
+      boletim: boletins.find((b) => normalizarSetor(b.setor) === setor) ?? null
+    }));
+  }, [gruposPorSetor, boletins]);
 
   // Load proposals list on mount
   useEffect(() => {
@@ -1098,6 +1154,18 @@ export function BoletimFormPage() {
         }
         setBoletimId(dadosBoletim.boletim.id);
 
+        // 1b'. Conferência de cada setor — cada uma na linha do seu setor.
+        const conferencia = await salvarConferenciaDosSetores(Number(idIntParam), conferenciaPorSetor);
+        if (!conferencia.success) {
+          showToast({
+            type: "error",
+            title: "Erro ao Salvar a Conferência",
+            description: conferencia.error || "Não foi possível gravar a revisão dos setores."
+          });
+          setLoadingDetails(false);
+          return;
+        }
+
         // 1c. O setor do lote é o do PRODUTO dele (produtos.setor_pcp), não o do
         // boletim aberto. Antes todos os lotes da proposta levavam o setor do
         // boletim que estava sendo salvo — era assim que um lote TEXTIL ia parar
@@ -1144,11 +1212,17 @@ export function BoletimFormPage() {
 
         showToast({
           type: "success",
-          title: "Boletim Finalizado",
-          description: "Orientações e especificações técnicas de design atualizadas com sucesso"
+          title: "Boletim salvo",
+          description: "Orientações e especificações técnicas gravadas. Você continua nesta OS."
         });
 
-        router.push("/pedidos");
+        // Recarrega os boletins para a aba recém-criada deixar de ser "a abrir".
+        if (idIntParam) {
+          const atualizados = await listarBoletinsDaProposta(Number(idIntParam));
+          setBoletins(atualizados);
+          const desteSetor = atualizados.find((b) => normalizarSetor(b.setor) === normalizarSetor(boletimSetor));
+          if (desteSetor) setBoletimId(desteSetor.id);
+        }
       } catch (error) {
         console.error("Erro ao processar atualização do boletim:", error);
         showToast({
@@ -1275,6 +1349,18 @@ export function BoletimFormPage() {
       }
       setBoletimId(dadosBoletim.boletim.id);
 
+      // 2b'. Conferência de cada setor, na linha do próprio setor.
+      const conferencia = await salvarConferenciaDosSetores(idInt, conferenciaPorSetor);
+      if (!conferencia.success) {
+        showToast({
+          type: "error",
+          title: "Erro ao Salvar a Conferência",
+          description: conferencia.error || "Não foi possível gravar a revisão dos setores."
+        });
+        setLoadingDetails(false);
+        return;
+      }
+
       // 3. Mapear e Salvar Modelos/Lotes no Supabase
       const modelosPayload = produtos.flatMap(p =>
         p.modelos.map(m => ({
@@ -1312,11 +1398,9 @@ export function BoletimFormPage() {
       // 4. Sucesso!
       showToast({
         type: "success",
-        title: "Boletim Salvo",
-        description: "Novo boletim de entrada gerado com sucesso."
+        title: "Boletim salvo",
+        description: "Novo boletim de entrada gerado. Você continua nesta OS."
       });
-
-      router.push("/pedidos");
 
     } catch (error) {
       console.error("Erro ao processar salvamento do boletim:", error);
@@ -1334,6 +1418,21 @@ export function BoletimFormPage() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-7 text-xs text-slate-800 dark:text-slate-250 font-sans pb-12">
+      {/* Salvar flutuante: a página é longa e o botão do rodapé exigia rolar até
+          o fim só para gravar. Fica no canto, acima de tudo, e some enquanto
+          está salvando para não render clique duplo. */}
+      {selectedProposta && (
+        <button
+          type="submit"
+          disabled={loadingDetails}
+          title={isEditing ? "Salvar alterações desta OS" : "Salvar boletim"}
+          className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3.5 text-sm font-bold text-white shadow-xl shadow-emerald-700/25 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Save className="h-4 w-4" />
+          {loadingDetails ? "Salvando..." : isEditing ? "Salvar Alterações" : "Salvar Boletim"}
+        </button>
+      )}
+
       {/* Title Header com PageHeader global */}
       <PageHeader
         title={isEditing ? "Edição de OS — Boletim de Entrada" : "Abertura de OS — Boletim de Entrada"}
@@ -1613,9 +1712,9 @@ export function BoletimFormPage() {
                     <label className="text-xs font-semibold text-slate-500 uppercase">Título do Evento</label>
                     <div className="relative w-full h-12 rounded-2xl border border-slate-200 bg-slate-100 overflow-hidden cursor-not-allowed">
                       <div className="absolute inset-0 flex items-center px-4">
-                        <span className="text-base font-bold text-slate-800 truncate">{dadosEventoNome || "-"}</span>
+                        <span className="text-base font-bold text-slate-800 truncate">{tituloEvento}</span>
                       </div>
-                      <input type="text" readOnly value={dadosEventoNome} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
+                      <input type="text" readOnly value={tituloEvento} className="opacity-0 absolute inset-0 w-full h-full cursor-not-allowed" />
                     </div>
                   </div>
 
@@ -1630,81 +1729,99 @@ export function BoletimFormPage() {
                   </div>
                 </div>
 
-                {/* Boletins da proposta — um por setor, todos no mesmo pedido */}
-                {isEditing && boletins.length > 0 && (
-                  <div className="mt-4 rounded-3xl border-2 border-blue-100 bg-white p-4">
-                    <div className="mb-3 space-y-1">
-                      <span className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Boletins deste pedido ({boletins.length})
-                      </span>
-                      <p className="text-[11px] leading-relaxed text-slate-500">
-                        O pedido #{idIntParam} é um só, mas cada setor produz a sua parte e recebe o
-                        seu próprio boletim e PDF. Clique num setor abaixo para abrir e editar o
-                        boletim dele.
-                        {setoresSemBoletim.length > 0 && (
-                          <>
-                            {" "}Ainda falta abrir o boletim de{" "}
-                            <strong className="text-orange-700">{setoresSemBoletim.join(", ")}</strong> — use o
-                            botão ao lado, escolha o setor e salve.
-                          </>
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {boletins.map((b) => {
-                        const ativo = b.id === boletimId;
+                {/* Abas de setor. A OS já nasce sabendo os seus setores — eles vêm
+                    dos produtos do pedido —, então não há "adicionar setor": cada
+                    aba é um setor, e clicar nela abre o boletim daquele setor
+                    (criando-o no primeiro save, se ainda não existir). */}
+                {isEditing && abasDeSetor.length > 0 && (
+                  <div className="mt-4">
+                    <div className="flex flex-wrap items-end gap-1.5 border-b-[3px] border-slate-300">
+                      {abasDeSetor.map((aba) => {
+                        const cores = coresDoSetor(aba.setor);
+                        const ativa = !abaExpedicao && normalizarSetor(boletimSetor) === aba.setor && Boolean(boletimSetor);
                         return (
                           <button
-                            key={b.id}
+                            key={aba.setor}
                             type="button"
                             onClick={() => {
-                              setBoletimId(b.id);
-                              setBoletimSetor(b.setor || "");
-                              setBoletimHora(b.hora || "");
-                              if (b.prazo) setDataPrevistaEntrega(b.prazo);
+                              setAbaExpedicao(false);
+                              setBoletimSetor(aba.setor);
+                              setBoletimId(aba.boletim?.id ?? null);
+                              setBoletimHora(aba.boletim?.hora || "");
+                              if (aba.boletim?.prazo) setDataPrevistaEntrega(aba.boletim.prazo);
                             }}
-                            className={`rounded-2xl border-2 px-4 py-2 text-sm font-bold transition ${
-                              ativo
-                                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                                : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50"
+                            className={`-mb-[3px] flex items-center gap-2 rounded-t-2xl border-2 border-b-0 px-5 py-3 text-sm font-black uppercase tracking-wide transition ${
+                              ativa
+                                ? `${cores.chip} ${cores.borda} shadow-md`
+                                : `${cores.borda} ${cores.fundo} ${cores.texto} hover:brightness-95`
                             }`}
                           >
-                            {b.setor || "Sem setor"}
-                            {b.hora && <span className="ml-2 font-mono text-xs opacity-80">{b.hora}</span>}
+                            {aba.setor}
+                            <span className={`text-[11px] font-bold normal-case ${ativa ? "opacity-80" : "opacity-60"}`}>
+                              {aba.produtos} prod.
+                            </span>
+                            {aba.boletim ? (
+                              aba.boletim.hora && (
+                                <span className={`font-mono text-[11px] ${ativa ? "opacity-80" : "opacity-60"}`}>
+                                  {aba.boletim.hora}
+                                </span>
+                              )
+                            ) : (
+                              <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                                ativa ? "bg-white/25 text-white" : "bg-orange-100 text-orange-800"
+                              }`}>
+                                a abrir
+                              </span>
+                            )}
                           </button>
                         );
                       })}
+                      {/* Expedição não é setor: é o fechamento do pedido inteiro. */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setBoletimId(null);
-                          setBoletimSetor("");
-                          setBoletimHora("");
-                        }}
-                        title="Limpa o formulário do boletim para você escolher outro setor e salvar. Não apaga os boletins já criados."
-                        className="rounded-2xl border-2 border-dashed border-slate-300 px-4 py-2 text-sm font-bold text-slate-500 transition hover:border-blue-400 hover:text-blue-700"
+                        onClick={() => setAbaExpedicao(true)}
+                        className={`-mb-[3px] ml-2 flex items-center gap-2 rounded-t-2xl border-2 border-b-0 border-[#0b2f4a] px-5 py-3 text-sm font-black uppercase tracking-wide transition ${
+                          abaExpedicao
+                            ? "bg-[#0b2f4a] text-white shadow-md"
+                            : "bg-[#0b2f4a]/5 text-[#0b2f4a] hover:brightness-95"
+                        }`}
                       >
-                        {setoresSemBoletim.length > 0
-                          ? `+ Abrir boletim de ${setoresSemBoletim.join(" / ")}`
-                          : "+ Abrir boletim de outro setor"}
+                        Expedição
+                        <span className={`text-[11px] font-bold normal-case ${abaExpedicao ? "opacity-80" : "opacity-60"}`}>
+                          pedido inteiro
+                        </span>
                       </button>
                     </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                      O pedido #{idIntParam} é um só; cada setor produz a sua parte e tem o seu
+                      boletim e o seu PDF. A aba mostra apenas os produtos daquele setor.
+                      {setoresSemBoletim.length > 0 && (
+                        <>
+                          {" "}As abas marcadas como <strong className="text-orange-700">a abrir</strong> ainda
+                          não têm boletim: preencha o prazo e salve para criá-lo.
+                        </>
+                      )}
+                    </p>
                   </div>
                 )}
 
+                {!abaExpedicao && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mt-4 p-5 rounded-3xl bg-blue-50/80 border-2 border-blue-100">
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-blue-900 uppercase tracking-wider">Setor do Boletim</label>
-                    <select
-                      value={boletimSetor}
-                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setBoletimSetor(e.target.value)}
-                      className="w-full h-11 rounded-2xl border-2 border-blue-300 bg-white px-4 text-base font-bold text-blue-950 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
-                    >
-                      <option value="">Não definido</option>
-                      {SETORES_BOLETIM.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
+                    {/* Quem define o setor é a aba aberta — não há escolha a fazer
+                        aqui, o setor vem dos produtos do pedido. */}
+                    <div className="flex h-11 w-full items-center gap-2 rounded-2xl border-2 border-blue-200 bg-white px-4">
+                      {boletimSetor ? (
+                        <>
+                          <span className={`h-2.5 w-2.5 rounded-full ${coresDoSetor(normalizarSetor(boletimSetor)).chip}`} />
+                          <span className="text-base font-bold text-blue-950">{normalizarSetor(boletimSetor)}</span>
+                          <span className="ml-auto text-[11px] font-semibold text-slate-400">definido pela aba</span>
+                        </>
+                      ) : (
+                        <span className="text-sm font-semibold text-slate-400">Escolha uma aba de setor acima</span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -1754,6 +1871,7 @@ export function BoletimFormPage() {
                     </label>
                   </div>
                 </div>
+                )}
               </div>
             
             {/* BLOCO 2 — BRIEFING COMERCIAL */}
@@ -1773,21 +1891,25 @@ export function BoletimFormPage() {
               </div>
             </div>
 
-          {/* BLOCO 3 & 4 — PRODUTOS E MODELOS */}
+          {/* BLOCO 3 & 4 — PRODUTOS E MODELOS (do setor da aba) */}
+          {!abaExpedicao && (
           <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-6 shadow-sm">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider flex items-center gap-1.5">
                 BLOCO 3 & 4 — Produtos & Lotes Técnicos (PCP)
+                {isEditing && boletimSetor && (
+                  <span className={`ml-2 rounded-lg px-2.5 py-1 text-xs font-black tracking-wider ${coresDoSetor(normalizarSetor(boletimSetor)).chip}`}>
+                    {normalizarSetor(boletimSetor)}
+                  </span>
+                )}
               </h3>
               {/* Produtos são herdados da proposta de origem */}
             </div>
 
-            {/* Um bloco por setor: o pedido pode ter produtos de setores
-                diferentes, e cada setor tem o seu próprio boletim e o seu PDF.
-                O setor deste boletim vem em destaque; os demais ficam à vista,
-                porém apagados, para deixar claro que pertencem a outro boletim. */}
+            {/* Só o setor da aba aberta. Os outros setores do pedido têm as suas
+                próprias abas — misturá-los aqui era justamente o que confundia. */}
             <div className="space-y-6">
-              {gruposPorSetor.map((grupo) => {
+              {gruposVisiveis.map((grupo) => {
                 const cores = coresDoSetor(grupo.setor);
                 const ehDesteBoletim = normalizarSetor(boletimSetor) === grupo.setor && Boolean(boletimSetor);
                 const boletimDoSetor = boletins.find((b) => normalizarSetor(b.setor) === grupo.setor);
@@ -2302,6 +2424,7 @@ export function BoletimFormPage() {
               })}
             </div>
           </div>
+          )}
 
           {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS) */}
           <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
@@ -2343,10 +2466,87 @@ export function BoletimFormPage() {
             </div>
           </div>
 
-          {/* BLOCO 8 — REVISÃO / LOGÍSTICA */}
+          {/* BLOCO 8 — REVISÃO / CONFERÊNCIA (deste setor) */}
+                          {!abaExpedicao && (
+                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
+                            <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
+                              BLOCO 8 — Revisão / Conferência
+                              {boletimSetor && (
+                                <span className={`rounded-lg px-2.5 py-1 text-xs font-black tracking-wider ${coresDoSetor(normalizarSetor(boletimSetor)).chip}`}>
+                                  {normalizarSetor(boletimSetor)}
+                                </span>
+                              )}
+                            </h3>
+                            <p className="-mt-2 text-xs text-slate-500">
+                              O que este setor entregou: pesos, volumes e quem conferiu. O fechamento do
+                              pedido inteiro (frete, transportadora, destino) está na aba Expedição.
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-5">
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Estimado</label>
+                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
+                                  {pesoEstimadoDoSetor}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Real (kg)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Ex: 12.5"
+                                  value={conferenciaAtual.peso_real || ""}
+                                  onChange={(e) => atualizarConferencia("peso_real", e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Qtd de Volumes</label>
+                                <input
+                                  type="number"
+                                  placeholder="Ex: 2"
+                                  value={conferenciaAtual.qtd_volumes || ""}
+                                  onChange={(e) => atualizarConferencia("qtd_volumes", e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de Volume</label>
+                                <select
+                                  value={conferenciaAtual.tipo_volume || ""}
+                                  onChange={(e) => atualizarConferencia("tipo_volume", e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                >
+                                  <option value="">Selecione...</option>
+                                  <option value="Caixa">Caixa</option>
+                                  <option value="Pacote">Pacote</option>
+                                  <option value="Envelope">Envelope</option>
+                                  <option value="Palete">Palete</option>
+                                </select>
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-500 uppercase">Responsável pela conferência</label>
+                                <input
+                                  type="text"
+                                  placeholder="Quem revisou e conferiu"
+                                  value={conferenciaAtual.responsavel_conferencia || ""}
+                                  onChange={(e) => atualizarConferencia("responsavel_conferencia", e.target.value)}
+                                  className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          )}
+
+                          {/* ABA EXPEDIÇÃO — fechamento do pedido inteiro */}
+                          {abaExpedicao && (
                           <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
                             <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3">
-                              BLOCO 8 — Revisão / Logística
+                              Expedição — fechamento do pedido #{idIntParam}
                             </h3>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
@@ -2470,6 +2670,7 @@ export function BoletimFormPage() {
                               </div>
                             </div>
                           </div>
+                          )}
                           
                           {/* BLOCO DE RESUMO FINAL E SUBMISSÃO */}
                           <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 flex flex-col sm:flex-row sm:items-center justify-end gap-4 shadow-sm mb-12">

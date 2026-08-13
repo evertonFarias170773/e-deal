@@ -107,9 +107,10 @@ public.boletos
 ## Arte e Produção
 
 ```text
-public.pedidos
+public.propostas_os           (cabeçalho da OS — 1 por pedido; era public.pedidos)
+public.propostas_os_setores   (boletim de cada setor — 1 por setor)
 public.pedidos_modelos
-public.pedidos_artes
+public.pedidos_artes          (somente arte/briefing)
 ```
 
 ## Auditoria e comunicação
@@ -1018,6 +1019,12 @@ conforme permissões.
 `public.boletos` representa contas a receber e vencimentos.
 
 `public.pedidos_modelos` e `public.pedidos_artes` representam evidências operacionais de modelos e arte.
+
+`public.propostas_os_setores.status_producao` é a fase de CADA setor
+(PVC/LASER/FLEXO/TEXTIL). Desde 13/08/2026 `propostas.status_interno` espelha a
+fase do setor menos adiantado enquanto houver setor em aberto; quando todos
+concluem, nada é escrito — a saída da produção continua manual. Expedição não é
+por setor: o pedido é despachado inteiro.
 
 Nenhuma tabela secundária deve alterar automaticamente o status global sem automação oficialmente homologada.
 

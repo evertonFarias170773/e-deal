@@ -1,8 +1,10 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { sendPropostaChatMessage } from "@/features/orcamentos/services/orcamentos.service";
-import type { PedidoProducaoListItem, PedidoStatus, PropostaOperacionalListItem } from "../types";
+import type { PedidoProducaoListItem, PedidoStatus, PropostaOperacionalListItem, SetorDoPedido } from "../types";
 import type { PedidoModelo } from "@/features/producao/types";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
+import { SETORES_PCP, normalizarSetor } from "../setores";
+import { normalizarFaseSetor } from "../status-setor";
+import { tituloEventoDoPedido } from "../titulo-evento";
 /**
  * Busca a lista de pedidos em produção.
  * Retorna array vazio nesta etapa para transição segura de mock para o Supabase.
@@ -69,16 +71,64 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     console.warn("[pedidos-producao.service] Erro ao buscar modelos");
   }
 
+  // Briefing de arte, em ordem de criação: o primeiro é o que carrega o nome do
+  // evento. Boletim de setor não vive mais aqui (propostas_os_setores).
   let artes: { id_int: number; nome_evento: string | null; created_at: string }[] = [];
   try {
     const { data: artesRows } = await client
       .from("pedidos_artes")
       .select("id_int, nome_evento, created_at")
       .in("id_int", idInts)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: true });
     if (artesRows) artes = artesRows;
   } catch (error) {
     console.warn("[pedidos-producao.service] Erro ao buscar artes");
+  }
+
+  // Boletim de cada setor: prazo, hora e a fase de produção daquele setor.
+  let boletinsSetor: { id: string; id_int: number; setor: string | null; status_producao: string | null }[] = [];
+  try {
+    const { data: setoresRows } = await client
+      .from("propostas_os_setores")
+      .select("id, id_int, setor, status_producao")
+      .in("id_int", idInts);
+    if (setoresRows) boletinsSetor = setoresRows;
+  } catch (error) {
+    console.warn("[pedidos-producao.service] Erro ao buscar boletins de setor");
+  }
+
+  // Itens do pedido + cadastro do produto: o setor de produção é do cadastro
+  // (produtos.setor_pcp), e é ele que diz quantos setores a OS tem.
+  let itens: { id_int: number; id_produto: number | null; nome_produto: string | null; is_estoque: boolean | null }[] = [];
+  try {
+    const { data: itensRows } = await client
+      .from("produtos_proposta")
+      .select("id_int, id_produto, nome_produto, is_estoque")
+      .in("id_int", idInts);
+    if (itensRows) itens = itensRows;
+  } catch (error) {
+    console.warn("[pedidos-producao.service] Erro ao buscar itens da proposta");
+  }
+
+  const idsProduto = Array.from(
+    new Set(itens.map((i) => Number(i.id_produto)).filter((id) => Number.isFinite(id) && id > 0))
+  );
+  const setorPorProduto = new Map<number, string>();
+  const estoquePorProduto = new Map<number, boolean>();
+  if (idsProduto.length > 0) {
+    try {
+      const { data: produtosRows } = await client
+        .from("produtos")
+        .select("id_produto, setor_pcp, is_estoque")
+        .in("id_produto", idsProduto);
+      for (const linha of produtosRows ?? []) {
+        const id = Number(linha.id_produto);
+        if (linha.setor_pcp) setorPorProduto.set(id, String(linha.setor_pcp));
+        estoquePorProduto.set(id, linha.is_estoque === true);
+      }
+    } catch (error) {
+      console.warn("[pedidos-producao.service] Erro ao buscar setor dos produtos");
+    }
   }
 
   let osDados: { id_int: number; data_termino: string | null }[] = [];
@@ -106,18 +156,47 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       pendencias.push("Aguardando liberação de arte (ou arquivo pendente)");
     }
 
-    let produtoPrincipal = "Diversos";
     let quantidadeTotal = 0;
-    
     if (modelosDestaProposta.length > 0) {
-      produtoPrincipal = modelosDestaProposta[0].nome_modelo || "Diversos";
       quantidadeTotal = modelosDestaProposta.reduce((acc, m) => acc + (Number(m.quantidade) || 0), 0);
     }
 
-    const artesDestaProposta = artes.filter(a => a.id_int === idInt);
-    const nomeEvento = artesDestaProposta.length > 0 && artesDestaProposta[0].nome_evento 
-      ? artesDestaProposta[0].nome_evento 
-      : produtoPrincipal;
+    const boletins = boletinsSetor.filter((b) => b.id_int === idInt);
+    const itensDoPedido = itens.filter((i) => i.id_int === idInt);
+
+    // Título do evento: `pedidos_artes.nome_evento` do primeiro briefing que o
+    // tenha. Pedido só de prateleira não tem evento e usa o nome dos produtos.
+    const nomeEvento = tituloEventoDoPedido(
+      artes
+        .filter((a) => a.id_int === idInt)
+        .map((a) => a.nome_evento)
+        .find((nome) => (nome || "").trim() !== "") ?? null,
+      itensDoPedido.map((i) => ({
+        nome: i.nome_produto,
+        // O snapshot do item manda; o cadastro do produto é a rede de segurança
+        // para item gravado antes de o snapshot existir.
+        isPrateleira: i.is_estoque === true || estoquePorProduto.get(Number(i.id_produto)) === true
+      }))
+    );
+
+    // Setores do pedido = setores dos produtos ∪ setores que já têm boletim.
+    const setoresDoPedido = new Set<string>();
+    for (const item of itensDoPedido) {
+      const cadastro = setorPorProduto.get(Number(item.id_produto));
+      if (cadastro) setoresDoPedido.add(normalizarSetor(cadastro));
+    }
+    for (const boletim of boletins) {
+      if (boletim.setor) setoresDoPedido.add(normalizarSetor(boletim.setor));
+    }
+
+    const setores: SetorDoPedido[] = SETORES_PCP.filter((s) => setoresDoPedido.has(s)).map((setor) => {
+      const doSetor = boletins.find((b) => b.setor && normalizarSetor(b.setor) === setor);
+      return {
+        setor,
+        boletimId: doSetor ? String(doSetor.id) : null,
+        fase: normalizarFaseSetor(doSetor?.status_producao)
+      };
+    });
 
     const osDestaProposta = osDados.find(o => o.id_int === idInt);
     const dataTermino = osDestaProposta && osDestaProposta.data_termino
@@ -151,7 +230,8 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       hasArtePendente: emArte,
       obs: "",
       libera_nf: p.libera_nf === true,
-      is_prd_aprovado: p.is_prd_aprovado === true
+      is_prd_aprovado: p.is_prd_aprovado === true,
+      setores
     });
   }
 
@@ -205,41 +285,5 @@ export async function listarModelosImpressao(): Promise<PedidoModelo[]> {
   return data as unknown as PedidoModelo[];
 }
 
-/**
- * Atualiza o status macro da proposta para a fase de produção e grava um log.
- */
-export async function atualizarFaseProducaoLista(idInt: number, faseStatus: string, oldStatus: string): Promise<{ success: boolean; error?: string }> {
-  const allowedFases = ["EM IMPRESSAO", "EM ACABAMENTO", "REVISAO"];
-  if (!allowedFases.includes(faseStatus)) {
-    return { success: false, error: "Fase inválida." };
-  }
-
-  const client = getSupabaseClient();
-  if (!client) return { success: false, error: "Supabase client not initialized" };
-
-  const { error } = await client
-    .from("propostas")
-    .update({ status_interno: faseStatus })
-    .eq("id_int", idInt);
-
-  if (error) {
-    console.error("[PedidosProducaoService] Erro ao atualizar fase:", error);
-    return { success: false, error: error.message };
-  }
-
-  await sendPropostaChatMessage({
-    id_int: idInt,
-    mensagem: `Fase de produção atualizada via painel geral: de [${oldStatus || "Indefinido"}] para [${faseStatus}].`,
-    tipo: "SISTEMA",
-    autor_nome: "Operador (Lista)",
-    autor_uid: null,
-    autor_email: null,
-    setor: "PRODUCAO",
-    visivel_externo: false,
-    anexos: null,
-    id_cliente: null,
-    avatar: null
-  });
-
-  return { success: true };
-}
+// A fase de cada setor é gravada por `atualizarFaseSetor`, em
+// `services/boletim-setores.service.ts` — mesma casa do resto do boletim.

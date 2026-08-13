@@ -156,6 +156,7 @@ export async function montarOsPdfViewModel(
       propostaResult,
       empresaResult,
       artesResult,
+      setoresResult,
       modelosResult,
       pesosResult,
       freteResult
@@ -188,11 +189,23 @@ export async function montarOsPdfViewModel(
         try {
           return await client
             .from("pedidos_artes")
-            .select("id, setor, prazo, hora, nome_evento, arquivos, created_at")
+            .select("id, nome_evento, arquivos, created_at")
+            .eq("id_int", idInt)
+            .order("created_at", { ascending: true });
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao buscar artes (nao-fatal):", e);
+          return { data: null };
+        }
+      })(),
+      (async () => {
+        try {
+          return await client
+            .from("propostas_os_setores")
+            .select("id, setor, prazo, hora, created_at")
             .eq("id_int", idInt)
             .order("created_at", { ascending: false });
         } catch (e) {
-          console.warn("[os-viewmodel] Falha ao buscar boletim/artes (nao-fatal):", e);
+          console.warn("[os-viewmodel] Falha ao buscar boletins de setor (nao-fatal):", e);
           return { data: null };
         }
       })(),
@@ -270,9 +283,9 @@ export async function montarOsPdfViewModel(
       }
     }
 
-    // Cadastro do boletim + anexos do briefing (pedidos_artes). Setor e hora são
-    // campos próprios do boletim. Com idBoletim, o boletim é escolhido pelo seu
-    // id (identidade estável); sem ele, mantém o legado da linha mais recente.
+    // Boletim do setor (propostas_os_setores) + anexos do briefing
+    // (pedidos_artes). Com idBoletim, o boletim é escolhido pelo seu id
+    // (identidade estável); sem ele, mantém o legado da linha mais recente.
     let boletimId: string | null = null;
     let boletimSetor: string | null = null;
     let boletimPrazo: string | null = null;
@@ -280,17 +293,21 @@ export async function montarOsPdfViewModel(
     let boletimEvento: string | null = null;
     const artesGerais: OsPdfArteRef[] = [];
     {
-      const linhas = (artesResult?.data || []) as Record<string, unknown>[];
+      const setoresLinhas = (setoresResult?.data || []) as Record<string, unknown>[];
       const boletimRow = opts.idBoletim
-        ? linhas.find((r) => String(r.id) === String(opts.idBoletim))
-        : linhas[0];
+        ? setoresLinhas.find((r) => String(r.id) === String(opts.idBoletim))
+        : setoresLinhas[0];
       if (boletimRow) {
         boletimId = String(boletimRow.id);
         boletimSetor = boletimRow.setor ? String(boletimRow.setor) : null;
         boletimPrazo = boletimRow.prazo ? String(boletimRow.prazo) : null;
         boletimHora = boletimRow.hora ? String(boletimRow.hora) : null;
-        boletimEvento = boletimRow.nome_evento ? String(boletimRow.nome_evento) : null;
       }
+
+      const linhas = (artesResult?.data || []) as Record<string, unknown>[];
+      // O evento é do pedido, não do setor: vale o primeiro briefing que o tenha.
+      boletimEvento =
+        linhas.map((r) => (r.nome_evento ? String(r.nome_evento) : "")).find((nome) => nome.trim() !== "") ?? null;
       for (const row of linhas) {
         const arquivos: ArquivoJsonb[] = Array.isArray(row.arquivos) ? row.arquivos : [];
         artesGerais.push(...arquivos.map((a) => arquivoParaArteRef(client, a)));

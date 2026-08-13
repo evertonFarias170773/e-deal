@@ -697,6 +697,9 @@ export interface ParsedObs {
     responsavel_logistica?: string;
     observacoes_frete?: string;
   };
+  // A revisão/conferência de cada setor NÃO fica aqui: é uma linha por setor em
+  // `propostas_os_setores` (colunas de verdade, desde 13/08/2026). A logística
+  // acima continua sendo do pedido inteiro — é a aba Expedição.
 }
 
 export function parsePedidosObs(obsText: string | null | undefined): ParsedObs {
@@ -814,6 +817,7 @@ export interface SerializeObsInput {
     responsavel_logistica?: string;
     observacoes_frete?: string;
   };
+  // A conferência de cada setor mora em `propostas_os_setores`, não neste texto.
 }
 
 export function serializePedidosObs(input: SerializeObsInput, existingObsText: string | null | undefined): string {

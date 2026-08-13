@@ -18,17 +18,17 @@ import { useAppToast } from "@/components/common/AppToast";
 import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
-import { listarPedidosOperacionais, atualizarFaseProducaoLista } from "./services/pedidos-producao.service";
+import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
+import { atualizarFaseSetor } from "./services/boletim-setores.service";
+import { consolidarFases, type FaseSetor } from "./status-setor";
+import { SetorFaseChip } from "./components/SetorFaseChip";
 import { abrirPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { 
-  devolverPropostaParaRevisaoAtendente,
-  registrarMensagemSistemaProposta
-} from "@/features/orcamentos/services/orcamentos.service";
+import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
 import { liberarPedidoParaFiscal } from "./services/boletim-propostas.service";
 
-import type { PropostaOperacionalListItem } from "./types";
+import type { PropostaOperacionalListItem, SetorDoPedido } from "./types";
 import { useRouter } from "next/navigation";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
@@ -45,6 +45,8 @@ export function PedidosListPage() {
   const [isLiberando, setIsLiberando] = useState(false);
   const [selectedPropostaForDevolver, setSelectedPropostaForDevolver] = useState<PropostaOperacionalListItem | null>(null);
   const [isDevolverSubmitting, setIsDevolverSubmitting] = useState(false);
+  /** Chave `id_int:SETOR` do chip que está gravando — trava só aquele chip. */
+  const [salvandoSetor, setSalvandoSetor] = useState<string | null>(null);
 
   // Autorização (V2.1 + Legado V1)
   const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.view");
@@ -240,31 +242,65 @@ export function PedidosListPage() {
     }
   }
 
-  async function handleFaseChange(proposta: PropostaOperacionalListItem, newFase: string) {
-    // Optimistic UI Update
-    const oldStatus = proposta.status_interno || "Indefinido";
-    if (oldStatus === newFase) return; // Se já é a mesma, não faz nada
+  /**
+   * Move a fase de UM setor. O status do pedido é consequência: o service
+   * espelha nele a fase do setor menos adiantado e devolve o valor gravado.
+   */
+  async function handleFaseSetorChange(
+    proposta: PropostaOperacionalListItem,
+    setor: SetorDoPedido,
+    novaFase: FaseSetor
+  ) {
+    if (!setor.boletimId || setor.fase === novaFase) return;
 
-    setPedidos(current => current.map(p => 
-      p.id_int === proposta.id_int ? { ...p, status_interno: newFase } : p
-    ));
+    const chave = `${proposta.id_int}:${setor.setor}`;
+    const faseAnterior = setor.fase;
+    const statusAnterior = proposta.status_interno;
 
-    const res = await atualizarFaseProducaoLista(proposta.id_int, newFase, oldStatus);
+    setSalvandoSetor(chave);
+    setPedidos((current) =>
+      current.map((p) =>
+        p.id_int === proposta.id_int
+          ? { ...p, setores: (p.setores ?? []).map((s) => (s.setor === setor.setor ? { ...s, fase: novaFase } : s)) }
+          : p
+      )
+    );
+
+    const res = await atualizarFaseSetor(
+      proposta.id_int,
+      setor.boletimId,
+      setor.setor,
+      novaFase,
+      faseAnterior
+    );
+    setSalvandoSetor(null);
+
     if (!res.success) {
-      // Rollback
-      showToast({ type: "error", title: "Erro", description: res.error || "Erro ao atualizar fase." });
-      setPedidos(current => current.map(p => 
-        p.id_int === proposta.id_int ? { ...p, status_interno: oldStatus } : p
-      ));
-    } else {
-      showToast({ type: "success", title: "Sucesso", description: "Fase atualizada." });
-      registrarMensagemSistemaProposta({
-        idInt: proposta.id_int,
-        mensagem: `Fase de produção alterada de ${oldStatus} para ${newFase}.`
-      }).catch(err => {
-        console.warn("[PedidosListPage] Erro silencioso ao logar no chat:", err);
-      });
+      showToast({ type: "error", title: "Erro", description: res.error || "Erro ao atualizar a fase do setor." });
+      setPedidos((current) =>
+        current.map((p) =>
+          p.id_int === proposta.id_int
+            ? {
+                ...p,
+                status_interno: statusAnterior,
+                setores: (p.setores ?? []).map((s) => (s.setor === setor.setor ? { ...s, fase: faseAnterior } : s))
+              }
+            : p
+        )
+      );
+      return;
     }
+
+    if (res.statusInterno) {
+      setPedidos((current) =>
+        current.map((p) => (p.id_int === proposta.id_int ? { ...p, status_interno: res.statusInterno as string } : p))
+      );
+    }
+    showToast({
+      type: "success",
+      title: `${setor.setor} atualizado`,
+      description: `Fase alterada para ${novaFase}.`
+    });
   }
 
   if (!canView) {
@@ -386,8 +422,11 @@ export function PedidosListPage() {
         items={filteredPedidos}
         getKey={(proposta) => proposta.id_int.toString()}
         isLoading={!isLoaded}
-        onRowClick={() => {
-          // No action row click directly, user should use actions column.
+        onRowClick={(proposta) => {
+          // Segundo caminho para o boletim, além do menu de ações. Clique em
+          // controle (chip de setor, menu, botão) não conta como clique na
+          // linha — a ResponsiveList já filtra isso.
+          router.push(`/pedidos/boletim?id_int=${proposta.id_int}&modo=${proposta.hasOS ? "edicao" : "abertura"}`);
         }}
         emptyTitle="Nenhuma OS em andamento"
         emptyDescription="Ajuste os filtros ou verifique se a proposta foi aprovada."
@@ -399,10 +438,9 @@ export function PedidosListPage() {
           {
             header: "Cliente",
             cell: (proposta) => (
-              <div className="flex flex-col">
-                <span className="font-medium text-slate-900 truncate max-w-[150px]" title={proposta.clienteNome}>{proposta.clienteNome}</span>
-                <span className="text-[10px] uppercase font-bold text-slate-400">{proposta.empresa}</span>
-              </div>
+              <span className="block truncate max-w-[170px] font-medium text-slate-900" title={proposta.clienteNome}>
+                {proposta.clienteNome}
+              </span>
             )
           },
           {
@@ -437,9 +475,22 @@ export function PedidosListPage() {
             header: "Status",
             cell: (proposta) => {
               const st = (proposta.status_interno || "");
+              // Consolidado do pedido: o detalhe de cada setor está na coluna
+              // Setores, aqui vale quanto do pedido já terminou a produção.
+              const consolidado = consolidarFases((proposta.setores ?? []).map((s) => s.fase));
               return (
                 <div className="flex flex-col gap-1.5 items-start">
                   <StatusBadge status={st} tone={getStatusTone(st)} />
+                  {consolidado && (
+                    <span
+                      className={`text-[10px] font-semibold whitespace-nowrap ${
+                        consolidado.tudoPronto ? "text-emerald-600" : "text-slate-500"
+                      }`}
+                    >
+                      {consolidado.prontos}/{consolidado.total}{" "}
+                      {consolidado.total === 1 ? "setor pronto" : "setores prontos"}
+                    </span>
+                  )}
                   {proposta.libera_nf && (
                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20 whitespace-nowrap">
                       Liberado para NF
@@ -450,27 +501,23 @@ export function PedidosListPage() {
             }
           },
           {
-            header: "Fases",
+            header: "Setores",
             cell: (proposta) => {
-              const fases = ["EM IMPRESSAO", "EM ACABAMENTO", "REVISAO"];
-              const currentStatus = proposta.status_interno;
-              const isLocked = currentStatus === "REVISAO PRODUCAO";
-              
+              const setores = proposta.setores ?? [];
+              if (setores.length === 0) {
+                return <span className="text-xs text-slate-400">Sem setor definido</span>;
+              }
               return (
-                <div className="flex items-center gap-3">
-                  {fases.map(fase => (
-                    <label key={fase} className={`flex items-center gap-1.5 text-xs font-medium ${isLocked ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer text-slate-700'}`}>
-                      <input 
-                        type="radio" 
-                        name={`fase-${proposta.id_int}`}
-                        value={fase}
-                        checked={currentStatus === fase}
-                        disabled={isLocked}
-                        onChange={() => handleFaseChange(proposta, fase)}
-                        className={`w-3.5 h-3.5 text-blue-600 border-slate-300 focus:ring-blue-500 ${isLocked ? 'cursor-not-allowed opacity-50' : ''}`}
-                      />
-                      {fase.replace("EM ", "")}
-                    </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {setores.map((setor) => (
+                    <SetorFaseChip
+                      key={setor.setor}
+                      setor={setor.setor}
+                      fase={setor.fase}
+                      temBoletim={Boolean(setor.boletimId)}
+                      salvando={salvandoSetor === `${proposta.id_int}:${setor.setor}`}
+                      onSelecionar={(fase) => { void handleFaseSetorChange(proposta, setor, fase); }}
+                    />
                   ))}
                 </div>
               );
@@ -550,6 +597,20 @@ export function PedidosListPage() {
                 )}
               </div>
             </div>
+            {(proposta.setores ?? []).length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                {(proposta.setores ?? []).map((setor) => (
+                  <SetorFaseChip
+                    key={setor.setor}
+                    setor={setor.setor}
+                    fase={setor.fase}
+                    temBoletim={Boolean(setor.boletimId)}
+                    salvando={salvandoSetor === `${proposta.id_int}:${setor.setor}`}
+                    onSelecionar={(fase) => { void handleFaseSetorChange(proposta, setor, fase); }}
+                  />
+                ))}
+              </div>
+            )}
             <div className="mt-4 space-y-2 text-sm text-slate-600">
               <p>OS: {proposta.hasOS ? "Criada" : "Sem OS"}</p>
               <p>Data: {proposta.dataProposta ? formatDateTime(proposta.dataProposta) : "-"}</p>

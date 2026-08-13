@@ -39,6 +39,44 @@ export function ordenarSetores<T>(itens: T[], setorDe: (item: T) => string | nul
   return [...itens].sort((a, b) => indice(setorDe(a)) - indice(setorDe(b)));
 }
 
+// ── Identidade visual ───────────────────────────────────────────────────────
+
+/**
+ * Cor de cada setor. É a mesma identidade das abas do boletim, dos chips da
+ * lista de OS e do PDF — por isso mora aqui, junto da lista de setores, e não
+ * na tela que a usou primeiro.
+ */
+export const CORES_SETOR: Record<string, { chip: string; borda: string; fundo: string; texto: string }> = {
+  PVC: {
+    chip: "bg-blue-600 text-white",
+    borda: "border-blue-300",
+    fundo: "bg-blue-50/40",
+    texto: "text-blue-900"
+  },
+  LASER: {
+    chip: "bg-amber-500 text-white",
+    borda: "border-amber-300",
+    fundo: "bg-amber-50/40",
+    texto: "text-amber-900"
+  },
+  FLEXO: {
+    chip: "bg-violet-600 text-white",
+    borda: "border-violet-300",
+    fundo: "bg-violet-50/40",
+    texto: "text-violet-900"
+  },
+  TEXTIL: {
+    chip: "bg-teal-600 text-white",
+    borda: "border-teal-300",
+    fundo: "bg-teal-50/40",
+    texto: "text-teal-900"
+  }
+};
+
+export function coresDoSetor(setor: string) {
+  return CORES_SETOR[setor] ?? CORES_SETOR.LASER;
+}
+
 // ── Prazo de produção ───────────────────────────────────────────────────────
 
 /**

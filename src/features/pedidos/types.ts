@@ -1,3 +1,5 @@
+import type { FaseSetor } from "./status-setor";
+
 export type PedidoStatus =
   | "BOLETIM_FINALIZADO"
   | "APROVADO"
@@ -108,6 +110,8 @@ export interface ProdutoMock {
   isEstoque?: boolean;
   /** `produtos.prazo` (texto livre do cadastro) — base da data limite sugerida. */
   prazoProducao?: string | null;
+  /** produtos_proposta.peso_total, em gramas — peso estimado real do item. */
+  pesoTotalGramas?: number;
   modelos: ModeloMock[];
 }
 
@@ -173,6 +177,14 @@ export interface PedidoProducaoListItem extends PedidoMock {
   status_expedicao?: string;
 }
 
+/** Um setor do pedido e o estado do boletim daquele setor. */
+export interface SetorDoPedido {
+  setor: string;
+  /** `pedidos_artes.id` do boletim do setor; null quando ainda não foi aberto. */
+  boletimId: string | null;
+  fase: FaseSetor;
+}
+
 export interface PropostaOperacionalListItem {
   id_int: number;
   clienteNome: string;
@@ -214,6 +226,13 @@ export interface PropostaOperacionalListItem {
   qtd_modelos: number;
   arte_status_geral: string; // "LIBERADA", "PENDENTE", "AGUARDANDO_CLIENTE", "SEM_MODELO"
   hasArtePendente: boolean;
+
+  /**
+   * Setores de produção do pedido (PVC/LASER/FLEXO/TEXTIL), cada um com a sua
+   * fase. Substitui os antigos rádios IMPRESSÃO/ACABAMENTO/REVISÃO da lista,
+   * que eram do pedido inteiro e não davam conta de setores em fases diferentes.
+   */
+  setores?: SetorDoPedido[];
 
   // Hierarquia
   produtos?: ProdutoMock[];
