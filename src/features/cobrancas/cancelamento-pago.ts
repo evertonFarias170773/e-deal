@@ -5,7 +5,6 @@
  *
  * Spec: docs/superpowers/specs/2026-08-11-cancelamento-cobranca-paga-design.md
  */
-import { PROPOSTA_STATUS_PROTEGIDOS } from "@/features/orcamentos/services/status-protegidos";
 import { getLocalDateInSaoPaulo, getLocalMonthKey } from "@/features/cobrancas/cobrancas-utils";
 
 export type MotivoCancelamentoPago =
@@ -119,24 +118,70 @@ export function referenciaConfirmacaoParaMesFechado(cobranca: {
 }
 
 /**
- * Status operacionais que impedem o cancelamento. E a lista protegida MENOS
- * REVISAO ATENDENTE: esse status e justamente a porta de saida — o gerente
- * devolve a proposta para la (devolverPropostaParaRevisaoAtendente, tela de
- * Pedidos) e so entao o financeiro cancela.
+ * Status que so existem DEPOIS da revisao do gerente — a partir de
+ * REVISAO PRODUCAO a proposta ja entrou na producao.
+ *
+ * Lista explicita de proposito. Ate 13/08/2026 ela era derivada de
+ * PROPOSTA_STATUS_PROTEGIDOS menos REVISAO ATENDENTE, e estava errada:
+ * aquela constante existe para outro fim (impedir que o cancelamento de uma
+ * cobranca rebaixe o status da proposta automaticamente) e inclui APROVADO e
+ * LIBERADO, que vem ANTES da revisao. No fluxo oficial LIBERADO significa
+ * "condicao financeira aceita" (docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md
+ * secao 6.6) — e o status normal de toda cobranca recem-confirmada. O
+ * resultado era um bloqueio em 99,8% das cobrancas pagas, e sem saida: a
+ * mensagem pedia ao gerente para devolver a proposta para REVISAO ATENDENTE,
+ * que nem e devolucao (e transicao para frente) nem esta ao alcance dele,
+ * porque a lista de Pedidos onde mora esse botao filtra is_prd_aprovado.
+ *
+ * REVISAO ATENDENTE fica de fora: e a porta de saida — o gerente devolve a
+ * proposta para la (devolverPropostaParaRevisaoAtendente, tela de Pedidos) e
+ * so entao o financeiro cancela.
  */
-export const STATUS_QUE_BLOQUEIAM_CANCELAMENTO_PAGO: readonly string[] =
-  PROPOSTA_STATUS_PROTEGIDOS.filter((status) => status !== "REVISAO ATENDENTE");
+export const STATUS_QUE_BLOQUEIAM_CANCELAMENTO_PAGO: readonly string[] = [
+  "REVISAO PRODUCAO",
+  "EM PRODUCAO",
+  "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE",
+  "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE",
+  "EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"
+];
 
-export function bloqueiaCancelamentoPago(statusProposta: string | null | undefined): boolean {
-  const normalizado = String(statusProposta || "").trim().toUpperCase();
+export type PropostaParaBloqueioCancelamento = {
+  status_interno?: string | null;
+  is_prd_aprovado?: boolean | null;
+};
+
+/**
+ * `is_prd_aprovado` entra junto com o status porque e a flag REAL de "esta na
+ * producao": e o que a liberacao liga (junto com REVISAO PRODUCAO), o que
+ * retirarPropostaDaProducao desliga e o filtro da lista de Pedidos
+ * (pedidos-producao.service.ts) — ou seja, e o que faz a proposta aparecer na
+ * tela onde existe o botao de devolver para REVISAO ATENDENTE. Bloquear por
+ * ela mantem a mensagem honesta: so ouve "peca ao gerente" quem o gerente
+ * consegue alcancar.
+ */
+export function bloqueiaCancelamentoPago(proposta: PropostaParaBloqueioCancelamento): boolean {
+  if (proposta.is_prd_aprovado === true) return true;
+  const normalizado = String(proposta.status_interno || "").trim().toUpperCase();
   if (!normalizado) return false;
   return STATUS_QUE_BLOQUEIAM_CANCELAMENTO_PAGO.includes(normalizado);
 }
 
-export function mensagemBloqueioProducao(idInt: number | null, statusProposta: string): string {
-  const proposta = idInt != null ? `Proposta ${idInt}` : "A proposta";
-  return `${proposta} esta ${String(statusProposta).trim().toUpperCase()}. ` +
-    "Peca ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobranca.";
+export function mensagemBloqueioProducao(
+  idInt: number | null,
+  proposta: PropostaParaBloqueioCancelamento
+): string {
+  const prefixo = idInt != null ? `Proposta ${idInt}` : "A proposta";
+  const status = String(proposta.status_interno || "").trim().toUpperCase();
+
+  if (STATUS_QUE_BLOQUEIAM_CANCELAMENTO_PAGO.includes(status)) {
+    return `${prefixo} esta ${status}. ` +
+      "Peca ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobranca.";
+  }
+
+  // Sobrou o caso da flag: status ainda anterior a producao, mas a proposta
+  // consta liberada. A acao do gerente aqui e retirar da producao, nao devolver.
+  return `${prefixo} consta liberada para a producao. ` +
+    "Peca ao gerente para retira-la da producao antes de cancelar a cobranca.";
 }
 
 /**

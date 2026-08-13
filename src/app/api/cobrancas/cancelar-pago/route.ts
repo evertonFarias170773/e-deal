@@ -105,17 +105,18 @@ export async function POST(request: Request) {
       return erro("NAO_PAGA", "Esta cobranca nao esta paga. Use o cancelamento normal.", 409);
     }
 
-    // 6. Producao ativa bloqueia.
+    // 6. Producao ativa bloqueia. Le os DOIS campos: o status diz onde a
+    //    proposta esta no fluxo e is_prd_aprovado diz se ela consta na
+    //    producao — ver bloqueiaCancelamentoPago.
     if (pagamento.id_int != null) {
       const { data: proposta } = await supabase
         .from("propostas")
-        .select("status_interno")
+        .select("status_interno, is_prd_aprovado")
         .eq("id_int", pagamento.id_int)
         .maybeSingle();
 
-      const statusProposta = String(proposta?.status_interno || "");
-      if (bloqueiaCancelamentoPago(statusProposta)) {
-        return erro("PRODUCAO_ATIVA", mensagemBloqueioProducao(Number(pagamento.id_int), statusProposta), 409);
+      if (proposta && bloqueiaCancelamentoPago(proposta)) {
+        return erro("PRODUCAO_ATIVA", mensagemBloqueioProducao(Number(pagamento.id_int), proposta), 409);
       }
     }
 

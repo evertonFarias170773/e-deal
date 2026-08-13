@@ -138,28 +138,34 @@ A verificação de tela é conveniência; a da rota é a que vale.
 | 2 | Cobrança não existe, ou os dados enviados divergem dos persistidos | `409 NAO_ENCONTRADA` |
 | 3 | Cobrança já está `CANCELADO` | `200` sucesso idempotente, sem efeito (protege duplo clique) |
 | 4 | Cobrança **não** está paga nem confirmada | `409 NAO_PAGA` — "use o cancelamento normal" |
-| 5 | Proposta em status operacional, exceto `REVISAO ATENDENTE` | `409 PRODUCAO_ATIVA` |
+| 5 | Proposta já passou pela revisão do gerente, ou consta liberada para a produção | `409 PRODUCAO_ATIVA` |
 | 6 | Confirmação em mês anterior e `confirma_mes_fechado != true` | `409 MES_FECHADO` |
 
 ### Detalhe do bloqueio 5
 
-Bloqueia quando `propostas.status_interno` estiver em:
+Bloqueia quando `propostas.is_prd_aprovado = true` **ou** quando `propostas.status_interno` estiver em:
 
 ```
-APROVADO, APROVADO / EM ARTE, LIBERADO, LIBERADO / EM ARTE,
 REVISAO PRODUCAO, EM PRODUCAO,
 EM IMPRESSAO, EM IMPRESSAO / PENDENTE,
 EM ACABAMENTO, EM ACABAMENTO / PENDENTE,
 EXPEDICAO, A RETIRAR, EM TRANSITO, ENTREGUE
 ```
 
-É a lista `PROPOSTA_STATUS_PROTEGIDOS` (`src/features/orcamentos/services/status-protegidos.ts`) **menos `REVISAO ATENDENTE`**, que é a porta de saída. A constante existente não pode ser usada crua: a implementação deve derivar a lista removendo esse status, deixando explícito no código o porquê.
+> **Correção de 13/08/2026.** A versão original desta seção mandava derivar a lista de `PROPOSTA_STATUS_PROTEGIDOS` menos `REVISAO ATENDENTE`, e estava errada. Aquela constante existe para outro fim — impedir que o cancelamento de uma cobrança rebaixe o status da proposta automaticamente — e inclui `APROVADO` e `LIBERADO`, que vêm **antes** da revisão do gerente. Pelo fluxo oficial (§6.6), `LIBERADO` significa "condição financeira aceita": é o status normal de toda cobrança recém-confirmada. Na prática o bloqueio pegava 99,8% das cobranças pagas (6.072 de 6.087), e sem saída — a mensagem mandava pedir ao gerente algo que ele não tem como fazer, porque a lista de Pedidos onde mora o botão de devolver filtra `is_prd_aprovado = true`. A lista passa a ser explícita, e `is_prd_aprovado` entra como critério porque é a flag real de "está na produção" (é o que a liberação liga, o que "Retirar da Produção" desliga e o filtro da tela de Pedidos). Com a regra corrigida, 7 das 6.087 cobranças pagas ficam bloqueadas — as que realmente estão em produção.
 
 Mensagem acionável, com o número real da proposta e o status real:
 
 ```
 Proposta 20493 está EM PRODUCAO.
 Peça ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobrança.
+```
+
+Quando o bloqueio vier só da flag (status ainda anterior à produção, mas `is_prd_aprovado = true`), a ação do gerente é outra e a mensagem acompanha:
+
+```
+Proposta 20493 consta liberada para a produção.
+Peça ao gerente para retirá-la da produção antes de cancelar a cobrança.
 ```
 
 ### Detalhe do bloqueio 6
@@ -247,8 +253,8 @@ Cenários obrigatórios antes de considerar pronto:
 2. Mesma coisa com destino `CREDITO` → crédito criado com o valor exato; saldo da conta corrente do cliente sobe.
 3. Repetir a mesma requisição (duplo clique) → nenhum crédito em dobro, resposta idempotente.
 4. Usuário não super admin → `403 NEGADO` na rota, mesmo chamando direto.
-5. Proposta em `EM PRODUCAO` → `409 PRODUCAO_ATIVA`, nada gravado.
-6. Proposta em `REVISAO ATENDENTE` → cancelamento permitido.
+5. Proposta em `EM PRODUCAO` → `409 PRODUCAO_ATIVA`, nada gravado. O mesmo para qualquer proposta com `is_prd_aprovado = true`.
+6. Proposta em `LIBERADO` ou `REVISAO ATENDENTE`, sem `is_prd_aprovado` → cancelamento permitido.
 7. Cobrança confirmada em mês anterior sem `confirma_mes_fechado` → `409 MES_FECHADO`; com a confirmação → sucesso.
 8. Cobrança `A_RECEBER` → `409 NAO_PAGA`, orientando o cancelamento normal.
 9. Falha na RPC de crédito → cobrança permanece paga, nada gravado.

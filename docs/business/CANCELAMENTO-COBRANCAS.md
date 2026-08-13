@@ -194,7 +194,7 @@ Também deve ser bloqueada quando:
 ## Exceção autorizada: cancelamento de cobrança já paga
 
 > **Exceção autorizada (11/08/2026): cancelamento de cobrança paga.**
-> Restrito a super admin, pela rota `POST /api/cobrancas/cancelar-pago`, com motivo de catálogo e destino definido para o valor. Não passa por provedor externo, porque cobrança paga não tem título em aberto. Bloqueado quando a proposta está em status operacional (exceto `REVISAO ATENDENTE`) e exige confirmação explícita quando a confirmação for de mês anterior. As rotas `cancelar-externo` e `cancelar-boleto` continuam recusando cobrança paga.
+> Restrito a super admin, pela rota `POST /api/cobrancas/cancelar-pago`, com motivo de catálogo e destino definido para o valor. Não passa por provedor externo, porque cobrança paga não tem título em aberto. Bloqueado quando a proposta já passou pela revisão do gerente (`REVISAO PRODUCAO` em diante) ou consta liberada para a produção (`is_prd_aprovado = true`) — nesse caso o gerente devolve a proposta para `REVISAO ATENDENTE` (ou a retira da produção) e só então o financeiro cancela. Exige confirmação explícita quando a confirmação for de mês anterior. As rotas `cancelar-externo` e `cancelar-boleto` continuam recusando cobrança paga.
 
 Esta rota é o **único ponto oficial** para esse caso excepcional. Ela não enfraquece a regra geral desta seção — cobrança paga continua bloqueada em todos os demais fluxos, sem exceção — e não deve ser lida como o "cancelamento paralelo" que a seção Fonte da Verdade deste documento proíbe. Qualquer alteração de `status` ou `motivo_cancela` de uma cobrança paga fora desta rota permanece não autorizada.
 
