@@ -106,6 +106,8 @@ export interface ProdutoMock {
    * boletim e o PDF da OS escondem esses campos.
    */
   isEstoque?: boolean;
+  /** `produtos.prazo` (texto livre do cadastro) — base da data limite sugerida. */
+  prazoProducao?: string | null;
   modelos: ModeloMock[];
 }
 

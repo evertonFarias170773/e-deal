@@ -583,6 +583,8 @@ export interface ModeloBoletimInput {
   numeracao_fim: number | null;
   obs_impressao: string | null;
   bloco?: string | null;
+  /** Setor do PRODUTO deste lote. Sem ele cai no `setor` geral da chamada. */
+  setor?: string | null;
 }
 
 /**
@@ -650,7 +652,9 @@ export async function salvarModelosBoletim(
     id_produto_proposta_origem: m.id_produto_proposta_origem || null,
     nome_modelo: m.nome_modelo,
     quantidade: m.quantidade,
-    setor: setorDoLote,
+    // Setor por lote: um pedido pode ter produtos de setores diferentes, e cada
+    // lote precisa ficar no boletim do SEU setor.
+    setor: m.setor ?? setorDoLote,
     tipo_numeracao: m.tipo_numeracao || null,
     numeracao_inicio: m.numeracao_inicio || null,
     numeracao_fim: m.numeracao_fim || null,

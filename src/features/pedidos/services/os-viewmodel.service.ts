@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./pedidos-detalhe.service";
 import { parsePedidosObs, obterFreteEscolhido } from "./boletim-propostas.service";
 import type { ParsedObs } from "./boletim-propostas.service";
+import { normalizarSetor } from "../setores";
 import { empresaTextoParaId, EMPRESA_NOMES } from "../pdf/os-pdf-assets";
 import type { EmpresaId } from "../pdf/os-pdf-assets";
 
@@ -147,12 +148,85 @@ export async function montarOsPdfViewModel(
     let contato: string | null = null;
     let statusInterno = "";
     let idCliente: number | null = pedido.idCliente || null;
+    // As leituras abaixo sao independentes entre si: rodam juntas para o PDF nao
+    // pagar ~12 idas e voltas em serie ao banco. Cada uma segue tolerante a
+    // falha; o encadeamento so existe onde o dado e mesmo pre-requisito
+    // (cliente depende do id_cliente que vem da proposta).
+    const [
+      propostaResult,
+      empresaResult,
+      artesResult,
+      modelosResult,
+      pesosResult,
+      freteResult
+    ] = await Promise.all([
+      (async () => {
+        try {
+          return await client
+            .from("propostas")
+            .select("cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente")
+            .eq("id_int", idInt)
+            .maybeSingle();
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao enriquecer com proposta (nao-fatal):", e);
+          return { data: null };
+        }
+      })(),
+      (async () => {
+        try {
+          return await client
+            .from("empresas")
+            .select("id, empresa, cnpj")
+            .eq("id", empresaTextoParaId(pedido.empresa))
+            .maybeSingle();
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao buscar empresa (nao-fatal):", e);
+          return { data: null };
+        }
+      })(),
+      (async () => {
+        try {
+          return await client
+            .from("pedidos_artes")
+            .select("id, setor, prazo, hora, nome_evento, arquivos, created_at")
+            .eq("id_int", idInt)
+            .order("created_at", { ascending: false });
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao buscar boletim/artes (nao-fatal):", e);
+          return { data: null };
+        }
+      })(),
+      (async () => {
+        try {
+          return await client
+            .from("pedidos_modelos")
+            .select("id, setor, arte_url, amostra_arte_base64")
+            .eq("id_int", idInt);
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao buscar arte dos modelos (nao-fatal):", e);
+          return { data: null };
+        }
+      })(),
+      (async () => {
+        try {
+          return await client.from("produtos_proposta").select("id, peso_total").eq("id_int", idInt);
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao buscar peso dos produtos (nao-fatal):", e);
+          return { data: null };
+        }
+      })(),
+      (async () => {
+        try {
+          return await obterFreteEscolhido(idInt, client);
+        } catch (e) {
+          console.warn("[os-viewmodel] Falha ao buscar frete (nao-fatal):", e);
+          return null;
+        }
+      })()
+    ]);
+
     try {
-      const { data: propostaRow } = await client
-        .from("propostas")
-        .select("cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente")
-        .eq("id_int", idInt)
-        .maybeSingle();
+      const propostaRow = propostaResult?.data as Record<string, unknown> | null;
       if (propostaRow) {
         cnpjCpf = propostaRow.cnpjCpf ? String(propostaRow.cnpjCpf) : null;
         contato = propostaRow.contato ? String(propostaRow.contato) : null;
@@ -188,18 +262,12 @@ export async function montarOsPdfViewModel(
     const empresaId = empresaTextoParaId(pedido.empresa);
     let empresaNome = EMPRESA_NOMES[empresaId];
     let empresaCnpj: string | null = null;
-    try {
-      const { data: empresaRow } = await client
-        .from("empresas")
-        .select("id, empresa, cnpj")
-        .eq("id", empresaId)
-        .maybeSingle();
+    {
+      const empresaRow = empresaResult?.data as Record<string, unknown> | null;
       if (empresaRow) {
         empresaNome = String(empresaRow.empresa || empresaNome);
         empresaCnpj = empresaRow.cnpj ? String(empresaRow.cnpj) : null;
       }
-    } catch (e) {
-      console.warn("[os-viewmodel] Falha ao buscar empresa (não-fatal):", e);
     }
 
     // Cadastro do boletim + anexos do briefing (pedidos_artes). Setor e hora são
@@ -211,13 +279,8 @@ export async function montarOsPdfViewModel(
     let boletimHora: string | null = null;
     let boletimEvento: string | null = null;
     const artesGerais: OsPdfArteRef[] = [];
-    try {
-      const { data: artesRows } = await client
-        .from("pedidos_artes")
-        .select("id, setor, prazo, hora, nome_evento, arquivos, created_at")
-        .eq("id_int", idInt)
-        .order("created_at", { ascending: false });
-      const linhas = artesRows || [];
+    {
+      const linhas = (artesResult?.data || []) as Record<string, unknown>[];
       const boletimRow = opts.idBoletim
         ? linhas.find((r) => String(r.id) === String(opts.idBoletim))
         : linhas[0];
@@ -232,8 +295,6 @@ export async function montarOsPdfViewModel(
         const arquivos: ArquivoJsonb[] = Array.isArray(row.arquivos) ? row.arquivos : [];
         artesGerais.push(...arquivos.map((a) => arquivoParaArteRef(client, a)));
       }
-    } catch (e) {
-      console.warn("[os-viewmodel] Falha ao buscar cadastro do boletim/artes (não-fatal):", e);
     }
 
     // Imagem do modelo: pedidos_modelos.arte_url (oficial) + amostra renderizada
@@ -241,20 +302,15 @@ export async function montarOsPdfViewModel(
     // `setor` define a que boletim cada modelo pertence.
     const imagemPorModelo = new Map<string, { url: string | null; fallback: string | null }>();
     const setorPorModelo = new Map<string, string | null>();
-    try {
-      const { data: modelosRows } = await client
-        .from("pedidos_modelos")
-        .select("id, setor, arte_url, amostra_arte_base64")
-        .eq("id_int", idInt);
-      for (const row of modelosRows || []) {
+    {
+      const modelosRows = (modelosResult?.data || []) as Record<string, unknown>[];
+      for (const row of modelosRows) {
         imagemPorModelo.set(String(row.id), {
           url: row.arte_url ? String(row.arte_url) : null,
           fallback: row.amostra_arte_base64 ? String(row.amostra_arte_base64) : null
         });
         setorPorModelo.set(String(row.id), row.setor ? String(row.setor) : null);
       }
-    } catch (e) {
-      console.warn("[os-viewmodel] Falha ao buscar arte_url dos modelos (não-fatal):", e);
     }
 
     // Prévia da cor do papel: mesma fonte que a aba Pedido usa no card do
@@ -286,24 +342,19 @@ export async function montarOsPdfViewModel(
 
     // Peso total por produto (produtos_proposta.peso_total, em gramas).
     const pesoPorProduto = new Map<number, number>();
-    try {
-      const { data: pesosRows } = await client
-        .from("produtos_proposta")
-        .select("id, peso_total")
-        .eq("id_int", idInt);
-      for (const row of pesosRows || []) {
+    {
+      const pesosRows = (pesosResult?.data || []) as Record<string, unknown>[];
+      for (const row of pesosRows) {
         if (row.peso_total !== null && row.peso_total !== undefined) {
           pesoPorProduto.set(Number(row.id), Number(row.peso_total));
         }
       }
-    } catch (e) {
-      console.warn("[os-viewmodel] Falha ao buscar peso dos produtos (não-fatal):", e);
     }
 
     // Frete escolhido (apenas dados não-monetários).
     let frete: OsPdfViewModel["frete"] = null;
-    try {
-      const freteRow = await obterFreteEscolhido(idInt, client);
+    {
+      const freteRow = freteResult;
       if (freteRow) {
         const transportadora =
           freteRow.transportadora || freteRow.nome_transportadora || freteRow.transportador || null;
@@ -315,17 +366,30 @@ export async function montarOsPdfViewModel(
           };
         }
       }
-    } catch (e) {
-      console.warn("[os-viewmodel] Falha ao buscar frete (não-fatal):", e);
     }
 
     const obs = parsePedidosObs(pedido.obs);
 
-    // Modelos deste boletim. Quando o boletim tem setor, o PDF mostra apenas os
-    // modelos daquele setor; o produto entra no card por ter modelos ali — nunca
-    // é duplicado entre setores. Sem setor (legado), nada é filtrado.
-    const pertenceAoBoletim = (idModelo: string) =>
-      !boletimSetor || (setorPorModelo.get(idModelo) ?? null) === boletimSetor;
+    /**
+     * Setor efetivo de um lote = setor do PRODUTO (`produtos.setor_pcp`).
+     *
+     * O setor não é escolha do lote: é consequência do que se está produzindo.
+     * `pedidos_modelos.setor` é espelho gravado no save e serve para consulta,
+     * mas não pode mandar aqui — o save antigo carimbava nele o setor do boletim
+     * aberto, então há lotes TEXTIL/PVC/FLEXO gravados como LASER no banco.
+     * Derivando do produto, esses casos se corrigem na leitura, sem migração.
+     * O valor gravado só entra quando o produto não tem setor algum.
+     */
+    const setorEfetivo = (idModelo: string, setorDoProduto: string | null | undefined) =>
+      normalizarSetor(setorDoProduto || setorPorModelo.get(idModelo));
+
+    /**
+     * O PDF de um setor mostra SÓ os lotes daquele setor — um produto TEXTIL
+     * nunca entra na OS do PVC. Boletim sem setor é legado de proposta com um
+     * único boletim: aí nada é filtrado, senão o PDF sairia vazio.
+     */
+    const pertenceAoBoletim = (idModelo: string, setorDoProduto: string | null | undefined) =>
+      !boletimSetor || setorEfetivo(idModelo, setorDoProduto) === normalizarSetor(boletimSetor);
 
     const produtos: OsPdfProduto[] = (pedido.produtos || []).map((prod) => ({
       codigo: prod.idProduto ?? null,
@@ -334,7 +398,7 @@ export async function montarOsPdfViewModel(
       setor: prod.setor,
       pesoTotalGramas: prod.db_id !== undefined ? pesoPorProduto.get(prod.db_id) ?? null : null,
       isEstoque: prod.isEstoque === true,
-      modelos: (prod.modelos || []).filter((m) => pertenceAoBoletim(String(m.id))).map((m) => {
+      modelos: (prod.modelos || []).filter((m) => pertenceAoBoletim(String(m.id), prod.setor)).map((m) => {
         const imagens = imagemPorModelo.get(String(m.id));
         const artes: OsPdfArteRef[] = [];
         if (imagens?.url) {
@@ -364,18 +428,27 @@ export async function montarOsPdfViewModel(
 
     // Resumo dos demais setores da mesma proposta: o que está sendo produzido
     // fora deste boletim, agrupado por setor (nome do modelo + quantidade).
-    const resumoPorSetor = new Map<string, { produto: string; quantidade: number }[]>();
+    // Uma linha por PRODUTO, com a soma dos seus lotes. Antes cada lote virava
+    // uma linha e o rótulo era o nome do lote ("1", "2"), o que produzia listas
+    // de números sem sentido para quem lê o boletim de outro setor.
+    const resumoPorSetor = new Map<string, Map<string, number>>();
     for (const prod of pedido.produtos || []) {
       for (const m of prod.modelos || []) {
-        const setorDoModelo = setorPorModelo.get(String(m.id)) ?? null;
-        if (!setorDoModelo || setorDoModelo === boletimSetor) continue;
-        const lista = resumoPorSetor.get(setorDoModelo) || [];
-        lista.push({ produto: m.nomeModelo || prod.nome, quantidade: m.quantidade });
-        resumoPorSetor.set(setorDoModelo, lista);
+        const setorDoModelo = setorEfetivo(String(m.id), prod.setor);
+        if (!boletimSetor || setorDoModelo === normalizarSetor(boletimSetor)) continue;
+        const porProduto = resumoPorSetor.get(setorDoModelo) || new Map<string, number>();
+        const chave = prod.nome || "Produto";
+        porProduto.set(chave, (porProduto.get(chave) || 0) + (Number(m.quantidade) || 0));
+        resumoPorSetor.set(setorDoModelo, porProduto);
       }
     }
     const outrosSetores = Array.from(resumoPorSetor.entries())
-      .map(([setor, itens]) => ({ setor, itens }))
+      .map(([setor, porProduto]) => ({
+        setor,
+        itens: Array.from(porProduto.entries())
+          .map(([produto, quantidade]) => ({ produto, quantidade }))
+          .sort((a, b) => b.quantidade - a.quantidade)
+      }))
       .sort((a, b) => a.setor.localeCompare(b.setor, "pt-BR"));
 
     // v1: variante administrativa não implementada — valores nunca são consultados.

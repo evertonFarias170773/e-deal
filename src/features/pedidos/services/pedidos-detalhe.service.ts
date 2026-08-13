@@ -155,14 +155,19 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
         )
       );
       const setorPorProduto = new Map<number, string>();
+      // `produtos.prazo` e texto livre ("3 dias uteis"); o maior deles define a
+      // data limite sugerida para os boletins do pedido.
+      const prazoPorProduto = new Map<number, string>();
       if (idsProduto.length > 0) {
         const { data: catalogo } = await client
           .from("produtos")
-          .select("id_produto, setor_pcp")
+          .select("id_produto, setor_pcp, prazo")
           .in("id_produto", idsProduto);
         for (const linha of catalogo || []) {
           const setor = linha.setor_pcp ? String(linha.setor_pcp).trim() : "";
           if (setor) setorPorProduto.set(Number(linha.id_produto), setor);
+          const prazo = linha.prazo ? String(linha.prazo).trim() : "";
+          if (prazo) prazoPorProduto.set(Number(linha.id_produto), prazo);
         }
       }
 
@@ -176,6 +181,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
           quantidade: Number(p.qtd || 0),
           pesoEstimado: Number(p.peso_base || 0),
           setor: (idProduto !== null ? setorPorProduto.get(idProduto) : undefined) || "LASER",
+          prazoProducao: idProduto !== null ? prazoPorProduto.get(idProduto) ?? null : null,
           isEstoque: p.is_estoque === true,
           modelos: []
         };

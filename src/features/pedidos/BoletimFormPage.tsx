@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -38,13 +38,14 @@ import {
   avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
+import { SETORES_PCP, SETOR_PADRAO, normalizarSetor, prazoLimiteDoPedido } from "./setores";
 import {
   listarBoletinsDaProposta,
   salvarBoletimSetor,
   atribuirSetorAosModelos,
   type BoletimSetor
 } from "./services/pedidos-artes.service";
-import { abrirPdfOs } from "./services/imprimir-os.client";
+import { abrirPdfOs, baixarPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -58,7 +59,44 @@ export interface GabaritoItem {
 }
 
 /** Setores possíveis do Boletim de Produção (campo próprio do boletim). */
-export const SETORES_BOLETIM = ["IMPRESSÃO", "LASER", "TEXTIL", "PVC", "FLEXO"];
+/** Mantido por compatibilidade de import; a fonte e SETORES_PCP. */
+export const SETORES_BOLETIM: readonly string[] = SETORES_PCP;
+
+/**
+ * Cor de cada setor. Serve para separar os blocos de olho, sem ler o rótulo —
+ * a mesma cor identifica o setor no cabeçalho do grupo e no chip do lote.
+ * As classes são literais porque o Tailwind não resolve nome montado em runtime.
+ */
+const CORES_SETOR: Record<string, { chip: string; borda: string; fundo: string; texto: string }> = {
+  PVC: {
+    chip: "bg-blue-600 text-white",
+    borda: "border-blue-300",
+    fundo: "bg-blue-50/40",
+    texto: "text-blue-900"
+  },
+  LASER: {
+    chip: "bg-amber-500 text-white",
+    borda: "border-amber-300",
+    fundo: "bg-amber-50/40",
+    texto: "text-amber-900"
+  },
+  FLEXO: {
+    chip: "bg-violet-600 text-white",
+    borda: "border-violet-300",
+    fundo: "bg-violet-50/40",
+    texto: "text-violet-900"
+  },
+  TEXTIL: {
+    chip: "bg-teal-600 text-white",
+    borda: "border-teal-300",
+    fundo: "bg-teal-50/40",
+    texto: "text-teal-900"
+  }
+};
+
+function coresDoSetor(setor: string) {
+  return CORES_SETOR[setor] ?? CORES_SETOR.LASER;
+}
 
 export const MOCK_GABARITOS: GabaritoItem[] = [
   { id: "sem_gabarito", nome: "Sem gabarito", descricao: "Sem formatação ou gabarito específico.", previewImageUrl: "" },
@@ -305,8 +343,15 @@ export function BoletimFormPage() {
           setFormaPagamento(pedido.formaPagamento || "Pix a vista");
           setStatusOperacional(pedido.status_producao || "PENDENTE");
 
+          // Data limite: o maior prazo de producao entre TODOS os produtos do
+          // pedido, em dias uteis a partir da abertura do boletim. So sugere
+          // quando ainda nao ha data gravada — edicao manual sempre prevalece.
           const deadlineDate = pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "";
-          setDataPrevistaEntrega(deadlineDate);
+          const sugestao = prazoLimiteDoPedido(
+            (pedido.produtos || []).map((p) => p.prazoProducao),
+            pedido.dataPedido ? new Date(pedido.dataPedido) : new Date()
+          );
+          setDataPrevistaEntrega(deadlineDate || sugestao || "");
 
           const parsed = parsePedidosObs(pedido.obs);
           setObsCriticas(parsed.obsCriticas || "");
@@ -338,7 +383,7 @@ export function BoletimFormPage() {
             quantidadeOriginal: p.quantidade,
             // O setor vem do cadastro do produto (produtos.setor_pcp); o lote
             // pode ter o seu próprio, gravado na abertura do boletim.
-            setor: p.modelos.find((m) => m.setor)?.setor || p.setor || "IMPRESSÃO",
+            setor: normalizarSetor(p.setor || p.modelos.find((m) => m.setor)?.setor),
             isEstoque: p.isEstoque === true,
             modelos: p.modelos.map((m) => ({
               id: m.id,
@@ -346,7 +391,7 @@ export function BoletimFormPage() {
               quantidade: m.quantidade,
               statusArte: m.statusArte,
               statusProducao: m.statusProducao,
-              setor: m.setor || p.setor || "IMPRESSÃO",
+              setor: normalizarSetor(m.setor || p.setor),
               corMaterial: m.corMaterial,
               verso: m.verso,
               bloco: m.bloco || "Bloco A",
@@ -551,7 +596,7 @@ export function BoletimFormPage() {
       id: "prod_initial_1",
       nome: "Pulseira Tyvek",
       quantidade: 1000,
-      setor: "IMPRESSÃO",
+      setor: SETOR_PADRAO,
       modelos: [
         {
           id: "mod_initial_1",
@@ -559,7 +604,7 @@ export function BoletimFormPage() {
           quantidade: 1000,
           statusArte: "PENDENTE" as ArteStatus,
           statusProducao: "PENDENTE" as ProducaoStatus,
-          setor: "IMPRESSÃO",
+          setor: SETOR_PADRAO,
           corMaterial: "Branco",
           verso: false,
           bloco: "Bloco A",
@@ -577,7 +622,27 @@ export function BoletimFormPage() {
     }
   ]);
 
+  /**
+   * Produtos agrupados por setor, na ordem PVC → LASER → FLEXO → TEXTIL.
+   * Setor sem nenhum produto no pedido não aparece.
+   */
+  const gruposPorSetor = useMemo(
+    () =>
+      SETORES_PCP.map((setor) => ({
+        setor,
+        produtos: produtos.filter((p) => normalizarSetor(p.setor) === setor)
+      })).filter((grupo) => grupo.produtos.length > 0),
+    [produtos]
+  );
 
+  /** Setores com produto no pedido que ainda não têm boletim aberto. */
+  const setoresSemBoletim = useMemo(
+    () =>
+      gruposPorSetor
+        .map((g) => g.setor)
+        .filter((setor) => !boletins.some((b) => normalizarSetor(b.setor) === setor)),
+    [gruposPorSetor, boletins]
+  );
 
   // Load proposals list on mount
   useEffect(() => {
@@ -842,7 +907,7 @@ export function BoletimFormPage() {
                 quantidade: 500,
                 statusArte: "PENDENTE" as ArteStatus,
                 statusProducao: "PENDENTE" as ProducaoStatus,
-                setor: p.setor || "IMPRESSÃO", // Inherit product sector
+                setor: normalizarSetor(p.setor), // herda o setor do produto
                 corMaterial: "Branco",
                 verso: false,
                 bloco: `Bloco ${String.fromCharCode(65 + p.modelos.length)}`,
@@ -1033,9 +1098,12 @@ export function BoletimFormPage() {
         }
         setBoletimId(dadosBoletim.boletim.id);
 
-        // 1c. Cada modelo pertence ao setor deste boletim.
+        // 1c. O setor do lote é o do PRODUTO dele (produtos.setor_pcp), não o do
+        // boletim aberto. Antes todos os lotes da proposta levavam o setor do
+        // boletim que estava sendo salvo — era assim que um lote TEXTIL ia parar
+        // na OS do PVC.
         const setoresDosModelos = produtos.flatMap((p) =>
-          p.modelos.map((m) => ({ id: Number(m.id), setor: boletimSetor || null }))
+          p.modelos.map((m) => ({ id: Number(m.id), setor: normalizarSetor(p.setor) }))
         ).filter((m) => !isNaN(m.id) && m.id > 0);
         if (setoresDosModelos.length > 0) {
           const atribuicao = await atribuirSetorAosModelos(setoresDosModelos);
@@ -1219,11 +1287,13 @@ export function BoletimFormPage() {
           numeracao_inicio: m.numeracaoInicial !== undefined && m.numeracaoInicial !== null ? Number(m.numeracaoInicial) : null,
           numeracao_fim: m.numeracaoFinal !== undefined && m.numeracaoFinal !== null ? Number(m.numeracaoFinal) : null,
           obs_impressao: m.comentarioInterno || null,
-          bloco: m.bloco || null
+          bloco: m.bloco || null,
+          // Cada lote nasce no setor do seu produto, nao no do boletim aberto.
+          setor: normalizarSetor(p.setor)
         }))
       );
 
-      // Os lotes nascem no setor deste boletim.
+      // `boletimSetor` fica so como padrao de quem nao tiver setor proprio.
       const modelsResult = await salvarModelosBoletim(idInt, result.id, modelosPayload, boletimSetor || null);
 
       if (!modelsResult.success) {
@@ -1305,6 +1375,37 @@ export function BoletimFormPage() {
                       ? `Imprimir OS · ${boletimSetor}`
                       : "Imprimir OS"}
                 </span>
+              </button>
+            )}
+            {isEditing && boletins.length > 1 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (isPrintingOs || !idIntParam) return;
+                  setIsPrintingOs(true);
+                  // Um arquivo por setor. Abrir N abas seria bloqueado pelo
+                  // navegador depois da primeira, então cada uma vira download.
+                  const falhas: string[] = [];
+                  for (const b of boletins) {
+                    const r = await baixarPdfOs(Number(idIntParam), b.id, b.setor);
+                    if (!r.success) falhas.push(`${b.setor || "sem setor"}: ${r.errorMessage || "erro"}`);
+                  }
+                  setIsPrintingOs(false);
+                  showToast(
+                    falhas.length === 0
+                      ? {
+                          type: "success",
+                          title: "PDFs gerados",
+                          description: `${boletins.length} boletins baixados, um por setor.`
+                        }
+                      : { type: "error", title: "Falha em parte dos PDFs", description: falhas.join(" | ") }
+                  );
+                }}
+                disabled={isPrintingOs}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm flex items-center gap-1.5 disabled:opacity-60"
+              >
+                <Printer className="h-4 w-4" />
+                <span>Baixar todos ({boletins.length})</span>
               </button>
             )}
             {selectedProposta && (
@@ -1532,13 +1633,22 @@ export function BoletimFormPage() {
                 {/* Boletins da proposta — um por setor, todos no mesmo pedido */}
                 {isEditing && boletins.length > 0 && (
                   <div className="mt-4 rounded-3xl border-2 border-blue-100 bg-white p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <div className="mb-3 space-y-1">
+                      <span className="block text-xs font-bold uppercase tracking-wider text-slate-500">
                         Boletins deste pedido ({boletins.length})
                       </span>
-                      <span className="text-[11px] text-slate-400">
-                        Cada setor tem o seu boletim e o seu PDF, todos na proposta #{idIntParam}
-                      </span>
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        O pedido #{idIntParam} é um só, mas cada setor produz a sua parte e recebe o
+                        seu próprio boletim e PDF. Clique num setor abaixo para abrir e editar o
+                        boletim dele.
+                        {setoresSemBoletim.length > 0 && (
+                          <>
+                            {" "}Ainda falta abrir o boletim de{" "}
+                            <strong className="text-orange-700">{setoresSemBoletim.join(", ")}</strong> — use o
+                            botão ao lado, escolha o setor e salve.
+                          </>
+                        )}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {boletins.map((b) => {
@@ -1571,9 +1681,12 @@ export function BoletimFormPage() {
                           setBoletimSetor("");
                           setBoletimHora("");
                         }}
+                        title="Limpa o formulário do boletim para você escolher outro setor e salvar. Não apaga os boletins já criados."
                         className="rounded-2xl border-2 border-dashed border-slate-300 px-4 py-2 text-sm font-bold text-slate-500 transition hover:border-blue-400 hover:text-blue-700"
                       >
-                        + Novo setor
+                        {setoresSemBoletim.length > 0
+                          ? `+ Abrir boletim de ${setoresSemBoletim.join(" / ")}`
+                          : "+ Abrir boletim de outro setor"}
                       </button>
                     </div>
                   </div>
@@ -1669,13 +1782,81 @@ export function BoletimFormPage() {
               {/* Produtos são herdados da proposta de origem */}
             </div>
 
-            <div className="space-y-4">
-              {produtos.map((p, pIndex) => {
-                const modelsSum = p.modelos.reduce((sum, m) => sum + (Number(m.quantidade) || 0), 0);
-                const maxQty = p.quantidadeOriginal || p.quantidade;
-                const isOverLimit = modelsSum > maxQty;
+            {/* Um bloco por setor: o pedido pode ter produtos de setores
+                diferentes, e cada setor tem o seu próprio boletim e o seu PDF.
+                O setor deste boletim vem em destaque; os demais ficam à vista,
+                porém apagados, para deixar claro que pertencem a outro boletim. */}
+            <div className="space-y-6">
+              {gruposPorSetor.map((grupo) => {
+                const cores = coresDoSetor(grupo.setor);
+                const ehDesteBoletim = normalizarSetor(boletimSetor) === grupo.setor && Boolean(boletimSetor);
+                const boletimDoSetor = boletins.find((b) => normalizarSetor(b.setor) === grupo.setor);
+                const totalDoSetor = grupo.produtos.reduce(
+                  (soma, prod) => soma + (Number(prod.quantidadeOriginal || prod.quantidade) || 0),
+                  0
+                );
 
                 return (
+                  <section
+                    key={grupo.setor}
+                    className={`rounded-3xl border-2 p-5 space-y-4 transition ${
+                      ehDesteBoletim ? `${cores.borda} bg-white shadow-sm` : "border-slate-200 bg-slate-50/60"
+                    }`}
+                  >
+                    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className={`rounded-xl px-3 py-1.5 text-sm font-black tracking-wider ${cores.chip}`}>
+                          {grupo.setor}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {grupo.produtos.length} produto{grupo.produtos.length > 1 ? "s" : ""} · {totalDoSetor.toLocaleString("pt-BR")} un
+                        </span>
+                        {ehDesteBoletim ? (
+                          <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase ${cores.borda} ${cores.fundo} ${cores.texto}`}>
+                            Este boletim
+                          </span>
+                        ) : boletimDoSetor ? (
+                          <span className="rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-[10px] font-bold uppercase text-slate-500">
+                            Boletim próprio
+                          </span>
+                        ) : (
+                          <span className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold uppercase text-orange-800">
+                            Sem boletim
+                          </span>
+                        )}
+                      </div>
+                      {isEditing && boletimDoSetor && !ehDesteBoletim && idIntParam && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (isPrintingOs) return;
+                            setIsPrintingOs(true);
+                            const r = await abrirPdfOs(Number(idIntParam), boletimDoSetor.id, boletimDoSetor.setor);
+                            setIsPrintingOs(false);
+                            if (!r.success) {
+                              showToast({
+                                type: "error",
+                                title: "Erro ao gerar PDF da OS",
+                                description: r.errorMessage || "Erro desconhecido."
+                              });
+                            }
+                          }}
+                          disabled={isPrintingOs}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                        >
+                          Abrir PDF do {grupo.setor}
+                        </button>
+                      )}
+                    </header>
+
+                    <div className={`space-y-4 ${ehDesteBoletim ? "" : "opacity-60"}`}>
+                      {grupo.produtos.map((p) => {
+                        const pIndex = produtos.findIndex((item) => item.id === p.id);
+                        const modelsSum = p.modelos.reduce((sum, m) => sum + (Number(m.quantidade) || 0), 0);
+                        const maxQty = p.quantidadeOriginal || p.quantidade;
+                        const isOverLimit = modelsSum > maxQty;
+
+                        return (
                   <div
                     key={p.id}
                     className="rounded-3xl border border-[#d7e5e8] bg-slate-50/50 p-6 space-y-5 shadow-sm relative"
@@ -1760,7 +1941,7 @@ export function BoletimFormPage() {
                                   Lote / Modelo
                                 </span>
                                 <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                                  {p.setor || "IMPRESSÃO"}
+                                  {normalizarSetor(p.setor)}
                                 </span>
                               </div>
                               {!isEditing && (
@@ -2113,8 +2294,12 @@ export function BoletimFormPage() {
                   </div>
                   </div>
                 </div>
-              );
-            })}
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           </div>
 

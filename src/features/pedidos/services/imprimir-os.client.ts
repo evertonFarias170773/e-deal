@@ -20,6 +20,64 @@ export interface AbrirPdfOsResult {
   errorMessage?: string;
 }
 
+function urlDoBoletim(idInt: number, idBoletim?: string | null): string {
+  const params = new URLSearchParams({ id_int: String(idInt) });
+  if (idBoletim) params.set("boletim", idBoletim);
+  return `/api/pedidos/imprimir-os?${params.toString()}`;
+}
+
+/**
+ * Baixa o PDF de um boletim direto para o disco, sem abrir aba.
+ *
+ * É o caminho de "baixar todos": N abas seriam bloqueadas pelo navegador depois
+ * da primeira, então cada setor vira um download com o seu próprio nome.
+ */
+export async function baixarPdfOs(
+  idInt: number,
+  idBoletim?: string | null,
+  setor?: string | null
+): Promise<AbrirPdfOsResult> {
+  const nomeArquivo = nomeArquivoOs(idInt, setor);
+  let objectUrl: string | null = null;
+  try {
+    const client = getSupabaseClient();
+    const sessionResult = client ? await client.auth.getSession() : null;
+    const token = sessionResult?.data?.session?.access_token;
+    if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
+
+    const response = await fetch(urlDoBoletim(idInt, idBoletim), {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      let message = `Falha ao gerar o PDF (HTTP ${response.status}).`;
+      try {
+        const body = await response.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // resposta sem JSON — mantém a mensagem genérica
+      }
+      return { success: false, errorMessage: message };
+    }
+
+    const blob = await response.blob();
+    objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = nomeArquivo;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    return { success: true };
+  } catch (e) {
+    return {
+      success: false,
+      errorMessage: e instanceof Error ? e.message : "Erro inesperado ao gerar o PDF da OS."
+    };
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
 /**
  * Abre o PDF da OS. `idBoletim` (pedidos_artes.id) seleciona o boletim do setor;
  * sem ele, mantém o comportamento legado do boletim mais recente da proposta.
@@ -31,10 +89,7 @@ export async function abrirPdfOs(
   setor?: string | null
 ): Promise<AbrirPdfOsResult> {
   const nomeArquivo = nomeArquivoOs(idInt, setor);
-
-  const params = new URLSearchParams({ id_int: String(idInt) });
-  if (idBoletim) params.set("boletim", idBoletim);
-  const url = `/api/pedidos/imprimir-os?${params.toString()}`;
+  const url = urlDoBoletim(idInt, idBoletim);
 
   // Aberta de forma síncrona no gesto do usuário — não move para depois de um await.
   const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;

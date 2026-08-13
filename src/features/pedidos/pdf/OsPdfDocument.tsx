@@ -27,6 +27,26 @@ const CHECKLIST_CARD = ["IMP", "ACA", "CON"];
 /** Cards de modelo por linha (grade do layout 2027). */
 const MODELOS_POR_LINHA = 3;
 
+/**
+ * Identidade de cor por setor — a mesma da tela do boletim, para o PDF de cada
+ * setor ser reconhecido de longe. `forte` vai em barra com texto branco;
+ * `claro` e o fundo do selo de setor no cabecalho.
+ */
+const CORES_SETOR: Record<string, { forte: string; claro: string }> = {
+  PVC: { forte: "#1d4ed8", claro: "#eff6ff" },
+  LASER: { forte: "#b45309", claro: "#fffbeb" },
+  FLEXO: { forte: "#6d28d9", claro: "#f5f3ff" },
+  TEXTIL: { forte: "#0f766e", claro: "#f0fdfa" }
+};
+
+/** Cinza do layout original — usado quando o setor nao tem cor propria. */
+const COR_NEUTRA = { forte: "#58585a", claro: "#ffffff" };
+
+function coresDoSetor(setor: string | null | undefined) {
+  const chave = (setor || "").trim().toUpperCase();
+  return CORES_SETOR[chave] ?? COR_NEUTRA;
+}
+
 
 const nfInteiro = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 const nfDecimal = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -158,6 +178,16 @@ const styles = StyleSheet.create({
   },
   setorLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#5a6b7a", marginRight: 8 },
   setorValor: { fontSize: 16, fontFamily: "Helvetica-Bold", flex: 1, textAlign: "center" },
+  // Aviso de que o pedido tem outros boletins: fica abaixo do setor, sem
+  // competir com ele, mas em negrito — a producao precisa notar que o pedido
+  // nao termina neste PDF.
+  setorOutros: {
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    color: "#2f3b47",
+    textAlign: "center",
+    marginTop: 3
+  },
   headerPrazo: { width: 116, marginRight: 8 },
   prazoBox: {
     borderWidth: 1,
@@ -248,10 +278,23 @@ const styles = StyleSheet.create({
     justifyContent: "center"
   },
   modeloImagemVaziaTexto: { fontSize: 6.5, color: "#9aa8b5", textAlign: "center" },
-  modeloLinhaCampos: { flexDirection: "row", alignItems: "flex-start", marginBottom: 2 },
-  modeloCampo: { flex: 1, paddingHorizontal: 2 },
-  modeloCampoLabel: { fontSize: 5.5, fontFamily: "Helvetica-Bold", color: "#6b7a88" },
-  modeloCampoValor: { fontSize: 8, fontFamily: "Helvetica-Bold", textAlign: "right" },
+  modeloLinhaCampos: { flexDirection: "row", alignItems: "stretch", marginBottom: 0 },
+  // Rotulo e valor na mesma linha: rotulo a esquerda, valor colado a direita.
+  // Empilhados, como era antes, cada valor comecava numa posicao diferente e a
+  // grade do card ficava em zigue-zague.
+  modeloCampo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    paddingHorizontal: 3,
+    paddingBottom: 1.5,
+    marginBottom: 1.5,
+    borderBottomWidth: 0.4,
+    borderBottomColor: "#e6ebef"
+  },
+  modeloCampoLabel: { fontSize: 5.5, fontFamily: "Helvetica-Bold", color: "#6b7a88", paddingRight: 4 },
+  modeloCampoValor: { fontSize: 7.5, fontFamily: "Helvetica-Bold", textAlign: "right", flexShrink: 1 },
   modeloDivisor: { width: 0.75, backgroundColor: "#cfd8e0", alignSelf: "stretch" },
   modeloObs: { fontSize: 6, color: "#5a6b7a", marginTop: 1, marginBottom: 1 },
   checklistLinha: {
@@ -297,10 +340,27 @@ const styles = StyleSheet.create({
     padding: 6,
     minHeight: 52
   },
-  resumoSetor: { fontSize: 8.5, fontFamily: "Helvetica-Bold", marginBottom: 3 },
-  resumoItem: { flexDirection: "row", justifyContent: "space-between", marginBottom: 1 },
-  resumoItemNome: { fontSize: 7, fontFamily: "Helvetica-Bold", flex: 1, paddingRight: 4 },
-  resumoItemQtd: { fontSize: 7, fontFamily: "Helvetica-Bold" },
+  // Faixa colorida com o nome do setor, para o bloco nao ser lido como parte da
+  // producao deste boletim.
+  resumoSetorBarra: {
+    borderRadius: 3,
+    paddingVertical: 2,
+    paddingHorizontal: 5,
+    marginBottom: 4,
+    alignSelf: "flex-start"
+  },
+  resumoSetor: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.4 },
+  resumoItem: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    marginBottom: 1.5,
+    paddingBottom: 1,
+    borderBottomWidth: 0.4,
+    borderBottomColor: "#e6ebef"
+  },
+  resumoItemNome: { fontSize: 7, flex: 1, paddingRight: 5, color: "#3f4b58" },
+  resumoItemQtd: { fontSize: 7.5, fontFamily: "Helvetica-Bold" },
   // ── Observações / envio ────────────────────────────────────────────────────
   obsBox: {
     borderWidth: 1,
@@ -470,7 +530,7 @@ function ModelosLinha({ modelos, isEstoque }: { modelos: OsPdfModelo[]; isEstoqu
 }
 
 /** Card do produto: barra de título (qtd + peso) e a grade dos seus modelos. */
-function ProdutoCard({ produto }: { produto: OsPdfProduto }) {
+function ProdutoCard({ produto, corSetor }: { produto: OsPdfProduto; corSetor: string }) {
   const codigoNome = [produto.codigo, pdfSafe(produto.nome)]
     .filter((v) => v !== null && v !== "")
     .join(" - ");
@@ -478,7 +538,7 @@ function ProdutoCard({ produto }: { produto: OsPdfProduto }) {
   const linhas = emGrupos(produto.modelos, MODELOS_POR_LINHA);
 
   const barra = (
-    <View style={styles.produtoBarra}>
+    <View style={[styles.produtoBarra, { backgroundColor: corSetor }]}>
       <Text style={styles.produtoNome}>{codigoNome || "Produto"}</Text>
       <View style={styles.produtoChip}>
         <Text style={styles.produtoChipLabel}>QUANT.:</Text>
@@ -523,19 +583,21 @@ function ResumoDemaisSetores({
     <View style={styles.produtoCard}>
       <View wrap={false}>
         <View style={styles.resumoBarra}>
-          <Text style={styles.resumoTitulo}>Resumo demais setores</Text>
+          <Text style={styles.resumoTitulo}>O restante do pedido - nao produzir aqui</Text>
         </View>
         {linhas.map((linha, i) => (
           <View key={i} style={styles.resumoLinha} wrap={false}>
             {linha.map((grupo, j) => (
               <React.Fragment key={j}>
                 {j > 0 ? <View style={styles.modeloGap} /> : null}
-                <View style={styles.resumoCard}>
-                  <Text style={styles.resumoSetor}>{pdfSafe(grupo.setor).toUpperCase()}:</Text>
+                <View style={[styles.resumoCard, { borderColor: coresDoSetor(grupo.setor).forte }]}>
+                  <View style={[styles.resumoSetorBarra, { backgroundColor: coresDoSetor(grupo.setor).forte }]}>
+                    <Text style={styles.resumoSetor}>{pdfSafe(grupo.setor).toUpperCase()}</Text>
+                  </View>
                   {grupo.itens.map((item, k) => (
                     <View key={k} style={styles.resumoItem}>
-                      <Text style={styles.resumoItemNome}>{pdfSafe(item.produto).toUpperCase()}</Text>
-                      <Text style={styles.resumoItemQtd}>{formatarQuantidade(item.quantidade)}</Text>
+                      <Text style={styles.resumoItemNome}>{pdfSafe(item.produto)}</Text>
+                      <Text style={styles.resumoItemQtd}>{formatarQuantidade(item.quantidade)} un</Text>
                     </View>
                   ))}
                 </View>
@@ -577,6 +639,10 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
   // EVENTO e DESIGNER não têm o que informar. Basta um item normal no boletim
   // para os dois voltarem, porque aí existe arte a rastrear.
   const produtosDoBoletim = vm.produtos.filter((produto) => produto.modelos.length > 0);
+  const outrosSetores = vm.boletim.outrosSetores
+    .map((grupo) => pdfSafe(grupo.setor).toUpperCase())
+    .filter(Boolean);
+  const cores = coresDoSetor(vm.boletim.setor);
   const somenteEstoque =
     produtosDoBoletim.length > 0 && produtosDoBoletim.every((produto) => produto.isEstoque);
 
@@ -601,10 +667,17 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
           </View>
 
           <View style={styles.headerSetor}>
-            <View style={styles.setorBox}>
+            <View style={[styles.setorBox, { borderColor: cores.forte, backgroundColor: cores.claro }]}>
               <Text style={styles.setorLabel}>Setor:</Text>
-              <Text style={styles.setorValor}>{setor}</Text>
+              <Text style={[styles.setorValor, { color: cores.forte }]}>{setor}</Text>
             </View>
+            {/* Uma OS pode ter mais de um boletim: este PDF é só de um setor, e
+                a produção precisa saber que o pedido não termina aqui. */}
+            {outrosSetores.length > 0 ? (
+              <Text style={styles.setorOutros}>
+                Setor complementar: {outrosSetores.join(" | ")}
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.headerPrazo}>
@@ -643,7 +716,7 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
         {/* Um card por produto, com os modelos DESTE boletim (setor). Produtos sem
             modelos no setor pertencem a outro boletim e saem do corpo do PDF. */}
         {produtosDoBoletim.map((produto, i) => (
-          <ProdutoCard key={i} produto={produto} />
+          <ProdutoCard key={i} produto={produto} corSetor={cores.forte} />
         ))}
 
         {/* O que os demais boletins da proposta produzem */}
