@@ -4020,6 +4020,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               modelos={form.pedidosModelos}
               autoSaveHabilitado={!hasActiveCobranca && !isFormBloqueadoPorCobranca}
               onModelosChange={aplicarPatchModelos}
+              onLotesGravados={(idProdutoPropostaOrigem, novaQtd, freteMensagem) => {
+                // A lista rápida já gravou item e lotes no banco. Aqui só
+                // espelhamos no formulário: o total da proposta é calculado na
+                // tela, então ele se move na hora, e o cabeçalho da proposta
+                // sincroniza no "Salvar alterações", como qualquer edição.
+                updateField(
+                  "itens",
+                  form.itens.map((it) =>
+                    Number(it.id_produto_proposta_origem) === Number(idProdutoPropostaOrigem)
+                      ? recalculateItem({ ...it, quantidade: novaQtd }, bonusPercent, cliente, canEditarValoresItem)
+                      : it
+                  )
+                );
+                if (freteMensagem) {
+                  // Aviso, não bloqueio: o vendedor decide quando recotar. O
+                  // impedimento de verdade é na geração da cobrança.
+                  showToast({
+                    type: "warning",
+                    title: "O frete precisa ser atualizado",
+                    description: freteMensagem
+                  });
+                }
+              }}
             />
           )}
           {activeFormTab === "artes" && shouldShowRest && (

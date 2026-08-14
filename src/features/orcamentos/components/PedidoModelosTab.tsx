@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, X } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, ListPlus, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { LotesGrid } from "@/features/orcamentos/components/LotesGrid";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
   buscarArquivoCorPapel,
@@ -1027,6 +1028,7 @@ export function PedidoModelosTab({
   modelos,
   autoSaveHabilitado = true,
   onModelosChange,
+  onLotesGravados,
 }: {
   idInt?: number;
   /** propostas.id_cliente — filtra as numerações exclusivas de cliente. */
@@ -1046,6 +1048,8 @@ export function PedidoModelosTab({
    * descartar a outra.
    */
   onModelosChange: (atualizar: (prev: PedidoModeloState[]) => PedidoModeloState[]) => void;
+  /** Lotes gravados em massa: o pai acerta a quantidade do item e relê os lotes. */
+  onLotesGravados?: (idProdutoPropostaOrigem: number, novaQtd: number, freteMensagem: string | null) => void;
 }) {
   const { showToast } = useAppToast();
   // Proposta 100% de prateleira: mesma definição usada para dispensar a arte.
@@ -1054,6 +1058,8 @@ export function PedidoModelosTab({
   const formularioSimplificado = propostaDispensaArte(itens);
   const [loading, setLoading] = useState(false);
   const [coresOpcoes, setCoresOpcoes] = useState<any[]>([]);
+  /** Itens exibindo a lista rápida em vez da pilha de cards. */
+  const [emModoGrade, setEmModoGrade] = useState<Record<string, boolean>>({});
   const [numeracoesOpcoes, setNumeracoesOpcoes] = useState<any[]>([]);
   const [formatosOpcoes, setFormatosOpcoes] = useState<any[]>([]);
   const [deletingModelo, setDeletingModelo] = useState<PedidoModeloState | null>(null);
@@ -1286,18 +1292,95 @@ export function PedidoModelosTab({
                   </div>
                 </div>
 
-                <button
-                  onClick={() => startCreate(item, saldo)}
-                  disabled={isFull}
-                  className="flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
-                >
-                  <Plus className="h-4 w-4" />
-                  Adicionar modelo
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {/* Lista rápida: para o pedido de 12, 20, 30 lotes do mesmo
+                      produto, onde os cards custam 4 idas ao servidor cada. */}
+                  <button
+                    onClick={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: !atual[item.id] }))}
+                    disabled={!autoSaveHabilitado}
+                    title={
+                      autoSaveHabilitado
+                        ? "Digitar ou colar vários lotes de uma vez"
+                        : "Proposta com cobrança: a lista rápida fica indisponível"
+                    }
+                    className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition disabled:opacity-50 ${
+                      emModoGrade[item.id]
+                        ? "bg-[#0b2f4a] text-white hover:bg-[#123f61]"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    <ListPlus className="h-4 w-4" />
+                    Lista rápida
+                  </button>
+                  {!emModoGrade[item.id] && (
+                    <button
+                      onClick={() => startCreate(item, saldo)}
+                      disabled={isFull}
+                      className="flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Adicionar modelo
+                    </button>
+                  )}
+                </div>
               </div>
 
               {!collapsedItems[item.id] && (
                 <div className="p-5 space-y-4 bg-slate-50/30">
+                {emModoGrade[item.id] ? (
+                  (() => {
+                    const numFormatId = item.produto?.id_formato;
+                    const formatoObj = formatosOpcoes.find(
+                      (f) => String(f.id_formato_num) === String(numFormatId) || String(f.id) === String(numFormatId)
+                    );
+                    const formatoUUID = formatoObj ? formatoObj.id : null;
+                    const coresDoItem = formatoUUID
+                      ? coresOpcoes.filter((c) => String(c.formato_id) === String(formatoUUID))
+                      : [];
+                    const idNoBanco = Number(item.id_produto_proposta_origem);
+
+                    // Item ainda não gravado não tem onde pendurar os lotes: a
+                    // grade grava direto no banco, pelo id da linha do item.
+                    if (!Number.isFinite(idNoBanco) || idNoBanco <= 0) {
+                      return (
+                        <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-6 text-center text-sm font-semibold text-amber-700">
+                          Salve a proposta uma vez antes de montar os lotes deste produto.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <LotesGrid
+                        idInt={Number(idInt)}
+                        item={{
+                          id_produto_proposta_origem: idNoBanco,
+                          nome: item.nome,
+                          quantidade: item.quantidade || 0
+                        }}
+                        cores={coresDoItem}
+                        linhasIniciais={modelosDoItem.map((m) => ({
+                          id: m.isPersisted && m.id ? Number(m.id) : null,
+                          nome_modelo: m.nome_modelo || "",
+                          quantidade: m.quantidade || "",
+                          padrao: m.padrao ?? null,
+                          tipo_numeracao: m.tipo_numeracao ?? null,
+                          numeracao_inicio: m.numeracao_inicio ?? null,
+                          numeracao_fim: m.numeracao_fim ?? null,
+                          verso_tipo: m.verso_tipo ?? null,
+                          bloco: m.bloco ?? null,
+                          gabarito_operacional: m.gabarito_operacional ?? null,
+                          variacoes_texto: m.variacoes_texto ?? null
+                        }))}
+                        onGravado={({ qtdItem, freteMensagem }) => {
+                          onLotesGravados?.(idNoBanco, qtdItem, freteMensagem);
+                          setEmModoGrade((atual) => ({ ...atual, [item.id]: false }));
+                        }}
+                        onSair={() => setEmModoGrade((atual) => ({ ...atual, [item.id]: false }))}
+                      />
+                    );
+                  })()
+                ) : (
+                <>
                 {modelosDoItem.length === 0 && (
                   <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 py-8 text-center bg-white">
                     <CheckCircle className="mb-2 h-8 w-8 text-slate-300" />
@@ -1499,6 +1582,8 @@ export function PedidoModelosTab({
                     </div>
                   );
                 })}
+                </>
+                )}
               </div>
               )}
             </div>
