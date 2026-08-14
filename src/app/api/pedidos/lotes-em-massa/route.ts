@@ -300,12 +300,26 @@ export async function POST(request: Request) {
 
   const frete = await situacaoDoFrete(supabase, idInt);
 
+  // Devolve os lotes COMO FICARAM, com os ids do banco. Sem isto a tela
+  // continuava com a versão anterior, sem identificador nas linhas recém
+  // criadas — e o "Fechar lote" seguinte inseria tudo de novo em vez de
+  // atualizar, duplicando os lotes. Foi o que aconteceu na proposta 20262.
+  const { data: lotesFinais } = await supabase
+    .from("pedidos_modelos")
+    .select(
+      "id, nome_modelo, padrao, quantidade, tipo_numeracao, numeracao_inicio, numeracao_fim, " +
+      "verso_tipo, bloco, gabarito_operacional, variacoes_texto, status_arte, status_producao, ordem"
+    )
+    .eq("id_produto_proposta_origem", idProdutoProposta)
+    .order("ordem", { ascending: true });
+
   return NextResponse.json({
     success: true,
     qtdItem: soma,
     qtdAnterior: qtdAtual,
     lotesGravados: lotes.length,
     lotesRemovidos: removerIds.length,
+    lotes: lotesFinais || [],
     frete: frete.situacao,
     freteMensagem: frete.mensagem
   });

@@ -58,7 +58,12 @@ export function LotesGrid({
   linhasIniciais: LinhaLote[];
   cores: CorOpcao[];
   /** Chamado depois de gravar: o pai atualiza a quantidade do item e relê os lotes. */
-  onGravado: (resultado: { qtdItem: number; freteMensagem: string | null }) => void;
+  onGravado: (resultado: {
+    qtdItem: number;
+    freteMensagem: string | null;
+    /** Lotes como ficaram no banco, com os ids — o pai precisa deles para nao duplicar no proximo salvamento. */
+    lotes: Record<string, unknown>[];
+  }) => void;
   onSair: () => void;
 }) {
   const { showToast } = useAppToast();
@@ -208,7 +213,11 @@ export function LotesGrid({
         title: `${dados.lotesGravados} lote(s) gravados`,
         description: `Quantidade do item: ${dados.qtdItem}.`
       });
-      onGravado({ qtdItem: dados.qtdItem, freteMensagem: dados.freteMensagem || null });
+      onGravado({
+        qtdItem: dados.qtdItem,
+        freteMensagem: dados.freteMensagem || null,
+        lotes: Array.isArray(dados.lotes) ? dados.lotes : []
+      });
     } catch (erro) {
       showToast({
         type: "error",

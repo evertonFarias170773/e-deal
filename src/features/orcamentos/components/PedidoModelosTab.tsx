@@ -1371,7 +1371,39 @@ export function PedidoModelosTab({
                           gabarito_operacional: m.gabarito_operacional ?? null,
                           variacoes_texto: m.variacoes_texto ?? null
                         }))}
-                        onGravado={({ qtdItem, freteMensagem }) => {
+                        onGravado={({ qtdItem, freteMensagem, lotes }) => {
+                          // Troca os lotes deste item pelo que o banco devolveu,
+                          // COM os ids. Sem isso a tela ficava com a versao
+                          // anterior e o "Fechar lote" seguinte inseria tudo de
+                          // novo em vez de atualizar.
+                          onModelosChange((prev) => [
+                            ...prev.filter(
+                              (m) => Number(m.id_produto_proposta_origem) !== Number(idNoBanco)
+                            ),
+                            ...lotes.map((l) => {
+                              const linha = l as Record<string, unknown>;
+                              return {
+                                id: Number(linha.id),
+                                isPersisted: true,
+                                id_produto_proposta_origem: idNoBanco,
+                                nome_modelo: String(linha.nome_modelo ?? ""),
+                                padrao: (linha.padrao as string | null) ?? null,
+                                quantidade: Number(linha.quantidade) || 0,
+                                tipo_numeracao: (linha.tipo_numeracao as string | null) ?? null,
+                                numeracao_inicio:
+                                  linha.numeracao_inicio == null ? null : Number(linha.numeracao_inicio),
+                                numeracao_fim:
+                                  linha.numeracao_fim == null ? null : Number(linha.numeracao_fim),
+                                verso_tipo: (linha.verso_tipo as string | null) ?? null,
+                                bloco: (linha.bloco as string | null) ?? null,
+                                gabarito_operacional: (linha.gabarito_operacional as string | null) ?? null,
+                                status_arte: (linha.status_arte as string | undefined) ?? undefined,
+                                status_producao: (linha.status_producao as string | undefined) ?? undefined,
+                                variacoes_texto: (linha.variacoes_texto as string | null) ?? null,
+                                ordem: linha.ordem == null ? undefined : Number(linha.ordem)
+                              } as PedidoModeloState;
+                            })
+                          ]);
                           onLotesGravados?.(idNoBanco, qtdItem, freteMensagem);
                           setEmModoGrade((atual) => ({ ...atual, [item.id]: false }));
                         }}
