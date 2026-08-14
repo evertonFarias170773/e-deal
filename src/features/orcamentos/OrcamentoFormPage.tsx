@@ -402,6 +402,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     } catch {
       // Aba anônima ou storage cheio: perde-se o aviso, não o recarregamento.
     }
+    saindoIntencionalmenteRef.current = true;
     window.location.reload();
   }, []);
 
@@ -823,6 +824,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const initialFormSnapshot = useRef<string>("");
   const snapshotCaptured    = useRef(false);
   const isDirtyRef          = useRef(false);
+  /** Saída de página disparada por nós (reload pós-salvamento): não avisar. */
+  const saindoIntencionalmenteRef = useRef(false);
   const handleNavigateRef   = useRef<(href: string) => void>(() => {});
   const searchInputRef      = useRef<HTMLInputElement>(null);
 
@@ -1335,6 +1338,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // beforeunload — warn on tab close / refresh when dirty
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
+      // Recarregamento que nós mesmos disparamos depois de salvar não é saída
+      // com pendência: nada se perde. Sem esta guarda o navegador perguntava
+      // "as alterações feitas podem não ser salvas" logo após um salvamento
+      // bem-sucedido — `isDirtyRef` só é reescrito no render seguinte, que não
+      // chega a acontecer antes do reload.
+      if (saindoIntencionalmenteRef.current) return;
       if (!isDirtyRef.current) return;
       e.preventDefault();
       e.returnValue = '';
@@ -3429,6 +3438,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             } catch {
               // Sem storage o aviso se perde; a navegação continua.
             }
+            saindoIntencionalmenteRef.current = true;
             window.location.replace(`/orcamentos/${finalIdInt}/editar?tab=pagamentos`);
             return;
           }
@@ -5409,8 +5419,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 throw new Error(data.error || "Falha ao consolidar total financeiro.");
               }
               
-              showToast({ type: "success", title: "Sucesso", description: data.message || "Total financeiro consolidado." });
-              window.location.reload();
+              // Mesmo recarregamento intencional do pós-salvamento: o aviso
+              // precisa sobreviver e o guarda do navegador não deve aparecer.
+              concluirSalvamentoERecarregar({
+                type: "success",
+                title: "Total financeiro consolidado.",
+                description: data.message || undefined
+              });
             } catch (err: any) {
               console.error(err);
               showToast({ type: "error", title: "Erro", description: err.message || "Falha ao consolidar." });
