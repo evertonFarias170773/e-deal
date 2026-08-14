@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, CreditCard, Landmark, QrCode, ReceiptText, X, Copy, SlidersHorizontal, Check, Wallet } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -192,6 +193,7 @@ export function PropostaCobrancaPanel({
   const { createCobranca, getCobrancasByProposta, source, cobrancas, refreshCobrancas } = useCobrancas();
   const { user } = useAuth();
   
+  const router = useRouter();
   const [saldoCredito, setSaldoCredito] = useState<number>(0);
   const [isLoadingSaldo, setIsLoadingSaldo] = useState(false);
   const [refreshingSaldo, setRefreshingSaldo] = useState(false);
@@ -243,6 +245,8 @@ export function PropostaCobrancaPanel({
   const [internalModalOpen, setInternalModalOpen] = useState(defaultModalOpen);
   const [selectedCobrancaId, setSelectedCobrancaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  /** Texto do bloqueio de frete desatualizado; null = sem bloqueio. */
+  const [freteDesatualizado, setFreteDesatualizado] = useState<string | null>(null);
   // Chave de idempotência por tentativa de aplicação de crédito (E-CREDITO /
   // pagamento combinado). Persiste entre retries do MESMO clique (mesma
   // operação lógica) e só é renovada após um desfecho terminal (sucesso,
@@ -904,6 +908,33 @@ export function PropostaCobrancaPanel({
       return;
     }
 
+    // Frete cotado para outro peso: a cobrança não sai até ele ser refeito.
+    // Fica aqui, antes de qualquer desvio por forma de pagamento, porque o
+    // E-Crédito sai por outra rota mais abaixo e não passaria por uma trava
+    // colocada perto do createCobranca.
+    //
+    // A checagem lê do BANCO de propósito: `proposta` vem da montagem da
+    // página e, na aba Pagamentos do mesmo editor em que a quantidade acabou
+    // de mudar, carregaria o peso antigo — daria "em dia" justamente no caso
+    // que a trava existe para pegar.
+    try {
+      const resposta = await fetchComSessao(`/api/propostas/frete-status?idInt=${proposta.id_int}`);
+      const dados = await resposta.json().catch(() => null);
+      if (resposta.ok && dados?.success && dados.situacao?.bloqueia) {
+        setFreteDesatualizado(dados.mensagem || "O frete precisa ser atualizado antes de gerar a cobrança.");
+        return;
+      }
+    } catch (erro) {
+      if (erro instanceof SessaoExpiradaError) {
+        showToast({ type: "error", title: "Sessão expirada", description: erro.message });
+        return;
+      }
+      // Falha na checagem não impede cobrar: frete desatualizado é o caso
+      // raro, ficar sem faturar por causa de uma consulta que não respondeu
+      // seria o dano certo.
+      console.warn("[PropostaCobrancaPanel] Nao foi possivel checar o frete:", erro);
+    }
+
     // Trava do Cartão Asaas por empresa recebedora. Repetida aqui de propósito:
     // o botão desabilitado é só apresentação e pode ser contornado (estado
     // antigo, empresa trocada em outra aba). Nenhuma requisição sai daqui.
@@ -1380,9 +1411,50 @@ export function PropostaCobrancaPanel({
    */
   const cobrancasIndefinidas = Boolean(getSupabaseClient()) && source !== "supabase";
 
+  // Declarado antes dos returns porque o painel tem três saídas — modo só
+  // modal (lista de Orçamentos), detalhe de cobrança e painel completo — e o
+  // bloqueio de frete precisa aparecer em todas. Renderizado só na primeira e
+  // na última, ele ficava MUDO na lista: o clique em Gerar cobrança não fazia
+  // nada e nada explicava por quê.
+  const modalFreteDesatualizado = freteDesatualizado ? (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/60 p-4" role="alertdialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="rounded-2xl bg-amber-100 p-3 text-amber-600">
+            <AlertTriangle className="h-8 w-8" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-950">O frete precisa ser atualizado</h2>
+          <p className="text-sm leading-relaxed text-slate-600">{freteDesatualizado}</p>
+        </div>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
+          <button
+            type="button"
+            onClick={() => {
+              setFreteDesatualizado(null);
+              // A aba vive na URL, então este empurrão funciona igual dentro
+              // do editor da proposta e nas outras telas que montam o painel.
+              router.push(`/orcamentos/${proposta.id_int}/editar?tab=fretes`);
+            }}
+            className="w-full rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#123f61] sm:w-auto"
+          >
+            Recalcular frete
+          </button>
+          <button
+            type="button"
+            onClick={() => setFreteDesatualizado(null)}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto"
+          >
+            Voltar
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (onlyModal) {
     return (
       <>
+        {modalFreteDesatualizado}
         {modalOpen ? (
           <div className="fixed inset-0 z-[70] bg-slate-950/60 p-2 sm:p-6" role="dialog" aria-modal="true" onClick={(event) => {
         if (event.target === event.currentTarget) {
@@ -1771,11 +1843,14 @@ export function PropostaCobrancaPanel({
 
   if (selectedCobrancaId) {
     return (
-      <CobrancaDetail 
-        cobrancaId={selectedCobrancaId} 
-        onClose={() => setSelectedCobrancaId(null)} 
-        onRefreshProposta={onRefreshProposta}
-      />
+      <>
+        {modalFreteDesatualizado}
+        <CobrancaDetail
+          cobrancaId={selectedCobrancaId}
+          onClose={() => setSelectedCobrancaId(null)}
+          onRefreshProposta={onRefreshProposta}
+        />
+      </>
     );
   }
 
@@ -2381,6 +2456,8 @@ export function PropostaCobrancaPanel({
         }}
       />
       ) : null}
+
+      {modalFreteDesatualizado}
     </div>
   );
 }
