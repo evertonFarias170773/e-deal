@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Menu, Bell, CheckSquare } from "lucide-react";
 import { CompanySwitcher } from "@/components/app-shell/CompanySwitcher";
-import { GlobalSearch } from "@/components/app-shell/GlobalSearch";
 import { ThemeToggle } from "@/components/app-shell/ThemeToggle";
 import { UserMenu } from "@/components/app-shell/UserMenu";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -302,10 +301,7 @@ export function Topbar({ onOpenMenu }: TopbarProps) {
           <Menu className="h-5 w-5" />
         </button>
 
-        {/* Busca global */}
-        <GlobalSearch />
-
-        {/* Ações à direita */}
+        {/* Ações à direita (o `ml-auto` mantém o bloco encostado à direita) */}
         <div className="ml-auto flex items-center gap-2">
           <CompanySwitcher />
 
