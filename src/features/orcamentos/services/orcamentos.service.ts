@@ -1833,7 +1833,17 @@ export async function saveProposta(
           valor: freteValor,
           prazo: formState.isAvulso ? "A combinar" : (chosenFrete?.prazo || "A combinar"),
           cep: cepText || null,
-          peso: formState.isAvulso ? 0 : (resumo.pesoTotal || null),
+          // Peso COTADO, não o peso de agora. Esta linha é a única memória de
+          // com quanto o frete foi calculado: gravar o peso atual aqui apagava
+          // a própria evidência da divergência — depois de qualquer salvamento
+          // a proposta parecia estar com o frete em dia, mesmo com a
+          // quantidade alterada, e o aviso de "frete desatualizado" nunca
+          // disparava.
+          //
+          // `||` e não `??`: os fretes sintetizados para proposta sem linha em
+          // cotacao_frete nascem com pesoUsado 0, e `??` gravaria esse zero —
+          // que é justamente o valor que desliga qualquer comparação.
+          peso: formState.isAvulso ? 0 : (chosenFrete?.pesoUsado || resumo.pesoTotal || null),
           escolhido: true
         };
 
