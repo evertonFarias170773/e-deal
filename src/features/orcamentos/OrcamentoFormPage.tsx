@@ -12,7 +12,15 @@ import { ContactEditModal } from "@/features/orcamentos/components/ContactEditMo
 import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelosTab";
 import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
+import { LiberarFaturadoModal } from "@/features/orcamentos/components/LiberarFaturadoModal";
 import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
+import {
+  avaliarEdicaoFaturado,
+  avaliarElegibilidadeFaturado,
+  type CobrancaParaFaturado,
+  type TituloParaFaturado
+} from "@/features/orcamentos/services/faturado-editavel";
+import { listarTitulosDaProposta } from "@/features/orcamentos/services/faturado-titulos.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -292,6 +300,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     user?.isSuperAdmin ||
     hasPermissao(user, "propostas.editar_paga")
   );
+  // Permissão estreita do financeiro: libera SÓ a proposta cuja cobrança é
+  // faturada a vencer (dinheiro ainda não recebido). Quem já pode editar
+  // proposta paga naturalmente também pode este caso, que é mais brando.
+  const canEditarFaturado = Boolean(
+    canEditarPropostaPaga ||
+    hasPermissao(user, "propostas.editar_faturado")
+  );
   const canBonificar = Boolean(
     user?.isSuperAdmin ||
     hasPermissao(user, "financeiro.bonificar")
@@ -540,6 +555,34 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       .catch(() => setPendenciaRevisaoAberta(null));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposta?.id_int, mode]);
+
+  // — Títulos do Contas a Receber ligados a esta proposta —
+  // Precisam ser conhecidos antes de qualquer edição de proposta faturada: são
+  // eles que a avaliação usa para barrar título quitado e para montar a lista
+  // do modal de confirmação. Lista vazia enquanto carrega — a avaliação só
+  // libera a edição depois, e a rota revalida de qualquer forma.
+  const [titulosDaProposta, setTitulosDaProposta] = useState<TituloParaFaturado[]>([]);
+
+  useEffect(() => {
+    // Proposta nova não tem título; o estado inicial já é a lista vazia.
+    if (mode !== "edit" || !proposta?.id_int) return;
+    let ativo = true;
+    void listarTitulosDaProposta(proposta.id_int).then((titulos) => {
+      if (ativo) setTitulosDaProposta(titulos ?? []);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [proposta?.id_int, mode]);
+
+  // Dados do modal de confirmação da edição faturada; null = modal fechado.
+  const [liberarFaturado, setLiberarFaturado] = useState<{
+    faturadoId: string;
+    titulos: TituloParaFaturado[];
+    valorAtual: number;
+    valorNovo: number;
+    valorOutrasCobrancas: number;
+  } | null>(null);
 
   // Reabertura automática do modal de resolução via query string (retomada da listagem)
   useEffect(() => {
@@ -2107,8 +2150,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         (c) => c.status !== "CANCELADO"
       );
       if (cobrancaAtiva) {
-        // Sem permissão de editar proposta paga → bloqueio total (comportamento anterior).
-        if (!canEditarPropostaPaga) {
+        // Sem permissão de editar proposta paga nem caminho do faturado a
+        // vencer → bloqueio total (comportamento anterior).
+        if (!canEditarPropostaPaga && !podeEditarPeloFaturado) {
           showToast({
             type: "error",
             title: "Remoção bloqueada",
@@ -2974,7 +3018,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   //   chama /api/orcamentos/editar-paga com JWT, que valida permissão
   //   server-side e cria pendência financeira se houver diferença
   // ------------------------------------------------------------------
-  async function handleSave() {
+  async function handleSave(opcoes?: { faturadoConfirmado?: boolean }) {
     // Bloqueio absoluto (vale para admin/superadmin): avulsa ou sem produtos
     // ativos + paga = somente visualização/Histórico/Pagamentos. O backend
     // (editar-paga) aplica a mesma regra — este guard evita o round-trip.
@@ -3012,6 +3056,39 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       console.log("[DEV] handleSave — deletedProdutoPropostaIds enviados:", formToSave.deletedProdutoPropostaIds);
     }
 
+    // — Edição de proposta faturada: confirmar antes de mexer no Contas a Receber —
+    // Excluir título e cancelar boleto no banco não pode ser efeito colateral
+    // silencioso de "Salvar alterações": o cancelamento bancário é definitivo.
+    // O modal executa a exclusão e chama handleSave de volta já confirmado.
+    if (podeEditarPeloFaturado && !opcoes?.faturadoConfirmado) {
+      // O novo total precisa caber no faturado. Não cabendo, a alteração não
+      // segue — a sobra seria dinheiro já recebido a devolver, que é outro
+      // fluxo.
+      if (!avaliacaoFaturado.elegivel) {
+        showToast({
+          type: "error",
+          title: "Alteração não permitida",
+          description: avaliacaoFaturado.mensagem
+        });
+        return;
+      }
+
+      const faturadoAtual = cobrancasVinculadas.find((c) => c.id === avaliacaoFaturado.faturadoId);
+      const valorAtual = Math.round((Number(faturadoAtual?.valor) || 0) * 100) / 100;
+      const mudouValor = Math.abs(valorAtual - avaliacaoFaturado.novoValorFaturado) >= 0.01;
+
+      if (avaliacaoFaturado.titulosParaExcluir.length > 0 || mudouValor) {
+        setLiberarFaturado({
+          faturadoId: avaliacaoFaturado.faturadoId,
+          titulos: avaliacaoFaturado.titulosParaExcluir,
+          valorAtual,
+          valorNovo: avaliacaoFaturado.novoValorFaturado,
+          valorOutrasCobrancas: avaliacaoFaturado.valorOutrasCobrancas
+        });
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       // — Capturar valor pago ANTES de salvar (para cálculo de diferença) —
@@ -3020,7 +3097,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const idClienteNum = proposta?.cliente?.idCliente ?? (cliente?.idCliente ?? 0);
 
       // — Fluxo para proposta paga (usa API route server-side) —
-      if (canEditarPropostaPaga && hasActiveCobranca) {
+      // O caminho do faturado usa a mesma rota: ela decide sozinha se ajusta a
+      // cobrança ou se abre pendência de Conta Corrente.
+      if ((canEditarPropostaPaga || podeEditarPeloFaturado) && hasActiveCobranca) {
         // Obter JWT da sessão atual
         const { getSupabaseClient } = await import("@/lib/supabase/client");
         const supabase = getSupabaseClient();
@@ -3053,9 +3132,22 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         const apiResult = await apiResponse.json();
 
         if (!apiResponse.ok || !apiResult.success) {
+          // Bloqueios do faturado descrevem algo que o usuário precisa
+          // resolver antes de continuar (título quitado, valor que não cabe,
+          // cobrança não ajustada). Vão no alerta que exige leitura, não no
+          // toast que some sozinho — ver AppToastProvider.
+          const codigosFaturado = [
+            "TITULO_QUITADO", "TITULO_AMBIGUO", "VALOR_NAO_CABE",
+            "MAIS_DE_UM_FATURADO", "TITULOS_ATIVOS", "FALHA_AJUSTE_FATURADO"
+          ];
+          const ehBloqueioFaturado = codigosFaturado.includes(String(apiResult.code || ""));
           showToast({
-            type: apiResponse.status === 403 ? "error" : (apiResponse.status === 409 ? "warning" : "error"),
-            title: apiResponse.status === 403 ? "Sem permissão" : (apiResponse.status === 409 ? "Atenção" : "Falha ao salvar"),
+            type: apiResponse.status === 403 || ehBloqueioFaturado ? "error" : (apiResponse.status === 409 ? "warning" : "error"),
+            title: apiResponse.status === 403
+              ? "Sem permissão"
+              : ehBloqueioFaturado
+                ? "Alteração não permitida"
+                : (apiResponse.status === 409 ? "Atenção" : "Falha ao salvar"),
             description: apiResult.error ?? "Erro ao salvar proposta paga.",
           });
           if (apiResponse.status === 409 && apiResult.pendenciaAtiva) {
@@ -3442,9 +3534,32 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const bloqueioAvulsaPaga =
     mode === "edit" && isPropostaPagaAtual && (Boolean(form.isAvulso) || !temProdutosAtivos);
 
+  // — Caminho do faturado a vencer —
+  // Faturado a vencer é receita autorizada, não dinheiro recebido: o pedido
+  // ainda pode mudar e o valor da cobrança acompanha. Mesmas regras que a rota
+  // `editar-paga` reaplica antes de gravar.
+  //
+  // O destravamento do formulário usa a elegibilidade ESTRUTURAL, que não olha
+  // o total digitado: se dependesse dele, baixar o valor abaixo do já pago
+  // congelaria a edição no meio, sem como desfazer. O valor entra só na
+  // avaliação usada ao salvar.
+  const cobrancasParaFaturado = cobrancasVinculadas as unknown as CobrancaParaFaturado[];
+  const elegibilidadeFaturado = avaliarElegibilidadeFaturado({
+    cobrancas: cobrancasParaFaturado,
+    titulos: titulosDaProposta
+  });
+  const avaliacaoFaturado = avaliarEdicaoFaturado({
+    cobrancas: cobrancasParaFaturado,
+    titulos: titulosDaProposta,
+    novoTotal: resumo.valorTotal
+  });
+  const podeEditarPeloFaturado = mode === "edit" && elegibilidadeFaturado.elegivel && canEditarFaturado;
+
   // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
   const isFormBloqueadoPorCobranca =
-    (hasActiveCobranca && !canEditarPropostaPaga) || pendenciaRevisaoAberta !== null || bloqueioAvulsaPaga;
+    (hasActiveCobranca && !canEditarPropostaPaga && !podeEditarPeloFaturado) ||
+    pendenciaRevisaoAberta !== null ||
+    bloqueioAvulsaPaga;
 
   return (
     <div className="space-y-6">
@@ -3461,7 +3576,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             >
               {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
             </button>
-            <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
+            <button type="button" onClick={() => void handleSave()} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
               {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}
             </button>
           </div>
@@ -3487,6 +3602,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   Esta proposta {form.isAvulso ? "é avulsa" : "não possui produtos cadastrados"} e já possui pagamento confirmado.
                   A edição está bloqueada para todos os perfis (inclusive administrador). Visualização, Histórico e Pagamentos permanecem disponíveis.
                 </p>
+              </>
+            ) : podeEditarPeloFaturado ? (
+              <>
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Faturado a Vencer — Alteração Liberada</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">
+                  O valor ainda não foi recebido, então o pedido pode ser alterado e a cobrança acompanha o novo total.
+                  {elegibilidadeFaturado.elegivel && elegibilidadeFaturado.titulosParaExcluir.length > 0
+                    ? ` Ao salvar, ${elegibilidadeFaturado.titulosParaExcluir.length} título(s) sairão do Contas a Receber e a cobrança voltará para Registros de Recebíveis — você confirma antes.`
+                    : " Ao salvar, a cobrança volta para Registros de Recebíveis para ser registrada com o valor novo."}
+                </p>
+              </>
+            ) : canEditarFaturado && !canEditarPropostaPaga && !elegibilidadeFaturado.elegivel && elegibilidadeFaturado.motivo !== "SEM_FATURADO" ? (
+              <>
+                {/* Financeiro tem a permissão do faturado, mas esta proposta
+                    específica ficou de fora. Dizer o motivo evita o "por que
+                    não me deixa editar?" — que é o caso mais comum, já que na
+                    maioria das faturadas o título já foi quitado. */}
+                <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Alteração Bloqueada</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300/80 mt-1">{elegibilidadeFaturado.mensagem}</p>
               </>
             ) : canEditarPropostaPaga && isPropostaPagaAtual ? (
               <>
@@ -4922,7 +5056,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             <p className="text-sm font-semibold text-slate-700">Proposta #{form.id_int || "NOVA"} | Total {formatCurrency(resumo.valorTotal)}</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button type="button" onClick={() => handleNavigateRef.current(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
-              <button type="button" onClick={handleSave} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
+              <button type="button" onClick={() => void handleSave()} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}</button>
             </div>
           </div>
         </div>
@@ -4964,6 +5098,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           <ArtesBlockModal
             erros={showArtesBlockModal}
             onClose={() => setShowArtesBlockModal(null)}
+          />
+        )}
+
+        {liberarFaturado && (
+          <LiberarFaturadoModal
+            isOpen
+            onClose={() => setLiberarFaturado(null)}
+            titulos={liberarFaturado.titulos}
+            faturadoId={liberarFaturado.faturadoId}
+            valorAtualFaturado={liberarFaturado.valorAtual}
+            novoValorFaturado={liberarFaturado.valorNovo}
+            valorOutrasCobrancas={liberarFaturado.valorOutrasCobrancas}
+            onLiberado={async () => {
+              // Os títulos já saíram: relê a lista para a avaliação não voltar
+              // a exigir exclusão, e só então salva.
+              const restantes = proposta?.id_int ? await listarTitulosDaProposta(proposta.id_int) : [];
+              setTitulosDaProposta(restantes ?? []);
+              await handleSave({ faturadoConfirmado: true });
+            }}
           />
         )}
 

@@ -360,6 +360,50 @@ A aprovação de faturado não representa pagamento recebido.
 
 Ela representa recebimento futuro autorizado.
 
+### Alteração da proposta com faturado a vencer
+
+Porque o valor ainda não entrou, a proposta continua alterável enquanto o
+faturado estiver em `A_VENCER` e não liquidado — inclusive depois de
+confirmado, que é conferência e não recebimento. Vale trocar frete, incluir e
+excluir produto; o `valor` da cobrança acompanha o novo total e, como o
+faturamento é lido de `pagamentos_v2`, o mês fecha certo sozinho.
+
+Quem pode: perfil com `propostas.editar_faturado` (concedida ao Financeiro em
+13/08/2026) ou com `propostas.editar_paga`. Regras em
+`src/features/orcamentos/services/faturado-editavel.ts`, aplicadas na tela e
+revalidadas em `POST /api/orcamentos/editar-paga` antes de gravar.
+
+Consequências, sempre confirmadas em modal antes de salvar:
+
+- os títulos daquela cobrança saem do Contas a Receber, e boleto registrado é
+  cancelado no banco pelo caminho de sempre (`deleteBoletoFromBankViaN8n`);
+- `boleto_enviadoo` volta a `false`, então a cobrança reaparece em Registros de
+  Recebíveis para ser registrada de novo com o valor novo;
+- a alteração é registrada na timeline da proposta.
+
+Fora deste fluxo, a proposta **volta ao comportamento de sempre** — quem tem
+`propostas.editar_paga` continua editando pela Conta Corrente. Não é um
+bloqueio novo; é só a ausência do atalho. Para quem só tem
+`propostas.editar_faturado`, a tela e a rota mostram o motivo:
+
+| Situação | Código |
+|---|---|
+| Título já quitado (`PAID` ou com `paid_at`) | `TITULO_QUITADO` |
+| Faturado liquidado | `FATURADO_LIQUIDADO` |
+| Mais de um faturado ativo na proposta | `MAIS_DE_UM_FATURADO` |
+| Proposta com mais de uma cobrança e título sem `id_pagamento` | `TITULO_AMBIGUO` — apagar título de outra cobrança seria destruir recebível alheio |
+| Novo total não cobre as demais cobranças | `VALOR_NAO_CABE` |
+
+> **Título quitado é o caso mais comum, não a exceção.** Em 13/08/2026, 181 das
+> 247 propostas com faturado a vencer já tinham título `PAID` no Contas a
+> Receber — o dinheiro entrou, mas `pagamentos_v2` continuou em `A_VENCER`,
+> porque a liquidação do título não promove a cobrança. Por isso o título é a
+> fonte da verdade sobre recebimento neste fluxo, e não o status da cobrança.
+
+Numa proposta mista (ex.: PIX pago + faturado a vencer) o faturado absorve toda
+a diferença e a parte já recebida não é tocada. A Conta Corrente **não** é
+acionada neste caminho: não há dinheiro recebido para creditar ou cobrar.
+
 ---
 
 # Status Financeiros Principais

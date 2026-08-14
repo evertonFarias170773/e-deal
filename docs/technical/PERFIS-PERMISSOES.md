@@ -304,6 +304,22 @@ permissão, escopo e estado financeiro no servidor — o payload do cliente nunc
 O cancelamento é sempre **lógico** (`status = 'CANCELADO'` + `motivo_cancela`), nunca DELETE físico,
 e o autor é registrado em `propostas_chat` pelo servidor.
 
+## Edição de proposta com cobrança — duas permissões, escopos diferentes
+
+| Chave | Alcance |
+|---|---|
+| `propostas.editar_paga` | Edita proposta com pagamento confirmado de qualquer tipo. Diferença vai para a Conta Corrente do cliente. Perfis: Super Administrador e Vendedor. |
+| `propostas.editar_faturado` | Só a proposta cuja cobrança é `E-FATURADO` em `A_VENCER` e não liquidada — dinheiro ainda não recebido. Ajusta o `valor` da cobrança em vez de abrir pendência de Conta Corrente. Perfil: Financeiro (desde 13/08/2026). |
+
+Quem tem `propostas.editar_paga` cobre também o caso do faturado, que é mais brando.
+O contrário não vale: `propostas.editar_faturado` não abre proposta paga de verdade.
+
+As duas passam por `POST /api/orcamentos/editar-paga`, que relê cobranças e títulos e
+decide o caminho no servidor. As regras de elegibilidade estão em
+`src/features/orcamentos/services/faturado-editavel.ts`, com testes em
+`scripts/testes/faturado-editavel.test.mts`. Detalhamento do fluxo em
+`docs/business/CHECKOUT-PAGAMENTOS.md`, seção Faturado.
+
 ---
 
 # 12. Validação

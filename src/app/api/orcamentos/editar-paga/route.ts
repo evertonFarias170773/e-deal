@@ -29,15 +29,28 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { saveProposta } from "@/features/orcamentos/services/orcamentos.service";
 import type { PropostaFormState } from "@/features/orcamentos/types";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
+import {
+  avaliarEdicaoFaturado,
+  type CobrancaParaFaturado,
+  type TituloParaFaturado
+} from "@/features/orcamentos/services/faturado-editavel";
 
 // ---------------------------------------------------------------------------
 // Configurações e Tipagens
 // ---------------------------------------------------------------------------
 
 const PERMISSOES_FALLBACK_ADMIN: string[] = [
-  "propostas.editar_paga", "financeiro.resolver_credito", "financeiro.bonificar",
-  "financeiro.devolver", "financeiro.debito_futuro", "credito.usar"
+  "propostas.editar_paga", "propostas.editar_faturado", "financeiro.resolver_credito",
+  "financeiro.bonificar", "financeiro.devolver", "financeiro.debito_futuro", "credito.usar"
 ];
+
+/**
+ * Permissões que abrem a edição, por caminho. `propostas.editar_faturado` vale
+ * SÓ no caminho do faturado a vencer (dinheiro ainda não recebido) — quem tem
+ * apenas ela continua sem poder editar proposta paga de verdade.
+ */
+const PERMISSAO_PROPOSTA_PAGA = "propostas.editar_paga";
+const PERMISSAO_FATURADO = "propostas.editar_faturado";
 
 type UsuarioMinRow = {
   id_perfil: number | null;
@@ -50,11 +63,14 @@ type PerfilMinRow = {
 };
 
 /**
- * Verifica se o usuário tem permissão para editar proposta paga
+ * Verifica se o usuário tem alguma das permissões que abrem a edição.
+ * `permissoesAceitas` muda conforme o caminho: paga de verdade aceita só
+ * `propostas.editar_paga`; faturado a vencer aceita as duas.
  */
 async function verificarPermissaoEditarPaga(
   supabase: SupabaseClient<any, any, any>,
-  userId: string
+  userId: string,
+  permissoesAceitas: string[]
 ): Promise<{ autorizado: boolean; motivo?: string }> {
   const { data: usuarioData, error: usuarioError } = await supabase
     .from("usuarios")
@@ -83,15 +99,15 @@ async function verificarPermissaoEditarPaga(
     if (!perfilError && perfilData) {
       const perfil = perfilData as PerfilMinRow;
       const permissoes: string[] = Array.isArray(perfil.permissoes) ? perfil.permissoes : [];
-      if (permissoes.includes("*") || permissoes.includes("propostas.editar_paga")) {
+      if (permissoes.includes("*") || permissoesAceitas.some((p) => permissoes.includes(p))) {
         return { autorizado: true };
       }
-      return { autorizado: false, motivo: "Perfil sem permissão propostas.editar_paga." };
+      return { autorizado: false, motivo: `Perfil sem permissão ${permissoesAceitas.join(" ou ")}.` };
     }
   }
 
   if (row.is_admin) {
-    const temPermissao = PERMISSOES_FALLBACK_ADMIN.includes("propostas.editar_paga");
+    const temPermissao = permissoesAceitas.some((p) => PERMISSOES_FALLBACK_ADMIN.includes(p));
     return { autorizado: temPermissao };
   }
 
@@ -213,7 +229,7 @@ export async function POST(request: NextRequest) {
   // ── 5. Buscar cobranças e re-calcular valor pago confirmado (servidor) ───
   const { data: cobrancasBanco, error: cobrancasError } = await supabase
     .from("pagamentos_v2")
-    .select("status, confirmado, valor, obs_v2")
+    .select("id, id_pagamento, tipo_cobranca, status, confirmado, paid_at, valor, obs_v2")
     .eq("id_int", idInt)
     .neq("status", "CANCELADO");
 
@@ -273,8 +289,63 @@ export async function POST(request: NextRequest) {
     valorPagoRealArredondado >= valorTotalAntesEdicao - TOLERANCIA_CC &&
     valorCobradoPendente <= TOLERANCIA_CC;
 
-  // Se houver cobranças mas nenhum pagamento confirmado, impede gravação
-  if (temCobrancasAtivas && valorPagoRealArredondado <= 0) {
+  // ── 5a2. Caminho do faturado a vencer ─────────────────────────────────────
+  // Faturado a vencer é receita autorizada, não dinheiro recebido: a proposta
+  // ainda pode mudar e o valor da cobrança acompanha. Sem este desvio ela cai
+  // no fluxo de proposta paga e abre pendência de Conta Corrente por um
+  // dinheiro que nunca entrou. Avaliado ANTES dos bloqueios abaixo porque
+  // muda o que cada um deles decide.
+  // Ver features/orcamentos/services/faturado-editavel.ts.
+  const { data: titulosBanco, error: titulosError } = await supabase
+    .from("boletos")
+    .select("id, id_pagamento, parcela, total_parcelas, valor, vencimento, status, paid_at, deposito_conta, id_boleto_c6, id_empresa")
+    .eq("id_int", idInt);
+
+  if (titulosError) {
+    return NextResponse.json(
+      { success: false, error: "Erro ao verificar os títulos desta proposta no Contas a Receber." },
+      { status: 500 }
+    );
+  }
+
+  const titulos = (titulosBanco || []) as TituloParaFaturado[];
+  // Avaliação preliminar: usa o total que o cliente calculou apenas para
+  // decidir o caminho e barrar o que impede a edição (título quitado, título
+  // ainda ativo). O valor gravado sai da reavaliação pós-save, soberana.
+  const avaliacaoPrevia = avaliarEdicaoFaturado({
+    cobrancas: cobrancas as CobrancaParaFaturado[],
+    titulos,
+    novoTotal: Number(novoTotal) || Number(propostaBanco.valor_total) || 0
+  });
+  const ehCaminhoFaturado = avaliacaoPrevia.elegivel;
+
+  // Inelegível NÃO bloqueia a rota: significa apenas que este não é o caminho
+  // do faturado, e a proposta segue pelo fluxo de sempre (Conta Corrente).
+  // Isso importa porque título quitado com cobrança ainda em A_VENCER é a
+  // situação MAIS COMUM na base — 181 das 247 propostas faturadas em
+  // 13/08/2026. Ali o dinheiro entrou de verdade (o `pagamentos_v2` é que não
+  // acompanha), então quem tem `propostas.editar_paga` deve continuar
+  // editando pela Conta Corrente, exatamente como antes. Barrar aqui seria
+  // tirar da mesa uma edição que hoje funciona.
+  //
+  // Rede de segurança: a tela exclui os títulos antes de salvar. Se ainda
+  // houver algum ativo, o Contas a Receber ficaria com valor velho.
+  if (ehCaminhoFaturado && avaliacaoPrevia.titulosParaExcluir.length > 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "TITULOS_ATIVOS",
+        error: `Esta proposta ainda tem ${avaliacaoPrevia.titulosParaExcluir.length} título(s) ativo(s) no Contas a Receber. Eles precisam ser excluídos antes da alteração.`
+      },
+      { status: 409 }
+    );
+  }
+
+  // Se houver cobranças mas nenhum pagamento confirmado, impede gravação.
+  // O faturado a vencer é a exceção: ele é justamente a cobrança que ainda não
+  // foi paga e que mesmo assim pode ser ajustada — exigir confirmação aqui
+  // travaria o caso principal deste fluxo.
+  if (temCobrancasAtivas && valorPagoRealArredondado <= 0 && !ehCaminhoFaturado) {
     return NextResponse.json(
       { success: false, error: "Esta proposta possui cobranças ativas mas não possui pagamento confirmado de fato. Cancele as cobranças antes de editar." },
       { status: 400 }
@@ -323,10 +394,29 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 6. Verificar permissão de edição se for proposta paga ────────────────
-  if (ehPropostaPaga) {
-    const { autorizado, motivo } = await verificarPermissaoEditarPaga(supabase, user.id);
+  // O faturado a vencer entra aqui mesmo quando `ehPropostaPaga` é falso
+  // (cobrança ainda não confirmada): existe cobrança ativa, então a edição
+  // continua sendo operação com permissão.
+  if (ehPropostaPaga || ehCaminhoFaturado) {
+    const permissoesAceitas = ehCaminhoFaturado
+      ? [PERMISSAO_PROPOSTA_PAGA, PERMISSAO_FATURADO]
+      : [PERMISSAO_PROPOSTA_PAGA];
+    const { autorizado, motivo } = await verificarPermissaoEditarPaga(supabase, user.id, permissoesAceitas);
     if (!autorizado) {
       console.warn(`[editar-paga] Acesso negado para user ${user.id}: ${motivo}`);
+      // Quem só tem a permissão do faturado precisa saber POR QUE esta
+      // proposta ficou de fora — "perfil sem permissão" não diz nada quando o
+      // motivo real é título quitado ou valor que não cabe.
+      const explicacaoFaturado =
+        !avaliacaoPrevia.elegivel && avaliacaoPrevia.motivo !== "SEM_FATURADO"
+          ? avaliacaoPrevia
+          : null;
+      if (explicacaoFaturado) {
+        return NextResponse.json(
+          { success: false, code: explicacaoFaturado.motivo, error: explicacaoFaturado.mensagem },
+          { status: 409 }
+        );
+      }
       return NextResponse.json(
         { success: false, error: motivo ?? "Sem permissão para editar proposta paga." },
         { status: 403 }
@@ -335,11 +425,14 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 8. Salvar proposta ────────────────────────────────────────────────────
+  // `force` também no caminho do faturado: sem ele o saveProposta cai no
+  // "salvamento parcial seguro", que preserva os produtos e ignora as
+  // exclusões — exatamente o que o financeiro precisa poder fazer aqui.
   const saveResult = await saveProposta(
     formState,
     supabase as unknown as import("@supabase/supabase-js").SupabaseClient,
     user.id,
-    { force: ehPropostaPaga }
+    { force: ehPropostaPaga || ehCaminhoFaturado }
   );
 
   if (!saveResult.success) {
@@ -354,6 +447,85 @@ export async function POST(request: NextRequest) {
   const novoTotalRealArredondado = Math.round(novoTotalReal * 100) / 100;
 
   console.info(`[editar-paga] Pós-save: valor_total (retornado pelo saveProposta) = ${novoTotalRealArredondado}`);
+
+  // ── 9b. Caminho do faturado: a cobrança acompanha o novo total ────────────
+  // Reavaliação soberana com o total que o banco calculou — o `novoTotal` do
+  // cliente serviu só para escolher o caminho. Como o faturamento é lido de
+  // `pagamentos_v2`, este UPDATE é o que faz o mês fechar certo; não existe
+  // outro lugar para corrigir.
+  let faturadoAjustado: { id: string; valorAnterior: number; valorNovo: number } | null = null;
+
+  if (ehCaminhoFaturado) {
+    const avaliacao = avaliarEdicaoFaturado({
+      cobrancas: cobrancas as CobrancaParaFaturado[],
+      titulos,
+      novoTotal: novoTotalRealArredondado
+    });
+
+    if (!avaliacao.elegivel) {
+      // A proposta já foi gravada e a cobrança não pode acompanhar. Nada de
+      // silêncio: o financeiro precisa saber que os dois valores divergiram.
+      console.error(`[editar-paga] Proposta #${idInt} salva, mas o faturado nao pode ser ajustado: ${avaliacao.motivo}`);
+      return NextResponse.json(
+        {
+          success: false,
+          code: avaliacao.motivo,
+          error: `A proposta foi salva, mas a cobrança faturada NÃO foi ajustada: ${avaliacao.mensagem} Acerte a cobrança manualmente na aba Pagamentos.`
+        },
+        { status: 409 }
+      );
+    }
+
+    const faturadoAtual = (cobrancas as CobrancaParaFaturado[]).find((c) => c.id === avaliacao.faturadoId);
+    const valorAnterior = Math.round((Number(faturadoAtual?.valor) || 0) * 100) / 100;
+
+    if (Math.abs(valorAnterior - avaliacao.novoValorFaturado) >= 0.01) {
+      // `boleto_enviadoo` volta a false junto com o valor: com valor novo, os
+      // títulos anteriores não servem mais e a cobrança precisa reaparecer em
+      // Registros de Recebíveis para ser registrada de novo.
+      const { error: updateFaturadoError } = await supabase
+        .from("pagamentos_v2")
+        .update({ valor: avaliacao.novoValorFaturado, boleto_enviadoo: false })
+        .eq("id", avaliacao.faturadoId);
+
+      if (updateFaturadoError) {
+        console.error("[editar-paga] Falha ao ajustar o valor do faturado:", updateFaturadoError.message);
+        return NextResponse.json(
+          {
+            success: false,
+            code: "FALHA_AJUSTE_FATURADO",
+            error: "A proposta foi salva, mas o valor da cobrança faturada não pôde ser atualizado. Acerte a cobrança manualmente na aba Pagamentos."
+          },
+          { status: 500 }
+        );
+      }
+
+      faturadoAjustado = {
+        id: avaliacao.faturadoId,
+        valorAnterior,
+        valorNovo: avaliacao.novoValorFaturado
+      };
+
+      const moeda = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+      await supabase.from("propostas_chat").insert([
+        {
+          id_int: idInt,
+          id_cliente: idCliente,
+          mensagem:
+            `Proposta alterada com cobrança faturada a vencer. ` +
+            `Valor da cobrança ajustado de ${moeda(valorAnterior)} para ${moeda(avaliacao.novoValorFaturado)}` +
+            (avaliacao.valorOutrasCobrancas > 0
+              ? ` (outras cobranças da proposta: ${moeda(avaliacao.valorOutrasCobrancas)}, sem alteração).`
+              : ".") +
+            ` A cobrança voltou para Registros de Recebíveis. Responsável: ${userEmail ?? user.email}.`,
+          tipo: "SISTEMA",
+          autor_nome: "Sistema",
+          setor: "Financeiro",
+          visivel_externo: false
+        }
+      ]);
+    }
+  }
 
   // ── 10. Abrir/ajustar a pendência de Conta Corrente via RPC cc_abrir_pendencia ──
   // A RPC recalcula soberanamente (dentro do banco) e reconcilia com qualquer
@@ -382,10 +554,13 @@ export async function POST(request: NextRequest) {
   // serve só à cobertura (estavaIntegralmentePaga); usá-la aqui deixava
   // débitos de R$ 0,01–0,02 no fluxo antigo (RPC → pendência → modal),
   // regressão vista na #19514 (pago R$ 140,44 × total R$ 140,45).
+  // No caminho do faturado a Conta Corrente não entra: a diferença foi para o
+  // valor da própria cobrança, e não há dinheiro recebido para creditar ou
+  // cobrar do cliente.
   const ehDiferencaDevedora = novoTotalRealArredondado > valorPagoRealArredondado;
   let temPendenciaAbertaParaReconciliar = false;
 
-  if (estavaIntegralmentePaga && ehDiferencaDevedora) {
+  if (!ehCaminhoFaturado && estavaIntegralmentePaga && ehDiferencaDevedora) {
     const { data: pendAbertas } = await supabase
       .from("conta_corrente_pendencias")
       .select("id")
@@ -395,7 +570,7 @@ export async function POST(request: NextRequest) {
     temPendenciaAbertaParaReconciliar = Boolean(pendAbertas && pendAbertas.length > 0);
   }
 
-  if (estavaIntegralmentePaga && (!ehDiferencaDevedora || temPendenciaAbertaParaReconciliar)) {
+  if (!ehCaminhoFaturado && estavaIntegralmentePaga && (!ehDiferencaDevedora || temPendenciaAbertaParaReconciliar)) {
     const eventoUuid = chaveEvento && /^[0-9a-f-]{36}$/i.test(chaveEvento) ? chaveEvento : crypto.randomUUID();
 
     const { data: idPendenciaRpc, error: rpcError } = await supabase.rpc("cc_abrir_pendencia", {
@@ -469,5 +644,7 @@ export async function POST(request: NextRequest) {
     ehPropostaPaga,
     valorPagoReal: valorPagoRealArredondado,
     pendenciaAtiva: pendenciaCriada,
+    ehCaminhoFaturado,
+    faturadoAjustado,
   });
 }
