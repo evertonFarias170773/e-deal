@@ -1259,6 +1259,150 @@ function isNonEmpty(value: unknown): boolean {
   return value !== null && value !== undefined && String(value).trim() !== "";
 }
 
+/**
+ * Linha de `produtos_proposta` correspondente a um item do formulário.
+ *
+ * Extraída de dentro do `saveProposta` para virar fonte única: o salvamento
+ * completo e o salvamento isolado de um item (`salvarItemProposta`) precisam
+ * gravar exatamente as mesmas colunas. Se as duas montagens divergirem, o
+ * mesmo item passa a ter dois resultados diferentes conforme o botão clicado.
+ */
+export function montarDadosItemProposta(item: PropostaItem, idInt: number) {
+  const pesoExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.peso || 0), 0);
+  const pesoBase = Math.max(0, (item.produto.peso || 0));
+  const pesoUni = pesoBase + pesoExtra;
+
+  const valorExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.v_extra || 0), 0);
+
+  return {
+    id_int: idInt,
+    id_produto: item.id_produto,
+    nome_produto: item.nome,
+    modelo_descri: item.descricaoModelo,
+    valor_unt: item.valorUnitario,
+    qtd: item.quantidade,
+    fixo: item.valorFixo,
+    // valor_sub_total = subtotal líquido do item (já inclui desconto manual e bônus do cliente).
+    // item.subtotal é o valor calculado por calculateItemSubtotal() na UI — não recalcular aqui
+    // para evitar aplicação dupla do bônus (o save deve persistir o que o usuário confirmou).
+    valor_sub_total: item.subtotal,
+    peso_uni: pesoUni,
+    peso_base: pesoBase,
+    peso_extra: pesoExtra,
+    // valor_base = preço unitário SEM variações. item.valorUnitario já é o
+    // preço base (calculateItemSubtotal soma os acréscimos por fora), então
+    // subtrair valorExtra aqui zerava o acréscimo: o trigger
+    // calcular_valor_sub_total refaz valor_unt = valor_base + valor_extra e
+    // o item voltava ao preço base ao recarregar.
+    valor_base: item.valorUnitario,
+    valor_extra: valorExtra,
+    ncm: item.produto.ncm || null,
+    cfop: item.produto.cfop_interno || null,
+    status_item: item.statusItem || "PENDENTE",
+    // Produto de prateleira congelado no item (mesmo espirito de ncm/cfop):
+    // desmarcar o produto depois nao pode reabrir exigencia de arte em
+    // proposta ja fechada. Item ja gravado mantem o que veio do banco.
+    is_estoque: isItemPrateleira(item)
+  };
+}
+
+/**
+ * Grava UM item já existente da proposta, e só ele.
+ *
+ * POR QUE ISSO EXISTE
+ *   A aba Pedido grava cada modelo direto no banco e, antes de gravar, pergunta
+ *   ao banco qual a quantidade do item para calcular o saldo. Só que a
+ *   quantidade digitada na aba Orçamento vivia apenas na memória até alguém
+ *   clicar em "Salvar proposta" — então o card do modelo era validado contra um
+ *   número velho e recusava uma quantidade que a tela já mostrava como válida
+ *   ("excede o saldo disponível", com o cabeçalho exibindo o valor novo).
+ *   Com o item gravado no "Salvar item", os dois lados passam a olhar o mesmo
+ *   número.
+ *
+ * POR QUE AS VARIAÇÕES VÃO JUNTO
+ *   `montarDadosItemProposta` deriva `valor_extra`, `peso_extra` e `peso_uni`
+ *   das variações escolhidas, e o trigger `calcular_valor_sub_total` refaz o
+ *   preço a partir desses campos. Gravar a linha-pai sem regravar
+ *   `produtos_proposta_variacao` deixaria o preço refletindo uma variação que
+ *   a tabela filha não conhece: ao recarregar, a tela reconstrói a variação da
+ *   filha e a escolha do usuário desaparece, com o valor gravado errado. É a
+ *   mesma dupla de escritas que o `saveProposta` sempre fez no mesmo laço —
+ *   aqui ela é repetida para UM item.
+ *
+ * O QUE ELA NÃO FAZ, DE PROPÓSITO
+ *   Não toca em `propostas`, cobranças, modelos nem na lista de itens
+ *   removidos. Não é um "salvar proposta menor": é a gravação de uma linha e
+ *   das variações dela.
+ */
+export async function salvarItemProposta(
+  idProdutoProposta: number,
+  item: PropostaItem,
+  idInt: number
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, errorMessage: "Cliente Supabase não configurado." };
+  }
+
+  // `select` para distinguir "gravou" de "não achou a linha": sem ele o
+  // Supabase devolve sucesso quando o UPDATE não atinge nada — por exemplo se
+  // o item foi removido em outra aba —, e o card fecharia como se tivesse
+  // gravado.
+  const { data: atualizados, error } = await client
+    .from("produtos_proposta")
+    .update(montarDadosItemProposta(item, idInt))
+    .eq("id", idProdutoProposta)
+    .select("id");
+
+  if (error) {
+    console.error(`[OrcamentosService] Falha ao gravar o item #${idProdutoProposta}:`, error.message);
+    return { success: false, errorMessage: error.message };
+  }
+
+  if (!atualizados || atualizados.length === 0) {
+    return {
+      success: false,
+      errorMessage: "Este item não existe mais nesta proposta. Recarregue a página antes de continuar."
+    };
+  }
+
+  const { error: erroApagarVariacoes } = await client
+    .from("produtos_proposta_variacao")
+    .delete()
+    .eq("id_produto_proposta", idProdutoProposta);
+
+  if (erroApagarVariacoes) {
+    return {
+      success: false,
+      errorMessage: `Item gravado, mas as variações não puderam ser atualizadas: ${erroApagarVariacoes.message}`
+    };
+  }
+
+  if (item.variacoesEscolhidas.length > 0) {
+    const { error: erroGravarVariacoes } = await client
+      .from("produtos_proposta_variacao")
+      .insert(
+        item.variacoesEscolhidas.map((escolha) => ({
+          id_produto_proposta: idProdutoProposta,
+          id_variacao: escolha.id_variacao,
+          id_tipo_variacao: Number(escolha.tipo.id),
+          nome_variacao: escolha.tipo.variacao,
+          v_extra: escolha.tipo.v_extra,
+          peso_uni: escolha.tipo.peso
+        }))
+      );
+
+    if (erroGravarVariacoes) {
+      return {
+        success: false,
+        errorMessage: `Item gravado, mas as variações não puderam ser atualizadas: ${erroGravarVariacoes.message}`
+      };
+    }
+  }
+
+  return { success: true };
+}
+
 export async function saveProposta(
   formState: PropostaFormState,
   injectedClient?: import('@supabase/supabase-js').SupabaseClient,
@@ -1750,43 +1894,7 @@ export async function saveProposta(
         }
         const isExistingItem = parsedItemId && existingIds.includes(parsedItemId);
 
-        // Calculos de peso e valor extra
-        const pesoExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.peso || 0), 0);
-        const pesoBase = Math.max(0, (item.produto.peso || 0));
-        const pesoUni = pesoBase + pesoExtra;
-
-        const valorExtra = item.variacoesEscolhidas.reduce((sum, v) => sum + (v.tipo.v_extra || 0), 0);
-
-        const itemData = {
-          id_int: id_int!,
-          id_produto: item.id_produto,
-          nome_produto: item.nome,
-          modelo_descri: item.descricaoModelo,
-          valor_unt: item.valorUnitario,
-          qtd: item.quantidade,
-          fixo: item.valorFixo,
-          // valor_sub_total = subtotal líquido do item (já inclui desconto manual e bônus do cliente).
-          // item.subtotal é o valor calculado por calculateItemSubtotal() na UI — não recalcular aqui
-          // para evitar aplicação dupla do bônus (o save deve persistir o que o usuário confirmou).
-          valor_sub_total: item.subtotal,
-          peso_uni: pesoUni,
-          peso_base: pesoBase,
-          peso_extra: pesoExtra,
-          // valor_base = preço unitário SEM variações. item.valorUnitario já é o
-          // preço base (calculateItemSubtotal soma os acréscimos por fora), então
-          // subtrair valorExtra aqui zerava o acréscimo: o trigger
-          // calcular_valor_sub_total refaz valor_unt = valor_base + valor_extra e
-          // o item voltava ao preço base ao recarregar.
-          valor_base: item.valorUnitario,
-          valor_extra: valorExtra,
-          ncm: item.produto.ncm || null,
-          cfop: item.produto.cfop_interno || null,
-          status_item: item.statusItem || "PENDENTE",
-          // Produto de prateleira congelado no item (mesmo espirito de ncm/cfop):
-          // desmarcar o produto depois nao pode reabrir exigencia de arte em
-          // proposta ja fechada. Item ja gravado mantem o que veio do banco.
-          is_estoque: isItemPrateleira(item)
-        };
+        const itemData = montarDadosItemProposta(item, id_int!);
 
         let dbItemId: number;
 

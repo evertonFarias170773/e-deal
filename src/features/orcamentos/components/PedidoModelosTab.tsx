@@ -318,6 +318,23 @@ const CAMPOS_AUTOSAVE = [
 
 type CampoAutoSave = (typeof CAMPOS_AUTOSAVE)[number];
 
+/**
+ * A recusa veio do saldo conferido NO BANCO?
+ *
+ * Só nesse caso a orientação é gravar o item na aba Orçamento. O padrão casa
+ * exclusivamente com a mensagem de `validarSaldoModelo`
+ * (services/pedidos-modelos.service.ts): "Quantidade (N) excede o saldo...".
+ *
+ * Existe uma segunda mensagem com "excede o saldo" nesta mesma tela — a do
+ * numerador Camarote, em `motivoBloqueio` ("A QTD calculada (N) excede o saldo
+ * disponível do item (M)"). Aquela é calculada em memória, com a quantidade
+ * que o cabeçalho já mostra: mandar gravar o item ali seria orientação falsa,
+ * porque não muda a conta. Daí o padrão exigir o início "Quantidade (N)".
+ */
+function ehErroDeSaldoDoBanco(mensagem: string | null): boolean {
+  return Boolean(mensagem && /quantidade\s*\(\d+\)\s*excede o saldo/i.test(mensagem));
+}
+
 /** Monta o payload com SOMENTE os campos alterados — nunca sobrescreve o resto. */
 function montarPayloadParcial(mod: PedidoModeloState, campos: Set<CampoAutoSave>): Partial<ModeloInput> {
   const p: Partial<ModeloInput> = {};
@@ -731,6 +748,15 @@ function ModeloInlineCard({
       {erroSalvar && (
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-700">
           {erroSalvar}
+          {/* O saldo é conferido no banco, e a quantidade do item só chega lá
+              quando o item é gravado. Sem esta linha o usuário lê dois números
+              que se contradizem: o cabeçalho já mostra a quantidade nova e o
+              erro fala da antiga. */}
+          {ehErroDeSaldoDoBanco(erroSalvar) && (
+            <span className="mt-1 block font-medium">
+              A quantidade do item ainda não foi gravada. Volte à aba Orçamento, clique em “Salvar item” e tente de novo.
+            </span>
+          )}
         </div>
       )}
 

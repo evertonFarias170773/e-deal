@@ -57,7 +57,7 @@ import {
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, salvarItemProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
@@ -740,6 +740,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }, [cliente?.idCliente, form.clienteId]);
 
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
+  /** Item cuja linha está sendo gravada pelo "Salvar item" — trava o botão contra clique duplo. */
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [duplicateProductPrompt, setDuplicateProductPrompt] = useState<{
     productId: string;
     nomeProduto: string;
@@ -2443,7 +2445,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }
   }
 
-  function handleSaveItem(itemId: string) {
+  /**
+   * Fecha a edição do item E grava aquela linha no banco.
+   *
+   * A gravação existe porque a aba Pedido valida o saldo de cada modelo
+   * consultando `produtos_proposta.qtd` no banco. Enquanto o item só existia na
+   * memória, o card do modelo recusava uma quantidade que o próprio cabeçalho
+   * já exibia como válida. Grava só esta linha: nada de validação global, de
+   * modal ou de recarregar a página — isso é do "Salvar alterações".
+   */
+  async function handleSaveItem(itemId: string) {
     const item = form.itens.find((it) => it.id === itemId);
     if (!item) return;
 
@@ -2491,6 +2502,49 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       "itens",
       form.itens.map((it) => (it.id === itemId ? updatedItem : it))
     );
+
+    // Só grava o que já existe no banco e só quando a aba Pedido também pode
+    // gravar sozinha — mesmo portão do `autoSaveHabilitado`. Onde o modelo está
+    // travado (cobrança ativa, proposta bloqueada), o item também fica: assim
+    // os dois lados nunca divergem. Item novo e proposta nova continuam
+    // dependendo do "Salvar alterações", que é quem sabe criar a linha.
+    const idNoBanco = updatedItem.id_produto_proposta_origem;
+    const idIntNumerico = Number(form.id_int);
+    const podeGravarItemIsolado =
+      Boolean(idNoBanco) &&
+      form.id_int !== "NOVO" &&
+      Number.isFinite(idIntNumerico) &&
+      idIntNumerico > 0 &&
+      !hasActiveCobranca &&
+      !isFormBloqueadoPorCobranca;
+
+    if (podeGravarItemIsolado) {
+      setSavingItemId(itemId);
+      try {
+        const res = await salvarItemProposta(Number(idNoBanco), updatedItem, idIntNumerico);
+        if (!res.success) {
+          // Card permanece aberto: fechar daria a impressão de gravado.
+          showToast({
+            type: "error",
+            title: "Item não salvo",
+            description: res.errorMessage || "Não foi possível gravar este item. Tente novamente."
+          });
+          return;
+        }
+      } catch (erro) {
+        // Sem este catch a exceção viraria rejeição não tratada: o botão
+        // voltaria ao normal e o usuário não distinguiria de um clique que
+        // não pegou.
+        showToast({
+          type: "error",
+          title: "Item não salvo",
+          description: erro instanceof Error ? erro.message : "Falha inesperada ao gravar este item."
+        });
+        return;
+      } finally {
+        setSavingItemId(null);
+      }
+    }
 
     setOpenItemIds((prev) => ({ ...prev, [itemId]: false }));
   }
@@ -4810,7 +4864,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onUpdate={(updater) => updateItem(item.id, updater)}
                           onVariationChange={(idVariacao, tipoId) => updateItemVariation(item.id, idVariacao, tipoId)}
                           onRemove={() => handleRemoveProductClick(item.id)}
-                          onSave={() => handleSaveItem(item.id)}
+                          onSave={() => void handleSaveItem(item.id)}
+                          isSaving={savingItemId === item.id}
                           minQuantity={somaModelos}
                           // Variação é característica do produto, não valor: segue a mesma
                           // condição de edição do formulário (proposta paga/pendência bloqueiam).
@@ -5570,6 +5625,7 @@ function ProductItemEditor({
   onVariationChange,
   onRemove,
   onSave,
+  isSaving,
   minQuantity,
   podeEditarVariacoes,
   canEditarValoresItem,
@@ -5583,6 +5639,8 @@ function ProductItemEditor({
   onVariationChange: (idVariacao: number, tipoId: string) => void;
   onRemove: () => void;
   onSave: () => void;
+  /** Gravação da linha em andamento — trava o botão contra clique duplo. */
+  isSaving?: boolean;
   minQuantity?: number;
   podeEditarVariacoes?: boolean;
   canEditarValoresItem?: boolean;
@@ -5721,9 +5779,10 @@ function ProductItemEditor({
         <button
           type="button"
           onClick={onSave}
-          className="rounded-2xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 shadow-md shadow-teal-700/10 transition-all"
+          disabled={isSaving}
+          className="rounded-2xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 shadow-md shadow-teal-700/10 transition-all disabled:opacity-60"
         >
-          Salvar item
+          {isSaving ? "Salvando..." : "Salvar item"}
         </button>
       </div>
     </div>
