@@ -373,6 +373,16 @@ Quem pode: perfil com `propostas.editar_faturado` (concedida ao Financeiro em
 `src/features/orcamentos/services/faturado-editavel.ts`, aplicadas na tela e
 revalidadas em `POST /api/orcamentos/editar-paga` antes de gravar.
 
+Vale inclusive para **proposta avulsa**, desde 13/08/2026. A trava "avulsa já
+paga não pode ser alterada" (caso #19486) protege contra dois danos que só
+existem com dinheiro recebido — crédito de Conta Corrente a favor do cliente
+sobre valor que entrou no caixa, e proposta quitada voltando para `AGUARDANDO`.
+Os dois já estão desligados neste caminho. Avulsa faturada é caso corrente:
+acrescentar item, mudar o frete, renegociar depois de pronto. A avulsa **paga
+de verdade** continua bloqueada, e sem precisar de regra extra: PIX, cartão e
+boleto liquidado nunca satisfazem `isFaturadoAjustavel`, então o bloqueio
+antigo volta sozinho.
+
 Consequências, sempre confirmadas em modal antes de salvar:
 
 - os títulos daquela cobrança saem do Contas a Receber, e boleto registrado é
@@ -380,6 +390,29 @@ Consequências, sempre confirmadas em modal antes de salvar:
 - `boleto_enviadoo` volta a `false`, então a cobrança reaparece em Registros de
   Recebíveis para ser registrada de novo com o valor novo;
 - a alteração é registrada na timeline da proposta.
+
+### Cancelamento em cascata da cobrança (parcela única)
+
+O workflow `VIBE-BOLETO-FATURADO-INTER` marca `pagamentos_v2` inteiro como
+`CANCELADO` quando não resta parcela ativa. Num faturado de parcela única —
+a maioria — excluir o título mata a cobrança junto, o que não é o que este
+fluxo quer.
+
+Duas defesas, porque o desfecho silencioso seria grave (proposta com valor
+novo, cobrança com valor velho, receita fora do faturamento e sem histórico):
+
+1. `excluirTitulosDoFaturado` relê a cobrança depois da exclusão e, se ela
+   tiver sido cancelada em cascata, reabre como `A_VENCER` com
+   `motivo_cancela` limpo, avisando na tela. Não conseguindo reabrir, o save
+   é abortado.
+2. A tela envia `faturadoEsperadoId` no corpo de `editar-paga`. Se aquela
+   cobrança não estiver mais ativa quando a rota reler o banco, a resposta é
+   `409 FATURADO_SUMIU` e **nada é gravado** — falhar alto em vez de gravar
+   torto.
+
+Pela mesma razão, falha ao ler os títulos nunca é tratada como "não há
+títulos": enquanto a leitura não confirmar, o caminho do faturado fica
+fechado.
 
 Fora deste fluxo, a proposta **volta ao comportamento de sempre** — quem tem
 `propostas.editar_paga` continua editando pela Conta Corrente. Não é um

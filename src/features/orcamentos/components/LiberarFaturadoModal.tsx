@@ -83,6 +83,17 @@ export function LiberarFaturadoModal({
           setIsSubmitting(false);
           return;
         }
+
+        if (resultado.cobrancaReativada) {
+          // Não é erro, mas o financeiro precisa saber: a cobrança chegou a
+          // ser cancelada pelo banco e foi reaberta para receber o valor novo.
+          showToast({
+            type: "warning",
+            title: "Cobrança reaberta",
+            description:
+              "Ao excluir o último título, a integração bancária cancelou a cobrança inteira. Ela foi reaberta como A Vencer para receber o valor novo — confira na aba Pagamentos depois de salvar."
+          });
+        }
       }
 
       await onLiberado();

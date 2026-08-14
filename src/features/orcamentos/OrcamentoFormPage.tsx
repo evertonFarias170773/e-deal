@@ -559,16 +559,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   // — Títulos do Contas a Receber ligados a esta proposta —
   // Precisam ser conhecidos antes de qualquer edição de proposta faturada: são
   // eles que a avaliação usa para barrar título quitado e para montar a lista
-  // do modal de confirmação. Lista vazia enquanto carrega — a avaliação só
-  // libera a edição depois, e a rota revalida de qualquer forma.
-  const [titulosDaProposta, setTitulosDaProposta] = useState<TituloParaFaturado[]>([]);
+  // do modal de confirmação.
+  //
+  // `null` = ainda não lidos, ou a leitura falhou. Não é o mesmo que "não tem
+  // título": tratar falha de leitura como lista vazia liberaria a edição de
+  // uma proposta cujo título pode estar quitado. Enquanto for null o caminho
+  // do faturado fica fechado.
+  const [titulosDaProposta, setTitulosDaProposta] = useState<TituloParaFaturado[] | null>(null);
 
   useEffect(() => {
-    // Proposta nova não tem título; o estado inicial já é a lista vazia.
     if (mode !== "edit" || !proposta?.id_int) return;
     let ativo = true;
     void listarTitulosDaProposta(proposta.id_int).then((titulos) => {
-      if (ativo) setTitulosDaProposta(titulos ?? []);
+      if (ativo) setTitulosDaProposta(titulos);
     });
     return () => {
       ativo = false;
@@ -3126,6 +3129,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             novoTotal: novoTotalCalculado,
             userEmail: user?.email,
             userName: user?.name,
+            // Deixa o servidor recusar o save caso esta cobrança tenha sido
+            // cancelada entre a exclusão do título e agora — ver FATURADO_SUMIU.
+            faturadoEsperadoId: podeEditarPeloFaturado && avaliacaoFaturado.elegivel
+              ? avaliacaoFaturado.faturadoId
+              : undefined,
           }),
         });
 
@@ -3138,7 +3146,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           // toast que some sozinho — ver AppToastProvider.
           const codigosFaturado = [
             "TITULO_QUITADO", "TITULO_AMBIGUO", "VALOR_NAO_CABE",
-            "MAIS_DE_UM_FATURADO", "TITULOS_ATIVOS", "FALHA_AJUSTE_FATURADO"
+            "MAIS_DE_UM_FATURADO", "TITULOS_ATIVOS", "FALHA_AJUSTE_FATURADO",
+            "FATURADO_SUMIU"
           ];
           const ehBloqueioFaturado = codigosFaturado.includes(String(apiResult.code || ""));
           showToast({
@@ -3524,16 +3533,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const valorPagoConfirmadoAtual = calcularValorPagoConfirmado(cobrancasVinculadas);
   const isPropostaPagaAtual = valorPagoConfirmadoAtual > 0;
 
-  // Proposta avulsa (ou sem nenhum produto ativo) JÁ PAGA não pode ser
-  // alterada por NINGUÉM — inclusive admin/superadmin (caso #19486). A edição
-  // autorizada de proposta paga existe para tratar alterações de produtos,
-  // frete ou serviços; avulsa não tem produtos a alterar. Visualização,
-  // Histórico e Pagamentos permanecem acessíveis. Backend espelha o bloqueio
-  // em /api/orcamentos/editar-paga (não depende deste botão).
-  const temProdutosAtivos = form.itens.some((i) => (i.statusItem || "PENDENTE") !== "CANCELADO");
-  const bloqueioAvulsaPaga =
-    mode === "edit" && isPropostaPagaAtual && (Boolean(form.isAvulso) || !temProdutosAtivos);
-
   // — Caminho do faturado a vencer —
   // Faturado a vencer é receita autorizada, não dinheiro recebido: o pedido
   // ainda pode mudar e o valor da cobrança acompanha. Mesmas regras que a rota
@@ -3546,14 +3545,36 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const cobrancasParaFaturado = cobrancasVinculadas as unknown as CobrancaParaFaturado[];
   const elegibilidadeFaturado = avaliarElegibilidadeFaturado({
     cobrancas: cobrancasParaFaturado,
-    titulos: titulosDaProposta
+    titulos: titulosDaProposta ?? []
   });
   const avaliacaoFaturado = avaliarEdicaoFaturado({
     cobrancas: cobrancasParaFaturado,
-    titulos: titulosDaProposta,
+    titulos: titulosDaProposta ?? [],
     novoTotal: resumo.valorTotal
   });
-  const podeEditarPeloFaturado = mode === "edit" && elegibilidadeFaturado.elegivel && canEditarFaturado;
+  const podeEditarPeloFaturado =
+    mode === "edit" && titulosDaProposta !== null && elegibilidadeFaturado.elegivel && canEditarFaturado;
+
+  // Proposta avulsa (ou sem nenhum produto ativo) JÁ PAGA não pode ser
+  // alterada por NINGUÉM — inclusive admin/superadmin (caso #19486). A edição
+  // autorizada de proposta paga existe para tratar alterações de produtos,
+  // frete ou serviços; avulsa não tem produtos a alterar. Visualização,
+  // Histórico e Pagamentos permanecem acessíveis. Backend espelha o bloqueio
+  // em /api/orcamentos/editar-paga (não depende deste botão).
+  //
+  // O faturado a vencer é exceção desde 13/08/2026: a trava existe porque
+  // mexer no valor de uma avulsa depois do dinheiro entrar quebra a âncora
+  // financeira, e no faturado a vencer o dinheiro NÃO entrou — a âncora é a
+  // própria cobrança, que passa a acompanhar o novo valor. Avulsa faturada é
+  // caso comum: acrescentar item, mudar o frete ou renegociar depois de
+  // pronto. Continua bloqueada a avulsa paga de verdade (PIX, cartão, boleto
+  // quitado), e continua valendo o bloqueio por título quitado.
+  const temProdutosAtivos = form.itens.some((i) => (i.statusItem || "PENDENTE") !== "CANCELADO");
+  const bloqueioAvulsaPaga =
+    mode === "edit" &&
+    isPropostaPagaAtual &&
+    !podeEditarPeloFaturado &&
+    (Boolean(form.isAvulso) || !temProdutosAtivos);
 
   // Desbloqueado quando usuário tem permissão E há cobrança ativa E não há pendência aberta
   const isFormBloqueadoPorCobranca =
@@ -5114,7 +5135,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               // Os títulos já saíram: relê a lista para a avaliação não voltar
               // a exigir exclusão, e só então salva.
               const restantes = proposta?.id_int ? await listarTitulosDaProposta(proposta.id_int) : [];
-              setTitulosDaProposta(restantes ?? []);
+              if (restantes === null) {
+                // Sem conseguir reler, não dá para saber em que estado o
+                // Contas a Receber ficou. Salvar às cegas aqui gravaria a
+                // proposta com valor novo por um caminho que não ajusta a
+                // cobrança. Os títulos já excluídos permanecem excluídos.
+                showToast({
+                  type: "error",
+                  title: "Não foi possível confirmar o Contas a Receber",
+                  description:
+                    "Os títulos foram excluídos, mas a releitura falhou e a proposta NÃO foi salva. Recarregue a página e confira o Contas a Receber antes de tentar de novo."
+                });
+                return;
+              }
+              setTitulosDaProposta(restantes);
               await handleSave({ faturadoConfirmado: true });
             }}
           />

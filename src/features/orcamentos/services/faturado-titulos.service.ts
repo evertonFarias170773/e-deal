@@ -31,7 +31,12 @@ export type ResultadoExclusaoTitulos = {
   excluidos: number;
   /** Títulos que falharam, com o motivo que o banco ou o Supabase devolveu. */
   falhas: { rotulo: string; erro: string }[];
+  /** A cobrança foi cancelada em cascata pelo n8n e teve de ser reativada. */
+  cobrancaReativada?: boolean;
 };
+
+/** Status em que a cobrança deixa de ser considerada ativa. */
+const STATUS_COBRANCA_INATIVA = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
 
 /** Todos os títulos da proposta. A seleção de quais pertencem ao faturado é do avaliador. */
 export async function listarTitulosDaProposta(idInt: number): Promise<TituloParaFaturado[] | null> {
@@ -119,11 +124,34 @@ export async function excluirTitulosDoFaturado(params: {
     return { success: false, excluidos, falhas };
   }
 
-  // Sem título ativo, a cobrança precisa reaparecer em Registros de Recebíveis:
-  // é `boleto_enviadoo` que controla essa lista.
+  // Cancelamento em cascata: o workflow VIBE-BOLETO-FATURADO-INTER marca a
+  // cobrança inteira como CANCELADO quando não resta parcela ativa (está no
+  // cabeçalho de api/cobrancas/cancelar-boleto-faturado). Num faturado de
+  // parcela única — que é a maioria — tirar o título mata a cobrança junto.
+  //
+  // Isso não é o que o financeiro pediu: ele quer trocar o valor e registrar
+  // de novo, não cancelar. Pior, uma cobrança cancelada some da lista de
+  // ativas e o save seguinte deixaria a proposta com o valor novo e a cobrança
+  // com o valor velho, fora do faturamento e sem rastro. Então reativamos.
+  const { data: cobrancaAtual } = await client
+    .from("pagamentos_v2")
+    .select("status, motivo_cancela")
+    .eq("id", params.faturadoId)
+    .maybeSingle<{ status: string | null; motivo_cancela: string | null }>();
+
+  const foiCanceladaEmCascata = STATUS_COBRANCA_INATIVA.includes(
+    String(cobrancaAtual?.status ?? "").trim().toUpperCase()
+  );
+
+  const patch: Record<string, unknown> = { boleto_enviadoo: false };
+  if (foiCanceladaEmCascata) {
+    patch.status = "A_VENCER";
+    patch.motivo_cancela = null;
+  }
+
   const { error: cobrancaError } = await client
     .from("pagamentos_v2")
-    .update({ boleto_enviadoo: false })
+    .update(patch)
     .eq("id", params.faturadoId);
 
   if (cobrancaError) {
@@ -132,12 +160,14 @@ export async function excluirTitulosDoFaturado(params: {
       excluidos,
       falhas: [
         {
-          rotulo: "Registros de Recebíveis",
-          erro: `Títulos excluídos, mas a cobrança não voltou para a lista: ${cobrancaError.message}`
+          rotulo: foiCanceladaEmCascata ? "Cobrança cancelada em cascata" : "Registros de Recebíveis",
+          erro: foiCanceladaEmCascata
+            ? `A exclusão do título cancelou a cobrança inteira e não foi possível reativá-la: ${cobrancaError.message}. NÃO salve a proposta — acerte a cobrança na aba Pagamentos antes.`
+            : `Títulos excluídos, mas a cobrança não voltou para a lista: ${cobrancaError.message}`
         }
       ]
     };
   }
 
-  return { success: true, excluidos, falhas: [] };
+  return { success: true, excluidos, falhas: [], cobrancaReativada: foiCanceladaEmCascata };
 }

@@ -179,6 +179,8 @@ export async function POST(request: NextRequest) {
     userName?: string;
     motivoPendencia?: string;
     chaveEvento?: string;
+    /** `pagamentos_v2.id` do faturado que a tela espera ajustar — ver passo 5a1. */
+    faturadoEsperadoId?: string;
   };
 
   try {
@@ -187,7 +189,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Payload inválido." }, { status: 400 });
   }
 
-  const { formState, idInt, idCliente, valorPagoConfirmado, novoTotal, userEmail, userName, motivoPendencia, chaveEvento } = body;
+  const { formState, idInt, idCliente, valorPagoConfirmado, novoTotal, userEmail, userName, motivoPendencia, chaveEvento, faturadoEsperadoId } = body;
   const motivoFinal = motivoPendencia && MOTIVOS_VALIDOS.includes(motivoPendencia) ? motivoPendencia : "OUTRO";
 
   if (!formState || !idInt || !idCliente) {
@@ -242,6 +244,27 @@ export async function POST(request: NextRequest) {
 
   const cobrancas = cobrancasBanco || [];
   const temCobrancasAtivas = cobrancas.length > 0;
+
+  // ── 5a1. A cobrança que a tela ia ajustar ainda existe? ───────────────────
+  // Quando a tela vem do fluxo do faturado, ela informa qual cobrança espera
+  // ajustar. Se essa cobrança sumiu da lista de ativas entre a confirmação e
+  // este save — o caso real é o n8n cancelar o faturado inteiro ao excluir a
+  // última parcela —, seguir adiante seria o pior desfecho possível: sem
+  // cobrança ativa, `ehPropostaPaga` e `ehCaminhoFaturado` viram false, o save
+  // roda sem `force`, a proposta grava o valor novo e a cobrança fica com o
+  // valor velho, fora do faturamento e sem uma linha de histórico. Falhar
+  // alto é melhor que gravar torto.
+  if (faturadoEsperadoId && !cobrancas.some((c) => String(c.id) === String(faturadoEsperadoId))) {
+    console.error(`[editar-paga] Faturado ${faturadoEsperadoId} da proposta #${idInt} nao esta mais ativo; save recusado.`);
+    return NextResponse.json(
+      {
+        success: false,
+        code: "FATURADO_SUMIU",
+        error: "A cobrança faturada desta proposta deixou de estar ativa durante a operação — provavelmente foi cancelada junto com o título. A proposta NÃO foi alterada. Confira a aba Pagamentos antes de tentar de novo."
+      },
+      { status: 409 }
+    );
+  }
 
   // Regra oficial de pagamento confirmado. Cobranças que incluem abatimento de
   // débito da conta corrente (marcador [ABATIMENTO_DEBITO:x] em obs_v2) têm essa
@@ -359,7 +382,15 @@ export async function POST(request: NextRequest) {
   // avulsa já paga quebraria a âncora financeira (caso #19486). Bloqueio
   // vale para TODOS, inclusive admin e superadmin (verificado antes da
   // checagem de permissão, que não pode contornar esta regra).
-  if (ehPropostaPaga) {
+  //
+  // Exceção desde 13/08/2026: o faturado a vencer. A âncora que esta regra
+  // protege é o dinheiro recebido, e aqui ele não foi — a âncora passa a ser
+  // a própria cobrança, cujo valor acompanha o novo total. Avulsa faturada é
+  // caso corrente (acrescentar item, mudar frete, renegociar depois de
+  // pronto). A avulsa paga de verdade segue bloqueada, e o bloqueio por
+  // título quitado continua valendo: se o título foi liquidado, a proposta
+  // nem chega a ser caminho do faturado.
+  if (ehPropostaPaga && !ehCaminhoFaturado) {
     let semProdutosAtivos = false;
     if (propostaBanco.is_avulso) {
       semProdutosAtivos = true;
@@ -381,6 +412,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (semProdutosAtivos) {
+      // Havendo faturado na proposta, o motivo REAL de ela não ter entrado no
+      // caminho novo é mais útil que "avulsa já paga" — que soa como se o
+      // dinheiro tivesse entrado quando o que houve foi, por exemplo, um valor
+      // que não cabe no faturado.
+      if (!avaliacaoPrevia.elegivel && avaliacaoPrevia.motivo !== "SEM_FATURADO") {
+        return NextResponse.json(
+          { success: false, code: avaliacaoPrevia.motivo, error: avaliacaoPrevia.mensagem },
+          { status: 409 }
+        );
+      }
       return NextResponse.json(
         {
           success: false,
