@@ -37,7 +37,14 @@ const STATUS_INICIAL_MODELO = "PENDENTE";
 
 const STATUS_COBRANCA_INATIVA = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
 
-export type LoteEmMassa = {
+/**
+ * Local de propósito: arquivo de rota do App Router só pode exportar os
+ * handlers e a configuração reconhecida (`maxDuration` e afins). Qualquer
+ * outro export — inclusive de tipo — entra na validação de rota do Next e
+ * derruba o worker de compilação. Nenhuma outra rota deste projeto exporta
+ * tipo, e esta era a exceção.
+ */
+type LoteEmMassa = {
   /** `pedidos_modelos.id` quando a linha já existe; ausente = lote novo. */
   id?: number | null;
   nome_modelo: string;
