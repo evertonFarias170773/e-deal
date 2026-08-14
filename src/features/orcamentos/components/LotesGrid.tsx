@@ -26,6 +26,16 @@ import { Copy, Plus, Trash2 } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { fetchComSessao, SessaoExpiradaError } from "@/lib/supabase/sessao";
 import { interpretarColagem, somaQuantidades, type CorOpcao } from "@/features/orcamentos/services/lotes-colagem";
+import {
+  calcularNumeracaoFim,
+  findNumeracaoByName,
+  resolverMultiplicadorNumeracao,
+  type NumeracaoOpcao
+} from "@/features/orcamentos/numeracao-modelo-utils";
+import { aplicarNumeracao, rotuloFaixa, type ModoNumeracao } from "@/features/orcamentos/services/lotes-numeracao";
+
+/** Teto para a criação em lote: acima disso é engano de digitação, não pedido. */
+const MAX_LINHAS_DE_UMA_VEZ = 200;
 
 export type LinhaLote = {
   /** `pedidos_modelos.id` quando a linha já existe no banco. */
@@ -50,6 +60,7 @@ export function LotesGrid({
   item,
   linhasIniciais,
   cores,
+  numeracoes,
   onGravado,
   onSair
 }: {
@@ -57,6 +68,8 @@ export function LotesGrid({
   item: { id_produto_proposta_origem: number; nome: string; quantidade: number };
   linhasIniciais: LinhaLote[];
   cores: CorOpcao[];
+  /** Cadastro de numerações: só para saber quantos números cada unidade consome (TICKET). */
+  numeracoes: NumeracaoOpcao[];
   /** Chamado depois de gravar: o pai atualiza a quantidade do item e relê os lotes. */
   onGravado: (resultado: {
     qtdItem: number;
@@ -72,11 +85,28 @@ export function LotesGrid({
   );
   const [removidos, setRemovidos] = useState<number[]>([]);
   const [gravando, setGravando] = useState(false);
+  const [quantasLinhas, setQuantasLinhas] = useState<number | "">(1);
+  const [modoNumeracao, setModoNumeracao] = useState<ModoNumeracao | null>(null);
   const qtdVista = useRef(item.quantidade);
 
   const soma = useMemo(() => somaQuantidades(linhas), [linhas]);
   const naoReconhecidas = linhas.filter((l) => l.corNaoReconhecida).length;
   const semNome = linhas.filter((l) => !l.nome_modelo.trim()).length;
+
+  // A numeração é DERIVADA, nunca guardada em estado: assim ela nunca fica
+  // velha depois de mudar uma quantidade, remover ou reordenar um lote.
+  const linhasNumeradas = useMemo(
+    () =>
+      aplicarNumeracao(linhas, modoNumeracao, (inicio, qtd, linha) => {
+        const { multiplicador } = resolverMultiplicadorNumeracao(
+          findNumeracaoByName(numeracoes, linha.gabarito_operacional)
+        );
+        return calcularNumeracaoFim(inicio, qtd, multiplicador);
+      }),
+    [linhas, modoNumeracao, numeracoes]
+  );
+
+  const quantasCriar = Math.min(MAX_LINHAS_DE_UMA_VEZ, Math.max(1, Number(quantasLinhas) || 1));
 
   function atualizar(indice: number, patch: Partial<LinhaLote>) {
     setLinhas((atual) => atual.map((l, i) => (i === indice ? { ...l, ...patch } : l)));
@@ -98,10 +128,12 @@ export function LotesGrid({
     } as LinhaLote;
   }
 
-  function acrescentar(indice?: number) {
+  function acrescentar(indice?: number, quantas = 1) {
     setLinhas((atual) => {
       const base = indice !== undefined ? atual[indice] : atual[atual.length - 1];
-      return [...atual, novaLinha(base)];
+      // novaLinha por índice, não uma cópia do mesmo objeto: linhas que
+      // compartilhassem referência editariam umas às outras.
+      return [...atual, ...Array.from({ length: quantas }, () => novaLinha(base))];
     });
   }
 
@@ -166,7 +198,7 @@ export function LotesGrid({
           qtdItemVista: qtdVista.current,
           confirmarReducao,
           removerIds: removidos,
-          lotes: linhas.map((l) => ({
+          lotes: linhasNumeradas.map((l) => ({
             id: l.id ?? null,
             nome_modelo: l.nome_modelo,
             quantidade: Number(l.quantidade),
@@ -242,13 +274,29 @@ export function LotesGrid({
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={MAX_LINHAS_DE_UMA_VEZ}
+            value={quantasLinhas}
+            onChange={(e) =>
+              setQuantasLinhas(
+                e.target.value === ""
+                  ? ""
+                  : Math.min(MAX_LINHAS_DE_UMA_VEZ, Math.max(1, Number(e.target.value) || 1))
+              )
+            }
+            title="Quantas linhas criar de uma vez"
+            aria-label="Quantas linhas criar de uma vez"
+            className="w-16 rounded-xl border border-slate-200 px-2 py-2 text-center text-xs font-bold text-slate-700 outline-none"
+          />
           <button
             type="button"
-            onClick={() => acrescentar()}
+            onClick={() => acrescentar(undefined, quantasCriar)}
             className="flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-200"
           >
-            <Plus className="h-4 w-4" /> Linha
+            <Plus className="h-4 w-4" /> {quantasCriar > 1 ? `${quantasCriar} linhas` : "Linha"}
           </button>
           <button
             type="button"
@@ -268,6 +316,35 @@ export function LotesGrid({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Numeração</span>
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+          <input
+            type="checkbox"
+            checked={modoNumeracao === "CADA_DO_1"}
+            onChange={() => setModoNumeracao((atual) => (atual === "CADA_DO_1" ? null : "CADA_DO_1"))}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Cada modelo começa do 1
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+          <input
+            type="checkbox"
+            checked={modoNumeracao === "SEQUENCIAL"}
+            onChange={() => setModoNumeracao((atual) => (atual === "SEQUENCIAL" ? null : "SEQUENCIAL"))}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Sequencial entre os modelos
+        </label>
+        <span className="text-[11px] text-slate-500">
+          {modoNumeracao === "CADA_DO_1"
+            ? "1–300, 1–150, 1–80"
+            : modoNumeracao === "SEQUENCIAL"
+              ? "1–300, 301–450, 451–530"
+              : "Sem marcar, a grade não altera a numeração já gravada."}
+        </span>
+      </div>
+
       <p className="px-1 text-[11px] text-slate-500">
         Cole a lista do cliente em qualquer campo (uma linha por lote, cor e quantidade).
         Enter cria a próxima linha herdando a cor.
@@ -280,11 +357,12 @@ export function LotesGrid({
               <th className="px-3 py-2 text-left font-bold">Cor do papel</th>
               <th className="w-28 px-3 py-2 text-left font-bold">Qtd</th>
               <th className="px-3 py-2 text-left font-bold">Modelo</th>
+              <th className="w-32 px-3 py-2 text-left font-bold">Numeração</th>
               <th className="w-20 px-3 py-2" />
             </tr>
           </thead>
           <tbody>
-            {linhas.map((linha, indice) => (
+            {linhasNumeradas.map((linha, indice) => (
               <tr key={indice} className={linha.corNaoReconhecida ? "bg-red-50" : "border-t border-slate-100"}>
                 <td className="px-3 py-2">
                   <select
@@ -326,6 +404,9 @@ export function LotesGrid({
                     className="w-full rounded-xl border border-slate-200 px-2 py-1.5 text-sm outline-none"
                     placeholder={item.nome}
                   />
+                </td>
+                <td className="px-3 py-2 text-xs font-semibold tabular-nums text-slate-600">
+                  {rotuloFaixa(linha.numeracao_inicio, linha.numeracao_fim)}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex justify-end gap-1">

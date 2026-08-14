@@ -1358,6 +1358,7 @@ export function PedidoModelosTab({
                           quantidade: item.quantidade || 0
                         }}
                         cores={coresDoItem}
+                        numeracoes={numeracoesOpcoes}
                         linhasIniciais={modelosDoItem.map((m) => ({
                           id: m.isPersisted && m.id ? Number(m.id) : null,
                           nome_modelo: m.nome_modelo || "",
