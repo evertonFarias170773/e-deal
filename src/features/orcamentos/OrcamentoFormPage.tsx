@@ -211,6 +211,27 @@ const ABAS_EDITOR = [
   "historico"
 ] as const;
 
+/** Aviso de salvamento que precisa sobreviver ao recarregamento da página. */
+const CHAVE_AVISO_POS_SALVAMENTO = "orcamento:aviso-pos-salvamento";
+
+type AvisoPosSalvamento = {
+  title: string;
+  description?: string;
+  type: "success" | "info" | "warning";
+};
+
+function lerAvisoPosSalvamento(): AvisoPosSalvamento | null {
+  try {
+    const bruto = sessionStorage.getItem(CHAVE_AVISO_POS_SALVAMENTO);
+    if (!bruto) return null;
+    sessionStorage.removeItem(CHAVE_AVISO_POS_SALVAMENTO);
+    const aviso = JSON.parse(bruto) as AvisoPosSalvamento;
+    return aviso && typeof aviso.title === "string" ? aviso : null;
+  } catch {
+    return null;
+  }
+}
+
 export function OrcamentoFormPage({ mode, idInt, proposta }: OrcamentoFormPageProps) {
   const { getCobrancasByProposta } = useCobrancas();
   const targetIdInt = idInt ?? proposta?.id_int;
@@ -362,9 +383,37 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     [setFiltroAba]
   );
 
-  const [saveSuccessModal, setSaveSuccessModal] = useState<{ isOpen: boolean; finalIdInt: number | string }>({ isOpen: false, finalIdInt: "" });
-
   const [form, setForm] = useState<PropostaFormState>(() => createInitialState(proposta));
+
+  /**
+   * Confirma o salvamento e recarrega a página no mesmo lugar.
+   *
+   * Substitui o antigo modal "Proposta Salva!" com três destinos: salvar não é
+   * uma bifurcação, é o fim da tarefa. O recarregamento é o que o botão
+   * "Salvar e ficar" já fazia — traz cobranças, status e modelos frescos, que
+   * um refresh só do estado local não alcança.
+   *
+   * O aviso viaja pelo sessionStorage porque o recarregamento mataria um toast
+   * disparado agora; assim ele aparece na página já atualizada.
+   */
+  const concluirSalvamentoERecarregar = useCallback((aviso: AvisoPosSalvamento) => {
+    try {
+      sessionStorage.setItem(CHAVE_AVISO_POS_SALVAMENTO, JSON.stringify(aviso));
+    } catch {
+      // Aba anônima ou storage cheio: perde-se o aviso, não o recarregamento.
+    }
+    window.location.reload();
+  }, []);
+
+  useEffect(() => {
+    const aviso = lerAvisoPosSalvamento();
+    if (!aviso) return;
+    // Adiado um tick: toast é estado, e disparar direto no corpo do efeito
+    // encadeia render. Também deixa o aviso entrar depois da primeira pintura.
+    const timer = setTimeout(() => showToast(aviso), 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Carregamentos de inicialização que ainda vão escrever no `form` depois da
@@ -3243,7 +3292,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 router.push(pendingNavigation);
                 setPendingNavigation(null);
               } else {
-                setSaveSuccessModal({ isOpen: true, finalIdInt });
+                concluirSalvamentoERecarregar({ type: "success", title: "Proposta atualizada com sucesso." });
               }
             },
           });
@@ -3270,8 +3319,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           router.push(pendingNavigation);
           setPendingNavigation(null);
         } else {
-          showToast({ type: "success", title: "Proposta atualizada com sucesso." });
-          setSaveSuccessModal({ isOpen: true, finalIdInt });
+          concluirSalvamentoERecarregar({ type: "success", title: "Proposta atualizada com sucesso." });
         }
         return;
       }
@@ -3347,11 +3395,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           if (onReload) onReload(true);
         }
 
-        showToast({
+        const avisoSalvamento: AvisoPosSalvamento = {
           type: res.errorMessage ? "info" : "success",
           title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
           description: res.errorMessage || undefined
-        });
+        };
 
         if (formToSave.briefingArtesDraft) {
           try {
@@ -3369,7 +3417,30 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }
         }
 
-        setSaveSuccessModal({ isOpen: true, finalIdInt });
+        // A aba Pagamentos de uma proposta recém-criada precisa da proposta
+        // carregada, e em modo "new" ela ainda não existe no componente — daí
+        // a navegação de verdade em vez de só trocar de aba. Nos demais casos
+        // o usuário fica onde está, com a página atualizada.
+        if (pendingNavigation === "?tab=pagamentos") {
+          setPendingNavigation(null);
+          if (formToSave.id_int === "NOVO") {
+            try {
+              sessionStorage.setItem(CHAVE_AVISO_POS_SALVAMENTO, JSON.stringify(avisoSalvamento));
+            } catch {
+              // Sem storage o aviso se perde; a navegação continua.
+            }
+            window.location.replace(`/orcamentos/${finalIdInt}/editar?tab=pagamentos`);
+            return;
+          }
+          setActiveFormTab("pagamentos");
+          showToast(avisoSalvamento);
+        } else if (pendingNavigation && pendingNavigation.startsWith("/")) {
+          setPendingNavigation(null);
+          showToast(avisoSalvamento);
+          router.push(pendingNavigation);
+        } else {
+          concluirSalvamentoERecarregar(avisoSalvamento);
+        }
       } else {
         showToast({
           type: "error",
@@ -5004,7 +5075,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         fetchSaldoCredito();
                       }}
                       onPagamentoIntegralConcluido={() => {
-                        setSaveSuccessModal({ isOpen: true, finalIdInt: form.id_int });
+                        concluirSalvamentoERecarregar({ type: "success", title: "Pagamento integral concluído." });
                       }}
                     />
                   )}
@@ -5192,8 +5263,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           }}
         />
       )}
-      
-      {/* MODAL DE SUCESSO DE SALVAMENTO */}
+
       {carteiraWarning && (
         <Modal
           title="Atenção à Carteira"
@@ -5362,54 +5432,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         </Modal>
       )}
 
-      {saveSuccessModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-[#0b2f4a]">Proposta Salva!</h2>
-              <button
-                type="button"
-                onClick={() => setSaveSuccessModal({ isOpen: false, finalIdInt: "" })}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <p className="mb-6 text-sm text-slate-600">
-              A proposta foi salva com sucesso. O que você deseja fazer agora?
-            </p>
-
-            <div className="flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setSaveSuccessModal({ isOpen: false, finalIdInt: "" });
-                  window.location.reload();
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-[#0b2f4a] hover:border-slate-300"
-              >
-                1. Salvar e ficar
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push("/orcamentos")}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-[#0b2f4a] hover:border-slate-300"
-              >
-                2. Salvar e voltar pra lista
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push(`/orcamentos/${saveSuccessModal.finalIdInt}`)}
-                className="w-full rounded-2xl bg-[#0b2f4a] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
-              >
-                3. Salvar e ver detalhes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* O modal "Proposta Salva!" com três destinos (ficar / lista / detalhe)
+          foi removido em 13/08/2026: salvar não é uma bifurcação, é o fim da
+          tarefa. Agora o salvamento avisa e recarrega no mesmo lugar — ver
+          concluirSalvamentoERecarregar. */}
 
       {/* Modal obrigatório de diferença financeira — não pode ser fechado sem escolher ação */}
       {diferencaModal && (
