@@ -903,6 +903,25 @@ export function ContasReceberPage() {
           throw new Error(updateError.message);
         }
       } else {
+        // Cancelar o boleto não desfaz o faturamento: a cobrança continua
+        // faturada e volta para o Registro de Recebíveis, para ser refaturada
+        // com o pedido novo. É `boleto_enviadoo` que a traz de volta àquela
+        // lista — o mesmo campo que a emissão marca como true.
+        if (item.is_faturado && item.id_pagamento) {
+          const { error: erroRetorno } = await client
+            .from("pagamentos_v2")
+            .update({ boleto_enviadoo: false })
+            .eq("id_pagamento", item.id_pagamento);
+
+          if (erroRetorno) {
+            showToast({
+              type: "warning",
+              title: "Boleto cancelado, mas a cobrança não voltou ao Registro de Recebíveis.",
+              description: erroRetorno.message
+            });
+          }
+        }
+
         showToast({
           type: "success",
           title: isDeposito
