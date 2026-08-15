@@ -742,6 +742,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [openItemIds, setOpenItemIds] = useState<Record<string, boolean>>({});
   /** Item cuja linha está sendo gravada pelo "Salvar item" — trava o botão contra clique duplo. */
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  /**
+   * Produto recém-incluído no orçamento: o cursor vai direto para a Quantidade,
+   * que é sempre o primeiro campo a preencher. Só na inclusão — ao editar um
+   * item já existente o foco fica onde o vendedor clicou.
+   */
+  const [itemNovoParaFocar, setItemNovoParaFocar] = useState<string | null>(null);
   const [duplicateProductPrompt, setDuplicateProductPrompt] = useState<{
     productId: string;
     nomeProduto: string;
@@ -2190,12 +2196,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       const item = createItemFromProduto(enrichedProduto, initialQty, bonusPercent, false, precoFixoBase);
       updateField("itens", [...form.itens, item]);
       setOpenItemIds((current) => ({ ...current, [item.id]: true }));
+      setItemNovoParaFocar(item.id);
       showToast({ type: "success", title: "Produto adicionado", description: `${produto.nomeReal} incluído no orçamento.` });
     } catch (err) {
       console.error("Erro ao carregar variações do produto:", err);
       const item = createItemFromProduto(produto, initialQty, bonusPercent, false, precoFixoBase);
       updateField("itens", [...form.itens, item]);
       setOpenItemIds((current) => ({ ...current, [item.id]: true }));
+      setItemNovoParaFocar(item.id);
       showToast({ type: "success", title: "Produto adicionado", description: `${produto.nomeReal} incluído no orçamento.` });
     }
   }
@@ -4896,6 +4904,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           canEditarValoresItem={canEditarValoresItem}
                           isRemoveAllowed={isRemoveAllowed}
                           isPrecoFixoAplicado={isPrecoFixoAplicado}
+                          autoFocusQuantidade={itemNovoParaFocar === item.id}
+                          onQuantidadeFocada={() => setItemNovoParaFocar(null)}
                         />
                       );
                     } else {
@@ -5653,7 +5663,9 @@ function ProductItemEditor({
   podeEditarVariacoes,
   canEditarValoresItem,
   isRemoveAllowed,
-  isPrecoFixoAplicado
+  isPrecoFixoAplicado,
+  autoFocusQuantidade,
+  onQuantidadeFocada
 }: {
   item: PropostaItem;
   bonusPercent: number;
@@ -5669,8 +5681,24 @@ function ProductItemEditor({
   canEditarValoresItem?: boolean;
   isRemoveAllowed?: boolean;
   isPrecoFixoAplicado?: boolean;
+  /** Só na inclusão de um produto novo — ver `itemNovoParaFocar`. */
+  autoFocusQuantidade?: boolean;
+  onQuantidadeFocada?: () => void;
 }) {
   const { showToast } = useAppToast();
+  const quantidadeRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!autoFocusQuantidade) return;
+    const campo = quantidadeRef.current;
+    if (!campo) return;
+    campo.focus();
+    // Seleciona a quantidade sugerida (mínima do produto): digitar substitui em
+    // vez de emendar no número que já estava lá.
+    campo.select();
+    onQuantidadeFocada?.();
+  }, [autoFocusQuantidade, onQuantidadeFocada]);
+
   return (
     <div 
       className="rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-inner space-y-4"
@@ -5699,6 +5727,7 @@ function ProductItemEditor({
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 items-start">
           <Field label="Quantidade">
             <input
+              ref={quantidadeRef}
               type="number"
               value={item.quantidade || ""}
               onChange={(event) => onUpdate((current) => ({ ...current, quantidade: Math.max(0, Number(event.target.value)) }))}
