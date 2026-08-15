@@ -176,7 +176,7 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
 
         {hasChildren && isItemOpen && (
           <div
-            className="ml-6 mt-1 mb-2 flex flex-col space-y-0.5 border-l pl-4"
+            className="ml-3 mt-1 mb-2 flex flex-col space-y-0.5 border-l pl-3"
             style={{ borderColor: "var(--sidebar-border)" }}
           >
             {item.children!.map((child) => {
@@ -327,7 +327,12 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
                   type="button"
                   onClick={() => setOpenSection((current) => (current === section.id ? "" : section.id))}
                   className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left"
-                  style={{ color: "var(--sidebar-text-muted)" }}
+                  style={{
+                    // Seção aberta fica com fundo e texto mais fortes. Antes o
+                    // único sinal de "aberto" era a seta girada, fácil de não ver.
+                    color: open ? "var(--sidebar-text)" : "var(--sidebar-text-muted)",
+                    background: open ? "var(--sidebar-hover-bg)" : "transparent"
+                  }}
                   aria-expanded={open}
                 >
                   <SectionIcon className="h-4 w-4 shrink-0" style={{ color: "var(--sidebar-icon)" }} />
@@ -340,7 +345,12 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
                   />
                 </button>
                 {open && (
-                  <div className="mt-1 mb-1.5 flex flex-col space-y-1">
+                  // Deslocamento + fio à esquerda separam o submenu do nível
+                  // principal — mesma linguagem que o terceiro nível já usava.
+                  <div
+                    className="ml-4 mt-1 mb-1.5 flex flex-col space-y-1 border-l pl-2"
+                    style={{ borderColor: "var(--sidebar-border)" }}
+                  >
                     {section.items.map(renderItem)}
                   </div>
                 )}
