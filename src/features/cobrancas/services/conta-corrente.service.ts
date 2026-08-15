@@ -95,119 +95,94 @@ export async function listPendenciasCliente(idCliente: number): Promise<ContaCor
 }
 
 /**
- * Ajuste manual avulso da Conta Corrente (origem=AJUSTE em movimento_credito,
- * sem proposta e sem pendência vinculada — lançado pelo modal do cadastro via
- * mc_ajuste_avulso_criar). NÃO é uma pendência: é um lançamento direto no saldo.
+ * Extrato COMPLETO da conta corrente — todo `movimento_credito` não cancelado,
+ * sem recorte por origem.
  *
- * Lê da MESMA fonte oficial do saldo (public.movimento_credito) — não cria
- * estrutura paralela nem duplica saldo. Só materializa, para exibição, os
- * lançamentos manuais que hoje entram no saldo mas não apareciam na listagem
- * de pendências (que lê apenas conta_corrente_pendencias).
+ * POR QUE EXISTE: `listAjustesManuais` e `listUsosDeCredito` filtram cada uma
+ * a sua fatia, e a tela mostrava só a união das duas. Medido em 15/08/2026:
+ * 52 dos 71 lançamentos apareciam — ficavam de fora 12 débitos manuais, 3
+ * créditos manuais, 3 lançamentos de sistema e 1 ESTORNO. A lista não fechava
+ * com os cards, que sempre leram a razão inteira.
  */
-export type AjusteManualConta = {
+export type TipoLancamentoConta = "AJUSTE" | "USO" | "PENDENCIA" | "ESTORNO" | "LEGADO";
+
+export const ROTULO_TIPO_LANCAMENTO: Record<TipoLancamentoConta, string> = {
+  AJUSTE: "Ajuste manual",
+  USO: "Uso de crédito",
+  PENDENCIA: "Pendência",
+  ESTORNO: "Estorno",
+  LEGADO: "Lançamento legado",
+};
+
+export type LancamentoContaCorrente = {
   id: number;
   id_cliente: number;
-  valor: number;
   tipo: "CREDITO" | "DEBITO";
+  valor: number;
+  /** Crédito positivo, débito negativo — pronto para somar. */
+  valorComSinal: number;
+  categoria: TipoLancamentoConta;
   observacao: string | null;
   created_at: string;
   created_by: string | null;
-  cancelado: boolean;
+  /** Proposta de origem do lançamento. */
+  id_int: number | null;
+  /** Proposta onde o crédito foi aplicado (uso). */
+  id_int_destino: number | null;
+  id_pendencia: number | null;
 };
-
-/** Lançamentos manuais avulsos (origem=AJUSTE, sem pendência), não cancelados. */
-export async function listAjustesManuais(options?: { limit?: number }): Promise<AjusteManualConta[]> {
-  const client = getSupabaseClient();
-  if (!client) return [];
-  let query = client
-    .from("movimento_credito")
-    .select("id, id_cliente, valor, tipo, observacao, created_at, created_by, cancelado")
-    .eq("origem", "AJUSTE")
-    .is("id_pendencia", null)
-    .eq("cancelado", false)
-    .order("created_at", { ascending: false });
-  if (options?.limit !== undefined) {
-    query = query.limit(options.limit);
-  }
-  const { data, error } = await query;
-  if (error) {
-    console.warn("[ContaCorrenteService] Erro ao listar ajustes manuais:", error.message);
-    return [];
-  }
-  return (data || []).map((r) => ({
-    id: Number(r.id),
-    id_cliente: Number(r.id_cliente),
-    valor: Number(r.valor) || 0,
-    tipo: r.tipo === "DEBITO" ? "DEBITO" : "CREDITO",
-    observacao: r.observacao ?? null,
-    created_at: r.created_at,
-    created_by: r.created_by ?? null,
-    cancelado: Boolean(r.cancelado),
-  }));
-}
 
 /**
- * Consumo de crédito avulso (movimento_credito com tipo_evento=USO_PEDIDO e
- * SEM pendência vinculada) — o débito gravado por `mc_usar_credito_avulso`
- * quando o vendedor aplica crédito como pagamento (E-Crédito ou pagamento
- * combinado).
- *
- * POR QUE EXISTE: `listAjustesManuais` filtra `origem = 'AJUSTE'`, e este
- * débito nasce com `origem = 'SISTEMA'`. Resultado: o crédito aparecia na
- * Conta Corrente e o uso dele, não — a linha do ajuste seguia exibindo o
- * valor cheio para sempre. Medido em 06/08/2026: 9 usos, R$ 6.441,11
- * invisíveis, com 5 clientes exibindo crédito disponível e saldo real zero.
- *
- * Quando o crédito consumido vem de uma PENDÊNCIA, o uso já é visível pela
- * própria pendência (valor_saldo cai, status vira PARCIALMENTE_RESOLVIDA) —
- * por isso o filtro `id_pendencia is null`, que evita contar o mesmo uso
- * duas vezes na tela.
+ * Ordem importa: ESTORNO antes de tudo (é um evento próprio), uso avulso
+ * antes de pendência, e o que sobrar com origem AJUSTE é ajuste manual.
+ * O resto é legado — anterior às RPCs, sem `tipo_evento`.
  */
-export type UsoCreditoConta = {
-  id: number;
-  id_cliente: number;
-  valor: number;
-  /** Proposta onde o crédito foi aplicado. */
-  id_int_destino: number | null;
-  /** Cobrança E-CREDITO gerada pela aplicação. */
-  id_pagamento_destino: string | null;
-  observacao: string | null;
-  created_at: string;
-  created_by: string | null;
-};
+function classificarLancamento(row: {
+  origem: string | null;
+  tipo_evento: string | null;
+  id_pendencia: number | null;
+}): TipoLancamentoConta {
+  if (row.tipo_evento === "ESTORNO") return "ESTORNO";
+  if (row.tipo_evento === "USO_PEDIDO" && row.id_pendencia === null) return "USO";
+  if (row.id_pendencia !== null) return "PENDENCIA";
+  if (row.origem === "AJUSTE") return "AJUSTE";
+  return "LEGADO";
+}
 
-/** Usos de crédito avulso (USO_PEDIDO sem pendência), não cancelados. */
-export async function listUsosDeCredito(options?: { limit?: number }): Promise<UsoCreditoConta[]> {
+export async function listExtratoContaCorrente(options?: { limit?: number }): Promise<LancamentoContaCorrente[]> {
   const client = getSupabaseClient();
   if (!client) return [];
-  let query = client
+  const { data, error } = await client
     .from("movimento_credito")
-    .select("id, id_cliente, valor, id_int_destino, id_pagamento_destino, observacao, created_at, created_by")
-    .eq("tipo_evento", "USO_PEDIDO")
-    // Consumo é sempre DEBITO. Explícito de propósito: um USO_PEDIDO do tipo
-    // CREDITO (estorno de uso) não pode ser desenhado como se fosse saída.
-    .eq("tipo", "DEBITO")
-    .is("id_pendencia", null)
+    .select("id, id_cliente, valor, tipo, origem, tipo_evento, observacao, created_at, created_by, id_int, id_int_destino, id_pendencia")
     .eq("cancelado", false)
-    .order("created_at", { ascending: false });
-  if (options?.limit !== undefined) {
-    query = query.limit(options.limit);
-  }
-  const { data, error } = await query;
+    .order("created_at", { ascending: false })
+    .limit(options?.limit ?? 5000);
+
   if (error) {
-    console.warn("[ContaCorrenteService] Erro ao listar usos de crédito:", error.message);
+    console.warn("[ContaCorrenteService] Erro ao listar o extrato:", error.message);
     return [];
   }
-  return (data || []).map((r) => ({
-    id: Number(r.id),
-    id_cliente: Number(r.id_cliente),
-    valor: Number(r.valor) || 0,
-    id_int_destino: r.id_int_destino === null || r.id_int_destino === undefined ? null : Number(r.id_int_destino),
-    id_pagamento_destino: r.id_pagamento_destino ?? null,
-    observacao: r.observacao ?? null,
-    created_at: r.created_at,
-    created_by: r.created_by ?? null,
-  }));
+
+  return (data || []).map((r) => {
+    const valor = Number(r.valor) || 0;
+    const tipo: "CREDITO" | "DEBITO" = r.tipo === "DEBITO" ? "DEBITO" : "CREDITO";
+    const idPendencia = r.id_pendencia === null || r.id_pendencia === undefined ? null : Number(r.id_pendencia);
+    return {
+      id: Number(r.id),
+      id_cliente: Number(r.id_cliente),
+      tipo,
+      valor,
+      valorComSinal: tipo === "CREDITO" ? valor : -valor,
+      categoria: classificarLancamento({ origem: r.origem, tipo_evento: r.tipo_evento, id_pendencia: idPendencia }),
+      observacao: r.observacao ?? null,
+      created_at: r.created_at,
+      created_by: r.created_by ?? null,
+      id_int: r.id_int === null || r.id_int === undefined ? null : Number(r.id_int),
+      id_int_destino: r.id_int_destino === null || r.id_int_destino === undefined ? null : Number(r.id_int_destino),
+      id_pendencia: idPendencia,
+    };
+  });
 }
 
 /** Fila financeira: todas as pendências (para a tela dedicada de Conta Corrente). */

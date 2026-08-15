@@ -1,15 +1,19 @@
 "use client";
 
 /**
- * /conta-corrente — Tela financeira de Conta Corrente (Pendências Financeiras)
+ * /conta-corrente — Saldo de crédito/débito dos clientes.
  *
- * Permite ao Financeiro/Admin consultar e administrar pendências
- * (public.conta_corrente_pendencias) SEM depender de um novo pedido — o
- * requisito explícito do módulo. Pendência nunca bloqueia o cliente; esta
- * tela apenas resolve/baixa/cancela/estorna o que já existe.
+ * ORGANIZAÇÃO: uma linha por CLIENTE com o saldo atual; clicar abre o extrato
+ * dele. A pergunta do dia a dia é "quem tem crédito e quanto", não "qual foi o
+ * 40º lançamento" — o extrato corrido respondia a segunda e escondia a
+ * primeira, com o mesmo cliente espalhado em linhas distantes.
  *
- * Toda escrita passa pelas RPCs cc_encerrar_pendencia (via /api/conta-corrente/encerrar).
- * Leitura é direta com RLS (sem RPC), reaproveitando conta-corrente.service.ts.
+ * FONTE: `movimento_credito` é a razão COMPLETA — pendência grava seu
+ * movimento de ABERTURA (cc_abrir_pendencia), ajuste manual e uso de crédito
+ * entram na mesma tabela. Por isso o saldo sai daqui, e não da soma de
+ * fontes separadas.
+ *
+ * Escrita continua só via RPC cc_encerrar_pendencia (/api/conta-corrente/encerrar).
  */
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
@@ -24,18 +28,14 @@ import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { codecs } from "@/lib/url-state";
 import {
   listAllPendencias,
-  listAjustesManuais,
-  listUsosDeCredito,
+  listExtratoContaCorrente,
+  ROTULO_TIPO_LANCAMENTO,
   type ContaCorrentePendencia,
   type ContaCorrentePendenciaStatus,
-  type AjusteManualConta,
-  type UsoCreditoConta,
+  type LancamentoContaCorrente,
+  type TipoLancamentoConta,
 } from "@/features/cobrancas/services/conta-corrente.service";
-import {
-  getSaldoGlobalContaCorrente,
-  type SaldoGlobalContaCorrente,
-} from "@/features/cobrancas/services/movimento-credito.service";
-import { Wallet, TrendingUp, TrendingDown, Coins, Search, Loader2, X } from "lucide-react";
+import { Wallet, TrendingUp, TrendingDown, Coins, Search, Loader2, X, ChevronRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
 
 const STATUS_LABEL: Record<ContaCorrentePendenciaStatus, string> = {
@@ -54,29 +54,37 @@ const MOTIVO_LABEL: Record<string, string> = {
   OUTRO: "Outro",
 };
 
+/** Cor do selo por categoria — mesma leitura em todo o extrato. */
+const TOM_CATEGORIA: Record<TipoLancamentoConta, string> = {
+  AJUSTE: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  USO: "border-rose-200 bg-rose-50 text-rose-700",
+  PENDENCIA: "border-sky-200 bg-sky-50 text-sky-700",
+  ESTORNO: "border-amber-200 bg-amber-50 text-amber-800",
+  LEGADO: "border-slate-200 bg-slate-100 text-slate-600",
+};
+
 type ModoAcao = "DEVOLUCAO" | "BONIFICACAO" | "BAIXA" | "CANCELAMENTO" | "ESTORNO";
 
-/** Filtros da tela, na ordem em que aparecem no select. */
-const STATUS_FILTRO = ["TODAS", "ABERTA", "PARCIALMENTE_RESOLVIDA", "RESOLVIDA", "CANCELADA"] as const;
-const SENTIDO_FILTRO = ["TODAS", "FAVOR_CLIENTE", "FAVOR_EMPRESA"] as const;
+const TIPO_FILTRO = ["TODOS", "AJUSTE", "USO", "PENDENCIA", "ESTORNO", "LEGADO"] as const;
+const SALDO_FILTRO = ["TODOS", "COM_CREDITO", "COM_DEBITO"] as const;
 
-/**
- * Linha unificada do extrato da Conta Corrente. Reúne, para exibição, dois
- * tipos de lançamento que hoje coexistem na mesma conta do cliente:
- *  - PENDENCIA: diferença pós-pagamento (public.conta_corrente_pendencias);
- *  - AJUSTE: lançamento manual avulso (movimento_credito origem=AJUSTE).
- * Não é uma nova estrutura de dados — apenas a junção de duas fontes já
- * existentes para leitura na tela.
- */
-type LinhaExtrato =
-  | { kind: "PENDENCIA"; created_at: string; direcao: "FAVOR_CLIENTE" | "FAVOR_EMPRESA"; pendencia: ContaCorrentePendencia }
-  | { kind: "AJUSTE"; created_at: string; direcao: "FAVOR_CLIENTE" | "FAVOR_EMPRESA"; ajuste: AjusteManualConta }
-  // USO: consumo do crédito avulso (movimento_credito USO_PEDIDO sem
-  // pendência). Sempre saída da conta do cliente, por isso FAVOR_EMPRESA.
-  | { kind: "USO"; created_at: string; direcao: "FAVOR_EMPRESA"; uso: UsoCreditoConta };
+/** Linha da tabela principal: um cliente com o saldo já fechado. */
+type LinhaCliente = {
+  idCliente: number;
+  nome: string;
+  saldo: number;
+  lancamentos: LancamentoContaCorrente[];
+  pendenciasAbertas: ContaCorrentePendencia[];
+  ultimoMovimento: string | null;
+};
 
 function formatCurrency(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("pt-BR");
 }
 
 export default function ContaCorrenteRoute() {
@@ -93,27 +101,30 @@ function ContaCorrentePage() {
   const { showToast } = useAppToast();
 
   const [pendencias, setPendencias] = useState<ContaCorrentePendencia[]>([]);
-  const [ajustes, setAjustes] = useState<AjusteManualConta[]>([]);
-  const [usos, setUsos] = useState<UsoCreditoConta[]>([]);
-  const [saldoGlobal, setSaldoGlobal] = useState<SaldoGlobalContaCorrente | null>(null);
+  const [lancamentos, setLancamentos] = useState<LancamentoContaCorrente[]>([]);
   const [nomesCliente, setNomesCliente] = useState<Record<number, string>>({});
   const [nomesAutor, setNomesAutor] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
+  const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
 
-  // Filtros na URL: sobrevivem ao F5, ao histórico do navegador e a um link copiado.
+  // Filtros na URL: sobrevivem ao F5, ao histórico e a um link copiado.
   const filtrosSchema = useMemo(
     () => ({
       q: { codec: codecs.texto(), default: "" },
-      status: { codec: codecs.enumOf(STATUS_FILTRO), default: "TODAS" as const },
-      sentido: { codec: codecs.enumOf(SENTIDO_FILTRO), default: "TODAS" as const }
+      tipo: { codec: codecs.enumOf(TIPO_FILTRO), default: "TODOS" as const },
+      saldo: { codec: codecs.enumOf(SALDO_FILTRO), default: "TODOS" as const },
+      de: { codec: codecs.texto(), default: "" },
+      ate: { codec: codecs.texto(), default: "" },
     }),
     []
   );
   const { filters, setFilter } = useUrlFilters(filtrosSchema);
 
-  const statusFiltro = filters.status;
-  const direcaoFiltro = filters.sentido;
+  const tipoFiltro = filters.tipo;
+  const saldoFiltro = filters.saldo;
+  const dataDe = filters.de;
+  const dataAte = filters.ate;
   // O campo responde a cada tecla; a URL só é gravada depois da pausa.
   const [searchTerm, setSearchTerm] = useDebouncedInput(filters.q, (valor) => setFilter("q", valor));
 
@@ -130,31 +141,18 @@ function ContaCorrentePage() {
   const carregar = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: pends }, ajustesManuais, usosCredito, saldo] = await Promise.all([
+      const [{ data: pends }, extrato] = await Promise.all([
         listAllPendencias({ limit: 500 }),
-        listAjustesManuais({ limit: 500 }),
-        listUsosDeCredito({ limit: 500 }),
-        getSaldoGlobalContaCorrente(),
+        listExtratoContaCorrente(),
       ]);
       setPendencias(pends);
-      setAjustes(ajustesManuais);
-      setUsos(usosCredito);
-      setSaldoGlobal(saldo);
+      setLancamentos(extrato);
 
-      // Resolve nomes de cliente e autor (ajustes + usos) em lote.
       const client = getSupabaseClient();
       const idsCliente = Array.from(
-        new Set(
-          [
-            ...pends.map((p) => p.id_cliente),
-            ...ajustesManuais.map((a) => a.id_cliente),
-            ...usosCredito.map((u) => u.id_cliente),
-          ].filter(Boolean)
-        )
+        new Set([...pends.map((p) => p.id_cliente), ...extrato.map((l) => l.id_cliente)].filter(Boolean))
       );
-      const uidsAutor = Array.from(
-        new Set([...ajustesManuais.map((a) => a.created_by), ...usosCredito.map((u) => u.created_by)].filter(Boolean))
-      ) as string[];
+      const uidsAutor = Array.from(new Set(extrato.map((l) => l.created_by).filter(Boolean))) as string[];
 
       if (client && idsCliente.length > 0) {
         const { data: cli } = await client.from("clientes").select("id_cliente, nome").in("id_cliente", idsCliente);
@@ -178,7 +176,7 @@ function ContaCorrentePage() {
         setNomesAutor({});
       }
     } catch (err) {
-      console.error("[ContaCorrentePage] Erro ao carregar Conta Corrente:", err);
+      console.error("[ContaCorrentePage] Erro ao carregar a Conta Corrente:", err);
       showToast({ type: "error", title: "Erro ao carregar a Conta Corrente." });
     } finally {
       setLoading(false);
@@ -187,59 +185,116 @@ function ContaCorrentePage() {
 
   useEffect(() => { void carregar(); }, [carregar]);
 
-  const filtradas = useMemo<LinhaExtrato[]>(() => {
-    const linhas: LinhaExtrato[] = [
-      ...pendencias.map((p): LinhaExtrato => ({ kind: "PENDENCIA", created_at: p.created_at, direcao: p.direcao, pendencia: p })),
-      ...ajustes.map((a): LinhaExtrato => ({
-        kind: "AJUSTE",
-        created_at: a.created_at,
-        direcao: a.tipo === "CREDITO" ? "FAVOR_CLIENTE" : "FAVOR_EMPRESA",
-        ajuste: a,
-      })),
-      ...usos.map((u): LinhaExtrato => ({
-        kind: "USO",
-        created_at: u.created_at,
-        direcao: "FAVOR_EMPRESA",
-        uso: u,
-      })),
-    ];
-
-    return linhas
-      .filter((linha) => {
-        // Filtro de status: ajustes manuais não têm status de pendência.
-        // Só aparecem quando o filtro é "TODAS" (não há sentido em filtrá-los
-        // por ABERTA/RESOLVIDA etc.).
-        if (statusFiltro !== "TODAS") {
-          if (linha.kind !== "PENDENCIA" || linha.pendencia.status !== statusFiltro) return false;
-        }
-        if (direcaoFiltro !== "TODAS" && linha.direcao !== direcaoFiltro) return false;
-        if (searchTerm.trim()) {
-          const t = searchTerm.trim().toLowerCase();
-          const idCliente =
-            linha.kind === "PENDENCIA" ? linha.pendencia.id_cliente
-            : linha.kind === "AJUSTE" ? linha.ajuste.id_cliente
-            : linha.uso.id_cliente;
-          const nomeCliente = nomesCliente[idCliente] ?? "";
-          const alvo =
-            linha.kind === "PENDENCIA"
-              ? `${linha.pendencia.id_int} ${linha.pendencia.id_cliente} ${nomeCliente} ${linha.pendencia.motivo} ${linha.pendencia.observacao ?? ""}`
-              : linha.kind === "AJUSTE"
-                ? `ajuste manual ${linha.ajuste.id_cliente} ${nomeCliente} ${linha.ajuste.observacao ?? ""}`
-                : `uso de credito ${linha.uso.id_int_destino ?? ""} ${linha.uso.id_cliente} ${nomeCliente} ${linha.uso.observacao ?? ""}`;
-          if (!alvo.toLowerCase().includes(t)) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [pendencias, ajustes, usos, nomesCliente, statusFiltro, direcaoFiltro, searchTerm]);
-
+  // ── Totais dos cards ──────────────────────────────────────────────────────
+  // Saldo é ESTOQUE: fecha cliente a cliente sobre a razão inteira e ignora o
+  // filtro de período de propósito — saldo "de agosto" não existe. Só o card
+  // de uso é FLUXO e segue o período.
   const totais = useMemo(() => {
-    const abertas = pendencias.filter(p => p.status === "ABERTA" || p.status === "PARCIALMENTE_RESOLVIDA");
-    const totalCredito = abertas.filter(p => p.direcao === "FAVOR_CLIENTE").reduce((s, p) => s + p.valor_saldo, 0);
-    const totalDebito = abertas.filter(p => p.direcao === "FAVOR_EMPRESA").reduce((s, p) => s + p.valor_saldo, 0);
+    const saldoPorCliente = new Map<number, number>();
+    for (const l of lancamentos) {
+      saldoPorCliente.set(l.id_cliente, (saldoPorCliente.get(l.id_cliente) ?? 0) + l.valorComSinal);
+    }
+
+    let totalCredito = 0;
+    let totalDebito = 0;
+    let clientesComCredito = 0;
+    let clientesComDebito = 0;
+    for (const saldo of saldoPorCliente.values()) {
+      const v = Math.round(saldo * 100) / 100;
+      if (v > 0) { totalCredito += v; clientesComCredito += 1; }
+      else if (v < 0) { totalDebito += -v; clientesComDebito += 1; }
+    }
+
+    const abertas = pendencias.filter((p) => p.status === "ABERTA" || p.status === "PARCIALMENTE_RESOLVIDA");
+    const pendCredito = abertas.filter((p) => p.direcao === "FAVOR_CLIENTE").reduce((s, p) => s + p.valor_saldo, 0);
+    const pendDebito = abertas.filter((p) => p.direcao === "FAVOR_EMPRESA").reduce((s, p) => s + p.valor_saldo, 0);
     const reservado = abertas.reduce((s, p) => s + p.valor_reservado, 0);
-    return { totalCredito, totalDebito, reservado, qtdAbertas: abertas.length };
-  }, [pendencias]);
+
+    const usosNoPeriodo = lancamentos.filter(
+      (l) => l.categoria === "USO" && dentroDoPeriodo(l.created_at, dataDe, dataAte)
+    );
+
+    return {
+      totalCredito: Math.round(totalCredito * 100) / 100,
+      totalDebito: Math.round(totalDebito * 100) / 100,
+      clientesComCredito,
+      clientesComDebito,
+      pendCredito,
+      pendDebito,
+      reservado,
+      qtdAbertas: abertas.length,
+      usoTotal: Math.round(usosNoPeriodo.reduce((s, l) => s + l.valor, 0) * 100) / 100,
+      usoQtd: usosNoPeriodo.length,
+      saldoPorCliente,
+    };
+  }, [lancamentos, pendencias, dataDe, dataAte]);
+
+  const temPeriodo = Boolean(dataDe || dataAte);
+
+  // ── Linhas por cliente, já filtradas ──────────────────────────────────────
+  const linhas = useMemo<LinhaCliente[]>(() => {
+    const termo = searchTerm.trim().toLowerCase();
+
+    const porCliente = new Map<number, LancamentoContaCorrente[]>();
+    for (const l of lancamentos) {
+      // Período e tipo filtram o EXTRATO. O saldo do cliente continua vindo do
+      // total (totais.saldoPorCliente) — filtrar a lista não muda o que ele tem.
+      if (!dentroDoPeriodo(l.created_at, dataDe, dataAte)) continue;
+      if (tipoFiltro !== "TODOS" && l.categoria !== tipoFiltro) continue;
+      const atual = porCliente.get(l.id_cliente);
+      if (atual) atual.push(l);
+      else porCliente.set(l.id_cliente, [l]);
+    }
+
+    const resultado: LinhaCliente[] = [];
+    for (const [idCliente, lista] of porCliente) {
+      const nome = nomesCliente[idCliente] ?? `Cliente #${idCliente}`;
+      if (termo && !`${nome} ${idCliente} ${lista.map((l) => l.observacao ?? "").join(" ")}`.toLowerCase().includes(termo)) {
+        continue;
+      }
+      const saldo = Math.round((totais.saldoPorCliente.get(idCliente) ?? 0) * 100) / 100;
+      if (saldoFiltro === "COM_CREDITO" && saldo <= 0) continue;
+      if (saldoFiltro === "COM_DEBITO" && saldo >= 0) continue;
+
+      resultado.push({
+        idCliente,
+        nome,
+        saldo,
+        lancamentos: lista,
+        pendenciasAbertas: pendencias.filter(
+          (p) => p.id_cliente === idCliente && (p.status === "ABERTA" || p.status === "PARCIALMENTE_RESOLVIDA")
+        ),
+        ultimoMovimento: lista[0]?.created_at ?? null,
+      });
+    }
+
+    // Maior saldo primeiro: quem tem dinheiro parado é quem exige ação.
+    // Empate (zerados) volta a ordenar por movimento mais recente.
+    return resultado.sort((a, b) => {
+      if (b.saldo !== a.saldo) return b.saldo - a.saldo;
+      return new Date(b.ultimoMovimento ?? 0).getTime() - new Date(a.ultimoMovimento ?? 0).getTime();
+    });
+  }, [lancamentos, pendencias, nomesCliente, searchTerm, tipoFiltro, saldoFiltro, dataDe, dataAte, totais.saldoPorCliente]);
+
+  const totalLancamentosExibidos = linhas.reduce((s, l) => s + l.lancamentos.length, 0);
+  const filtroAtivo = Boolean(searchTerm.trim()) || tipoFiltro !== "TODOS" || saldoFiltro !== "TODOS" || temPeriodo;
+
+  function alternarExpandido(idCliente: number) {
+    setExpandidos((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(idCliente)) proximo.delete(idCliente);
+      else proximo.add(idCliente);
+      return proximo;
+    });
+  }
+
+  function limparFiltros() {
+    setSearchTerm("");
+    setFilter("tipo", "TODOS");
+    setFilter("saldo", "TODOS");
+    setFilter("de", "");
+    setFilter("ate", "");
+  }
 
   function abrirModal(pendencia: ContaCorrentePendencia, modo: ModoAcao) {
     setModal({ pendencia, modo });
@@ -306,7 +361,7 @@ function ContaCorrentePage() {
   if (!podeVisualizar) {
     return (
       <div className="p-8">
-        <PageHeader title="Conta Corrente" subtitle="Pendências financeiras" />
+        <PageHeader title="Conta Corrente" subtitle="Saldo de crédito e débito dos clientes" />
         <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
           <p className="text-sm font-semibold text-slate-600">Sem acesso a este módulo.</p>
           <p className="mt-1 text-xs text-slate-400">Requer permissão financeira (financeiro.* ou credito.usar).</p>
@@ -322,249 +377,251 @@ function ContaCorrentePage() {
         subtitle="Saldo do cliente: pendências pós-pagamento, ajustes manuais e usos do crédito. Não é Contas a Receber; nunca bloqueia novos pedidos."
       />
 
-      {/*
-        Os dois primeiros cards saem de movimento_credito, a razão COMPLETA da
-        conta corrente (pendências gravam ABERTURA lá; ajustes e usos também).
-        Antes eles somavam só conta_corrente_pendencias e por isso ignoravam
-        ajuste manual e uso de crédito — anunciavam crédito que já tinha sido
-        gasto. O saldo é fechado cliente a cliente antes de somar: crédito de
-        um cliente não abate débito de outro.
-
-        O terceiro card deixou de ser "Reservado" (era R$ 0,00 desde sempre —
-        reserva é mecanismo raro) e passou a ser a fila de pendências, com o
-        reservado descrito na linha de baixo quando existir.
-      */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           title="Crédito a favor dos clientes"
-          value={formatCurrency(saldoGlobal?.totalCredito ?? 0)}
-          description={
-            saldoGlobal
-              ? `${saldoGlobal.clientesComCredito} cliente(s) com saldo positivo — já descontados os usos${saldoGlobal.truncado ? " · parcial" : ""}`
-              : "Calculando..."
-          }
+          value={formatCurrency(totais.totalCredito)}
+          description={`${totais.clientesComCredito} cliente(s) com saldo positivo — já descontados os usos`}
           icon={TrendingUp}
           tone="success"
         />
         <SummaryCard
           title="Débito a favor da empresa"
-          value={formatCurrency(saldoGlobal?.totalDebito ?? 0)}
-          description={saldoGlobal ? `${saldoGlobal.clientesComDebito} cliente(s) com saldo negativo` : "Calculando..."}
+          value={formatCurrency(totais.totalDebito)}
+          description={`${totais.clientesComDebito} cliente(s) com saldo negativo`}
           icon={TrendingDown}
           tone="warning"
         />
         <SummaryCard
           title="Pendências em aberto"
-          value={formatCurrency(totais.totalCredito + totais.totalDebito)}
+          value={formatCurrency(totais.pendCredito + totais.pendDebito)}
           description={
-            `${totais.qtdAbertas} pendência(s) — ${formatCurrency(totais.totalCredito)} ao cliente, ${formatCurrency(totais.totalDebito)} à empresa` +
+            `${totais.qtdAbertas} pendência(s) — ${formatCurrency(totais.pendCredito)} ao cliente, ${formatCurrency(totais.pendDebito)} à empresa` +
             (totais.reservado > 0 ? ` · ${formatCurrency(totais.reservado)} reservado` : "")
           }
           icon={Wallet}
           tone="info"
         />
         <SummaryCard
-          title="Crédito aplicado em pagamentos"
-          value={formatCurrency(saldoGlobal?.totalUsos ?? 0)}
-          description={saldoGlobal ? `${saldoGlobal.qtdUsos} uso(s) já abatido(s) em propostas` : "Calculando..."}
+          // Único card de FLUXO: segue o período filtrado. Sem período era um
+          // acumulado desde sempre ao lado de três cards de saldo — só crescia
+          // e não respondia a pergunta nenhuma.
+          title={temPeriodo ? "Crédito aplicado no período" : "Crédito aplicado (total)"}
+          value={formatCurrency(totais.usoTotal)}
+          description={
+            temPeriodo
+              ? `${totais.usoQtd} uso(s) entre ${dataDe ? formatDate(dataDe) : "o início"} e ${dataAte ? formatDate(dataAte) : "hoje"}`
+              : `${totais.usoQtd} uso(s) desde o início — filtre por período para fechar um mês`
+          }
           icon={Coins}
           tone="special"
         />
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por proposta, cliente, motivo ou observação..."
-            className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm"
-          />
+      {/* ── Filtros ─────────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="flex-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cliente</label>
+            <div className="relative mt-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Nome, ID do cliente ou observação..."
+                className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">De</label>
+            <input
+              type="date"
+              value={dataDe}
+              onChange={(e) => setFilter("de", e.target.value)}
+              className="mt-1 block rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Até</label>
+            <input
+              type="date"
+              value={dataAte}
+              onChange={(e) => setFilter("ate", e.target.value)}
+              className="mt-1 block rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</label>
+            <select
+              value={tipoFiltro}
+              onChange={(e) => setFilter("tipo", e.target.value as (typeof TIPO_FILTRO)[number])}
+              className="mt-1 block rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            >
+              <option value="TODOS">Todos os tipos</option>
+              {(["AJUSTE", "USO", "PENDENCIA", "ESTORNO", "LEGADO"] as TipoLancamentoConta[]).map((t) => (
+                <option key={t} value={t}>{ROTULO_TIPO_LANCAMENTO[t]}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo</label>
+            <select
+              value={saldoFiltro}
+              onChange={(e) => setFilter("saldo", e.target.value as (typeof SALDO_FILTRO)[number])}
+              className="mt-1 block rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            >
+              <option value="TODOS">Qualquer saldo</option>
+              <option value="COM_CREDITO">Só com crédito</option>
+              <option value="COM_DEBITO">Só devedores</option>
+            </select>
+          </div>
         </div>
-        <select value={statusFiltro} onChange={(e) => setFilter("status", e.target.value as (typeof STATUS_FILTRO)[number])} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-          <option value="TODAS">Todos os status</option>
-          {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select value={direcaoFiltro} onChange={(e) => setFilter("sentido", e.target.value as (typeof SENTIDO_FILTRO)[number])} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
-          <option value="TODAS">Crédito e débito</option>
-          <option value="FAVOR_CLIENTE">Só crédito (favor cliente)</option>
-          <option value="FAVOR_EMPRESA">Só débito (favor empresa)</option>
-        </select>
+
+        <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+          <span>
+            {linhas.length} cliente(s) · {totalLancamentosExibidos} lançamento(s)
+            {filtroAtivo ? " no filtro atual" : ""}
+          </span>
+          {filtroAtivo && (
+            <button type="button" onClick={limparFiltros} className="font-semibold text-sky-700 hover:underline">
+              Limpar filtros
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* ── Lista por cliente ───────────────────────────────────────────── */}
       {loading ? (
         <div className="flex items-center justify-center gap-2 p-16 text-slate-400">
           <Loader2 className="h-5 w-5 animate-spin" /> Carregando lançamentos...
         </div>
-      ) : filtradas.length === 0 ? (
+      ) : linhas.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-16 text-center">
-          <p className="text-sm font-semibold text-slate-600">Nenhum lançamento encontrado.</p>
+          <p className="text-sm font-semibold text-slate-600">Nenhum cliente encontrado.</p>
+          {filtroAtivo && <p className="mt-1 text-xs text-slate-400">Tente limpar os filtros.</p>}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-bold uppercase tracking-wider text-slate-500">
-                <th className="px-4 py-3">Proposta</th>
-                <th className="px-4 py-3">Direção</th>
-                <th className="px-4 py-3">Motivo</th>
-                <th className="px-4 py-3">Saldo</th>
-                <th className="px-4 py-3">Reservado</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Criada em</th>
-                <th className="px-4 py-3 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtradas.map((linha) => {
-                // ── Uso do crédito (USO_PEDIDO sem pendência) ─────────────────
-                // Contrapartida do ajuste: mostra onde o crédito foi gasto.
-                if (linha.kind === "USO") {
-                  const u = linha.uso;
-                  const nomeCliente = nomesCliente[u.id_cliente] ?? `Cliente #${u.id_cliente}`;
-                  const autor = u.created_by ? (nomesAutor[u.created_by] ?? "Usuário") : "—";
-                  return (
-                    <tr key={`uso-${u.id}`} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700">
-                          Uso de crédito
-                        </span>
-                        <p className="mt-1 font-semibold text-slate-700">{nomeCliente}</p>
-                        <p className="text-[10px] text-slate-400">Cliente #{u.id_cliente}</p>
-                        {u.observacao ? (
-                          <p className="mt-1 max-w-[260px] truncate text-[11px] text-slate-500" title={u.observacao}>{u.observacao}</p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700">
-                          Saiu da conta do cliente
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {u.id_int_destino ? (
-                          <>
-                            Aplicado na proposta{" "}
-                            <Link href={`/orcamentos/${u.id_int_destino}?chat=open`} className="font-semibold text-sky-700 hover:underline">
-                              #{u.id_int_destino}
-                            </Link>
-                          </>
-                        ) : (
-                          "Aplicado em pagamento"
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-rose-700">- {formatCurrency(u.valor)}</td>
-                      <td className="px-4 py-3 text-slate-500">—</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">Aplicado</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
-                        {new Date(u.created_at).toLocaleDateString("pt-BR")}
-                        <span className="block text-[10px] text-slate-400">por {autor}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right text-[10px] text-slate-400">Automático</td>
-                    </tr>
-                  );
-                }
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 border-b border-slate-100 bg-slate-50/60 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+            <span>Cliente</span>
+            <span className="text-right">Saldo atual</span>
+            <span className="hidden text-right sm:block">Lançamentos</span>
+            <span className="hidden text-right sm:block">Último mov.</span>
+          </div>
 
-                // ── Lançamento manual avulso (origem=AJUSTE) ──────────────────
-                if (linha.kind === "AJUSTE") {
-                  const a = linha.ajuste;
-                  const nomeCliente = nomesCliente[a.id_cliente] ?? `Cliente #${a.id_cliente}`;
-                  const autor = a.created_by ? (nomesAutor[a.created_by] ?? "Usuário") : "—";
-                  return (
-                    <tr key={`ajuste-${a.id}`} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
-                          Ajuste manual
+          <div className="divide-y divide-slate-100">
+            {linhas.map((linha) => {
+              const aberto = expandidos.has(linha.idCliente);
+              return (
+                <div key={linha.idCliente}>
+                  <button
+                    type="button"
+                    onClick={() => alternarExpandido(linha.idCliente)}
+                    className="grid w-full grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-4 py-3 text-left transition hover:bg-slate-50"
+                    aria-expanded={aberto}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      {aberto ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-slate-800">{linha.nome}</span>
+                        <span className="block text-[10px] text-slate-400">
+                          Cliente #{linha.idCliente}
+                          {linha.pendenciasAbertas.length > 0 && (
+                            <span className="ml-2 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-bold text-sky-700">
+                              {linha.pendenciasAbertas.length} pendência(s)
+                            </span>
+                          )}
                         </span>
-                        <p className="mt-1 font-semibold text-slate-700">{nomeCliente}</p>
-                        <p className="text-[10px] text-slate-400">Cliente #{a.id_cliente}</p>
-                        {a.observacao ? (
-                          <p className="mt-1 max-w-[260px] truncate text-[11px] text-slate-500" title={a.observacao}>{a.observacao}</p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-lg px-2 py-1 text-xs font-bold ${a.tipo === "CREDITO" ? "bg-teal-50 text-teal-700 border border-teal-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
-                          {a.tipo === "CREDITO" ? "Crédito ao cliente" : "Débito à empresa"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">Ajuste manual</td>
-                      <td className="px-4 py-3 font-semibold">{formatCurrency(a.valor)}</td>
-                      <td className="px-4 py-3 text-slate-500">—</td>
-                      <td className="px-4 py-3">
-                        {/* "Lançado", não "Ativo": esta linha é o MOVIMENTO de
-                            entrada, com o valor original — não o saldo que
-                            restou. "Ativo" (verde) se lia como "disponível" e
-                            continuava verde depois do crédito ter sido gasto.
-                            O saldo que sobrou está no card "Saldo real". */}
-                        <span className="inline-flex rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">Lançado</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
-                        {new Date(a.created_at).toLocaleDateString("pt-BR")}
-                        <span className="block text-[10px] text-slate-400">por {autor}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right text-[10px] text-slate-400">Gerido no cadastro</td>
-                    </tr>
-                  );
-                }
+                      </span>
+                    </span>
+                    <span className={`text-right font-bold ${linha.saldo > 0 ? "text-teal-700" : linha.saldo < 0 ? "text-rose-700" : "text-slate-400"}`}>
+                      {formatCurrency(linha.saldo)}
+                    </span>
+                    <span className="hidden text-right text-sm text-slate-500 sm:block">{linha.lancamentos.length}</span>
+                    <span className="hidden whitespace-nowrap text-right text-xs text-slate-400 sm:block">{formatDate(linha.ultimoMovimento)}</span>
+                  </button>
 
-                // ── Pendência financeira (conta_corrente_pendencias) ──────────
-                const p = linha.pendencia;
-                const utilizavel = p.status === "ABERTA" || p.status === "PARCIALMENTE_RESOLVIDA";
-                const nomeCliente = nomesCliente[p.id_cliente];
-                return (
-                  <tr key={`pend-${p.id}`} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-3">
-                      <Link href={`/orcamentos/${p.id_int}?chat=open`} className="font-semibold text-sky-700 hover:underline">
-                        #{p.id_int}
-                      </Link>
-                      {nomeCliente ? <p className="text-[11px] text-slate-600">{nomeCliente}</p> : null}
-                      <p className="text-[10px] text-slate-400">Cliente #{p.id_cliente}</p>
-                      {p.observacao ? (
-                        <p className="mt-1 max-w-[260px] truncate text-[11px] text-slate-500" title={p.observacao}>{p.observacao}</p>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-lg px-2 py-1 text-xs font-bold ${p.direcao === "FAVOR_CLIENTE" ? "bg-teal-50 text-teal-700 border border-teal-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
-                        {p.direcao === "FAVOR_CLIENTE" ? "Crédito ao cliente" : "Débito à empresa"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{MOTIVO_LABEL[p.motivo] ?? p.motivo}</td>
-                    <td className="px-4 py-3 font-semibold">{formatCurrency(p.valor_saldo)}</td>
-                    <td className="px-4 py-3 text-slate-500">{p.valor_reservado > 0 ? formatCurrency(p.valor_reservado) : "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
-                        {STATUS_LABEL[p.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
-                      {new Date(p.created_at).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1.5 flex-wrap">
-                        {utilizavel && p.direcao === "FAVOR_CLIENTE" && canDevolver && (
-                          <button disabled={busy === p.id} onClick={() => abrirModal(p, "DEVOLUCAO")} className="rounded-lg bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 text-xs font-bold hover:bg-blue-100">Devolver</button>
-                        )}
-                        {utilizavel && p.direcao === "FAVOR_EMPRESA" && canBonificar && (
-                          <button disabled={busy === p.id} onClick={() => abrirModal(p, "BONIFICACAO")} className="rounded-lg bg-purple-50 border border-purple-200 text-purple-700 px-2 py-1 text-xs font-bold hover:bg-purple-100">Bonificar</button>
-                        )}
-                        {utilizavel && p.direcao === "FAVOR_EMPRESA" && canResolver && (
-                          <button disabled={busy === p.id} onClick={() => abrirModal(p, "BAIXA")} className="rounded-lg bg-sky-50 border border-sky-200 text-sky-700 px-2 py-1 text-xs font-bold hover:bg-sky-100">Baixar</button>
-                        )}
-                        {utilizavel && p.valor_reservado === 0 && canResolver && (
-                          <button disabled={busy === p.id} onClick={() => abrirModal(p, "CANCELAMENTO")} className="rounded-lg bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1 text-xs font-bold hover:bg-slate-200">Cancelar</button>
-                        )}
-                        {canEstornar && (p.status === "RESOLVIDA" || p.status === "PARCIALMENTE_RESOLVIDA") && (
-                          <button disabled={busy === p.id} onClick={() => abrirModal(p, "ESTORNO")} className="rounded-lg bg-red-50 border border-red-200 text-red-700 px-2 py-1 text-xs font-bold hover:bg-red-100">Estornar</button>
-                        )}
+                  {aberto && (
+                    <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3 space-y-3">
+                      {/* Pendências abertas primeiro: são as que pedem ação. */}
+                      {linha.pendenciasAbertas.map((p) => (
+                        <div key={`pend-${p.id}`} className="rounded-xl border border-sky-200 bg-white p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">
+                                Pendência {STATUS_LABEL[p.status]} ·{" "}
+                                <Link href={`/orcamentos/${p.id_int}?chat=open`} className="text-sky-700 hover:underline">
+                                  #{p.id_int}
+                                </Link>
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {MOTIVO_LABEL[p.motivo] ?? p.motivo} · {p.direcao === "FAVOR_CLIENTE" ? "a favor do cliente" : "a favor da empresa"}
+                                {p.valor_reservado > 0 ? ` · ${formatCurrency(p.valor_reservado)} reservado` : ""}
+                              </p>
+                              {p.observacao && <p className="mt-1 text-xs text-slate-500">{p.observacao}</p>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="mr-1 font-bold text-slate-800">{formatCurrency(p.valor_saldo)}</span>
+                              {p.direcao === "FAVOR_CLIENTE" && canDevolver && (
+                                <button disabled={busy === p.id} onClick={() => abrirModal(p, "DEVOLUCAO")} className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100">Devolver</button>
+                              )}
+                              {p.direcao === "FAVOR_EMPRESA" && canBonificar && (
+                                <button disabled={busy === p.id} onClick={() => abrirModal(p, "BONIFICACAO")} className="rounded-lg border border-purple-200 bg-purple-50 px-2 py-1 text-xs font-bold text-purple-700 hover:bg-purple-100">Bonificar</button>
+                              )}
+                              {p.direcao === "FAVOR_EMPRESA" && canResolver && (
+                                <button disabled={busy === p.id} onClick={() => abrirModal(p, "BAIXA")} className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700 hover:bg-sky-100">Baixar</button>
+                              )}
+                              {p.valor_reservado === 0 && canResolver && (
+                                <button disabled={busy === p.id} onClick={() => abrirModal(p, "CANCELAMENTO")} className="rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-200">Cancelar</button>
+                              )}
+                              {canEstornar && p.status === "PARCIALMENTE_RESOLVIDA" && (
+                                <button disabled={busy === p.id} onClick={() => abrirModal(p, "ESTORNO")} className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-700 hover:bg-red-100">Estornar</button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Extrato do cliente */}
+                      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        {linha.lancamentos.map((l) => (
+                          <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 last:border-b-0">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="whitespace-nowrap text-xs text-slate-400">{formatDate(l.created_at)}</span>
+                              <span className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-bold ${TOM_CATEGORIA[l.categoria]}`}>
+                                {ROTULO_TIPO_LANCAMENTO[l.categoria]}
+                              </span>
+                              <span className="min-w-0 truncate text-sm text-slate-600" title={l.observacao ?? ""}>
+                                {l.id_int_destino ? (
+                                  <>
+                                    Aplicado na proposta{" "}
+                                    <Link href={`/orcamentos/${l.id_int_destino}?chat=open`} className="font-semibold text-sky-700 hover:underline">
+                                      #{l.id_int_destino}
+                                    </Link>
+                                  </>
+                                ) : (
+                                  l.observacao || "—"
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`whitespace-nowrap font-semibold ${l.tipo === "CREDITO" ? "text-teal-700" : "text-rose-700"}`}>
+                                {l.tipo === "CREDITO" ? "+" : "−"} {formatCurrency(l.valor)}
+                              </span>
+                              <span className="hidden whitespace-nowrap text-[10px] text-slate-400 md:block">
+                                {l.created_by ? (nomesAutor[l.created_by] ?? "Usuário") : "Sistema"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -612,7 +669,7 @@ function ContaCorrentePage() {
               <button
                 disabled={busy === modal.pendencia.id}
                 onClick={() => void executarAcao()}
-                className="btn-primary rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                className="rounded-xl bg-[#0b2f4a] px-4 py-2 text-sm font-semibold text-white hover:bg-[#123f61] disabled:opacity-50"
               >
                 {busy === modal.pendencia.id ? "Processando..." : "Confirmar"}
               </button>
@@ -622,4 +679,17 @@ function ContaCorrentePage() {
       ) : null}
     </div>
   );
+}
+
+/**
+ * Compara só a parte da data (YYYY-MM-DD). O input date entrega data local sem
+ * fuso; converter o timestamp para Date e comparar traria o lançamento do dia
+ * anterior perto da meia-noite.
+ */
+function dentroDoPeriodo(iso: string, de: string, ate: string): boolean {
+  if (!de && !ate) return true;
+  const dia = iso.slice(0, 10);
+  if (de && dia < de) return false;
+  if (ate && dia > ate) return false;
+  return true;
 }
