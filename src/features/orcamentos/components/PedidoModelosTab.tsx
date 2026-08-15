@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Plus, Edit2, Trash2, Package, CheckCircle, Copy, AlertOctagon, ChevronDown, ListPlus, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
-import { LotesGrid } from "@/features/orcamentos/components/LotesGrid";
+import { LotesGrid, type PadroesDeLote } from "@/features/orcamentos/components/LotesGrid";
+import { rotuloFaixaExtenso } from "@/features/orcamentos/services/lotes-numeracao";
 import type { PedidoModeloRow, ModeloInput } from "@/features/orcamentos/services/pedidos-modelos.service";
 import {
   buscarArquivoCorPapel,
@@ -290,6 +291,45 @@ function modeloKey(m: Pick<PedidoModeloState, "tempId" | "id">): string {
   if (m.tempId) return `tmp:${m.tempId}`;
   if (m.id) return `id:${m.id}`;
   return "";
+}
+
+/** Opção de cadastro (cores do papel ou numerações) no que interessa aqui. */
+type OpcaoCadastro = {
+  name?: string | null;
+  id_modelo_cor_num?: unknown;
+  id_gabarito?: unknown;
+};
+
+/**
+ * Com o que um lote novo deste produto já nasce preenchido.
+ *
+ * Fonte única: o card "Adicionar modelo" e a grade da Lista rápida chamam esta
+ * função. Enquanto a grade tinha os seus próprios defaults (nenhum), lote
+ * criado por ali nascia sem numerador e o vendedor abria um por um depois só
+ * para escolher o que o cadastro do produto já sabia.
+ */
+function padroesDeNovoLote(
+  produto: { id_modelo_cor?: unknown; id_gabarito?: unknown } | null | undefined,
+  cores: OpcaoCadastro[],
+  numeracoes: OpcaoCadastro[]
+): PadroesDeLote {
+  const cor = cores.find(
+    (c) => produto?.id_modelo_cor && String(c.id_modelo_cor_num) === String(produto.id_modelo_cor)
+  );
+  const numerador = numeracoes.find(
+    (n) => produto?.id_gabarito && String(n.id_gabarito) === String(produto.id_gabarito)
+  );
+  const nomeNumerador = numerador?.name ?? null;
+
+  return {
+    padrao: cor?.name ?? null,
+    gabarito_operacional: nomeNumerador,
+    // Sem numerador não há numeração — é o mesmo par que os cards mantêm.
+    tipo_numeracao: nomeNumerador ? "SEQUENCIAL" : "SEM_NUMERACAO",
+    numeracao_inicio: nomeNumerador ? 1 : null,
+    verso_tipo: "SÓ FRENTE",
+    bloco: "50"
+  };
 }
 
 // ─── Auto-save ───────────────────────────────────────────────────────────────
@@ -1129,17 +1169,9 @@ export function PedidoModelosTab({
       return;
     }
 
-    // Default de Cor do papel (padrao) vindo do cadastro do produto
-    const defaultCor = coresOpcoes.find(c => 
-      item.produto?.id_modelo_cor && String(c.id_modelo_cor_num) === String(item.produto.id_modelo_cor)
-    );
-    const defaultCorName = defaultCor ? defaultCor.name : null;
-
-    // Default de Numerador (gabarito_operacional) vindo de id_gabarito do produto
-    const defaultNum = numeracoesOpcoes.find((n) => 
-      item.produto?.id_gabarito && String(n.id_gabarito) === String(item.produto.id_gabarito)
-    );
-    const defaultNumName = defaultNum ? defaultNum.name : null;
+    // Cor do papel e numerador vindos do cadastro do produto — mesma fonte
+    // que a grade da Lista rápida usa.
+    const padroes = padroesDeNovoLote(item.produto, coresOpcoes, numeracoesOpcoes);
 
     const newId = novoModeloTempId();
     const newModel: PedidoModeloState = {
@@ -1154,14 +1186,14 @@ export function PedidoModelosTab({
       // O padrão passa a ser o nome do produto — nada fica em branco e o
       // usuário não precisa preencher um campo que não vê.
       nome_modelo: formularioSimplificado ? item.nome || "" : "",
-      padrao: defaultCorName || null,
+      padrao: padroes.padrao,
       quantidade: 0,
-      tipo_numeracao: defaultNumName ? "SEQUENCIAL" : "SEM_NUMERACAO",
-      numeracao_inicio: defaultNumName ? 1 : null,
+      tipo_numeracao: padroes.tipo_numeracao,
+      numeracao_inicio: padroes.numeracao_inicio,
       numeracao_fim: null,
-      verso_tipo: "SÓ FRENTE",
-      bloco: "50",
-      gabarito_operacional: defaultNumName || null,
+      verso_tipo: padroes.verso_tipo,
+      bloco: padroes.bloco,
+      gabarito_operacional: padroes.gabarito_operacional,
       // Texto consolidado das variações do item de origem (não do produto).
       variacoes_texto: formatVariacoesItem(item),
       Q_CAM: null,
@@ -1359,6 +1391,10 @@ export function PedidoModelosTab({
                         }}
                         cores={coresDoItem}
                         numeracoes={numeracoesOpcoes}
+                        // Cores restritas ao formato do item, que é o que a grade
+                        // oferece no dropdown: um padrão fora dessa lista viraria
+                        // um valor selecionado que ninguém consegue ver.
+                        padroes={padroesDeNovoLote(item.produto, coresDoItem, numeracoesOpcoes)}
                         linhasIniciais={modelosDoItem.map((m) => ({
                           id: m.isPersisted && m.id ? Number(m.id) : null,
                           nome_modelo: m.nome_modelo || "",
@@ -1505,6 +1541,18 @@ export function PedidoModelosTab({
                           <span className="rounded bg-slate-100 px-2.5 py-1 text-sm font-medium text-slate-500">
                             Numerador: {m.gabarito_operacional || "-"}
                           </span>
+                          {/* A faixa fecha a leitura do lote sem precisar abrir:
+                              qual pedaço da numeração é este. Só aparece quando
+                              o lote de fato tem numeração. */}
+                          {m.tipo_numeracao !== "SEM_NUMERACAO" &&
+                            (() => {
+                              const faixa = rotuloFaixaExtenso(m.numeracao_inicio, m.numeracao_fim);
+                              return faixa ? (
+                                <span className="rounded bg-slate-100 px-2.5 py-1 text-sm font-medium text-slate-500 tabular-nums">
+                                  {faixa}
+                                </span>
+                              ) : null;
+                            })()}
                         </div>
                       </div>
 

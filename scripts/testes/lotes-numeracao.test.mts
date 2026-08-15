@@ -6,7 +6,7 @@
  * Numeração errada só aparece na produção, com o material já impresso. Rode
  * depois de mexer em src/features/orcamentos/services/lotes-numeracao.ts.
  */
-import { aplicarNumeracao, rotuloFaixa } from "../../src/features/orcamentos/services/lotes-numeracao.ts";
+import { aplicarNumeracao, rotuloFaixa, rotuloFaixaExtenso } from "../../src/features/orcamentos/services/lotes-numeracao.ts";
 
 let falhas = 0;
 function checar(nome: string, real: unknown, esperado: unknown) {
@@ -35,12 +35,40 @@ const tresLotes = [
   { nome_modelo: "Vip", quantidade: 80 as number | "" }
 ];
 
-// — Sem modo escolhido: a grade não encosta na numeração —
+// — Sem modo: mantem o Nº Inicial de cada lote e so refaz o Nº Final —
 const jaGravados = [
   { quantidade: 300 as number | "", numeracao_inicio: 5001, numeracao_fim: 5300 }
 ];
-checar("sem modo: devolve a mesma lista", aplicarNumeracao(jaGravados, null, fimSimples) === jaGravados, true);
-checar("sem modo: numeracao do banco intacta", faixas(aplicarNumeracao(jaGravados, null, fimSimples)), [[5001, 5300]]);
+checar("sem modo: inicio do banco preservado", faixas(aplicarNumeracao(jaGravados, null, fimSimples)), [[5001, 5300]]);
+checar(
+  "sem modo: fim desatualizado e corrigido pela quantidade nova",
+  faixas(aplicarNumeracao([{ quantidade: 400 as number | "", numeracao_inicio: 5001, numeracao_fim: 5300 }], null, fimSimples)),
+  [[5001, 5400]]
+);
+checar(
+  "sem modo: nao reorganiza a sequencia entre os lotes",
+  faixas(
+    aplicarNumeracao(
+      [
+        { quantidade: 300 as number | "", numeracao_inicio: 1, numeracao_fim: 300 },
+        { quantidade: 150 as number | "", numeracao_inicio: 1, numeracao_fim: 150 }
+      ],
+      null,
+      fimSimples
+    )
+  ),
+  [[1, 300], [1, 150]]
+);
+checar(
+  "sem modo: lote sem Nº Inicial fica intacto",
+  faixas(aplicarNumeracao([{ quantidade: 300 as number | "" }], null, fimSimples)),
+  [[null, null]]
+);
+checar(
+  "sem modo: lote sem quantidade nao perde a numeracao gravada",
+  faixas(aplicarNumeracao([{ quantidade: "" as number | "", numeracao_inicio: 10, numeracao_fim: 20 }], null, fimSimples)),
+  [[10, 20]]
+);
 
 // — Cada modelo do 1 —
 checar(
@@ -128,6 +156,15 @@ checar("rotulo: milhar com separador", rotuloFaixa(1301, 12450), "1.301–12.450
 checar("rotulo: sem inicio", rotuloFaixa(null, null), "—");
 checar("rotulo: sem fim", rotuloFaixa(451, null), "451–?");
 checar("rotulo: indefinido", rotuloFaixa(undefined, undefined), "—");
+
+// — Faixa por extenso, no resumo do lote fechado —
+checar("extenso: exemplo do dono", rotuloFaixaExtenso(1, 80), "De 001 a 080");
+checar("extenso: piso de tres digitos", rotuloFaixaExtenso(1, 100), "De 001 a 100");
+checar("extenso: largura acompanha o maior numero", rotuloFaixaExtenso(301, 1450), "De 0301 a 1450");
+checar("extenso: faixa sequencial", rotuloFaixaExtenso(301, 450), "De 301 a 450");
+checar("extenso: sem fim nao mostra nada", rotuloFaixaExtenso(1, null), null);
+checar("extenso: sem inicio nao mostra nada", rotuloFaixaExtenso(null, 80), null);
+checar("extenso: sem numeracao nenhuma", rotuloFaixaExtenso(undefined, undefined), null);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exit(falhas === 0 ? 0 : 1);

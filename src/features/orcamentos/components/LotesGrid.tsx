@@ -55,12 +55,31 @@ export type LinhaLote = {
   corNaoReconhecida?: string | null;
 };
 
+/**
+ * Como nasce um lote novo deste item: cor do papel e numerador vindos do
+ * cadastro do produto, mais os defaults de verso e bloco.
+ *
+ * Quem monta isso é o PedidoModelosTab, num lugar só, e o mesmo objeto
+ * alimenta o card "Adicionar modelo" e esta grade. Antes a grade criava linha
+ * sem numerador, e o vendedor tinha que abrir lote por lote depois só para
+ * escolher o que o cadastro já sabia.
+ */
+export type PadroesDeLote = {
+  padrao: string | null;
+  gabarito_operacional: string | null;
+  tipo_numeracao: string;
+  numeracao_inicio: number | null;
+  verso_tipo: string;
+  bloco: string;
+};
+
 export function LotesGrid({
   idInt,
   item,
   linhasIniciais,
   cores,
   numeracoes,
+  padroes,
   onGravado,
   onSair
 }: {
@@ -70,6 +89,8 @@ export function LotesGrid({
   cores: CorOpcao[];
   /** Cadastro de numerações: só para saber quantos números cada unidade consome (TICKET). */
   numeracoes: NumeracaoOpcao[];
+  /** Com o que um lote novo deste item já nasce preenchido. */
+  padroes: PadroesDeLote;
   /** Chamado depois de gravar: o pai atualiza a quantidade do item e relê os lotes. */
   onGravado: (resultado: {
     qtdItem: number;
@@ -81,7 +102,7 @@ export function LotesGrid({
 }) {
   const { showToast } = useAppToast();
   const [linhas, setLinhas] = useState<LinhaLote[]>(
-    linhasIniciais.length > 0 ? linhasIniciais : [{ nome_modelo: "", quantidade: "", padrao: null }]
+    linhasIniciais.length > 0 ? linhasIniciais : [novaLinha()]
   );
   const [removidos, setRemovidos] = useState<number[]>([]);
   const [gravando, setGravando] = useState(false);
@@ -113,17 +134,19 @@ export function LotesGrid({
   }
 
   function novaLinha(base?: LinhaLote) {
-    // Herda o que não costuma variar entre lotes do mesmo produto; a
-    // quantidade nasce em branco de propósito, para ninguém gravar por engano
-    // o número da linha anterior.
+    // Herda da linha anterior o que não costuma variar entre lotes do mesmo
+    // produto e, quando não há de quem herdar, cai no cadastro do produto — é
+    // o que evita lote nascendo sem numerador. A quantidade nasce em branco de
+    // propósito, para ninguém gravar por engano o número da linha anterior.
     return {
       nome_modelo: base?.nome_modelo ?? "",
       quantidade: "" as const,
-      padrao: base?.padrao ?? null,
-      tipo_numeracao: base?.tipo_numeracao ?? null,
-      verso_tipo: base?.verso_tipo ?? null,
-      bloco: base?.bloco ?? null,
-      gabarito_operacional: base?.gabarito_operacional ?? null,
+      padrao: base?.padrao ?? padroes.padrao,
+      tipo_numeracao: base?.tipo_numeracao ?? padroes.tipo_numeracao,
+      numeracao_inicio: base?.numeracao_inicio ?? padroes.numeracao_inicio,
+      verso_tipo: base?.verso_tipo ?? padroes.verso_tipo,
+      bloco: base?.bloco ?? padroes.bloco,
+      gabarito_operacional: base?.gabarito_operacional ?? padroes.gabarito_operacional,
       variacoes_texto: base?.variacoes_texto ?? null
     } as LinhaLote;
   }
@@ -142,7 +165,7 @@ export function LotesGrid({
       const alvo = atual[indice];
       if (alvo?.id) setRemovidos((r) => [...r, Number(alvo.id)]);
       const resto = atual.filter((_, i) => i !== indice);
-      return resto.length > 0 ? resto : [{ nome_modelo: "", quantidade: "", padrao: null }];
+      return resto.length > 0 ? resto : [novaLinha()];
     });
   }
 
@@ -166,7 +189,13 @@ export function LotesGrid({
     const nomePadrao = linhas[indice]?.nome_modelo?.trim() || item.nome;
     setLinhas((atual) => {
       const semVaziaFinal = atual.filter((l) => l.nome_modelo.trim() || l.quantidade !== "" || l.padrao);
-      return [...semVaziaFinal, ...lidas.map((l) => ({ ...l, nome_modelo: nomePadrao }))];
+      const base = atual[atual.length - 1];
+      // O que veio da lista (cor e quantidade) manda; o resto do lote vem dos
+      // padrões, senão colar 20 linhas geraria 20 lotes sem numerador.
+      return [
+        ...semVaziaFinal,
+        ...lidas.map((l) => ({ ...novaLinha(base), ...l, nome_modelo: nomePadrao }))
+      ];
     });
 
     const semCor = lidas.filter((l) => l.corNaoReconhecida).length;
@@ -341,7 +370,7 @@ export function LotesGrid({
             ? "1–300, 1–150, 1–80"
             : modoNumeracao === "SEQUENCIAL"
               ? "1–300, 301–450, 451–530"
-              : "Sem marcar, a grade não altera a numeração já gravada."}
+              : "Sem marcar, cada lote mantém o Nº inicial que já tem."}
         </span>
       </div>
 

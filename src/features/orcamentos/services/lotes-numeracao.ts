@@ -15,8 +15,10 @@
  *   CADA_DO_1   todo lote começa em 1     → 1–300, 1–150, 1–80
  *   SEQUENCIAL  um continua o anterior    → 1–300, 301–450, 451–530
  *
- * Sem modo escolhido a grade não encosta na numeração: os lotes que já vieram
- * do banco mantêm exatamente o que os cards gravaram.
+ * SEM MODO ESCOLHIDO cada lote mantém o Nº Inicial que já tem — a grade não
+ * reorganiza nada por conta própria. O Nº Final, esse sim, é sempre refeito:
+ * é campo automático nos cards também, e deixá-lo velho depois de mudar a
+ * quantidade mandaria uma faixa errada para a produção.
  */
 
 export type ModoNumeracao = "CADA_DO_1" | "SEQUENCIAL";
@@ -39,24 +41,29 @@ export const INICIO_PADRAO = 1;
  * é o melhor palpite possível sem o multiplicador.
  *
  * Lote sem quantidade não recebe numeração e não move a sequência: numerar um
- * lote vazio produziria faixa fantasma na produção.
+ * lote vazio produziria faixa fantasma na produção. Sem modo escolhido, porém,
+ * um lote sem quantidade fica intacto — não é hora de apagar o que o card
+ * gravou.
  */
 export function aplicarNumeracao<T extends LinhaNumeravel>(
   linhas: T[],
   modo: ModoNumeracao | null,
   calcularFim: (inicio: number, quantidade: number, linha: T) => number | null
 ): T[] {
-  if (!modo) return linhas;
-
   let proximo = INICIO_PADRAO;
 
   return linhas.map((linha) => {
     const qtd = Number(linha.quantidade);
     if (!Number.isFinite(qtd) || qtd <= 0) {
-      return { ...linha, numeracao_inicio: null, numeracao_fim: null };
+      return modo ? { ...linha, numeracao_inicio: null, numeracao_fim: null } : linha;
     }
 
-    const inicio = modo === "SEQUENCIAL" ? proximo : INICIO_PADRAO;
+    const inicio =
+      modo === "SEQUENCIAL" ? proximo : modo === "CADA_DO_1" ? INICIO_PADRAO : (linha.numeracao_inicio ?? null);
+
+    // Sem modo e sem Nº Inicial não há de onde tirar faixa: lote fica como está.
+    if (inicio === null) return linha;
+
     const fim = calcularFim(inicio, qtd, linha);
 
     if (modo === "SEQUENCIAL") {
@@ -65,6 +72,25 @@ export function aplicarNumeracao<T extends LinhaNumeravel>(
 
     return { ...linha, numeracao_inicio: inicio, numeracao_fim: fim };
   });
+}
+
+/**
+ * Faixa por extenso, para o resumo do lote fechado: "De 001 a 080".
+ *
+ * Zeros à esquerda porque é assim que a numeração é impressa. A largura
+ * acompanha o maior número da faixa, com piso de 3 — abaixo disso "1 a 80"
+ * não se lê como numeração.
+ *
+ * Devolve `null` quando o lote não tem faixa: quem chama decide não mostrar
+ * nada, em vez de exibir um traço sem sentido.
+ */
+export function rotuloFaixaExtenso(inicio?: number | null, fim?: number | null): string | null {
+  if (inicio === null || inicio === undefined) return null;
+  if (fim === null || fim === undefined) return null;
+  if (!Number.isFinite(inicio) || !Number.isFinite(fim)) return null;
+
+  const largura = Math.max(3, String(Math.max(inicio, fim)).length);
+  return `De ${String(inicio).padStart(largura, "0")} a ${String(fim).padStart(largura, "0")}`;
 }
 
 /** Rótulo da faixa para a coluna Numeração. */
