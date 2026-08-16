@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -51,6 +51,13 @@ import {
 import { abrirPdfOs, baixarPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
+import {
+  carregarRevisaoGeral,
+  confirmarRevisao,
+  validarRevisao,
+  REVISAO_GERAL_VAZIA,
+  type RevisaoGeral
+} from "./services/revisao-expedicao.service";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 
@@ -222,8 +229,15 @@ export function BoletimFormPage() {
   const [propostaBusca, setPropostaBusca] = useState("");
   const [selectedProposta, setSelectedProposta] = useState<Proposta | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  /** Aba "Expedição" aberta: mostra o fechamento do pedido inteiro, não um setor. */
+  /** Aba "Revisão" aberta: confere o pedido inteiro, não um setor. */
   const [abaExpedicao, setAbaExpedicao] = useState(false);
+
+  /**
+   * Bloco geral da revisão: volume e peso bruto são do PEDIDO, não de cada
+   * setor. Gravado em `expedicoes`, a mesma linha que a Expedição já lê.
+   */
+  const [revisaoGeral, setRevisaoGeral] = useState<RevisaoGeral>(REVISAO_GERAL_VAZIA);
+  const [confirmandoRevisao, setConfirmandoRevisao] = useState(false);
 
   /**
    * Revisão/conferência de cada setor (peso real, volumes e responsável).
@@ -478,8 +492,15 @@ export function BoletimFormPage() {
       }
     }
 
+    // Volume e peso bruto vivem em `expedicoes` (linha do pedido), não nos
+    // boletins: carga separada da dos setores.
+    async function loadRevisaoGeral() {
+      setRevisaoGeral(await carregarRevisaoGeral(Number(idIntParam)));
+    }
+
     loadEvento();
     loadBoletins();
+    void loadRevisaoGeral();
   }, [idIntParam]);
 
   useEffect(() => {
@@ -640,15 +661,13 @@ export function BoletimFormPage() {
   );
 
 
-  /** Setor da aba aberta, já normalizado — chave da conferência. */
-  const setorAtivo = normalizarSetor(boletimSetor);
 
-  const conferenciaAtual: ConferenciaSetor = conferenciaPorSetor[setorAtivo] ?? {};
-
-  function atualizarConferencia(campo: keyof ConferenciaSetor, valor: string) {
+  // Recebe o setor: a revisão mostra todos os setores lado a lado, não só o da
+  // aba aberta.
+  function atualizarConferencia(setor: string, campo: keyof ConferenciaSetor, valor: string) {
     setConferenciaPorSetor((atual) => ({
       ...atual,
-      [setorAtivo]: { ...(atual[setorAtivo] ?? {}), [campo]: valor }
+      [setor]: { ...(atual[setor] ?? {}), [campo]: valor }
     }));
   }
 
@@ -656,13 +675,16 @@ export function BoletimFormPage() {
    * Peso estimado do setor: soma do peso dos produtos daquele setor
    * (produtos_proposta.peso_total, em gramas). Derivado — não se digita.
    */
-  const pesoEstimadoDoSetor = useMemo(() => {
-    const grupo = gruposPorSetor.find((g) => g.setor === setorAtivo);
-    if (!grupo) return "Não calculado";
-    const gramas = grupo.produtos.reduce((soma, p) => soma + (Number(p.pesoEstimado) || 0), 0);
-    if (gramas <= 0) return "Não calculado";
-    return gramas >= 1000 ? `${(gramas / 1000).toFixed(2)} kg` : `${Math.round(gramas)} g`;
-  }, [gruposPorSetor, setorAtivo]);
+  const pesoEstimadoDe = useCallback(
+    (setor: string) => {
+      const grupo = gruposPorSetor.find((g) => g.setor === setor);
+      if (!grupo) return "Não calculado";
+      const gramas = grupo.produtos.reduce((soma, p) => soma + (Number(p.pesoEstimado) || 0), 0);
+      if (gramas <= 0) return "Não calculado";
+      return gramas >= 1000 ? `${(gramas / 1000).toFixed(2)} kg` : `${Math.round(gramas)} g`;
+    },
+    [gruposPorSetor]
+  );
 
   /** Setores com produto no pedido que ainda não têm boletim aberto. */
   const setoresSemBoletim = useMemo(
@@ -699,6 +721,60 @@ export function BoletimFormPage() {
       boletim: boletins.find((b) => normalizarSetor(b.setor) === setor) ?? null
     }));
   }, [gruposPorSetor, boletins]);
+
+  /**
+   * Peso líquido: soma do que cada setor pesou. É referência para o revisor
+   * conferir o bruto, não substitui — bruto inclui embalagem e sai diferente.
+   */
+  const somaPesoDosSetores = useMemo(() => {
+    const total = abasDeSetor.reduce((soma, aba) => {
+      const bruto = (conferenciaPorSetor[aba.setor]?.peso_real || "").trim().replace(",", ".");
+      const numero = Number(bruto);
+      return soma + (Number.isFinite(numero) ? numero : 0);
+    }, 0);
+    return total > 0 ? `${total.toFixed(2)} kg` : "Não conferido";
+  }, [abasDeSetor, conferenciaPorSetor]);
+
+  const quantidadeDeVolumes = useMemo(() => {
+    const numero = Number((revisaoGeral.qtdVolumes || "").trim());
+    return Number.isFinite(numero) && numero > 0 ? Math.trunc(numero) : 0;
+  }, [revisaoGeral.qtdVolumes]);
+
+  const pendenciasRevisao = useMemo(
+    () => validarRevisao(abasDeSetor.map((a) => a.setor), conferenciaPorSetor, revisaoGeral),
+    [abasDeSetor, conferenciaPorSetor, revisaoGeral]
+  );
+
+  async function handleConfirmarRevisao() {
+    if (confirmandoRevisao || !idIntParam) return;
+    setConfirmandoRevisao(true);
+    try {
+      // Conferência dos setores primeiro: o botão libera o pedido, e liberar
+      // sem ter gravado o que foi conferido deixaria a Expedição sem os pesos.
+      const conferencia = await salvarConferenciaDosSetores(Number(idIntParam), conferenciaPorSetor);
+      if (!conferencia.success) {
+        showToast({ type: "error", title: "Não foi possível salvar a conferência", description: conferencia.error });
+        return;
+      }
+
+      const res = await confirmarRevisao(Number(idIntParam), revisaoGeral, {
+        uid: user?.id ?? null,
+        nome: user?.name ?? user?.email ?? null
+      });
+
+      if (res.success) {
+        showToast({
+          type: "success",
+          title: "Revisão confirmada",
+          description: `Pedido #${idIntParam} liberado para a Expedição.`
+        });
+      } else {
+        showToast({ type: "error", title: "Não foi possível liberar", description: res.error });
+      }
+    } finally {
+      setConfirmandoRevisao(false);
+    }
+  }
 
   // Load proposals list on mount
   useEffect(() => {
@@ -1776,7 +1852,7 @@ export function BoletimFormPage() {
                           </button>
                         );
                       })}
-                      {/* Expedição não é setor: é o fechamento do pedido inteiro. */}
+                      {/* Revisão não é setor: confere o pedido inteiro e o libera para a Expedição. */}
                       <button
                         type="button"
                         onClick={() => setAbaExpedicao(true)}
@@ -1786,7 +1862,7 @@ export function BoletimFormPage() {
                             : "bg-[#0b2f4a]/5 text-[#0b2f4a] hover:brightness-95"
                         }`}
                       >
-                        Expedição
+                        Revisão
                         <span className={`text-[11px] font-bold normal-case ${abaExpedicao ? "opacity-80" : "opacity-60"}`}>
                           pedido inteiro
                         </span>
@@ -2466,207 +2542,172 @@ export function BoletimFormPage() {
             </div>
           </div>
 
-          {/* BLOCO 8 — REVISÃO / CONFERÊNCIA (deste setor) */}
-                          {!abaExpedicao && (
-                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
-                            <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
-                              BLOCO 8 — Revisão / Conferência
-                              {boletimSetor && (
-                                <span className={`rounded-lg px-2.5 py-1 text-xs font-black tracking-wider ${coresDoSetor(normalizarSetor(boletimSetor)).chip}`}>
-                                  {normalizarSetor(boletimSetor)}
-                                </span>
-                              )}
-                            </h3>
-                            <p className="-mt-2 text-xs text-slate-500">
-                              O que este setor entregou: pesos, volumes e quem conferiu. O fechamento do
-                              pedido inteiro (frete, transportadora, destino) está na aba Expedição.
-                            </p>
+          {/* Conferência saiu das abas de setor: agora é feita de uma vez na aba Revisão. */}
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-5">
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Estimado</label>
-                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
-                                  {pesoEstimadoDoSetor}
-                                </div>
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Real (kg)</label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="Ex: 12.5"
-                                  value={conferenciaAtual.peso_real || ""}
-                                  onChange={(e) => atualizarConferencia("peso_real", e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Qtd de Volumes</label>
-                                <input
-                                  type="number"
-                                  placeholder="Ex: 2"
-                                  value={conferenciaAtual.qtd_volumes || ""}
-                                  onChange={(e) => atualizarConferencia("qtd_volumes", e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de Volume</label>
-                                <select
-                                  value={conferenciaAtual.tipo_volume || ""}
-                                  onChange={(e) => atualizarConferencia("tipo_volume", e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                >
-                                  <option value="">Selecione...</option>
-                                  <option value="Caixa">Caixa</option>
-                                  <option value="Pacote">Pacote</option>
-                                  <option value="Envelope">Envelope</option>
-                                  <option value="Palete">Palete</option>
-                                </select>
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Responsável pela conferência</label>
-                                <input
-                                  type="text"
-                                  placeholder="Quem revisou e conferiu"
-                                  value={conferenciaAtual.responsavel_conferencia || ""}
-                                  onChange={(e) => atualizarConferencia("responsavel_conferencia", e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          )}
-
-                          {/* ABA EXPEDIÇÃO — fechamento do pedido inteiro */}
+                          {/* ABA REVISÃO — conferência de cada setor + fechamento do pedido */}
                           {abaExpedicao && (
-                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
-                            <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3">
-                              Expedição — fechamento do pedido #{idIntParam}
-                            </h3>
-                            
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
-                              {/* Linha 1 */}
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Serviço / Transporte</label>
-                                <input
-                                  type="text"
-                                  placeholder="Ex: Sedex, Azul..."
-                                  value={logisticaServico}
-                                  onChange={(e) => setLogisticaServico(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
+                          <div className="space-y-5">
+                            {/* Um bloco por setor: o que cada um entregou e quem conferiu. */}
+                            {abasDeSetor.map((aba) => {
+                              const conferencia = conferenciaPorSetor[aba.setor] ?? {};
+                              const cores = coresDoSetor(aba.setor);
+                              return (
+                                <div key={aba.setor} className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
+                                  <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-2">
+                                    Conferência
+                                    <span className={`rounded-lg px-2.5 py-1 text-xs font-black tracking-wider ${cores.chip}`}>
+                                      {aba.setor}
+                                    </span>
+                                  </h3>
 
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Transportador</label>
-                                <input
-                                  type="text"
-                                  placeholder="Nome da transportadora"
-                                  value={logisticaTransportador}
-                                  onChange={(e) => setLogisticaTransportador(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                                    <div className="space-y-1.5">
+                                      <label className="text-xs font-semibold text-slate-500 uppercase">Peso Estimado</label>
+                                      <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
+                                        {pesoEstimadoDe(aba.setor)}
+                                      </div>
+                                    </div>
 
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Prazo (Dias)</label>
-                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
-                                  {cotacaoFrete?.prazo ? `${cotacaoFrete.prazo} dias` : "Não confirmado"}
+                                    <div className="space-y-1.5">
+                                      <label className="text-xs font-semibold text-slate-500 uppercase">Peso Real (kg)</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="Ex: 12.5"
+                                        value={conferencia.peso_real || ""}
+                                        onChange={(e) => atualizarConferencia(aba.setor, "peso_real", e.target.value)}
+                                        className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                      <label className="text-xs font-semibold text-slate-500 uppercase">Responsável pela conferência</label>
+                                      <input
+                                        type="text"
+                                        placeholder="Quem revisou e conferiu"
+                                        value={conferencia.responsavel_conferencia || ""}
+                                        onChange={(e) => atualizarConferencia(aba.setor, "responsavel_conferencia", e.target.value)}
+                                        className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {/* Volume e peso são do PEDIDO, não de cada setor: um bloco só. */}
+                            <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
+                              <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3">
+                                Volume e peso do pedido #{idIntParam}
+                              </h3>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-semibold text-slate-500 uppercase">Qtd de Volumes</label>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    placeholder="Ex: 2"
+                                    value={revisaoGeral.qtdVolumes}
+                                    onChange={(e) => setRevisaoGeral((r) => ({ ...r, qtdVolumes: e.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                  />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de Volume</label>
+                                  <select
+                                    value={revisaoGeral.tipoVolume}
+                                    onChange={(e) => setRevisaoGeral((r) => ({ ...r, tipoVolume: e.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                  >
+                                    <option value="">Selecione...</option>
+                                    <option value="Caixa">Caixa</option>
+                                    <option value="Pacote">Pacote</option>
+                                    <option value="Envelope">Envelope</option>
+                                    <option value="Palete">Palete</option>
+                                  </select>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-semibold text-slate-500 uppercase">Peso líquido (soma dos setores)</label>
+                                  <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
+                                    {somaPesoDosSetores}
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <label className="text-xs font-semibold text-slate-500 uppercase">Peso bruto total (kg)</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="Com embalagem"
+                                    value={revisaoGeral.pesoBruto}
+                                    onChange={(e) => setRevisaoGeral((r) => ({ ...r, pesoBruto: e.target.value }))}
+                                    className="w-full rounded-2xl border border-slate-300 bg-transparent px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                  />
+                                  <p className="text-[11px] text-slate-500">É o peso que vai para a NF-e.</p>
                                 </div>
                               </div>
 
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">CEP Destino</label>
-                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
-                                  {cotacaoFrete?.cep || "Não confirmado"}
+                              {/* Peso por volume só faz sentido a partir do segundo. */}
+                              {quantidadeDeVolumes > 1 && (
+                                <div className="space-y-3 rounded-2xl bg-slate-50 p-5">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Peso bruto de cada volume (kg)
+                                  </p>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                                    {Array.from({ length: quantidadeDeVolumes }, (_, i) => (
+                                      <div key={i} className="space-y-1.5">
+                                        <label className="text-xs font-semibold text-slate-500">Volume {i + 1}</label>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          value={revisaoGeral.pesosVolumes[i] || ""}
+                                          onChange={(e) =>
+                                            setRevisaoGeral((r) => {
+                                              const pesos = [...r.pesosVolumes];
+                                              pesos[i] = e.target.value;
+                                              return { ...r, pesosVolumes: pesos };
+                                            })
+                                          }
+                                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none transition-shadow focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
+                            </div>
 
-                              {/* Linha 2 */}
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Estimado</label>
-                                <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
-                                  {cotacaoFrete?.peso ? `${(Number(cotacaoFrete.peso) / 1000).toFixed(2)} kg` : "Não confirmado"}
+                            {/* Fechamento: libera o pedido para a Expedição. */}
+                            <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-4 shadow-sm">
+                              {pendenciasRevisao.length > 0 ? (
+                                <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">
+                                  <p className="font-semibold">Falta conferir antes de liberar:</p>
+                                  <ul className="mt-2 space-y-1">
+                                    {pendenciasRevisao.map((p) => (
+                                      <li key={p.setor} className="text-xs">
+                                        <span className="font-bold">{p.setor}</span> — {p.falta}
+                                      </li>
+                                    ))}
+                                  </ul>
                                 </div>
-                              </div>
+                              ) : (
+                                <p className="text-sm text-slate-600">
+                                  Tudo conferido. Confirmar a revisão manda o pedido para a Expedição.
+                                </p>
+                              )}
 
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Peso Real (kg)</label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="Ex: 12.5"
-                                  value={logisticaPesoReal}
-                                  onChange={(e) => setLogisticaPesoReal(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Qtd de Volumes</label>
-                                <input
-                                  type="number"
-                                  placeholder="Ex: 2"
-                                  value={logisticaQtdVolumes}
-                                  onChange={(e) => setLogisticaQtdVolumes(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Tipo de volume</label>
-                                <select
-                                  value={logisticaTipoVolume}
-                                  onChange={(e) => setLogisticaTipoVolume(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleConfirmarRevisao()}
+                                  disabled={pendenciasRevisao.length > 0 || confirmandoRevisao}
+                                  className="rounded-2xl bg-[#0b2f4a] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  <option value="">Selecione...</option>
-                                  <option value="Pacote">Pacote</option>
-                                  <option value="Caixa">Caixa</option>
-                                  <option value="Envelope">Envelope</option>
-                                  <option value="Outro">Outro</option>
-                                </select>
-                              </div>
-
-                              {/* Linha 3 */}
-                              <div className="space-y-1.5 md:col-span-2">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Responsável</label>
-                                <input
-                                  type="text"
-                                  placeholder="Nome do responsável pelo pacote"
-                                  value={logisticaResponsavel}
-                                  onChange={(e) => setLogisticaResponsavel(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5 md:col-span-2">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Observações do frete</label>
-                                <textarea
-                                  placeholder="Observações logísticas, restrições, horários..."
-                                  rows={1}
-                                  value={logisticaObsFrete}
-                                  onChange={(e) => setLogisticaObsFrete(e.target.value)}
-                                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder-slate-400 outline-none transition focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6] resize-y"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5 md:col-span-4 border-t border-slate-100 pt-5 mt-2">
-                                <label className="text-xs font-semibold text-slate-500 uppercase">Observações Gerais (OS)</label>
-                                <textarea
-                                  id="obsCriticas"
-                                  rows={2}
-                                  className={`w-full rounded-2xl border bg-transparent px-4 py-3 text-sm outline-none transition-shadow ${lockObs ? 'bg-slate-50 cursor-not-allowed border-slate-200 text-slate-500' : 'border-slate-300 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10'}`}
-                                  placeholder={lockObs ? "Apenas coordenadores podem editar" : "Ex: Cliente não aceita receber de sexta-feira..."}
-                                  value={obsCriticas}
-                                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setObsCriticas(e.target.value)}
-                                  disabled={lockObs}
-                                />
+                                  {confirmandoRevisao ? "Liberando..." : "Confirmar revisão e liberar para Expedição"}
+                                </button>
                               </div>
                             </div>
                           </div>
