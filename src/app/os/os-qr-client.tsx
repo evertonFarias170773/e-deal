@@ -92,12 +92,19 @@ export function OsQrClient() {
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  // Segura a tela de status enquanto o navegador troca de página: sem isso o
+  // usuário logado vê a lista de transições piscar antes do boletim abrir.
+  const [redirecionando, setRedirecionando] = useState(false);
 
-  const consultar = useCallback(async (tokenAtual: string | null) => {
+  // Devolve o estado além de guardá-lo: o efeito de abertura precisa do id_int
+  // para decidir o redirecionamento, e ler isso de dentro de um setState seria
+  // efeito colateral em updater — o StrictMode chamaria duas vezes.
+  const consultar = useCallback(async (tokenAtual: string | null): Promise<ConsultaEstado | null> => {
     if (!tokenAtual) {
-      setEstado({ ok: false, motivo: "TOKEN_INVALIDO" });
+      const invalido: ConsultaEstado = { ok: false, motivo: "TOKEN_INVALIDO" };
+      setEstado(invalido);
       setCarregando(false);
-      return;
+      return invalido;
     }
     try {
       const response = await fetch("/api/os-qr/consultar", {
@@ -107,16 +114,52 @@ export function OsQrClient() {
       });
       const data = (await response.json()) as ConsultaEstado;
       setEstado(data);
+      return data;
     } catch {
       setAviso("Falha de conexão. Tente novamente.");
+      return null;
     } finally {
       setCarregando(false);
     }
   }, []);
 
+  /**
+   * Primeira leitura: quem já está logado no ERP (Produção, Admin, Super Admin)
+   * vai direto para a edição do boletim; o celular do chão de fábrica, sem
+   * sessão, fica na troca rápida de status.
+   *
+   * As duas chamadas saem juntas: a sessão não depende do token, e serializar
+   * atrasaria a tela pública de quem não está logado — que é o caso comum.
+   * `replace` em vez de `push`: o Voltar do navegador não deve trazer de volta
+   * uma página que só ia redirecionar de novo.
+   */
   useEffect(() => {
     tokenRef.current = capturarToken();
-    void consultar(tokenRef.current);
+    const token = tokenRef.current;
+
+    let cancelado = false;
+
+    async function abrir() {
+      const [sessao, dados] = await Promise.all([
+        fetch("/api/os-qr/sessao", { cache: "no-store" })
+          .then((r) => r.json() as Promise<{ autenticado?: boolean; podeEditar?: boolean }>)
+          .catch(() => ({ autenticado: false, podeEditar: false })),
+        consultar(token)
+      ]);
+
+      if (cancelado || !sessao?.podeEditar) return;
+      // Sem id_int não há para onde ir: token inválido ou OS inexistente
+      // continua na página pública, que já mostra o motivo.
+      if (!dados?.ok || !dados.id_int) return;
+
+      setRedirecionando(true);
+      window.location.replace(`/pedidos/boletim?id_int=${dados.id_int}&modo=edicao`);
+    }
+
+    void abrir();
+    return () => {
+      cancelado = true;
+    };
   }, [consultar]);
 
   async function transicionar(destino: Destino, motivo: string) {
@@ -157,6 +200,10 @@ export function OsQrClient() {
 
   if (carregando) {
     return <Cartao titulo="Carregando...">Consultando a OS.</Cartao>;
+  }
+
+  if (redirecionando) {
+    return <Cartao titulo="Abrindo o boletim...">Você está logado no sistema — abrindo a edição do boletim.</Cartao>;
   }
 
   return (
