@@ -1,0 +1,178 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
+
+export type ItemDeclaracao = {
+  discriminacao: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+};
+
+export type ParteDeclaracao = {
+  nome: string;
+  documento: string;
+  endereco: string;
+  bairro: string;
+  cidadeUf: string;
+  cep: string;
+};
+
+export type DeclaracaoViewModel = {
+  idInt: number;
+  remetente: ParteDeclaracao;
+  destinatario: ParteDeclaracao;
+  itens: ItemDeclaracao[];
+  totalValor: number;
+  totalQuantidade: number;
+  pesoKg: string;
+  cidadeEmissao: string;
+};
+
+/** 14 dígitos vira CNPJ, 11 vira CPF; qualquer outra coisa sai como veio. */
+function formatarDocumento(bruto: string | null | undefined): string {
+  const d = String(bruto ?? "").replace(/\D/g, "");
+  if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  return String(bruto ?? "").trim();
+}
+
+function formatarCep(bruto: string | null | undefined): string {
+  const d = String(bruto ?? "").replace(/\D/g, "");
+  return d.length === 8 ? d.replace(/^(\d{5})(\d{3})$/, "$1-$2") : String(bruto ?? "").trim();
+}
+
+/**
+ * Declaração de conteúdo — documento que acompanha a remessa quando NÃO há NF-e
+ * autorizada. Os Correios registram os itens via `itensDeclaracaoConteudo` na
+ * pré-postagem, mas o rótulo que eles devolvem é só a etiqueta (conferido: PDF
+ * de 1 página). O papel a colar no volume é este, gerado aqui.
+ *
+ * Reaproveita `resolverEmpresaRemetente` — a mesma função que escolhe as
+ * credenciais dos Correios — para o remetente sair coerente com quem postou.
+ */
+export async function montarDeclaracaoViewModel(
+  supabase: SupabaseClient,
+  idInt: number
+): Promise<DeclaracaoViewModel | null> {
+  const { data: proposta } = await supabase
+    .from("propostas")
+    .select("id_int, cliente, id_cliente, empresa, cep")
+    .eq("id_int", idInt)
+    .maybeSingle();
+  if (!proposta) return null;
+
+  const [{ data: exp }, { data: frete }, { data: itensPedido }] = await Promise.all([
+    supabase.from("expedicoes").select("peso_kg, id_endereco_entrega").eq("id_int", idInt).maybeSingle(),
+    supabase
+      .from("cotacao_frete")
+      .select("peso, cep")
+      .eq("id_int", idInt)
+      .eq("escolhido", true)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("produtos_proposta")
+      .select("nome_produto, modelo_descri, qtd, valor_unt, valor_sub_total")
+      .eq("id_int", idInt)
+  ]);
+
+  // Endereço de entrega: o escolhido no despacho > o que casa com o CEP cotado >
+  // o mais recente. Mesma escada de etiqueta-viewmodel.service.ts.
+  const idCliente = proposta.id_cliente !== null ? Number(proposta.id_cliente) : null;
+  let endereco: {
+    endereco: string | null; numero: string | null; complemento: string | null;
+    bairro: string | null; cidade: string | null; uf: string | null; cep: string | null;
+  } | null = null;
+
+  if (exp?.id_endereco_entrega) {
+    const { data } = await supabase
+      .from("enderecos")
+      .select("endereco, numero, complemento, bairro, cidade, uf, cep")
+      .eq("id", exp.id_endereco_entrega)
+      .maybeSingle();
+    endereco = data ?? null;
+  }
+  if (!endereco && idCliente !== null) {
+    const { data: lista } = await supabase
+      .from("enderecos")
+      .select("endereco, numero, complemento, bairro, cidade, uf, cep, data_criacao")
+      .eq("id_cliente", idCliente)
+      .order("data_criacao", { ascending: false });
+    const cepAlvo = String(frete?.cep ?? proposta.cep ?? "").replace(/\D/g, "");
+    endereco =
+      (cepAlvo && (lista ?? []).find((e) => String(e.cep ?? "").replace(/\D/g, "") === cepAlvo)) ||
+      (lista ?? [])[0] ||
+      null;
+  }
+
+  const { data: cliente } = idCliente !== null
+    ? await supabase
+        .from("clientes")
+        .select("nome, fantasia, documento, cidade_uf")
+        .eq("id_cliente", idCliente)
+        .maybeSingle()
+    : { data: null };
+
+  const empresaRow = await resolverEmpresaRemetente(supabase, proposta.empresa);
+
+  const itens: ItemDeclaracao[] = (itensPedido ?? [])
+    .map((item) => {
+      const nome = String(item.nome_produto ?? item.modelo_descri ?? "").trim();
+      if (!nome) return null;
+      const quantidade = Math.max(1, Number(item.qtd) || 1);
+      const subtotal = Number(item.valor_sub_total) || 0;
+      const unitario = Number(item.valor_unt) || (quantidade > 0 ? subtotal / quantidade : 0);
+      return {
+        discriminacao: nome,
+        quantidade,
+        valorUnitario: Number.isFinite(unitario) ? unitario : 0,
+        valorTotal: subtotal || (Number.isFinite(unitario) ? unitario * quantidade : 0)
+      };
+    })
+    .filter((i): i is ItemDeclaracao => i !== null);
+
+  const pesoNumero =
+    exp?.peso_kg && Number(exp.peso_kg) > 0
+      ? Number(exp.peso_kg)
+      : frete?.peso
+        ? Number(frete.peso) / 1000
+        : null;
+
+  return {
+    idInt,
+    remetente: {
+      nome: empresaRow?.razao_social || empresaRow?.nome_fantasia || String(proposta.empresa ?? ""),
+      documento: formatarDocumento(empresaRow?.cnpj),
+      endereco: [
+        [empresaRow?.logradouro, empresaRow?.numero].filter(Boolean).join(", "),
+        empresaRow?.complemento
+      ]
+        .filter(Boolean)
+        .join(" - "),
+      bairro: empresaRow?.bairro ?? "",
+      cidadeUf: [empresaRow?.municipio, empresaRow?.uf].filter(Boolean).join("/"),
+      cep: formatarCep(empresaRow?.cep)
+    },
+    destinatario: {
+      nome: String(proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`),
+      documento: formatarDocumento(cliente?.documento),
+      endereco: endereco
+        ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]
+            .filter(Boolean)
+            .join(" - ")
+        : "",
+      bairro: endereco?.bairro ?? "",
+      cidadeUf: endereco ? [endereco.cidade, endereco.uf].filter(Boolean).join("/") : (cliente?.cidade_uf ?? ""),
+      cep: formatarCep(endereco?.cep)
+    },
+    itens,
+    totalValor: itens.reduce((s, i) => s + i.valorTotal, 0),
+    totalQuantidade: itens.reduce((s, i) => s + i.quantidade, 0),
+    pesoKg:
+      pesoNumero && pesoNumero > 0
+        ? pesoNumero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : "",
+    // Local de emissão = cidade do remetente, que é quem assina.
+    cidadeEmissao: empresaRow?.municipio ?? ""
+  };
+}

@@ -15,6 +15,10 @@ export function humanizeStatus(status: string) {
     REVISAO_FINAL: "Revisão Final",
     PRONTO_EXPEDICAO: "Pronto p/ Expedição",
     EXPEDIDO: "Expedido",
+    EXPEDICAO: "Na Expedição",
+    "A RETIRAR": "A Retirar",
+    "EM TRANSITO": "Em Trânsito",
+    ENTREGUE: "Entregue",
 
     // ArteStatus
     EM_CRIACAO: "Em Criação",

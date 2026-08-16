@@ -20,6 +20,12 @@ const toneByStatus: Record<string, StatusTone> = {
   EXPEDIDO: "success",
   CANCELADO: "neutral",
 
+  // Status logísticos oficiais (propostas.status_interno) — chaves com espaço.
+  EXPEDICAO: "warning",
+  "A RETIRAR": "special",
+  "EM TRANSITO": "info",
+  ENTREGUE: "success",
+
   // ArteStatus
   PENDENTE: "warning",
   EM_CRIACAO: "info",

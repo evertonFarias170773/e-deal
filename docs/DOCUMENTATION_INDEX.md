@@ -99,6 +99,10 @@ Boletim/OS, modelos, artes e limites da Produção.
 
 Timeline, anexos, menções, notificações e pendências.
 
+## [`business/EXPEDICAO.md`](./business/EXPEDICAO.md)
+
+Painel do funil APROVADO→ENTREGUE, fontes de dados, transições, etiquetas, Correios, rastreio n8n e permissões.
+
 ---
 
 # 5. Maestro

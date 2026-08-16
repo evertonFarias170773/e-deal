@@ -1,6 +1,27 @@
--- valor_total de proposta AVULSA: preenchimento automatico + backfill
+-- valor_total de proposta AVULSA: preenchimento automatico
 --
--- ESCOPO (leia antes de mexer)
+-- ATENCAO ANTES DE EDITAR ESTE ARQUIVO
+--   NAO use `create or replace function public.recalcular_proposta_v4_trigger()`
+--   aqui. Aquela funcao e COMPARTILHADA por quatro triggers:
+--
+--     public.cotacao_frete      -> tg_recalc_frete_v4
+--     public.desconto_proposta  -> tg_recalc_desconto_v4
+--     public.produtos_proposta  -> trg_recalc_proposta_v4
+--     public.propostas          -> (nao mais; ver secao 2)
+--
+--   Ela le SOMENTE `id_int`, coluna que existe nas quatro tabelas. Uma versao
+--   anterior desta migration trocou o corpo dela por uma logica que le
+--   `NEW.is_avulso` — coluna que so existe em `propostas`. Resultado em
+--   producao: `record "new" has no field "is_avulso"` em todo INSERT/UPDATE/
+--   DELETE das outras tres tabelas, ou seja, nenhum orcamento com frete, item
+--   ou desconto conseguia ser salvo. `CREATE OR REPLACE FUNCTION` e global:
+--   trocar o corpo atinge todos os triggers que apontam para ela.
+--
+--   Por isso `propostas` ganhou FUNCAO PROPRIA (secao 1) e TRIGGER PROPRIO
+--   (secao 2), e `recalcular_proposta_v4_trigger()` nao e tocada por esta
+--   migration. Este arquivo reflete o estado real do banco.
+--
+-- ESCOPO
 --   Isto NAO e um recalculo de proposta. E uma PROTECAO CONTRA valor_total
 --   ausente em proposta AVULSA, e so.
 --   * Age exclusivamente em proposta AVULSA (`is_avulso = true`).
@@ -27,6 +48,9 @@
 --   e a engine de status (que exige total > 0, guarda proposital) nunca
 --   promovia a proposta mesmo com pagamento confirmado (caso #18792).
 --
+--   Nas outras tres tabelas o mesmo no-op continua valendo, e tudo bem: quem
+--   grava os valores de proposta com itens e o `saveProposta`.
+--
 -- REGRA DA AVULSA
 --   `coalesce(valor, 0) + coalesce(valor_frete, 0)` — frete ausente conta 0.
 --   E a regra oficial do projeto, ja usada no fallback
@@ -40,21 +64,29 @@
 --   linha ser gravada). Nao ha `UPDATE public.propostas` dentro dele — esse era
 --   o unico caminho de reentrada, e e o motivo de ser BEFORE e nao AFTER.
 --
---   Ordem entre triggers BEFORE de public.propostas (alfabetica):
---     propostas_set_timestamp -> tg_recalc_propostas_v4 -> tg_registrar_paid_at
---     -> trg_set_updated_at
+--   Ordem entre triggers BEFORE de public.propostas (alfabetica, conferida no
+--   banco):
+--     propostas_set_timestamp -> tg_propostas_valor_total_avulsa
+--     -> tg_registrar_paid_at -> trg_set_updated_at
 --   Nenhum dos outros le ou escreve `valor_total`, entao a ordem e indiferente.
 --
--- Aditivo e reversivel no schema: substitui a funcao do trigger e recria o
--- trigger. Nao altera schema, RLS nem permissoes.
--- `recalcular_proposta_v4` permanece INTACTA e deixa de ser usada por este
--- trigger (outros consumidores seguem iguais).
+-- Aditivo e reversivel: cria uma funcao nova e troca o trigger de `propostas`.
+-- Nao altera schema, RLS nem permissoes. `recalcular_proposta_v4` e
+-- `recalcular_proposta_v4_trigger` permanecem INTACTAS.
+--
+-- ROLLBACK
+--   drop trigger if exists tg_propostas_valor_total_avulsa on public.propostas;
+--   drop function if exists public.propostas_preencher_valor_total_avulsa();
+--   -- (opcional, volta ao no-op anterior em propostas)
+--   -- create trigger tg_recalc_propostas_v4 after insert or update
+--   --   on public.propostas for each row
+--   --   execute function public.recalcular_proposta_v4_trigger();
 
 -- ---------------------------------------------------------------------------
--- 1. Funcao do trigger
+-- 1. Funcao dedicada a public.propostas
 -- ---------------------------------------------------------------------------
 
-create or replace function public.recalcular_proposta_v4_trigger()
+create or replace function public.propostas_preencher_valor_total_avulsa()
 returns trigger
 language plpgsql
 security definer
@@ -89,19 +121,23 @@ begin
 end;
 $function$;
 
-comment on function public.recalcular_proposta_v4_trigger() is
-  'Protecao contra valor_total ausente (nao e recalculo). Age SOMENTE em proposta avulsa: preenche quando nulo, ou quando zero com valor > 0, usando valor + valor_frete. Valor explicito maior que zero e sempre preservado: saveProposta e a autoridade. Nao reage a alteracao de itens. BEFORE trigger, sem UPDATE interno — sem recursao.';
+comment on function public.propostas_preencher_valor_total_avulsa() is
+  'Protecao contra valor_total ausente (nao e recalculo). Exclusiva de public.propostas — le is_avulso/valor/valor_frete, que so existem nesta tabela. Age SOMENTE em proposta avulsa: preenche quando nulo, ou quando zero com valor > 0, usando valor + valor_frete. Valor explicito maior que zero e sempre preservado: saveProposta e a autoridade. Nao reage a alteracao de itens. BEFORE trigger, sem UPDATE interno — sem recursao.';
 
 -- ---------------------------------------------------------------------------
--- 2. Trigger (BEFORE, para atribuir NEW sem executar UPDATE)
+-- 2. Trigger de public.propostas (BEFORE, para atribuir NEW sem UPDATE)
 -- ---------------------------------------------------------------------------
+-- Sai o antigo `tg_recalc_propostas_v4`, que apontava para a funcao
+-- compartilhada e era um no-op nesta tabela. As outras tres tabelas mantem os
+-- triggers delas apontando para `recalcular_proposta_v4_trigger()`, intactos.
 
 drop trigger if exists tg_recalc_propostas_v4 on public.propostas;
+drop trigger if exists tg_propostas_valor_total_avulsa on public.propostas;
 
-create trigger tg_recalc_propostas_v4
+create trigger tg_propostas_valor_total_avulsa
   before insert or update on public.propostas
   for each row
-  execute function public.recalcular_proposta_v4_trigger();
+  execute function public.propostas_preencher_valor_total_avulsa();
 
 -- ---------------------------------------------------------------------------
 -- 3. Passivo existente — NAO tratado aqui
@@ -115,15 +151,16 @@ create trigger tg_recalc_propostas_v4
 --     209 avulsas com valor_total NULL e valor = 0  (fora do escopo da correcao)
 --       0 avulsas com valor_total = 0
 --
--- A correcao desse passivo sai em MIGRATION SEPARADA, deliberadamente fora
--- desta, por dois motivos:
+-- As 5.365 foram corrigidas em execucao manual acompanhada, deliberadamente
+-- fora desta migration, por dois motivos:
 --   1. Um UPDATE em massa dispara `propostas_set_timestamp` e `trg_set_updated_at`,
 --      que reescrevem `updated_at` e jogariam milhares de propostas antigas para
 --      o topo da ordenacao por ultima atualizacao na listagem de Orcamentos.
---      O backfill precisa preservar o `updated_at` original, o que exige
+--      O backfill precisou preservar o `updated_at` original, o que exigiu
 --      desabilitar esses dois triggers durante a execucao — operacao que pede
 --      janela e acompanhamento, nao pode viajar junto de uma migration de schema.
 --   2. Separar mantem esta migration reversivel e sem efeito sobre dados.
 --
--- Ate la, `status_interno` das propostas do passivo permanece como esta:
--- a engine de status nao promove proposta com total zero, por guarda proposital.
+-- As 209 com valor = 0 seguem sem valor_total, por decisao: nao ha total a
+-- calcular. `status_interno` delas permanece como esta — a engine de status nao
+-- promove proposta com total zero, por guarda proposital.

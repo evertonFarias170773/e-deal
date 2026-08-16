@@ -52,6 +52,7 @@ import type { ExtractedData } from "./components/ImportSistemaAntigoModal";
 type CadastroFormPageProps = {
   mode: "new" | "edit";
   cadastro?: Cadastro;
+  categoriaInicial?: CadastroCategoria;
 };
 
 type FormMessage = {
@@ -129,7 +130,7 @@ function validateEnderecos(enderecos: CadastroEndereco[]): { isValid: boolean; m
   return { isValid: true };
 }
 
-export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
+export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroFormPageProps) {
   const router = useRouter();
   const { user } = useAuth();
 
@@ -154,7 +155,7 @@ export function CadastroFormPage({ mode, cadastro }: CadastroFormPageProps) {
   const [isInitialValidated, setIsInitialValidated] = useState(mode === "edit");
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [form, setForm] = useState<CadastroFormState>(() =>
-    createInitialState(cadastro, mode === "new" ? documentoInicial : "")
+    createInitialState(cadastro, mode === "new" ? documentoInicial : "", categoriaInicial)
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isInitialChecking, setIsInitialChecking] = useState(false);
@@ -2120,13 +2121,17 @@ function Toggle({ label, checked, disabled, onChange }: { label: string; checked
  * `documentoInicial` só chega no cadastro novo aberto pelo card de vínculos
  * (`?documento=`), para o usuário não redigitar o CPF/CNPJ que acabou de buscar.
  */
-function createInitialState(cadastro?: Cadastro, documentoInicial = ""): CadastroFormState {
+function createInitialState(
+  cadastro?: Cadastro,
+  documentoInicial = "",
+  categoriaInicial?: CadastroCategoria
+): CadastroFormState {
   const documentoPrefixado =
     !cadastro && (documentoInicial.length === 11 || documentoInicial.length === 14) ? documentoInicial : "";
   return {
     idCliente: cadastro?.idCliente.toString() ?? "",
     idVendedor: cadastro?.idVendedor ? String(cadastro.idVendedor) : "",
-    categoria: cadastro?.categoria ?? "CLIENTE",
+    categoria: cadastro?.categoria ?? categoriaInicial ?? "CLIENTE",
     tipoCliente: cadastro?.tipoPessoa === "FISICA" ? "CPF" : documentoPrefixado.length === 11 ? "CPF" : "CNPJ",
     documento: cadastro?.documento ?? documentoPrefixado,
     atendente: cadastro?.vendedor ?? "",

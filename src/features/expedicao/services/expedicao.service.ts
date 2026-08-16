@@ -1,151 +1,266 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { ExpedicaoListItem, FreteInfo } from "../types";
+import { normalizarTipoFrete } from "../lib/tipo-frete";
+import type {
+  EtapaExpedicao,
+  ExpedicaoRegistro,
+  NfStatusExpedicao,
+  PedidoExpedicao,
+  TipoFreteNormalizado
+} from "../types";
 
-export async function listarExpedicoes(): Promise<ExpedicaoListItem[]> {
+/**
+ * Universo do painel: tudo que está aprovado para produção (is_prd_aprovado)
+ * do APROVADO até a entrega. EXPEDICAO em diante é o fluxo oficial da doc
+ * FLUXO-OFICIAL-STATUS-PROPOSTAS.md §6.13.
+ */
+export const STATUS_FUNIL_EXPEDICAO = [
+  "APROVADO",
+  "LIBERADO",
+  "REVISAO ATENDENTE",
+  "REVISAO PRODUCAO",
+  "EM PRODUCAO",
+  "EM IMPRESSAO",
+  "EM IMPRESSAO / PENDENTE",
+  "EM ACABAMENTO",
+  "EM ACABAMENTO / PENDENTE",
+  "EXPEDICAO",
+  "A RETIRAR",
+  "EM TRANSITO",
+  "ENTREGUE"
+];
+
+/** Entregues somem do painel depois de 30 dias (expedicoes.data_entrega). */
+const DIAS_ENTREGUE_VISIVEL = 30;
+
+export function hojeSaoPaulo(): string {
+  // en-CA formata como YYYY-MM-DD, comparável por string.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+/** Converte um instante ISO para a data-calendário (YYYY-MM-DD) em America/Sao_Paulo. */
+function diaSaoPaulo(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(iso));
+}
+
+function etapaDoStatus(status: string): EtapaExpedicao {
+  if (status === "EXPEDICAO") return "PRONTO";
+  if (status === "A RETIRAR") return "A_RETIRAR";
+  if (status === "EM TRANSITO") return "EM_TRANSITO";
+  if (status === "ENTREGUE") return "ENTREGUE";
+  if (status.startsWith("EM ACABAMENTO")) return "ACABAMENTO";
+  return "PRODUCAO";
+}
+
+/** Diferença em dias entre duas datas YYYY-MM-DD (b - a). */
+function diffDias(a: string, b: string): number {
+  const ms = Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`);
+  return Math.round(ms / 86400000);
+}
+
+export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   const client = getSupabaseClient();
   if (!client) {
     console.warn("[expedicao.service] Supabase client não inicializado.");
     return [];
   }
 
-  // 1. Buscar propostas com status logístico
-  const statusLogisticos = ["EXPEDICAO", "A RETIRAR", "EM TRANSITO", "ENTREGUE"];
+  // 1. Propostas do funil
   const { data: propostas, error: propError } = await client
     .from("propostas")
-    .select("id_int, cliente, status_interno")
-    .in("status_interno", statusLogisticos)
+    .select("id_int, cliente, id_cliente, empresa, status_interno, libera_nf, volume")
+    .eq("is_prd_aprovado", true)
+    .in("status_interno", STATUS_FUNIL_EXPEDICAO)
     .order("id_int", { ascending: false });
 
-  if (propError) {
-    console.error("[expedicao.service] Erro ao buscar propostas logísticas:", propError);
-  }
-
-  const propostasIds = (propostas || []).map(p => p.id_int);
-
-  // 2. Buscar pedidos legados que estão em expedição, mas cuja proposta talvez não tenha status logístico atualizado
-  const statusPedidosLegados = ["PRONTO_EXPEDICAO", "EXPEDIDO"];
-  const { data: pedidosLegados, error: pedLegadosError } = await client
-    .from("propostas_os")
-    .select("id_int, descricao, status_pedido, status_expedicao")
-    .in("status_expedicao", statusPedidosLegados);
-    
-  if (pedLegadosError) {
-    console.error("[expedicao.service] Erro ao buscar pedidos legados:", pedLegadosError);
-  }
-
-  const legacyIds = (pedidosLegados || [])
-    .map(p => p.id_int)
-    .filter((id): id is number => id !== null && !propostasIds.includes(id));
-
-  const allIds = [...propostasIds, ...legacyIds];
-  if (allIds.length === 0) {
+  if (propError || !propostas) {
+    console.error("[expedicao.service] Erro ao buscar propostas:", propError);
     return [];
   }
+  if (propostas.length === 0) return [];
 
-  // Se precisar de nomes de clientes dos legados, já que não temos em propostas
-  let legacyPropostas: any[] = [];
-  if (legacyIds.length > 0) {
-    const { data: propLegadas } = await client
-      .from("propostas")
-      .select("id_int, cliente, status_interno")
-      .in("id_int", legacyIds);
-    if (propLegadas) {
-      legacyPropostas = propLegadas;
+  const ids = propostas.map((p) => Number(p.id_int));
+  const idsCliente = Array.from(
+    new Set(propostas.map((p) => Number(p.id_cliente)).filter((n) => Number.isFinite(n) && n > 0))
+  );
+
+  // 2..6 em paralelo — cada bloco é tolerante a falha individual (warn + vazio),
+  // MENOS cotacao_frete, cujo erro é logado com destaque (foi o bug da tela antiga).
+  const [osRes, fretesRes, nfsRes, expRes, clientesRes, pesosRes] = await Promise.all([
+    client
+      .from("propostas_os")
+      .select("id_int, data_termino, codigo_rastreamento, obs")
+      .in("id_int", ids),
+    client
+      .from("cotacao_frete")
+      .select("id_int, servico, valor, peso, cep")
+      .eq("escolhido", true)
+      .in("id_int", ids),
+    client
+      .from("notas_fiscais")
+      .select("id_int, status, numero_nf")
+      .in("id_int", ids),
+    client
+      .from("expedicoes")
+      .select(
+        "id_int, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs"
+      )
+      .in("id_int", ids),
+    idsCliente.length > 0
+      ? client.from("clientes").select("id_cliente, nome, fantasia, cidade_uf").in("id_cliente", idsCliente)
+      : Promise.resolve({ data: [], error: null } as const),
+    client.from("produtos_proposta").select("id_int, peso_total").in("id_int", ids)
+  ]);
+
+  if (fretesRes.error) {
+    console.error("[expedicao.service] Erro ao buscar cotacao_frete (frete ficará 'A definir'):", fretesRes.error);
+  }
+  for (const [nome, res] of [
+    ["propostas_os", osRes],
+    ["notas_fiscais", nfsRes],
+    ["expedicoes", expRes],
+    ["clientes", clientesRes],
+    ["produtos_proposta", pesosRes]
+  ] as const) {
+    if (res.error) console.warn(`[expedicao.service] Erro ao buscar ${nome}:`, res.error);
+  }
+
+  const osMap = new Map<number, { data_termino: string | null; codigo_rastreamento: string | null; obs: string | null }>();
+  for (const row of osRes.data ?? []) {
+    if (row.id_int !== null) osMap.set(Number(row.id_int), row);
+  }
+
+  const freteMap = new Map<number, { servico: string | null; valor: number | null; peso: number | null; cep: string | null }>();
+  for (const row of fretesRes.data ?? []) freteMap.set(Number(row.id_int), row);
+
+  // NF: AUTORIZADA vence; senão qualquer nota não-cancelada conta como PENDENTE.
+  const nfMap = new Map<number, { status: NfStatusExpedicao; numero: string | null }>();
+  for (const row of nfsRes.data ?? []) {
+    const idInt = Number(row.id_int);
+    const st = String(row.status ?? "").toUpperCase();
+    const atual = nfMap.get(idInt);
+    if (st === "AUTORIZADA") {
+      nfMap.set(idInt, { status: "AUTORIZADA", numero: row.numero_nf ? String(row.numero_nf) : null });
+    } else if (st !== "CANCELADA" && atual?.status !== "AUTORIZADA") {
+      nfMap.set(idInt, { status: "PENDENTE", numero: row.numero_nf ? String(row.numero_nf) : null });
     }
   }
 
-  const todasPropostasMap = new Map<number, any>();
-  (propostas || []).forEach(p => todasPropostasMap.set(p.id_int, { ...p, isLegacy: false }));
-  legacyPropostas.forEach(p => todasPropostasMap.set(p.id_int, { ...p, isLegacy: true }));
-
-  // 3. Buscar os pedidos associados para pegar rastreamento, status de produção, etc
-  const { data: pedidos, error: pedError } = await client
-    .from("propostas_os")
-    .select("id, id_int, codigo_rastreamento, status_producao, status_expedicao, data_termino, obs")
-    .in("id_int", allIds);
-
-  if (pedError) {
-    console.warn("[expedicao.service] Erro ao buscar pedidos vinculados:", pedError);
-  }
-
-  const pedidosMap = new Map<number, any>();
-  (pedidos || []).forEach(p => {
-    if (p.id_int !== null) {
-      pedidosMap.set(p.id_int, p);
-    }
-  });
-
-  // 4. Buscar os fretes escolhidos
-  const { data: fretes, error: fretesError } = await client
-    .from("cotacao_frete")
-    .select("id_int, transportadora, servico, valor, prazo, peso_usado, volumes, observacao")
-    .eq("escolhido", true)
-    .in("id_int", allIds);
-
-  if (fretesError) {
-    console.warn("[expedicao.service] Erro ao buscar cotações de frete:", fretesError);
-  }
-
-  const fretesMap = new Map<number, FreteInfo>();
-  (fretes || []).forEach(f => {
-    fretesMap.set(f.id_int, {
-      transportadora: f.transportadora || "Transportadora",
-      servico: f.servico || "",
-      valor: f.valor !== null ? Number(f.valor) : 0,
-      prazo: f.prazo || "Sob consulta",
-      pesoUsado: f.peso_usado !== null ? Number(f.peso_usado) : 0,
-      volumes: f.volumes !== null ? Number(f.volumes) : 1,
-      observacao: f.observacao || ""
+  const expMap = new Map<number, ExpedicaoRegistro>();
+  for (const row of expRes.data ?? []) {
+    expMap.set(Number(row.id_int), {
+      idInt: Number(row.id_int),
+      tipoFrete: (row.tipo_frete as TipoFreteNormalizado | null) ?? null,
+      transportadoraNome: row.transportadora_nome ?? null,
+      idTransportadoraCliente: row.id_transportadora_cliente !== null ? Number(row.id_transportadora_cliente) : null,
+      pesoKg: row.peso_kg !== null ? Number(row.peso_kg) : null,
+      qtdVolumes: row.qtd_volumes !== null ? Number(row.qtd_volumes) : null,
+      tipoVolume: row.tipo_volume ?? null,
+      idEnderecoEntrega: row.id_endereco_entrega ?? null,
+      codigoRastreamento: row.codigo_rastreamento ?? null,
+      correiosIdPrepostagem: row.correios_id_prepostagem ?? null,
+      correiosCodigoObjeto: row.correios_codigo_objeto ?? null,
+      dataPronto: row.data_pronto ?? null,
+      dataDespacho: row.data_despacho ?? null,
+      dataEntrega: row.data_entrega ?? null,
+      despachadoPor: row.despachado_por ?? null,
+      retiradoPor: row.retirado_por ?? null,
+      obs: row.obs ?? null
     });
-  });
+  }
 
-  // 5. Mapear para retorno
-  const resultado: ExpedicaoListItem[] = [];
-  
-  // Vamos iterar sobre todasPropostasMap
-  todasPropostasMap.forEach((prop, id_int) => {
-    const pedido = pedidosMap.get(id_int);
-    const frete = fretesMap.get(id_int);
-    
-    // Regra rígida: Retirada Local se transportadora for "Retirada", "Balcão", "Sem custo"
-    let isRetiradaLocal = false;
-    let freteDefinido = false;
-    
-    if (frete) {
-      freteDefinido = true;
-      const transpUpper = (frete.transportadora || "").toUpperCase();
-      const servicoUpper = (frete.servico || "").toUpperCase();
-      
-      if (
-        transpUpper.includes("RETIRADA") || 
-        servicoUpper.includes("RETIRADA") || 
-        transpUpper.includes("BALCÃO") || 
-        transpUpper.includes("BALCAO") ||
-        transpUpper.includes("SEM CUSTO")
-      ) {
-        isRetiradaLocal = true;
-      }
+  const clienteMap = new Map<number, { nome: string | null; fantasia: string | null; cidade_uf: string | null }>();
+  for (const row of clientesRes.data ?? []) clienteMap.set(Number(row.id_cliente), row);
+
+  const pesoTeoricoGramas = new Map<number, number>();
+  for (const row of pesosRes.data ?? []) {
+    const idInt = Number(row.id_int);
+    const g = Number(row.peso_total) || 0;
+    pesoTeoricoGramas.set(idInt, (pesoTeoricoGramas.get(idInt) ?? 0) + g);
+  }
+
+  const hoje = hojeSaoPaulo();
+  const resultado: PedidoExpedicao[] = [];
+
+  for (const p of propostas) {
+    const idInt = Number(p.id_int);
+    const statusInterno = String(p.status_interno ?? "");
+    const etapa = etapaDoStatus(statusInterno);
+    const os = osMap.get(idInt);
+    const frete = freteMap.get(idInt);
+    const exp = expMap.get(idInt) ?? null;
+    const nf = nfMap.get(idInt);
+    const idCliente = p.id_cliente !== null ? Number(p.id_cliente) : null;
+    const cli = idCliente !== null ? clienteMap.get(idCliente) : undefined;
+
+    // Entregue some do painel após 30 dias (sem data_entrega registrada, mantém).
+    if (etapa === "ENTREGUE" && exp?.dataEntrega) {
+      const dataEntregueDia = diaSaoPaulo(exp.dataEntrega);
+      if (diffDias(dataEntregueDia, hoje) > DIAS_ENTREGUE_VISIVEL) continue;
+    }
+
+    const dataPromessa = os?.data_termino ?? null;
+    // data_termino é timestamp SEM timezone (não timestamptz) — slice direto já
+    // é a data-calendário correta; não trocar por diaSaoPaulo (isso é só para
+    // instantes timestamptz em UTC, como expedicoes.data_entrega acima).
+    const promessaDia = dataPromessa ? dataPromessa.slice(0, 10) : null;
+    const emAberto = etapa !== "ENTREGUE";
+    const atrasadoDias =
+      emAberto && promessaDia && promessaDia < hoje ? diffDias(promessaDia, hoje) : 0;
+    const prometidoHoje = emAberto && promessaDia === hoje;
+
+    const tipoFrete: TipoFreteNormalizado = exp?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
+
+    let pesoKg: number | null = null;
+    let pesoOrigem: PedidoExpedicao["pesoOrigem"] = null;
+    if (exp?.pesoKg !== null && exp?.pesoKg !== undefined) {
+      pesoKg = exp.pesoKg;
+      pesoOrigem = "aferido";
+    } else if (frete?.peso) {
+      pesoKg = Number(frete.peso) / 1000;
+      pesoOrigem = "cotado";
+    } else if ((pesoTeoricoGramas.get(idInt) ?? 0) > 0) {
+      pesoKg = (pesoTeoricoGramas.get(idInt) as number) / 1000;
+      pesoOrigem = "teorico";
     }
 
     resultado.push({
-      id_int,
-      cliente: prop.cliente || pedido?.descricao || `Proposta #${id_int}`,
-      statusLogistico: prop.status_interno || (prop.isLegacy && pedido ? (pedido.status_expedicao || "Desconhecido") : "Desconhecido"),
-      isLegacy: !!prop.isLegacy,
-      idPedido: pedido?.id,
-      codigoRastreamento: pedido?.codigo_rastreamento || "",
-      statusProducao: pedido?.status_producao,
-      statusExpedicao: pedido?.status_expedicao,
-      dataTermino: pedido?.data_termino,
-      observacoesOs: pedido?.obs || "",
-      frete,
-      isRetiradaLocal,
-      freteDefinido
+      idInt,
+      cliente: p.cliente || cli?.nome || cli?.fantasia || `Proposta #${idInt}`,
+      idCliente,
+      cidadeUf: cli?.cidade_uf ?? "",
+      empresa: p.empresa || "",
+      statusInterno,
+      etapa,
+      dataPromessa,
+      atrasadoDias,
+      prometidoHoje,
+      tipoFrete,
+      freteServico: frete?.servico ?? "",
+      freteCep: frete?.cep ? String(frete.cep) : null,
+      transportadoraNome: exp?.transportadoraNome || frete?.servico || "",
+      freteValor: frete?.valor !== null && frete?.valor !== undefined ? Number(frete.valor) : null,
+      pesoKg,
+      pesoOrigem,
+      volumes: exp?.qtdVolumes ?? (p.volume !== null ? Number(p.volume) : null),
+      nfStatus: nf?.status ?? "SEM_NF",
+      nfNumero: nf?.numero ?? null,
+      liberaNf: p.libera_nf === true,
+      codigoRastreamento: exp?.codigoRastreamento || os?.codigo_rastreamento || "",
+      obsOs: os?.obs ?? "",
+      expedicao: exp
     });
-  });
+  }
 
-  // Ordenar decrescente por id_int
-  resultado.sort((a, b) => b.id_int - a.id_int);
+  // Urgência primeiro: atrasados (mais atrasado no topo) → prometidos hoje →
+  // demais por promessa mais próxima; sem promessa vai para o fim de cada grupo.
+  resultado.sort((a, b) => {
+    if (a.atrasadoDias !== b.atrasadoDias) return b.atrasadoDias - a.atrasadoDias;
+    if (a.prometidoHoje !== b.prometidoHoje) return a.prometidoHoje ? -1 : 1;
+    const pa = a.dataPromessa ?? "9999-12-31";
+    const pb = b.dataPromessa ?? "9999-12-31";
+    if (pa !== pb) return pa < pb ? -1 : 1;
+    return b.idInt - a.idInt;
+  });
 
   return resultado;
 }

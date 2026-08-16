@@ -5,7 +5,6 @@ export { PedidosKanbanPage } from "./PedidosKanbanPage";
 export { PainelImpressaoPage } from "./PainelImpressaoPage";
 export { PedidoDetailPage } from "./PedidoDetailPage";
 export { ClienteAprovacaoPage } from "./ClienteAprovacaoPage";
-export { ExpedicaoPage } from "./ExpedicaoPage";
 export { BoletimFormPage } from "./BoletimFormPage";
 export { initialPedidosMock } from "./mocks/pedidos.mock";
 export { default as ModelosManagerPanel } from "./components/ModelosManagerPanel";
