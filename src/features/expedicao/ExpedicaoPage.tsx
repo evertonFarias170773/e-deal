@@ -11,6 +11,7 @@ import {
   Clock,
   Copy,
   Factory,
+  LayoutGrid,
   MapPin,
   Package,
   PackageCheck,
@@ -41,6 +42,7 @@ import { RetiradaModal } from "./components/RetiradaModal";
 import { VoltarStatusModal } from "./components/VoltarStatusModal";
 import { TransportadorasModal } from "./components/TransportadorasModal";
 import { RastreioModal } from "./components/RastreioModal";
+import { KanbanTransportadoras } from "./components/KanbanTransportadoras";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
 
 const filterClass =
@@ -202,7 +204,9 @@ export function ExpedicaoPage() {
       etapa: { codec: codecs.texto(), default: "ATIVOS" },
       alerta: { codec: codecs.texto(), default: "TODOS" },
       frete: { codec: codecs.texto(), default: "TODOS" },
-      emp: { codec: codecs.texto(), default: "TODOS" }
+      emp: { codec: codecs.texto(), default: "TODOS" },
+      // Visão da lista: "lista" (tabela/cards) ou "transportadoras" (colunas kanban).
+      visao: { codec: codecs.texto(), default: "lista" }
     }),
     []
   );
@@ -454,6 +458,18 @@ export function ExpedicaoPage() {
           >
             Frete a definir ({alertas.freteIndefinido})
           </button>
+          {/* Troca de VISÃO (não é filtro): tabela ⇄ colunas por transportadora. */}
+          <button
+            type="button"
+            onClick={() => setFilter("visao", filters.visao === "transportadoras" ? "lista" : "transportadoras")}
+            className={`${chipBase} ${
+              filters.visao === "transportadoras"
+                ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                : "border-dashed border-slate-400 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
+            }`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" /> Por transportadora
+          </button>
           {(filters.etapa !== "ATIVOS" || filters.alerta !== "TODOS") && (
             <button
               type="button"
@@ -510,6 +526,14 @@ export function ExpedicaoPage() {
         </div>
       </section>
 
+      {filters.visao === "transportadoras" ? (
+        <KanbanTransportadoras
+          pedidos={listaExibida}
+          acaoPrimaria={acaoPrimaria}
+          itensMenu={itensMenu}
+          formatarPeso={formatarPeso}
+        />
+      ) : (
       <ResponsiveList<PedidoExpedicao>
         items={listaExibida}
         getKey={(p) => p.idInt.toString()}
@@ -741,6 +765,7 @@ export function ExpedicaoPage() {
           );
         }}
       />
+      )}
 
       {pedidoDespacho && (
         <DespacharModal

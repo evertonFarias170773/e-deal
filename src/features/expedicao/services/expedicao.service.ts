@@ -102,7 +102,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs"
+        "id_int, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -164,7 +164,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       dataEntrega: row.data_entrega ?? null,
       despachadoPor: row.despachado_por ?? null,
       retiradoPor: row.retirado_por ?? null,
-      obs: row.obs ?? null
+      obs: row.obs ?? null,
+      etiquetaImpressaEm: row.etiqueta_impressa_em ?? null
     });
   }
 
@@ -247,6 +248,10 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       liberaNf: p.libera_nf === true,
       codigoRastreamento: exp?.codigoRastreamento || os?.codigo_rastreamento || "",
       obsOs: os?.obs ?? "",
+      // "Envio já preparado": prepostagem Correios OU 10x15 registrada OU rastreio (de qualquer origem).
+      etiquetaGerada: Boolean(
+        exp?.correiosIdPrepostagem || exp?.etiquetaImpressaEm || exp?.codigoRastreamento || os?.codigo_rastreamento
+      ),
       expedicao: exp
     });
   }

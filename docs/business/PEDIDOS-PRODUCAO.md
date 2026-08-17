@@ -1,8 +1,8 @@
 # PEDIDOS-PRODUCAO.md
 
-Versão: 2.0  
+Versão: 2.1  
 Status: Oficial — Implementação parcial e evolução controlada  
-Última atualização: 18/07/2026  
+Última atualização: 17/08/2026  
 Projeto: Vibe
 
 ---
@@ -214,8 +214,10 @@ Regras:
 - unicidade `(id_int, setor)` garantida por constraint;
 - `id_os` liga ao cabeçalho da OS e é anulável — o vínculo obrigatório é
   `id_int`;
-- expedição **não** é por setor: o pedido é despachado inteiro, e essa parte
-  continua em `propostas_os` e na aba Expedição do boletim;
+- expedição **não** é por setor: o pedido é despachado inteiro. Desde
+  16/08/2026 a conferência de cada setor é preenchida na aba **Revisão** do
+  boletim (§19), não mais num bloco dentro da aba do próprio setor — mas a
+  gravação continua aqui, uma linha por setor;
 - `propostas.status_interno` espelha a fase do setor **menos adiantado**;
   quando todos concluem, nada é escrito — a saída da produção segue pelo
   caminho existente.
@@ -453,9 +455,17 @@ Após a impressão:
 - embalagem;
 - separação por volumes.
 
+A conferência e a separação por volumes têm lugar definido no sistema desde
+16/08/2026: a aba **Revisão** do boletim (§19).
+
 ## Etapa 9 — Expedição
 
 A Produção entrega o pedido concluído ao fluxo de Expedição.
+
+A entrega é o botão **"Confirmar revisão e liberar para Expedição"** da aba
+Revisão — que não escreve status por conta própria: delega a `marcarPronto`, a
+mesma função do botão "Marcar pronto" do painel `/expedicao`
+(`EXPEDICAO.md` §3.4).
 
 Ela não deve marcar recebimento financeiro nem emitir nota fiscal.
 
@@ -496,6 +506,17 @@ A liberação da fila produtiva continua separada e depende de `is_prd_aprovado`
 A página pública `/os` (QR impresso na OS, origem `qr_producao`) é executor oficial das transições entre os status produtivos e logísticos: destaca o próximo natural, permite pausa, salto e retorno com motivo opcional (registrado quando informado), exige confirmação reforçada para `ENTREGUE` (terminal — sem transição posterior via QR) e registra tudo em `public.os_status_log` e na timeline. O próximo natural de `EXPEDICAO` segue a cotação de frete escolhida (retirada → `A RETIRAR`; transporte → `EM TRANSITO`; sem informação → nenhum natural, ambos disponíveis). Detalhes normativos: `FLUXO-OFICIAL-STATUS-PROPOSTAS.md` §13 e Matriz de Segurança (seção QR de Produção).
 
 Uma proposta pausada permanece na fila de `/pedidos` (o filtro da fila inclui os status `/ PENDENTE`).
+
+### Quem escaneia logado abre o boletim (16/08/2026)
+
+O QR impresso é um só e continua público — o celular do chão de fábrica não faz login. O que mudou é o destino de quem **já tem sessão no ERP**:
+
+- ao abrir `/os`, o client consulta `GET /api/os-qr/sessao` **em paralelo** com a consulta do token;
+- a rota lê apenas a sessão do cookie e responde `{ autenticado, podeEditar }`, onde `podeEditar` é `pedidos.view` (Produção tem no perfil; Admin e Super Admin passam pelo wildcard). Ela **nunca recebe nem devolve o token do QR**;
+- com `podeEditar` e `id_int` resolvido, a página redireciona para a edição do boletim correspondente. Sem isso, permanece na página pública de troca de status — que é o comportamento útil para quem não tem permissão, melhor do que cair numa tela de acesso negado depois do redirect;
+- falha na consulta de sessão nunca derruba o fluxo público: o `catch` responde não-autenticado.
+
+Depende de `OS_QR_PUBLICO_ENABLED=true`, `OS_QR_TOKEN_SECRET` (o mesmo valor em todos os ambientes — trocar invalida os QRs já impressos) e `SUPABASE_SERVICE_ROLE_KEY`, aplicadas na Vercel em 17/08/2026.
 
 ---
 
@@ -849,24 +870,79 @@ A aprovação externa não substitui a liberação final interna.
 
 ---
 
-# 19. Pesagem e Volumes
+# 19. Revisão, Pesagem e Volumes
 
-Pesagem e pacotes continuam como evolução futura.
+Implementado em 16/08/2026. A aba **Expedição** do boletim foi substituída pela
+aba **Revisão** (`abaExpedicao` no código, `BoletimFormPage.tsx`), e a
+conferência deixou de ser feita setor a setor, espalhada pelas abas.
 
-O fluxo esperado deve permitir:
+## Antes
 
-- peso previsto;
-- peso aferido;
-- diferença;
-- responsável;
-- data;
-- quantidade de volumes;
-- observação;
-- tolerância.
+Cada aba de setor tinha um "BLOCO 8 — Revisão / Conferência" com peso, volume,
+tipo e responsável **daquele setor**, e a aba Expedição repetia os mesmos campos
+mais frete, transportadora, prazo e CEP — os mesmos dados que o modal Despachar
+do painel `/expedicao` já edita, com risco de um sobrescrever o outro.
 
-Uma divergência não deve alterar automaticamente quantidade, financeiro ou frete.
+## Agora
 
-A regra de bloqueio e a tolerância precisam ser definidas antes da implementação.
+A aba Revisão reúne tudo em uma tela, na ordem em que a bancada trabalha:
+
+| Bloco | Campos | Onde grava |
+|---|---|---|
+| Um por setor do pedido | peso estimado (derivado, somente leitura), **peso real (kg)**, **responsável pela conferência** | `propostas_os_setores`, uma linha por setor |
+| Volume e peso do pedido | **qtd de volumes**, **tipo de volume**, peso líquido (derivado, somente leitura), **peso bruto total (kg)** | `expedicoes` (`qtd_volumes`, `tipo_volume`, `peso_bruto_kg`) |
+| Peso por volume | peso bruto de cada volume, só quando a quantidade é maior que 1 | `expedicoes.pesos_volumes` (jsonb) |
+| Fechamento | pendências listadas por setor + botão "Confirmar revisão e liberar para Expedição" | — |
+
+Decisões que sustentam esse desenho:
+
+- **Volume é do pedido, não do setor.** Por isso quantidade, tipo e peso bruto
+  saíram dos blocos por setor e viraram um bloco único. O que continua por setor
+  é o que só o setor sabe: quanto ele entregou e quem conferiu.
+- **Peso líquido é referência derivada, não digitada.** É a soma do peso
+  **estimado** dos produtos de cada setor — informação que existe antes de
+  qualquer conferência, portanto útil no momento em que o revisor está pesando.
+  Somar o peso *real* deixaria o campo vazio justamente aí.
+- **Peso bruto é grandeza diferente e é digitado**: inclui embalagem e é o número
+  que vai para a NF-e. Não substitui `expedicoes.peso_kg`, que continua sendo o
+  aferido usado na etiqueta e na prepostagem.
+- **Peso por volume existe porque a NF de múltiplos volumes exige.** Com um
+  volume só, o detalhamento não é gravado; sobra de campos de uma contagem maior
+  anterior é descartada no salvamento, para não virar ruído na nota.
+- **Campos de frete saíram da tela.** Quem define transporte é o expedidor, no
+  modal Despachar. Os estados continuam sendo lidos e regravados no salvamento,
+  então nenhum dado existente foi apagado.
+- **Briefing Comercial (BLOCO 2) e Configurações Técnicas e Acabamento (PCP) não
+  aparecem na Revisão** — são conteúdo de cada setor e já estão nas abas de
+  setor; repeti-los só alongava a rolagem até a conferência.
+
+## Trava de liberação
+
+O botão de confirmar fica desabilitado até não sobrar pendência
+(`validarRevisao`, em `revisao-expedicao.service.ts`). Exige:
+
+- **todos** os setores com peso real e responsável preenchidos;
+- do pedido: quantidade de volumes, tipo de volume e peso bruto total;
+- com mais de um volume, o peso bruto de cada um.
+
+As pendências aparecem nomeadas por setor logo acima do botão. O critério é
+deliberadamente rígido: pedido sem peso chega à Expedição sem como emitir
+etiqueta nem pré-postagem, e conferência sem responsável não tem a quem
+perguntar depois.
+
+## Banco
+
+Migration `20260816_expedicoes_peso_bruto.sql` (aplicada): adiciona
+`expedicoes.peso_bruto_kg` (numeric) e `expedicoes.pesos_volumes` (jsonb), ambas
+nuláveis e aditivas. Nenhuma coluna existente foi alterada.
+
+## Continua futuro
+
+- diferença entre previsto e aferido, com **tolerância** e regra de bloqueio;
+- data e observação da pesagem como campos próprios;
+- divergência de peso **não** deve alterar automaticamente quantidade,
+  financeiro ou frete — isso permanece como regra a definir antes de qualquer
+  automação.
 
 ---
 

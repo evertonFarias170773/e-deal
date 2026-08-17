@@ -25,6 +25,8 @@ const toneByStatus: Record<string, StatusTone> = {
   "A RETIRAR": "special",
   "EM TRANSITO": "info",
   ENTREGUE: "success",
+  // Sub-estado VISUAL da Expedição (pedido PRONTO + etiqueta gerada) — não existe em propostas.status_interno.
+  "AGUARDANDO TRANSPORTADORA": "info",
 
   // ArteStatus
   PENDENTE: "warning",

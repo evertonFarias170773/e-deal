@@ -37,6 +37,8 @@ export interface ExpedicaoRegistro {
   despachadoPor: string | null;
   retiradoPor: string | null;
   obs: string | null;
+  /** Última geração da etiqueta interna 10x15 (ISO) — gravada pela rota da etiqueta. */
+  etiquetaImpressaEm: string | null;
 }
 
 /** Item do painel de Expedição (projeção sobre 6 tabelas — ver expedicao.service). */
@@ -70,5 +72,7 @@ export interface PedidoExpedicao {
   liberaNf: boolean;
   codigoRastreamento: string;
   obsOs: string;
+  /** Já existe etiqueta/rastreio para o envio: prepostagem Correios OU rastreio OU 10x15 gerada. */
+  etiquetaGerada: boolean;
   expedicao: ExpedicaoRegistro | null;
 }

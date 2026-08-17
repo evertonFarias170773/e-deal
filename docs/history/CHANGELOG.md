@@ -1,8 +1,8 @@
 # CHANGELOG.md
 
-Versão documental: 2.0  
+Versão documental: 2.1  
 Status: Histórico — Registro de alterações  
-Última revisão documental: 18/07/2026  
+Última revisão documental: 17/08/2026  
 Projeto: Vibe
 
 ---
@@ -22,6 +22,36 @@ Os registros descrevem o estado do projeto na data indicada. Eles não substitue
 - registrar somente mudanças efetivamente implementadas ou claramente marcadas como não lançadas.
 
 ---
+
+## [Unreleased] - 2026-08-17
+
+> Cobre as mudanças de 05/08 a 17/08/2026 nos módulos de Expedição, Produção e
+> Conferência. Documentação oficial correspondente: `business/EXPEDICAO.md` (v1.1),
+> `business/PEDIDOS-PRODUCAO.md` (v2.1), `business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md` (v3.3)
+> e `technical/PADROES-UX-UI.md` (v2.2).
+
+### Adicionado
+- **Expedição / Correios — credenciais por empresa:** cartão de postagem e contrato são por CNPJ, e as empresas do grupo têm contratos distintos. `lerConfigCorreios(idEmpresa)` passou a ler `CORREIOS_<empresas.id>_{USUARIO,CODIGO_ACESSO,CARTAO_POSTAGEM,CONTRATO}`, com as variáveis sem sufixo como padrão. O segredo é reconhecido pelo prefixo: `cws-…` é token pronto (expira em horas), qualquer outro valor é código de acesso e o token passa a ser renovado a cada operação. A empresa remetente sai de `resolverEmpresaRemetente()` e **as rotas de prepostagem e de rótulo resolvem igual** — o rótulo só é acessível pelo cartão que criou a pré-postagem.
+- **Expedição / Declaração de conteúdo:** nova rota `GET /api/expedicao/declaracao-conteudo` (`expedicao.view`) e PDF A4 com itens reais do pedido, totais, textos legais e linha de assinatura, com no mínimo 8 linhas de tabela. Aparece no menu de ações **somente quando o pedido não tem NF-e autorizada** — o rótulo dos Correios traz só o endereçamento, e o volume precisa viajar com o documento.
+- **Boletim / aba Revisão:** a aba "Expedição / pedido inteiro" virou **Revisão** e passou a concentrar a conferência: um bloco por setor (peso estimado derivado, peso real, responsável) e um bloco único de volume e peso do pedido (qtd, tipo, peso líquido derivado, peso bruto total), mais peso bruto por volume quando há mais de um. Botão "Confirmar revisão e liberar para Expedição" grava e **delega a `marcarPronto`** — mesma guarda de concorrência e mesma trilha em `os_status_log`, sem um segundo caminho para `EXPEDICAO`. Trava exige todos os setores conferidos e as pendências aparecem nomeadas por setor.
+- **Banco:** migration `20260816_expedicoes_peso_bruto.sql` (aplicada) adiciona `expedicoes.peso_bruto_kg` (numeric) e `expedicoes.pesos_volumes` (jsonb), nuláveis e aditivas. Peso bruto é grandeza distinta de `peso_kg`, que continua sendo o aferido usado na etiqueta e na prepostagem.
+- **QR de Produção / usuário logado:** quem escaneia **já logado no ERP e com `pedidos.view`** é redirecionado para a edição do boletim em vez da página pública de troca de status. Nova rota `GET /api/os-qr/sessao`, que lê apenas a sessão do cookie e responde `{ autenticado, podeEditar }` — nunca recebe nem devolve o token do QR. Sem sessão ou sem permissão, o fluxo público continua idêntico; falha na consulta cai em não-autenticado e não derruba a troca de status.
+- **Listagens:** `ResponsiveList` ganhou `getRowHighlight`, para destacar linhas de uma categoria sem tocar em filtro, consulta ou ordenação. Exige as duas cores (`base` e `hover`) porque o hover é aplicado por estilo inline. Primeiro uso: Conferência de pagamentos, fundo amarelo claro em `tipo_cobranca = E-Faturado`, nas duas abas.
+
+### Alterado
+- **Expedição / payload dos Correios alinhado a evidência real:** duas pré-postagens foram criadas em produção em 16/08/2026 (`AD802864385BR`, Ideal Gráfica; `AD802865749BR`, E3). O payload do ERP foi ajustado ao que comprovadamente passou: `cienteObjetoNaoProibido` de `"S"` para **`"1"`**, `itensDeclaracaoConteudo` **passou a ser enviado** (`{ conteudo, quantidade, valor }`, com genérico de material gráfico quando não há itens), `numeroCartaoPostagem`/`numeroContrato` e `solicitarColeta: "N"` incluídos, e `modalidadePagamento` **removido** — campo extra é candidato a 400.
+- **Etiqueta interna 10×15 redesenhada:** de lista de linhas do mesmo tamanho para blocos com moldura, hierarquizados por distância de leitura — NF-E e PEDIDO em número grande, cidade/UF em corpo grande, CEP ancorado no rodapé do bloco do destinatário, bloco de transportadora com Volumes/Embalagem/Peso bruto e rastreio, observação de transporte e rodapé com remetente + QR pequeno. O QR continua sendo conferência interna (`/orcamentos/:id_int`), não rastreio.
+- **Expedição / menu de ações:** "Detalhes da proposta" saiu e entrou "Boletim da produção" (`/pedidos/boletim?id_int=…&modo=edicao`) — na bancada o que se consulta é o que foi produzido, não a negociação.
+- **Expedição / confirmação:** "Marcar pronto" e "Marcar entregue" deixaram de usar `window.confirm` e passaram a pedir confirmação no `ConfirmarAcaoModal`, no padrão visual do sistema.
+- **Boletim:** o "BLOCO 8 — Revisão / Conferência" foi removido das abas de setor (seus campos vivem agora na Revisão); Briefing Comercial (BLOCO 2) e Configurações Técnicas e Acabamento (PCP) não são renderizados na aba Revisão, por já existirem em cada setor; o botão de salvar fixo do rodapé foi removido — permanecem o do cabeçalho e o flutuante, ambos `type="submit"`.
+- **Menu lateral (Sidebar):** a seção aberta ficou visualmente distinta — cabeçalho com fundo e texto em cor cheia, bloco de itens com recuo e fio à esquerda. A seta girada sozinha não era sinal suficiente. O `onMouseLeave` do cabeçalho volta para o fundo de seção aberta, não para transparente. Terceiro nível compensado de `ml-5/pl-4` para `ml-3/pl-3` para não truncar rótulos longos. Desktop e drawer mobile.
+- **Configuração:** `.env.local.example` documenta `CORREIOS_AMBIENTE` e o bloco por empresa. As 13 variáveis dos Correios e as 3 do QR público (`OS_QR_PUBLICO_ENABLED`, `OS_QR_TOKEN_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`) foram aplicadas na Vercel em 17/08/2026, com redeploy.
+
+### Corrigido
+- **Conferência de pagamentos / ordenação:** a lista ordenava por `paid_at` puro, e qualquer modalidade sem liquidação bancária colapsava para 0 e caía em bloco no fim — era o caso de E-Faturado, com `paid_at` nulo em 234 das 237 cobranças, exibido abaixo de PIX confirmados dias antes. `sortByConferenceRecency` passou a usar a data oficial da tela (`data_confirmacao → paid_at → created_at`, via `getDataReferenciaCobranca`), com `created_at` como desempate. Nenhum tipo de cobrança é tratado à parte; filtros, paginação e consultas inalterados.
+- **Correios / telefone do destinatário:** a API valida `celular` com 9 dígitos e `telefone` com 8 — mandar celular no campo `telefone` retornava "Telefone do destinatário inválido". `contatoParaPayload()` passou a escolher o par pelo tamanho do número (`dddCelular`/`celular` ou `dddTelefone`/`telefone`) e a omitir o campo inteiro quando o número é inválido, em vez de enviar string vazia.
+- **Boletim / peso líquido:** o campo somava `peso_real` de cada setor e por isso nascia "Não conferido" — inútil justamente no momento em que o revisor precisa da referência. Passou a somar o peso **estimado** dos produtos de cada setor, que é derivado e existe antes de qualquer conferência.
+- **Migration `20260804_recalc_valor_total_propostas.sql`:** o arquivo versionado divergia do banco. Reescrito para refletir o estado real, com aviso explícito de que `recalcular_proposta_v4_trigger()` é **compartilhada por quatro tabelas** — `CREATE OR REPLACE` nela atinge todas. `public.propostas` passou a ter função e trigger dedicadas (`propostas_preencher_valor_total_avulsa`), sem tocar na função compartilhada.
 
 ## [Unreleased] - 2026-07-28
 

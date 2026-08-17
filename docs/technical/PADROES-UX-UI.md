@@ -1,8 +1,8 @@
 # PADROES-UX-UI.md
 
-Versão: 2.1  
+Versão: 2.2  
 Status: Oficial  
-Última atualização: 23/07/2026  
+Última atualização: 17/08/2026  
 Projeto: Vibe
 
 ---
@@ -160,6 +160,12 @@ Regras:
 
 - clicar no cabeçalho de uma seção abre essa seção e fecha a anterior;
 - a seção correspondente à rota atual abre automaticamente; seções-link não fecham o acordeão aberto;
+- **a seção aberta é visualmente distinta**: o cabeçalho ganha fundo e texto na cor cheia, e o
+  bloco de itens ganha recuo com fio à esquerda — a seta girada sozinha não bastava como sinal
+  (16/08/2026). O `onMouseLeave` do cabeçalho volta para o fundo de seção aberta, não para
+  transparente, senão o destaque sumiria ao tirar o mouse. O terceiro nível foi compensado de
+  `ml-5/pl-4` para `ml-3/pl-3`, senão rótulos longos passariam a truncar com o novo recuo.
+  Vale igual no desktop e no drawer mobile;
 - a rota ativa é resolvida pelo href **mais específico** (`navigationHrefs`), para que
   `/contas-a-receber/registro` não acenda também "Carteira";
 - itens com subitens expandem e recolhem sem navegar;
@@ -342,6 +348,21 @@ Padrão recomendado:
 Cards de resumo devem ser usados somente quando ajudarem a decisão operacional.
 
 Não adicionar cards apenas para preencher espaço.
+
+## Destaque de linha por categoria
+
+`ResponsiveList` aceita `getRowHighlight?: (item) => { base, hover } | null` para marcar linhas de
+uma categoria sem tocar em filtro, consulta ou ordenação. Regras:
+
+- o destaque é **informativo**, nunca substitui um filtro nem muda o que a lista traz;
+- as duas cores (`base` e `hover`) são obrigatórias porque o hover da linha é aplicado por estilo
+  inline: sem a cor de hover, passar o mouse apagaria o destaque, e o `onMouseLeave` precisa voltar
+  para `base`, não para `transparent`;
+- cor bem clara, para não competir com badges de status nem prejudicar contraste do texto;
+- usar para uma categoria por vez. Duas ou três famílias de cor na mesma lista viram ruído.
+
+Primeiro uso: Financeiro → Conferência de pagamentos, com fundo amarelo claro nas linhas
+`tipo_cobranca = E-Faturado`, nas duas abas (05/08/2026).
 
 ---
 

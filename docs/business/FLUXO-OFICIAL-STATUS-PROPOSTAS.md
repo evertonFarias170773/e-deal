@@ -1,8 +1,8 @@
 # FLUXO-OFICIAL-STATUS-PROPOSTAS.md
 
-Versão: 3.2  
+Versão: 3.3  
 Status: Oficial  
-Última atualização: 23/07/2026  
+Última atualização: 17/08/2026  
 Projeto: Vibe
 
 ---
@@ -872,7 +872,7 @@ Não permitir:
 | `EM IMPRESSAO` | `EM ACABAMENTO` | Impressão concluída | Manual (ERP ou QR de Produção) |
 | `EM ACABAMENTO` | `EM ACABAMENTO / PENDENTE` | Pausa (motivo opcional) | Manual (ERP ou QR de Produção) |
 | `EM ACABAMENTO / PENDENTE` | `EM ACABAMENTO` | Impedimento resolvido | Manual (ERP ou QR de Produção) |
-| `EM ACABAMENTO` | `EXPEDICAO` | Produção concluída | Manual (ERP ou QR de Produção) |
+| `EM ACABAMENTO` | `EXPEDICAO` | Produção concluída | Manual (ERP, QR de Produção ou "Confirmar revisão" do boletim) |
 | `EXPEDICAO` | `A RETIRAR` | Retirada definida | Manual (ERP ou QR de Produção) |
 | `EXPEDICAO` | `EM TRANSITO` | Coleta confirmada | Manual (ERP ou QR de Produção) |
 | `A RETIRAR` | `ENTREGUE` | Retirada confirmada | Manual (ERP ou QR de Produção) |
@@ -888,7 +888,10 @@ O QR de Produção (página pública `/os`, origem `qr_producao`) é um executor
 - `ENTREGUE` exige confirmação reforçada e é terminal (sem transições posteriores via QR);
 - destino igual ao status atual é rejeitado;
 - status fora da lista de produção/expedição permanecem controlados exclusivamente pelo ERP (`FORA_DO_FLUXO` no QR);
-- toda transição registra `os_status_log` (status anterior, novo, tipo, motivo, origem `qr_producao`) e mensagem SISTEMA na timeline.
+- toda transição registra `os_status_log` (status anterior, novo, tipo, motivo, origem `qr_producao`) e mensagem SISTEMA na timeline;
+- desde 16/08/2026, quem escaneia **já logado no ERP e com `pedidos.view`** é redirecionado para a edição do boletim em vez da página de troca de status. O QR impresso é o mesmo; a decisão é do client, a partir de `GET /api/os-qr/sessao` (só lê a sessão do cookie, nunca recebe o token do QR). Sem sessão ou sem permissão, o fluxo público continua idêntico. Ver `PEDIDOS-PRODUCAO.md` §8.
+
+Além do QR e do painel `/expedicao`, `EM ACABAMENTO → EXPEDICAO` também é executada pelo botão "Confirmar revisão e liberar para Expedição" da aba Revisão do boletim. Ela **não é um caminho paralelo**: delega a `marcarPronto`, com a mesma guarda de concorrência e a mesma trilha em `os_status_log` (`EXPEDICAO.md` §3.4).
 
 ---
 

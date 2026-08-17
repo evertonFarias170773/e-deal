@@ -70,6 +70,15 @@ export async function GET(request: Request) {
   }
 
   const pdf = await renderToBuffer(criarEtiquetaElement(vm, qrDataUrl));
+
+  // Registra a geração (sub-estado "Aguardando transportadora" no painel).
+  // Falha aqui não bloqueia a etiqueta — o PDF já está pronto.
+  const { error: marcaErr } = await supabase.from("expedicoes").upsert(
+    { id_int: idInt, etiqueta_impressa_em: new Date().toISOString(), updated_at: new Date().toISOString() },
+    { onConflict: "id_int" }
+  );
+  if (marcaErr) console.warn("[expedicao/etiqueta] Falha ao registrar etiqueta_impressa_em:", marcaErr);
+
   return new NextResponse(new Uint8Array(pdf), {
     status: 200,
     headers: {

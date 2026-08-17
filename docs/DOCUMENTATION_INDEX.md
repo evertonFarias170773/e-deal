@@ -1,8 +1,8 @@
 # DOCUMENTATION_INDEX.md
 
-Versão: 3.3  
+Versão: 3.4  
 Status: Oficial  
-Última atualização: 29/07/2026  
+Última atualização: 17/08/2026  
 Projeto: Vibe
 
 ---
@@ -93,7 +93,7 @@ Cancelamento, exclusão permitida, integração externa e sincronização.
 
 ## [`business/PEDIDOS-PRODUCAO.md`](./business/PEDIDOS-PRODUCAO.md)
 
-Boletim/OS, modelos, artes e limites da Produção.
+Boletim/OS, modelos, artes, aba Revisão (conferência por setor, volumes e peso bruto), QR de Produção e limites da Produção.
 
 ## [`business/CHAT-INTERNO.md`](./business/CHAT-INTERNO.md)
 
@@ -101,7 +101,7 @@ Timeline, anexos, menções, notificações e pendências.
 
 ## [`business/EXPEDICAO.md`](./business/EXPEDICAO.md)
 
-Painel do funil APROVADO→ENTREGUE, fontes de dados, transições, etiquetas, Correios, rastreio n8n e permissões.
+Painel do funil APROVADO→ENTREGUE, fontes de dados, transições, etiqueta 10×15, declaração de conteúdo, Correios por empresa, rastreio n8n e permissões.
 
 ---
 

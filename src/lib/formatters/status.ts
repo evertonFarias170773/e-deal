@@ -19,6 +19,7 @@ export function humanizeStatus(status: string) {
     "A RETIRAR": "A Retirar",
     "EM TRANSITO": "Em Trânsito",
     ENTREGUE: "Entregue",
+    "AGUARDANDO TRANSPORTADORA": "Aguardando transportadora",
 
     // ArteStatus
     EM_CRIACAO: "Em Criação",
