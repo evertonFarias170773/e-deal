@@ -554,6 +554,34 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error("Cliente do Supabase nao inicializado.");
       }
 
+      // ── Idempotência por tentativa ──────────────────────────────────────────
+      // A trava do botão impede o clique duplo dentro de uma aba; esta camada
+      // cobre o que ela não vê — retry de rede e repetição da mesma tentativa.
+      // Quem garante é o banco: índice único parcial em chave_idempotencia e a
+      // RPC SECURITY DEFINER, único caminho autorizado a gravar a coluna.
+      //
+      // A verificação vem ANTES do insert: repetir a mesma chave devolve a
+      // cobrança já criada, sem tocar no provedor.
+      const chaveIdempotencia = values.chaveIdempotencia;
+      if (chaveIdempotencia) {
+        const { data: jaCriada } = await client
+          .from("pagamentos_v2")
+          .select("id, status")
+          .eq("chave_idempotencia", chaveIdempotencia)
+          .maybeSingle();
+
+        if (jaCriada && jaCriada.status !== "CANCELADO") {
+          console.info(`[CobrancasProvider] Repeticao idempotente (chave=${chaveIdempotencia}, cobranca=${jaCriada.id}).`);
+          const loadResult = await loadData();
+          const found = loadResult.cobrancas.find((item) => item.id === jaCriada.id) ||
+                        loadResult.cobrancasStats.find((item) => item.id === jaCriada.id);
+          if (!found) {
+            throw new Error("Cobrança já criada nesta tentativa não foi encontrada ao recarregar. Atualize a tela.");
+          }
+          return found;
+        }
+      }
+
       // Cartão Asas — antiduplicidade em nova tentativa. A linha de pagamentos_v2
       // é criada ANTES da chamada ao n8n; se a integração falhou, a cobrança
       // ficou pendente sem link do provedor e um novo clique criaria uma SEGUNDA
@@ -715,6 +743,58 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
       const createdRow = createdRows[0];
       const cobrancaId = createdRow.id;
+
+      // Registra a chave AQUI, antes de qualquer chamada ao provedor: é o
+      // provedor que cria a cobrança de verdade no banco (o QR do PIX, o
+      // boleto), então perder a corrida depois dele já teria custado uma
+      // cobrança real. Duas requisições concorrentes com a mesma chave inserem
+      // as duas linhas (a coluna nasce nula); só uma consegue registrar, por
+      // causa do índice único. A perdedora se cancela e devolve a vencedora,
+      // sem nunca ter falado com o provedor.
+      if (chaveIdempotencia) {
+        const { error: chaveError } = await client.rpc("pgv2_registrar_chave_idempotencia", {
+          p_id_pagamento: cobrancaId,
+          p_chave_idempotencia: chaveIdempotencia
+        });
+
+        if (chaveError) {
+          // Corrida real e erro de infraestrutura são coisas diferentes, e
+          // tratá-los igual causaria um dos dois danos. Descobrir qual é ANTES
+          // de decidir: existe outra cobrança com esta chave?
+          const { data: vencedora } = await client
+            .from("pagamentos_v2")
+            .select("id")
+            .eq("chave_idempotencia", chaveIdempotencia)
+            .maybeSingle();
+
+          console.warn(
+            `[CobrancasProvider] Falha ao registrar chave ${chaveIdempotencia} (corrida=${Boolean(vencedora)}): ${chaveError.message}`
+          );
+
+          if (vencedora) {
+            // Duplicidade de verdade: esta é a perdedora. Cancela antes de
+            // qualquer contato com o provedor e devolve a que venceu.
+            await client.from("pagamentos_v2").update({
+              status: "CANCELADO",
+              motivo_cancela: "Requisição duplicada (mesma chave de idempotência já registrada por outra cobrança)."
+            }).eq("id", cobrancaId);
+
+            const loadResult = await loadData();
+            const found = loadResult.cobrancas.find((item) => item.id === vencedora.id) ||
+                          loadResult.cobrancasStats.find((item) => item.id === vencedora.id);
+            if (!found) {
+              throw new Error("Cobrança concorrente não encontrada ao recarregar. Atualize a tela.");
+            }
+            return found;
+          }
+
+          // Não é duplicidade: a RPC não pôde ser executada (ela exige a
+          // permissão `credito.usar`, que nem todo perfil tem). Segue sem a
+          // chave, DE PROPÓSITO. Cancelar aqui transformaria uma camada de
+          // proteção num novo jeito de o vendedor não conseguir cobrar — o
+          // dano certo para evitar o dano raro. A trava do botão continua de pé.
+        }
+      }
 
       // 2. Gerar token_publico e url_cobranca a partir do primeiro bloco do UUID
       const tokenPublico = cobrancaId.split("-")[0];

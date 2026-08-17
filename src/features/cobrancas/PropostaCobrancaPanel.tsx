@@ -252,6 +252,21 @@ export function PropostaCobrancaPanel({
   // operação lógica) e só é renovada após um desfecho terminal (sucesso,
   // combinado parcial ou reabertura do modal) — nunca por janela de tempo.
   const chaveIdempotenciaECreditoRef = useRef<string | null>(null);
+  /**
+   * Trava de envio em curso. É um ref, e não o `isSaving`, porque estado só vale
+   * depois que o React renderiza de novo: entre o clique e esse render o botão
+   * segue vivo e `isSaving` segue `false`. O ref muda no mesmo instante da
+   * chamada, antes de qualquer `await`.
+   *
+   * Em 14/08/2026 essa diferença custou quatro cobranças duplicadas de verdade
+   * no banco (propostas 20710, 20711, 20712 e 20714): a checagem de frete
+   * introduziu uma ida à rede ANTES do ponto onde `isSaving` era ligado, e o
+   * segundo clique passou pelas duas guardas dentro dessa janela de ~1 segundo.
+   */
+  const enviandoCobrancaRef = useRef(false);
+  /** Chave de idempotência da tentativa de cobrança em curso (PIX, Boleto, Cartão,
+   *  Faturado). Mesma vida do envio: nasce no clique e morre no desfecho. */
+  const chaveIdempotenciaCobrancaRef = useRef<string | null>(null);
   const [isUserEditingValor, setIsUserEditingValor] = useState(false);
   const [tipoSecundario, setTipoSecundario] = useState<CobrancaTipo>("PIX");
   const [condicaoSecundaria, setCondicaoSecundaria] = useState<string>("");
@@ -866,7 +881,7 @@ export function PropostaCobrancaPanel({
    * tentativa de envio (resetada quando o modal de cobrança fecha).
    */
   function handleSubmitClick() {
-    if (isSaving) return;
+    if (enviandoCobrancaRef.current || isSaving) return;
     // A reserva de débito (v1) atua sobre UMA única pendência (a mais antiga em
     // aberto) — o teto oferecido é o saldo dessa pendência, não o saldoDevedor
     // total (que pode somar várias pendências).
@@ -878,11 +893,29 @@ export function PropostaCobrancaPanel({
     void handleSubmit();
   }
 
+  /**
+   * Porta única de entrada do envio. Fecha a trava ANTES de delegar, e só a
+   * abre no fim — inclusive quando `executarSubmit` sai por uma das muitas
+   * validações que apenas abrem um modal e retornam.
+   *
+   * A trava tem que morar aqui, e não lá dentro: `executarSubmit` faz consultas
+   * de rede antes de chegar ao ponto onde a cobrança é criada, e cada uma delas
+   * é uma janela em que um segundo clique entraria.
+   */
   async function handleSubmit(bypassPendingCheck?: boolean | React.MouseEvent, debitoIncluidoOverride?: number) {
-    const shouldBypass = bypassPendingCheck === true;
-    if (isSaving) {
-      return;
+    if (enviandoCobrancaRef.current) return;
+    enviandoCobrancaRef.current = true;
+    setIsSaving(true);
+    try {
+      await executarSubmit(bypassPendingCheck, debitoIncluidoOverride);
+    } finally {
+      enviandoCobrancaRef.current = false;
+      setIsSaving(false);
     }
+  }
+
+  async function executarSubmit(bypassPendingCheck?: boolean | React.MouseEvent, debitoIncluidoOverride?: number) {
+    const shouldBypass = bypassPendingCheck === true;
 
     // As opções de pagamento já não esperam o carregamento da lista de cobranças
     // (ver isFormaPagamentoDisponivel), mas `createCobranca` ainda decide
@@ -986,7 +1019,7 @@ export function PropostaCobrancaPanel({
     }
 
     if (form.tipoCobranca === "E-CREDITO") {
-      setIsSaving(true);
+      // `isSaving` é ligado e desligado pelo handleSubmit, dono da trava.
       setRefreshingSaldo(true);
       // Chave de idempotência: gerada uma vez por operação lógica e reutilizada
       // em retries de uma mesma tentativa ambígua (ex.: falha de rede antes de
@@ -1153,7 +1186,6 @@ export function PropostaCobrancaPanel({
         if (respostaDefinitivaRecebida) {
           chaveIdempotenciaECreditoRef.current = null;
         }
-        setIsSaving(false);
         setRefreshingSaldo(false);
       }
       return;
@@ -1272,10 +1304,13 @@ export function PropostaCobrancaPanel({
       // Pagador efetivo: id_faturado validado; fallback automático via ?? no createCobranca
       pagadorIdCliente: pagador?.idCliente,
       pagadorNome: pagador?.nome,
-      pagadorDocumento: pagador?.documento
+      pagadorDocumento: pagador?.documento,
+      // Identidade desta tentativa. Sobrevive a retries do mesmo envio; só é
+      // renovada no desfecho (ver o finally abaixo), para que um erro de
+      // validação não trave a tentativa seguinte, que é legítima.
+      chaveIdempotencia: (chaveIdempotenciaCobrancaRef.current ??= crypto.randomUUID())
     };
 
-    setIsSaving(true);
     try {
       if (source !== "supabase") {
         await new Promise((resolve) => window.setTimeout(resolve, 850));
@@ -1371,7 +1406,10 @@ export function PropostaCobrancaPanel({
         description: errorMessage
       });
     } finally {
-      setIsSaving(false);
+      // Desfecho definitivo (criou ou falhou de verdade): a próxima tentativa é
+      // outra operação e merece chave nova. Reaproveitar a chave aqui travaria
+      // um retry legítimo depois de um erro de validação.
+      chaveIdempotenciaCobrancaRef.current = null;
     }
   }
 

@@ -246,4 +246,7 @@ export type CriarCobrancaFormValues = {
   pagadorIdCliente?: number | null;
   pagadorNome?: string;
   pagadorDocumento?: string;
+  /** UUID que identifica UMA tentativa de cobrança. Repetir a mesma chave devolve
+   *  a cobrança já criada em vez de criar outra — ver createCobranca. */
+  chaveIdempotencia?: string;
 };
