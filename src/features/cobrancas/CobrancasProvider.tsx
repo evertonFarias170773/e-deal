@@ -902,7 +902,15 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
                       loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
 
         const isFaturadoType = ["E-FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"].includes(values.tipoCobranca);
-        let msg = "";
+
+        // "Registrada nova cobrança ..." NÃO é escrita aqui: quem registra a
+        // criação é a trigger do banco (tg_registrar_chat_nova_cobranca), no
+        // mesmo instante do INSERT e já com o tipo e o autor. Escrever de novo
+        // daqui era o que fazia a timeline mostrar a mesma cobrança duas vezes.
+        //
+        // O faturado continua: a mensagem dele não repete a criação, conta o
+        // resultado da análise de crédito — informação que só existe depois do
+        // acionamento acima e que a trigger não tem como saber.
         if (isFaturadoType) {
           const label = getTipoCobrancaLabel(values.tipoCobranca);
           let condicaoText = "";
@@ -910,22 +918,19 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
             condicaoText = ` - Condição solicitada pelo vendedor: ${values.forma_fatu}. Sujeita à aprovação do Financeiro.`;
           }
           const observacoesText = ` Observações: ${values.observacao || "Nenhuma"}`;
-          msg = liberadoAutomaticamente
+          const msg = liberadoAutomaticamente
             ? `${label} liberado automaticamente por limite operacional (sem faturamentos vencidos e com crédito disponível). Enviado para a Conferência.${condicaoText}${observacoesText}`
             : `${label} enviado para análise financeira.${condicaoText}${observacoesText}`;
-        } else {
-          const sufixoCartao = values.cartaoFluxo === "ASAS" ? " ASAS" : "";
-          msg = `Registrada nova cobrança CARTÃO${sufixoCartao}, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
-        }
 
-        void registrarMensagemSistemaProposta({
-          idInt: proposta.id_int,
-          idCliente: proposta.cliente.idCliente,
-          mensagem: msg,
-          setor: "Financeiro"
-        }).catch((chatErr) => {
-          console.warn("Falha ao registrar historico no chat:", chatErr);
-        });
+          void registrarMensagemSistemaProposta({
+            idInt: proposta.id_int,
+            idCliente: proposta.cliente.idCliente,
+            mensagem: msg,
+            setor: "Financeiro"
+          }).catch((chatErr) => {
+            console.warn("Falha ao registrar historico no chat:", chatErr);
+          });
+        }
 
         if (found) {
           return found;
@@ -995,19 +1000,10 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         throw new Error(result.message || `Falha no retorno da API de ${values.tipoCobranca}.`);
       }
 
-      // 5. Enviar mensagem no chat da proposta para BOLETO ou PIX usando a nova função padronizada
-      const msg = values.tipoCobranca === "BOLETO"
-        ? `Registrada nova cobrança BOLETO, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`
-        : `Registrada nova cobrança PIX, valor: R$ ${values.valor.toFixed(2).replace(".", ",")}.`;
-
-      void registrarMensagemSistemaProposta({
-        idInt: proposta.id_int,
-        idCliente: proposta.cliente.idCliente,
-        mensagem: msg,
-        setor: "Financeiro"
-      }).catch((chatErr) => {
-        console.warn("Falha ao registrar historico no chat:", chatErr);
-      });
+      // A criação do PIX/Boleto na timeline é registrada pela trigger do banco
+      // (tg_registrar_chat_nova_cobranca), no instante do INSERT e já com o
+      // tipo. A mensagem que existia aqui chegava segundos depois dizendo a
+      // mesma coisa — era a duplicata que o dono viu na proposta 20719.
 
       const loadResult = await loadData();
       const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||

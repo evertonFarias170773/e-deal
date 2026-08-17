@@ -50,17 +50,22 @@ const ALLOWED_MIME_TYPES = [
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 /**
- * De onde veio o registro, em uma palavra.
+ * De onde veio o registro: quem fez e em que frente.
  *
- * As mensagens automáticas nascem com `autor_nome = "Sistema"` e `autor_uid`
- * nulo — nenhuma das ~19 mil guarda quem disparou a ação. O que elas guardam é
- * o `setor` ("Financeiro", "AUTO_FINANCEIRO", "STATUS_ENGINE_FASE_4A"), e é ele
- * que responde de onde partiu. Quando existe pessoa de verdade, a pessoa vence.
+ * São perguntas diferentes e as duas aparecem quando existem. O `setor`
+ * ("Financeiro", "AUTO_FINANCEIRO", "STATUS_ENGINE_FASE_4A") é a categoria do
+ * evento — nunca foi autoria, embora fosse lido como se fosse enquanto era a
+ * única coisa exibida.
+ *
+ * Registros de cobrança criados a partir de 17/08/2026 trazem o usuário de
+ * verdade, gravado pela trigger `tg_registrar_chat_nova_cobranca`. Os
+ * anteriores nascem com "Sistema" e ficam só com o setor — passado não se
+ * reescreve.
  */
 function origemDoRegistro(autorNome?: string | null, setor?: string | null): string | null {
   const nome = autorNome?.trim();
-  if (nome && nome.toLowerCase() !== "sistema") return nome;
-  return setor?.trim() || null;
+  const pessoa = nome && nome.toLowerCase() !== "sistema" ? nome : null;
+  return [pessoa, setor?.trim() || null].filter(Boolean).join(" · ") || null;
 }
 
 /**
