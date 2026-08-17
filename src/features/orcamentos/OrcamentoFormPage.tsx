@@ -58,7 +58,7 @@ import {
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta, salvarItemProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
@@ -2455,13 +2455,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   }
 
   /**
-   * Fecha a edição do item E grava aquela linha no banco.
+   * Fecha a edição do item E salva a proposta inteira.
    *
-   * A gravação existe porque a aba Pedido valida o saldo de cada modelo
-   * consultando `produtos_proposta.qtd` no banco. Enquanto o item só existia na
-   * memória, o card do modelo recusava uma quantidade que o próprio cabeçalho
-   * já exibia como válida. Grava só esta linha: nada de validação global, de
-   * modal ou de recarregar a página — isso é do "Salvar alterações".
+   * POR QUE A PROPOSTA INTEIRA, E NÃO SÓ A LINHA
+   *   A aba Pedido trabalha pelo id da linha em `produtos_proposta`, que só
+   *   existe depois que a proposta é salva. Gravando só a linha, um item ainda
+   *   não persistido não ganhava id nenhum: o "Salvar item" fechava o card sem
+   *   avisar nada, e na aba Pedido a Lista rápida não tinha onde pendurar os
+   *   lotes. O vendedor ficava tentando montar a lista contra um item que, para
+   *   o banco, não existia.
+   *
+   *   Salvar tudo resolve na origem e é o que o dono pediu: salvar item é
+   *   salvar o pedido. O custo é o do "Salvar alterações" — validação global e
+   *   recarregamento — e é um custo justo perto de fechar o card mentindo que
+   *   gravou.
    */
   async function handleSaveItem(itemId: string) {
     const item = form.itens.find((it) => it.id === itemId);
@@ -2512,50 +2519,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       form.itens.map((it) => (it.id === itemId ? updatedItem : it))
     );
 
-    // Só grava o que já existe no banco e só quando a aba Pedido também pode
-    // gravar sozinha — mesmo portão do `autoSaveHabilitado`. Onde o modelo está
-    // travado (cobrança ativa, proposta bloqueada), o item também fica: assim
-    // os dois lados nunca divergem. Item novo e proposta nova continuam
-    // dependendo do "Salvar alterações", que é quem sabe criar a linha.
-    const idNoBanco = updatedItem.id_produto_proposta_origem;
-    const idIntNumerico = Number(form.id_int);
-    const podeGravarItemIsolado =
-      Boolean(idNoBanco) &&
-      form.id_int !== "NOVO" &&
-      Number.isFinite(idIntNumerico) &&
-      idIntNumerico > 0 &&
-      !hasActiveCobranca &&
-      !isFormBloqueadoPorCobranca;
-
-    if (podeGravarItemIsolado) {
-      setSavingItemId(itemId);
-      try {
-        const res = await salvarItemProposta(Number(idNoBanco), updatedItem, idIntNumerico);
-        if (!res.success) {
-          // Card permanece aberto: fechar daria a impressão de gravado.
-          showToast({
-            type: "error",
-            title: "Item não salvo",
-            description: res.errorMessage || "Não foi possível gravar este item. Tente novamente."
-          });
-          return;
-        }
-      } catch (erro) {
-        // Sem este catch a exceção viraria rejeição não tratada: o botão
-        // voltaria ao normal e o usuário não distinguiria de um clique que
-        // não pegou.
-        showToast({
-          type: "error",
-          title: "Item não salvo",
-          description: erro instanceof Error ? erro.message : "Falha inesperada ao gravar este item."
-        });
-        return;
-      } finally {
-        setSavingItemId(null);
-      }
-    }
-
+    // Fecha o card antes de salvar: `handleSave` termina recarregando a página,
+    // e deixar o card aberto até lá dá a impressão de que nada aconteceu.
     setOpenItemIds((prev) => ({ ...prev, [itemId]: false }));
+
+    // `updateItem` já roda `recalculateItem` a cada digitação, então
+    // `form.itens` está atualizado aqui e o `handleSave` pode ler o estado
+    // normalmente — não há versão nova esperando para ser aplicada.
+    setSavingItemId(itemId);
+    try {
+      await handleSave();
+    } finally {
+      setSavingItemId(null);
+    }
   }
 
   function handleEditItem(itemId: string) {
