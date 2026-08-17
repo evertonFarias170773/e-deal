@@ -723,17 +723,20 @@ export function BoletimFormPage() {
   }, [gruposPorSetor, boletins]);
 
   /**
-   * Peso líquido: soma do que cada setor pesou. É referência para o revisor
-   * conferir o bruto, não substitui — bruto inclui embalagem e sai diferente.
+   * Peso líquido: soma do peso ESTIMADO de cada setor, derivado dos produtos.
+   * Já vem preenchido antes de qualquer conferência — é a referência contra a
+   * qual o revisor compara o bruto que vai pesar na balança. Bruto inclui
+   * embalagem e sai maior; por isso são campos separados.
    */
   const somaPesoDosSetores = useMemo(() => {
-    const total = abasDeSetor.reduce((soma, aba) => {
-      const bruto = (conferenciaPorSetor[aba.setor]?.peso_real || "").trim().replace(",", ".");
-      const numero = Number(bruto);
-      return soma + (Number.isFinite(numero) ? numero : 0);
+    const gramas = abasDeSetor.reduce((soma, aba) => {
+      const grupo = gruposPorSetor.find((g) => g.setor === aba.setor);
+      if (!grupo) return soma;
+      return soma + grupo.produtos.reduce((s, p) => s + (Number(p.pesoEstimado) || 0), 0);
     }, 0);
-    return total > 0 ? `${total.toFixed(2)} kg` : "Não conferido";
-  }, [abasDeSetor, conferenciaPorSetor]);
+    if (gramas <= 0) return "Não calculado";
+    return gramas >= 1000 ? `${(gramas / 1000).toFixed(2)} kg` : `${Math.round(gramas)} g`;
+  }, [abasDeSetor, gruposPorSetor]);
 
   const quantidadeDeVolumes = useMemo(() => {
     const numero = Number((revisaoGeral.qtdVolumes || "").trim());
@@ -1950,7 +1953,8 @@ export function BoletimFormPage() {
                 )}
               </div>
             
-            {/* BLOCO 2 — BRIEFING COMERCIAL */}
+            {/* BLOCO 2 — BRIEFING COMERCIAL (não aparece na Revisão: já está em cada setor) */}
+            {!abaExpedicao && (
             <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
               <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-1.5">
                 BLOCO 2 — Briefing Comercial (Vendas)
@@ -1966,6 +1970,7 @@ export function BoletimFormPage() {
                 />
               </div>
             </div>
+            )}
 
           {/* BLOCO 3 & 4 — PRODUTOS E MODELOS (do setor da aba) */}
           {!abaExpedicao && (
@@ -2502,7 +2507,9 @@ export function BoletimFormPage() {
           </div>
           )}
 
-          {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS) */}
+          {/* CONFIGURAÇÕES TÉCNICAS POR SETOR PCP (BLOCOS 6 & 7 SIMPLIFICADOS)
+              Não aparece na Revisão: é conteúdo de cada setor. */}
+          {!abaExpedicao && (
           <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider">
@@ -2541,6 +2548,7 @@ export function BoletimFormPage() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Conferência saiu das abas de setor: agora é feita de uma vez na aba Revisão. */}
 
@@ -2634,6 +2642,7 @@ export function BoletimFormPage() {
                                   <div className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600 opacity-80 select-none cursor-not-allowed">
                                     {somaPesoDosSetores}
                                   </div>
+                                  <p className="text-[11px] text-slate-500">Somado do peso estimado de cada setor.</p>
                                 </div>
 
                                 <div className="space-y-1.5">
@@ -2713,19 +2722,10 @@ export function BoletimFormPage() {
                           </div>
                           )}
                           
-                          {/* BLOCO DE RESUMO FINAL E SUBMISSÃO */}
-                          <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 flex flex-col sm:flex-row sm:items-center justify-end gap-4 shadow-sm mb-12">
-
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="submit"
-                                className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 text-sm font-bold tracking-wider shadow transition flex items-center justify-center gap-1.5"
-                              >
-                                <Save className="h-4 w-4" />
-                                <span>{isEditing ? "Salvar Alterações" : "Salvar e Iniciar OS"}</span>
-                              </button>
-                            </div>
-                          </div>
+                          {/* Sem bloco de submissão no fim: salvar já existe no
+                              cabeçalho e no botão flutuante, ambos type="submit".
+                              Um terceiro no rodapé só se sobrepunha ao flutuante. */}
+                          <div className="mb-12" />
           </div>
       {selectedGabaritoPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
