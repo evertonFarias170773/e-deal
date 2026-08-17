@@ -425,28 +425,50 @@ export function PrepararBoletosModal({
       if (!client) throw new Error("Supabase client not initialized");
 
       // 4. Inserir boletos
-      const payloadBoletos = installments.map((item) => ({
-        id_int: cobranca.id_int,
-        id_cliente: cobranca.id_cliente,
-        id_empresa: cobranca.id_empresa,
-        empresa: cobranca.empresa,
-        nome_cliente: cobranca.cliente,
-        documento: cobranca.documento,
-        n_nf: numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null,
-        ext_reference: hasNfe ? extReference : `P${item.parcela}${item.total_parcelas}${cobranca.id_int}`,
-        parcela: item.parcela,
-        total_parcelas: item.total_parcelas,
-        valor: Number(item.valor),
-        vencimento: item.vencimento,
-        descricao: item.descricao || "",
-        multa: Number(item.multa ?? 0),
-        juros_dia: Number(item.juros_dia ?? 0),
-        deposito_conta: Boolean(item.deposito_conta),
-        status: "A_VENCER",
-        is_faturado: true,
-        is_avulso: false,
-        id_pagamento: cobranca.id_pagamento || null
-      }));
+      const payloadBoletos = installments.map((item) => {
+        /*
+         * A mesma referência vai em `ext_reference` e em `n_doc_boleto`.
+         *
+         * A Edge Function do link público (`boleto-publico?codigo=X`) procura o
+         * boleto por `n_doc_boleto` — não por `ext_reference`. Gravar só a
+         * referência fazia o link devolver 404 "Boleto não encontrado" em todo
+         * faturado criado por esta tela, mesmo com nosso número, linha digitável
+         * e código do banco corretos. Depois da migração do FlutterFlow para o
+         * Vibe esta virou a única porta de criação do faturado, então passou a
+         * valer para 100% deles, nas três empresas e nos dois bancos.
+         *
+         * O valor é determinístico, e `idx_boletos_n_doc_boleto_ativo` é único —
+         * mas condicional, ignorando cancelados, para não travar o refaturamento
+         * de uma parcela cancelada (migration 20260817).
+         */
+        const referencia = hasNfe
+          ? extReference
+          : `P${item.parcela}${item.total_parcelas}${cobranca.id_int}`;
+
+        return {
+          id_int: cobranca.id_int,
+          id_cliente: cobranca.id_cliente,
+          id_empresa: cobranca.id_empresa,
+          empresa: cobranca.empresa,
+          nome_cliente: cobranca.cliente,
+          documento: cobranca.documento,
+          n_nf: numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null,
+          ext_reference: referencia,
+          n_doc_boleto: referencia,
+          parcela: item.parcela,
+          total_parcelas: item.total_parcelas,
+          valor: Number(item.valor),
+          vencimento: item.vencimento,
+          descricao: item.descricao || "",
+          multa: Number(item.multa ?? 0),
+          juros_dia: Number(item.juros_dia ?? 0),
+          deposito_conta: Boolean(item.deposito_conta),
+          status: "A_VENCER",
+          is_faturado: true,
+          is_avulso: false,
+          id_pagamento: cobranca.id_pagamento || null
+        };
+      });
 
       const supabase = client;
 
