@@ -13,6 +13,7 @@ import { PedidoModelosTab } from "@/features/orcamentos/components/PedidoModelos
 import { ArtesTab, type BriefingArtesDraft } from "@/features/orcamentos/components/ArtesTab";
 import { ProductSearchSelector } from "@/features/orcamentos/components/ProductSearchSelector";
 import { LiberarFaturadoModal } from "@/features/orcamentos/components/LiberarFaturadoModal";
+import { PropostaChatPanel } from "@/features/orcamentos/components/PropostaChatPanel";
 import { validarStatusProposta } from "@/features/orcamentos/services/status-shadow.service";
 import {
   avaliarEdicaoFaturado,
@@ -4067,15 +4068,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               <div className="rounded-3xl border border-dashed border-amber-300 bg-amber-50 p-10 text-center">
                 <p className="text-sm font-semibold text-amber-700">Salve a proposta para visualizar o histórico.</p>
               </div>
-            ) : loadingHistorico ? (
-              <div className="flex flex-col items-center justify-center p-20 gap-3 rounded-3xl border bg-slate-50 border-slate-200">
+            ) : (
+              <div className="space-y-4">
+                {/* A timeline vem primeiro: é o histórico que o usuário procura
+                    todo dia. Antes ela só existia no drawer da lista, o que
+                    obrigava a sair da proposta para ler o que aconteceu nela. */}
+                <PropostaChatPanel
+                  key={form.id_int}
+                  idInt={Number(form.id_int)}
+                  clienteNome={form.clienteNaoCadastrado ? (form.nomeClienteLivre || null) : (cliente?.nome ?? null)}
+                  idCliente={form.clienteId ?? null}
+                  tituloContexto="Timeline da proposta"
+                  className="h-[560px] rounded-3xl border border-[#d7e5e8] dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden"
+                />
+
+                {loadingHistorico ? (
+              <div className="flex flex-col items-center justify-center p-10 gap-3 rounded-3xl border bg-slate-50 border-slate-200">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
-                <span className="text-sm font-semibold text-slate-400">Carregando histórico financeiro da proposta...</span>
+                <span className="text-sm font-semibold text-slate-400">Carregando movimentos financeiros...</span>
               </div>
             ) : historicoMovimentos.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-16 text-center">
-                <p className="text-sm font-semibold text-slate-600">Nenhum movimento financeiro registrado</p>
-                <p className="mt-1 text-xs text-slate-400">Esta proposta não possui registros de créditos gerados ou consumidos até o momento.</p>
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-5 text-center">
+                <p className="text-xs font-semibold text-slate-500">Nenhum movimento financeiro registrado</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">Esta proposta não possui créditos gerados ou consumidos até o momento.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -4213,6 +4228,8 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     </table>
                   </div>
                 </div>
+              </div>
+                )}
               </div>
             )
           )}

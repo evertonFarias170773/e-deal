@@ -49,6 +49,60 @@ const ALLOWED_MIME_TYPES = [
 ];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+/**
+ * De onde veio o registro, em uma palavra.
+ *
+ * As mensagens automáticas nascem com `autor_nome = "Sistema"` e `autor_uid`
+ * nulo — nenhuma das ~19 mil guarda quem disparou a ação. O que elas guardam é
+ * o `setor` ("Financeiro", "AUTO_FINANCEIRO", "STATUS_ENGINE_FASE_4A"), e é ele
+ * que responde de onde partiu. Quando existe pessoa de verdade, a pessoa vence.
+ */
+function origemDoRegistro(autorNome?: string | null, setor?: string | null): string | null {
+  const nome = autorNome?.trim();
+  if (nome && nome.toLowerCase() !== "sistema") return nome;
+  return setor?.trim() || null;
+}
+
+/**
+ * Registro automático da timeline (Sistema, Financeiro, Produção).
+ *
+ * Data, hora e origem ficam SEMPRE visíveis: sem elas a timeline não serve para
+ * conferir nada — foi exatamente o que impediu de enxergar, em 17/08/2026, que
+ * duas cobranças da proposta 20714 tinham nascido com 1 segundo de diferença.
+ */
+function RegistroDeSistema({
+  rotulo,
+  tom,
+  mensagem,
+  criadoEm,
+  origem
+}: {
+  rotulo: string;
+  tom: string;
+  mensagem: string;
+  criadoEm: string;
+  origem: string | null;
+}) {
+  return (
+    <div className="flex justify-center my-2">
+      <div className="max-w-md">
+        <div className={`rounded-2xl border px-4 py-2 text-xs text-center ${tom}`}>
+          <span className="font-semibold">{rotulo}:</span> {mensagem}
+        </div>
+        <div className="mt-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-400">
+          <span className="tabular-nums">{formatDateTime(criadoEm)}</span>
+          {origem && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="font-medium text-slate-500">{origem}</span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PropostaChatPanel({
   idInt,
   clienteNome,
@@ -618,34 +672,26 @@ export function PropostaChatPanel({
           messages.map((message) => {
             const isUser = message.autor_uid === user?.id;
             
-            // Renderização de mensagens de Sistema, Financeiro e Produção
-            if (message.tipo === "SISTEMA") {
-              return (
-                <div key={message.id} className="flex justify-center my-2">
-                  <div className="rounded-full bg-slate-100 px-4 py-1.5 text-xs text-slate-600 border border-slate-200 text-center max-w-md">
-                    <span className="font-semibold text-slate-700">Sistema:</span> {message.mensagem}
-                  </div>
-                </div>
-              );
-            }
+            // Registros automáticos: Sistema, Financeiro e Produção. Mudam só o
+            // rótulo e a cor — data, hora e origem vêm do mesmo componente, para
+            // não existir um caminho em que a timeline volte a ficar sem eles.
+            const registroAutomatico: Record<string, { rotulo: string; tom: string }> = {
+              SISTEMA: { rotulo: "Sistema", tom: "bg-slate-100 text-slate-600 border-slate-200" },
+              FINANCEIRO: { rotulo: "Financeiro", tom: "bg-orange-50 text-orange-800 border-orange-200" },
+              PRODUCAO: { rotulo: "Produção", tom: "bg-purple-50 text-purple-800 border-purple-200" }
+            };
 
-            if (message.tipo === "FINANCEIRO") {
+            const estilo = registroAutomatico[message.tipo];
+            if (estilo) {
               return (
-                <div key={message.id} className="flex justify-center my-2">
-                  <div className="rounded-2xl bg-orange-50 px-4 py-2 text-xs text-orange-800 border border-orange-200 text-center max-w-md">
-                    <span className="font-semibold">Financeiro:</span> {message.mensagem}
-                  </div>
-                </div>
-              );
-            }
-
-            if (message.tipo === "PRODUCAO") {
-              return (
-                <div key={message.id} className="flex justify-center my-2">
-                  <div className="rounded-2xl bg-purple-50 px-4 py-2 text-xs text-purple-800 border border-purple-200 text-center max-w-md">
-                    <span className="font-semibold">Produção:</span> {message.mensagem}
-                  </div>
-                </div>
+                <RegistroDeSistema
+                  key={message.id}
+                  rotulo={estilo.rotulo}
+                  tom={estilo.tom}
+                  mensagem={message.mensagem}
+                  criadoEm={message.created_at}
+                  origem={origemDoRegistro(message.autor_nome, message.setor)}
+                />
               );
             }
 
