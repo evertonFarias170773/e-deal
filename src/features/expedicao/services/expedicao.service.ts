@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { normalizarTipoFrete } from "../lib/tipo-frete";
+import { resolverPesoExpedicao } from "../lib/peso";
 import type {
   EtapaExpedicao,
   ExpedicaoRegistro,
@@ -102,7 +103,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
+        "id_int, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -153,6 +154,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       transportadoraNome: row.transportadora_nome ?? null,
       idTransportadoraCliente: row.id_transportadora_cliente !== null ? Number(row.id_transportadora_cliente) : null,
       pesoKg: row.peso_kg !== null ? Number(row.peso_kg) : null,
+      pesoBrutoKg: row.peso_bruto_kg !== null ? Number(row.peso_bruto_kg) : null,
       qtdVolumes: row.qtd_volumes !== null ? Number(row.qtd_volumes) : null,
       tipoVolume: row.tipo_volume ?? null,
       idEnderecoEntrega: row.id_endereco_entrega ?? null,
@@ -211,18 +213,13 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
 
     const tipoFrete: TipoFreteNormalizado = exp?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
 
-    let pesoKg: number | null = null;
-    let pesoOrigem: PedidoExpedicao["pesoOrigem"] = null;
-    if (exp?.pesoKg !== null && exp?.pesoKg !== undefined) {
-      pesoKg = exp.pesoKg;
-      pesoOrigem = "aferido";
-    } else if (frete?.peso) {
-      pesoKg = Number(frete.peso) / 1000;
-      pesoOrigem = "cotado";
-    } else if ((pesoTeoricoGramas.get(idInt) ?? 0) > 0) {
-      pesoKg = (pesoTeoricoGramas.get(idInt) as number) / 1000;
-      pesoOrigem = "teorico";
-    }
+    // Precedência única (lib/peso.ts): aferido > bruto da revisão > cotado > teórico.
+    const { pesoKg, origem: pesoOrigem } = resolverPesoExpedicao({
+      pesoAferidoKg: exp?.pesoKg,
+      pesoBrutoKg: exp?.pesoBrutoKg,
+      pesoCotadoGramas: frete?.peso,
+      pesoTeoricoGramas: pesoTeoricoGramas.get(idInt)
+    });
 
     resultado.push({
       idInt,

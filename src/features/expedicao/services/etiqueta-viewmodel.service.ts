@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolverPesoExpedicao } from "../lib/peso";
 
 export type EtiquetaViewModel = {
   idInt: number;
@@ -63,7 +64,7 @@ export async function montarEtiquetaViewModel(
   const [{ data: exp }, { data: os }, { data: frete }, { data: notas }] = await Promise.all([
     supabase
       .from("expedicoes")
-      .select("peso_kg, qtd_volumes, tipo_volume, transportadora_nome, codigo_rastreamento, id_endereco_entrega, obs")
+      .select("peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, codigo_rastreamento, id_endereco_entrega, obs")
       .eq("id_int", idInt)
       .maybeSingle(),
     supabase.from("propostas_os").select("codigo_rastreamento").eq("id_int", idInt).maybeSingle(),
@@ -143,12 +144,13 @@ export async function montarEtiquetaViewModel(
   }
 
   const volumes = Math.max(1, Number(exp?.qtd_volumes) || 1);
+  // Precedência única (lib/peso.ts): aferido > bruto da revisão > cotado.
   const pesoKg = fmtPeso(
-    exp?.peso_kg !== null && exp?.peso_kg !== undefined && Number(exp.peso_kg) > 0
-      ? Number(exp.peso_kg)
-      : frete?.peso
-        ? Number(frete.peso) / 1000
-        : null
+    resolverPesoExpedicao({
+      pesoAferidoKg: exp?.peso_kg,
+      pesoBrutoKg: exp?.peso_bruto_kg,
+      pesoCotadoGramas: frete?.peso
+    }).pesoKg
   );
 
   const cidadeUf = endereco

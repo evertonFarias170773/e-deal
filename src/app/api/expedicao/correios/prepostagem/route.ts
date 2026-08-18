@@ -4,6 +4,7 @@ import { createClient as createServerSupabaseClient } from "@/lib/supabase/serve
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
+import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
   const [{ data: exp }, { data: frete }, { data: itensPedido }] = await Promise.all([
     supabase
       .from("expedicoes")
-      .select("peso_kg, id_endereco_entrega")
+      .select("peso_kg, peso_bruto_kg, id_endereco_entrega")
       .eq("id_int", idInt)
       .maybeSingle(),
     supabase
@@ -122,7 +123,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const pesoGramas = exp?.peso_kg ? Number(exp.peso_kg) * 1000 : Number(frete?.peso) || 300;
+  // Precedência única (lib/peso.ts): aferido > bruto da revisão > cotado.
+  // Fallback final de 300 g preservado: os Correios recusam peso ausente.
+  const { pesoKg: pesoResolvidoKg } = resolverPesoExpedicao({
+    pesoAferidoKg: exp?.peso_kg,
+    pesoBrutoKg: exp?.peso_bruto_kg,
+    pesoCotadoGramas: frete?.peso
+  });
+  const pesoGramas = pesoResolvidoKg !== null ? pesoResolvidoKg * 1000 : 300;
 
   // Declaração de conteúdo com os itens reais do pedido. É o que substitui a
   // nota quando a remessa vai sem NF-e autorizada — caso comum aqui, o próprio

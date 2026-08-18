@@ -1,3 +1,5 @@
+import type { PesoOrigem as PesoOrigemInterna } from "./lib/peso";
+
 /** Categorias canônicas derivadas do texto livre de cotacao_frete.servico. */
 export type TipoFreteNormalizado =
   | "CORREIOS"
@@ -18,6 +20,9 @@ export type EtapaExpedicao =
 
 export type NfStatusExpedicao = "AUTORIZADA" | "PENDENTE" | "SEM_NF";
 
+// Origem do peso exibido — a precedência vive em lib/peso.ts, fonte única.
+export type { PesoOrigem } from "./lib/peso";
+
 /** Linha de public.expedicoes (execução da expedição), em camelCase. */
 export interface ExpedicaoRegistro {
   idInt: number;
@@ -25,6 +30,8 @@ export interface ExpedicaoRegistro {
   transportadoraNome: string | null;
   idTransportadoraCliente: number | null;
   pesoKg: number | null;
+  /** expedicoes.peso_bruto_kg — bruto com embalagem, gravado pela Revisão do boletim. */
+  pesoBrutoKg: number | null;
   qtdVolumes: number | null;
   tipoVolume: string | null;
   idEnderecoEntrega: string | null;
@@ -65,7 +72,7 @@ export interface PedidoExpedicao {
   transportadoraNome: string;
   freteValor: number | null;
   pesoKg: number | null;
-  pesoOrigem: "aferido" | "cotado" | "teorico" | null;
+  pesoOrigem: PesoOrigemInterna | null;
   volumes: number | null;
   nfStatus: NfStatusExpedicao;
   nfNumero: string | null;

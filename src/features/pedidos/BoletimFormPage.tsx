@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { usePedidosMockDb } from "./hooks/usePedidosMockDb";
 import { useAppToast } from "@/components/common/AppToast";
 import {
@@ -176,6 +176,7 @@ function generateUniqueId(prefix: string): string {
 }
 
 export function BoletimFormPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const modoParam = searchParams ? searchParams.get("modo") : null;
   const idIntParam = searchParams ? searchParams.get("id_int") : null;
@@ -238,6 +239,12 @@ export function BoletimFormPage() {
    */
   const [revisaoGeral, setRevisaoGeral] = useState<RevisaoGeral>(REVISAO_GERAL_VAZIA);
   const [confirmandoRevisao, setConfirmandoRevisao] = useState(false);
+  /**
+   * Trava o botão depois que a liberação deu certo: o pedido já saiu para a
+   * Expedição e um segundo clique só voltaria erro da allow-list de
+   * `marcarPronto`. Também sinaliza que a navegação está a caminho.
+   */
+  const [revisaoLiberada, setRevisaoLiberada] = useState(false);
 
   /**
    * Revisão/conferência de cada setor (peso real, volumes e responsável).
@@ -774,7 +781,7 @@ export function BoletimFormPage() {
   );
 
   async function handleConfirmarRevisao() {
-    if (confirmandoRevisao || !idIntParam) return;
+    if (confirmandoRevisao || revisaoLiberada || !idIntParam) return;
     setConfirmandoRevisao(true);
     try {
       // Conferência dos setores primeiro: o botão libera o pedido, e liberar
@@ -791,14 +798,29 @@ export function BoletimFormPage() {
       });
 
       if (res.success) {
+        // O pedido saiu da fila de produção e virou item da bancada da
+        // Expedição: a tela do boletim não tem mais o que mostrar dele. Trava o
+        // botão e leva para lá, com o mesmo respiro de ~900ms dos outros
+        // formulários do sistema (CadastroFormPage, OrcamentoFormPage) para o
+        // toast ser lido antes da troca de tela.
+        setRevisaoLiberada(true);
         showToast({
           type: "success",
           title: "Revisão confirmada",
           description: `Pedido #${idIntParam} liberado para a Expedição.`
         });
+        window.setTimeout(() => router.push("/expedicao"), 900);
       } else {
         showToast({ type: "error", title: "Não foi possível liberar", description: res.error });
       }
+    } catch (erro) {
+      // Sem catch, uma exceção aqui sumia: o `void` do onClick engole a rejeição
+      // e o operador ficaria olhando uma tela que não deu sinal nenhum.
+      showToast({
+        type: "error",
+        title: "Erro ao liberar para a Expedição",
+        description: erro instanceof Error ? erro.message : "Erro inesperado. Tente novamente."
+      });
     } finally {
       setConfirmandoRevisao(false);
     }
@@ -2741,10 +2763,14 @@ export function BoletimFormPage() {
                                 <button
                                   type="button"
                                   onClick={() => void handleConfirmarRevisao()}
-                                  disabled={pendenciasRevisao.length > 0 || confirmandoRevisao}
+                                  disabled={pendenciasRevisao.length > 0 || confirmandoRevisao || revisaoLiberada}
                                   className="rounded-2xl bg-[#0b2f4a] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {confirmandoRevisao ? "Liberando..." : "Confirmar revisão e liberar para Expedição"}
+                                  {revisaoLiberada
+                                    ? "Liberado — abrindo a Expedição..."
+                                    : confirmandoRevisao
+                                      ? "Liberando..."
+                                      : "Confirmar revisão e liberar para Expedição"}
                                 </button>
                               </div>
                             </div>

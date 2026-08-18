@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
+import { resolverPesoExpedicao } from "../lib/peso";
 
 export type ItemDeclaracao = {
   discriminacao: string;
@@ -62,7 +63,7 @@ export async function montarDeclaracaoViewModel(
   if (!proposta) return null;
 
   const [{ data: exp }, { data: frete }, { data: itensPedido }] = await Promise.all([
-    supabase.from("expedicoes").select("peso_kg, id_endereco_entrega").eq("id_int", idInt).maybeSingle(),
+    supabase.from("expedicoes").select("peso_kg, peso_bruto_kg, id_endereco_entrega").eq("id_int", idInt).maybeSingle(),
     supabase
       .from("cotacao_frete")
       .select("peso, cep")
@@ -131,12 +132,12 @@ export async function montarDeclaracaoViewModel(
     })
     .filter((i): i is ItemDeclaracao => i !== null);
 
-  const pesoNumero =
-    exp?.peso_kg && Number(exp.peso_kg) > 0
-      ? Number(exp.peso_kg)
-      : frete?.peso
-        ? Number(frete.peso) / 1000
-        : null;
+  // Precedência única (lib/peso.ts): aferido > bruto da revisão > cotado.
+  const { pesoKg: pesoNumero } = resolverPesoExpedicao({
+    pesoAferidoKg: exp?.peso_kg,
+    pesoBrutoKg: exp?.peso_bruto_kg,
+    pesoCotadoGramas: frete?.peso
+  });
 
   return {
     idInt,
