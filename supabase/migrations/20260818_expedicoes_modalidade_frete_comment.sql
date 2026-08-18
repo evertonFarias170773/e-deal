@@ -1,0 +1,42 @@
+-- Corrige o comment de public.expedicoes.modalidade_frete (CIF passou a ser oferecido na tela)
+--
+-- O QUE E
+--   Apenas `comment on column`. Nao altera coluna, tipo, CHECK, policy, trigger
+--   nem uma linha de dado — so o texto de documentacao que o banco carrega.
+--
+-- POR QUE
+--   A migration `20260818_expedicoes_modalidade_frete.sql` nasceu num momento em
+--   que CIF entrava no CHECK mas ficava FORA da tela, e o comment dizia isso:
+--   "CIF aceito no CHECK, mas ainda nao oferecido na tela".
+--
+--   Essa decisao foi revista no mesmo dia. Manter CIF fora da tela deixaria os
+--   Correios sem caminho nenhum no despacho — a prepostagem sai pelo cartao de
+--   postagem da empresa, ou seja, e CIF por natureza, e FOB nao aceita Correios.
+--   O modal passou a oferecer as tres modalidades, com CIF valendo APENAS como
+--   rotulo de quem paga: sem cotacao, sem recotacao, sem alterar valor da
+--   proposta e sem lancamento na Conta Corrente (a fase de recotacao segue
+--   pendente de decisao).
+--
+--   Comment desatualizado e divergencia de documentacao dentro do proprio banco:
+--   quem consultar a coluna acreditaria que CIF nao chega pela tela — e chega,
+--   em todo despacho feito desde 18/08/2026.
+
+comment on column public.expedicoes.modalidade_frete is
+  'Modalidade comercial do frete declarada no despacho: RETIRA (cliente busca no balcao), FOB (por conta do cliente) ou CIF (por conta do remetente). Ortogonal a tipo_frete, que diz por onde vai. As tres sao oferecidas na tela desde 18/08/2026, e CIF vale apenas como rotulo de quem paga: nao cota, nao altera valor_frete/valor_total da proposta e nao lanca nada na Conta Corrente. Nula nas linhas anteriores a 18/08/2026.';
+
+-- VERIFICACAO (somente leitura, depois de aplicar)
+--   select col_description('public.expedicoes'::regclass, ordinal_position)
+--     from information_schema.columns
+--    where table_schema = 'public'
+--      and table_name = 'expedicoes'
+--      and column_name = 'modalidade_frete';
+--
+--   -- nada mais pode ter mudado: CHECK e contagem de linhas seguem iguais
+--   select conname, pg_get_constraintdef(oid)
+--     from pg_constraint
+--    where conrelid = 'public.expedicoes'::regclass
+--      and conname in ('expedicoes_modalidade_frete_check', 'expedicoes_tipo_frete_check');
+--
+-- ROLLBACK (restaura o texto anterior, palavra por palavra)
+--   comment on column public.expedicoes.modalidade_frete is
+--     'Modalidade comercial do frete declarada no despacho: RETIRA (cliente busca no balcao), FOB (por conta do cliente) ou CIF (por conta do remetente). Ortogonal a tipo_frete, que diz por onde vai. CIF aceito no CHECK, mas ainda nao oferecido na tela. Nula nas linhas anteriores a 18/08/2026.';
