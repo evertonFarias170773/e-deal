@@ -57,6 +57,33 @@ function vencimentoISO(valor: string | null): string {
   return data.toISOString().split("T")[0];
 }
 
+/** Asaas exige e-mail valido para criar o cliente — e e por ele que envia o link. */
+const EMAIL_PLACEHOLDER = "meu@email.com.br";
+
+/**
+ * Primeiro e-mail utilizavel do cadastro, ou string vazia.
+ *
+ * A precedencia antiga (`email_financeiro || email_contato || email`) pegava o
+ * primeiro valor TRUTHY, e o cadastro guarda lixo como texto: o cliente 7011 tem
+ * `email_financeiro = "NULL"` (a string, nao SQL NULL) e um e-mail real em
+ * `email`. O "NULL" vencia, o Asaas recusava com "O email informado e invalido"
+ * e o cartao da proposta 20803 nao gerava link — com o cliente tendo e-mail bom
+ * o tempo todo.
+ *
+ * Validar antes de escolher resolve os dois casos: aproveita o e-mail real
+ * quando existe, e so cai no placeholder quando nenhum campo serve.
+ */
+function primeiroEmailValido(...candidatos: Array<string | null | undefined>): string {
+  for (const candidato of candidatos) {
+    const texto = String(candidato ?? "").trim();
+    if (!texto) continue;
+    if (/^(null|undefined|n\/a|na|-|--|sem email|nao tem|não tem)$/i.test(texto)) continue;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(texto)) continue;
+    return texto;
+  }
+  return "";
+}
+
 export async function POST(request: Request) {
   let body: GerarCartaoAsasRequest;
 
@@ -158,7 +185,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ email_financeiro: string | null; email_contato: string | null; email: string | null; whatsapp_1: string | null }>();
 
     if (cad) {
-      email = String(cad.email_financeiro || cad.email_contato || cad.email || "").trim();
+      email = primeiroEmailValido(cad.email_financeiro, cad.email_contato, cad.email);
       if (!whats) whats = soDigitos(cad.whatsapp_1);
     }
   }
@@ -166,7 +193,7 @@ export async function POST(request: Request) {
   const payload = {
     name: String(cobranca.cliente ?? "").trim(),
     cpfCnpj: documento,
-    e_mail: email,
+    e_mail: email || EMAIL_PLACEHOLDER,
     whats,
     tipo: "CREDIT_CARD",
     valor,
