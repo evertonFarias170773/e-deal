@@ -1079,6 +1079,68 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     return form.itens.length > 0 && resumo.pesoTotal > 0;
   }, [form.itens.length, resumo.pesoTotal]);
 
+  const isCotandoFrete = isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo;
+
+  /**
+   * Existe cotação de frete a caminho — já em rede OU ainda no debounce.
+   *
+   * POR QUE UM REF, E POR QUE INCLUI O DEBOUNCE
+   *   Incluir um item muda o peso, o que muda a `shipmentKey` e agenda uma
+   *   recotação com 600 ms de espera (ver o efeito de cotação automática).
+   *   Nessa janela `form.freteEscolhidoId` está vazio e QUALQUER save falha na
+   *   validação de frete — foi o que passou a acontecer quando "Salvar item"
+   *   virou o salvamento completo. `isQuoting*` sozinho não cobre o caso: o
+   *   debounce ainda não disparou, então nada está "em voo".
+   *
+   *   `isFreightOutdated` é justamente "as chaves de destino/embarque mudaram e
+   *   a cotação aplicada ficou velha" — verdadeiro desde a inclusão do item até
+   *   o efeito gravar o resultado. É o sinal do debounce pendente sem precisar
+   *   tocar no efeito.
+   *
+   *   O ref existe porque quem espera é um handler assíncrono: o valor lido
+   *   dentro do laço precisa ser o do render atual, não o do render em que o
+   *   clique aconteceu.
+   *
+   *   As condições de "vai cotar" espelham a guarda do próprio efeito
+   *   (não avulsa, com CEP e com peso) — sem isso a espera ficaria eterna
+   *   justamente quando nenhuma cotação viria. `volumes` fica de fora por ser
+   *   sempre >= 1.
+   */
+  const cotacaoDeFretePendenteRef = useRef(false);
+  useEffect(() => {
+    const cep = form.clienteNaoCadastrado ? form.cepLivre : currentAddress?.cep;
+    const vaiCotar = !form.isAvulso && Boolean(cep) && resumo.pesoTotal > 0;
+    cotacaoDeFretePendenteRef.current = isCotandoFrete || (vaiCotar && isFreightOutdated);
+  });
+
+  /**
+   * Segura o fluxo até a cotação pendente terminar.
+   *
+   * O teto de tempo é rede travada, não regra de negócio: estourando, o save
+   * segue e a validação de frete decide — mesmo desfecho de antes desta espera,
+   * nunca um save com frete pela metade.
+   */
+  async function aguardarCotacaoDeFrete(timeoutMs = 20000) {
+    const inicio = Date.now();
+    while (cotacaoDeFretePendenteRef.current) {
+      if (Date.now() - inicio >= timeoutMs) return;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+  }
+
+  /**
+   * Sempre o `handleSave` do render mais recente.
+   *
+   * `handleSaveItem` espera a cotação antes de salvar, e nesse meio-tempo a
+   * cotação re-renderiza o formulário. Chamar o `handleSave` capturado no
+   * clique leria o `form` velho — sem os fretes que acabaram de chegar — e
+   * reproduziria exatamente o erro que a espera existe para evitar.
+   */
+  const handleSaveRef = useRef<((opcoes?: { faturadoConfirmado?: boolean }) => Promise<boolean | undefined>) | null>(null);
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
+
 
   const selectedContact = proposalContacts.find((c) => c.id === form.contatoId);
   const contatoNome = form.clienteNaoCadastrado ? "Contato Rápido" : (selectedContact ? selectedContact.nome : "");
@@ -2519,16 +2581,27 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       form.itens.map((it) => (it.id === itemId ? updatedItem : it))
     );
 
-    // Fecha o card antes de salvar: `handleSave` termina recarregando a página,
-    // e deixar o card aberto até lá dá a impressão de que nada aconteceu.
-    setOpenItemIds((prev) => ({ ...prev, [itemId]: false }));
-
     // `updateItem` já roda `recalculateItem` a cada digitação, então
     // `form.itens` está atualizado aqui e o `handleSave` pode ler o estado
     // normalmente — não há versão nova esperando para ser aplicada.
     setSavingItemId(itemId);
     try {
-      await handleSave();
+      // O item que acabou de entrar mudou o peso e agendou uma recotação de
+      // frete. Salvar antes dela terminar reprovava na validação de frete e
+      // devolvia "Frete não selecionado" — um erro de corrida, não do usuário.
+      // A cotação já está agendada por conta própria; aqui só se espera.
+      await aguardarCotacaoDeFrete();
+
+      // Pelo ref, e não pelo `handleSave` do clique: a espera acima deixou
+      // aquele closure para trás, com o formulário sem os fretes recém-cotados.
+      const salvou = await handleSaveRef.current?.();
+
+      // Card fecha só com o save confirmado. Fechando antes, uma reprovação na
+      // validação deixava o card fechado e o item por gravar — de novo o
+      // "fechou como se tivesse salvado" que este botão veio corrigir.
+      if (salvou) {
+        setOpenItemIds((prev) => ({ ...prev, [itemId]: false }));
+      }
     } finally {
       setSavingItemId(null);
     }
@@ -3369,7 +3442,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         } else {
           concluirSalvamentoERecarregar({ type: "success", title: "Proposta atualizada com sucesso." });
         }
-        return;
+        return true;
       }
 
       // — Fluxo normal (proposta não paga) — client-side
@@ -3479,7 +3552,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             }
             saindoIntencionalmenteRef.current = true;
             window.location.replace(`/orcamentos/${finalIdInt}/editar?tab=pagamentos`);
-            return;
+            return true;
           }
           setActiveFormTab("pagamentos");
           showToast(avisoSalvamento);
@@ -3490,6 +3563,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         } else {
           concluirSalvamentoERecarregar(avisoSalvamento);
         }
+
+        // Único sinal de sucesso que o chamador recebe. Existe para o "Salvar
+        // item" saber se pode fechar o card; os botões da proposta continuam
+        // chamando `void handleSave()` e ignoram o retorno, sem mudança de
+        // comportamento. Caminhos que só abrem modal (diferença financeira)
+        // seguem sem retorno: ali o save ainda não terminou.
+        return true;
       } else {
         showToast({
           type: "error",
@@ -4890,6 +4970,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           onRemove={() => handleRemoveProductClick(item.id)}
                           onSave={() => void handleSaveItem(item.id)}
                           isSaving={savingItemId === item.id}
+                          isCotandoFrete={isCotandoFrete}
                           minQuantity={somaModelos}
                           // Variação é característica do produto, não valor: segue a mesma
                           // condição de edição do formulário (proposta paga/pendência bloqueiam).
@@ -5652,6 +5733,7 @@ function ProductItemEditor({
   onRemove,
   onSave,
   isSaving,
+  isCotandoFrete,
   minQuantity,
   podeEditarVariacoes,
   canEditarValoresItem,
@@ -5669,6 +5751,12 @@ function ProductItemEditor({
   onSave: () => void;
   /** Gravação da linha em andamento — trava o botão contra clique duplo. */
   isSaving?: boolean;
+  /**
+   * Cotação de frete em voo. Salvar aqui é salvar a proposta inteira, e a
+   * validação exige frete escolhido — a mesma trava que os botões "Salvar
+   * proposta" e "Salvar alterações" já têm.
+   */
+  isCotandoFrete?: boolean;
   minQuantity?: number;
   podeEditarVariacoes?: boolean;
   canEditarValoresItem?: boolean;
@@ -5701,6 +5789,10 @@ function ProductItemEditor({
           if (target.tagName.toLowerCase() === 'select' || target.tagName.toLowerCase() === 'textarea') return;
           e.preventDefault();
           e.stopPropagation();
+          // O Enter não passa pelo botão, então a trava do botão não vale para
+          // ele: sem esta linha, o atalho continuaria salvando no meio da
+          // cotação de frete — que é exatamente como o erro aparecia.
+          if (isSaving || isCotandoFrete) return;
           onSave();
         }
       }}
@@ -5824,7 +5916,8 @@ function ProductItemEditor({
         <button
           type="button"
           onClick={onSave}
-          disabled={isSaving}
+          disabled={isSaving || isCotandoFrete}
+          title={isCotandoFrete && !isSaving ? "Aguarde a cotação do frete terminar" : undefined}
           className="rounded-2xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 shadow-md shadow-teal-700/10 transition-all disabled:opacity-60"
         >
           {isSaving ? "Salvando..." : "Salvar item"}
