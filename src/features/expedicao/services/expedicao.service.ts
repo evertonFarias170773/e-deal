@@ -1,4 +1,8 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import {
+  nomeTransportadoraCadastro,
+  nomeTransporteEfetivo
+} from "@/features/orcamentos/lib/modalidade-frete";
 import { normalizarTipoFrete } from "../lib/tipo-frete";
 import { resolverPesoExpedicao } from "../lib/peso";
 import type {
@@ -83,8 +87,17 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   if (propostas.length === 0) return [];
 
   const ids = propostas.map((p) => Number(p.id_int));
+  // Transportadoras são clientes: entram no MESMO `in` que já busca os clientes
+  // do painel, sem ida e volta extra. Sem isso o nome da transportadora declarada
+  // no orçamento não existiria no mapa e a coluna FRETE cairia de volta no texto
+  // da cotação — que em FOB diz "SEDEX".
   const idsCliente = Array.from(
-    new Set(propostas.map((p) => Number(p.id_cliente)).filter((n) => Number.isFinite(n) && n > 0))
+    new Set(
+      [
+        ...propostas.map((p) => Number(p.id_cliente)),
+        ...propostas.map((p) => Number(p.id_transportadora_cliente))
+      ].filter((n) => Number.isFinite(n) && n > 0)
+    )
   );
 
   // 2..6 em paralelo — cada bloco é tolerante a falha individual (warn + vazio),
@@ -217,6 +230,21 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
 
     const tipoFrete: TipoFreteNormalizado = exp?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
 
+    const modalidadeOrcamento = (p.modalidade_frete as ModalidadeFrete | null) ?? null;
+    const idTransportadoraOrcamento =
+      p.id_transportadora_cliente !== null && p.id_transportadora_cliente !== undefined
+        ? Number(p.id_transportadora_cliente)
+        : null;
+    const transportadoraOrcamento =
+      idTransportadoraOrcamento !== null
+        ? nomeTransportadoraCadastro(
+            (() => {
+              const cadastro = clienteMap.get(idTransportadoraOrcamento);
+              return cadastro ? { id_cliente: idTransportadoraOrcamento, ...cadastro } : null;
+            })()
+          )
+        : null;
+
     // Precedência única (lib/peso.ts): aferido > bruto da revisão > cotado > teórico.
     const { pesoKg, origem: pesoOrigem } = resolverPesoExpedicao({
       pesoAferidoKg: exp?.pesoKg,
@@ -240,14 +268,20 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // O que o VENDEDOR declarou no orçamento. Não vira `tipoFrete` nem
       // sobrescreve nada: é a referência que o despacho pré-seleciona e contra
       // a qual a divergência do expedidor é mostrada.
-      modalidadeOrcamento: (p.modalidade_frete as ModalidadeFrete | null) ?? null,
-      idTransportadoraOrcamento:
-        p.id_transportadora_cliente !== null && p.id_transportadora_cliente !== undefined
-          ? Number(p.id_transportadora_cliente)
-          : null,
+      modalidadeOrcamento,
+      idTransportadoraOrcamento,
+      // `freteServico` continua sendo o texto CRU da cotação: é o "frete cotado"
+      // que o DespacharModal mostra como referência, e mexer nele apagaria a
+      // evidência de com o que o frete foi calculado.
       freteServico: frete?.servico ?? "",
       freteCep: frete?.cep ? String(frete.cep) : null,
-      transportadoraNome: exp?.transportadoraNome || frete?.servico || "",
+      // Precedência preservada: o despacho é soberano. O que muda é o degrau
+      // seguinte — antes caía direto no texto da cotação, que sob FOB diz
+      // "SEDEX" num pedido que os Correios nunca vão tocar.
+      transportadoraNome:
+        exp?.transportadoraNome ||
+        nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
+        "",
       freteValor: frete?.valor !== null && frete?.valor !== undefined ? Number(frete.valor) : null,
       pesoKg,
       pesoOrigem,

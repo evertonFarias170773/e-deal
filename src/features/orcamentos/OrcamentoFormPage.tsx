@@ -978,6 +978,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * rebaixaria a proposta para NOVO — ver `lib/modalidade-frete.ts`.
    */
   const modalidadeEditavel = podeEditarModalidade(form.status);
+
+  /**
+   * Declaração de frete que a TELA tem e o BANCO ainda não.
+   *
+   * A saída da página já era coberta pelo guarda geral de alterações não salvas
+   * (beforeunload + interceptação de links + botão voltar): `isDirty` compara o
+   * formulário inteiro, e modalidade/transportadora entram nessa comparação. O
+   * que faltava era dizer isso NO PONTO DA DECISÃO — o vendedor clica em FOB, vê
+   * o Resumo zerar na hora e não tem como saber que o clique ainda não é um dado
+   * gravado. Foi assim que a 20890 atravessou o fluxo inteiro sem modalidade.
+   */
+  const declaracaoFreteNaoSalva =
+    (form.modalidadeFrete ?? null) !== (proposta?.modalidadeFrete ?? null) ||
+    (form.idTransportadoraCliente ?? null) !== (proposta?.idTransportadoraCliente ?? null);
   const bonusPercent = cliente ? getClienteBonusPercent(cliente) : 0;
   
   const resumo = useMemo(() => {
@@ -3574,11 +3588,23 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           if (onReload) onReload(true);
         }
 
-        const avisoSalvamento: AvisoPosSalvamento = {
-          type: res.errorMessage ? "info" : "success",
-          title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
-          description: res.errorMessage || undefined
-        };
+        // A trava de status recusou a modalidade/transportadora declarada. O
+        // resto foi gravado, mas a recusa precisa ser DITA: descartá-la em
+        // silêncio foi o que fez o vendedor atravessar toda a proposta 20890
+        // acreditando ter marcado FOB. Vai no PRÓPRIO aviso pós-salvamento
+        // porque a página recarrega em seguida — um segundo toast disparado
+        // agora morreria no reload.
+        const avisoSalvamento: AvisoPosSalvamento = res.avisoModalidade
+          ? {
+              type: "warning",
+              title: "Modalidade do frete NÃO foi salva",
+              description: res.avisoModalidade
+            }
+          : {
+              type: res.errorMessage ? "info" : "success",
+              title: res.errorMessage ? "Salvamento Parcial" : (mode === "edit" ? "Orçamento atualizado com sucesso." : "Orçamento criado com sucesso."),
+              description: res.errorMessage || undefined
+            };
 
         if (formToSave.briefingArtesDraft) {
           try {
@@ -3743,6 +3769,16 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { fretes: _f, ...savedSnap } = formToSave;
         initialFormSnapshot.current = JSON.stringify(savedSnap);
+
+        // Mesma recusa do caminho normal de salvamento: aqui não há reload, então
+        // o aviso vai direto como toast.
+        if (res.avisoModalidade) {
+          showToast({
+            type: "warning",
+            title: "Modalidade do frete NÃO foi salva",
+            description: res.avisoModalidade
+          });
+        }
 
         const finalIdInt = res.id_int || formToSave.id_int;
         if (form.id_int === "NOVO") {
@@ -5135,6 +5171,13 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 </div>
               )}
 
+              {modalidadeEditavel && declaracaoFreteNaoSalva && (
+                <p className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  Alteração pendente: a modalidade escolhida ainda NÃO está gravada. Salve o orçamento — sem isso a
+                  OS e a Expedição continuam com o frete cotado, e a declaração se perde ao sair da página.
+                </p>
+              )}
+
               {!modalidadeEditavel && (
                 <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                   {motivoBloqueioModalidade(form.status)}
@@ -5298,9 +5341,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
                         <div>
                           <p className="text-xs text-slate-400 font-semibold uppercase">Valor</p>
-                          <p className="text-base font-extrabold text-slate-950">
-                            {formatCurrency(frete.valor)}
-                          </p>
+                          {/* Sob FOB o card escolhido não pode seguir anunciando o
+                              valor cotado: era essa a contradição da tela — cartão
+                              com R$ 28,84 e "Escolhido" enquanto o Resumo somava
+                              zero. O valor cotado continua logo abaixo, como
+                              referência, e os demais cards não mudam. */}
+                          {form.modalidadeFrete === "FOB" && frete.id === form.freteEscolhidoId ? (
+                            <>
+                              <p className="text-base font-extrabold text-slate-950">
+                                {formatCurrency(0)} — FOB, cliente paga
+                              </p>
+                              <p className="text-xs font-medium text-slate-500 mt-0.5">
+                                Cotado: {formatCurrency(frete.valor)} (referência)
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-base font-extrabold text-slate-950">
+                              {formatCurrency(frete.valor)}
+                            </p>
+                          )}
                           {frete.transportadora === "Azul Cargo" && frete.valorOriginal !== undefined && (
                             <p className="text-xs font-medium text-slate-500 mt-0.5">
                               Original: {formatCurrency(frete.valorOriginal)} (+15%)

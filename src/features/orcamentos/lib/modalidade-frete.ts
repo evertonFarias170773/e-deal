@@ -100,3 +100,50 @@ export function faltaTransportadoraEmFob(
 ): boolean {
   return modalidade === "FOB" && (idTransportadoraCliente === null || idTransportadoraCliente === undefined);
 }
+
+/**
+ * Nome usado quando a modalidade é FOB e a transportadora declarada não pôde ser
+ * resolvida no cadastro (linha órfã ou leitura falha). Nunca cai de volta no
+ * serviço cotado: dizer "SEDEX" num pedido FOB é exatamente o erro que este
+ * módulo existe para impedir.
+ */
+export const TRANSPORTADORA_FOB_INDEFINIDA = "Transportadora a definir";
+
+/**
+ * Nome do transporte que vale para quem lê a proposta DEPOIS — `frete_escolhido`,
+ * a "FORMA DE ENVIO" do PDF da OS e a coluna FRETE da Expedição.
+ *
+ * POR QUE ISSO EXISTE
+ *   `valorFreteEfetivo` resolveu o dinheiro, mas não a IDENTIDADE do transporte.
+ *   Sob FOB o serviço cotado (SEDEX, PAC) é só a referência de preço que ficou
+ *   registrada em `cotacao_frete` — quem leva a mercadoria é a transportadora que
+ *   o cliente contratou e o vendedor declarou. Sem esta função cada consumidor
+ *   lia `cotacao_frete.servico` cru e imprimia "SEDEX" num pedido que os Correios
+ *   nunca vão tocar.
+ *
+ *   A cotação continua intacta no banco, escolhida e com peso real: o que muda é
+ *   o RÓTULO, na fronteira de consumo — mesma disciplina de `valorFreteEfetivo`.
+ *
+ * Fora de FOB devolve o serviço cotado, sem alteração de comportamento.
+ */
+export function nomeTransporteEfetivo(
+  servicoCotado: string | null | undefined,
+  modalidade: ModalidadeFrete | null | undefined,
+  nomeTransportadora: string | null | undefined
+): string {
+  if (modalidade !== "FOB") return (servicoCotado ?? "").trim();
+  return (nomeTransportadora ?? "").trim() || TRANSPORTADORA_FOB_INDEFINIDA;
+}
+
+/**
+ * Nome de exibição de uma transportadora do cadastro (`clientes` com
+ * `categoria = TRANSPORTADORA`). Fantasia primeiro, razão social depois, e o id
+ * como último recurso — mesma ordem que a aba Fretes e o DespacharModal já usam,
+ * para o vendedor e o expedidor lerem exatamente o mesmo texto.
+ */
+export function nomeTransportadoraCadastro(
+  cadastro: { id_cliente: number; nome?: string | null; fantasia?: string | null } | null | undefined
+): string | null {
+  if (!cadastro) return null;
+  return cadastro.fantasia || cadastro.nome || `#${cadastro.id_cliente}`;
+}

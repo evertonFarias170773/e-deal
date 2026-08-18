@@ -5,6 +5,11 @@ import type { ParsedObs } from "./boletim-propostas.service";
 import { normalizarSetor } from "../setores";
 import { empresaTextoParaId, EMPRESA_NOMES } from "../pdf/os-pdf-assets";
 import type { EmpresaId } from "../pdf/os-pdf-assets";
+import {
+  nomeTransportadoraCadastro,
+  nomeTransporteEfetivo,
+  type ModalidadeFrete
+} from "@/features/orcamentos/lib/modalidade-frete";
 
 /**
  * View-model único da OS, compartilhado entre a tela do boletim e o PDF.
@@ -148,6 +153,9 @@ export async function montarOsPdfViewModel(
     let contato: string | null = null;
     let statusInterno = "";
     let idCliente: number | null = pedido.idCliente || null;
+    /** Modalidade declarada pelo vendedor — decide o rótulo de FORMA DE ENVIO. */
+    let modalidadeFrete: ModalidadeFrete | null = null;
+    let idTransportadoraCliente: number | null = null;
     // As leituras abaixo sao independentes entre si: rodam juntas para o PDF nao
     // pagar ~12 idas e voltas em serie ao banco. Cada uma segue tolerante a
     // falha; o encadeamento so existe onde o dado e mesmo pre-requisito
@@ -165,7 +173,9 @@ export async function montarOsPdfViewModel(
         try {
           return await client
             .from("propostas")
-            .select("cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente")
+            .select(
+              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, modalidade_frete, id_transportadora_cliente"
+            )
             .eq("id_int", idInt)
             .maybeSingle();
         } catch (e) {
@@ -246,6 +256,13 @@ export async function montarOsPdfViewModel(
         statusInterno = propostaRow.status_interno ? String(propostaRow.status_interno) : "";
         if (propostaRow.id_cliente !== null && propostaRow.id_cliente !== undefined) {
           idCliente = Number(propostaRow.id_cliente);
+        }
+        modalidadeFrete = (propostaRow.modalidade_frete as ModalidadeFrete | null) ?? null;
+        if (
+          propostaRow.id_transportadora_cliente !== null &&
+          propostaRow.id_transportadora_cliente !== undefined
+        ) {
+          idTransportadoraCliente = Number(propostaRow.id_transportadora_cliente);
         }
       }
     } catch (e) {
@@ -369,19 +386,50 @@ export async function montarOsPdfViewModel(
     }
 
     // Frete escolhido (apenas dados não-monetários).
+    //
+    // FORMA DE ENVIO sob FOB não é o serviço cotado. A cotação continua no banco,
+    // escolhida e com o peso real — ela é a referência de preço que ficou
+    // registrada, não quem leva a mercadoria. Quem leva é a transportadora que o
+    // cliente contratou e o vendedor declarou no orçamento. O PDF compõe
+    // "servico - transportadora", então em FOB o par vira "FOB - AVI AZUL" sem
+    // que o componente da OS precise mudar.
     let frete: OsPdfViewModel["frete"] = null;
     {
       const freteRow = freteResult;
-      if (freteRow) {
-        const transportadora =
-          freteRow.transportadora || freteRow.nome_transportadora || freteRow.transportador || null;
-        const servico = freteRow.servico || freteRow.tipo_servico || freteRow.modalidade || null;
-        if (transportadora || servico) {
-          frete = {
-            transportadora: transportadora ? String(transportadora) : null,
-            servico: servico ? String(servico) : null
-          };
+      const servicoCotado = freteRow
+        ? freteRow.servico || freteRow.tipo_servico || freteRow.modalidade || null
+        : null;
+      const transportadoraCotada = freteRow
+        ? freteRow.transportadora || freteRow.nome_transportadora || freteRow.transportador || null
+        : null;
+
+      if (modalidadeFrete === "FOB") {
+        let nomeCadastro: string | null = null;
+        if (idTransportadoraCliente !== null) {
+          try {
+            const { data: transpRow } = await client
+              .from("clientes")
+              .select("id_cliente, nome, fantasia")
+              .eq("id_cliente", idTransportadoraCliente)
+              .maybeSingle();
+            nomeCadastro = nomeTransportadoraCadastro(transpRow);
+          } catch (e) {
+            console.warn("[os-viewmodel] Falha ao resolver transportadora do orçamento (nao-fatal):", e);
+          }
         }
+        frete = {
+          servico: "FOB",
+          transportadora: nomeTransporteEfetivo(
+            servicoCotado ? String(servicoCotado) : null,
+            "FOB",
+            nomeCadastro
+          )
+        };
+      } else if (transportadoraCotada || servicoCotado) {
+        frete = {
+          transportadora: transportadoraCotada ? String(transportadoraCotada) : null,
+          servico: servicoCotado ? String(servicoCotado) : null
+        };
       }
     }
 

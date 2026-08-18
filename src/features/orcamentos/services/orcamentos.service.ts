@@ -5,6 +5,9 @@ import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/or
 import {
   aplicarModalidadeNosFretes,
   faltaTransportadoraEmFob,
+  motivoBloqueioModalidade,
+  nomeTransportadoraCadastro,
+  nomeTransporteEfetivo,
   podeEditarModalidade,
   valorFreteEfetivo,
   type ModalidadeFrete
@@ -1445,6 +1448,13 @@ export async function saveProposta(
    * original (FK com ON DELETE CASCADE, levando modelos e variações junto).
    */
   itensSincronizados?: Array<{ itemId: string; id: number }>;
+  /**
+   * Preenchido quando o salvamento deu certo MAS a modalidade/transportadora
+   * declarada na tela foi recusada pela trava de status — o resto foi gravado e
+   * o que já estava em `propostas` permanece. Campo aditivo e opcional: quem não
+   * lê (rota `editar-paga`, Maestro) segue igual.
+   */
+  avisoModalidade?: string;
 }> {
   const client = injectedClient ?? getSupabaseClient();
   if (!client) {
@@ -1637,9 +1647,69 @@ export async function saveProposta(
     // é o que veio do banco, exibido somente leitura). O que a trava muda é a
     // GRAVAÇÃO: fora da fase de orçamento os dois campos não entram no UPDATE —
     // travado significa "não altera", nunca "apaga o que o vendedor declarou".
-    const modalidadeEditavel = podeEditarModalidade(formState.status);
+    //
+    // O status que decide a trava é o do BANCO AGORA, não o que a tela carregou
+    // na abertura. Era essa a origem de 0 gravações em 8.182 propostas: um
+    // formulário aberto ainda na fase de orçamento seguia com os botões
+    // habilitados depois de a proposta avançar, aceitava o clique e descartava a
+    // declaração em silêncio. Falha de leitura cai no status da tela — o
+    // comportamento anterior, nunca pior que ele.
+    let statusParaGate: string = formState.status;
+    let modalidadePersistida: ModalidadeFrete | null = null;
+    let transportadoraPersistida: number | null = null;
+    let gateLidoDoBanco = false;
+
+    if (isUpdate && id_int) {
+      const { data: gateRow, error: gateError } = await client
+        .from("propostas")
+        .select("status_interno, modalidade_frete, id_transportadora_cliente")
+        .eq("id_int", id_int)
+        .maybeSingle();
+
+      if (gateError) {
+        console.warn("[OrcamentosService] Falha ao reler o status para o gate da modalidade:", gateError);
+      } else if (gateRow) {
+        gateLidoDoBanco = true;
+        statusParaGate = String(gateRow.status_interno ?? formState.status);
+        modalidadePersistida = (gateRow.modalidade_frete as ModalidadeFrete | null) ?? null;
+        transportadoraPersistida =
+          gateRow.id_transportadora_cliente !== null && gateRow.id_transportadora_cliente !== undefined
+            ? Number(gateRow.id_transportadora_cliente)
+            : null;
+      }
+    }
+
+    const modalidadeEditavel = podeEditarModalidade(statusParaGate);
     const modalidadeFrete: ModalidadeFrete | null = formState.modalidadeFrete ?? null;
     const idTransportadoraCliente = formState.idTransportadoraCliente ?? null;
+
+    // Declaração que a tela traz e o banco ainda não tem. Só ela vira aviso de
+    // recusa: reenviar o que já está gravado não é alteração descartada.
+    const declaracaoDivergePersistido =
+      modalidadeFrete !== modalidadePersistida || idTransportadoraCliente !== transportadoraPersistida;
+
+    /**
+     * A modalidade que governa o DINHEIRO e o RÓTULO desta gravação.
+     *
+     * Enquanto editável é a da tela — o vendedor está declarando agora. Depois de
+     * travada é a do BANCO, e a diferença não é cosmética: se a gravação da
+     * declaração foi recusada e o cálculo seguisse a tela, o salvamento
+     * reescreveria `valor_frete` e `frete_escolhido` de uma proposta FOB com o
+     * valor cotado e o nome do serviço. Seria a mesma incoerência deste eixo
+     * entrando pela porta dos fundos: banco dizendo FOB, dinheiro dizendo SEDEX.
+     * Travado vale para tudo, não só para as duas colunas.
+     *
+     * Se a releitura falhou não há valor persistido confiável para usar: cai na
+     * tela, que é o comportamento anterior.
+     */
+    const usarDeclaracaoPersistida = !modalidadeEditavel && gateLidoDoBanco;
+    const modalidadeVigente = usarDeclaracaoPersistida ? modalidadePersistida : modalidadeFrete;
+    const transportadoraVigente = usarDeclaracaoPersistida
+      ? transportadoraPersistida
+      : idTransportadoraCliente;
+
+    /** Preenchido quando a trava recusa uma declaração nova — a tela avisa. */
+    let avisoModalidade: string | undefined;
 
     if (modalidadeEditavel && faltaTransportadoraEmFob(modalidadeFrete, idTransportadoraCliente)) {
       return {
@@ -1655,7 +1725,7 @@ export async function saveProposta(
       formState.isAvulso
         ? (parseCurrencyBR(formState.valorFreteManual) ?? 0)
         : (chosenFrete ? chosenFrete.valor : 0),
-      modalidadeFrete
+      modalidadeVigente
     );
 
     // Map internal freight name
@@ -1673,6 +1743,27 @@ export async function saveProposta(
         freteNome = chosenFrete.transportadora;
       }
     }
+
+    // FOB: quem leva não é o serviço cotado, é a transportadora que o vendedor
+    // declarou. `frete_escolhido` é lido pela lista, pelo Maestro e pelo
+    // fallback de reconstrução dos fretes — gravar "SEDEX" num pedido que os
+    // Correios nunca vão tocar era o começo da cadeia que terminava no PDF da OS
+    // e na coluna FRETE da Expedição. Uma leitura só, e só em FOB.
+    let nomeTransportadoraDeclarada: string | null = null;
+    if (modalidadeVigente === "FOB" && transportadoraVigente !== null) {
+      const { data: transpRow, error: transpError } = await client
+        .from("clientes")
+        .select("id_cliente, nome, fantasia")
+        .eq("id_cliente", transportadoraVigente)
+        .maybeSingle();
+
+      if (transpError) {
+        console.warn("[OrcamentosService] Falha ao resolver a transportadora declarada:", transpError);
+      } else if (transpRow) {
+        nomeTransportadoraDeclarada = nomeTransportadoraCadastro(transpRow);
+      }
+    }
+    freteNome = nomeTransporteEfetivo(freteNome, modalidadeVigente, nomeTransportadoraDeclarada);
 
     // Calculo de valores resumo e totais
     const activeItens = formState.itens.filter((item) => item.statusItem !== "CANCELADO");
@@ -1695,7 +1786,7 @@ export async function saveProposta(
       prazoEntrega: "A combinar"
     } : calculateResumo(
       activeItens,
-      aplicarModalidadeNosFretes(formState.fretes, modalidadeFrete),
+      aplicarModalidadeNosFretes(formState.fretes, modalidadeVigente),
       Number.isFinite(Number(formState.descontoGeralValor)) ? Number(formState.descontoGeralValor) : 0,
       formState.descontoGeralTipo
     );
@@ -1811,6 +1902,12 @@ export async function saveProposta(
     if (modalidadeEditavel) {
       propostaData.modalidade_frete = modalidadeFrete;
       propostaData.id_transportadora_cliente = idTransportadoraCliente;
+    } else if (declaracaoDivergePersistido) {
+      // A trava continua valendo — a proposta não é rebaixada e o que já estava
+      // gravado permanece. O que muda é que a recusa passa a ser DITA: descartar
+      // a declaração em silêncio foi o que fez o vendedor acreditar, por toda a
+      // 20890, que tinha marcado FOB.
+      avisoModalidade = motivoBloqueioModalidade(statusParaGate);
     }
 
     let persistedValorTotal = valorTotal;
@@ -2325,7 +2422,14 @@ export async function saveProposta(
       }
     }
 
-    return { success: true, id_int: id_int!, valor_total: persistedValorTotal, modelosSincronizados, itensSincronizados };
+    return {
+      success: true,
+      id_int: id_int!,
+      valor_total: persistedValorTotal,
+      modelosSincronizados,
+      itensSincronizados,
+      avisoModalidade
+    };
   } catch (err) {
     console.error("[OrcamentosService] Falha ao salvar proposta:", err);
     if (!isUpdate && id_int) {
