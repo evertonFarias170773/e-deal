@@ -69,7 +69,9 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   // 1. Propostas do funil
   const { data: propostas, error: propError } = await client
     .from("propostas")
-    .select("id_int, cliente, id_cliente, empresa, status_interno, libera_nf, volume")
+    .select(
+      "id_int, cliente, id_cliente, empresa, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente"
+    )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
     .order("id_int", { ascending: false });
@@ -235,6 +237,14 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       atrasadoDias,
       prometidoHoje,
       tipoFrete,
+      // O que o VENDEDOR declarou no orçamento. Não vira `tipoFrete` nem
+      // sobrescreve nada: é a referência que o despacho pré-seleciona e contra
+      // a qual a divergência do expedidor é mostrada.
+      modalidadeOrcamento: (p.modalidade_frete as ModalidadeFrete | null) ?? null,
+      idTransportadoraOrcamento:
+        p.id_transportadora_cliente !== null && p.id_transportadora_cliente !== undefined
+          ? Number(p.id_transportadora_cliente)
+          : null,
       freteServico: frete?.servico ?? "",
       freteCep: frete?.cep ? String(frete.cep) : null,
       transportadoraNome: exp?.transportadoraNome || frete?.servico || "",

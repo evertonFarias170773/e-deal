@@ -104,6 +104,14 @@ export interface PedidoExpedicao {
   prometidoHoje: boolean;
   /** expedicoes.tipo_frete (definido no despacho) > normalização da cotação. */
   tipoFrete: TipoFreteNormalizado;
+  /**
+   * `propostas.modalidade_frete` — o que o VENDEDOR declarou na aba Fretes do
+   * orçamento. Nunca vence a declaração do expedidor (`expedicoes.modalidade_frete`):
+   * serve para pré-selecionar o despacho e para mostrar divergência.
+   */
+  modalidadeOrcamento: ModalidadeFrete | null;
+  /** `propostas.id_transportadora_cliente` — transportadora definida no orçamento. */
+  idTransportadoraOrcamento: number | null;
   /** Texto cru do serviço cotado (ex: "SEDEX", "FRETE INCLUSO"). */
   freteServico: string;
   /** CEP da cotação escolhida — usado no default do endereço de entrega. */

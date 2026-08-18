@@ -85,21 +85,29 @@ export function DespacharModal({
   /**
    * Modalidade (quem paga) é a escolha do PASSO 1 e comanda o resto do modal.
    *
-   * Só é pré-selecionada quando já foi declarada antes (`expedicoes.modalidade_frete`)
-   * ou quando a cotação diz RETIRA_BALCAO sem margem de dúvida. Pedido legado
-   * cotado como "Sem custo" ou indefinido abre SEM modalidade — o texto da
-   * cotação é ambíguo (o banco e o TypeScript já divergem ao lê-lo), então quem
-   * decide é o expedidor.
+   * PRECEDÊNCIA, em três níveis:
+   *   1. `expedicoes.modalidade_frete` — o que o expedidor já declarou. Soberana:
+   *      é o que de fato aconteceu na bancada.
+   *   2. `propostas.modalidade_frete` — o que o vendedor declarou no orçamento.
+   *      Chega como sugestão; discordar dela é livre e não altera a proposta.
+   *   3. nada — e aí o modal abre SEM modalidade, exigindo escolha explícita.
+   *
+   * `RETIRA_BALCAO` vindo da cotação continua pré-selecionando RETIRA por ser o
+   * único texto sem ambiguidade. Pedido cotado como "Sem custo" ou indefinido
+   * não ganha chute: o banco e o TypeScript já divergem ao ler esse texto.
    */
   const [modalidade, setModalidade] = useState<ModalidadeFrete | null>(
-    exp?.modalidadeFrete ?? (tipoInicial === "RETIRA_BALCAO" ? "RETIRA" : null)
+    exp?.modalidadeFrete ??
+      pedido.modalidadeOrcamento ??
+      (tipoInicial === "RETIRA_BALCAO" ? "RETIRA" : null)
   );
   const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(transporteInicial(tipoInicial));
   const [transportadoraNome, setTransportadoraNome] = useState(
     exp?.transportadoraNome ?? (pedido.tipoFrete === "INDEFINIDO" ? "" : pedido.transportadoraNome)
   );
+  /** Mesma precedência da modalidade: despacho > orçamento > nada. */
   const [idTransportadoraCliente, setIdTransportadoraCliente] = useState<number | null>(
-    exp?.idTransportadoraCliente ?? null
+    exp?.idTransportadoraCliente ?? pedido.idTransportadoraOrcamento ?? null
   );
   const [pesoKg, setPesoKg] = useState(exp?.pesoKg?.toString() ?? pedido.pesoKg?.toFixed(2) ?? "");
   const [qtdVolumes, setQtdVolumes] = useState(exp?.qtdVolumes?.toString() ?? pedido.volumes?.toString() ?? "1");
@@ -137,6 +145,25 @@ export function DespacharModal({
 
   const precisaAvisoNf = !modoEdicao && pedido.nfStatus !== "AUTORIZADA";
 
+  /**
+   * Divergência entre o que o vendedor declarou no orçamento e o que o expedidor
+   * está escolhendo agora. Aparece na tela, nomeando o que veio do orçamento —
+   * mas NÃO bloqueia e NÃO reescreve `propostas`: quem despacha sabe o que
+   * saiu pela porta, e a proposta continua sendo o registro comercial.
+   */
+  const nomeTransportadoraOrcamento = useMemo(() => {
+    if (pedido.idTransportadoraOrcamento === null) return null;
+    const t = transportadoras.find((x) => x.id_cliente === pedido.idTransportadoraOrcamento);
+    return t ? t.fantasia || t.nome || `#${t.id_cliente}` : `#${pedido.idTransportadoraOrcamento}`;
+  }, [pedido.idTransportadoraOrcamento, transportadoras]);
+
+  const modalidadeDivergente =
+    pedido.modalidadeOrcamento !== null && modalidade !== null && modalidade !== pedido.modalidadeOrcamento;
+  const transportadoraDivergente =
+    pedido.idTransportadoraOrcamento !== null &&
+    idTransportadoraCliente !== null &&
+    idTransportadoraCliente !== pedido.idTransportadoraOrcamento;
+
   useEffect(() => {
     let ativo = true;
     if (pedido.idCliente !== null) {
@@ -152,7 +179,16 @@ export function DespacharModal({
       });
     }
     void getTransportadoras().then((lista) => {
-      if (ativo) setTransportadoras(lista as Transportadora[]);
+      if (!ativo) return;
+      const transps = lista as Transportadora[];
+      setTransportadoras(transps);
+      // Transportadora veio pré-selecionada do orçamento e o despacho ainda não
+      // tem nome próprio gravado: resolve o nome pelo cadastro, senão o campo
+      // ficaria mostrando o texto da cotação, que pode dizer outra coisa.
+      if (!exp?.transportadoraNome && idTransportadoraCliente !== null) {
+        const t = transps.find((x) => x.id_cliente === idTransportadoraCliente);
+        if (t) setTransportadoraNome(t.fantasia || t.nome || `#${t.id_cliente}`);
+      }
     });
     void correiosStatus().then((s) => {
       if (ativo) setCorreiosOk(s.configurado);
@@ -344,7 +380,38 @@ export function DespacharModal({
                 CIF aqui é só o registro de quem paga: não cota, não altera o valor da proposta e não lança nada na Conta Corrente.
               </p>
             )}
+            {pedido.modalidadeOrcamento !== null && !modalidadeDivergente && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Veio do orçamento: {LABEL_MODALIDADE[pedido.modalidadeOrcamento]}
+                {nomeTransportadoraOrcamento ? ` · ${nomeTransportadoraOrcamento}` : ""}.
+              </p>
+            )}
           </div>
+
+          {/* Divergência com o orçamento: informa, não trava. A proposta não é
+              reescrita — o despacho tem a palavra final sobre o que saiu. */}
+          {(modalidadeDivergente || transportadoraDivergente) && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+              <p className="font-bold">Diferente do que o orçamento declarou</p>
+              <ul className="mt-1.5 space-y-0.5">
+                {modalidadeDivergente && pedido.modalidadeOrcamento !== null && (
+                  <li>
+                    Modalidade: orçamento <strong>{LABEL_MODALIDADE[pedido.modalidadeOrcamento]}</strong> · despacho{" "}
+                    <strong>{modalidade !== null ? LABEL_MODALIDADE[modalidade] : "—"}</strong>
+                  </li>
+                )}
+                {transportadoraDivergente && (
+                  <li>
+                    Transportadora: orçamento <strong>{nomeTransportadoraOrcamento}</strong> · despacho{" "}
+                    <strong>{transportadoraNome || "—"}</strong>
+                  </li>
+                )}
+              </ul>
+              <p className="mt-1.5 text-xs">
+                Vale o que você declarar aqui. O orçamento não é alterado — a diferença fica registrada nas duas pontas.
+              </p>
+            </div>
+          )}
 
           {/* Guarda do envio já existente nos Correios: nada é trocado sem o
               expedidor dizer que quer. */}

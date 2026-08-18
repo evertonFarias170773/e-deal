@@ -1,6 +1,6 @@
 # EXPEDICAO.md
 
-Versão: 1.3
+Versão: 1.4
 Status: Oficial — Correios em produção (prepostagens reais emitidas em 16/08/2026)
 Última atualização: 18/08/2026
 Projeto: Vibe
@@ -83,7 +83,7 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
 
 | # | Tabela | O que fornece | Chave |
 |---|---|---|---|
-| 1 | `public.propostas` | cliente, empresa, `status_interno`, `libera_nf`, `volume`; filtro `is_prd_aprovado = true` | `id_int` |
+| 1 | `public.propostas` | cliente, empresa, `status_interno`, `libera_nf`, `volume` e, desde 18/08/2026, a modalidade declarada no orçamento (`modalidade_frete`, `id_transportadora_cliente` — leitura apenas, seção 5.2); filtro `is_prd_aprovado = true` | `id_int` |
 | 2 | `public.propostas_os` | `data_termino` (promessa exibida), `codigo_rastreamento` (legado), `obs` | `id_int` |
 | 3 | `public.cotacao_frete` | `servico`, `valor`, `peso` da cotação com `escolhido = true` | `id_int` |
 | 4 | `public.notas_fiscais` | `status`, `numero_nf` | `id_int` |
@@ -127,7 +127,7 @@ Duas tabelas adicionais entram fora do painel, em pontos específicos: `public.e
 - **Peso** (corrigido em 18/08/2026 — ver 2.2): aferido no despacho (`expedicoes.peso_kg`, kg) > **bruto da Revisão (`expedicoes.peso_bruto_kg`, kg)** > cotado (`cotacao_frete.peso`, em gramas, convertido para kg) > teórico (soma de `produtos_proposta.peso_total`, em gramas, convertido para kg). Zero, negativo ou valor não numérico não conta como peso informado e cai para o próximo da fila.
 - **Rastreio**: `expedicoes.codigo_rastreamento` > `propostas_os.codigo_rastreamento` (campo legado, mantido para telas antigas).
 - **Tipo de frete**: `expedicoes.tipo_frete` (definido no despacho) > normalização de `cotacao_frete.servico` (seção 5).
-- **Modalidade do frete** (quem paga, seção 5.1): só existe declarada — `expedicoes.modalidade_frete`. Não há inferência a partir da cotação; sem declaração, é nula.
+- **Modalidade do frete** (quem paga, seções 5.1 e 5.2): `expedicoes.modalidade_frete` (declarada no despacho) > `propostas.modalidade_frete` (declarada no orçamento) > nula. Não há inferência a partir da cotação. Mesma precedência para a transportadora (`expedicoes.id_transportadora_cliente` > `propostas.id_transportadora_cliente`).
 - **Transportadora exibida**: `expedicoes.transportadora_nome` > `cotacao_frete.servico` (texto cru da cotação).
 - **NF**: `AUTORIZADA` vence qualquer outra; senão, qualquer nota não `CANCELADA` conta como `PENDENTE`; sem registro nenhum = `SEM_NF`.
 
@@ -279,11 +279,66 @@ A modalidade é declarada pelo expedidor e gravada em **`expedicoes.modalidade_f
 3. **Transportadora** — cadastrada (`clientes` com `categoria = TRANSPORTADORA`) ou nome livre.
 4. **Endereço, rastreio e prepostagem** — como antes.
 
-**Sem chute e sem backfill.** O modal só pré-seleciona a modalidade quando ela já foi declarada, ou quando a cotação diz `RETIRA_BALCAO` sem ambiguidade. Pedido cotado como "Sem custo" ou indefinido abre **sem modalidade**, obrigando a escolha — o texto da cotação é ambíguo o bastante para o banco (`osqr__forma_entrega`, que o lê como indefinido) e o TypeScript (`normalizarTipoFrete`, que o lê como envio) divergirem entre si. Pelo mesmo motivo a migration não fez backfill: a modalidade nasce quando alguém a declara.
+**Sem chute e sem backfill.** O modal só pré-seleciona a modalidade quando ela já foi declarada — no despacho ou no orçamento (seção 5.2) — ou quando a cotação diz `RETIRA_BALCAO` sem ambiguidade. Pedido cotado como "Sem custo" ou indefinido abre **sem modalidade**, obrigando a escolha — o texto da cotação é ambíguo o bastante para o banco (`osqr__forma_entrega`, que o lê como indefinido) e o TypeScript (`normalizarTipoFrete`, que o lê como envio) divergirem entre si. Pelo mesmo motivo nenhuma das migrations fez backfill: a modalidade nasce quando alguém a declara.
 
 **Pedido legado com envio pelos Correios.** Marcar `FOB` num pedido cujo transporte gravado é `CORREIOS` **nunca** troca o transporte sozinho: aparece um aviso com o código do objeto/prepostagem e uma confirmação explícita ("este pedido deixa de ir pelos Correios"), e o passo 2 fica fechado até o expedidor decidir. Confirmando, só o rótulo do transporte muda para `TRANSPORTADORA` — **prepostagem, código de objeto, rastreio e etiqueta oficial continuam gravados** e a etiqueta oficial segue emitível, porque ela depende da prepostagem, não do tipo. Desmarcar, ou trocar de modalidade, devolve o transporte a `CORREIOS`.
 
 **`SEM_CUSTO` saiu do despacho, não do sistema.** A categoria continua na union, no `LABELS`, no `ICONE_TIPO_FRETE`, no `normalizarTipoFrete`, no filtro do painel e nas colunas do kanban — são 98 cotações vivas, geradas continuamente pelo Orçamento ("Retirada Local" para UF = RS), e o painel precisa seguir exibindo e filtrando esses pedidos. O que mudou é que o expedidor não pode mais *escolher* "Sem custo" como transporte: chegando um pedido assim, ele declara a modalidade.
+
+## 5.2 A modalidade nasce no Orçamento (18/08/2026)
+
+A modalidade estreou no despacho, mas esse é o lugar errado: quem sabe se o cliente assume o frete é **o vendedor**, no momento da venda. Desde 18/08/2026 ela é declarada na **aba Fretes do Orçamento** e atravessa o fluxo até a Expedição.
+
+**Campos**, aditivos em `public.propostas` (migration `20260818_propostas_modalidade_frete.sql`):
+
+| Coluna | Tipo | Papel |
+|---|---|---|
+| `modalidade_frete` | `text`, nullable, CHECK `RETIRA \| FOB \| CIF` | quem paga, no mesmo vocabulário de `expedicoes.modalidade_frete` |
+| `id_transportadora_cliente` | `integer`, nullable, FK → `clientes(id_cliente)` | transportadora definida em FOB — **FK, não texto livre** |
+
+**Na tela** (`OrcamentoFormPage.tsx`, aba "7. Fretes e Entrega", vale também para proposta avulsa):
+
+- as três modalidades, com os rótulos da Expedição;
+- em **FOB**, seletor de transportadora alimentado por `getTransportadoras()` — `clientes` com `categoria = TRANSPORTADORA` **e** `ativo = true`, a mesma fonte do despacho;
+- **FOB sem transportadora não salva**: o botão recusa com toast e reabre a aba Fretes. É justamente o dado que a Expedição vai usar.
+
+**FOB vale zero.** Em FOB o cliente contrata e paga o transporte: não há frete a cobrar, qualquer que seja a cotação em tela. A regra vive num ponto único — `src/features/orcamentos/lib/modalidade-frete.ts` — e é aplicada na **fronteira de consumo**, os três lugares que precisam concordar: o resumo da tela, o resumo do salvamento e o valor gravado em `propostas.valor_frete` e `cotacao_frete.valor`. Os valores cotados continuam visíveis na lista como referência; só a opção **escolhida** é zerada.
+
+Consequência: **nenhuma escrita nova em `cotacao_frete`**. O zero desce pelo `DELETE` + `INSERT` que o salvamento já fazia — ver o aviso da seção 2 sobre os triggers dessa tabela.
+
+> ### Por que a edição para em LIBERADO
+>
+> Os dois campos ficam **somente leitura quando `status_interno` não é `NOVO` nem
+> `AGUARDANDO`** (as formas compostas `NOVO / EM ARTE` e `AGUARDANDO / EM ARTE`
+> contam como editáveis — a barra separa o estado de arte, não o estágio do
+> pedido). A tela mostra um aviso âmbar com o motivo.
+>
+> O motivo é do banco, não de processo: salvar o orçamento faz `DELETE` +
+> `INSERT` em `cotacao_frete`, e o trigger `trg_frete_sync_financeiro` reescreve
+> `status_interno` a partir de `pagamentos_v2` — **com zero pagamentos ele força
+> `NOVO` incondicionalmente**, sem guarda por status atual. Editar o frete de um
+> pedido já liberado o rebaixaria e o tiraria do fluxo de produção. Em
+> 18/08/2026 havia 5 propostas `EM PRODUCAO` e 3 `CANCELADO` sem nenhum
+> pagamento — exatamente as que seriam rebaixadas.
+>
+> **Travado significa "não altera", nunca "apaga".** Fora da fase de orçamento os
+> dois campos não entram no `UPDATE`, e o que o vendedor declarou permanece.
+
+**Na Expedição, precedência em três níveis** (`DespacharModal.tsx`):
+
+1. `expedicoes.modalidade_frete` — o que o expedidor declarou. **Soberana**: é o que aconteceu na bancada;
+2. `propostas.modalidade_frete` — o que o vendedor declarou. Chega como pré-seleção;
+3. nada — o modal abre sem modalidade e exige escolha.
+
+A mesma precedência vale para a transportadora. Quando a transportadora vem pré-selecionada do orçamento e o despacho ainda não tem nome próprio gravado, o nome é resolvido pelo cadastro, não pelo texto da cotação.
+
+**Divergência aparece, não bloqueia.** Se o expedidor escolher modalidade ou transportadora diferente da que veio do orçamento, um aviso azul nomeia as duas versões lado a lado. Vale o que o despacho declarar; **a Expedição nunca escreve em `propostas`**, e a diferença fica registrada nas duas pontas.
+
+### Pendências conhecidas desta fase
+
+1. **NF-e emite o código errado em FOB.** `nfe.service.ts` deriva a modalidade fiscal de `valorFrete > 0 ? 0 : 9`. Como FOB grava zero, a nota sai com **`9` (sem ocorrência de transporte)** quando o correto seria **`1` (por conta do destinatário)**. Nenhuma das 43 notas usa `1` hoje. O campo é editável na tela da NF-e, então há saída manual. Corrigir é decisão fiscal — fora desta tarefa.
+2. **O avaliador de cobrança mostra o motivo errado.** `frete-desatualizado.ts` devolve `FRETE_SEM_CUSTO` para qualquer `valor === 0`, sem olhar modalidade. O comportamento acerta por acaso (FOB não deve bloquear cobrança por peso divergente, porque o cliente não paga frete à empresa), mas o motivo exibido mente. Falta um `FRETE_FOB` próprio.
+3. **Duplicar proposta perde a modalidade em silêncio.** `copiar_proposta_v2` e `duplicar_proposta` copiam `frete_escolhido`, mas **não copiam as colunas novas**. Duplicar uma proposta FOB gera uma cópia sem modalidade e sem transportadora, sem aviso nenhum. Atualizar as duas funções ficou fora desta tarefa.
 
 ---
 
@@ -470,6 +525,10 @@ Limitações que continuam valendo:
 - **Correios fora do FOB**, por regra operacional e não só de UI: a postagem sai pelo cartão da empresa.
 - **Nenhum rebaixamento silencioso de transporte.** Trocar um envio dos Correios por transportadora exige confirmação explícita do expedidor, e não apaga prepostagem, rastreio nem etiqueta.
 - **`SEM_CUSTO` sai do despacho e permanece na leitura**: o Orçamento continua gerando essas cotações, e os pedidos precisam continuar visíveis e filtráveis.
+- **A modalidade passa a nascer no Orçamento** (seção 5.2), onde a decisão de fato acontece — o despacho deixa de redescobri-la no fim do fluxo.
+- **A edição da modalidade para em `LIBERADO`**, por causa do trigger de `cotacao_frete`, não por processo. Travado não apaga o que já foi declarado.
+- **Divergência entre orçamento e despacho é exibida, nunca silenciada** — e resolvida sempre a favor do despacho, sem reescrever a proposta.
+- **Transportadora do orçamento é FK para o cadastro**, não texto livre: é o que permite o despacho reaproveitar o vínculo e emitir etiqueta e rastreio.
 
 ---
 
