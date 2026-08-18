@@ -698,18 +698,38 @@ A dispensa **não** altera:
 - a revisão do atendente;
 - a liberação manual para Produção (`is_prd_aprovado`, §9.1).
 
-Aplicada em dois pontos, para não depender da interface:
+Aplicada em três pontos, para não depender da interface:
 
 ```text
 src/features/orcamentos/services/status-engine.service.ts   (evidência arteDispensada)
 public.check_and_promote_proposta                            (garantia no banco)
+public.atualiza_flag_arte_proposta                           (flag propostas.em_arte)
 ```
 
 Ocultar a aba "Artes" na proposta é apenas apresentação.
 
-Nenhuma pendência de arte fictícia é criada: sem modelos, `propostas.em_arte`
-permanece `false` pelo próprio trigger existente, e `public.pedidos_artes` só
-recebe linha quando a aba Artes é usada.
+O flag `propostas.em_arte` é calculado exclusivamente pelo trigger
+`trg_sync_arte_pendente` → `atualiza_flag_arte_proposta()`, e ele também
+dispensa a arte: quando todos os itens ativos de `produtos_proposta` têm
+`is_estoque = true`, `em_arte` recebe `false` sem consultar os modelos. A
+definição de dispensa é a mesma de `check_and_promote_proposta` — ao menos um
+item ativo (`status_item <> 'CANCELADO'`) e todos de prateleira.
+
+Isso vale desde 18/08/2026 (`supabase/migrations/20260818_em_arte_dispensada_produto_prateleira.sql`).
+Antes disso o documento afirmava que pedido de prateleira não gera pendência de
+arte porque não teria modelos — **premissa falsa**: os lotes de cor/quantidade
+da aba Pedido são `pedidos_modelos` como quaisquer outros e nascem
+`status_arte = 'PENDENTE'`. Como não há arte para aprovar, esse status nunca
+mudava e `em_arte` ficava `true` para sempre: a proposta aparecia como
+"LIBERADO / EM ARTE", caía no card EM ARTE e carregava na produção a pendência
+"Aguardando liberação de arte" — uma etapa sem como ser concluída.
+
+**Limitação conhecida:** o recálculo do flag só acontece em eventos de
+`pedidos_modelos` (INSERT/DELETE/UPDATE de `status_arte` ou `id_int`). Marcar ou
+desmarcar `is_estoque` em `produtos_proposta` sem salvar nenhum modelo depois
+deixa `em_arte` desatualizado até o próximo evento de modelo.
+
+`public.pedidos_artes` continua recebendo linha só quando a aba Artes é usada.
 
 ---
 
