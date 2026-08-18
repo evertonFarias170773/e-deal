@@ -1,15 +1,15 @@
 # EXPEDICAO.md
 
-Versão: 1.1
+Versão: 1.2
 Status: Oficial — Correios em produção (prepostagens reais emitidas em 16/08/2026)
-Última atualização: 17/08/2026
+Última atualização: 18/08/2026
 Projeto: Vibe
 
 ---
 
 # Expedição e Logística
 
-Este documento descreve o que está implementado no módulo de Expedição do Vibe em 17/08/2026 — não o planejado nem etapas futuras de um roadmap.
+Este documento descreve o que está implementado no módulo de Expedição do Vibe em 18/08/2026 — não o planejado nem etapas futuras de um roadmap.
 
 O painel `/expedicao` (`src/features/expedicao/ExpedicaoPage.tsx`, rota `src/app/(erp)/expedicao/page.tsx`) cobre o funil logístico de uma proposta já liberada para produção, do `APROVADO` até `ENTREGUE`. Quem opera as transições e o despacho é o expedidor — na prática, qualquer usuário com a permissão `expedicao.processar` (seção 8).
 
@@ -93,17 +93,75 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
 
 Erro ao buscar qualquer uma das tabelas 2, 4, 5, 6 ou 7 é tolerado (loga aviso, segue com o que faltar vazio); erro em `cotacao_frete` é logado com destaque (`console.error`) porque a tela antiga tinha um bug nesse ponto.
 
+> ### ⚠️ `cotacao_frete` é SOMENTE LEITURA para a Expedição
+>
+> Escrever em `public.cotacao_frete` — INSERT, UPDATE ou DELETE, de qualquer
+> lugar — **altera o valor e o status da proposta**, por efeito de triggers do
+> banco. Verificado no banco vivo em 18/08/2026:
+>
+> | Trigger | Eventos | Função | O que executa de fato |
+> |---|---|---|---|
+> | `trg_recalc_after_frete` | `AFTER INSERT OR UPDATE`, por linha | `recalcular_proposta_v3_trigger` → `recalcular_proposta_v3` (`void`) | **`UPDATE propostas SET valor, volume, valor_total`** (`valor_total` = produtos − desconto + frete) |
+> | `trg_frete_sync_financeiro` | `AFTER INSERT OR DELETE OR UPDATE`, por linha | `tg_recalc_financeiro_por_frete` → `atualizar_status_financeiro_proposta` (`void`) | **`UPDATE propostas SET status_interno`** para `NOVO`, `AGUARDANDO`, `APROVADO` ou `CANCELADO`, conforme as linhas de `pagamentos_v2` |
+> | `tg_recalc_frete_v4` | `AFTER INSERT OR DELETE OR UPDATE`, por linha | `recalcular_proposta_v4_trigger` → `recalcular_proposta_v4` (`RETURNS TABLE`) | **No-op**: o trigger faz `PERFORM` e descarta o resultado, sem `UPDATE` |
+>
+> **A documentação do repositório diverge do banco neste ponto.** A migration
+> `supabase/migrations/20260804_recalc_valor_total_propostas.sql` descreve os
+> triggers de recálculo como no-op — isso vale apenas para o `v4`. Os outros
+> dois existem no banco de produção, não estão nessa migration e têm efeito
+> real.
+>
+> Consequência prática para a Expedição: um pedido em `EXPEDICAO`, `A RETIRAR`
+> ou `EM TRANSITO` cujo `cotacao_frete` fosse tocado seria **jogado para fora do
+> funil logístico** no ato, porque `status_interno` é reescrito pelos
+> pagamentos. Por isso os dados de execução moram em `public.expedicoes`
+> (seção 12) e nenhum caminho da Expedição escreve em `cotacao_frete` —
+> nem o despacho, nem a Revisão do boletim, nem as rotas dos Correios.
+
 Duas tabelas adicionais entram fora do painel, em pontos específicos: `public.enderecos` (endereço de entrega — escolhido no despacho > mesmo CEP da cotação > mais recente do cliente) e `public.empresas` (dados do remetente — casada por nome com `propostas.empresa` via `ilike`, com fallback para a primeira empresa cadastrada).
 
 `propostas.libera_nf` é lido e vira `PedidoExpedicao.liberaNf`, mas hoje esse campo não é exibido nem usado em nenhuma condição da tela — está calculado e disponível, sem consumidor ainda.
 
 ## 2.1 Precedências
 
-- **Peso**: aferido (`expedicoes.peso_kg`) > cotado (`cotacao_frete.peso`, em gramas, convertido para kg) > teórico (soma de `produtos_proposta.peso_total`). `peso_bruto_kg` **não entra nessa cadeia**: é grandeza diferente (inclui embalagem), preenchida na Revisão do boletim e destinada à NF-e — ver `PEDIDOS-PRODUCAO.md` §19.
+- **Peso** (corrigido em 18/08/2026 — ver 2.2): aferido no despacho (`expedicoes.peso_kg`, kg) > **bruto da Revisão (`expedicoes.peso_bruto_kg`, kg)** > cotado (`cotacao_frete.peso`, em gramas, convertido para kg) > teórico (soma de `produtos_proposta.peso_total`, em gramas, convertido para kg). Zero, negativo ou valor não numérico não conta como peso informado e cai para o próximo da fila.
 - **Rastreio**: `expedicoes.codigo_rastreamento` > `propostas_os.codigo_rastreamento` (campo legado, mantido para telas antigas).
 - **Tipo de frete**: `expedicoes.tipo_frete` (definido no despacho) > normalização de `cotacao_frete.servico` (seção 5).
 - **Transportadora exibida**: `expedicoes.transportadora_nome` > `cotacao_frete.servico` (texto cru da cotação).
 - **NF**: `AUTORIZADA` vence qualquer outra; senão, qualquer nota não `CANCELADA` conta como `PENDENTE`; sem registro nenhum = `SEM_NF`.
+
+## 2.2 Peso: helper único (18/08/2026)
+
+A precedência de peso vivia copiada em quatro lugares e divergiu: nenhum deles
+lia `expedicoes.peso_bruto_kg`, gravado pela Revisão do boletim. Um pedido
+revisado com 32,7 kg (caso real: proposta 20678) aparecia como 31,20 kg no modal
+de despacho — o peso da cotação — e o mesmo número ia para a etiqueta, para a
+declaração de conteúdo e para o payload dos Correios.
+
+A regra passou a viver em **`src/features/expedicao/lib/peso.ts`**
+(`resolverPesoExpedicao`), consumida pelos quatro caminhos:
+
+| Consumidor | Arquivo |
+|---|---|
+| Painel e modal de despacho | `src/features/expedicao/services/expedicao.service.ts` |
+| Etiqueta interna 10×15 | `src/features/expedicao/services/etiqueta-viewmodel.service.ts` |
+| Declaração de conteúdo | `src/features/expedicao/services/declaracao-viewmodel.service.ts` |
+| Prepostagem dos Correios | `src/app/api/expedicao/correios/prepostagem/route.ts` |
+
+- `PedidoExpedicao.pesoOrigem` ganhou o valor **`"bruto"`**, que identifica o peso
+  bruto vindo da Revisão — ao lado de `"aferido"` (pesado no despacho),
+  `"cotado"` e `"teorico"`.
+- Unidades ficam como estão no banco (`expedicoes` em kg, `cotacao_frete` e
+  `produtos_proposta` em gramas); a conversão acontece só dentro do helper.
+- O **fallback de 300 g da prepostagem continua valendo**: quando nenhuma fonte
+  tem peso utilizável, a rota dos Correios envia 300 g, porque a API recusa
+  peso ausente.
+- Peso digitado pelo expedidor no despacho continua tendo prioridade sobre o
+  bruto da Revisão.
+
+O peso bruto na **NF-e** segue pendente e é tarefa do módulo fiscal: a nota usa
+hoje a soma teórica dos itens (`nfe.service.ts`), não `peso_bruto_kg` — ver
+`PEDIDOS-PRODUCAO.md` §19.
 
 ---
 

@@ -1,8 +1,8 @@
 # MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md
 
-Versão: 3.3  
+Versão: 3.4  
 Status: Oficial  
-Última atualização: 17/08/2026  
+Última atualização: 18/08/2026  
 Projeto: Vibe
 
 ---
@@ -107,6 +107,7 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
 | `public.produtos_proposta_variacao` | Qualquer exclusão direta fora da conciliação oficial | `DELETE` | `BLOQUEADO` | Impede remoção isolada fora do fluxo de gravação estruturado. | Alto | Não aplicável. | Permanente | O `DELETE` liberado acima vale exclusivamente para a conciliação oficial do item da proposta. |
 | `public.cotacao_frete` | Seleção e observação de frete | `READ`, `UPDATE`, `INSERT` | `LIBERADO` | Escrita controlada liberada para o cálculo de frete e consolidação nas propostas. | Alto | `select * from public.cotacao_frete where id_int = :id_int order by id;` | `2026-05-30` / Fase 6 | Tabela com triggers de recálculo; o frete escolhido atualiza o total final. |
 | `public.cotacao_frete` | Qualquer campo | `DELETE` | `BLOQUEADO` | Excluir frete diretamente pode desestruturar o cálculo total da proposta. | Crítico | Não aplicável. | Permanente | Bloqueio por padrão. |
+| `public.cotacao_frete` | **Efeito colateral de QUALQUER escrita** (`INSERT`/`UPDATE`/`DELETE`) — vale para as duas linhas acima | — | `ATENÇÃO` | Três triggers `FOR EACH ROW` disparam por escrita nesta tabela, e **dois têm efeito real sobre `public.propostas`**: `trg_recalc_after_frete` (`AFTER INSERT OR UPDATE` → `recalcular_proposta_v3`, `void`) faz `UPDATE propostas SET valor, volume, valor_total`; `trg_frete_sync_financeiro` (`AFTER INSERT OR DELETE OR UPDATE` → `atualizar_status_financeiro_proposta`, `void`) faz `UPDATE propostas SET status_interno` para `NOVO`/`AGUARDANDO`/`APROVADO`/`CANCELADO` conforme `pagamentos_v2`. Apenas `tg_recalc_frete_v4` (→ `recalcular_proposta_v4`, `RETURNS TABLE`) é no-op. **A migration `20260804_recalc_valor_total_propostas.sql` documenta os triggers de recálculo como no-op — isso só vale para o `v4`; os outros dois não estão nessa migration e existem no banco de produção.** | Crítico | `select tgname, pg_get_triggerdef(t.oid) from pg_trigger t join pg_class c on c.oid=t.tgrelid where not t.tgisinternal and c.relname='cotacao_frete';` + conferir `valor_total` e `status_interno` da proposta antes/depois. | Verificado no banco vivo em `2026-08-18` | Consequência prática: escrever aqui em um pedido que já está em `EXPEDICAO`/`A RETIRAR`/`EM TRANSITO` **reescreve `status_interno` pelos pagamentos e tira o pedido do funil logístico**. Por isso a Expedição trata `cotacao_frete` como somente-leitura e grava execução em `public.expedicoes` (ver `docs/business/EXPEDICAO.md` §2). Qualquer fluxo novo que precise recotar frete deve tratar este efeito antes. |
 | `public.desconto_proposta` | Desconto comercial | `READ`, `UPDATE`, `INSERT` | `LIBERADO` | Escrita de descontos comerciais da proposta liberada sob validação de perfil (admin/gerente para desconto geral). | Alto | `select * from public.desconto_proposta where id_int = :id_int;` | `2026-05-30` / Fase 7 | Deve respeitar as regras e perfis comerciais para aplicação de descontos. |
 | `public.desconto_proposta` | Qualquer campo | `DELETE` | `BLOQUEADO` | Remover desconto altera total e histórico comercial. | Alto | Não aplicável. | Permanente | Manter bloqueado. |
 | `public.pagamentos_v2` | Campos retornados pelas consultas financeiras autorizadas | `READ` | `LIBERADO` | Leitura usada por cobranças, conferência e Maestro conforme sessão, perfil e RLS. | Alto | `select * from public.pagamentos_v2 where id_int = :id_int;` | Fase Financeira | Não expor tokens, payloads sensíveis ou dados de pagamento fora do fluxo autorizado. |
