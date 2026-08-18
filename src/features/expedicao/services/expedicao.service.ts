@@ -4,6 +4,7 @@ import { resolverPesoExpedicao } from "../lib/peso";
 import type {
   EtapaExpedicao,
   ExpedicaoRegistro,
+  ModalidadeFrete,
   NfStatusExpedicao,
   PedidoExpedicao,
   TipoFreteNormalizado
@@ -103,7 +104,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -150,6 +151,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   for (const row of expRes.data ?? []) {
     expMap.set(Number(row.id_int), {
       idInt: Number(row.id_int),
+      modalidadeFrete: (row.modalidade_frete as ModalidadeFrete | null) ?? null,
       tipoFrete: (row.tipo_frete as TipoFreteNormalizado | null) ?? null,
       transportadoraNome: row.transportadora_nome ?? null,
       idTransportadoraCliente: row.id_transportadora_cliente !== null ? Number(row.id_transportadora_cliente) : null,

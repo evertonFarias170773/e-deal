@@ -1,5 +1,28 @@
 import type { PesoOrigem as PesoOrigemInterna } from "./lib/peso";
 
+/**
+ * Modalidade comercial do frete — QUEM PAGA o transporte.
+ *
+ * Dimensão distinta de `TipoFreteNormalizado`, que diz POR ONDE VAI: um envio
+ * pode ser FOB via Braspress ou CIF via Correios. Declarada pelo expedidor no
+ * despacho e gravada em `expedicoes.modalidade_frete`.
+ *
+ * NESTA FASE, `CIF` é apenas RÓTULO: declara que o transporte corre por conta
+ * da empresa e libera os Correios no passo 2 do despacho. Não cota, não
+ * recota, não altera valor da proposta e não lança nada na Conta Corrente —
+ * isso depende da fase de recotação (Parte C do plano), ainda em decisão.
+ */
+export type ModalidadeFrete = "RETIRA" | "FOB" | "CIF";
+
+/** Modalidades que o despacho oferece, na ordem de exibição. */
+export const MODALIDADES_OFERECIDAS: ModalidadeFrete[] = ["RETIRA", "FOB", "CIF"];
+
+export const LABEL_MODALIDADE: Record<ModalidadeFrete, string> = {
+  RETIRA: "Retira no balcão",
+  FOB: "FOB — por conta do cliente",
+  CIF: "CIF — por conta da empresa"
+};
+
 /** Categorias canônicas derivadas do texto livre de cotacao_frete.servico. */
 export type TipoFreteNormalizado =
   | "CORREIOS"
@@ -8,6 +31,21 @@ export type TipoFreteNormalizado =
   | "RETIRA_BALCAO"
   | "SEM_CUSTO"
   | "INDEFINIDO";
+
+/**
+ * Transportes oferecidos em cada modalidade de ENVIO. `RETIRA` não aparece
+ * aqui: não há transporte a escolher, o submit força `RETIRA_BALCAO`.
+ *
+ * CORREIOS só existe em CIF — a prepostagem sai pelo cartão de postagem da
+ * empresa, e em FOB quem posta é o cliente, com contrato próprio.
+ *
+ * `SEM_CUSTO` e `INDEFINIDO` continuam na union (98 cotações vivas os produzem
+ * e o painel precisa exibi-los), mas não são escolhíveis no despacho.
+ */
+export const TRANSPORTES_POR_MODALIDADE: Record<"FOB" | "CIF", TipoFreteNormalizado[]> = {
+  FOB: ["TRANSPORTADORA", "MOTOBOY"],
+  CIF: ["CORREIOS", "TRANSPORTADORA", "MOTOBOY"]
+};
 
 /** Etapa do funil logístico, derivada de propostas.status_interno. */
 export type EtapaExpedicao =
@@ -26,6 +64,8 @@ export type { PesoOrigem } from "./lib/peso";
 /** Linha de public.expedicoes (execução da expedição), em camelCase. */
 export interface ExpedicaoRegistro {
   idInt: number;
+  /** expedicoes.modalidade_frete — quem paga (nula em linhas anteriores a 18/08/2026). */
+  modalidadeFrete: ModalidadeFrete | null;
   tipoFrete: TipoFreteNormalizado | null;
   transportadoraNome: string | null;
   idTransportadoraCliente: number | null;

@@ -1,11 +1,13 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import type { TipoFreteNormalizado } from "../types";
+import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
 
 export type AtorExpedicao = { uid: string | null; nome: string | null };
 export type ResultadoAcao = { success: boolean; error?: string };
 
 export type DespachoInput = {
   tipoEntrega: "TRANSPORTE" | "RETIRADA";
+  /** Quem paga o transporte. Null só em pedido legado que ainda não foi redespachado. */
+  modalidadeFrete: ModalidadeFrete | null;
   tipoFrete: TipoFreteNormalizado;
   transportadoraNome: string;
   idTransportadoraCliente: number | null;
@@ -115,6 +117,7 @@ export async function despachar(
   if (!t.success) return t;
 
   const up = await upsertExpedicao(idInt, {
+    modalidade_frete: input.modalidadeFrete,
     tipo_frete: input.tipoFrete,
     transportadora_nome: input.transportadoraNome || null,
     id_transportadora_cliente: input.idTransportadoraCliente,
@@ -236,6 +239,7 @@ export async function salvarDadosExpedicao(
   dados: Partial<Omit<DespachoInput, "tipoEntrega">>
 ): Promise<ResultadoAcao> {
   const campos: Record<string, unknown> = {};
+  if (dados.modalidadeFrete !== undefined) campos.modalidade_frete = dados.modalidadeFrete;
   if (dados.tipoFrete !== undefined) campos.tipo_frete = dados.tipoFrete;
   if (dados.transportadoraNome !== undefined) campos.transportadora_nome = dados.transportadoraNome || null;
   if (dados.idTransportadoraCliente !== undefined) campos.id_transportadora_cliente = dados.idTransportadoraCliente;

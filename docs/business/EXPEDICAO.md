@@ -1,6 +1,6 @@
 # EXPEDICAO.md
 
-Versão: 1.2
+Versão: 1.3
 Status: Oficial — Correios em produção (prepostagens reais emitidas em 16/08/2026)
 Última atualização: 18/08/2026
 Projeto: Vibe
@@ -87,7 +87,7 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
 | 2 | `public.propostas_os` | `data_termino` (promessa exibida), `codigo_rastreamento` (legado), `obs` | `id_int` |
 | 3 | `public.cotacao_frete` | `servico`, `valor`, `peso` da cotação com `escolhido = true` | `id_int` |
 | 4 | `public.notas_fiscais` | `status`, `numero_nf` | `id_int` |
-| 5 | `public.expedicoes` | dados de execução gravados pelo expedidor (peso aferido, volumes, transportadora, rastreio, prepostagem, datas) e, desde 16/08/2026, o peso bruto vindo da Revisão do boletim (`peso_bruto_kg`, `pesos_volumes`) | `id_int` (única) |
+| 5 | `public.expedicoes` | dados de execução gravados pelo expedidor (modalidade do frete, peso aferido, volumes, transportadora, rastreio, prepostagem, datas) e, desde 16/08/2026, o peso bruto vindo da Revisão do boletim (`peso_bruto_kg`, `pesos_volumes`) | `id_int` (única) |
 | 6 | `public.clientes` | nome, fantasia, `cidade_uf` do destinatário | `id_cliente` |
 | 7 | `public.produtos_proposta` | `peso_total` por item (somado = peso teórico do pedido) | `id_int` |
 
@@ -127,6 +127,7 @@ Duas tabelas adicionais entram fora do painel, em pontos específicos: `public.e
 - **Peso** (corrigido em 18/08/2026 — ver 2.2): aferido no despacho (`expedicoes.peso_kg`, kg) > **bruto da Revisão (`expedicoes.peso_bruto_kg`, kg)** > cotado (`cotacao_frete.peso`, em gramas, convertido para kg) > teórico (soma de `produtos_proposta.peso_total`, em gramas, convertido para kg). Zero, negativo ou valor não numérico não conta como peso informado e cai para o próximo da fila.
 - **Rastreio**: `expedicoes.codigo_rastreamento` > `propostas_os.codigo_rastreamento` (campo legado, mantido para telas antigas).
 - **Tipo de frete**: `expedicoes.tipo_frete` (definido no despacho) > normalização de `cotacao_frete.servico` (seção 5).
+- **Modalidade do frete** (quem paga, seção 5.1): só existe declarada — `expedicoes.modalidade_frete`. Não há inferência a partir da cotação; sem declaração, é nula.
 - **Transportadora exibida**: `expedicoes.transportadora_nome` > `cotacao_frete.servico` (texto cru da cotação).
 - **NF**: `AUTORIZADA` vence qualquer outra; senão, qualquer nota não `CANCELADA` conta como `PENDENTE`; sem registro nenhum = `SEM_NF`.
 
@@ -173,7 +174,7 @@ O status oficial continua em `propostas.status_interno` (`FLUXO-OFICIAL-STATUS-P
 |---|---|---|---|
 | `marcarPronto` | (produção/acabamento) → `EXPEDICAO` | NATURAL | `data_pronto` |
 | `confirmarRevisao` | idem — delega a `marcarPronto` | NATURAL | grava antes volume, tipo e peso bruto (seção 3.4) |
-| `despachar` | `EXPEDICAO` → `EM TRANSITO` (transporte) ou `A RETIRAR` (retirada) | NATURAL | tipo de frete, transportadora, peso, volumes, endereço, rastreio, `data_despacho`, `despachado_por` |
+| `despachar` | `EXPEDICAO` → `EM TRANSITO` (transporte) ou `A RETIRAR` (retirada) | NATURAL | modalidade, tipo de frete, transportadora, peso, volumes, endereço, rastreio, `data_despacho`, `despachado_por` |
 | `confirmarRetirada` | `A RETIRAR` → `ENTREGUE` | NATURAL | `data_entrega`, `retirado_por` |
 | `marcarEntregue` | `EM TRANSITO` → `ENTREGUE` | NATURAL | `data_entrega` |
 | `voltarStatus` | desfaz 1 passo (abaixo) | RETORNO | limpa a data do passo desfeito |
@@ -250,6 +251,40 @@ Duas decisões importantes do normalizador:
 
 Essa normalização só se aplica enquanto não há uma escolha explícita do expedidor: assim que o despacho grava `expedicoes.tipo_frete`, esse valor passa a valer para o pedido (precedência da seção 2.1).
 
+## 5.1 Modalidade do frete: quem paga (18/08/2026)
+
+O tipo de frete responde **por onde vai**. A modalidade responde **quem paga** — são dimensões ortogonais, e o sistema só tinha a primeira. Por isso o modal de despacho chegou a oferecer "Sem custo" como se fosse um tipo de transporte.
+
+A modalidade é declarada pelo expedidor e gravada em **`expedicoes.modalidade_frete`** (`text`, nullable, CHECK `RETIRA | FOB | CIF`, migration `20260818_expedicoes_modalidade_frete.sql`). Tipo e constantes em `src/features/expedicao/types.ts`.
+
+| Modalidade | Significado | Transportes oferecidos no passo 2 |
+|---|---|---|
+| `RETIRA` | o cliente busca no balcão | nenhum — o submit força `tipo_frete = RETIRA_BALCAO`, `transportadora_nome = "Retira balcão"`, `id_transportadora_cliente = null`, destino `A RETIRAR` |
+| `FOB` | transporte por conta do cliente | Transportadora, Motoboy |
+| `CIF` | transporte por conta da empresa | **Correios**, Transportadora, Motoboy |
+
+> ### CIF, nesta fase, é apenas rótulo
+>
+> `CIF` grava quem paga e libera os Correios no passo 2. Ele **não cota, não
+> recota, não altera `valor_frete`/`valor_total` da proposta e não lança nada
+> na Conta Corrente**. A fase de recotação com débito da diferença (Parte C do
+> plano) segue **pendente de decisão do dono** — ver seção 10.
+
+**Por que Correios só em CIF.** A prepostagem sai pelo cartão de postagem da empresa, que é quem paga. Em FOB quem posta é o cliente, com contrato próprio — não há serviço dos Correios a cobrar dele. Daí a trava não ser só de UI: os botões de prepostagem exigem `modalidade === "CIF"` além de `tipo_frete === "CORREIOS"` (seção 6.2).
+
+**Ordem no modal** (`DespacharModal.tsx`), inclusive em modo edição — a modalidade é informação nova, e pedido despachado antes de 18/08/2026 precisa poder ganhar uma:
+
+1. **Modalidade** — sempre; sem ela o botão de confirmar recusa com aviso.
+2. **Como vai** — só em FOB/CIF, com a lista da tabela acima.
+3. **Transportadora** — cadastrada (`clientes` com `categoria = TRANSPORTADORA`) ou nome livre.
+4. **Endereço, rastreio e prepostagem** — como antes.
+
+**Sem chute e sem backfill.** O modal só pré-seleciona a modalidade quando ela já foi declarada, ou quando a cotação diz `RETIRA_BALCAO` sem ambiguidade. Pedido cotado como "Sem custo" ou indefinido abre **sem modalidade**, obrigando a escolha — o texto da cotação é ambíguo o bastante para o banco (`osqr__forma_entrega`, que o lê como indefinido) e o TypeScript (`normalizarTipoFrete`, que o lê como envio) divergirem entre si. Pelo mesmo motivo a migration não fez backfill: a modalidade nasce quando alguém a declara.
+
+**Pedido legado com envio pelos Correios.** Marcar `FOB` num pedido cujo transporte gravado é `CORREIOS` **nunca** troca o transporte sozinho: aparece um aviso com o código do objeto/prepostagem e uma confirmação explícita ("este pedido deixa de ir pelos Correios"), e o passo 2 fica fechado até o expedidor decidir. Confirmando, só o rótulo do transporte muda para `TRANSPORTADORA` — **prepostagem, código de objeto, rastreio e etiqueta oficial continuam gravados** e a etiqueta oficial segue emitível, porque ela depende da prepostagem, não do tipo. Desmarcar, ou trocar de modalidade, devolve o transporte a `CORREIOS`.
+
+**`SEM_CUSTO` saiu do despacho, não do sistema.** A categoria continua na union, no `LABELS`, no `ICONE_TIPO_FRETE`, no `normalizarTipoFrete`, no filtro do painel e nas colunas do kanban — são 98 cotações vivas, geradas continuamente pelo Orçamento ("Retirada Local" para UF = RS), e o painel precisa seguir exibindo e filtrando esses pedidos. O que mudou é que o expedidor não pode mais *escolher* "Sem custo" como transporte: chegando um pedido assim, ele declara a modalidade.
+
 ---
 
 # 6. Etiquetas
@@ -286,7 +321,7 @@ Fluxo em duas etapas: gerar a prepostagem (grava o objeto no sistema dos Correio
 - Geração: `POST /api/expedicao/correios/prepostagem` (`src/app/api/expedicao/correios/prepostagem/route.ts`), exige permissão `expedicao.processar`. Chama `criarPrepostagem()` (`src/lib/correios/cws.ts`), grava `expedicoes.correios_id_prepostagem`, `correios_codigo_objeto` e usa o código do objeto também como `codigo_rastreamento`; espelha em `propostas_os` (best-effort).
 - Rótulo: `GET /api/expedicao/correios/etiqueta?id_int=...` (`src/app/api/expedicao/correios/etiqueta/route.ts`), exige permissão `expedicao.view`. Baixa o PDF assíncrono (`baixarRotuloPdf`, `tipoRotulo: "P"`, `formatoRotulo: "ET"`) com até 6 tentativas de poll.
 - Status: `GET /api/expedicao/correios/status` informa se as credenciais estão configuradas (`configurado`) e qual ambiente (`ambiente`: `producao` ou `homologacao`).
-- No modal Despachar, os botões "Gerar prepostagem SEDEX/PAC" só aparecem quando o tipo de frete é `CORREIOS` e `correiosStatus()` confirma `configurado: true`.
+- No modal Despachar, os botões "Gerar prepostagem SEDEX/PAC" só aparecem quando a **modalidade é `CIF`** (seção 5.1), o tipo de frete é `CORREIOS` e `correiosStatus()` confirma `configurado: true`.
 - O formulário do modal é **salvo antes** de chamar a prepostagem: a rota lê peso e endereço já persistidos em `expedicoes`, então qualquer alteração ainda não salva na tela seria ignorada. Por isso `handleGerarPrepostagem` chama `salvarDadosExpedicao()` primeiro e só segue para os Correios se esse salvamento confirmar sucesso.
 
 ### Credenciais por empresa (16/08/2026)
@@ -406,6 +441,7 @@ Limitações que continuam valendo:
 3. Exercitar o contrato da empresa **2 (Ideal Birô)**: as prepostagens reais de 16/08/2026 cobriram Ideal Gráfica e E3; o cartão da 2 nunca foi usado de verdade.
 4. Rodar um roteiro manual de validação visual: painel (cards, chips, filtros), os modais (Despachar, Confirmar retirada, Voltar status, Rastreio, Confirmar ação) e os PDFs — etiqueta interna e rótulo dos Correios impressos em 10×15 real, declaração de conteúdo em A4.
 5. Preencher `telefone_nfe` nas empresas cadastradas sem esse campo (3 das 4 empresas, em 15/08/2026) — sem ele, o remetente sai incompleto na etiqueta interna e o contato some do payload da prepostagem (seção 9, item 3).
+6. **Decidir a fase de recotação do CIF (Parte C do plano).** Hoje `CIF` é só rótulo (seção 5.1). Cotar na Expedição e cobrar a diferença exige quatro decisões de negócio ainda em aberto: onde entra o novo valor de frete (só em `expedicoes` ou também em `propostas`, já que `cotacao_frete` é intocável), de onde sai o dinheiro da diferença (a regra de 22/07 barra pendência devedora na Conta Corrente), quem tem permissão para lançá-la, e o que fazer quando já existe NF-e autorizada ou o pedido já está quitado.
 
 **Variáveis de ambiente na Vercel:** as 13 dos Correios (`CORREIOS_AMBIENTE` + `CORREIOS_{1,2,3}_{USUARIO,CODIGO_ACESSO,CARTAO_POSTAGEM,CONTRATO}`) foram aplicadas em 17/08/2026, junto com as três do QR público (`OS_QR_PUBLICO_ENABLED`, `OS_QR_TOKEN_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`) e o redeploy correspondente.
 
@@ -426,6 +462,14 @@ Limitações que continuam valendo:
 - **Etiqueta 10×15 hierarquizada por distância de leitura**: cidade/UF e números de NF/pedido em corpo grande; o resto em blocos com moldura.
 - **Confirmação de transição usa modal do sistema**, nunca `window.confirm`.
 - **Peso bruto entra pela Revisão do boletim**, não pela Expedição: quem embala é quem sabe o peso com embalagem, e a Expedição precisa dele já pronto para a NF-e.
+
+## 11.2 Decisões de 18/08/2026
+
+- **Quem paga e por onde vai são dimensões separadas** (seção 5.1). A modalidade ganhou coluna própria, aditiva, em vez de virar mais um valor de `tipo_frete` — que teria misturado as duas e quebrado filtro, kanban e rótulos.
+- **`CIF` entra nesta fase só como rótulo**, sem cotação e sem qualquer efeito financeiro. A alternativa — deixar CIF fora da tela — desligaria a emissão pelos Correios, que é sempre CIF por natureza.
+- **Correios fora do FOB**, por regra operacional e não só de UI: a postagem sai pelo cartão da empresa.
+- **Nenhum rebaixamento silencioso de transporte.** Trocar um envio dos Correios por transportadora exige confirmação explícita do expedidor, e não apaga prepostagem, rastreio nem etiqueta.
+- **`SEM_CUSTO` sai do despacho e permanece na leitura**: o Orçamento continua gerando essas cotações, e os pedidos precisam continuar visíveis e filtráveis.
 
 ---
 

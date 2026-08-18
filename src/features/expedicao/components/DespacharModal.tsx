@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
-import { labelTipoFrete, TIPOS_FRETE } from "../lib/tipo-frete";
+import { labelTipoFrete } from "../lib/tipo-frete";
 import { despachar, salvarDadosExpedicao } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
-import type { PedidoExpedicao, TipoFreteNormalizado } from "../types";
+import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
+import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 
 const TIPOS_VOLUME = ["Pacote", "Caixa", "Envelope", "Outro"];
 
@@ -43,6 +44,16 @@ function parseQtdVolumes(valor: string): number | null {
  * de entrega (tipo_endereco contendo "ENTREG"); (3) senão, o mais recente da
  * lista (que já cobre o caso de sobrar um único cadastro).
  */
+/**
+ * Transporte com que o formulário abre. `SEM_CUSTO`, `INDEFINIDO` e
+ * `RETIRA_BALCAO` não são opções do passo 2 (os dois primeiros são leitura de
+ * cotação legada; o último vem da modalidade), então o form abre em
+ * TRANSPORTADORA e o expedidor confirma o que de fato vai acontecer.
+ */
+function transporteInicial(tipo: TipoFreteNormalizado): TipoFreteNormalizado {
+  return tipo === "CORREIOS" || tipo === "MOTOBOY" || tipo === "TRANSPORTADORA" ? tipo : "TRANSPORTADORA";
+}
+
 function escolherEnderecoDefault(lista: EnderecoCliente[], freteCep: string | null): EnderecoCliente | null {
   if (lista.length === 0) return null;
   const cepAlvo = freteCep ? freteCep.replace(/\D/g, "") : "";
@@ -70,12 +81,20 @@ export function DespacharModal({
   const exp = pedido.expedicao;
 
   const tipoInicial: TipoFreteNormalizado = exp?.tipoFrete ?? pedido.tipoFrete;
-  const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(
-    tipoInicial === "INDEFINIDO" ? "TRANSPORTADORA" : tipoInicial
+
+  /**
+   * Modalidade (quem paga) é a escolha do PASSO 1 e comanda o resto do modal.
+   *
+   * Só é pré-selecionada quando já foi declarada antes (`expedicoes.modalidade_frete`)
+   * ou quando a cotação diz RETIRA_BALCAO sem margem de dúvida. Pedido legado
+   * cotado como "Sem custo" ou indefinido abre SEM modalidade — o texto da
+   * cotação é ambíguo (o banco e o TypeScript já divergem ao lê-lo), então quem
+   * decide é o expedidor.
+   */
+  const [modalidade, setModalidade] = useState<ModalidadeFrete | null>(
+    exp?.modalidadeFrete ?? (tipoInicial === "RETIRA_BALCAO" ? "RETIRA" : null)
   );
-  const [tipoEntrega, setTipoEntrega] = useState<"TRANSPORTE" | "RETIRADA">(
-    tipoInicial === "RETIRA_BALCAO" ? "RETIRADA" : "TRANSPORTE"
-  );
+  const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(transporteInicial(tipoInicial));
   const [transportadoraNome, setTransportadoraNome] = useState(
     exp?.transportadoraNome ?? (pedido.tipoFrete === "INDEFINIDO" ? "" : pedido.transportadoraNome)
   );
@@ -92,9 +111,29 @@ export function DespacharModal({
   const [enderecos, setEnderecos] = useState<EnderecoCliente[]>([]);
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
   const [confirmaSemNf, setConfirmaSemNf] = useState(false);
+  const [confirmaTrocaCorreios, setConfirmaTrocaCorreios] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
   const [gerandoPrepostagem, setGerandoPrepostagem] = useState(false);
+
+  /**
+   * O service continua decidindo o status destino por `tipoEntrega`
+   * (RETIRADA → "A RETIRAR", TRANSPORTE → "EM TRANSITO"). Ele agora é derivado
+   * da modalidade, em vez de ser um toggle próprio.
+   */
+  const tipoEntrega: "TRANSPORTE" | "RETIRADA" = modalidade === "RETIRA" ? "RETIRADA" : "TRANSPORTE";
+
+  /**
+   * Pedido cujo envio JÁ existe nos Correios. Marcar FOB nele significaria
+   * rebaixar o transporte para TRANSPORTADORA e perder a informação de que a
+   * encomenda foi postada pelos Correios — por isso a troca nunca acontece
+   * sozinha: exige a confirmação explícita do bloco de aviso abaixo. A
+   * prepostagem, o código de objeto e o rastreio NÃO são apagados em nenhum
+   * caso; só o rótulo do transporte muda.
+   */
+  const gravadoComoCorreios = tipoInicial === "CORREIOS";
+  const prepostagemCorreios = exp?.correiosCodigoObjeto ?? exp?.correiosIdPrepostagem ?? null;
+  const trocaCorreiosPendente = gravadoComoCorreios && modalidade === "FOB" && !confirmaTrocaCorreios;
 
   const precisaAvisoNf = !modoEdicao && pedido.nfStatus !== "AUTORIZADA";
 
@@ -134,6 +173,22 @@ export function DespacharModal({
 
   async function handleConfirmar() {
     if (salvando) return;
+    if (modalidade === null) {
+      showToast({
+        type: "warning",
+        title: "Escolha a modalidade do frete",
+        description: "Diga quem paga o transporte: Retira, FOB ou CIF."
+      });
+      return;
+    }
+    if (trocaCorreiosPendente) {
+      showToast({
+        type: "warning",
+        title: "Confirme a troca do transporte",
+        description: "Este envio está gravado como Correios. Marque a confirmação para trocá-lo por transportadora."
+      });
+      return;
+    }
     if (precisaAvisoNf && !confirmaSemNf) {
       showToast({ type: "warning", title: "Confirme o despacho sem NF", description: "Marque a caixa de confirmação para despachar sem nota autorizada." });
       return;
@@ -151,6 +206,7 @@ export function DespacharModal({
 
     const input: DespachoInput = {
       tipoEntrega,
+      modalidadeFrete: modalidade,
       tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
       transportadoraNome: tipoEntrega === "RETIRADA" ? "Retira balcão" : transportadoraNome.trim(),
       idTransportadoraCliente: tipoEntrega === "RETIRADA" ? null : idTransportadoraCliente,
@@ -203,6 +259,7 @@ export function DespacharModal({
 
     setGerandoPrepostagem(true);
     const salvo = await salvarDadosExpedicao(pedido.idInt, {
+      modalidadeFrete: modalidade,
       tipoFrete,
       transportadoraNome: transportadoraNome.trim(),
       idTransportadoraCliente,
@@ -247,39 +304,103 @@ export function DespacharModal({
             {pedido.cidadeUf ? ` · ${pedido.cidadeUf}` : ""} · frete cotado: {pedido.freteServico || "—"}
           </p>
 
-          {!modoEdicao && (
-            <div>
-              <span className={labelClass}>Tipo de entrega</span>
-              <div className="flex gap-2">
+          {/* PASSO 1 — Modalidade: quem paga o transporte. Comanda o resto do
+              modal e é editável também em modo edição, porque é informação nova:
+              pedido despachado antes de 18/08/2026 não tem modalidade e precisa
+              poder ganhar uma. */}
+          <div>
+            <span className={labelClass}>Modalidade do frete</span>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {MODALIDADES_OFERECIDAS.map((m) => (
                 <button
+                  key={m}
                   type="button"
-                  onClick={() => setTipoEntrega("TRANSPORTE")}
-                  className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${tipoEntrega === "TRANSPORTE" ? "border-[#0b2f4a] bg-[#0b2f4a] text-white" : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"}`}
+                  onClick={() => {
+                    setModalidade(m);
+                    // Sair do FOB desfaz exatamente o que a confirmação fez:
+                    // devolve o transporte gravado e volta a exigir confirmação.
+                    if (m !== "FOB" && confirmaTrocaCorreios) {
+                      setConfirmaTrocaCorreios(false);
+                      setTipoFrete("CORREIOS");
+                    }
+                  }}
+                  className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
+                    modalidade === m
+                      ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                      : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  }`}
                 >
-                  Transporte / envio
+                  {LABEL_MODALIDADE[m]}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setTipoEntrega("RETIRADA")}
-                  className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${tipoEntrega === "RETIRADA" ? "border-[#0b2f4a] bg-[#0b2f4a] text-white" : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"}`}
-                >
-                  Retirada no balcão
-                </button>
-              </div>
+              ))}
+            </div>
+            {modalidade === null && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Escolha a modalidade para liberar as opções de transportadora.
+              </p>
+            )}
+            {modalidade === "CIF" && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                CIF aqui é só o registro de quem paga: não cota, não altera o valor da proposta e não lança nada na Conta Corrente.
+              </p>
+            )}
+          </div>
+
+          {/* Guarda do envio já existente nos Correios: nada é trocado sem o
+              expedidor dizer que quer. */}
+          {trocaCorreiosPendente && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <p className="flex items-center gap-2 font-bold">
+                <AlertTriangle className="h-4 w-4" />
+                {prepostagemCorreios
+                  ? `Este envio já tem prepostagem dos Correios (${prepostagemCorreios}).`
+                  : "Este pedido está definido para ir pelos Correios."}
+              </p>
+              <p className="mt-1.5">
+                Em FOB não existe envio pelos Correios — a postagem sai pelo cartão da empresa. Confirmar troca o
+                transporte para transportadora.
+                {prepostagemCorreios
+                  ? " A prepostagem, o código de rastreio e a etiqueta oficial continuam gravados."
+                  : ""}{" "}
+                Se o envio realmente vai pelos Correios, escolha CIF.
+              </p>
+              <label className="mt-2 flex items-center gap-2 font-semibold">
+                <input
+                  type="checkbox"
+                  checked={confirmaTrocaCorreios}
+                  onChange={(e) => {
+                    setConfirmaTrocaCorreios(e.target.checked);
+                    if (e.target.checked) setTipoFrete("TRANSPORTADORA");
+                  }}
+                  className="h-4 w-4"
+                />
+                Confirmo: este pedido deixa de ir pelos Correios.
+              </label>
             </div>
           )}
 
-          {tipoEntrega === "TRANSPORTE" && (
+          {/* PASSO 2 em diante — modalidades de envio (FOB e CIF). Retira não
+              tem transporte a definir, e o FOB pendente de confirmação fica
+              fechado até o expedidor resolver a troca acima. */}
+          {(modalidade === "FOB" || modalidade === "CIF") && !trocaCorreiosPendente && (
             <>
+              <div>
+                <label className={labelClass}>Como vai</label>
+                <select value={tipoFrete} onChange={(e) => setTipoFrete(e.target.value as TipoFreteNormalizado)} className={inputClass}>
+                  {TRANSPORTES_POR_MODALIDADE[modalidade].map((t) => (
+                    <option key={t} value={t}>{labelTipoFrete(t)}</option>
+                  ))}
+                </select>
+                {modalidade === "FOB" && (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Correios não entra em FOB: a prepostagem sai pelo cartão de postagem da empresa. Para enviar pelos
+                    Correios, marque CIF.
+                  </p>
+                )}
+              </div>
+
+              {/* PASSO 3 — transportadora só depois de definir como vai. */}
               <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className={labelClass}>Tipo de frete</label>
-                  <select value={tipoFrete} onChange={(e) => setTipoFrete(e.target.value as TipoFreteNormalizado)} className={inputClass}>
-                    {TIPOS_FRETE.filter((t) => t !== "RETIRA_BALCAO" && t !== "INDEFINIDO").map((t) => (
-                      <option key={t} value={t}>{labelTipoFrete(t)}</option>
-                    ))}
-                  </select>
-                </div>
                 <div>
                   <label className={labelClass}>Transportadora cadastrada</label>
                   <select
@@ -298,10 +419,10 @@ export function DespacharModal({
                     ))}
                   </select>
                 </div>
-              </div>
-              <div>
-                <label className={labelClass}>Nome da transportadora / serviço</label>
-                <input value={transportadoraNome} onChange={(e) => setTransportadoraNome(e.target.value)} placeholder='Ex.: "Expresso São Miguel", "SEDEX"' className={inputClass} />
+                <div>
+                  <label className={labelClass}>Nome da transportadora / serviço</label>
+                  <input value={transportadoraNome} onChange={(e) => setTransportadoraNome(e.target.value)} placeholder='Ex.: "Expresso São Miguel"' className={inputClass} />
+                </div>
               </div>
               <div>
                 <label className={labelClass}>Endereço de entrega (vai para a etiqueta)</label>
@@ -316,7 +437,10 @@ export function DespacharModal({
                 <label className={labelClass}>Código de rastreio (manual)</label>
                 <input value={codigoRastreamento} onChange={(e) => setCodigoRastreamento(e.target.value)} placeholder="Ex.: AD173823345BR — ou gere pelos Correios na Fase 4" className={inputClass} />
               </div>
-              {tipoEntrega === "TRANSPORTE" && tipoFrete === "CORREIOS" && correiosOk && (
+              {/* Prepostagem é sempre CIF: sai pelo cartão de postagem da
+                  empresa. A modalidade entra na condição de propósito, para um
+                  pedido legado marcado FOB nunca reabrir o botão. */}
+              {modalidade === "CIF" && tipoFrete === "CORREIOS" && correiosOk && (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
