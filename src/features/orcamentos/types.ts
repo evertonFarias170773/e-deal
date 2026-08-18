@@ -1,4 +1,5 @@
 import type { Cadastro, CadastroContato, CadastroEndereco, CadastroVinculoComercial } from "@/features/cadastros/types";
+import type { ModalidadeFrete } from "@/features/expedicao/types";
 import type { Produto, TipoVariacao, VariacaoGlobal } from "@/features/produtos/types";
 
 export type PropostaStatus = 
@@ -156,6 +157,10 @@ export type Proposta = {
   itens: PropostaItem[];
   fretes: PropostaFrete[];
   freteEscolhidoId: string;
+  /** propostas.modalidade_frete — quem paga, declarado na aba Fretes. */
+  modalidadeFrete: ModalidadeFrete | null;
+  /** propostas.id_transportadora_cliente — transportadora definida em FOB. */
+  idTransportadoraCliente: number | null;
   resumo: PropostaResumo;
   descontoGeralTipo: TipoDescontoProposta;
   descontoGeralValor: number;
@@ -194,6 +199,10 @@ export type PropostaFormState = {
   briefingArtesDraft?: any;
   fretes: PropostaFrete[];
   freteEscolhidoId: string;
+  /** Quem paga o transporte. Null em proposta anterior a 18/08/2026 ou ainda não declarada. */
+  modalidadeFrete: ModalidadeFrete | null;
+  /** FK para clientes(id_cliente) — só transportadoras cadastradas e ativas. */
+  idTransportadoraCliente: number | null;
   descontoGeralTipo: TipoDescontoProposta;
   descontoGeralValor: string;
   formaPagamento: string;

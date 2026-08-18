@@ -195,6 +195,10 @@ export async function salvarCotacaoComoPropostaReal(
     pedidosModelos: [],
     fretes,
     freteEscolhidoId: pending.freteEscolhido.id,
+    // O Maestro cota e escolhe o frete, mas não declara quem paga: modalidade é
+    // decisão do vendedor na aba Fretes. Nasce nula e o valor cotado vale.
+    modalidadeFrete: null,
+    idTransportadoraCliente: null,
     descontoGeralTipo: 'PERCENTUAL',
     descontoGeralValor: percentualBonus > 0 ? String(percentualBonus) : '0',
     formaPagamento: 'A definir',

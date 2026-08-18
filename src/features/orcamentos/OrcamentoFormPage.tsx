@@ -63,6 +63,16 @@ import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.s
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
+import {
+  aplicarModalidadeNosFretes,
+  faltaTransportadoraEmFob,
+  LABEL_MODALIDADE,
+  MODALIDADES_ORCAMENTO,
+  motivoBloqueioModalidade,
+  podeEditarModalidade,
+  valorFreteEfetivo
+} from "@/features/orcamentos/lib/modalidade-frete";
+import { getTransportadoras } from "@/features/nfe/services/nfe.service";
 import type { Produto } from "@/features/produtos/types";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
@@ -829,6 +839,26 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const [dbVendedores, setDbVendedores] = useState<UsuarioVendedor[]>([]);
   const [loadingVendedores, setLoadingVendedores] = useState(true);
 
+  /**
+   * Transportadoras do cadastro (clientes com `categoria = TRANSPORTADORA` e
+   * `ativo = true`, filtro que já vive em `getTransportadoras`). É a mesma fonte
+   * do modal de despacho da Expedição — a proposta grava a FK, não texto livre,
+   * justamente para o despacho reaproveitar o vínculo.
+   */
+  const [transportadoras, setTransportadoras] = useState<
+    { id_cliente: number; nome: string | null; fantasia: string | null }[]
+  >([]);
+
+  useEffect(() => {
+    let ativo = true;
+    void getTransportadoras().then((lista) => {
+      if (ativo) setTransportadoras(lista as { id_cliente: number; nome: string | null; fantasia: string | null }[]);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
   // ── Unsaved changes guard ─────────────────────────────────────────────────
   const initialFormSnapshot = useRef<string>("");
   const snapshotCaptured    = useRef(false);
@@ -941,12 +971,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       : form.vendedor;
 
   const freteEscolhido = form.fretes.find((frete) => frete.id === form.freteEscolhidoId);
+
+  /**
+   * Modalidade e transportadora só são editáveis na fase de orçamento. Depois de
+   * LIBERADO o salvamento reescreveria `cotacao_frete`, e o trigger do banco
+   * rebaixaria a proposta para NOVO — ver `lib/modalidade-frete.ts`.
+   */
+  const modalidadeEditavel = podeEditarModalidade(form.status);
   const bonusPercent = cliente ? getClienteBonusPercent(cliente) : 0;
   
   const resumo = useMemo(() => {
     if (form.isAvulso) {
       const subtotalProdutos = parseCurrencyBR(form.valorProdutosManual) ?? 0;
-      const frete = parseCurrencyBR(form.valorFreteManual) ?? 0;
+      // Mesma regra da proposta normal: em FOB o frete manual não é cobrado.
+      const frete = valorFreteEfetivo(parseCurrencyBR(form.valorFreteManual) ?? 0, form.modalidadeFrete);
       return {
         subtotalProdutos,
         subtotalBrutoProdutos: subtotalProdutos,
@@ -961,8 +999,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         prazoEntrega: "A combinar"
       };
     }
-    return calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
-  }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.descontoGeralValor, form.descontoGeralTipo]);
+    // FOB não cobra frete: o resumo tem de mostrar o mesmo zero que o
+    // salvamento vai gravar, senão o total na tela mente.
+    return calculateResumo(
+      form.itens,
+      aplicarModalidadeNosFretes(form.fretes, form.modalidadeFrete),
+      Number(form.descontoGeralValor) || 0,
+      form.descontoGeralTipo
+    );
+  }, [form.isAvulso, form.valorProdutosManual, form.valorFreteManual, form.itens, form.fretes, form.modalidadeFrete, form.descontoGeralValor, form.descontoGeralTipo]);
 
   const volumes = Math.max(1, Math.ceil(resumo.pesoTotal / 14500));
 
@@ -3108,6 +3153,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       return false;
     }
 
+    // FOB sem transportadora não fecha: é justamente o dado que a Expedição vai
+    // usar no despacho. Só cobra enquanto os campos estão editáveis — proposta
+    // já liberada não fica refém de uma regra criada depois dela.
+    if (modalidadeEditavel && faltaTransportadoraEmFob(form.modalidadeFrete, form.idTransportadoraCliente)) {
+      showToast({
+        type: "error",
+        title: "Transportadora obrigatória em FOB",
+        description: "Escolha a transportadora que vai retirar antes de salvar o orçamento."
+      });
+      setActiveFormTab("fretes");
+      return false;
+    }
+
     if (form.isAvulso) {
       const valProdStr = form.valorProdutosManual || "";
       const valProd = parseCurrencyBR(valProdStr);
@@ -4833,7 +4891,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     const checked = e.target.checked;
                     updateField("isAvulso", checked);
                     if (checked) {
-                      const originalResumo = calculateResumo(form.itens, form.fretes, Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
+                      const originalResumo = calculateResumo(form.itens, aplicarModalidadeNosFretes(form.fretes, form.modalidadeFrete), Number(form.descontoGeralValor) || 0, form.descontoGeralTipo);
                       updateField("valorProdutosManual", formatCurrencyWithoutPrefix(originalResumo.valorTotal));
                       updateField("valorFreteManual", "0,00");
                       updateField("observacoesFreteManual", "Frete Incluso");
@@ -5019,6 +5077,71 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             title="7. Fretes e Entrega" 
             description={form.isAvulso ? "Configure o frete manual para a proposta avulsa." : "Integração em tempo real com cotações de SEDEX e cadastro de frete manual."}
           >
+            {/* Modalidade — quem paga o transporte. Vale para proposta normal e
+                avulsa: é decisão comercial, não detalhe da cotação. A escolha
+                atravessa o fluxo e chega pré-preenchida no despacho. */}
+            <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-4 dark:border-slate-700 dark:bg-slate-800/40">
+              <div>
+                <span className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">
+                  Modalidade do frete — quem paga
+                </span>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {MODALIDADES_ORCAMENTO.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={!modalidadeEditavel}
+                      onClick={() => {
+                        updateField("modalidadeFrete", m);
+                        // Só FOB tem transportadora definida pelo vendedor.
+                        if (m !== "FOB") updateField("idTransportadoraCliente", null);
+                      }}
+                      className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        form.modalidadeFrete === m
+                          ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                          : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      {LABEL_MODALIDADE[m]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {form.modalidadeFrete === "FOB" && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
+                    Transportadora definida *
+                  </label>
+                  <select
+                    value={form.idTransportadoraCliente ?? ""}
+                    disabled={!modalidadeEditavel}
+                    onChange={(e) =>
+                      updateField("idTransportadoraCliente", e.target.value === "" ? null : Number(e.target.value))
+                    }
+                    className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    <option value="">— escolha a transportadora —</option>
+                    {transportadoras.map((t) => (
+                      <option key={t.id_cliente} value={t.id_cliente}>
+                        {t.fantasia || t.nome || `#${t.id_cliente}`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Em FOB o cliente contrata e paga o transporte: a cotação vale zero e o total da proposta sai sem
+                    frete. A transportadora é obrigatória e vai pré-preenchida para a Expedição.
+                  </p>
+                </div>
+              )}
+
+              {!modalidadeEditavel && (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  {motivoBloqueioModalidade(form.status)}
+                </p>
+              )}
+            </div>
+
             {form.isAvulso ? (
               <div className="space-y-4 rounded-2xl bg-slate-50 p-4 border border-slate-200 dark:bg-slate-800/40 dark:border-slate-700">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -6683,6 +6806,8 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     pedidosModelos: [],
     fretes,
     freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),
+    modalidadeFrete: proposta?.modalidadeFrete ?? null,
+    idTransportadoraCliente: proposta?.idTransportadoraCliente ?? null,
     descontoGeralTipo: proposta?.descontoGeralTipo ?? "VALOR",
     descontoGeralValor: proposta?.descontoGeralValor ? proposta.descontoGeralValor.toString() : "0",
     formaPagamento: proposta?.formaPagamento ?? "Pix a vista 3 dias",

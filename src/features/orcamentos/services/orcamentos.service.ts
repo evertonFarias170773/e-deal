@@ -2,6 +2,13 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { PROPOSTA_STATUS_GROUP_ATIVO_CLIENTE } from "@/features/orcamentos/constants";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
+import {
+  aplicarModalidadeNosFretes,
+  faltaTransportadoraEmFob,
+  podeEditarModalidade,
+  valorFreteEfetivo,
+  type ModalidadeFrete
+} from "@/features/orcamentos/lib/modalidade-frete";
 import type {
   SupabasePagamentoTipoCobrancaRow,
   SupabasePropostaRow,
@@ -1223,6 +1230,9 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       itens: mappedItens,
       fretes,
       freteEscolhidoId,
+      modalidadeFrete: (proposalRow.modalidade_frete as ModalidadeFrete | null) ?? null,
+      idTransportadoraCliente:
+        proposalRow.id_transportadora_cliente != null ? Number(proposalRow.id_transportadora_cliente) : null,
       resumo: {
         subtotalBrutoProdutos: subtotalProdutos,
         acrescimoBonus: 0,
@@ -1623,10 +1633,31 @@ export async function saveProposta(
       }
     }
 
-    const freteValor = formState.isAvulso
-      ? (parseCurrencyBR(formState.valorFreteManual) ?? 0)
-      : (chosenFrete ? chosenFrete.valor : 0);
-    
+    // A modalidade do form vale sempre para o CÁLCULO (numa proposta travada ela
+    // é o que veio do banco, exibido somente leitura). O que a trava muda é a
+    // GRAVAÇÃO: fora da fase de orçamento os dois campos não entram no UPDATE —
+    // travado significa "não altera", nunca "apaga o que o vendedor declarou".
+    const modalidadeEditavel = podeEditarModalidade(formState.status);
+    const modalidadeFrete: ModalidadeFrete | null = formState.modalidadeFrete ?? null;
+    const idTransportadoraCliente = formState.idTransportadoraCliente ?? null;
+
+    if (modalidadeEditavel && faltaTransportadoraEmFob(modalidadeFrete, idTransportadoraCliente)) {
+      return {
+        success: false,
+        errorMessage: "Em FOB, escolha a transportadora que vai retirar antes de salvar o orçamento."
+      };
+    }
+
+    // FOB não cobra frete: o valor cotado continua visível na tela como
+    // referência, mas o que a proposta grava é zero. Ponto único da regra —
+    // `valor_frete`, `cotacao_frete.valor` e o resumo saem todos daqui.
+    const freteValor = valorFreteEfetivo(
+      formState.isAvulso
+        ? (parseCurrencyBR(formState.valorFreteManual) ?? 0)
+        : (chosenFrete ? chosenFrete.valor : 0),
+      modalidadeFrete
+    );
+
     // Map internal freight name
     let freteNome = "RETIRADA";
     if (formState.isAvulso) {
@@ -1664,7 +1695,7 @@ export async function saveProposta(
       prazoEntrega: "A combinar"
     } : calculateResumo(
       activeItens,
-      formState.fretes,
+      aplicarModalidadeNosFretes(formState.fretes, modalidadeFrete),
       Number.isFinite(Number(formState.descontoGeralValor)) ? Number(formState.descontoGeralValor) : 0,
       formState.descontoGeralTipo
     );
@@ -1773,6 +1804,13 @@ export async function saveProposta(
       propostaData.valor_total = valorTotal;
       propostaData.frete_escolhido = freteNome;
       propostaData.valor_frete = freteValor;
+    }
+
+    // Só entram no UPDATE enquanto a proposta está na fase de orçamento. Depois
+    // de LIBERADO os campos ficam de fora e o que já está gravado permanece.
+    if (modalidadeEditavel) {
+      propostaData.modalidade_frete = modalidadeFrete;
+      propostaData.id_transportadora_cliente = idTransportadoraCliente;
     }
 
     let persistedValorTotal = valorTotal;
