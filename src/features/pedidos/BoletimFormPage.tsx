@@ -723,6 +723,31 @@ export function BoletimFormPage() {
   }, [gruposPorSetor, boletins]);
 
   /**
+   * Setor que o boletim está tratando agora.
+   *
+   * A ordem de precedência é a regra:
+   *   1. `boletimSetor` — o setor do boletim já gravado (lido em loadBoletins)
+   *      ou a aba que o usuário clicou. Escolha explícita sempre vence.
+   *   2. o primeiro setor do pedido, que vem de `produtos.setor_pcp` pelos
+   *      grupos — é o que o campo sempre prometeu: "o setor vem dos produtos".
+   *
+   * Existe porque na Abertura de OS não havia caminho nenhum para preencher o
+   * setor: a régua de abas só era renderizada na edição, e `boletimSetor` só
+   * recebia valor de um boletim que ainda não existia. O campo pedia para
+   * escolher uma aba acima que não estava lá, e o save morria na validação
+   * "Informe o setor para abrir o boletim" — em qualquer proposta sem boletim.
+   *
+   * É derivado, e não estado inicializado por efeito, por dois motivos: não
+   * existe janela em que a tela mostre vazio antes de um efeito corrigir, e
+   * nada aqui pode sobrescrever o setor lido do banco por uma corrida de
+   * carregamento.
+   *
+   * Pedido sem grupo de setor continua vazio de propósito — inventar setor
+   * mandaria a OS para a bancada errada.
+   */
+  const setorEfetivo = boletimSetor || gruposPorSetor[0]?.setor || "";
+
+  /**
    * Peso líquido: soma do peso ESTIMADO de cada setor, derivado dos produtos.
    * Já vem preenchido antes de qualquer conferência — é a referência contra a
    * qual o revisor compara o bruto que vai pesar na balança. Bruto inclui
@@ -1218,7 +1243,7 @@ export function BoletimFormPage() {
         const dadosBoletim = await salvarBoletimSetor({
           id: boletimId,
           idInt: Number(idIntParam),
-          setor: boletimSetor || null,
+          setor: setorEfetivo || null,
           prazo: dataPrevistaEntrega || null,
           hora: boletimHora || null
         });
@@ -1299,7 +1324,7 @@ export function BoletimFormPage() {
         if (idIntParam) {
           const atualizados = await listarBoletinsDaProposta(Number(idIntParam));
           setBoletins(atualizados);
-          const desteSetor = atualizados.find((b) => normalizarSetor(b.setor) === normalizarSetor(boletimSetor));
+          const desteSetor = atualizados.find((b) => normalizarSetor(b.setor) === normalizarSetor(setorEfetivo));
           if (desteSetor) setBoletimId(desteSetor.id);
         }
       } catch (error) {
@@ -1413,7 +1438,7 @@ export function BoletimFormPage() {
       const dadosBoletim = await salvarBoletimSetor({
         id: boletimId,
         idInt,
-        setor: boletimSetor || null,
+        setor: setorEfetivo || null,
         prazo: dataPrevistaEntrega || null,
         hora: boletimHora || null
       });
@@ -1458,8 +1483,8 @@ export function BoletimFormPage() {
         }))
       );
 
-      // `boletimSetor` fica so como padrao de quem nao tiver setor proprio.
-      const modelsResult = await salvarModelosBoletim(idInt, result.id, modelosPayload, boletimSetor || null);
+      // `setorEfetivo` fica so como padrao de quem nao tiver setor proprio.
+      const modelsResult = await salvarModelosBoletim(idInt, result.id, modelosPayload, setorEfetivo || null);
 
       if (!modelsResult.success) {
         showToast({
@@ -1532,7 +1557,7 @@ export function BoletimFormPage() {
                   if (isPrintingOs || !idIntParam) return;
                   setIsPrintingOs(true);
                   // Imprime o boletim aberto: o PDF é do setor, não da proposta.
-                  const result = await abrirPdfOs(Number(idIntParam), boletimId, boletimSetor);
+                  const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo);
                   setIsPrintingOs(false);
                   if (!result.success) {
                     showToast({
@@ -1549,8 +1574,8 @@ export function BoletimFormPage() {
                 <span>
                   {isPrintingOs
                     ? "Gerando PDF..."
-                    : boletimSetor
-                      ? `Imprimir OS · ${boletimSetor}`
+                    : setorEfetivo
+                      ? `Imprimir OS · ${setorEfetivo}`
                       : "Imprimir OS"}
                 </span>
               </button>
@@ -1812,12 +1837,12 @@ export function BoletimFormPage() {
                     dos produtos do pedido —, então não há "adicionar setor": cada
                     aba é um setor, e clicar nela abre o boletim daquele setor
                     (criando-o no primeiro save, se ainda não existir). */}
-                {isEditing && abasDeSetor.length > 0 && (
+                {abasDeSetor.length > 0 && (
                   <div className="mt-4">
                     <div className="flex flex-wrap items-end gap-1.5 border-b-[3px] border-slate-300">
                       {abasDeSetor.map((aba) => {
                         const cores = coresDoSetor(aba.setor);
-                        const ativa = !abaExpedicao && normalizarSetor(boletimSetor) === aba.setor && Boolean(boletimSetor);
+                        const ativa = !abaExpedicao && normalizarSetor(setorEfetivo) === aba.setor && Boolean(setorEfetivo);
                         return (
                           <button
                             key={aba.setor}
@@ -1856,6 +1881,9 @@ export function BoletimFormPage() {
                         );
                       })}
                       {/* Revisão não é setor: confere o pedido inteiro e o libera para a Expedição. */}
+                      {/* ...mas ela segue só na edição: libera o pedido para a Expedição,
+                          e isso não é ação de quem está abrindo a OS. */}
+                      {isEditing && (
                       <button
                         type="button"
                         onClick={() => setAbaExpedicao(true)}
@@ -1870,6 +1898,7 @@ export function BoletimFormPage() {
                           pedido inteiro
                         </span>
                       </button>
+                      )}
                     </div>
                     <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
                       O pedido #{idIntParam} é um só; cada setor produz a sua parte e tem o seu
@@ -1891,10 +1920,10 @@ export function BoletimFormPage() {
                     {/* Quem define o setor é a aba aberta — não há escolha a fazer
                         aqui, o setor vem dos produtos do pedido. */}
                     <div className="flex h-11 w-full items-center gap-2 rounded-2xl border-2 border-blue-200 bg-white px-4">
-                      {boletimSetor ? (
+                      {setorEfetivo ? (
                         <>
-                          <span className={`h-2.5 w-2.5 rounded-full ${coresDoSetor(normalizarSetor(boletimSetor)).chip}`} />
-                          <span className="text-base font-bold text-blue-950">{normalizarSetor(boletimSetor)}</span>
+                          <span className={`h-2.5 w-2.5 rounded-full ${coresDoSetor(normalizarSetor(setorEfetivo)).chip}`} />
+                          <span className="text-base font-bold text-blue-950">{normalizarSetor(setorEfetivo)}</span>
                           <span className="ml-auto text-[11px] font-semibold text-slate-400">definido pela aba</span>
                         </>
                       ) : (
@@ -1992,7 +2021,7 @@ export function BoletimFormPage() {
             <div className="space-y-6">
               {gruposVisiveis.map((grupo) => {
                 const cores = coresDoSetor(grupo.setor);
-                const ehDesteBoletim = normalizarSetor(boletimSetor) === grupo.setor && Boolean(boletimSetor);
+                const ehDesteBoletim = normalizarSetor(setorEfetivo) === grupo.setor && Boolean(setorEfetivo);
                 const boletimDoSetor = boletins.find((b) => normalizarSetor(b.setor) === grupo.setor);
                 const totalDoSetor = grupo.produtos.reduce(
                   (soma, prod) => soma + (Number(prod.quantidadeOriginal || prod.quantidade) || 0),
