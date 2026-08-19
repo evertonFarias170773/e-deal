@@ -293,7 +293,11 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
     empresa,
     vendedor,
     dataPedido,
-    dataPrevistaEntrega: row?.data_termino || row?.data_pedido || new Date().toISOString(),
+    // Só a promessa real. Cair em `data_pedido` (ou em hoje) fabricava um prazo
+    // que ninguém prometeu: a data da ABERTURA da OS virava data de ENTREGA. O
+    // boletim então via o campo preenchido e nunca alcançava a sugestão por
+    // prazo de produto, que já existia e nunca rodou.
+    dataPrevistaEntrega: row?.data_termino || null,
     statusPedido: (row?.status_pedido || "BOLETIM_FINALIZADO") as PedidoStatus,
     status_pedido: row?.status_pedido || "BOLETIM_FINALIZADO",
     status_pagamento: row?.status_pagamento || "APROVADO",

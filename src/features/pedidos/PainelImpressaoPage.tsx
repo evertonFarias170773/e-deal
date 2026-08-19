@@ -29,6 +29,19 @@ const STATUS_FILTROS = ["todos", "prontos", "rodando", "aguardando_arte", "bloqu
 const CHAVE_COMPACTO = "ui:/pedidos/impressao:compacto";
 const CHAVE_TELA_CHEIA = "ui:/pedidos/impressao:tela-cheia";
 
+/**
+ * Prazo vencido — só existe quando alguém prometeu uma data.
+ *
+ * Sem `propostas_os.data_termino` não há prazo a violar. Antes chegava string
+ * vazia aqui e `new Date("")` era Invalid Date: a comparação dava falso por
+ * acidente (todo `<` com NaN é falso), então a fila acertava pelo motivo errado
+ * — e a coluna de prazo, que não compara nada, imprimia "Invalid Date".
+ */
+function prazoVencido(dataPrevista: string | null): boolean {
+  if (!dataPrevista) return false;
+  return new Date(dataPrevista) < new Date();
+}
+
 export function PainelImpressaoPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -221,7 +234,7 @@ export function PainelImpressaoPage() {
     if (filterStatus === "aguardando_arte" && itemStatus !== "AGUARDANDO ARTE") return false;
     if (filterStatus === "bloqueados" && itemStatus !== "BLOQUEADO FINANCEIRO" && itemStatus !== "PAUSADO OPERACIONAL") return false;
     if (filterStatus === "atrasados") {
-      const isLate = new Date(p.dataPrevistaEntrega) < new Date() && itemStatus !== "CONCLUÍDO";
+      const isLate = prazoVencido(p.dataPrevistaEntrega) && itemStatus !== "CONCLUÍDO";
       if (!isLate) return false;
     }
 
@@ -290,7 +303,7 @@ export function PainelImpressaoPage() {
     }).length;
     const atrasadosCount = allItems.filter(i => {
       const s = getItemStatus(i.pedido, i.modelo);
-      return new Date(i.pedido.dataPrevistaEntrega) < new Date() && s !== "CONCLUÍDO";
+      return prazoVencido(i.pedido.dataPrevistaEntrega) && s !== "CONCLUÍDO";
     }).length;
 
     return (
@@ -358,8 +371,10 @@ export function PainelImpressaoPage() {
         return a.pedido.urgente ? -1 : 1;
       }
 
-      const dateA = new Date(a.pedido.dataPrevistaEntrega).getTime();
-      const dateB = new Date(b.pedido.dataPrevistaEntrega).getTime();
+      // Sem prazo prometido vai para o fim da fila: não é urgente por não ter
+      // data, e antes NaN - NaN deixava a ordem entregue ao acaso do sort.
+      const dateA = a.pedido.dataPrevistaEntrega ? new Date(a.pedido.dataPrevistaEntrega).getTime() : Infinity;
+      const dateB = b.pedido.dataPrevistaEntrega ? new Date(b.pedido.dataPrevistaEntrega).getTime() : Infinity;
       return dateA - dateB;
     });
 
@@ -400,7 +415,7 @@ export function PainelImpressaoPage() {
             {sortedItems.map(({ pedido: p, modelo: m }) => {
               const itemStatus = getItemStatus(p, m);
               const isAwaiting = itemStatus === "AGUARDANDO ARTE";
-              const isLate = new Date(p.dataPrevistaEntrega) < new Date() && itemStatus !== "CONCLUÍDO";
+              const isLate = prazoVencido(p.dataPrevistaEntrega) && itemStatus !== "CONCLUÍDO";
               let statusBadge = null;
               let rowHighlightClass = "";
               const isCriticalBlock = itemStatus === "BLOQUEADO FINANCEIRO" || itemStatus === "PAUSADO OPERACIONAL";
@@ -560,7 +575,9 @@ export function PainelImpressaoPage() {
                   </td>
                   <td className={`${cellPadding} align-middle font-mono font-bold`}>
                     <span className={isLate ? "text-red-600 dark:text-red-400 font-black animate-pulse" : "text-slate-600 dark:text-slate-400"}>
-                      {new Date(p.dataPrevistaEntrega).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                      {p.dataPrevistaEntrega
+                        ? new Date(p.dataPrevistaEntrega).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+                        : "—"}
                     </span>
                   </td>
                   <td className={`${cellPadding} align-middle text-right`}>
@@ -671,7 +688,7 @@ export function PainelImpressaoPage() {
                 if (st === "rodando") return itemStatus === "EM IMPRESSÃO";
                 if (st === "aguardando_arte") return itemStatus === "AGUARDANDO ARTE";
                 if (st === "bloqueados") return itemStatus === "BLOQUEADO FINANCEIRO" || itemStatus === "PAUSADO OPERACIONAL";
-                if (st === "atrasados") return new Date(i.pedido.dataPrevistaEntrega) < new Date() && itemStatus !== "CONCLUÍDO";
+                if (st === "atrasados") return prazoVencido(i.pedido.dataPrevistaEntrega) && itemStatus !== "CONCLUÍDO";
                 return true;
               }).length;
 

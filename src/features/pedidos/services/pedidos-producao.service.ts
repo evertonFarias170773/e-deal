@@ -210,7 +210,9 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       vendedor: p.vendedor || "Não atribuído",
       status_interno: composeStatusEmArte(p.status_interno || "INDEFINIDO", emArte),
       dataProposta: p.created_at || new Date().toISOString(),
-      dataPrevistaEntrega: dataTermino || "",
+      // Mesma regra do detalhe: sem promessa gravada, ausência — não string
+      // vazia, que virava `new Date("")` e "Invalid Date" no Kanban e no painel.
+      dataPrevistaEntrega: dataTermino,
       valorTotal: Number(p.valor_total) || 0,
       urgente: false,
       produto_principal: nomeEvento,

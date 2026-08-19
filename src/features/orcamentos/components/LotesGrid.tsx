@@ -76,6 +76,7 @@ export type PadroesDeLote = {
 export function LotesGrid({
   idInt,
   item,
+  itemPrateleira,
   linhasIniciais,
   cores,
   numeracoes,
@@ -85,6 +86,12 @@ export function LotesGrid({
 }: {
   idInt: number;
   item: { id_produto_proposta_origem: number; nome: string; quantidade: number };
+  /**
+   * Produto de prateleira (`produtos_proposta.is_estoque`): vendido pronto, sem
+   * arte e sem lote desenhado. O lote não tem nome próprio a inventar — o que
+   * identifica a peça é o próprio produto, e é ele que a grade usa.
+   */
+  itemPrateleira: boolean;
   linhasIniciais: LinhaLote[];
   cores: CorOpcao[];
   /** Cadastro de numerações: só para saber quantos números cada unidade consome (TICKET). */
@@ -139,7 +146,13 @@ export function LotesGrid({
     // o que evita lote nascendo sem numerador. A quantidade nasce em branco de
     // propósito, para ninguém gravar por engano o número da linha anterior.
     return {
-      nome_modelo: base?.nome_modelo ?? "",
+      // Prateleira nasce com o nome do produto: não há arte nem lote desenhado a
+      // batizar, e exigir digitação era barrar o fechamento por um vazio que a
+      // própria grade tinha acabado de criar. O caminho de COLAR já fazia isto
+      // (`nomePadrao`, abaixo) — o "+" ficava de fora, na mesma tela.
+      // Produto normal segue nascendo vazio: ali o nome do lote é informação de
+      // verdade, e a validação continua inteira.
+      nome_modelo: base?.nome_modelo ?? (itemPrateleira ? item.nome : ""),
       quantidade: "" as const,
       padrao: base?.padrao ?? padroes.padrao,
       tipo_numeracao: base?.tipo_numeracao ?? padroes.tipo_numeracao,

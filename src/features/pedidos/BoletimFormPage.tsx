@@ -38,7 +38,7 @@ import {
   avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
-import { SETORES_PCP, SETOR_PADRAO, coresDoSetor, normalizarSetor, prazoLimiteDoPedido } from "./setores";
+import { SETORES_PCP, SETOR_PADRAO, coresDoSetor, normalizarSetor } from "./setores";
 import { tituloEventoDoPedido } from "./titulo-evento";
 import { atribuirSetorAosModelos } from "./services/pedidos-artes.service";
 import {
@@ -146,23 +146,41 @@ function somarDiasDeProducao(dias: number, emDiasUteis: boolean): string {
  * prazo do primeiro item (calculateResumo). Sem prazo em nenhum produto, cai no
  * padrão de 7 dias do formulário.
  */
-function calcularDataLimitePorProdutos(itens: Proposta["itens"]): string {
+function dataLimitePorPrazos(prazos: (string | null | undefined)[]): string {
   let maiorData = "";
 
-  for (const item of itens) {
-    if (item.statusItem === "CANCELADO") continue;
-
-    const textoPrazo = item.produto?.prazo || item.prazo || "";
-    const dias = diasDoPrazoCadastrado(textoPrazo);
+  for (const textoPrazo of prazos) {
+    const texto = textoPrazo || "";
+    const dias = diasDoPrazoCadastrado(texto);
     if (dias === null) continue;
 
     // Compara a data resultante, não o número de dias: "2 dias úteis" pode cair
     // depois de "3 dias" corridos quando o intervalo pega um fim de semana.
-    const data = somarDiasDeProducao(dias, /util|uteis/.test(semAcento(textoPrazo)));
+    const data = somarDiasDeProducao(dias, /util|uteis/.test(semAcento(texto)));
     if (!maiorData || data > maiorData) maiorData = data;
   }
 
   return maiorData || parsePrazoToDate("");
+}
+
+/**
+ * Data limite sugerida a partir do prazo de produção cadastrado em cada produto
+ * do pedido: vale sempre o maior. Dois produtos, um de 1 dia e outro de 3 dias,
+ * dão a data de 3 dias. O resumo da proposta não serve aqui porque leva só o
+ * prazo do primeiro item (calculateResumo). Sem prazo em nenhum produto, cai no
+ * padrão de 7 dias do formulário.
+ *
+ * Regra única do prazo (decisão do dono em 18/08/2026): útil ou corrido sai do
+ * TEXTO do cadastro — "1 dia útil" pula fim de semana, "3 dias" não. Feriados
+ * ficam de fora: o ERP não tem calendário deles. `prazoLimiteDoPedido`, que
+ * contava sempre em dias úteis, não rege mais este cálculo.
+ */
+function calcularDataLimitePorProdutos(itens: Proposta["itens"]): string {
+  return dataLimitePorPrazos(
+    itens
+      .filter((item) => item.statusItem !== "CANCELADO")
+      .map((item) => item.produto?.prazo || item.prazo || "")
+  );
 }
 
 function canStartProduction(proposal: Proposta): boolean {
@@ -345,13 +363,12 @@ export function BoletimFormPage() {
           setStatusOperacional(pedido.status_producao || "PENDENTE");
 
           // Data limite: o maior prazo de producao entre TODOS os produtos do
-          // pedido, em dias uteis a partir da abertura do boletim. So sugere
-          // quando ainda nao ha data gravada — edicao manual sempre prevalece.
+          // pedido — util ou corrido conforme o texto do cadastro. So sugere
+          // quando ainda nao ha data PROMETIDA gravada; edicao manual e prazo ja
+          // salvo sempre prevalecem. `dataPrevistaEntrega` agora e nula quando
+          // ninguem prometeu nada, e e por isso que a sugestao finalmente roda.
           const deadlineDate = pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "";
-          const sugestao = prazoLimiteDoPedido(
-            (pedido.produtos || []).map((p) => p.prazoProducao),
-            pedido.dataPedido ? new Date(pedido.dataPedido) : new Date()
-          );
+          const sugestao = dataLimitePorPrazos((pedido.produtos || []).map((p) => p.prazoProducao));
           setDataPrevistaEntrega(deadlineDate || sugestao || "");
 
           const parsed = parsePedidosObs(pedido.obs);

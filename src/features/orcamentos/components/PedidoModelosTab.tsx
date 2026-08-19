@@ -1389,6 +1389,7 @@ export function PedidoModelosTab({
                           nome: item.nome,
                           quantidade: item.quantidade || 0
                         }}
+                        itemPrateleira={isItemPrateleira(item)}
                         cores={coresDoItem}
                         numeracoes={numeracoesOpcoes}
                         // Cores restritas ao formato do item, que é o que a grade

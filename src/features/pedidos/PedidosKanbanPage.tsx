@@ -50,6 +50,13 @@ const getPrazoStatus = (pedido: PropostaOperacionalListItem) => {
   if (pedido.statusPedido === "EXPEDIDO" || pedido.statusPedido === "CANCELADO") {
     return { label: "CONCLUÍDO", color: "text-slate-400 bg-slate-100 dark:bg-slate-800 dark:text-slate-500", isLate: false };
   }
+  // Sem promessa gravada não há prazo a julgar: nem atrasado, nem entrega hoje.
+  // Antes chegava string vazia aqui e `new Date("T00:00:00")` virava Invalid
+  // Date, cujo diffDays é NaN — e NaN < 0 é falso, então o pedido caía no rótulo
+  // "PRAZO: Invalid Date" como se tivesse um.
+  if (!pedido.dataPrevistaEntrega) {
+    return { label: "PRAZO: —", color: "text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 font-bold", isLate: false };
+  }
   const deliveryDate = new Date(pedido.dataPrevistaEntrega + "T00:00:00");
   const today = new Date("2026-06-02T00:00:00");
   const diffTime = deliveryDate.getTime() - today.getTime();
@@ -212,6 +219,8 @@ export function PedidosKanbanPage() {
 
   const isPedidoAtrasado = (pedido: PropostaOperacionalListItem) => {
     if (pedido.statusPedido === "EXPEDIDO" || pedido.statusPedido === "CANCELADO") return false;
+    // Pedido sem promessa não está atrasado: não há prazo contra o qual atrasar.
+    if (!pedido.dataPrevistaEntrega) return false;
     const deliveryDate = new Date(pedido.dataPrevistaEntrega);
     const today = new Date("2026-06-02");
     return deliveryDate < today;
@@ -232,6 +241,8 @@ export function PedidosKanbanPage() {
   const bloqueadosCount = pedidos.filter(p => isPedidoBloqueado(p)).length;
   const hojeCount = pedidos.filter(p => p.dataPrevistaEntrega === "2026-06-02" && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO").length;
   const semanaCount = pedidos.filter(p => {
+    // Sem promessa gravada o pedido nao entra em nenhuma janela de prazo.
+    if (!p.dataPrevistaEntrega) return false;
     const t = new Date(p.dataPrevistaEntrega).getTime();
     const todayTime = new Date("2026-06-02").getTime();
     return t >= todayTime && t <= todayTime + 7 * 24 * 60 * 60 * 1000 && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO";
@@ -278,6 +289,7 @@ export function PedidosKanbanPage() {
       } else if (activeFilter === "hoje") {
         matchesQuickFilter = p.dataPrevistaEntrega === "2026-06-02" && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO";
       } else if (activeFilter === "semana") {
+        if (!p.dataPrevistaEntrega) return false;
         const t = new Date(p.dataPrevistaEntrega).getTime();
         const todayTime = new Date("2026-06-02").getTime();
         matchesQuickFilter = t >= todayTime && t <= todayTime + 7 * 24 * 60 * 60 * 1000 && p.statusPedido !== "EXPEDIDO" && p.statusPedido !== "CANCELADO";

@@ -123,7 +123,16 @@ export interface PedidoMock {
   empresa: string;
   vendedor: string;
   dataPedido: string;
-  dataPrevistaEntrega: string;
+  /**
+   * `propostas_os.data_termino` — a data limite PROMETIDA, e só ela.
+   *
+   * Nula quando ninguém prometeu nada ainda. Era `string` e caía em
+   * `data_pedido`, o que fazia todo pedido nascer com prazo "hoje": a tela do
+   * boletim via um valor preenchido, nunca chegava na sugestão por prazo de
+   * produto, e o pedido virava atrasado no dia seguinte. Quem exibe trata a
+   * ausência como ausência — traço, nunca data inventada.
+   */
+  dataPrevistaEntrega: string | null;
   statusPedido: PedidoStatus;
   urgente: boolean;
   formaPagamento: string;
@@ -191,7 +200,8 @@ export interface PropostaOperacionalListItem {
   empresa: string;
   vendedor: string;
   dataProposta: string;
-  dataPrevistaEntrega: string; // prazo prometido
+  /** Prazo prometido (`propostas_os.data_termino`). Nulo enquanto não houver. */
+  dataPrevistaEntrega: string | null;
   valorTotal: number;
   status_interno: string; // Da tabela propostas
   libera_nf?: boolean | null; // Flag de liberação fiscal

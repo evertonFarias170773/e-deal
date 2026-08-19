@@ -118,6 +118,12 @@ export function somarDiasUteis(base: Date, dias: number): string {
  * produtos, contado em dias úteis a partir da abertura do boletim. O pedido só
  * fica pronto quando o produto mais demorado ficar, então todos os setores
  * compartilham a mesma data.
+ *
+ * NÃO REGE MAIS A SUGESTÃO DO BOLETIM (decisão do dono em 18/08/2026): contar
+ * sempre em dias úteis contradiz os 10 produtos cujo cadastro diz "3 dias", sem
+ * "úteis". Quem sugere agora é `dataLimitePorPrazos`, em BoletimFormPage, que
+ * decide útil ou corrido pelo texto do cadastro. Mantida por ser API pública do
+ * módulo; sem chamador hoje.
  */
 export function prazoLimiteDoPedido(prazos: (string | null | undefined)[], base: Date): string | null {
   const dias = prazos.map(diasDoPrazo).filter((d): d is number => d !== null);

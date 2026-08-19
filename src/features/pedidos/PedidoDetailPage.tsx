@@ -652,7 +652,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
 
       <PageHeader
         title={`Pedido #${pedido.id_int}`}
-        subtitle={`${pedido.clienteNome} — ${pedido.empresa} — Entrega prevista: ${formatDate(pedido.dataPrevistaEntrega)}`}
+        subtitle={`${pedido.clienteNome} — ${pedido.empresa} — Entrega prevista: ${pedido.dataPrevistaEntrega ? formatDate(pedido.dataPrevistaEntrega) : "a definir"}`}
         context="Detalhe do Pedido"
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -1825,7 +1825,9 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400 font-bold uppercase text-[9px]">Previsão de Despacho</span>
-                        <strong className="text-slate-700 dark:text-slate-300">{formatDate(pedido.dataPrevistaEntrega)}</strong>
+                        <strong className="text-slate-700 dark:text-slate-300">
+                          {pedido.dataPrevistaEntrega ? formatDate(pedido.dataPrevistaEntrega) : "—"}
+                        </strong>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400 font-bold uppercase text-[9px]">Endereço Simplificado</span>
