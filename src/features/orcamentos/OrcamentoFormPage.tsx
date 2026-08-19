@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import type { ReactNode } from "react";
 import { useMemo, useState, useEffect, useRef, useCallback, useId } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -86,6 +87,12 @@ import {
 import {
   getSaldoContaCorrente
 } from "@/features/cobrancas/services/movimento-credito.service";
+
+// Imposicao (app externo Ideal Imposition): abre o pedido correspondente a
+// proposta. So existe destino quando a proposta ja tem numero (id_int) — em
+// proposta nova o botao nao e exibido.
+const IMPOSITION_BASE_URL = "https://ideal-imposition.vercel.app";
+const IMPOSITION_ICON_SRC = "/logos/ideal-icone.png";
 
 const removeAccents = (str: string): string => {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -3884,6 +3891,30 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         context="Orçamentos / Propostas"
         action={
           <div className="flex flex-wrap gap-2">
+            {proposta?.id_int ? (
+              <button
+                type="button"
+                title="Abrir no Ideal Imposition"
+                aria-label="Abrir no Ideal Imposition"
+                onClick={() => {
+                  // Saida para app externo, na MESMA janela. A guarda de
+                  // alteracoes nao salvas desta tela ja cobre saida de pagina
+                  // pelo listener de `beforeunload`, que o navegador dispara
+                  // aqui igual a um F5 ou fechamento de aba — por isso nao
+                  // passa por `handleNavigateRef`, que so trata rota interna.
+                  window.location.assign(`${IMPOSITION_BASE_URL}/pedido/${proposta.id_int}`);
+                }}
+                className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 transition hover:bg-slate-50"
+              >
+                <Image
+                  src={IMPOSITION_ICON_SRC}
+                  alt="Ideal Imposition"
+                  width={79}
+                  height={65}
+                  className="h-6 w-auto"
+                />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => handleNavigateRef.current(mode === "edit" && proposta ? `/orcamentos/${proposta.id_int}` : "/orcamentos")}
