@@ -9,8 +9,14 @@ const DEFAULT_MAX_BYTES = 5 * 1024 * 1024; // 5MB
  * Teto de espera por imagem. Sem ele, um arquivo lento no storage segurava a
  * geração inteira até o timeout da plataforma — era a causa do PDF "demorar
  * demais" e às vezes falhar. Estourado o tempo, o card cai no placeholder.
+ *
+ * O valor sai de medição, não de palpite: percorrendo TODOS os objetos de arte
+ * do banco, o pior download real levou 2.448 ms. Um teto de 2.500 ms deixaria
+ * 52 ms de folga para um objeto em rede — pouco. 3.000 ms cobre o pior caso
+ * observado com margem e não devolve nada do ganho do paralelismo, que veio de
+ * buscar as candidatas juntas, e não de cortar o tempo de cada uma.
  */
-const TIMEOUT_MS = 2500;
+const TIMEOUT_MS = 3000;
 
 export async function carregarImagemComoDataUrl(
   url: string,

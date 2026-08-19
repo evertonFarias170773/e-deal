@@ -97,6 +97,16 @@ export function PedidosListPage() {
         title: "Erro ao gerar PDF da OS",
         description: result.errorMessage || "Erro desconhecido."
       });
+    } else {
+      // Mesmo aviso do boletim, mesma razão: `abrirPdfOs` volta assim que a aba
+      // abre e o PDF ainda está sendo montado do outro lado. Sem isto o
+      // `printingOsId` pisca por milissegundos e a aba nova fica em branco, sem
+      // nada dizendo que há trabalho em curso.
+      showToast({
+        type: "info",
+        title: "Gerando o PDF na nova aba",
+        description: "A OS abre assim que ficar pronta. Na primeira impressão do dia costuma demorar mais."
+      });
     }
   }
 
