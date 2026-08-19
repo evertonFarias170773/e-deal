@@ -195,9 +195,16 @@ export async function salvarCotacaoComoPropostaReal(
     pedidosModelos: [],
     fretes,
     freteEscolhidoId: pending.freteEscolhido.id,
-    // O Maestro cota e escolhe o frete, mas não declara quem paga: modalidade é
-    // decisão do vendedor na aba Fretes. Nasce nula e o valor cotado vale.
-    modalidadeFrete: null,
+    // Mesmo padrão da tela: proposta nova nasce CIF, o caso de ~95% dos pedidos.
+    // Antes nascia nula, com o argumento de que quem declara é o vendedor na aba
+    // Fretes — só que ninguém declarava, e o resultado foi 8.238 propostas sem
+    // modalidade e zero pedidos CIF no banco. O vendedor continua livre para
+    // trocar por RETIRA ou FOB na aba Fretes; o que muda é o ponto de partida.
+    //
+    // CIF não altera dinheiro nem rótulo: quem zera o frete é FOB, e o valor
+    // cotado pelo Maestro segue valendo integralmente.
+    modalidadeFrete: 'CIF',
+    // Transportadora continua nula: só FOB exige uma, e o Maestro não a escolhe.
     idTransportadoraCliente: null,
     descontoGeralTipo: 'PERCENTUAL',
     descontoGeralValor: percentualBonus > 0 ? String(percentualBonus) : '0',

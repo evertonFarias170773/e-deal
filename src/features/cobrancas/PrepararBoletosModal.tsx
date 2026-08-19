@@ -20,6 +20,12 @@ interface PrepararBoletosModalProps {
   defaultIntervalo?: number;
 }
 
+/** Empresa do grupo habilitada a emitir boleto. */
+interface EmpresaRecebedora {
+  id: number;
+  empresa: string;
+}
+
 interface GeneratedInstallment {
   parcela: number;
   total_parcelas: number;
@@ -89,6 +95,26 @@ export function PrepararBoletosModal({
   const [extReference, setExtReference] = useState("");
   const [numeroNf, setNumeroNf] = useState<string | null>(null);
   const [hasNfe, setHasNfe] = useState(false);
+
+  // Empresa recebedora: o financeiro pode emitir por outra empresa do grupo.
+  // A escolha vale para o lançamento inteiro e acompanha a cobrança, porque o
+  // faturamento por empresa sai de pagamentos_v2.
+  const [empresas, setEmpresas] = useState<EmpresaRecebedora[]>([]);
+  // `null` = o financeiro não trocou; vale a empresa da própria cobrança. Guardar
+  // a escolha e derivar o valor evita resetar estado dentro de efeito, que gera
+  // render em cascata.
+  const [empresaEscolhida, setEmpresaEscolhida] = useState<number | null>(null);
+  const [cobrancaAnterior, setCobrancaAnterior] = useState<string>(String(cobranca.id));
+
+  // Padrão do React para ajustar estado quando a prop muda: o modal não é
+  // desmontado ao fechar, então sem isto a escolha de um lançamento vazaria
+  // para o próximo.
+  if (String(cobranca.id) !== cobrancaAnterior) {
+    setCobrancaAnterior(String(cobranca.id));
+    setEmpresaEscolhida(null);
+  }
+
+  const empresaId = empresaEscolhida ?? (Number(cobranca.id_empresa) || 0);
 
   // Installment Config parameters
   const valorEntrada = 0;
@@ -165,6 +191,31 @@ export function PrepararBoletosModal({
       }
     };
     void fetchModelos();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchEmpresas = async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+      // Só entram empresas com modelo de boleto: sem `url_boleto_base` a
+      // geração do PDF é bloqueada depois, com erro que o operador não
+      // conseguiria resolver na tela.
+      const { data, error } = await client
+        .from("empresas")
+        .select("id, empresa, url_boleto_base")
+        .order("id", { ascending: true });
+      if (error || !data) {
+        console.error("[PrepararBoletosModal] Erro ao carregar empresas:", error);
+        return;
+      }
+      setEmpresas(
+        (data as Array<{ id: number; empresa: string; url_boleto_base: string | null }>)
+          .filter((e) => String(e.url_boleto_base ?? "").trim() !== "")
+          .map((e) => ({ id: Number(e.id), empresa: String(e.empresa ?? "") }))
+      );
+    };
+    void fetchEmpresas();
   }, [isOpen]);
 
   const handleSelecionarModelo = (id: string) => {
@@ -409,6 +460,18 @@ export function PrepararBoletosModal({
       }
     }
 
+    // A empresa recebedora decide o banco emissor e entra no faturamento.
+    // Sem ela resolvida, o lançamento iria para o banco errado ou sem empresa.
+    const empresaEscolhidaId = Number(empresaId) || Number(cobranca.id_empresa) || 0;
+    const empresaEscolhidaNome =
+      empresas.find((item) => item.id === empresaEscolhidaId)?.empresa ||
+      (empresaEscolhidaId === Number(cobranca.id_empresa) ? String(cobranca.empresa ?? "") : "");
+
+    if (!empresaEscolhidaId || !empresaEscolhidaNome) {
+      setValidationError("Selecione a empresa recebedora antes de confirmar o lançamento.");
+      return;
+    }
+
     setIsSaving(true);
     try {
       // 3. Validar duplicidade
@@ -448,8 +511,8 @@ export function PrepararBoletosModal({
         return {
           id_int: cobranca.id_int,
           id_cliente: cobranca.id_cliente,
-          id_empresa: cobranca.id_empresa,
-          empresa: cobranca.empresa,
+          id_empresa: empresaEscolhidaId,
+          empresa: empresaEscolhidaNome,
           nome_cliente: cobranca.cliente,
           documento: cobranca.documento,
           n_nf: numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null,
@@ -492,7 +555,7 @@ export function PrepararBoletosModal({
       try {
         const { data: patchData, error: patchError } = await client
           .from("pagamentos_v2")
-          .update({ boleto_enviadoo: true })
+          .update({ boleto_enviadoo: true, id_empresa: empresaEscolhidaId, empresa: empresaEscolhidaNome })
           .eq("id", cobranca.id)
           .select();
         
@@ -615,10 +678,31 @@ export function PrepararBoletosModal({
                   </strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Empresa</span>
-                  <strong className="text-slate-800 text-sm block truncate font-medium">
-                    {cobranca.empresa}
-                  </strong>
+                  <label
+                    htmlFor="empresa-recebedora"
+                    className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold"
+                  >
+                    Empresa recebedora
+                  </label>
+                  <select
+                    id="empresa-recebedora"
+                    value={empresaId ? String(empresaId) : ""}
+                    onChange={(event) => setEmpresaEscolhida(Number(event.target.value))}
+                    disabled={empresas.length === 0}
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-medium text-slate-800 outline-none focus:border-[#0b2f4a] disabled:bg-slate-100 disabled:text-slate-500"
+                  >
+                    {empresas.length === 0 ? <option value="">{cobranca.empresa}</option> : null}
+                    {empresas.map((item) => (
+                      <option key={item.id} value={String(item.id)}>
+                        {item.empresa}
+                      </option>
+                    ))}
+                  </select>
+                  {empresaId !== Number(cobranca.id_empresa) ? (
+                    <p className="mt-1 text-[10px] font-semibold text-amber-600 leading-tight">
+                      Muda o banco emissor e o faturamento desta cobrança.
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Valor Total</span>

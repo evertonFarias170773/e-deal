@@ -1,4 +1,4 @@
-import type { TipoFreteNormalizado } from "../types";
+import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
 
 /** Ordem de exibição no select de filtro da tela. */
 export const TIPOS_FRETE: TipoFreteNormalizado[] = [
@@ -60,4 +60,48 @@ export function normalizarTipoFrete(
     return "TRANSPORTADORA";
   }
   return "INDEFINIDO";
+}
+
+/**
+ * Modalidade com que o modal de despacho ABRE.
+ *
+ * PRECEDÊNCIA, e o porquê de cada degrau:
+ *   1. `expedicoes.modalidade_frete` — o que o expedidor já declarou na bancada.
+ *      Soberana: é o que de fato aconteceu.
+ *   2. Cotação `RETIRA_BALCAO` — a mercadoria é buscada no balcão, então não há
+ *      transporte para ninguém pagar. Vence a modalidade do orçamento, EXCETO
+ *      quando ela é FOB.
+ *   3. `propostas.modalidade_frete` — o que o vendedor declarou.
+ *   4. nada, e o modal exige escolha explícita.
+ *
+ * POR QUE O DEGRAU 2 VENCE O 3 (e como isso dispensa coluna nova)
+ *   Desde 19/08/2026 o orçamento nasce em CIF por padrão. Sem o degrau 2, uma
+ *   venda de balcão em que o vendedor não trocou a modalidade chegaria ao
+ *   despacho pré-selecionada como CIF — e a inferência de RETIRA, que existia
+ *   antes, nunca mais rodaria.
+ *
+ *   Distinguir "CIF escolhido" de "CIF por default" parece exigir uma coluna
+ *   nova, mas não exige: RETIRA e FOB só existem por escolha explícita — nenhum
+ *   dos dois é, ou pode ser, o padrão. CIF é o ÚNICO valor que chega sem alguém
+ *   ter escolhido. Logo "CIF vindo do orçamento" já É o caso ambíguo, por
+ *   construção do vocabulário, e tratá-lo como evidência mais fraca que uma
+ *   cotação de balcão não perde informação nenhuma.
+ *
+ *   FOB fica de fora do degrau 2 de propósito: é sempre escolha deliberada, e
+ *   carrega uma transportadora obrigatória junto. Sobrepor RETIRA a um FOB
+ *   explícito descartaria uma decisão real do vendedor.
+ *
+ *   O limite, dito com todas as letras: um CIF escolhido a dedo numa venda de
+ *   balcão também abre como RETIRA. É combinação contraditória — quem retira no
+ *   balcão não tem frete para a empresa pagar — e continua sendo só uma
+ *   pré-seleção, que o expedidor troca em um clique.
+ */
+export function modalidadeInicialDoDespacho(
+  doDespacho: ModalidadeFrete | null | undefined,
+  doOrcamento: ModalidadeFrete | null | undefined,
+  tipoFreteCotado: TipoFreteNormalizado
+): ModalidadeFrete | null {
+  if (doDespacho) return doDespacho;
+  if (tipoFreteCotado === "RETIRA_BALCAO" && doOrcamento !== "FOB") return "RETIRA";
+  return doOrcamento ?? null;
 }

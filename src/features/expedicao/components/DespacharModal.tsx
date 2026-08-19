@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
-import { labelTipoFrete } from "../lib/tipo-frete";
+import { labelTipoFrete, modalidadeInicialDoDespacho } from "../lib/tipo-frete";
 import { despachar, salvarDadosExpedicao } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
 import { listarEnderecosCliente } from "../services/enderecos.service";
@@ -85,21 +85,16 @@ export function DespacharModal({
   /**
    * Modalidade (quem paga) é a escolha do PASSO 1 e comanda o resto do modal.
    *
-   * PRECEDÊNCIA, em três níveis:
-   *   1. `expedicoes.modalidade_frete` — o que o expedidor já declarou. Soberana:
-   *      é o que de fato aconteceu na bancada.
-   *   2. `propostas.modalidade_frete` — o que o vendedor declarou no orçamento.
-   *      Chega como sugestão; discordar dela é livre e não altera a proposta.
-   *   3. nada — e aí o modal abre SEM modalidade, exigindo escolha explícita.
+   * A precedência vive em `lib/tipo-frete.ts` (`modalidadeInicialDoDespacho`),
+   * com o raciocínio inteiro documentado lá: despacho > cotação de balcão >
+   * orçamento > nada, com FOB imune ao degrau da cotação. Aqui fica só a
+   * chamada — a regra é testada fora da tela.
    *
-   * `RETIRA_BALCAO` vindo da cotação continua pré-selecionando RETIRA por ser o
-   * único texto sem ambiguidade. Pedido cotado como "Sem custo" ou indefinido
-   * não ganha chute: o banco e o TypeScript já divergem ao ler esse texto.
+   * Discordar da sugestão continua livre e não altera a proposta; a divergência
+   * aparece no aviso abaixo e informa, não trava.
    */
   const [modalidade, setModalidade] = useState<ModalidadeFrete | null>(
-    exp?.modalidadeFrete ??
-      pedido.modalidadeOrcamento ??
-      (tipoInicial === "RETIRA_BALCAO" ? "RETIRA" : null)
+    modalidadeInicialDoDespacho(exp?.modalidadeFrete, pedido.modalidadeOrcamento, tipoInicial)
   );
   const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(transporteInicial(tipoInicial));
   const [transportadoraNome, setTransportadoraNome] = useState(
