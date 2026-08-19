@@ -251,6 +251,12 @@ Duas decisões importantes do normalizador:
 
 Essa normalização só se aplica enquanto não há uma escolha explícita do expedidor: assim que o despacho grava `expedicoes.tipo_frete`, esse valor passa a valer para o pedido (precedência da seção 2.1).
 
+**A Unesul saiu da cotação em 19/08/2026, mas continua no normalizador — de propósito.** O sistema parou de oferecer cotação nova dela: o bloco que lia o `un` da RPC `calcular_frete_transportadora` foi removido de `solicitarCotacaoTransportadoras` (`src/features/orcamentos/services/frete.service.ts`). A RPC segue devolvendo as três colunas (`sm`, `un`, `mb`) e a tabela `transportadoras` não foi alterada — quem decide é o código, e São Miguel e Motoboy continuam cotando normalmente pela mesma chamada.
+
+O que motivou: as tarifas UN estavam degradadas a ponto de virar ficção — `1kg_UN` zerado em **todas** as 919 linhas da tabela e `extra_UN` sobrando em torno de **R$ 1,00/kg sem piso** (40 das 87 linhas ativas com exatamente 1,00). Na prática a Unesul aparecia sempre como a opção mais barata da lista: numa cotação real para Santa Cruz do Sul/RS com 500 g, ela saía a **R$ 0,50** contra R$ 59,50 da São Miguel. A última cotação Unesul gerada foi em 26/07/2026.
+
+**`UNESUL` permanece em `normalizarTipoFrete`** (categoria `TRANSPORTADORA`) porque parar de oferecer não apaga o passado: são **35 cotações gravadas, 5 delas escolhidas** (propostas 19713, 18874, 18866, 18044 e 15463, todas em `NOVO`), que precisam seguir legíveis no painel, no PDF e nos relatórios. Tirar a palavra do normalizador jogaria essas cotações em `INDEFINIDO` — o histórico ficaria sem ícone e sem rótulo. **Não há cadastro de Unesul em `clientes`**, então nada a desativar ali: ela nunca foi selecionável como transportadora FOB.
+
 ## 5.1 Modalidade do frete: quem paga (18/08/2026)
 
 O tipo de frete responde **por onde vai**. A modalidade responde **quem paga** — são dimensões ortogonais, e o sistema só tinha a primeira. Por isso o modal de despacho chegou a oferecer "Sem custo" como se fosse um tipo de transporte.
@@ -263,12 +269,25 @@ A modalidade é declarada pelo expedidor e gravada em **`expedicoes.modalidade_f
 | `FOB` | transporte por conta do cliente | Transportadora, Motoboy |
 | `CIF` | transporte por conta da empresa | **Correios**, Transportadora, Motoboy |
 
-> ### CIF, nesta fase, é apenas rótulo
+> ### CIF recota, mas ainda não grava (19/08/2026)
 >
-> `CIF` grava quem paga e libera os Correios no passo 2. Ele **não cota, não
-> recota, não altera `valor_frete`/`valor_total` da proposta e não lança nada
-> na Conta Corrente**. A fase de recotação com débito da diferença (Parte C do
-> plano) segue **pendente de decisão do dono** — ver seção 10.
+> `CIF` grava quem paga, libera os Correios no passo 2 e, desde 19/08/2026,
+> **habilita a recotação do frete no despacho** — Parte C, Etapa 1: rota
+> `POST /api/expedicao/recotacao/cotar` e botão no modal Despachar, visíveis
+> só quando o pedido está em `EXPEDICAO` **e** a modalidade efetiva é `CIF`.
+>
+> A recotação é **estritamente somente leitura**. Ela cota de novo a partir do
+> endereço de entrega, do peso resolvido (mesma precedência da seção 2) e do
+> subtotal dos itens, e mostra a diferença de cada opção contra o que a
+> proposta cobra hoje. Ela **não altera `valor_frete`/`valor_total`, não
+> escreve em `cotacao_frete`, não toca `expedicoes` e não lança nada na Conta
+> Corrente** — o painel de resultado diz isso em rodapé, para o expedidor não
+> supor que escolher ali mudou alguma coisa.
+>
+> **Seguem pendentes as etapas de escrita**: o ledger `expedicao_recotacoes`
+> com a gravação do frete recotado em `propostas.valor_frete`/`valor_total`, o
+> lançamento da diferença na Conta Corrente, a alçada do expedidor e a
+> aprovação do Financeiro — ver seção 10.
 
 **Por que Correios só em CIF.** A prepostagem sai pelo cartão de postagem da empresa, que é quem paga. Em FOB quem posta é o cliente, com contrato próprio — não há serviço dos Correios a cobrar dele. Daí a trava não ser só de UI: os botões de prepostagem exigem `modalidade === "CIF"` além de `tipo_frete === "CORREIOS"` (seção 6.2).
 
@@ -534,7 +553,7 @@ Limitações que continuam valendo:
 3. Exercitar o contrato da empresa **2 (Ideal Birô)**: as prepostagens reais de 16/08/2026 cobriram Ideal Gráfica e E3; o cartão da 2 nunca foi usado de verdade.
 4. Rodar um roteiro manual de validação visual: painel (cards, chips, filtros), os modais (Despachar, Confirmar retirada, Voltar status, Rastreio, Confirmar ação) e os PDFs — etiqueta interna e rótulo dos Correios impressos em 10×15 real, declaração de conteúdo em A4.
 5. Preencher `telefone_nfe` nas empresas cadastradas sem esse campo (3 das 4 empresas, em 15/08/2026) — sem ele, o remetente sai incompleto na etiqueta interna e o contato some do payload da prepostagem (seção 9, item 3).
-6. **Decidir a fase de recotação do CIF (Parte C do plano).** Hoje `CIF` é só rótulo (seção 5.1). Cotar na Expedição e cobrar a diferença exige quatro decisões de negócio ainda em aberto: onde entra o novo valor de frete (só em `expedicoes` ou também em `propostas`, já que `cotacao_frete` é intocável), de onde sai o dinheiro da diferença (a regra de 22/07 barra pendência devedora na Conta Corrente), quem tem permissão para lançá-la, e o que fazer quando já existe NF-e autorizada ou o pedido já está quitado.
+6. **Aprovar as etapas de escrita da recotação (Parte C).** As quatro decisões de negócio que travavam a Parte C **foram tomadas em 19/08/2026**: o novo valor de frete entra em `propostas.valor_frete`/`valor_total` (nunca em `cotacao_frete`, intocável pelos triggers da seção 2); a diferença vai para a Conta Corrente, com `FRETE` como exceção explícita à regra de 22/07, acumulando em vez de bloquear; a alçada do expedidor é de R$ 150 medidos sobre o **valor do frete novo**, e acima dela a operação é barrada, dependendo de aprovação do Financeiro. Com isso saíram a **Etapa 0** (alinhamento de `cc_abrir_pendencia` ao corpo vivo) e a **Etapa 1** (recotação somente leitura, seção 5.1) — as duas no ar. O que resta como decisão do dono é aprovar o plano das etapas seguintes: ledger `expedicao_recotacoes` e gravação do frete na proposta, lançamento da diferença na Conta Corrente, alçada e aprovação do Financeiro, e o que fazer quando já existe NF-e autorizada ou o pedido já está quitado.
 
 **Variáveis de ambiente na Vercel:** as 13 dos Correios (`CORREIOS_AMBIENTE` + `CORREIOS_{1,2,3}_{USUARIO,CODIGO_ACESSO,CARTAO_POSTAGEM,CONTRATO}`) foram aplicadas em 17/08/2026, junto com as três do QR público (`OS_QR_PUBLICO_ENABLED`, `OS_QR_TOKEN_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`) e o redeploy correspondente.
 

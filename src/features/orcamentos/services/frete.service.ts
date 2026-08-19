@@ -369,20 +369,14 @@ export async function solicitarCotacaoTransportadoras(input: {
     });
   }
 
-  // un = Transportadora Unesul
-  if (row.un !== undefined && row.un > 0) {
-    results.push({
-      id: `frete_transp_un_${Date.now()}`,
-      id_int: idIntNum,
-      transportadora: "Transportadora Unesul",
-      servico: "UNESUL",
-      valor: Number(row.un),
-      prazo: "Sob consulta",
-      observacao: "Cotação via transportadora",
-      escolhido: false,
-      pesoUsado: input.peso
-    });
-  }
+  // un = Transportadora Unesul — DESCONTINUADA em 19/08/2026.
+  // A RPC continua devolvendo `un`, e ele é deliberadamente ignorado aqui: parar
+  // de oferecer é decisão de negócio, e o lugar dela é o código, não o banco. A
+  // tabela `transportadoras` fica intocada (as tarifas UN estavam degradadas —
+  // `1kg_UN` zerado em todas as linhas, sobrando ~R$ 1,00/kg sem piso, o que
+  // fazia a Unesul aparecer sempre como a opção mais barata da lista).
+  // O histórico segue legível: `normalizarTipoFrete` continua reconhecendo
+  // "UNESUL" para as 35 cotações e 5 escolhas já gravadas.
 
   // mb = Motoboy
   if (row.mb !== undefined && row.mb > 0) {
