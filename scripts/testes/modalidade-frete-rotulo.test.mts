@@ -16,6 +16,7 @@ import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo,
   valorFreteEfetivo,
+  faltaTransportadoraEmFob,
   aplicarModalidadeNosFretes
 } from "../../src/features/orcamentos/lib/modalidade-frete.ts";
 import type { PropostaFrete } from "../../src/features/orcamentos/types.ts";
@@ -74,6 +75,22 @@ checar("FOB mantém o peso cotado (memória do cálculo)", sobFob.map((f) => f.p
 checar("fora de FOB a lista sai intacta", aplicarModalidadeNosFretes(fretes, "CIF"), fretes);
 checar("valorFreteEfetivo zera em FOB", valorFreteEfetivo(28.84, "FOB"), 0);
 checar("valorFreteEfetivo preserva fora de FOB", valorFreteEfetivo(28.84, "CIF"), 28.84);
+
+// ── CIF como PADRÃO de proposta nova (19/08/2026) ───────────────────────────
+// O default só é seguro porque CIF e "sem modalidade" produzem exatamente o
+// mesmo dinheiro e o mesmo rótulo. Quem zera o frete é FOB, nunca CIF. Se algum
+// dia CIF passar a ter regra própria, estes testes quebram ANTES da tela.
+checar("CIF e nulo dão o mesmo valor de frete",
+  valorFreteEfetivo(28.84, "CIF"), valorFreteEfetivo(28.84, null));
+checar("CIF e nulo dão o mesmo rótulo de transporte",
+  nomeTransporteEfetivo("SEDEX", "CIF", "AVI AZUL"), nomeTransporteEfetivo("SEDEX", null, "AVI AZUL"));
+checar("CIF e nulo deixam a lista de fretes igualmente intacta",
+  aplicarModalidadeNosFretes(fretes, "CIF"), aplicarModalidadeNosFretes(fretes, null));
+checar("CIF NÃO zera o frete", valorFreteEfetivo(28.84, "CIF"), 28.84);
+checar("CIF sem transportadora é válido — só FOB exige",
+  faltaTransportadoraEmFob("CIF", null), false);
+checar("FOB sem transportadora continua bloqueando",
+  faltaTransportadoraEmFob("FOB", null), true);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
 process.exit(falhas === 0 ? 0 : 1);

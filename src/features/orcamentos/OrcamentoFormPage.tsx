@@ -6865,7 +6865,23 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     pedidosModelos: [],
     fretes,
     freteEscolhidoId: isAvulso ? "frete_manual_unico" : (proposta?.freteEscolhidoId ?? fretes.find((frete) => frete.escolhido)?.id ?? fretes[0]?.id ?? ""),
-    modalidadeFrete: proposta?.modalidadeFrete ?? null,
+    // CIF é o caso padrão — cerca de 95% dos pedidos saem por conta da empresa.
+    // Nascer nula fazia a modalidade depender de alguém lembrar de declarar, e
+    // ninguém lembrava: 8.238 propostas sem modalidade e ZERO pedidos CIF no
+    // banco desde que a coluna existe (18/08/2026). RETIRA e FOB continuam
+    // disponíveis como escolha explícita na aba Fretes.
+    //
+    // Só vale para proposta NOVA. Proposta existente mantém o que está gravado,
+    // inclusive nulo: reabrir um pedido antigo não pode declarar por ele uma
+    // modalidade que o vendedor nunca escolheu. A distinção por `proposta` é
+    // segura porque o `OrcamentoFormLoader` só monta este formulário depois de
+    // a proposta carregar — em edição ela nunca chega indefinida aqui.
+    //
+    // Não muda cálculo nenhum: `valorFreteEfetivo` e `aplicarModalidadeNosFretes`
+    // só agem em FOB, e `nomeTransporteEfetivo` devolve o serviço cotado para
+    // tudo que não é FOB. CIF e nulo produzem exatamente o mesmo dinheiro e o
+    // mesmo rótulo — quem zera o frete é FOB, nunca CIF.
+    modalidadeFrete: proposta ? (proposta.modalidadeFrete ?? null) : "CIF",
     idTransportadoraCliente: proposta?.idTransportadoraCliente ?? null,
     descontoGeralTipo: proposta?.descontoGeralTipo ?? "VALOR",
     descontoGeralValor: proposta?.descontoGeralValor ? proposta.descontoGeralValor.toString() : "0",
