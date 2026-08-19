@@ -40,6 +40,22 @@ import type { Proposta } from "@/features/orcamentos/types";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 
+/**
+ * Proposta parada esperando o atendente olhar. É a fila que trava o fluxo, e por
+ * isso ganha o topo da lista e um fundo próprio — o status sozinho, num badge no
+ * meio de dezenas de linhas iguais, passava batido.
+ */
+function ehRevisaoAtendente(item: { statusInterno: string }): boolean {
+  return normalizeProposalStatus(item.statusInterno) === "REVISAO ATENDENTE";
+}
+
+/**
+ * Azul claro da linha em revisão. Vai em `style` inline (é o contrato do
+ * `getRowHighlight` do ResponsiveList): o hover da linha também é inline e
+ * venceria qualquer classe, apagando o destaque assim que o mouse saísse.
+ */
+const DESTAQUE_REVISAO = { base: "#eff6ff", hover: "#dbeafe" };
+
 const TIPOS_COBRANCA = ["TODOS", "PIX", "BOLETO", "E-FATURADO", "CARTAO"] as const;
 type TipoCobrancaFiltro = (typeof TIPOS_COBRANCA)[number];
 
@@ -484,6 +500,18 @@ export function OrcamentosListPageReal() {
     }
 
     return result.sort((a, b) => {
+      // REVISAO ATENDENTE é a fila que trava o fluxo: alguém precisa olhar antes
+      // de a proposta seguir. Vem antes de qualquer outro critério — dentro do
+      // grupo, a data continua mandando como sempre.
+      //
+      // O pin vale sobre o que ESTÁ carregado. O servidor pagina em 200 e ordena
+      // por updated_at/id_int (intocado): uma proposta desse status que caia numa
+      // página seguinte não sobe para o topo da primeira. Hoje são 3 em 8.198,
+      // todas recentes, então caem na primeira página de qualquer jeito.
+      const pinA = ehRevisaoAtendente(a) ? 0 : 1;
+      const pinB = ehRevisaoAtendente(b) ? 0 : 1;
+      if (pinA !== pinB) return pinA - pinB;
+
       const dateA = new Date(a.updatedAt || a.createdAt).getTime();
       const dateB = new Date(b.updatedAt || b.createdAt).getTime();
       return dateB - dateA;
@@ -1067,6 +1095,7 @@ export function OrcamentosListPageReal() {
         }}
         emptyTitle="Nenhuma proposta encontrada"
         emptyDescription="Ajuste os filtros ou crie uma nova proposta para comecar."
+        getRowHighlight={(proposta) => (ehRevisaoAtendente(proposta) ? DESTAQUE_REVISAO : null)}
         columns={[
           { header: "N°", cell: (proposta) => <span className="font-semibold text-slate-950">{proposta.id_int}</span> },
           {
@@ -1165,7 +1194,17 @@ export function OrcamentosListPageReal() {
           }
         ]}
         renderCard={(proposta) => (
-          <article key={proposta.id} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
+          // O card do mobile tem estilo próprio e não passa pelo getRowHighlight
+          // da tabela: o mesmo destaque é aplicado aqui, senão a revisão pendente
+          // ficaria evidente só no desktop.
+          <article
+            key={proposta.id}
+            className={`rounded-3xl border p-5 shadow-sm ${
+              ehRevisaoAtendente(proposta)
+                ? "border-blue-200 bg-blue-50"
+                : "border-[#d7e5e8] bg-white"
+            }`}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>

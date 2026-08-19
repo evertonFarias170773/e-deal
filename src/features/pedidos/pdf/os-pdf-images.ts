@@ -10,7 +10,7 @@ const DEFAULT_MAX_BYTES = 5 * 1024 * 1024; // 5MB
  * geração inteira até o timeout da plataforma — era a causa do PDF "demorar
  * demais" e às vezes falhar. Estourado o tempo, o card cai no placeholder.
  */
-const TIMEOUT_MS = 4000;
+const TIMEOUT_MS = 2500;
 
 export async function carregarImagemComoDataUrl(
   url: string,

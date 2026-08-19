@@ -978,8 +978,15 @@ export async function atualizarModelosBoletim(modelosUpdates: { id: number, tipo
 
 /**
  * Avança o status macro da proposta para EM PRODUCAO apenas se o status atual for REVISAO PRODUCAO.
+ *
+ * Devolve o `statusInterno` RESULTANTE — o novo quando avançou, o atual quando a
+ * guarda não se aplicava. A escrita não mudou; o que mudou é que ela deixa de ser
+ * muda: quem chama precisa disso para refletir o status na própria tela, em vez
+ * de o usuário só descobrir a mudança ao voltar para a lista.
  */
-export async function avancarStatusParaEmProducao(idInt: number): Promise<{ success: boolean; error?: string }> {
+export async function avancarStatusParaEmProducao(
+  idInt: number
+): Promise<{ success: boolean; error?: string; statusInterno?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: "Supabase client not initialized" };
 
@@ -1009,9 +1016,13 @@ export async function avancarStatusParaEmProducao(idInt: number): Promise<{ succ
       id_cliente: null,
       avatar: null
     });
+
+    return { success: true, statusInterno: "EM PRODUCAO" };
   }
 
-  return { success: true };
+  // Guarda não se aplicava: nada foi escrito, e o status que vale é o que já
+  // estava lá.
+  return { success: true, statusInterno: data.status_interno ?? undefined };
 }
 
 

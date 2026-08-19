@@ -212,6 +212,22 @@ export function BoletimFormPage() {
   const [isPrdAprovado, setIsPrdAprovado] = useState(false);
   const [isPrintingOs, setIsPrintingOs] = useState(false);
 
+  /**
+   * Aviso na tela de ORIGEM enquanto o PDF é montado do outro lado.
+   *
+   * `abrirPdfOs` abre a aba de forma síncrona no clique e retorna na hora — o
+   * PDF ainda vai levar segundos para existir. Sem isto, o rótulo "Gerando
+   * PDF..." pisca por milissegundos aqui e a aba nova fica em branco, sem nada
+   * dizendo que há trabalho em curso. Era metade da sensação de "não abriu".
+   */
+  function avisarGeracaoDoPdf() {
+    showToast({
+      type: "info",
+      title: "Gerando o PDF na nova aba",
+      description: "A OS abre assim que ficar pronta. Na primeira impressão do dia costuma demorar mais."
+    });
+  }
+
   useEffect(() => {
     if (!isEditing || !idIntParam) {
       setIsPrdAprovado(false);
@@ -321,6 +337,19 @@ export function BoletimFormPage() {
   const [logisticaObsFrete, setLogisticaObsFrete] = useState("");
   const [statusOperacional, setStatusOperacional] = useState<string>("PENDENTE");
 
+  /**
+   * `propostas.status_interno` — o status MACRO da proposta, o mesmo que a lista
+   * exibe. Existe como state próprio porque é o único valor que o salvamento do
+   * boletim muda (via `avancarStatusParaEmProducao`) e que a tela precisa passar
+   * a refletir na hora: antes só aparecia atualizado ao voltar para a lista.
+   *
+   * Nasce do `statusProducao` do pedido, que o serviço já deriva desta mesma
+   * coluna — `propostas_os.status_producao` está morta (ver pedidos-detalhe.service).
+   * Os dois campos do cabeçalho divergem quando a proposta não está liberada
+   * para produção: ali o operacional mostra BLOQUEADO e este, o status real.
+   */
+  const [statusProposta, setStatusProposta] = useState<string>("");
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -361,6 +390,7 @@ export function BoletimFormPage() {
           setVendedor(pedido.vendedor || "Everton Farias");
           setFormaPagamento(pedido.formaPagamento || "Pix a vista");
           setStatusOperacional(pedido.status_producao || "PENDENTE");
+          setStatusProposta(pedido.status_producao || "");
 
           // Data limite: o maior prazo de producao entre TODOS os produtos do
           // pedido — util ou corrido conforme o texto do cadastro. So sugere
@@ -1350,8 +1380,12 @@ export function BoletimFormPage() {
           }
         }
 
-        // Update macro status if currently REVISAO PRODUCAO
-        await avancarStatusParaEmProducao(Number(idIntParam));
+        // Update macro status if currently REVISAO PRODUCAO. O resultante volta
+        // da própria chamada e vai direto para a tela — era exatamente isto que
+        // faltava: o status mudava no banco e o cabeçalho só descobria quando o
+        // usuário voltava para a lista.
+        const avanco = await avancarStatusParaEmProducao(Number(idIntParam));
+        if (avanco.statusInterno) setStatusProposta(avanco.statusInterno);
 
         showToast({
           type: "success",
@@ -1535,8 +1569,10 @@ export function BoletimFormPage() {
         return;
       }
 
-      // Update macro status if currently REVISAO PRODUCAO
-      await avancarStatusParaEmProducao(idInt);
+      // Update macro status if currently REVISAO PRODUCAO — mesmo retorno, mesma
+      // razão do caminho de edição acima.
+      const avanco = await avancarStatusParaEmProducao(idInt);
+      if (avanco.statusInterno) setStatusProposta(avanco.statusInterno);
 
       // 4. Sucesso!
       showToast({
@@ -1563,8 +1599,13 @@ export function BoletimFormPage() {
     <form onSubmit={handleSubmit} className="space-y-7 text-xs text-slate-800 dark:text-slate-250 font-sans pb-12">
       {/* Salvar flutuante: a página é longa e o botão do rodapé exigia rolar até
           o fim só para gravar. Fica no canto, acima de tudo, e some enquanto
-          está salvando para não render clique duplo. */}
-      {selectedProposta && (
+          está salvando para não render clique duplo.
+
+          Some também na aba Revisão: ali a ação principal é "Confirmar revisão e
+          liberar para Expedição", ancorada no mesmo canto inferior direito, e o
+          flutuante (z-50) ficava por cima dela atrapalhando o clique. O botão de
+          salvar do rodapé continua disponível na aba. */}
+      {selectedProposta && !abaExpedicao && (
         <button
           type="submit"
           disabled={loadingDetails}
@@ -1604,6 +1645,12 @@ export function BoletimFormPage() {
                       title: "Erro ao gerar PDF da OS",
                       description: result.errorMessage || "Erro desconhecido."
                     });
+                  } else {
+                    // `abrirPdfOs` volta assim que a aba abre — o PDF ainda está
+                    // sendo gerado do outro lado. Sem este aviso o rótulo
+                    // "Gerando PDF..." pisca por milissegundos e a aba nova fica
+                    // em branco sem explicação nenhuma.
+                    avisarGeracaoDoPdf();
                   }
                 }}
                 disabled={isPrintingOs}
@@ -1801,6 +1848,14 @@ export function BoletimFormPage() {
               <strong className="text-sm text-slate-800 flex items-center gap-1.5 mt-1.5">
                 <span className={`h-2 w-2 rounded-full ${statusOperacional === 'BLOQUEADO' ? 'bg-amber-500 animate-pulse' : 'bg-blue-500 animate-ping'}`}></span>
                 <span className="font-bold text-[#0b2f4a]">{statusOperacional}</span>
+              </strong>
+            </div>
+            {/* Status macro da proposta: o único que o salvamento do boletim
+                muda, e que agora acompanha a mudança sem sair da tela. */}
+            <div>
+              <span className="text-xs font-semibold text-slate-500 uppercase block">Status da proposta</span>
+              <strong className="text-sm text-slate-800 flex items-center gap-1.5 mt-1.5">
+                <span className="font-bold text-[#0b2f4a]">{statusProposta || "—"}</span>
               </strong>
             </div>
           </div>
@@ -2110,6 +2165,8 @@ export function BoletimFormPage() {
                                 title: "Erro ao gerar PDF da OS",
                                 description: r.errorMessage || "Erro desconhecido."
                               });
+                            } else {
+                              avisarGeracaoDoPdf();
                             }
                           }}
                           disabled={isPrintingOs}

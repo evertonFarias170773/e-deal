@@ -21,6 +21,18 @@ import { osQrFlagAtiva, obterOuEmitirTokenOsQr } from "@/features/pedidos/servic
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Teto de execução explícito.
+ *
+ * Sem ele a rota herdava o default da plataforma (10 s no Hobby, 15 s no Pro) —
+ * e o pior caso passa disso: numa instância fria, só carregar o
+ * `@react-pdf/renderer` custa segundos, e a isso se somam as leituras e o
+ * download das imagens. A requisição morria sem resposta, a aba recém-aberta
+ * ficava em branco, e o F5 "resolvia" porque caía na mesma instância já quente.
+ * Não é um pedido para demorar 60 s: é a margem para o primeiro acesso caber.
+ */
+export const maxDuration = 60;
+
 const MAX_MINIATURAS_POR_MODELO = 2;
 
 /**
@@ -92,19 +104,32 @@ async function preencherImagensDosModelos(modelos: OsPdfModelo[]): Promise<void>
       const candidatas = [modelo.imagemUrl, modelo.imagemFallbackUrl].filter(
         (url): url is string => typeof url === "string" && url.trim() !== ""
       );
-      for (const url of candidatas) {
-        if (url.startsWith("data:image/")) {
-          modelo.imagemDataUrl = url;
-          return;
-        }
-        // Evita baixar artes vetoriais só para descartá-las na validação de mime.
-        if (/\.(pdf|ai|eps|svg|cdr)(\?|$)/i.test(url)) continue;
-        const dataUrl = await carregarImagemComoDataUrl(url);
-        if (dataUrl) {
-          modelo.imagemDataUrl = dataUrl;
-          return;
-        }
+
+      // Já embutida: nada a baixar.
+      const jaEmbutida = candidatas.find((url) => url.startsWith("data:image/"));
+      if (jaEmbutida) {
+        modelo.imagemDataUrl = jaEmbutida;
+        return;
       }
+
+      // Evita baixar artes vetoriais só para descartá-las na validação de mime.
+      const baixaveis = candidatas.filter((url) => !/\.(pdf|ai|eps|svg|cdr)(\?|$)/i.test(url));
+      if (baixaveis.length === 0) return;
+
+      // As duas candidatas vão JUNTAS, e não uma depois da outra.
+      //
+      // Em sequência, uma primeira candidata que falha (404, mime inesperado,
+      // timeout) era tempo puro somado ao da segunda — medido: 272 ms em série
+      // contra 83 ms em paralelo no mesmo pedido. E cada tentativa podia esperar
+      // o timeout inteiro, então o pior caso por modelo era o dobro dele.
+      //
+      // `find` respeita a ORDEM das candidatas, não a ordem de chegada: quando as
+      // duas dão certo continua valendo `imagemUrl`, a fonte oficial, e a amostra
+      // segue sendo só reserva. O custo é baixar a reserva à toa quando a
+      // principal funciona — troca deliberada de banda por latência.
+      const resultados = await Promise.all(baixaveis.map((url) => carregarImagemComoDataUrl(url)));
+      const primeiraValida = resultados.find((dataUrl): dataUrl is string => Boolean(dataUrl));
+      if (primeiraValida) modelo.imagemDataUrl = primeiraValida;
     })
   );
 }
