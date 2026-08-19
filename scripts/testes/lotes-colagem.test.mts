@@ -98,4 +98,4 @@ checar("treze linhas de uma vez", lidos.length, 13);
 checar("soma dos treze", somaQuantidades(lidos), 9100);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;

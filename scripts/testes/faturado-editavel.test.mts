@@ -166,4 +166,4 @@ checar(
 );
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;

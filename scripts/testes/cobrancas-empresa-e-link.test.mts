@@ -95,4 +95,4 @@ checar("tipo vazio nao bloqueia (comportamento anterior preservado)",
   cobrancaTemLinkExterno({ tipo_cobranca: "" }), true);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;

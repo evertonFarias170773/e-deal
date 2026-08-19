@@ -55,4 +55,4 @@ checar("FC-82 não é trânsito", eventoEhTransito("FC", "82"), false);
 checar("BDE-1 não é trânsito", eventoEhTransito("BDE", "01"), false);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} falha(s)`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;

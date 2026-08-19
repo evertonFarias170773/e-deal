@@ -154,4 +154,4 @@ checar("recusa não reescreve o rótulo do transporte", depois?.frete_escolhido,
 
 console.log(`\nproposta de teste: id_int ${idInt}`);
 console.log(falhas === 0 ? "TUDO OK" : `${falhas} FALHA(S)`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;

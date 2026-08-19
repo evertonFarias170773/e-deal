@@ -157,4 +157,4 @@ checar("mensagem do mais leve diz mais leve", mensagemFreteDesatualizado(maisLev
 checar("sem bloqueio a mensagem e vazia", mensagemFreteDesatualizado(avaliarFreteParaCobranca(cotado())), "");
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;

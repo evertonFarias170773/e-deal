@@ -167,4 +167,4 @@ checar("extenso: sem inicio nao mostra nada", rotuloFaixaExtenso(null, 80), null
 checar("extenso: sem numeracao nenhuma", rotuloFaixaExtenso(undefined, undefined), null);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;

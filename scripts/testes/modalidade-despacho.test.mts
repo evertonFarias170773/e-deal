@@ -61,4 +61,4 @@ checar("undefined nos dois abre sem modalidade",
   modalidadeInicialDoDespacho(undefined, undefined, "CORREIOS"), null);
 
 console.log(falhas === 0 ? "\nTUDO OK" : `\n${falhas} FALHA(S)`);
-process.exit(falhas === 0 ? 0 : 1);
+process.exitCode = falhas === 0 ? 0 : 1;
