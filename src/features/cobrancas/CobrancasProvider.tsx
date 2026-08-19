@@ -5,8 +5,8 @@ import type { ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Cobranca, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
-import { clonePagamentosMock, createCobrancaFromForm, getEmpresaRecebedoraByProposta } from "@/lib/mocks/pagamentos.mock";
-import { canLiberarParaPedido, roundMoney, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
+import { clonePagamentosMock, createCobrancaFromForm } from "@/lib/mocks/pagamentos.mock";
+import { canLiberarParaPedido, resolverEmpresaRecebedora, roundMoney, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getCobrancasReadOnlyData,
@@ -618,9 +618,14 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const empresaOption = getEmpresaRecebedoraByProposta(proposta);
-      const idEmpresa = values.id_empresa ?? (empresaOption?.id ?? 1);
-      const nomeEmpresa = values.empresa ?? (empresaOption?.nome ?? proposta.empresa);
+      // Resolvedor compartilhado com o modal. O anterior fazia casamento EXATO
+      // contra as formas curtas ("Ideal Biro"), enquanto `propostas.empresa` usa
+      // majoritariamente a razão social ("IDEAL BIRÔ SERV. GRAFICOS") — o find
+      // devolvia undefined e o fallback caía na empresa 1 em silêncio. O que a
+      // tela mandar (`values`) continua vencendo: isto é só o padrão.
+      const empresaOption = resolverEmpresaRecebedora(proposta.empresa);
+      const idEmpresa = values.id_empresa ?? empresaOption.id;
+      const nomeEmpresa = values.empresa ?? empresaOption.nome;
 
       // Boleto Inter (empresa 2) — antiduplicidade em nova tentativa. A linha de
       // pagamentos_v2 é criada ANTES da chamada ao webhook; se a integração

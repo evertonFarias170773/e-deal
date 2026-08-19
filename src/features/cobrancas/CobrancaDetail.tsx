@@ -18,6 +18,7 @@ import {
 } from "@/features/cobrancas/cancelamento-pago";
 import {
   canLiberarParaPedido,
+  cobrancaTemLinkExterno,
   formatMesAnoPtBr,
   getTipoCobrancaLabel,
   isCobrancaVencida,
@@ -88,7 +89,10 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
   const podeLiberarParaPedido = canLiberarParaPedido(cobrancasDaProposta);
 
   const tipoNormalized = cobrancaAtual.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
-  const isFaturado = tipoNormalized === "E-FATURADO" || tipoNormalized === "FATURADO";
+  // Predicado único (cobrancas-utils): E-CREDITO e a família faturado inteira.
+  // O teste anterior via só E-FATURADO/FATURADO, e por isso o detalhe de uma
+  // cobrança de E-Crédito exibia o bloco "Link de Pagamento" com Abrir e Copiar.
+  const temLinkExterno = cobrancaTemLinkExterno(cobrancaAtual);
   const valorExibicao = getValorCobranca(cobrancaAtual);
 
   // Cobranca EFETIVAMENTE paga (so status PAID, nunca E-FATURADO/E-CREDITO —
@@ -262,7 +266,7 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
               <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Links e Códigos de Pagamento</h2>
               
               <div className="space-y-3 text-xs">
-                {cobrancaAtual.url_cobranca && !isFaturado && cobrancaAtual.tipo_cobranca !== "BOLETO" && (
+                {cobrancaAtual.url_cobranca && temLinkExterno && cobrancaAtual.tipo_cobranca !== "BOLETO" && (
                   <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
                     <div className="truncate">
                       <span className="text-slate-500 block text-[10px]">Link de Pagamento</span>

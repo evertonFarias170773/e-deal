@@ -28,13 +28,14 @@ import {
   isCreditoPendente,
   isPropostaLiberadaParaPedido,
   EMPRESAS_RECEBEDORAS_FIXAS,
+  cobrancaTemLinkExterno,
+  resolverEmpresaRecebedora,
   roundMoney
 } from "@/features/cobrancas/cobrancas-utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
   criarCobrancaInitialValues,
   getCobrancaTipoLabel,
-  getEmpresaRecebedoraByProposta,
   getMensagemTipoIndisponivel,
   isTipoDisponivelParaEmpresa
 } from "@/lib/mocks/pagamentos.mock";
@@ -52,42 +53,16 @@ type PropostaCobrancaPanelProps = {
 };
 
 function getInitialEmpresaFromProposta(proposta: Proposta): { id_empresa: number; empresa: string } {
-  const empresaPadrao = proposta.cliente?.empresaPadrao?.trim();
-  
-  if (empresaPadrao && empresaPadrao !== "Não informado" && empresaPadrao !== "Não Informado") {
-    const normalized = empresaPadrao.toLowerCase()
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    if (normalized.includes("eireli") || normalized.includes("grafica expressa") || normalized.includes("grafica")) {
-      if (normalized.includes("biro")) {
-        return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
-      }
-      return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
-    }
-    if (normalized.includes("biro")) {
-      return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
-    }
-    if (normalized.includes("e3") || normalized.includes("brindes")) {
-      return { id_empresa: 3, empresa: "E3 BRINDES LTDA" };
-    }
-  }
-
-  const propEmpresa = proposta.empresa?.trim() || "";
-  const normalizedProp = propEmpresa.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (normalizedProp.includes("eireli") || normalizedProp.includes("grafica expressa") || normalizedProp.includes("grafica")) {
-    if (normalizedProp.includes("biro")) {
-      return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
-    }
-    return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
-  }
-  if (normalizedProp.includes("biro")) {
-    return { id_empresa: 2, empresa: "IDEAL BIRÔ SERV. GRAFICOS" };
-  }
-  if (normalizedProp.includes("e3") || normalizedProp.includes("brindes")) {
-    return { id_empresa: 3, empresa: "E3 BRINDES LTDA" };
-  }
-
-  return { id_empresa: 1, empresa: "IDEAL GRÁFICA EXPRESSA EIRELI" };
+  // A regra e a PRECEDÊNCIA vivem em cobrancas-utils, no módulo que já é dono do
+  // vocabulário de empresa: proposta > padrão do cliente > default. Aqui fica só
+  // a adaptação para o formato do formulário.
+  //
+  // A ordem estava invertida: o padrão do cliente resolvia e RETORNAVA antes de
+  // `proposta.empresa` ser consultada, então uma proposta da Birô abria o modal
+  // na Gráfica sempre que o cliente tivesse empresa padrão gravada — que é a
+  // esmagadora maioria dos cadastros.
+  const escolhida = resolverEmpresaRecebedora(proposta.empresa, proposta.cliente?.empresaPadrao);
+  return { id_empresa: escolhida.id, empresa: escolhida.nome };
 }
 
 /**
@@ -2557,7 +2532,11 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
       {cobrancas.map((cobranca) => {
         const valorCobranca = getValorCobranca(cobranca);
         const tipoNormalized = cobranca.tipo_cobranca?.trim().toUpperCase().replace(/_/g, "-");
-        const isFaturado = tipoNormalized === "E-FATURADO" || tipoNormalized === "FATURADO";
+        // Predicado único (cobrancas-utils): cobre E-CREDITO e a família faturado
+        // inteira. Antes aqui só havia `isFaturado`, testando E-FATURADO e
+        // FATURADO — E-CREDITO caía no ramo genérico e oferecia "Abrir checkout"
+        // para um abatimento de saldo em conta corrente.
+        const temLinkExterno = cobrancaTemLinkExterno(cobranca);
         const isBoleto = tipoNormalized === "BOLETO";
         const isPix = tipoNormalized === "PIX";
         const isCard = tipoNormalized === "CARD-PARCELADO" || tipoNormalized === "CARD_PARCELADO";
@@ -2693,7 +2672,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                     )}
                   </>
                 ) : (
-                  cobranca.url_cobranca && !isFaturado && (
+                  cobranca.url_cobranca && temLinkExterno && (
                     <button
                       type="button"
                       onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
@@ -2704,15 +2683,21 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                   )
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => handleCopyUrl(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
-                  disabled={!(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
-                  className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copiar
-                </button>
+                {/* Fora da cadeia de ramos acima, este botão era renderizado
+                    SEMPRE — só desabilitado quando não havia nenhum código. Com
+                    a url_cobranca que o próprio fluxo do crédito grava, ele
+                    ficava ativo no E-Crédito. */}
+                {temLinkExterno && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyUrl(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                    disabled={!(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                    className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copiar
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -2883,7 +2868,7 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                       )}
                     </>
                   ) : (
-                    cobranca.url_cobranca && !isFaturado && (
+                    cobranca.url_cobranca && temLinkExterno && (
                       <button
                         type="button"
                         onClick={() => handleAbrirCheckout(cobranca.url_cobranca || "")}
@@ -2893,16 +2878,19 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                       </button>
                     )
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleCopyUrl(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
-                    disabled={!(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
-                    className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Copiar link"
-                  >
-                    <Copy className="mr-1.5 h-3.5 w-3.5" />
-                    Copiar
-                  </button>
+                  {/* Mesma regra do layout acima: sem link externo, sem botão. */}
+                  {temLinkExterno && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyUrl(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                      disabled={!(cobranca.url_cobranca || cobranca.cartao_checkout_url || cobranca.pix_copia_cola || cobranca.linha_digitavel)}
+                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Copiar link"
+                    >
+                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      Copiar
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onSelectCobranca(cobranca.id)}

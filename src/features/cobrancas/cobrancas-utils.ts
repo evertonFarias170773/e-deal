@@ -508,6 +508,109 @@ export function isCobrancaECredito(cobranca: Pick<Cobranca, "tipo_cobranca">): b
 }
 
 /**
+ * Modalidades que NÃO têm link de pagamento externo — não há checkout a abrir
+ * nem link a copiar.
+ *
+ * E-CREDITO é abatimento de saldo em conta corrente; a família faturado é
+ * cobrança contra o cliente, sem página de pagamento. Que exista uma
+ * `url_cobranca` gravada não muda isso: o fluxo do crédito estampa um token
+ * público na própria linha (`usar-credito`), e essa URL serve de identificador,
+ * não de checkout.
+ *
+ * Grafias mistas ("E-Faturado") e underscore ("CARD_PARCELADO") são
+ * normalizadas antes da comparação — o banco tem as duas formas.
+ */
+const TIPOS_SEM_LINK_EXTERNO = new Set([
+  "E-CREDITO",
+  "E-FATURADO",
+  "FATURADO",
+  "E-RETRABALHO",
+  "E-PERMUTA",
+  "E-AMOSTRA",
+  "E-AMOSTRAS"
+]);
+
+/**
+ * A cobrança tem link de pagamento externo (checkout, página pública) que faça
+ * sentido abrir ou copiar?
+ *
+ * Ponto único da regra: ela estava escrita três vezes com três conteúdos
+ * diferentes — no formulário (que já cobria a família faturado inteira), na
+ * lista e no detalhe (que cobriam só E-FATURADO). E-CREDITO não estava em
+ * nenhuma das duas últimas e por isso oferecia "Abrir checkout" para um
+ * abatimento de saldo.
+ */
+export function cobrancaTemLinkExterno(cobranca: Pick<Cobranca, "tipo_cobranca">): boolean {
+  const tipo = (cobranca.tipo_cobranca || "").trim().toUpperCase().replace(/_/g, "-");
+  return !TIPOS_SEM_LINK_EXTERNO.has(tipo);
+}
+
+/**
+ * Empresa recebedora correspondente a um texto de empresa, ou null quando não dá
+ * para afirmar.
+ *
+ * Reaproveita `resolveEmpresaIdFromTexto`, que já é a normalização canônica do
+ * módulo e reconhece as DUAS formas em uso no banco: a curta ("Ideal Biro") e a
+ * razão social ("IDEAL BIRÔ SERV. GRAFICOS"). O casamento exato contra a lista
+ * fixa, que existia antes, só acertava a forma curta — e a razão social é a
+ * maioria absoluta dos registros.
+ */
+export function empresaRecebedoraPorTexto(
+  texto: string | null | undefined
+): EmpresaRecebedoraOption | null {
+  const bruto = (texto ?? "").trim();
+  if (!bruto) return null;
+  // Placeholder do cadastro, não uma empresa: não é falha de reconhecimento.
+  if (normalize(bruto) === "nao informado") return null;
+
+  const id = resolveEmpresaIdFromTexto(bruto);
+  if (id === null) return null;
+  return EMPRESAS_RECEBEDORAS_FIXAS.find((item) => item.id === id) ?? null;
+}
+
+/**
+ * Empresa recebedora sugerida para uma cobrança nova.
+ *
+ * PRECEDÊNCIA, e o motivo dela:
+ *   1. `propostas.empresa` — a empresa ESCOLHIDA na aba Geral da proposta. É a
+ *      decisão comercial já tomada para esta venda, e é ela que manda.
+ *   2. `clientes.empresa_padrao` — só quando a proposta não diz nada. É a
+ *      preferência histórica do cliente, não a decisão desta venda.
+ *   3. Ideal Gráfica, o default de sempre.
+ *
+ * A ordem estava invertida: o padrão do cliente resolvia e retornava antes de a
+ * proposta ser consultada, então uma proposta da Birô abria o modal na Gráfica
+ * sempre que o cliente tivesse padrão gravado. Sugestão apenas — quem cria a
+ * cobrança continua livre para trocar no modal.
+ */
+export function resolverEmpresaRecebedora(
+  empresaProposta: string | null | undefined,
+  empresaPadraoCliente?: string | null
+): EmpresaRecebedoraOption {
+  const daProposta = empresaRecebedoraPorTexto(empresaProposta);
+  if (daProposta) return daProposta;
+
+  const doCliente = empresaRecebedoraPorTexto(empresaPadraoCliente);
+  if (doCliente) return doCliente;
+
+  // Cair no default é aceitável; cair nele em SILÊNCIO não era. Um texto que
+  // existe e não foi reconhecido é vocabulário novo no banco, e precisa
+  // aparecer em diagnóstico em vez de virar empresa 1 sem deixar rastro.
+  const naoReconhecidos = [empresaProposta, empresaPadraoCliente]
+    .map((texto) => (texto ?? "").trim())
+    .filter((texto) => texto !== "" && normalize(texto) !== "nao informado");
+
+  if (naoReconhecidos.length > 0) {
+    console.error(
+      "[cobrancas] Empresa recebedora não reconhecida; usando o default (id 1). Texto(s):",
+      naoReconhecidos
+    );
+  }
+
+  return EMPRESAS_RECEBEDORAS_FIXAS[0];
+}
+
+/**
  * Calcula o valor efetivamente pago e confirmado em uma lista de cobranças.
  * Utiliza o critério oficial de isPagamentoAprovado.
  * Ignora cobranças canceladas.
