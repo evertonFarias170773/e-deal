@@ -306,6 +306,25 @@ A modalidade estreou no despacho, mas esse é o lugar errado: quem sabe se o cli
 
 Consequência: **nenhuma escrita nova em `cotacao_frete`**. O zero desce pelo `DELETE` + `INSERT` que o salvamento já fazia — ver o aviso da seção 2 sobre os triggers dessa tabela.
 
+### CIF é o padrão desde 19/08/2026, e o passado fica como está
+
+CIF responde por cerca de **95% dos pedidos**. Nascendo nula, a modalidade dependia de alguém lembrar de declarar — e ninguém lembrava: em 19/08/2026 havia **8.238 propostas sem modalidade e zero pedidos CIF** no banco, um mês depois de a coluna existir. Sem um único pedido CIF, a recotação da Parte C não tinha como sequer ser exercitada.
+
+Desde 19/08/2026 **proposta nova nasce `CIF`**, pelos dois caminhos que criam proposta: a aba Fretes (`createInitialState`) e o Maestro (`maestro-save-proposta.server.ts`). RETIRA e FOB continuam como escolha explícita, e CIF **não exige transportadora** — só FOB exige.
+
+O default é seguro porque **CIF e "sem modalidade" produzem exatamente o mesmo dinheiro e o mesmo rótulo**: `valorFreteEfetivo` e `aplicarModalidadeNosFretes` só agem em FOB, e `nomeTransporteEfetivo` devolve o serviço cotado para tudo que não é FOB. Quem zera o frete é FOB, nunca CIF. Seis asserções em `scripts/testes/modalidade-frete-rotulo.test.mts` fixam essa equivalência, para o dia em que CIF ganhar regra própria a quebra aparecer no teste e não na tela.
+
+**Propostas anteriores a 19/08/2026 permanecem com `modalidade_frete` nula, por decisão.** O backfill foi levantado e **recusado** em 19/08/2026. O critério seguro chegou a ser montado — proposta normal, não cancelada, `valor_frete > 0`, cotação escolhida que não fosse retirada nem "sem custo", o que selecionava **635 linhas**. O que barrou não foi o critério, foi um efeito colateral irreversível:
+
+- os dois triggers `BEFORE UPDATE` de `propostas` (`propostas_set_timestamp` e `trg_set_updated_at`) fazem `NEW.updated_at = now()` **incondicionalmente**;
+- a lista de Orçamentos ordena no servidor por `updated_at DESC, id_int DESC`, e a coluna "Data / Hora" exibe `updatedAt || createdAt`;
+- o backfill recarimbaria as 635 (algumas de junho), jogando-as à frente de **4.783 propostas** e exibindo todas com a data de hoje — ocupando as primeiras páginas da lista;
+- **o rollback não desfaz isso**: devolveria `modalidade_frete` a null, nunca o `updated_at` original. Evitar exigiria desligar os triggers, o que não se faz por um dado retroativo.
+
+E não é necessário: **só o fluxo novo consome a modalidade** — a pré-seleção do despacho, a divergência entre orçamento e bancada, e a recotação da Parte C. Nada retroativo depende dela. O conjunto sem modalidade também encolhe sozinho conforme as propostas são tocadas: caiu de 636 para 635 em meia hora, no dia em que o default entrou.
+
+Registrado para não ser reaberto sem motivo novo: se um dia a modalidade retroativa passar a ser necessária, o custo a discutir é a ordenação da lista, não o critério de seleção.
+
 > ### Por que a edição para em LIBERADO
 >
 > Os dois campos ficam **somente leitura quando `status_interno` não é `NOVO` nem

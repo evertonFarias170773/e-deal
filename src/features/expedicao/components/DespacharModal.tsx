@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
+import { formatCurrency } from "@/lib/formatters/currency";
 import { labelTipoFrete, modalidadeInicialDoDespacho } from "../lib/tipo-frete";
 import { despachar, salvarDadosExpedicao } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
+import { recotarFrete } from "../services/recotacao.client";
+import type { RecotacaoResult } from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 
@@ -118,6 +121,41 @@ export function DespacharModal({
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
   const [gerandoPrepostagem, setGerandoPrepostagem] = useState(false);
+
+  /**
+   * Recotação (Parte C, Etapa 1) — SÓ CONSULTA. Nada é gravado por este bloco:
+   * nem o valor do frete, nem a proposta, nem a Conta Corrente. Serve para o
+   * expedidor ver o número real antes de trocar transportadora ou endereço.
+   */
+  const [recotando, setRecotando] = useState(false);
+  const [recotacao, setRecotacao] = useState<RecotacaoResult | null>(null);
+  const [erroRecotacao, setErroRecotacao] = useState<string | null>(null);
+
+  /**
+   * O botão só aparece no despacho de um pedido CIF. `modalidade` já nasce da
+   * precedência despacho > cotação de balcão > orçamento (ver
+   * `modalidadeInicialDoDespacho`), então um modal recém-aberto obedece
+   * exatamente a regra do banco — e marcar CIF agora também libera, o que é o
+   * momento em que o expedidor mais precisa do número. A rota revalida o gate
+   * contra o banco de qualquer forma.
+   */
+  const podeRecotar = pedido.statusInterno === "EXPEDICAO" && modalidade === "CIF";
+
+  /** Resultado velho ao lado de destino novo é pior que resultado nenhum. */
+  function limparRecotacao() {
+    setRecotacao(null);
+    setErroRecotacao(null);
+  }
+
+  async function handleRecotar() {
+    if (recotando) return;
+    setRecotando(true);
+    setErroRecotacao(null);
+    const res = await recotarFrete(pedido.idInt, idEnderecoEntrega);
+    setRecotando(false);
+    if (res.success) setRecotacao(res);
+    else setErroRecotacao(res.errorMessage || "Não foi possível recotar agora.");
+  }
 
   /**
    * O service continua decidindo o status destino por `tipoEntrega`
@@ -470,6 +508,7 @@ export function DespacharModal({
                     onChange={(e) => {
                       const id = e.target.value === "" ? null : Number(e.target.value);
                       setIdTransportadoraCliente(id);
+                      limparRecotacao();
                       const t = transportadoras.find((x) => x.id_cliente === id);
                       if (t) setTransportadoraNome(nomeExibicao(t));
                     }}
@@ -488,13 +527,102 @@ export function DespacharModal({
               </div>
               <div>
                 <label className={labelClass}>Endereço de entrega (vai para a etiqueta)</label>
-                <select value={idEnderecoEntrega ?? ""} onChange={(e) => setIdEnderecoEntrega(e.target.value === "" ? null : e.target.value)} className={inputClass}>
+                <select
+                  value={idEnderecoEntrega ?? ""}
+                  onChange={(e) => {
+                    setIdEnderecoEntrega(e.target.value === "" ? null : e.target.value);
+                    limparRecotacao();
+                  }}
+                  className={inputClass}
+                >
                   <option value="">— não informar —</option>
                   {enderecos.map((e) => (
                     <option key={e.id} value={e.id}>{e.rotulo}</option>
                   ))}
                 </select>
               </div>
+
+              {/* Recotação — SÓ CONSULTA. Fica embaixo do endereço porque é dele
+                  que o resultado depende. Nada aqui grava nada. */}
+              {podeRecotar && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Recotar frete</p>
+                      <p className="text-xs text-slate-500">
+                        Cota de novo com o endereço e o peso deste pedido. Frete atual da proposta:{" "}
+                        <strong>{formatCurrency(pedido.freteValor ?? 0)}</strong>.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRecotar}
+                      disabled={recotando}
+                      className="rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 disabled:opacity-60"
+                    >
+                      {recotando ? "Cotando..." : "Recotar frete"}
+                    </button>
+                  </div>
+
+                  {erroRecotacao && (
+                    <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-900">
+                      {erroRecotacao}
+                    </p>
+                  )}
+
+                  {recotacao?.success && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs text-slate-500">
+                        Peso usado: <strong>{((recotacao.pesoGramas ?? 0) / 1000).toFixed(2)} kg</strong>
+                        {recotacao.pesoOrigem ? ` (${recotacao.pesoOrigem})` : ""} · Destino:{" "}
+                        {recotacao.endereco ? `${recotacao.endereco.cidade}/${recotacao.endereco.uf}` : "—"}
+                      </p>
+
+                      {(recotacao.opcoes ?? []).map((o) => (
+                        <div
+                          key={o.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"
+                        >
+                          <div className="text-xs">
+                            <strong className="text-slate-800">{o.transportadora}</strong>
+                            {o.servico ? <span className="text-slate-500"> · {o.servico}</span> : null}
+                            <span className="text-slate-400"> · {o.prazo}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-bold text-slate-900">{formatCurrency(o.valor)}</span>
+                            <span
+                              className={
+                                o.diferenca < 0
+                                  ? "font-semibold text-emerald-700"
+                                  : o.diferenca > 0
+                                    ? "font-semibold text-amber-700"
+                                    : "text-slate-400"
+                              }
+                            >
+                              {o.diferenca === 0
+                                ? "sem diferença"
+                                : `${o.diferenca > 0 ? "+" : "−"}${formatCurrency(Math.abs(o.diferenca))}`}
+                            </span>
+                            {!o.dentroDaAlcada && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
+                                acima da alçada
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {(recotacao.avisos ?? []).map((aviso, i) => (
+                        <p key={i} className="text-xs italic text-slate-500">{aviso}</p>
+                      ))}
+
+                      <p className="text-xs font-semibold text-slate-500">
+                        Consulta apenas — nada foi gravado. O valor da proposta continua o mesmo.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <label className={labelClass}>Código de rastreio (manual)</label>
                 <input value={codigoRastreamento} onChange={(e) => setCodigoRastreamento(e.target.value)} placeholder="Ex.: AD173823345BR — ou gere pelos Correios na Fase 4" className={inputClass} />
