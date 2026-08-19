@@ -11,8 +11,8 @@ import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.s
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
-import { recotarFrete } from "../services/recotacao.client";
-import type { RecotacaoResult } from "../services/recotacao.client";
+import { recotarFrete, aplicarRecotacao } from "../services/recotacao.client";
+import type { RecotacaoResult, OpcaoRecotacao, AplicacaoRecotacao } from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 
@@ -132,6 +132,22 @@ export function DespacharModal({
   const [erroRecotacao, setErroRecotacao] = useState<string | null>(null);
 
   /**
+   * Aplicacao (Parte C, Etapa 2) — ESTA grava: `propostas.valor_frete`, o
+   * `valor_total` movido pelo delta do frete, e uma linha no ledger
+   * `expedicao_recotacoes`. Continua sem tocar `cotacao_frete` e sem lancar
+   * nada na Conta Corrente.
+   *
+   * `chavesPorOpcao` e a idempotencia: uma uuid POR OPCAO, gerada quando o
+   * resultado da cotacao chega — nunca no clique. Clicar duas vezes manda a
+   * mesma chave, e quem recusa a segunda e o unique do banco, nao o estado
+   * desta tela (que ja falhou nesse papel quatro vezes neste projeto).
+   */
+  const [aplicandoId, setAplicandoId] = useState<string | null>(null);
+  const [aplicacao, setAplicacao] = useState<AplicacaoRecotacao | null>(null);
+  const [erroAplicacao, setErroAplicacao] = useState<string | null>(null);
+  const [chavesPorOpcao, setChavesPorOpcao] = useState<Record<string, string>>({});
+
+  /**
    * O botão só aparece no despacho de um pedido CIF. `modalidade` já nasce da
    * precedência despacho > cotação de balcão > orçamento (ver
    * `modalidadeInicialDoDespacho`), então um modal recém-aberto obedece
@@ -145,16 +161,67 @@ export function DespacharModal({
   function limparRecotacao() {
     setRecotacao(null);
     setErroRecotacao(null);
+    setAplicacao(null);
+    setErroAplicacao(null);
+    setChavesPorOpcao({});
   }
 
   async function handleRecotar() {
     if (recotando) return;
     setRecotando(true);
     setErroRecotacao(null);
+    setAplicacao(null);
+    setErroAplicacao(null);
     const res = await recotarFrete(pedido.idInt, idEnderecoEntrega);
     setRecotando(false);
-    if (res.success) setRecotacao(res);
-    else setErroRecotacao(res.errorMessage || "Não foi possível recotar agora.");
+    if (res.success) {
+      setRecotacao(res);
+      // Uma chave por opcao, AGORA — nao no clique.
+      const chaves: Record<string, string> = {};
+      for (const o of res.opcoes ?? []) chaves[o.id] = crypto.randomUUID();
+      setChavesPorOpcao(chaves);
+    } else {
+      setRecotacao(null);
+      setChavesPorOpcao({});
+      setErroRecotacao(res.errorMessage || "Não foi possível recotar agora.");
+    }
+  }
+
+  /**
+   * Com NF-e autorizada so entra o que BARATEIA: empatar nao justifica mexer no
+   * valor de um pedido que ja tem nota. Encarecer depende da alcada e fica para
+   * a etapa seguinte. A rota e a RPC repetem os dois gates contra o banco.
+   */
+  function podeAplicar(o: OpcaoRecotacao): boolean {
+    if (o.diferenca > 0) return false;
+    if (pedido.nfStatus === "AUTORIZADA" && o.diferenca >= 0) return false;
+    return true;
+  }
+
+  function motivoBloqueio(o: OpcaoRecotacao): string {
+    if (o.diferenca > 0) return "Encarece: depende da alçada, ainda não liberado.";
+    return "Com NF-e autorizada, só o que barateia.";
+  }
+
+  async function handleAplicar(o: OpcaoRecotacao) {
+    if (aplicandoId) return;
+    const chave = chavesPorOpcao[o.id];
+    if (!chave) {
+      setErroAplicacao("Recote antes de aplicar.");
+      return;
+    }
+    setAplicandoId(o.id);
+    setErroAplicacao(null);
+    const res = await aplicarRecotacao({
+      idInt: pedido.idInt,
+      chave,
+      opcaoId: o.id,
+      valorVisto: o.valor,
+      idEnderecoEntrega
+    });
+    setAplicandoId(null);
+    if (res.success) setAplicacao(res);
+    else setErroAplicacao(res.errorMessage || "Não foi possível aplicar agora.");
   }
 
   /**
@@ -608,6 +675,23 @@ export function DespacharModal({
                                 acima da alçada
                               </span>
                             )}
+                            {podeAplicar(o) ? (
+                              <button
+                                type="button"
+                                onClick={() => handleAplicar(o)}
+                                disabled={Boolean(aplicandoId) || Boolean(aplicacao)}
+                                className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                {aplicandoId === o.id ? "Aplicando..." : "Aplicar"}
+                              </button>
+                            ) : (
+                              <span
+                                title={motivoBloqueio(o)}
+                                className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-400"
+                              >
+                                Aplicar
+                              </span>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -616,9 +700,39 @@ export function DespacharModal({
                         <p key={i} className="text-xs italic text-slate-500">{aviso}</p>
                       ))}
 
-                      <p className="text-xs font-semibold text-slate-500">
-                        Consulta apenas — nada foi gravado. O valor da proposta continua o mesmo.
-                      </p>
+                      {erroAplicacao && (
+                        <p className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-xs font-medium text-rose-900">
+                          {erroAplicacao}
+                        </p>
+                      )}
+
+                      {aplicacao?.success ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                          <p className="font-semibold">
+                            Frete atualizado{aplicacao.idempotente ? " (já estava aplicado)" : ""}
+                          </p>
+                          <p className="mt-1">
+                            {aplicacao.transportadora}
+                            {aplicacao.servico ? ` · ${aplicacao.servico}` : ""} —{" "}
+                            {formatCurrency(aplicacao.freteAnterior ?? 0)} → <strong>{formatCurrency(aplicacao.freteNovo ?? 0)}</strong>{" "}
+                            ({(aplicacao.diferenca ?? 0) < 0 ? "−" : ""}
+                            {formatCurrency(Math.abs(aplicacao.diferenca ?? 0))})
+                          </p>
+                          <p>
+                            Total do pedido: {formatCurrency(aplicacao.totalAnterior ?? 0)} →{" "}
+                            <strong>{formatCurrency(aplicacao.totalNovo ?? 0)}</strong>
+                          </p>
+                          <p className="mt-2 font-semibold">
+                            A diferença de {formatCurrency(Math.abs(aplicacao.diferenca ?? 0))} ainda NÃO foi lançada na
+                            conta do cliente. Registrado na timeline do pedido.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs font-semibold text-slate-500">
+                          Aplicar grava o frete novo na proposta e move o total pelo mesmo valor. A diferença NÃO vai
+                          para a conta do cliente nesta fase.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

@@ -44,6 +44,13 @@
 --   formula nao-linear no frete, a aplicacao para de funcionar em vez de gravar
 --   total errado em silencio.
 --
+-- GATES SAO LIDOS DO BANCO, NUNCA RECEBIDOS POR PARAMETRO
+--   Modalidade efetiva, NF-e autorizada, despacho e entrega sao consultados
+--   DENTRO da transacao, junto com status, avulsa e pagamento. Gate que confia
+--   no chamador nao e gate. Os parametros descritivos (transportadora, servico,
+--   peso, endereco) alimentam so o ledger; `p_modalidade` e conferido contra a
+--   leitura e recusado se divergir.
+--
 -- O QUE ESTA MIGRATION NAO FAZ
 --   NAO toca `cotacao_frete` (os tres triggers dela reescrevem
 --   `propostas.valor_total` e `status_interno` — secao 2 de EXPEDICAO.md).
@@ -212,6 +219,7 @@ DECLARE
   v_exp        public.expedicoes%ROWTYPE;
   v_tem_nfe    boolean;
   v_despachado boolean;
+  v_modalidade text;
 BEGIN
   PERFORM public.cc__assert_permissao(v_uid, 'expedicao.processar');
 
@@ -254,9 +262,6 @@ BEGIN
     RAISE EXCEPTION 'EXP_RECOT_STATUS: recotacao so no despacho; #% esta em "%"',
       p_id_int, v_prop.status_interno;
   END IF;
-  IF p_modalidade <> 'CIF' THEN
-    RAISE EXCEPTION 'EXP_RECOT_MODALIDADE: recotacao so em CIF (#% veio como %)', p_id_int, p_modalidade;
-  END IF;
 
   v_pago := public.cc__valor_pago(p_id_int);
   IF COALESCE(v_pago, 0) <= 0 THEN
@@ -271,6 +276,19 @@ BEGIN
     INTO v_tem_nfe;
 
   SELECT * INTO v_exp FROM public.expedicoes WHERE id_int = p_id_int;
+
+  -- Modalidade LIDA do banco, com a precedencia oficial (despacho > orcamento).
+  -- O parametro p_modalidade so alimenta o ledger, e e conferido contra a
+  -- leitura: gate que confia no chamador nao e gate.
+  v_modalidade := COALESCE(v_exp.modalidade_frete, v_prop.modalidade_frete);
+  IF v_modalidade IS DISTINCT FROM 'CIF' THEN
+    RAISE EXCEPTION 'EXP_RECOT_MODALIDADE: recotacao so em CIF; #% esta como %',
+      p_id_int, COALESCE(v_modalidade, 'sem modalidade declarada');
+  END IF;
+  IF p_modalidade IS DISTINCT FROM v_modalidade THEN
+    RAISE EXCEPTION 'EXP_RECOT_MODALIDADE: modalidade informada (%) diverge da gravada (%) na proposta #%',
+      p_modalidade, v_modalidade, p_id_int;
+  END IF;
 
   IF v_exp.data_entrega IS NOT NULL THEN
     RAISE EXCEPTION 'EXP_RECOT_ENTREGUE: pedido #% ja foi entregue', p_id_int;
@@ -333,7 +351,7 @@ BEGIN
     p_transportadora, p_servico, p_prazo, p_peso_gramas, p_peso_origem,
     round(p_subtotal_itens, 2),
     p_id_endereco_entrega, p_cep,
-    p_modalidade, v_prop.status_interno, v_tem_nfe, round(v_pago, 2),
+    v_modalidade, v_prop.status_interno, v_tem_nfe, round(v_pago, 2),
     COALESCE(v_despachado, false), v_exp.codigo_rastreamento, p_opcoes_cotadas, p_observacao)
   RETURNING id INTO v_new_id;
 
