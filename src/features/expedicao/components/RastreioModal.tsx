@@ -29,7 +29,7 @@ export function RastreioModal({
   async function consultar() {
     const minhaGeracao = ++geracaoRef.current;
     setResultado(null);
-    const res = await rastrearObjeto(pedido.codigoRastreamento);
+    const res = await rastrearObjeto(pedido.codigoRastreamento, pedido.idInt);
     if (minhaGeracao !== geracaoRef.current) return;
     setResultado(res);
   }
@@ -66,16 +66,28 @@ export function RastreioModal({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-6">
-          {resultado === null && <p className="text-center text-sm text-slate-500">Consultando os Correios...</p>}
+          {resultado === null && (
+            <p className="text-center text-sm text-slate-500">
+              Consultando os Correios — se o objeto não estiver no primeiro contrato, os demais são tentados antes de
+              desistir.
+            </p>
+          )}
 
           {resultado?.ok === false && (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-              {resultado.erro}
+              <p className="font-semibold">{resultado.erro}</p>
+              {resultado.detalhe && <p className="mt-1.5 text-xs opacity-90">{resultado.detalhe}</p>}
             </div>
           )}
 
           {resultado?.ok === true && (
             <>
+              <p className="text-xs text-slate-500">
+                {resultado.fonte === "correios"
+                  ? `Consultado na API dos Correios${resultado.empresaNome ? ` · contrato da ${resultado.empresaNome}` : ""}.`
+                  : "Consultado no rastreador externo (os Correios não reconheceram este objeto nos contratos configurados)."}
+              </p>
+
               {Object.keys(resultado.parse.resumo).length > 0 ? (
                 <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-800/50">
                   {["Status", "Situação atual", "Local atual", "Última atualização", "Previsão de entrega", "Peso"].map((chave) =>
@@ -107,10 +119,16 @@ export function RastreioModal({
                   ))}
                 </ol>
               ) : (
-                // Fallback: formato mudou no n8n — mostra o texto bruto, nunca quebra.
-                <pre className="whitespace-pre-wrap rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300">
-                  {resultado.mensagemBruta}
-                </pre>
+                // Sem evento algum: objeto existe mas ainda não movimentou, ou o
+                // formato do rastreador externo mudou. Mostra o bruto, nunca quebra.
+                <>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    O objeto existe, mas ainda não tem nenhum evento registrado pelos Correios.
+                  </p>
+                  <pre className="whitespace-pre-wrap rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300">
+                    {resultado.mensagemBruta}
+                  </pre>
+                </>
               )}
             </>
           )}

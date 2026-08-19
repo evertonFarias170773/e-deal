@@ -1,6 +1,9 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+// Listas de eventos em ponto único: a consulta de rastreio da tela usa as MESMAS
+// para liberar o botão "marcar ENTREGUE". Duas cópias divergiriam.
+import { EVENTOS_EM_TRANSITO, EVENTOS_ENTREGUE } from "@/lib/correios/eventos";
 
 /**
  * Receiver do WEBHOOK oficial dos Correios (serviço wh-rastro, API 78/534).
@@ -27,13 +30,6 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/** Postagem/coleta: o objeto entrou na rede dos Correios. */
-const EVENTOS_EM_TRANSITO = new Set(["PO-1", "PO-2", "PO-9", "CO-1", "CO-15", "CO-16", "CMT-0"]);
-/** Entrega ao destinatário (famílias BDE/BDI/BDR, variantes 1/67/68/70). */
-const EVENTOS_ENTREGUE = new Set(
-  ["BDE", "BDI", "BDR"].flatMap((f) => ["1", "67", "68", "70"].map((n) => `${f}-${n}`))
-);
 
 const REGEX_OBJETO = /\b[A-Z]{2}[0-9]{9}BR\b/;
 const REGEX_TIPO_EVENTO = /\b(?:PO|CO|OEC|BDE|BDI|BDR|RO|DO|CAR|CMT|PAR|FC|LDE|LDI|BLQ|EST|IDC|PMT|TRI|CLO)-[0-9]{1,3}\b/;

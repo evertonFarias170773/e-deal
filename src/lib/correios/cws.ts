@@ -33,6 +33,8 @@
  * O dono replica na Vercel quando publicar.
  */
 
+import { chaveEvento } from "./eventos";
+
 const BASES: Record<string, string> = {
   producao: "https://api.correios.com.br",
   homologacao: "https://apihom.correios.com.br"
@@ -114,8 +116,15 @@ export function correiosConfigurado(idEmpresa?: number | null): boolean {
 }
 
 class CorreiosApiError extends Error {
-  constructor(public status: number, message: string) {
+  // Campo declarado e atribuído à mão, não via parameter property: o runner de
+  // testes do projeto (`node --experimental-strip-types`) só remove tipos e
+  // recusa `constructor(public status: ...)`, o que tornava este módulo inteiro
+  // impossível de carregar num teste. Comportamento idêntico.
+  readonly status: number;
+
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
     this.name = "CorreiosApiError";
   }
 }
@@ -302,4 +311,133 @@ export async function baixarRotuloPdf(idPrepostagem: string, idEmpresa?: number 
     }
   }
   throw new CorreiosApiError(504, "Rótulo: tempo esgotado aguardando o PDF dos Correios.");
+}
+
+// ─── Rastreio (srorastro) ────────────────────────────────────────────────────
+
+/**
+ * Ids de empresa com credencial capaz de rastrear, em ordem crescente.
+ *
+ * Existe porque a consulta precisa varrer contratos: o objeto só aparece para a
+ * empresa dona dele, e nem sempre a empresa da proposta é quem postou (pedido
+ * antigo, etiqueta emitida por outra unidade). Sem a varredura, um caso desses
+ * viraria "não encontrado" sem explicação.
+ */
+export function empresasComRastro(): number[] {
+  const ids = new Set<number>();
+  for (const chave of Object.keys(process.env)) {
+    const m = /^CORREIOS_(\d+)_(RASTRO|CODIGO_ACESSO)$/.exec(chave);
+    if (m && String(process.env[chave] ?? "").trim()) ids.add(Number(m[1]));
+  }
+  return Array.from(ids).sort((a, b) => a - b);
+}
+
+export type CwsEventoRastro = {
+  /** Par codigo-tipo ("BDE-1"), como em lib/correios/eventos.ts. */
+  chave: string;
+  descricao: string;
+  detalhe: string | null;
+  /** ISO local devolvido pela API ("2026-08-19T11:58:55"). */
+  dataHora: string | null;
+  local: string | null;
+};
+
+export type CwsRastroObjeto = {
+  codigo: string;
+  categoria: string | null;
+  eventos: CwsEventoRastro[];
+};
+
+export type CwsRastroResultado =
+  /** O objeto pertence a este contrato e veio com dados. */
+  | { situacao: "encontrado"; objeto: CwsRastroObjeto }
+  /** Autenticou, mas o objeto é de outro contrato (SRO-009) ou não existe. */
+  | { situacao: "outro_contrato"; mensagem: string }
+  /** Empresa sem credencial de rastreio no ambiente. */
+  | { situacao: "sem_credencial" }
+  /** Erro real (rede, permissão da chave, indisponibilidade). */
+  | { situacao: "erro"; status: number; mensagem: string };
+
+/** Endereço do evento vira "CIDADE/UF" — a API só traz `uf` quando é interno. */
+function localDoEvento(unidade: unknown): string | null {
+  const u = unidade as { endereco?: { cidade?: string; uf?: string }; nome?: string } | undefined;
+  const cidade = u?.endereco?.cidade?.trim() ?? "";
+  const uf = u?.endereco?.uf?.trim() ?? "";
+  if (cidade && uf) return `${cidade}/${uf}`;
+  return cidade || uf || null;
+}
+
+/**
+ * Consulta UM objeto no contrato de UMA empresa.
+ *
+ * A API do SRO só devolve objetos do contrato dono da chave: consultar o objeto
+ * de outra empresa responde `200` com `SRO-009: Objeto não pertence ao
+ * contrato` dentro do corpo — não é erro de credencial, e por isso tem situação
+ * própria. Foi exatamente esse caso que fez o rastreio da Birô parecer quebrado
+ * enquanto o fluxo externo usava uma credencial só.
+ *
+ * O idioma vai no HEADER `Accept-Language`; como query param a API recusa com
+ * `SRO-018`, mesmo recebendo `pt-BR`.
+ */
+export async function rastrearObjetoCorreios(
+  codigo: string,
+  idEmpresa: number | null
+): Promise<CwsRastroResultado> {
+  const ambiente = (process.env.CORREIOS_AMBIENTE || "").trim();
+  const base = BASES[ambiente];
+  if (!base) return { situacao: "sem_credencial" };
+
+  // Chave dedicada de rastreio quando houver; senão a mesma credencial do resto.
+  const chave = lerVar(idEmpresa, "RASTRO") || lerVar(idEmpresa, "CODIGO_ACESSO");
+  if (!chave) return { situacao: "sem_credencial" };
+
+  const alvo = `${base}/srorastro/v1/objetos/${encodeURIComponent(codigo)}?resultado=T`;
+  let response: Response;
+  try {
+    response = await fetch(alvo, {
+      headers: { Authorization: `Bearer ${chave}`, "Accept-Language": "pt-BR" }
+    });
+  } catch (e) {
+    return { situacao: "erro", status: 0, mensagem: e instanceof Error ? e.message : "Falha de rede." };
+  }
+
+  if (!response.ok) {
+    return { situacao: "erro", status: response.status, mensagem: await lerErro(response) };
+  }
+
+  const corpo = (await response.json().catch(() => null)) as {
+    objetos?: Array<{
+      codObjeto?: string;
+      mensagem?: string;
+      tipoPostal?: { categoria?: string };
+      eventos?: Array<{
+        codigo?: string;
+        tipo?: string;
+        descricao?: string;
+        detalhe?: string;
+        dtHrCriado?: string;
+        unidade?: unknown;
+      }>;
+    }>;
+  } | null;
+
+  const objeto = corpo?.objetos?.[0];
+  if (!objeto) return { situacao: "erro", status: 502, mensagem: "Correios responderam sem o objeto." };
+  // `mensagem` no lugar dos eventos é a forma da API dizer que não tem o dado.
+  if (objeto.mensagem) return { situacao: "outro_contrato", mensagem: objeto.mensagem };
+
+  return {
+    situacao: "encontrado",
+    objeto: {
+      codigo: objeto.codObjeto ?? codigo,
+      categoria: objeto.tipoPostal?.categoria ?? null,
+      eventos: (objeto.eventos ?? []).map((ev) => ({
+        chave: chaveEvento(ev.codigo, ev.tipo),
+        descricao: (ev.descricao ?? "").trim(),
+        detalhe: (ev.detalhe ?? "").trim() || null,
+        dataHora: ev.dtHrCriado ?? null,
+        local: localDoEvento(ev.unidade)
+      }))
+    }
+  };
 }

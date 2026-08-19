@@ -1,15 +1,15 @@
 # EXPEDICAO.md
 
-Versão: 1.4
+Versão: 1.5
 Status: Oficial — Correios em produção (prepostagens reais emitidas em 16/08/2026)
-Última atualização: 18/08/2026
+Última atualização: 19/08/2026
 Projeto: Vibe
 
 ---
 
 # Expedição e Logística
 
-Este documento descreve o que está implementado no módulo de Expedição do Vibe em 18/08/2026 — não o planejado nem etapas futuras de um roadmap.
+Este documento descreve o que está implementado no módulo de Expedição do Vibe em 19/08/2026 — não o planejado nem etapas futuras de um roadmap.
 
 O painel `/expedicao` (`src/features/expedicao/ExpedicaoPage.tsx`, rota `src/app/(erp)/expedicao/page.tsx`) cobre o funil logístico de uma proposta já liberada para produção, do `APROVADO` até `ENTREGUE`. Quem opera as transições e o despacho é o expedidor — na prática, qualquer usuário com a permissão `expedicao.processar` (seção 8).
 
@@ -408,11 +408,30 @@ Ver seção 9 para as limitações conhecidas dessa integração.
 
 ---
 
-# 7. Rastreio via n8n
+# 7. Rastreio (consulta sob demanda)
 
-- `rastrearObjeto()` (`src/features/expedicao/services/rastro.service.ts`) chama, via `POST`, o webhook `https://10074.hostoo.net.br/webhook/rastro-e-deal-todos` — um fluxo n8n do dono, externo ao ERP — com `{ rastro: codigo }`.
+`rastrearObjeto()` (`src/features/expedicao/services/rastro.service.ts`) consulta **duas fontes, nesta ordem**, e só mostra erro depois que as duas falham:
 
-## 7.1 Webhook oficial dos Correios (17/08/2026)
+| Ordem | Fonte | Cobre |
+|---|---|---|
+| 1ª | `GET /api/expedicao/correios/rastro` → API `srorastro` dos Correios | objetos dos contratos das empresas do grupo |
+| 2ª | webhook n8n do dono (`.../webhook/rastro-e-deal-todos`, `POST { rastro }`) | o que a primeira não reconhece — código de transportadora, contrato de terceiro |
+
+## 7.1 Um objeto só aparece para o contrato que o postou (19/08/2026)
+
+A API do SRO devolve `200` com `SRO-009: Objeto não pertence ao contrato` quando a chave usada não é a do contrato dono do objeto. Comprovado em 19/08/2026 consultando o mesmo objeto com as três credenciais: a matriz é complementar — cada objeto responde para uma empresa e falha para as outras.
+
+Foi o que quebrou o rastreio da Birô: o fluxo n8n tem **uma credencial só** (Ideal Gráfica), então devolvia corpo vazio para objetos de Birô e E3 — e a tela mostrava "Resposta inesperada do rastreador", que não distingue "objeto de outro contrato" de "rastreador fora do ar". Duas sessões de investigação foram para o lugar errado por causa dessa mensagem.
+
+Por isso a rota **varre os contratos**: começa pela empresa da proposta (acerta de primeira no caso normal) e só então tenta as demais, via `empresasComRastro()`. Detalhes que custaram tempo e ficam registrados:
+
+- o idioma vai no header **`Accept-Language: pt-BR`**; como query param a API recusa com `SRO-018`, mesmo recebendo o valor certo;
+- `SRO-009` **não é erro de credencial** — tem situação própria (`outro_contrato`) e não interrompe a varredura;
+- um erro real (chave sem permissão, Correios fora do ar) é preservado e vira a mensagem final, em vez de virar "não encontrado".
+
+**Entrega é decidida pelo código do evento**, não por texto: `EVENTOS_ENTREGUE` em `src/lib/correios/eventos.ts` (famílias BDE/BDI/BDR, variantes 1/67/68/70) — a mesma lista que o receiver do webhook usa para marcar `ENTREGUE` sozinho, agora em ponto único. O SRO manda o tipo com zero à esquerda (`"01"`) e o webhook sem (`"1"`); `chaveEvento()` normaliza os dois. Testes em `scripts/testes/correios-eventos.test.mts`.
+
+## 7.2 Webhook oficial dos Correios (17/08/2026)
 
 O contrato tem a API Webhook (78) com o serviço `wh-rastro`: os Correios fazem
 POST na nossa URL a cada evento do objeto — sem polling. Explorado via OpenAPI
