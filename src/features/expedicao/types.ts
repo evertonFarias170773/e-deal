@@ -134,6 +134,20 @@ export interface PedidoExpedicao {
    * isto o bloqueio de divergencia nunca limparia.
    */
   recotacaoVigente: { pesoGramas: number | null; cep: string | null } | null;
+  /**
+   * O despacho foi CONFIRMADO, ou o que esta em `expedicoes` e rascunho?
+   *
+   * Marcador = `expedicoes.data_despacho IS NOT NULL`. Nao ha coluna propria:
+   * so `despachar()` escreve essa data, e ela ja e a fonte da `etapa`. Uma
+   * coluna nova seria uma segunda verdade sobre o mesmo fato, livre para
+   * divergir. Ver EXPEDICAO.md secao 2.2.
+   *
+   * Rascunho alimenta a PRECEDENCIA DE PESO e a divergencia de frete (peso real
+   * medido, e o expedidor precisa pedir liberacao com os dados persistidos),
+   * mas NAO alimenta transporte na lista, na visao por transportadora nem na
+   * etiqueta — la vale o estado confirmado.
+   */
+  despachoConfirmado: boolean;
   volumes: number | null;
   /**
    * Liberacao ATIVA da recotacao de frete (Parte C). Null = bloqueado: o

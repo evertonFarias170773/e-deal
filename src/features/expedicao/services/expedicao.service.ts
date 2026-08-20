@@ -266,7 +266,12 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       emAberto && promessaDia && promessaDia < hoje ? diffDias(promessaDia, hoje) : 0;
     const prometidoHoje = emAberto && promessaDia === hoje;
 
-    const tipoFrete: TipoFreteNormalizado = exp?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
+    // Rascunho (dados gravados sem despachar) NAO vence a cotacao aqui: a lista,
+    // a visao por transportadora e a etiqueta mostram o estado CONFIRMADO. Ver
+    // `despachoConfirmado` em types.ts.
+    const despachoConfirmado = Boolean(exp?.dataDespacho);
+    const expConfirmado = despachoConfirmado ? exp : null;
+    const tipoFrete: TipoFreteNormalizado = expConfirmado?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
 
     const modalidadeOrcamento = (p.modalidade_frete as ModalidadeFrete | null) ?? null;
     const idTransportadoraOrcamento =
@@ -317,7 +322,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // seguinte — antes caía direto no texto da cotação, que sob FOB diz
       // "SEDEX" num pedido que os Correios nunca vão tocar.
       transportadoraNome:
-        exp?.transportadoraNome ||
+        expConfirmado?.transportadoraNome ||
         nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
         "",
       freteValor: frete?.valor !== null && frete?.valor !== undefined ? Number(frete.valor) : null,
@@ -336,7 +341,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       ),
       expedicao: exp,
       liberacaoRecotacao: liberacaoMap.get(idInt) ?? null,
-      recotacaoVigente: recotacaoMap.get(idInt) ?? null
+      recotacaoVigente: recotacaoMap.get(idInt) ?? null,
+      despachoConfirmado
     });
   }
 

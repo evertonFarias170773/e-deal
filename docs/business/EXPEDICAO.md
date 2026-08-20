@@ -164,6 +164,28 @@ O peso bruto na **NF-e** segue pendente e é tarefa do módulo fiscal: a nota us
 hoje a soma teórica dos itens (`nfe.service.ts`), não `peso_bruto_kg` — ver
 `PEDIDOS-PRODUCAO.md` §19.
 
+
+### `peso_kg` pode vir de rascunho (20/08/2026)
+
+Desde 20/08/2026 o modal Despachar tem **"Salvar sem despachar"**: o expedidor altera peso, endereço ou transporte, grava, e fecha o modal para pedir liberação de recotação a um admin — sem perder o que preencheu. A gravação usa `salvarDadosExpedicao`, o mesmo caminho do modo edição, e **não toca `data_despacho`**.
+
+**O marcador que separa rascunho de despacho confirmado é `expedicoes.data_despacho IS NULL`.** Não há coluna própria: só `despachar()` escreve essa data, e ela já é a fonte da `etapa` (seção 3). Uma coluna nova seria uma segunda verdade sobre o mesmo fato, livre para divergir da primeira.
+
+Consequência direta para esta seção: **`expedicoes.peso_kg`, o primeiro degrau da precedência, pode vir de um despacho ainda não confirmado.** Isso é deliberado — é o peso real que alguém mediu na balança, e é o número certo para cotar, conferir divergência e imprimir. A ordem da precedência não muda.
+
+Quem **ignora** rascunho, lendo só o estado confirmado:
+
+| Consumidor | Comportamento |
+|---|---|
+| Lista e visão por transportadora | `transportadoraNome` e `tipoFrete` derivam de `expedicoes` **apenas** quando há `data_despacho`; sem ela vale a normalização da cotação. Um rascunho não move o pedido de coluna no kanban |
+| Etiqueta 10×15 | destino, transportadora, rastreio e observação saem do estado confirmado. Etiqueta impressa vira caixa despachada |
+| Declaração de conteúdo | mesmo critério para o destino |
+| Referência de transporte da divergência | rascunho **não** vira sua própria referência — senão o bloqueio se limparia sozinho ao trocar o "COMO VAI" |
+
+Duas exceções na etiqueta, e as duas são dado legítimo de **antes** do despacho: o **peso**, pela precedência acima, e **volumes / tipo de volume**, que a Revisão do boletim (`revisao-expedicao.service.ts`, seção 3.4) grava muito antes de existir despacho — gateá-los apagaria da etiqueta o que a Revisão registrou.
+
+Quem **consome** rascunho, de propósito: a **divergência de frete** (o expedidor precisa pedir liberação com os dados já persistidos), a **recotação** (`cotar` e `aplicar` leem peso e endereço de `expedicoes`) e a **prepostagem** — que já salvava o formulário antes de gerar exatamente por ler o persistido, e agora tem esse salvamento como redundância em vez de necessidade.
+
 ---
 
 # 3. Estados e Transições

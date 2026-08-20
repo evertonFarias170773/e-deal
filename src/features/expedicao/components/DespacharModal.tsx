@@ -340,9 +340,9 @@ export function DespacharModal({
       cepDestino: cepDoEnderecoEscolhido,
       modalidadeEfetiva: modalidade,
       tipoFreteEscolhido: tipoFrete,
-      tipoFreteJaDespachado: exp?.tipoFrete ?? null
+      tipoFreteJaDespachado: pedido.despachoConfirmado ? exp?.tipoFrete ?? null : null
     });
-  }, [pesoKg, cepDoEnderecoEscolhido, cotacaoVigente, modalidade, tipoFrete, exp?.tipoFrete]);
+  }, [pesoKg, cepDoEnderecoEscolhido, cotacaoVigente, modalidade, tipoFrete, exp?.tipoFrete, pedido.despachoConfirmado]);
 
 
   /**
@@ -495,6 +495,62 @@ export function DespacharModal({
         type: "success",
         title: modoEdicao ? "Dados de expedição salvos" : tipoEntrega === "RETIRADA" ? "Pedido aguardando retirada" : "Pedido despachado",
         description: `#${pedido.idInt} · ${pedido.cliente}`
+      });
+      onDone();
+    } else {
+      showToast({ type: "error", title: "Não foi possível salvar", description: res.error });
+    }
+  }
+
+  /**
+   * "Salvar sem despachar" — rascunho.
+   *
+   * O expedidor precisa alterar peso, endereco ou transporte, fechar o modal
+   * para pedir liberacao ao admin, e reencontrar o que preencheu. Ate 20/08/2026
+   * nao havia como: sem despachar, nada era gravado, e reabrir devolvia os dados
+   * originais.
+   *
+   * Grava em `expedicoes` pelo caminho que ja existia (`salvarDadosExpedicao`,
+   * usado no modo edicao), SEM tocar `data_despacho` — e por isso o pedido
+   * continua nao despachado, a `etapa` nao muda, e a etiqueta e a visao por
+   * transportadora seguem ignorando estes dados.
+   *
+   * Rascunho NAO exige campo: e justamente o estado incompleto que ele serve
+   * para preservar. Por isso `camposMinimosDespacho(..., "EDICAO")`.
+   */
+  async function handleSalvarRascunho() {
+    if (salvando) return;
+    const pesoNum = parsePesoKg(pesoKg);
+    if (pesoNum !== null && (!Number.isFinite(pesoNum) || pesoNum <= 0)) {
+      showToast({ type: "error", title: "Peso inválido", description: "Informe o peso em kg (ex.: 12,4) ou deixe vazio." });
+      return;
+    }
+    const volNum = parseQtdVolumes(qtdVolumes);
+    if (volNum !== null && (!Number.isFinite(volNum) || volNum <= 0 || volNum > 50)) {
+      showToast({ type: "error", title: "Volumes inválidos", description: "Quantidade de volumes deve ser entre 1 e 50." });
+      return;
+    }
+
+    setSalvando(true);
+    const res = await salvarDadosExpedicao(pedido.idInt, {
+      modalidadeFrete: modalidade,
+      tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
+      transportadoraNome: tipoEntrega === "RETIRADA" ? "Retira balcão" : transportadoraNome.trim(),
+      idTransportadoraCliente: tipoEntrega === "RETIRADA" ? null : idTransportadoraCliente,
+      pesoKg: pesoNum,
+      qtdVolumes: volNum,
+      tipoVolume,
+      idEnderecoEntrega,
+      codigoRastreamento: codigoRastreamento.trim(),
+      obs: obs.trim()
+    });
+    setSalvando(false);
+
+    if (res.success) {
+      showToast({
+        type: "success",
+        title: "Dados salvos",
+        description: `#${pedido.idInt} guardado sem despachar. O pedido segue na Expedição.`
       });
       onDone();
     } else {
@@ -1027,6 +1083,16 @@ export function DespacharModal({
           <button type="button" onClick={onClose} disabled={salvando} className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
             Cancelar
           </button>
+          {!modoEdicao && (
+            <button
+              type="button"
+              onClick={() => void handleSalvarRascunho()}
+              disabled={salvando}
+              className="rounded-2xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            >
+              Salvar sem despachar
+            </button>
+          )}
           {faltantes.length > 0 ? (
             <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
               Falta informar {frasearFaltantes(faltantes)}

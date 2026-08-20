@@ -63,7 +63,7 @@ export async function montarDeclaracaoViewModel(
   if (!proposta) return null;
 
   const [{ data: exp }, { data: frete }, { data: itensPedido }] = await Promise.all([
-    supabase.from("expedicoes").select("peso_kg, peso_bruto_kg, id_endereco_entrega").eq("id_int", idInt).maybeSingle(),
+    supabase.from("expedicoes").select("peso_kg, peso_bruto_kg, id_endereco_entrega, data_despacho").eq("id_int", idInt).maybeSingle(),
     supabase
       .from("cotacao_frete")
       .select("peso, cep")
@@ -85,11 +85,15 @@ export async function montarDeclaracaoViewModel(
     bairro: string | null; cidade: string | null; uf: string | null; cep: string | null;
   } | null = null;
 
-  if (exp?.id_endereco_entrega) {
+  // Mesmo criterio da etiqueta: o destino sai do estado CONFIRMADO, nunca de
+  // rascunho. O peso segue a precedencia unica, que considera o rascunho.
+  const expConfirmado = exp?.data_despacho ? exp : null;
+
+  if (expConfirmado?.id_endereco_entrega) {
     const { data } = await supabase
       .from("enderecos")
       .select("endereco, numero, complemento, bairro, cidade, uf, cep")
-      .eq("id", exp.id_endereco_entrega)
+      .eq("id", expConfirmado.id_endereco_entrega)
       .maybeSingle();
     endereco = data ?? null;
   }

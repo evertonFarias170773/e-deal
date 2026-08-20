@@ -64,7 +64,7 @@ export async function montarEtiquetaViewModel(
   const [{ data: exp }, { data: os }, { data: frete }, { data: notas }] = await Promise.all([
     supabase
       .from("expedicoes")
-      .select("peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, codigo_rastreamento, id_endereco_entrega, obs")
+      .select("peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, codigo_rastreamento, id_endereco_entrega, obs, data_despacho")
       .eq("id_int", idInt)
       .maybeSingle(),
     supabase.from("propostas_os").select("codigo_rastreamento").eq("id_int", idInt).maybeSingle(),
@@ -90,11 +90,26 @@ export async function montarEtiquetaViewModel(
     recebedor: string | null;
   } | null = null;
 
-  if (exp?.id_endereco_entrega) {
+  /**
+   * Rascunho NAO entra na etiqueta. `expedicoes` passou a poder guardar dados
+   * de despacho ainda NAO confirmado ("Salvar sem despachar", 20/08/2026), e
+   * etiqueta impressa vira caixa despachada: destino, transportadora, volumes e
+   * rastreio saem daqui so quando `data_despacho` existe.
+   *
+   * DUAS EXCECOES, e as duas sao dado legitimo de ANTES do despacho:
+   *   - PESO, que segue a precedencia unica de `lib/peso.ts` — e o peso real
+   *     medido na balanca;
+   *   - VOLUMES e TIPO DE VOLUME, gravados pela Revisao do boletim
+   *     (`revisao-expedicao.service.ts`, secao 3.4) muito antes de existir
+   *     despacho. Gatea-los apagaria da etiqueta o que a Revisao registrou.
+   */
+  const expConfirmado = exp?.data_despacho ? exp : null;
+
+  if (expConfirmado?.id_endereco_entrega) {
     const { data } = await supabase
       .from("enderecos")
       .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor")
-      .eq("id", exp.id_endereco_entrega)
+      .eq("id", expConfirmado.id_endereco_entrega)
       .maybeSingle();
     endereco = data ?? null;
   }
@@ -161,9 +176,9 @@ export async function montarEtiquetaViewModel(
     idInt,
     volumes,
     pesoKg,
-    transportadora: exp?.transportadora_nome || frete?.servico || "",
-    codigoRastreamento: exp?.codigo_rastreamento || os?.codigo_rastreamento || "",
-    obs: exp?.obs || "",
+    transportadora: expConfirmado?.transportadora_nome || frete?.servico || "",
+    codigoRastreamento: expConfirmado?.codigo_rastreamento || os?.codigo_rastreamento || "",
+    obs: expConfirmado?.obs || "",
     nfNumero: nfAutorizada?.numero_nf ? String(nfAutorizada.numero_nf) : "",
     tipoVolume: exp?.tipo_volume || "",
     remetenteRodape: [
