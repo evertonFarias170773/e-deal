@@ -219,6 +219,27 @@ O pedido também chega a `EXPEDICAO` pelo botão **"Confirmar revisão e liberar
 
 O critério e os campos estão descritos em `PEDIDOS-PRODUCAO.md` §19.
 
+## 3.5 Ordem de escrita do despacho, e a janela que sobra (20/08/2026)
+
+**`despachar()` grava `expedicoes` ANTES de transicionar.** Até 20/08/2026 era o contrário: o status ia primeiro, e uma falha na gravação dos dados deixava o pedido **fora do funil logístico com os dados pela metade** — o próprio código admitia isso na mensagem de erro, que mandava usar "Editar dados de expedição" para regravar. Invertida, uma falha de escrita deixa o pedido exatamente onde estava, e o expedidor tenta de novo.
+
+**A inversão afrouxou a proteção anterior.** A ordem antiga existia por um motivo: *ganhar a transição primeiro* impedia que uma aba obsoleta sobrescrevesse os dados de um despacho já feito por outra aba. Gravando primeiro, essa garantia se perde. A mitigação é dupla:
+
+1. uma **leitura prévia** de `propostas.status_interno` antes de escrever, que pega a aba obsoleta no caso comum e recusa com a mensagem de conflito;
+2. a **guarda de concorrência da transição**, `.eq("status_interno", statusEsperado)`, preservada intacta (§3.1) — ela continua sendo quem garante que só uma chamada transiciona.
+
+**A janela que sobra.** Entre a leitura prévia e o `upsert` existe um intervalo estreito em que uma aba obsoleta ainda regravaria `expedicoes`. Nesse caso a **transição falha** (a guarda pega), e a mensagem devolvida diz que os dados do despacho foram gravados e que o pedido segue em `EXPEDICAO`. Ou seja: o estado é consistente e recuperável — o pedido não sai do funil —, mas os dados na linha de `expedicoes` podem ser os da aba errada. É a mesma classe de corrida aceita conscientemente em §3.2, pelo mesmo motivo: balcão, volume baixo, e reversível pela tela de edição.
+
+**Fechar a janela de vez exige mover o despacho para uma RPC** `SECURITY DEFINER`, com `SELECT ... FOR UPDATE` na proposta e as duas escritas na mesma transação — igual ao que já foi feito em `exp_aplicar_recotacao`. Não implementado nesta fase.
+
+### A pendência de fundo: não existe rota de API para despachar
+
+O despacho inteiro é **PostgREST direto do browser**. `expedicao-acoes.service.ts` usa `getSupabaseClient()`, não há rota em `src/app/api/expedicao/` para despachar, e a RLS de `propostas` é permissiva (há uma policy `update_all_propostas` com `USING (true) WITH CHECK (true)` e uma `acesso geral completo` para `ALL`).
+
+Consequência prática: **`camposMinimosDespacho` é a única trava que existe**. Ela roda nos dois lados — no `disabled` do botão e dentro do `despachar()` — precisamente porque não há servidor para revalidar. Quem chamar o PostgREST por fora contorna tudo.
+
+A mesma RPC que fecharia a janela de concorrência resolveria isto junto, movendo a validação para o banco. As duas coisas são o mesmo trabalho, e é por isso que estão registradas no mesmo lugar.
+
 ---
 
 # 4. Regra de Nota Fiscal
