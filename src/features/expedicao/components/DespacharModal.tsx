@@ -157,6 +157,19 @@ export function DespacharModal({
    */
   const podeRecotar = pedido.statusInterno === "EXPEDICAO" && modalidade === "CIF";
 
+  /**
+   * Desde 20/08/2026 o expedidor NAO recota por conta propria: um admin libera
+   * caso a caso pelo menu Acoes da Expedicao. A liberacao vem carregada com a
+   * lista (`PedidoExpedicao.liberacaoRecotacao`), nao por fetch daqui — assim o
+   * menu e este modal leem a mesma fonte e nunca se contradizem.
+   *
+   * O bloco continua VISIVEL sem liberacao, com o botao desabilitado e o motivo
+   * escrito: o expedidor precisa saber que a funcao existe e de quem depende,
+   * nao concluir que ela sumiu.
+   */
+  const liberacao = pedido.liberacaoRecotacao;
+  const recotacaoLiberada = Boolean(liberacao);
+
   /** Resultado velho ao lado de destino novo é pior que resultado nenhum. */
   function limparRecotacao() {
     setRecotacao(null);
@@ -615,7 +628,9 @@ export function DespacharModal({
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">Recotar frete</p>
+                      <p className="text-sm font-semibold text-slate-800">
+                        Recotar frete {!recotacaoLiberada && <span title="Depende de liberação">🔒</span>}
+                      </p>
                       <p className="text-xs text-slate-500">
                         Cota de novo com o endereço e o peso deste pedido. Frete atual da proposta:{" "}
                         <strong>{formatCurrency(pedido.freteValor ?? 0)}</strong>.
@@ -624,12 +639,30 @@ export function DespacharModal({
                     <button
                       type="button"
                       onClick={handleRecotar}
-                      disabled={recotando}
-                      className="rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 disabled:opacity-60"
+                      disabled={recotando || !recotacaoLiberada}
+                      className="rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {recotando ? "Cotando..." : "Recotar frete"}
+                      {recotando ? "Cotando..." : recotacaoLiberada ? "Recotar frete" : "Bloqueado"}
                     </button>
                   </div>
+
+                  {recotacaoLiberada ? (
+                    <p className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900">
+                      🔓 Liberado{liberacao?.liberadoPorNome ? ` por ${liberacao.liberadoPorNome}` : ""} em{" "}
+                      {new Date(liberacao!.liberadoEm).toLocaleString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
+                      {" — vale para UMA aplicação."}
+                    </p>
+                  ) : (
+                    <p className="mt-2 rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                      A recotação deste pedido depende de liberação de um administrador. Peça a liberação no menu
+                      <strong> Ações</strong> da lista de Expedição.
+                    </p>
+                  )}
 
                   {erroRecotacao && (
                     <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-900">
@@ -725,6 +758,9 @@ export function DespacharModal({
                           <p className="mt-2 font-semibold">
                             A diferença de {formatCurrency(Math.abs(aplicacao.diferenca ?? 0))} ainda NÃO foi lançada na
                             conta do cliente. Registrado na timeline do pedido.
+                          </p>
+                          <p className="mt-1">
+                            A liberação foi consumida. Uma nova recotação deste pedido depende de nova liberação.
                           </p>
                         </div>
                       ) : (

@@ -40,6 +40,9 @@ export interface RecotacaoResult {
   endereco?: { rotulo: string; cep: string; cidade: string; uf: string } | null;
   opcoes?: OpcaoRecotacao[];
   avisos?: string[];
+  /** Quem autorizou esta recotacao, e quando. Vem da liberacao ativa. */
+  liberadoPorNome?: string | null;
+  liberadoEm?: string | null;
 }
 
 export async function recotarFrete(
@@ -113,4 +116,50 @@ export async function aplicarRecotacao(input: {
   } catch (e) {
     return { success: false, errorMessage: e instanceof Error ? e.message : "Erro de rede." };
   }
+}
+
+/** Resultado de liberar ou cancelar a liberacao de recotacao (admin). */
+export interface LiberacaoResult {
+  success: boolean;
+  errorMessage?: string;
+  /** true quando o pedido ja estava liberado: nenhuma linha nova foi criada. */
+  idempotente?: boolean;
+  idLiberacao?: number;
+  liberadoPorNome?: string | null;
+  liberadoEm?: string | null;
+}
+
+async function chamarLiberacao(metodo: "POST" | "DELETE", idInt: number, motivo?: string | null) {
+  const token = await tokenSessao();
+  if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
+  try {
+    const res = await fetch("/api/expedicao/recotacao/liberar", {
+      method: metodo,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id_int: idInt, motivo: motivo ?? null })
+    });
+    const data = (await res.json().catch(() => null)) as (LiberacaoResult & { message?: string }) | null;
+    if (res.ok && data?.success) return data;
+    return { success: false, errorMessage: data?.message || `Falha na operação (HTTP ${res.status}).` };
+  } catch (e) {
+    return { success: false, errorMessage: e instanceof Error ? e.message : "Erro de rede." };
+  }
+}
+
+/**
+ * Libera a recotacao de UM pedido. So admin (expedicao.admin).
+ *
+ * Idempotente: liberar pedido que ja tem liberacao ativa devolve a existente,
+ * sem criar segunda linha — quem garante e o indice unico parcial do banco.
+ */
+export function liberarRecotacao(idInt: number, motivo?: string | null): Promise<LiberacaoResult> {
+  return chamarLiberacao("POST", idInt, motivo);
+}
+
+/**
+ * Cancela a liberacao ATIVA de um pedido. So alcanca liberacao nao consumida:
+ * autorizacao ja usada nao se desfaz por aqui.
+ */
+export function revogarRecotacao(idInt: number, motivo?: string | null): Promise<LiberacaoResult> {
+  return chamarLiberacao("DELETE", idInt, motivo);
 }

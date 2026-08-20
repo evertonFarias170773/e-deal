@@ -102,7 +102,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
 
   // 2..6 em paralelo — cada bloco é tolerante a falha individual (warn + vazio),
   // MENOS cotacao_frete, cujo erro é logado com destaque (foi o bug da tela antiga).
-  const [osRes, fretesRes, nfsRes, expRes, clientesRes, pesosRes] = await Promise.all([
+  const [osRes, fretesRes, nfsRes, expRes, clientesRes, pesosRes, liberacoesRes] = await Promise.all([
     client
       .from("propostas_os")
       .select("id_int, data_termino, codigo_rastreamento, obs")
@@ -125,7 +125,16 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     idsCliente.length > 0
       ? client.from("clientes").select("id_cliente, nome, fantasia, cidade_uf").in("id_cliente", idsCliente)
       : Promise.resolve({ data: [], error: null } as const),
-    client.from("produtos_proposta").select("id_int, peso_total").in("id_int", ids)
+    client.from("produtos_proposta").select("id_int, peso_total").in("id_int", ids),
+    // Liberacao ATIVA da recotacao (Parte C): quem autorizou e quando. Vem
+    // junto da lista de proposito — o menu Acoes e o modal Despachar precisam
+    // ler a MESMA fonte, senao um mostra liberado e o outro bloqueado.
+    client
+      .from("expedicao_recotacao_liberacoes")
+      .select("id, id_int, liberado_em, liberado_por_nome")
+      .is("consumida_em", null)
+      .is("revogada_em", null)
+      .in("id_int", ids)
   ]);
 
   if (fretesRes.error) {
@@ -136,9 +145,19 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     ["notas_fiscais", nfsRes],
     ["expedicoes", expRes],
     ["clientes", clientesRes],
-    ["produtos_proposta", pesosRes]
+    ["produtos_proposta", pesosRes],
+    ["expedicao_recotacao_liberacoes", liberacoesRes]
   ] as const) {
     if (res.error) console.warn(`[expedicao.service] Erro ao buscar ${nome}:`, res.error);
+  }
+
+  const liberacaoMap = new Map<number, { id: number; liberadoEm: string; liberadoPorNome: string | null }>();
+  for (const row of liberacoesRes.data ?? []) {
+    liberacaoMap.set(Number(row.id_int), {
+      id: Number(row.id),
+      liberadoEm: String(row.liberado_em),
+      liberadoPorNome: row.liberado_por_nome ?? null
+    });
   }
 
   const osMap = new Map<number, { data_termino: string | null; codigo_rastreamento: string | null; obs: string | null }>();
@@ -295,7 +314,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       etiquetaGerada: Boolean(
         exp?.correiosIdPrepostagem || exp?.etiquetaImpressaEm || exp?.codigoRastreamento || os?.codigo_rastreamento
       ),
-      expedicao: exp
+      expedicao: exp,
+      liberacaoRecotacao: liberacaoMap.get(idInt) ?? null
     });
   }
 

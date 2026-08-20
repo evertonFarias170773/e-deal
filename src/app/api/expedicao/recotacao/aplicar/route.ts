@@ -158,6 +158,24 @@ export async function POST(request: Request) {
     return erro(`Pedido já despachado com rastreio/prepostagem emitidos (${emitido}) — o frete já foi contratado.`, 409);
   }
 
+  // Liberação: pré-checada aqui para responder 403 com mensagem que se lê, e
+  // CONSUMIDA dentro da RPC, na mesma transação das escritas. A pré-checagem
+  // não é a tranca — duas aplicações simultâneas passariam por ela; quem as
+  // separa é o `UPDATE ... WHERE consumida_em IS NULL RETURNING` lá dentro.
+  const { data: liberacao } = await supabase
+    .from("expedicao_recotacao_liberacoes")
+    .select("id")
+    .eq("id_int", idInt)
+    .is("consumida_em", null)
+    .is("revogada_em", null)
+    .maybeSingle();
+  if (!liberacao) {
+    return erro(
+      "Recotação bloqueada: peça a um administrador para liberar este pedido no menu Ações da Expedição.",
+      403
+    );
+  }
+
   const temNfeAutorizada = (notas ?? []).length > 0;
 
   // ── Endereço: override da tela > escolhido no despacho > mesmo CEP da
@@ -275,8 +293,11 @@ export async function POST(request: Request) {
   if (rpcError) {
     // As mensagens da RPC já são escritas para serem lidas por gente.
     const msg = rpcError.message || "Não foi possível aplicar a recotação.";
-    const conflito = /EXP_RECOT_/.test(msg);
-    return erro(msg.replace(/^.*?EXP_RECOT_[A-Z_]+:\s*/, ""), conflito ? 409 : 500);
+    const limpo = msg.replace(/^.*?EXP_RECOT_[A-Z_]+:\s*/, "");
+    // Falta de liberação é autorização, não conflito de estado — e pode ter
+    // sido revogada entre a pré-checagem e a RPC.
+    if (/EXP_RECOT_SEM_LIBERACAO/.test(msg)) return erro(limpo, 403);
+    return erro(limpo, /EXP_RECOT_/.test(msg) ? 409 : 500);
   }
 
   const totalNovo = Number((totalAnterior + diferenca).toFixed(2));
@@ -299,7 +320,8 @@ export async function POST(request: Request) {
           `por R$ ${opcao.valor.toFixed(2)} no lugar de R$ ${freteAnterior.toFixed(2)} ` +
           `(${sinal}R$ ${Math.abs(diferenca).toFixed(2)}). ` +
           `Total do pedido: R$ ${totalAnterior.toFixed(2)} → R$ ${totalNovo.toFixed(2)}. ` +
-          `A diferença ainda NÃO foi lançada na conta do cliente.`
+          `A diferença ainda NÃO foi lançada na conta do cliente. ` +
+          `A liberação de recotação deste pedido foi consumida.`
       }
     ]);
     if (chatError) console.warn("[recotacao/aplicar] Erro ao gravar na timeline:", chatError);

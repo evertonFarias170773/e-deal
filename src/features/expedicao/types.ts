@@ -122,6 +122,13 @@ export interface PedidoExpedicao {
   pesoKg: number | null;
   pesoOrigem: PesoOrigemInterna | null;
   volumes: number | null;
+  /**
+   * Liberacao ATIVA da recotacao de frete (Parte C). Null = bloqueado: o
+   * expedidor nao recota por conta propria, um admin libera caso a caso pelo
+   * menu Acoes. E de uso unico — a aplicacao consome. Vem carregada com a
+   * lista, para o menu e o modal lerem a mesma fonte.
+   */
+  liberacaoRecotacao: { id: number; liberadoEm: string; liberadoPorNome: string | null } | null;
   nfStatus: NfStatusExpedicao;
   nfNumero: string | null;
   liberaNf: boolean;

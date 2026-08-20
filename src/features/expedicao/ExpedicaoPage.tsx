@@ -33,6 +33,7 @@ import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { listarPainelExpedicao } from "./services/expedicao.service";
 import { marcarPronto, marcarEntregue } from "./services/expedicao-acoes.service";
+import { liberarRecotacao, revogarRecotacao } from "./services/recotacao.client";
 import { abrirDeclaracaoConteudo, abrirEtiqueta } from "./services/etiqueta.client";
 import { abrirEtiquetaCorreios } from "./services/correios.client";
 import { ConfirmarAcaoModal } from "./components/ConfirmarAcaoModal";
@@ -137,6 +138,42 @@ export function ExpedicaoPage() {
               : null;
   }
 
+  /**
+   * Liberar / cancelar a recotacao de frete de um pedido (Parte C).
+   * O expedidor nao recota por conta propria: o botao no modal Despachar nasce
+   * bloqueado e depende desta autorizacao, que e de USO UNICO — a aplicacao a
+   * consome e o botao volta a bloquear.
+   */
+  async function handleLiberarRecotacao(p: PedidoExpedicao) {
+    const res = await liberarRecotacao(p.idInt);
+    if (res.success) {
+      showToast({
+        type: "success",
+        title: res.idempotente ? "Já estava liberado" : "Recotação liberada",
+        description: res.idempotente
+          ? `O pedido ${p.idInt} já tinha liberação ativa${res.liberadoPorNome ? ` (por ${res.liberadoPorNome})` : ""}.`
+          : `O expedidor já pode recotar o frete do pedido ${p.idInt}. Vale para uma aplicação.`
+      });
+    } else {
+      showToast({ type: "error", title: "Não foi possível liberar", description: res.errorMessage });
+    }
+    void recarregar();
+  }
+
+  async function handleCancelarLiberacao(p: PedidoExpedicao) {
+    const res = await revogarRecotacao(p.idInt);
+    if (res.success) {
+      showToast({
+        type: "success",
+        title: "Liberação cancelada",
+        description: `A recotação do pedido ${p.idInt} voltou a ficar bloqueada.`
+      });
+    } else {
+      showToast({ type: "error", title: "Não foi possível cancelar", description: res.errorMessage });
+    }
+    void recarregar();
+  }
+
   /** Itens do menu "⋯" contextual — compartilhado entre a coluna "Ações" e o card mobile. */
   function itensMenu(p: PedidoExpedicao) {
     return [
@@ -188,6 +225,22 @@ export function ExpedicaoPage() {
       // o que foi produzido, não a negociação. Sempre `modo=edicao` — pedido que
       // chegou à expedição já tem OS aberta.
       { label: "Boletim da produção", onClick: () => router.push(`/pedidos/boletim?id_int=${p.idInt}&modo=edicao`) },
+      // Liberacao da recotacao de frete. Sem filtro por modalidade de proposito:
+      // o admin costuma liberar ANTES de o expedidor declarar CIF na bancada, e
+      // esconder o item nesse momento o deixaria sem affordance e sem
+      // explicacao. Os gates de CIF continuam nas duas rotas.
+      ...(canAdminExpedicao && p.statusInterno === "EXPEDICAO"
+        ? p.liberacaoRecotacao
+          ? [
+              { label: "Recotação já liberada", disabled: true, onClick: () => {} },
+              {
+                label: "Cancelar liberação",
+                destructive: true,
+                onClick: () => void handleCancelarLiberacao(p)
+              }
+            ]
+          : [{ label: "Liberar recotação de frete", onClick: () => void handleLiberarRecotacao(p) }]
+        : []),
       // Sem retorno definido a partir de PRODUCAO/ACABAMENTO no service (voltarStatus) — affordance morta.
       ...(canOperar && p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO"
         ? [{ label: "Voltar status", destructive: true, onClick: () => setPedidoVoltar(p) }]
@@ -196,6 +249,15 @@ export function ExpedicaoPage() {
   }
 
   const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.view");
+
+  /**
+   * Quem libera a recotacao de frete. A chave `expedicao.admin` ja existia no
+   * catalogo de perfis e nao era usada em lugar nenhum — este e o uso dela.
+   * Como `hasPermissao` cai em `isSuperAdmin || isAdmin` quando o usuario nao
+   * tem permissoes resolvidas, a chave nao restringe quem ja e admin: ela
+   * existe para poder delegar a liberacao sem dar admin geral do ERP.
+   */
+  const canAdminExpedicao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin");
 
   // Filtros na URL — padrão docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
   const filtrosSchema = useMemo(

@@ -181,7 +181,7 @@ const CATALOGO_PERMISSOES: Record<string, PermissionDefinition[]> = {
   "Expedição": [
     { key: "expedicao.view",      label: "Visualizar Expedição",       desc: "Permite ver a fila de expedição e os pedidos prontos para envio.",                  critica: false },
     { key: "expedicao.processar", label: "Processar Envio / Retirada", desc: "Permite registrar envios e confirmar retiradas na expedição.",                      critica: false },
-    { key: "expedicao.admin",     label: "Configurar Expedição",       desc: "Permite configurar métodos de envio e integrações logísticas.",                     critica: true  }
+    { key: "expedicao.admin",     label: "Configurar Expedição",       desc: "Permite configurar metodos de envio, integracoes logisticas e liberar a recotacao de frete de um pedido no despacho.", critica: true  }
   ],
 
   // ── Relatórios ────────────────────────────────────────────────────────────

@@ -288,6 +288,66 @@ A modalidade é declarada pelo expedidor e gravada em **`expedicoes.modalidade_f
 > com a gravação do frete recotado em `propostas.valor_frete`/`valor_total`, o
 > lançamento da diferença na Conta Corrente, a alçada do expedidor e a
 > aprovação do Financeiro — ver seção 10.
+>
+> ### Recotar depende de liberação de um admin (20/08/2026)
+>
+> O expedidor **não tem autonomia** para recotar. O botão "Recotar frete" no
+> modal Despachar **nasce bloqueado**, com cadeado e o motivo escrito — ele
+> não some, porque o expedidor precisa saber que a função existe e de quem
+> depende. Um admin libera **caso a caso**, pelo menu **Ações** da lista de
+> Expedição.
+>
+> A liberação é registrada em `public.expedicao_recotacao_liberacoes`, uma
+> linha por autorização, e tem quatro propriedades:
+>
+> - **cobre o fluxo inteiro** — ver as opções (rota `cotar`) e aplicar uma
+>   delas (rota `aplicar`). Uma liberação habilita as duas coisas;
+> - **é de uso único** — consumida quando uma aplicação acontece, e o botão
+>   volta a bloquear. **Recotar sem aplicar não consome**: ela vale até ser
+>   usada;
+> - **é por pedido**, nunca permissão geral de perfil;
+> - **não expira por tempo.** Só por consumo ou por revogação. Não há job para
+>   varrer, e expiração preguiçosa espalharia a mesma regra de prazo por três
+>   lugares (UI, `cotar`, `aplicar`) — três chances de divergirem.
+>
+> **Uma liberação ativa por pedido**, garantida pelo índice único parcial
+> `exp_lib_uma_ativa_por_pedido` (`WHERE consumida_em IS NULL AND revogada_em
+> IS NULL`) — mesma técnica de `ux_ccp_uma_aberta_por_proposta` na Conta
+> Corrente. Liberar um pedido já liberado é **idempotente**: devolve a
+> existente, não cria segunda linha e não é erro na tela. Consumir ou revogar
+> abre o slot para uma nova, o que preserva o histórico em vez de sobrescrever.
+>
+> **O consumo é atômico e acontece dentro da transação da aplicação.** Em
+> `exp_aplicar_recotacao`, um `UPDATE ... WHERE consumida_em IS NULL RETURNING`
+> reivindica a liberação depois dos gates e antes das escritas: duas aplicações
+> simultâneas não passam com uma liberação só, porque a segunda transação
+> bloqueia na trava de linha e depois casa zero linhas. E a checagem de
+> idempotência por `chave` vem **antes** do consumo — um retry de rede devolve
+> o registro anterior e não queima uma segunda autorização do admin.
+>
+> **Revogação**: liberação dada por engano se desfaz pelo item "Cancelar
+> liberação", no mesmo menu, com a mesma permissão. Só alcança liberação
+> **ativa e não consumida** — o que já foi usado não se desfaz por ali.
+>
+> **Permissão: `expedicao.admin`**, que já existia no catálogo de perfis e não
+> era usada em lugar nenhum do código. Vale o fallback padrão do projeto:
+> super admin passa sempre, a chave no perfil passa, e `is_admin` passa por
+> fallback. Ou seja, **a chave não restringe quem já é admin** — ela existe
+> para poder delegar a liberação a um supervisor sem dar admin geral do ERP.
+>
+> **Trilha em três camadas**: a própria tabela (quem liberou, quando, quando
+> consumiu, por qual aplicação, quem revogou e por quê); o trigger
+> `audit.log_row_changes_v2()`, que ela carrega porque **sofre UPDATE** —
+> diferente do ledger `expedicao_recotacoes`, que é append-only e por isso é a
+> própria trilha; e linhas em `propostas_chat` na liberação e na revogação,
+> gravadas pelas rotas em best-effort, fora da transação.
+>
+> **O pedido 20960 não recebeu liberação retroativa.** Ele teve a aplicação #1
+> do ledger em 20/08/2026, antes desta regra existir. Liberação é autorização
+> *prévia*: fabricar uma depois inventaria um ato administrativo que não houve
+> e o assinaria em nome de alguém. O ledger já guarda autor, data e valores
+> daquela aplicação. Na prática ele volta a ficar bloqueado como todos os
+> outros — que é exatamente o comportamento desejado.
 
 **Por que Correios só em CIF.** A prepostagem sai pelo cartão de postagem da empresa, que é quem paga. Em FOB quem posta é o cliente, com contrato próprio — não há serviço dos Correios a cobrar dele. Daí a trava não ser só de UI: os botões de prepostagem exigem `modalidade === "CIF"` além de `tipo_frete === "CORREIOS"` (seção 6.2).
 
