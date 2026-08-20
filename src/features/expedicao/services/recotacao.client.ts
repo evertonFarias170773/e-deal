@@ -79,6 +79,9 @@ export interface AplicacaoRecotacao {
   transportadora?: string;
   servico?: string;
   prazo?: string;
+  /** Peso e CEP que a recotacao usou — passam a ser a "cotacao vigente". */
+  pesoGramas?: number | null;
+  cep?: string | null;
 }
 
 /**

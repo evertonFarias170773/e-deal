@@ -102,7 +102,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
 
   // 2..6 em paralelo — cada bloco é tolerante a falha individual (warn + vazio),
   // MENOS cotacao_frete, cujo erro é logado com destaque (foi o bug da tela antiga).
-  const [osRes, fretesRes, nfsRes, expRes, clientesRes, pesosRes, liberacoesRes] = await Promise.all([
+  const [osRes, fretesRes, nfsRes, expRes, clientesRes, pesosRes, liberacoesRes, recotacoesRes] = await Promise.all([
     client
       .from("propostas_os")
       .select("id_int, data_termino, codigo_rastreamento, obs")
@@ -134,7 +134,14 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       .select("id, id_int, liberado_em, liberado_por_nome")
       .is("consumida_em", null)
       .is("revogada_em", null)
+      .in("id_int", ids),
+    // Ultima recotacao aplicada: vira a referencia de peso/CEP no despacho,
+    // porque `cotacao_frete` nao muda quando uma recotacao e aplicada.
+    client
+      .from("expedicao_recotacoes")
+      .select("id_int, peso_gramas, cep, aplicado_em")
       .in("id_int", ids)
+      .order("aplicado_em", { ascending: false })
   ]);
 
   if (fretesRes.error) {
@@ -146,7 +153,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     ["expedicoes", expRes],
     ["clientes", clientesRes],
     ["produtos_proposta", pesosRes],
-    ["expedicao_recotacao_liberacoes", liberacoesRes]
+    ["expedicao_recotacao_liberacoes", liberacoesRes],
+    ["expedicao_recotacoes", recotacoesRes]
   ] as const) {
     if (res.error) console.warn(`[expedicao.service] Erro ao buscar ${nome}:`, res.error);
   }
@@ -157,6 +165,17 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       id: Number(row.id),
       liberadoEm: String(row.liberado_em),
       liberadoPorNome: row.liberado_por_nome ?? null
+    });
+  }
+
+  // Vem ordenado por aplicado_em DESC: a primeira de cada id_int e a vigente.
+  const recotacaoMap = new Map<number, { pesoGramas: number | null; cep: string | null }>();
+  for (const row of recotacoesRes.data ?? []) {
+    const chave = Number(row.id_int);
+    if (recotacaoMap.has(chave)) continue;
+    recotacaoMap.set(chave, {
+      pesoGramas: row.peso_gramas !== null && row.peso_gramas !== undefined ? Number(row.peso_gramas) : null,
+      cep: row.cep ? String(row.cep) : null
     });
   }
 
@@ -316,7 +335,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
         exp?.correiosIdPrepostagem || exp?.etiquetaImpressaEm || exp?.codigoRastreamento || os?.codigo_rastreamento
       ),
       expedicao: exp,
-      liberacaoRecotacao: liberacaoMap.get(idInt) ?? null
+      liberacaoRecotacao: liberacaoMap.get(idInt) ?? null,
+      recotacaoVigente: recotacaoMap.get(idInt) ?? null
     });
   }
 

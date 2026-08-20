@@ -12,7 +12,7 @@ import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
-import { divergenciaFreteDoDespacho, formatarCep } from "../lib/divergencia-frete-despacho";
+import { divergenciaFreteDoDespacho, formatarCep, frasearMotivos } from "../lib/divergencia-frete-despacho";
 import { recotarFrete, aplicarRecotacao } from "../services/recotacao.client";
 import type { RecotacaoResult, OpcaoRecotacao, AplicacaoRecotacao } from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
@@ -281,20 +281,40 @@ export function DespacharModal({
     [enderecos, idEnderecoEntrega, pedido.freteCep]
   );
 
+  /**
+   * A "cotacao vigente" e a ULTIMA recotacao aplicada, quando houver — nao a
+   * `cotacao_frete`, que e imutavel para a Expedicao e nao muda quando uma
+   * recotacao e aplicada. `aplicacao` cobre o caso da MESMA sessao: aplicar
+   * limpa o bloqueio na hora, sem reabrir o modal; `pedido.recotacaoVigente`
+   * cobre a reabertura, vindo carregado com a lista.
+   */
+  const cotacaoVigente = useMemo(() => {
+    const daSessao =
+      aplicacao?.success && aplicacao.pesoGramas !== undefined
+        ? { pesoGramas: aplicacao.pesoGramas ?? null, cep: aplicacao.cep ?? null }
+        : null;
+    const referencia = daSessao ?? pedido.recotacaoVigente;
+    return {
+      pesoGramas: referencia ? referencia.pesoGramas : pedido.pesoCotadoGramas,
+      cep: referencia ? referencia.cep : pedido.freteCep,
+      valor: aplicacao?.success ? aplicacao.freteNovo ?? pedido.freteValor : pedido.freteValor,
+      servico: pedido.freteServico,
+      existe: pedido.freteValor !== null
+    };
+  }, [aplicacao, pedido.recotacaoVigente, pedido.pesoCotadoGramas, pedido.freteCep, pedido.freteValor, pedido.freteServico]);
+
   const divergencia = useMemo(() => {
     const pesoNum = parsePesoKg(pesoKg);
     return divergenciaFreteDoDespacho({
-      cotacao: {
-        pesoGramas: pedido.pesoCotadoGramas,
-        cep: pedido.freteCep,
-        valor: pedido.freteValor,
-        servico: pedido.freteServico,
-        existe: pedido.freteValor !== null
-      },
+      cotacao: cotacaoVigente,
       pesoAferidoGramas: pesoNum !== null ? Math.round(pesoNum * 1000) : null,
-      cepDestino: cepDoEnderecoEscolhido
+      cepDestino: cepDoEnderecoEscolhido,
+      modalidadeEfetiva: modalidade,
+      tipoFreteEscolhido: tipoFrete,
+      tipoFreteJaDespachado: exp?.tipoFrete ?? null
     });
-  }, [pesoKg, cepDoEnderecoEscolhido, pedido.pesoCotadoGramas, pedido.freteCep, pedido.freteValor, pedido.freteServico]);
+  }, [pesoKg, cepDoEnderecoEscolhido, cotacaoVigente, modalidade, tipoFrete, exp?.tipoFrete]);
+
 
   /**
    * Pedido cujo envio JÁ existe nos Correios. Marcar FOB nele significaria
@@ -399,6 +419,14 @@ export function DespacharModal({
         type: "warning",
         title: "Faltam dados para despachar",
         description: `Informe ${frasearFaltantes(faltantes)}.`
+      });
+      return;
+    }
+    if (divergencia.bloqueia) {
+      showToast({
+        type: "warning",
+        title: "Despacho bloqueado",
+        description: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivos)}.`
       });
       return;
     }
@@ -901,10 +929,30 @@ export function DespacharModal({
         </div>
 
         {divergencia.temAviso && !modoEdicao && (
-          <div className="mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-            <p className="font-semibold">⚠ O frete cobrado pode não refletir este envio</p>
-            {divergencia.peso.bloqueia && divergencia.resumoPeso && (
-              <p className="mt-1">Peso: {divergencia.resumoPeso}.</p>
+          <div
+            className={
+              divergencia.bloqueia
+                ? "mx-5 mb-1 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                : "mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+            }
+          >
+            <p className="font-semibold">
+              {divergencia.bloqueia
+                ? "⛔ Despacho bloqueado: este envio não é o que foi cotado"
+                : "⚠ O frete cobrado pode não refletir este envio"}
+            </p>
+            {divergencia.transporteMudou && (
+              <p className="mt-1">
+                Transporte: cotado como <strong>{labelTipoFrete(divergencia.transporteReferencia!)}</strong>, despacho
+                como <strong>{labelTipoFrete(tipoFrete)}</strong>.
+              </p>
+            )}
+            {divergencia.pesoExcedeuMargem && (
+              <p className="mt-1">
+                Peso: {((divergencia.peso.pesoCotadoGramas ?? 0) / 1000).toFixed(2)} kg cotados contra{" "}
+                {(divergencia.peso.pesoAtualGramas / 1000).toFixed(2)} kg no despacho —{" "}
+                <strong>{((divergencia.percentualAcimaDoCotado ?? 0) * 100).toFixed(1)}% acima</strong> (a margem é 5%).
+              </p>
             )}
             {divergencia.cepMudou && (
               <p className="mt-1">
@@ -912,10 +960,18 @@ export function DespacharModal({
                 {formatarCep(divergencia.cepDespacho)}.
               </p>
             )}
-            <p className="mt-1">
-              O valor na proposta continua <strong>{formatCurrency(pedido.freteValor ?? 0)}</strong>
-              {pedido.freteServico ? ` (${pedido.freteServico})` : ""} — despachar não o altera. Recotar depende de
-              liberação de um administrador.
+            <p className="mt-2">
+              {divergencia.bloqueia ? (
+                <>
+                  O frete da proposta ({formatCurrency(pedido.freteValor ?? 0)}) não paga este envio. Para destravar,{" "}
+                  <strong>recote e aplique</strong> uma opção — o que depende de liberação de um administrador.
+                </>
+              ) : (
+                <>
+                  O valor na proposta continua <strong>{formatCurrency(pedido.freteValor ?? 0)}</strong> — despachar não
+                  o altera.
+                </>
+              )}
             </p>
           </div>
         )}
@@ -924,12 +980,16 @@ export function DespacharModal({
           <button type="button" onClick={onClose} disabled={salvando} className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
             Cancelar
           </button>
-          {faltantes.length > 0 && (
+          {faltantes.length > 0 ? (
             <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
               Falta informar {frasearFaltantes(faltantes)}
             </span>
-          )}
-          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltantes.length > 0} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
+          ) : divergencia.bloqueia ? (
+            <span className="text-xs font-medium text-rose-700 dark:text-rose-400">
+              Bloqueado: {frasearMotivos(divergencia.motivos)}
+            </span>
+          ) : null}
+          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltantes.length > 0 || divergencia.bloqueia} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
             {salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
           </button>
         </div>

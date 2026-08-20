@@ -127,6 +127,13 @@ export interface PedidoExpedicao {
    * (lib/divergencia-frete-despacho.ts); a precedencia de `pesoKg` nao muda.
    */
   pesoCotadoGramas: number | null;
+  /**
+   * Ultima recotacao APLICADA (expedicao_recotacoes), quando houver. Passa a ser
+   * a "cotacao vigente" para comparar peso e destino no despacho: aplicar uma
+   * recotacao nao altera `cotacao_frete`, que e imutavel para a Expedicao — sem
+   * isto o bloqueio de divergencia nunca limparia.
+   */
+  recotacaoVigente: { pesoGramas: number | null; cep: string | null } | null;
   volumes: number | null;
   /**
    * Liberacao ATIVA da recotacao de frete (Parte C). Null = bloqueado: o

@@ -340,6 +340,11 @@ export async function POST(request: Request) {
     totalNovo,
     transportadora: opcao.transportadora,
     servico: opcao.servico,
-    prazo: opcao.prazo
+    prazo: opcao.prazo,
+    // Passam a ser a referência de peso/CEP do despacho: `cotacao_frete` não
+    // muda quando uma recotação é aplicada, então sem isto o bloqueio de
+    // divergência nunca limparia.
+    pesoGramas,
+    cep: String(endereco.cep)
   });
 }

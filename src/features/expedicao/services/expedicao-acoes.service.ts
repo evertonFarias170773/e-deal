@@ -20,6 +20,7 @@ export type DespachoInput = {
 };
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
+import { divergenciaFreteDoDespacho, frasearMotivos } from "../lib/divergencia-frete-despacho";
 
 const MSG_CONFLITO =
   "O pedido mudou de status em outra tela. A lista será recarregada.";
@@ -121,15 +122,56 @@ export async function despachar(
 
   const destino = input.tipoEntrega === "RETIRADA" ? "A RETIRAR" : "EM TRANSITO";
 
+  // Divergência bloqueante. A UI já barra, mas ela é só a UI: o despacho é
+  // PostgREST direto do browser, sem rota de API que revalide (§3.5 do
+  // EXPEDICAO.md). A referência de peso/CEP é a ÚLTIMA recotação aplicada
+  // quando houver — `cotacao_frete` não muda ao aplicar uma —, e só na falta
+  // dela a cotação escolhida.
+  const [{ data: cot }, { data: ultimaRecot }, { data: endereco }] = await Promise.all([
+    client.from("cotacao_frete").select("servico, peso, cep").eq("id_int", idInt).eq("escolhido", true).limit(1).maybeSingle(),
+    client
+      .from("expedicao_recotacoes")
+      .select("peso_gramas, cep")
+      .eq("id_int", idInt)
+      .order("aplicado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    input.idEnderecoEntrega
+      ? client.from("enderecos").select("cep").eq("id", input.idEnderecoEntrega).maybeSingle()
+      : Promise.resolve({ data: null } as { data: { cep: string | null } | null })
+  ]);
+
+  const { data: propAtual } = await client
+    .from("propostas")
+    .select("status_interno, valor_frete")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  const divergencia = divergenciaFreteDoDespacho({
+    cotacao: {
+      pesoGramas: ultimaRecot ? ultimaRecot.peso_gramas : cot?.peso,
+      cep: ultimaRecot ? ultimaRecot.cep : cot?.cep,
+      valor: propAtual?.valor_frete,
+      servico: cot?.servico,
+      existe: Boolean(cot)
+    },
+    pesoAferidoGramas: input.pesoKg !== null ? Math.round(input.pesoKg * 1000) : null,
+    cepDestino: endereco?.cep ?? null,
+    modalidadeEfetiva: input.modalidadeFrete,
+    tipoFreteEscolhido: input.tipoFrete,
+    tipoFreteJaDespachado: null
+  });
+  if (divergencia.bloqueia) {
+    return {
+      success: false,
+      error: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivos)}.`
+    };
+  }
+
   // Leitura de cortesia: pega a aba obsoleta ANTES de escrever, no caso comum.
   // Não é garantia — quem garante a transição é o `.eq(status_interno, ...)` do
   // `transicionar`, preservado abaixo.
-  const { data: atual } = await client
-    .from("propostas")
-    .select("status_interno")
-    .eq("id_int", idInt)
-    .maybeSingle();
-  if (atual && String(atual.status_interno ?? "").trim() !== "EXPEDICAO") {
+  if (propAtual && String(propAtual.status_interno ?? "").trim() !== "EXPEDICAO") {
     return { success: false, error: MSG_CONFLITO };
   }
 
