@@ -774,6 +774,56 @@ a proposta a `REVISAO ATENDENTE` e a liberação passa a ser possível pela tela
 Do nosso lado não há caminho: nenhuma tela nossa altera `status_arte` de modelo
 existente.
 
+## 8.3 Pendência conhecida — o financeiro reescreve `status_interno` sem olhar a etapa
+
+Levantado em 20/08/2026. **Não corrigido — aguarda decisão do dono.**
+
+`public.pagamentos_v2` tem o trigger `trg_sync_status_proposta`, que chama
+`tg_sync_status_financeiro_proposta` e daí `atualizar_status_financeiro_proposta`.
+A cada evento de pagamento (INSERT, UPDATE ou DELETE) essa função **recalcula
+`propostas.status_interno` a partir apenas do quadro de pagamentos, sem ler em
+nenhum momento o status atual da proposta**. O destino é sempre um destes quatro:
+
+| situação dos pagamentos | `status_interno` gravado |
+|---|---|
+| nenhum pagamento | `NOVO` |
+| todos cancelados | `CANCELADO` |
+| algum `A_RECEBER`, ou `A_VENCER`/`PAID` não confirmado | `AGUARDANDO` |
+| algum `A_VENCER` ou `PAID` **confirmado** | `APROVADO` |
+
+Como não há guarda de etapa, um pedido já na fábrica é jogado de volta para o
+começo do funil. **Observado no sandbox da V6 da migration
+`20260820_arte_guardas_promocao_e_lista_aprovados`:** inserir uma cobrança `PAID`
+confirmada numa proposta em `EM PRODUCAO` a levou para `APROVADO`. Os outros três
+ramos são igualmente irrestritos — apagar as cobranças de um pedido em
+`EM TRANSITO` o devolve para `NOVO`.
+
+É **a mesma classe de problema que o item A da migration de 20/08/2026 corrigiu**
+em `check_and_promote_proposta`, que promovia para `REVISAO ATENDENTE` sem olhar
+de onde vinha. O tratamento provável é o mesmo: **lista negativa dos status que
+não podem ser rebaixados** (`REVISAO PRODUCAO` em diante) no `WHERE` de cada um
+dos quatro `UPDATE`. Não foi feito aqui porque está fora do escopo aprovado
+naquela migration.
+
+Dois detalhes para quem for mexer:
+
+**Existem duas sobrecargas com lógica divergente.**
+`atualizar_status_financeiro_proposta(integer)` e
+`atualizar_status_financeiro_proposta(bigint)`. Na versão `integer` — a que roda
+hoje, porque `tg_sync_status_financeiro_proposta` declara a variável como `INT` —
+uma cobrança `A_VENCER`/`PAID` **não confirmada** conta como pendente e leva a
+`AGUARDANDO`. Na versão `bigint` esse caso cai direto no ramo seguinte. Como
+`propostas.id_int` é `bigint`, qualquer chamada nova que passe um `bigint`
+seleciona a sobrecarga divergente. Corrigir uma e esquecer a outra deixa a
+armadilha armada.
+
+**O trigger antigo está desabilitado.**
+`tg_atualiza_status_proposta_pagamento` → `atualizar_status_proposta_por_pagamento`,
+que grava `NOVO` / `A_RECEBER` / `QUITADO`, está com `tgenabled = 'D'` em
+`pg_trigger` — não executa. Ele não é o responsável pela reescrita descrita
+acima, e valores como `A_RECEBER` e `QUITADO` não fazem parte do fluxo oficial
+desta documentação.
+
 ---
 
 # 9. Entrada e Retirada da Produção
