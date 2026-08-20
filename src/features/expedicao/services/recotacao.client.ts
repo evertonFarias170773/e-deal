@@ -166,3 +166,24 @@ export function liberarRecotacao(idInt: number, motivo?: string | null): Promise
 export function revogarRecotacao(idInt: number, motivo?: string | null): Promise<LiberacaoResult> {
   return chamarLiberacao("DELETE", idInt, motivo);
 }
+
+/** A liberacao ATIVA de um pedido, ou null. Le direto da tabela (RLS: select). */
+export async function buscarLiberacaoAtiva(
+  idInt: number
+): Promise<{ id: number; liberadoEm: string; liberadoPorNome: string | null } | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("expedicao_recotacao_liberacoes")
+    .select("id, liberado_em, liberado_por_nome")
+    .eq("id_int", idInt)
+    .is("consumida_em", null)
+    .is("revogada_em", null)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    id: Number(data.id),
+    liberadoEm: String(data.liberado_em),
+    liberadoPorNome: data.liberado_por_nome ?? null
+  };
+}

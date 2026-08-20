@@ -13,7 +13,7 @@ import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
 import { divergenciaFreteDoDespacho, formatarCep, frasearMotivos } from "../lib/divergencia-frete-despacho";
-import { recotarFrete, aplicarRecotacao } from "../services/recotacao.client";
+import { recotarFrete, aplicarRecotacao, buscarLiberacaoAtiva } from "../services/recotacao.client";
 import type { RecotacaoResult, OpcaoRecotacao, AplicacaoRecotacao } from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
 import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
@@ -169,8 +169,32 @@ export function DespacharModal({
    * escrito: o expedidor precisa saber que a funcao existe e de quem depende,
    * nao concluir que ela sumiu.
    */
-  const liberacao = pedido.liberacaoRecotacao;
+  /**
+   * ESTADO DO PEDIDO, NAO DO FORMULARIO.
+   *
+   * O valor inicial vem do prop — carregado com a lista, mesma fonte do menu
+   * Acoes. Mas o prop e um SNAPSHOT tirado quando o modal abriu: se o admin
+   * liberar (ou revogar) enquanto ele esta aberto, o modal nunca ficaria
+   * sabendo. Por isso o valor vive em estado e e RELIDO do banco na abertura.
+   *
+   * Nao ha fonte concorrente aqui: e a mesma tabela que alimenta a lista. O que
+   * se resolve e a defasagem do snapshot, nao a origem do dado.
+   *
+   * `limparRecotacao()` NAO toca nisto de proposito: liberacao e autorizacao do
+   * admin, e editar peso, endereco ou transportadora nao pode revoga-la.
+   */
+  const [liberacao, setLiberacao] = useState(pedido.liberacaoRecotacao);
   const recotacaoLiberada = Boolean(liberacao);
+
+  useEffect(() => {
+    let vivo = true;
+    void buscarLiberacaoAtiva(pedido.idInt).then((atual) => {
+      if (vivo) setLiberacao(atual);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [pedido.idInt]);
 
   /** Resultado velho ao lado de destino novo é pior que resultado nenhum. */
   function limparRecotacao() {
@@ -235,7 +259,12 @@ export function DespacharModal({
       idEnderecoEntrega
     });
     setAplicandoId(null);
-    if (res.success) setAplicacao(res);
+    if (res.success) {
+      setAplicacao(res);
+      // A aplicacao consome a liberacao no banco, na mesma transacao. Refletir
+      // aqui evita o selo continuar dizendo "liberado" depois de gasto.
+      if (!res.idempotente) setLiberacao(null);
+    }
     else setErroAplicacao(res.errorMessage || "Não foi possível aplicar agora.");
   }
 
@@ -483,6 +512,16 @@ export function DespacharModal({
    */
   async function handleGerarPrepostagem(servico: "SEDEX" | "PAC") {
     if (gerandoPrepostagem) return;
+    // Mesmo bloqueio do "Confirmar despacho": emitir prepostagem e contratar
+    // transporte. Se o envio nao e o que foi cotado, nao pode ser emitida.
+    if (divergencia.bloqueia) {
+      showToast({
+        type: "warning",
+        title: "Prepostagem bloqueada",
+        description: `Recote o frete antes de emitir: ${frasearMotivos(divergencia.motivos)}.`
+      });
+      return;
+    }
     const pesoNum = parsePesoKg(pesoKg);
     if (pesoNum !== null && (!Number.isFinite(pesoNum) || pesoNum <= 0)) {
       showToast({ type: "error", title: "Peso inválido", description: "Informe o peso em kg (ex.: 12,4) ou deixe vazio." });
@@ -869,23 +908,31 @@ export function DespacharModal({
                   empresa. A modalidade entra na condição de propósito, para um
                   pedido legado marcado FOB nunca reabrir o botão. */}
               {modalidade === "CIF" && tipoFrete === "CORREIOS" && correiosOk && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={gerandoPrepostagem}
-                    onClick={() => void handleGerarPrepostagem("SEDEX")}
-                    className="rounded-2xl bg-[#0f9f9a] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-50"
-                  >
-                    {gerandoPrepostagem ? "Gerando..." : "Gerar prepostagem SEDEX"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={gerandoPrepostagem}
-                    onClick={() => void handleGerarPrepostagem("PAC")}
-                    className="rounded-2xl border border-[#0f9f9a] px-4 py-2 text-xs font-bold text-[#0f9f9a] transition hover:bg-teal-50 disabled:opacity-50"
-                  >
-                    PAC
-                  </button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={gerandoPrepostagem || divergencia.bloqueia}
+                      onClick={() => void handleGerarPrepostagem("SEDEX")}
+                      className="rounded-2xl bg-[#0f9f9a] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {gerandoPrepostagem ? "Gerando..." : "Gerar prepostagem SEDEX"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={gerandoPrepostagem || divergencia.bloqueia}
+                      onClick={() => void handleGerarPrepostagem("PAC")}
+                      className="rounded-2xl border border-[#0f9f9a] px-4 py-2 text-xs font-bold text-[#0f9f9a] transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      PAC
+                    </button>
+                  </div>
+                  {divergencia.bloqueia && (
+                    <p className="text-xs font-medium text-rose-700 dark:text-rose-400">
+                      Bloqueado: {frasearMotivos(divergencia.motivos)}. Emitir prepostagem é contratar transporte — não
+                      dá para emitir um envio que não é o que foi cotado.
+                    </p>
+                  )}
                 </div>
               )}
             </>
