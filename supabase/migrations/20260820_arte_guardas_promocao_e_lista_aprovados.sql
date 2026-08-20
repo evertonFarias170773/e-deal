@@ -600,13 +600,24 @@ commit;
 --          APROVADA_CLIENTE -> pedidos_artes.status volta a 'APROVADO' e
 --          propostas.status_interno PERMANECE 'EM PRODUCAO' (item A).
 --
---     ARMADILHA DO SETUP. Inserir a linha em pagamentos_v2 dispara
---     tg_atualiza_status_proposta_pagamento -> atualizar_status_proposta_por_pagamento,
---     que reescreve status_interno (na primeira tentativa levou a proposta de
---     'EM PRODUCAO' para 'APROVADO' e invalidou o passo d, que passou a medir
---     promocao a partir de APROVADO — comportamento correto, teste errado).
---     Monte o pagamento ANTES e so entao force status_interno para o cenario
---     desejado, imediatamente antes de mexer nos modelos.
+--     ARMADILHA DO SETUP. Inserir a linha em pagamentos_v2 reescreve
+--     status_interno: trg_sync_status_proposta -> tg_sync_status_financeiro_proposta
+--     -> atualizar_status_financeiro_proposta, que grava 'APROVADO'. Na primeira
+--     tentativa isso levou a proposta de 'EM PRODUCAO' para 'APROVADO' e
+--     invalidou o passo d, que passou a medir promocao a partir de APROVADO —
+--     comportamento correto, teste errado. Monte o pagamento ANTES e so entao
+--     force status_interno para o cenario desejado, imediatamente antes de mexer
+--     nos modelos.
+--
+--     (Nao confundir com tg_atualiza_status_proposta_pagamento /
+--     atualizar_status_proposta_por_pagamento, que grava 'NOVO' / 'A_RECEBER' /
+--     'QUITADO': esse trigger esta DESABILITADO, tgenabled = 'D'.)
+--
+--     SEGUNDA PORTA DO ITEM A. pagamentos_v2 tem trg_sync_finiro_to_proposta ->
+--     trg_sync_financeiro_to_proposta_func, que chama check_and_promote_proposta
+--     direto. Ou seja, o item A tambem passa a proteger o caminho financeiro:
+--     lancar ou confirmar pagamento num pedido ja em producao nao o rebaixa
+--     mais para REVISAO ATENDENTE. Nao era o alvo da mudanca, mas e efeito dela.
 --
 --     RESULTADO EM 20/08/2026 (sandbox em transacao abortada, zero residuo):
 --       a) quantidade = quantidade      -> nenhuma escrita em propostas; arte intacta
