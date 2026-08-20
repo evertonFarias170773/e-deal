@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -286,6 +286,12 @@ export function BoletimFormPage() {
    * de `propostas_os.obs`.
    */
   const [conferenciaPorSetor, setConferenciaPorSetor] = useState<Record<string, ConferenciaSetor>>({});
+  /**
+   * Sinaliza que a conferência já veio do banco. A sugestão de peso e de
+   * responsável só pode entrar depois disso: `loadBoletins` substitui o mapa
+   * inteiro e apagaria qualquer valor semeado antes da leitura.
+   */
+  const [conferenciaCarregada, setConferenciaCarregada] = useState(false);
 
   // Block 1 & 2: Main Info & Commercial Briefing State
   const [clienteNome, setClienteNome] = useState("");
@@ -537,6 +543,7 @@ export function BoletimFormPage() {
           lista.filter((b) => b.setor).map((b) => [normalizarSetor(b.setor), b.conferencia])
         )
       );
+      setConferenciaCarregada(true);
       const vigente = lista[0];
       if (vigente) {
         setBoletimId(vigente.id);
@@ -726,18 +733,28 @@ export function BoletimFormPage() {
   }
 
   /**
-   * Peso estimado do setor: soma do peso dos produtos daquele setor
-   * (produtos_proposta.peso_total, em gramas). Derivado — não se digita.
+   * Peso estimado do setor em gramas: soma do peso dos produtos daquele setor
+   * (produtos_proposta.peso_total). Zero quando o pedido não tem peso cadastrado.
+   */
+  const pesoEstimadoGramasDe = useCallback(
+    (setor: string) => {
+      const grupo = gruposPorSetor.find((g) => g.setor === setor);
+      if (!grupo) return 0;
+      return grupo.produtos.reduce((soma, p) => soma + (Number(p.pesoEstimado) || 0), 0);
+    },
+    [gruposPorSetor]
+  );
+
+  /**
+   * Peso estimado do setor, formatado para leitura. Derivado — não se digita.
    */
   const pesoEstimadoDe = useCallback(
     (setor: string) => {
-      const grupo = gruposPorSetor.find((g) => g.setor === setor);
-      if (!grupo) return "Não calculado";
-      const gramas = grupo.produtos.reduce((soma, p) => soma + (Number(p.pesoEstimado) || 0), 0);
+      const gramas = pesoEstimadoGramasDe(setor);
       if (gramas <= 0) return "Não calculado";
       return gramas >= 1000 ? `${(gramas / 1000).toFixed(2)} kg` : `${Math.round(gramas)} g`;
     },
-    [gruposPorSetor]
+    [pesoEstimadoGramasDe]
   );
 
   /** Setores com produto no pedido que ainda não têm boletim aberto. */
@@ -827,6 +844,75 @@ export function BoletimFormPage() {
     [abasDeSetor, conferenciaPorSetor, revisaoGeral]
   );
 
+  /**
+   * Setores que já receberam a sugestão inicial da conferência. É `ref` de
+   * propósito: a sugestão entra UMA vez por setor, então limpar o campo na mão
+   * continua valendo — sem isso, o efeito devolveria o valor a cada render.
+   */
+  const conferenciaSugerida = useRef<Set<string>>(new Set());
+
+  /**
+   * Peso real nasce com o peso estimado e o responsável com quem está logado —
+   * os dois editáveis. É sugestão: quem confere corrige na balança e assina por
+   * outro se for o caso; o que já veio gravado do banco nunca é sobrescrito.
+   *
+   * As guardas são o que mantém isso honesto:
+   *   - `hasLoadedExisting && !loadingDetails` → os produtos do pedido já estão
+   *     na tela; antes disso `gruposPorSetor` ainda é o mock e semear criaria
+   *     conferência de um setor que não é do pedido (o save grava por chave do
+   *     mapa e abriria linha errada em propostas_os_setores);
+   *   - `conferenciaCarregada` → o que veio do banco já chegou.
+   */
+  useEffect(() => {
+    if (!isEditing || !hasLoadedExisting || loadingDetails || !conferenciaCarregada) return;
+    const setores = abasDeSetor.map((a) => a.setor);
+    if (setores.length === 0) return;
+
+    const responsavelPadrao = (user?.name || user?.email || "").trim();
+
+    setConferenciaPorSetor((atual) => {
+      const proximo = { ...atual };
+      let mudou = false;
+
+      for (const setor of setores) {
+        if (conferenciaSugerida.current.has(setor)) continue;
+        conferenciaSugerida.current.add(setor);
+
+        const conferencia = proximo[setor] ?? {};
+        const sugestao: ConferenciaSetor = { ...conferencia };
+
+        if (!(conferencia.peso_real || "").trim()) {
+          const kg = pesoEstimadoGramasDe(setor) / 1000;
+          // Abaixo de 10 g o campo (step 0.01) arredondaria para 0,00 e a
+          // validação aceitaria um peso zero como conferido.
+          if (kg >= 0.01) sugestao.peso_real = kg.toFixed(2);
+        }
+
+        if (!(conferencia.responsavel_conferencia || "").trim() && responsavelPadrao) {
+          sugestao.responsavel_conferencia = responsavelPadrao;
+        }
+
+        if (
+          sugestao.peso_real !== conferencia.peso_real ||
+          sugestao.responsavel_conferencia !== conferencia.responsavel_conferencia
+        ) {
+          proximo[setor] = sugestao;
+          mudou = true;
+        }
+      }
+
+      return mudou ? proximo : atual;
+    });
+  }, [
+    isEditing,
+    hasLoadedExisting,
+    loadingDetails,
+    conferenciaCarregada,
+    abasDeSetor,
+    pesoEstimadoGramasDe,
+    user
+  ]);
+
   async function handleConfirmarRevisao() {
     if (confirmandoRevisao || revisaoLiberada || !idIntParam) return;
     setConfirmandoRevisao(true);
@@ -847,16 +933,18 @@ export function BoletimFormPage() {
       if (res.success) {
         // O pedido saiu da fila de produção e virou item da bancada da
         // Expedição: a tela do boletim não tem mais o que mostrar dele. Trava o
-        // botão e leva para lá, com o mesmo respiro de ~900ms dos outros
-        // formulários do sistema (CadastroFormPage, OrcamentoFormPage) para o
-        // toast ser lido antes da troca de tela.
+        // botão e volta para o Painel geral — de onde o boletim foi aberto e
+        // onde a lista já recarrega sozinha ao montar, mostrando o pedido no
+        // novo estado. O respiro de ~900ms é o mesmo dos outros formulários do
+        // sistema (CadastroFormPage, OrcamentoFormPage), para o toast ser lido
+        // antes da troca de tela.
         setRevisaoLiberada(true);
         showToast({
           type: "success",
           title: "Revisão confirmada",
           description: `Pedido #${idIntParam} liberado para a Expedição.`
         });
-        window.setTimeout(() => router.push("/expedicao"), 900);
+        window.setTimeout(() => router.push("/pedidos"), 900);
       } else {
         showToast({ type: "error", title: "Não foi possível liberar", description: res.error });
       }

@@ -45,6 +45,13 @@ export type OrcamentoListItem = {
   source: OrcamentoListSource;
   rawColumns?: string[];
   is_prd_aprovado?: boolean;
+  /**
+   * `propostas.encerrado_teste_em`. Preenchido, o pedido e um TESTE encerrado:
+   * saiu dos paineis operacionais mas continua aqui, com badge — Orcamentos e o
+   * caminho de volta. Nao altera status nem soma financeira.
+   */
+  encerradoTesteEm?: string | null;
+  encerradoTestePor?: string | null;
 };
 
 const EMPRESA_LABELS: Record<number, string> = {
@@ -351,7 +358,9 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     modelo,
     source: "supabase",
     rawColumns: Object.keys(row),
-    is_prd_aprovado: row.is_prd_aprovado === true
+    is_prd_aprovado: row.is_prd_aprovado === true,
+    encerradoTesteEm: typeof row.encerrado_teste_em === "string" ? row.encerrado_teste_em : null,
+    encerradoTestePor: typeof row.encerrado_teste_por === "string" ? row.encerrado_teste_por : null
   };
 }
 

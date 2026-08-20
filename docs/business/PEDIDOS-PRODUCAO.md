@@ -1,8 +1,8 @@
 # PEDIDOS-PRODUCAO.md
 
-Versão: 2.1  
+Versão: 2.2  
 Status: Oficial — Implementação parcial e evolução controlada  
-Última atualização: 17/08/2026  
+Última atualização: 20/08/2026  
 Projeto: Vibe
 
 ---
@@ -517,6 +517,71 @@ O QR impresso é um só e continua público — o celular do chão de fábrica n
 - falha na consulta de sessão nunca derruba o fluxo público: o `catch` responde não-autenticado.
 
 Depende de `OS_QR_PUBLICO_ENABLED=true`, `OS_QR_TOKEN_SECRET` (o mesmo valor em todos os ambientes — trocar invalida os QRs já impressos) e `SUPABASE_SERVICE_ROLE_KEY`, aplicadas na Vercel em 17/08/2026.
+
+---
+
+# 8-A. Encerramento de Pedido de Teste (20/08/2026)
+
+A transição do sistema antigo deixou pedidos de teste nas filas de trabalho. Eles **não são apagados** — o histórico e a trilha de auditoria são reais. O que se faz é tirá-los das listas operacionais.
+
+## Fonte
+
+```text
+public.propostas.encerrado_teste_em   timestamptz
+public.propostas.encerrado_teste_por  text
+```
+
+`encerrado_teste_em IS NULL` é o pedido normal. Preenchida, o pedido está encerrado como teste.
+
+Migration: `supabase/migrations/20260820_propostas_encerrado_teste.sql` (aditiva, sem backfill, sem default, sem índice).
+
+## Não é status, e não é `is_prd_aprovado`
+
+Encerrar teste **não cria status novo**: a lista oficial de `status_interno` continua intacta, e o pedido preserva o estado operacional real que tinha (um pedido `EM TRANSITO` marcado continua `EM TRANSITO`). Ver `FLUXO-OFICIAL-STATUS-PROPOSTAS.md`, que não muda por causa desta funcionalidade.
+
+Também **não reaproveita `is_prd_aprovado`**, que continua com um só significado: entrada oficial na fila produtiva. São ações diferentes e coexistem no menu Ações:
+
+| Ação | O que faz | Reversão |
+|---|---|---|
+| **Retirar da Produção** | `is_prd_aprovado = false`. O pedido deixa de ser pedido de fábrica. | Só pelo fluxo oficial, que exige `status_interno = REVISAO ATENDENTE`. Um pedido `EM TRANSITO` não volta. |
+| **Encerrar teste** | Grava `encerrado_teste_em`. Some das filas, sem tocar em status nem em `is_prd_aprovado`. | Imediata: "Reabrir", em Orçamentos. |
+
+## Onde o pedido some — e onde não some
+
+| Superfície | Some? | Como |
+|---|---|---|
+| Painel geral de Produção (`/pedidos`) | Sim | `.is("encerrado_teste_em", null)` em `listarPedidosOperacionais` |
+| Kanban (`/pedidos/kanban`, `/os-producao`) | Sim | mesma função |
+| Fila de impressão (`/pedidos/impressao`) | Sim | mesma função — a fila cruza `pedidos_modelos` com essa lista e descarta o modelo cujo pedido não veio; **não tem filtro próprio** |
+| Painel de Expedição (`/expedicao`) | Sim | `.is("encerrado_teste_em", null)` em `listarPainelExpedicao` |
+| Dashboard → bloco Produção | Sim | filtro em `rpc_dashboard_executivo` |
+| **Orçamentos** (`/orcamentos`) | **Não** | continua visível, com badge `teste encerrado` |
+| Busca por número, URL direta, histórico do cliente em Cadastros | **Não** | acesso preservado de propósito |
+| Faturamento, relatório de vendas, ranking, Contas a Receber, Cobranças | **Não** | movidos por `pagamentos_v2`/`boletos` |
+
+O corte é independente do auto-ocultar de `ENTREGUE` após 30 dias na Expedição: um trata de pedido que nunca foi real, o outro de pedido real que já terminou.
+
+## Não mexe em dinheiro
+
+Pedido de teste encerrado **segue contando no faturamento**. Todos os pedidos marcáveis hoje têm pagamento `PAID` confirmado em `pagamentos_v2`, e nenhuma soma financeira é filtrada por esta marca. Retirar pedido de teste do faturamento é tarefa à parte, com decisão própria — não presuma que encerrar o teste resolve isso.
+
+## Reversão
+
+O badge em Orçamentos é o caminho de volta: o pedido marcado nunca some dessa lista, justamente para poder ser reaberto. O chip **"Mostrar encerrados"** recorta a lista para só os marcados (inclusive `CANCELADO`, que o filtro padrão excluiria) — é o atalho para revisar e desfazer, não um toggle de esconder/mostrar.
+
+"Encerrar teste" aparece no menu Ações de Produção, Expedição e Orçamentos. **"Reabrir" existe só em Orçamentos**: nas outras duas telas o pedido marcado já saiu da lista, então lá o item seria inalcançável.
+
+## Permissão e onde ela é garantida
+
+Chave `propostas.release_producao` — a **mesma** de "Retirar da Produção". Não há chave nova: mesma natureza (tirar pedido das listas operacionais) e mesmo alcance. Vale o fallback padrão (super admin sempre; `is_admin` por fallback).
+
+A tranca é `POST /api/pedidos/encerrar-teste`, que revalida a permissão no servidor com `verificarPermissaoServerSide`. Esconder o item do menu **não protege nada**: a RLS de `public.propostas` é aberta para `authenticated` (política `update_all_propostas`, `qual = true`).
+
+**Limite conhecido:** enquanto essa RLS estiver aberta, um usuário autenticado ainda consegue escrever a coluna chamando o PostgREST direto, por fora do app. Fechar isso é apertar a RLS de `propostas` — decisão maior, que afeta todos os fluxos de escrita da tabela, e continua em aberto.
+
+## Marcação
+
+Manual, um a um, pela tela. **Não existe critério automático** e nenhum backfill foi feito: os sinais que separam teste de operação real (cliente, valor em centavos, pagamento por E-CREDITO, e-mail do criador) coincidem com pedidos reais em parte dos casos. Toda marcação e reabertura registra linha na timeline (`propostas_chat`, `setor = PRODUCAO`) e entra na auditoria (`audit.logs_v2`, via `trg_audit_propostas`).
 
 ---
 

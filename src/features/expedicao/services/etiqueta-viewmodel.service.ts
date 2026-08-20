@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
+import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
 
 export type EtiquetaViewModel = {
   idInt: number;
@@ -188,7 +189,12 @@ export async function montarEtiquetaViewModel(
       .filter(Boolean)
       .join("  ·  "),
     destinatario: {
-      nome: proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`,
+      // Mesmo rótulo da lista da Expedição: número do cadastro antes do nome.
+      // Sem `id_cliente` na proposta, sai só o nome (nada de prefixo vazio).
+      nome: rotuloClienteComNumero(
+        idCliente,
+        proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
+      ),
       recebedor: endereco?.recebedor || "",
       endereco: endereco
         ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]

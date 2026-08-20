@@ -219,6 +219,15 @@ export interface PropostaOperacionalListItem {
 
   // Evidências de OS/Boletim
   hasOS: boolean;
+  /**
+   * Existe a linha do pedido pai em `propostas_os`.
+   *
+   * NÃO confundir com `hasOS`, que é "tem lote em pedidos_modelos". São coisas
+   * diferentes: o PDF da OS precisa do pedido pai (ou de lotes, pelo caminho
+   * sintético do detalhe), e só a ausência DELE justifica criar a OS na hora de
+   * imprimir.
+   */
+  hasPedidoOs: boolean;
   isLegado: boolean;
   osId?: string;
   status_pedido?: PedidoStatus | string;

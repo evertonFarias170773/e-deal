@@ -199,7 +199,7 @@ export async function montarOsPdfViewModel(
         try {
           return await client
             .from("pedidos_artes")
-            .select("id, nome_evento, arquivos, created_at")
+            .select("id, nome_evento, designer_nome, arquivos, created_at")
             .eq("id_int", idInt)
             .order("created_at", { ascending: true });
         } catch (e) {
@@ -308,6 +308,7 @@ export async function montarOsPdfViewModel(
     let boletimPrazo: string | null = null;
     let boletimHora: string | null = null;
     let boletimEvento: string | null = null;
+    let designerBriefing: string | null = null;
     const artesGerais: OsPdfArteRef[] = [];
     {
       const setoresLinhas = (setoresResult?.data || []) as Record<string, unknown>[];
@@ -325,6 +326,18 @@ export async function montarOsPdfViewModel(
       // O evento é do pedido, não do setor: vale o primeiro briefing que o tenha.
       boletimEvento =
         linhas.map((r) => (r.nome_evento ? String(r.nome_evento) : "")).find((nome) => nome.trim() !== "") ?? null;
+      /**
+       * O designer é atribuído na aba Artes do orçamento, que grava em
+       * `pedidos_artes.designer_nome`. O bloco `[Designer]` do texto livre de
+       * `propostas_os.obs` é o formato ANTIGO: nenhuma tela escreve mais nele
+       * (`serializePedidosObs` só preserva o que já estivesse lá), então ler só
+       * de lá imprimia "DESIGNER: -" mesmo com designer atribuído.
+       * Fonte atual primeiro, obs como compatibilidade com pedido antigo.
+       */
+      designerBriefing =
+        linhas
+          .map((r) => (r.designer_nome ? String(r.designer_nome) : ""))
+          .find((nome) => nome.trim() !== "") ?? null;
       for (const row of linhas) {
         const arquivos: ArquivoJsonb[] = Array.isArray(row.arquivos) ? row.arquivos : [];
         artesGerais.push(...arquivos.map((a) => arquivoParaArteRef(client, a)));
@@ -544,7 +557,7 @@ export async function montarOsPdfViewModel(
         telefone
       },
       vendedor: pedido.vendedor,
-      designer: obs.designer?.nome || null,
+      designer: designerBriefing || obs.designer?.nome || null,
       obs,
       frete,
       produtos,

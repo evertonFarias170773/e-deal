@@ -58,6 +58,15 @@ export type OrcamentosReadFilters = {
    * LOTE_BUSCA_AMPLA registros, do mais recentemente atualizado ao mais antigo.
    */
   ignorarPeriodo?: boolean;
+  /**
+   * Chip "Mostrar encerrados": restringe a lista aos pedidos de TESTE marcados.
+   *
+   * Note que NAO existe o inverso. Em Orcamentos o pedido encerrado nunca e
+   * escondido — ele aparece com badge, e e por isso que da para reabri-lo. Este
+   * filtro serve para ACHAR os marcados rapido (revisar, desfazer), nao para
+   * revelar algo que estava oculto.
+   */
+  somenteEncerradosTeste?: boolean;
 };
 
 /** Teto de registros varridos quando o período é ignorado (busca ampla). */
@@ -273,7 +282,10 @@ async function fetchPropostaRows(
   }
 
   try {
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado";
+    // `encerrado_teste_em/por` viajam para a lista de proposito: aqui o pedido de
+    // teste NAO some, ganha badge. Orcamentos e o unico lugar onde ele continua
+    // visivel depois de marcado — e portanto o unico de onde da para reabrir.
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por";
 
     let query = client
       .from("propostas")
@@ -312,8 +324,17 @@ async function fetchPropostaRows(
       } else {
         query = query.eq("status_interno", filters.status);
       }
-    } else {
+    } else if (!filters?.somenteEncerradosTeste) {
       query = query.neq("status_interno", "CANCELADO");
+    }
+    // Com o chip ligado, CANCELADO nao e excluido: quem procura os pedidos de
+    // teste marcados quer a lista COMPLETA deles, inclusive os cancelados —
+    // senao um marcado por engano ficaria fora do unico atalho que o encontra.
+
+    // Chip "Mostrar encerrados": recorta para SO os pedidos de teste marcados.
+    // Sem o chip, nada e escondido — o encerrado aparece junto, com badge.
+    if (filters?.somenteEncerradosTeste) {
+      query = query.not("encerrado_teste_em", "is", null);
     }
 
     if (filters?.search && filters.search.trim()) {

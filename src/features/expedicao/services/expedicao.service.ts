@@ -78,6 +78,10 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
+    // Pedido de teste encerrado sai do painel sem ser apagado. Corte independente
+    // do auto-ocultar de ENTREGUE após 30 dias, mais abaixo: um é sobre pedido
+    // que nunca foi real, o outro é sobre pedido real que já terminou.
+    .is("encerrado_teste_em", null)
     .order("id_int", { ascending: false });
 
   if (propError || !propostas) {

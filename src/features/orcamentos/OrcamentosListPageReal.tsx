@@ -14,6 +14,7 @@ import { formatDateTime } from "@/lib/formatters/date";
 import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils";
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
+import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import {
   gerarPDFProposta,
   duplicarProposta,
@@ -252,7 +253,10 @@ export function OrcamentosListPageReal() {
         codec: codecs.mesIso(),
         default: periodOptions[0]?.value ?? getPeriodValue(new Date())
       },
-      pag: { codec: codecs.numero({ min: 1 }), default: 1 }
+      pag: { codec: codecs.numero({ min: 1 }), default: 1 },
+      // Chip "Mostrar encerrados": recorta para SO os pedidos de teste marcados.
+      // Nao existe o inverso — encerrado nunca e escondido desta lista.
+      teste: { codec: codecs.booleano(), default: false }
     }),
     [periodOptions]
   );
@@ -270,6 +274,7 @@ export function OrcamentosListPageReal() {
   const vendedor = filters.vend;
   const filterTipoCobranca = filters.cob;
   const activeCard = filters.card;
+  const somenteEncerradosTeste = filters.teste;
   const pageIndex = filters.pag - 1;
 
   // O campo responde a cada tecla; a URL — e a consulta ao banco — só depois da
@@ -303,9 +308,10 @@ export function OrcamentosListPageReal() {
       vendedor: vendedor !== "TODOS" ? vendedor : escopoVendedor,
       filterTipoCobranca: filterTipoCobranca !== "TODOS" ? filterTipoCobranca : undefined,
       activeCard: activeCard || undefined,
-      ignorarPeriodo: ignorarPeriodo || undefined
+      ignorarPeriodo: ignorarPeriodo || undefined,
+      somenteEncerradosTeste: somenteEncerradosTeste || undefined
     };
-  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, ignorarPeriodo, user]);
+  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, ignorarPeriodo, somenteEncerradosTeste, user]);
 
   const {
     propostas: rawPropostas,
@@ -835,6 +841,63 @@ export function OrcamentosListPageReal() {
     }
   }
 
+  /**
+   * Encerrar / reabrir pedido de TESTE.
+   *
+   * Este e o UNICO lugar do ERP com os dois lados. Nos paineis de Producao e
+   * Expedicao so existe "Encerrar": o pedido marcado sai da lista na hora, entao
+   * um "Reabrir" la seria codigo inalcancavel. Aqui ele continua visivel, com
+   * badge — por isso o caminho de volta mora aqui.
+   *
+   * Nao confundir com "Retirar da Producao" logo acima: aquele desliga
+   *  (o pedido deixa de ser um pedido de fabrica e so volta
+   * pelo fluxo oficial, que exige REVISAO ATENDENTE). Este apenas esconde das
+   * filas, sem tocar em status nem em .
+   */
+  const canEncerrarTeste = Boolean(
+    user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")
+  );
+  const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
+
+  async function handleEncerrarTeste(item: OrcamentoListItem, encerrar: boolean) {
+    if (encerrandoTesteId !== null) return;
+    const ok = window.confirm(
+      encerrar
+        ? `Encerrar a proposta #${item.id_int} como pedido de TESTE?
+
+` +
+            `Ela sai do painel de Producao, do Kanban, da fila de impressao e da Expedicao.
+` +
+            `Continua nesta lista, com badge, e segue contando no faturamento.`
+        : `Reabrir a proposta #${item.id_int}?
+
+Ela volta a aparecer nas listas operacionais.`
+    );
+    if (!ok) return;
+    setEncerrandoTesteId(item.id_int);
+    try {
+      const res = encerrar ? await encerrarTeste(item.id_int) : await reabrirTeste(item.id_int);
+      if (res.success) {
+        showToast({
+          type: "success",
+          title: encerrar ? "Teste encerrado" : "Proposta reaberta",
+          description: encerrar
+            ? `#${item.id_int} saiu das listas operacionais.`
+            : `#${item.id_int} voltou para as listas operacionais.`
+        });
+        triggerRefresh();
+      } else {
+        showToast({
+          type: "error",
+          title: "Erro na marcacao",
+          description: res.errorMessage || "Nao foi possivel concluir."
+        });
+      }
+    } finally {
+      setEncerrandoTesteId(null);
+    }
+  }
+
   async function handleCopiarPropostaInformal(item: OrcamentoListItem) {
     showToast({
       type: "info",
@@ -911,7 +974,19 @@ export function OrcamentosListPageReal() {
         }
       }] : []),
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
-      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
+      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : []),
+      ...(canEncerrarTeste ? [
+        item.encerradoTesteEm
+          ? {
+              label: encerrandoTesteId === item.id_int ? "Reabrindo..." : "Reabrir (desfazer encerramento de teste)",
+              onClick: () => void handleEncerrarTeste(item, false)
+            }
+          : {
+              label: encerrandoTesteId === item.id_int ? "Encerrando teste..." : "Encerrar teste",
+              destructive: true,
+              onClick: () => void handleEncerrarTeste(item, true)
+            }
+      ] : [])
     ];
   }
 
@@ -1071,6 +1146,23 @@ export function OrcamentosListPageReal() {
             ))}
           </select>
 
+          {/* Chip "Mostrar encerrados". Nao e um toggle de esconder/mostrar: o
+              pedido de teste encerrado NUNCA some desta lista — ele aparece com
+              badge, e e por isso que da para reabri-lo. O chip recorta para SO
+              os marcados, que e o atalho para revisar e desfazer. */}
+          <button
+            type="button"
+            onClick={() => setFilters({ teste: !somenteEncerradosTeste, pag: 1 })}
+            aria-pressed={somenteEncerradosTeste}
+            className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+              somenteEncerradosTeste
+                ? "border-violet-300 bg-violet-100 text-violet-800 hover:bg-violet-200"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {somenteEncerradosTeste ? "Mostrando so encerrados" : "Mostrar encerrados"}
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -1131,6 +1223,17 @@ export function OrcamentosListPageReal() {
                     financeiro confirmar" — sem este selo o vendedor lê
                     "Aguardando" e mexe na proposta com o dinheiro já em caixa. */}
                 {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
+                {/* Pedido de teste encerrado: sumiu dos paineis operacionais,
+                    mas continua aqui. O badge E o caminho de volta — sem ele,
+                    ninguem acha o que marcou para desfazer. */}
+                {proposta.encerradoTesteEm ? (
+                  <span
+                    title={`Teste encerrado em ${formatDateTime(proposta.encerradoTesteEm)}${proposta.encerradoTestePor ? ` por ${proposta.encerradoTestePor}` : ""}. Fora dos paineis de Producao e Expedicao; segue contando no faturamento.`}
+                    className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800 ring-1 ring-inset ring-violet-600/20 whitespace-nowrap"
+                  >
+                    teste encerrado
+                  </span>
+                ) : null}
               </div>
             ),
             align: "center"
@@ -1224,6 +1327,17 @@ export function OrcamentosListPageReal() {
                 <StatusBadge status={proposta.statusLabel} tone={getStatusTone(proposta.status)} />
                 {/* Mesmo sinal do layout de tabela (card do mobile). */}
                 {proposta.pagoAConfirmar ? <StatusBadge status="PAGO_A_LIBERAR" tone="info" /> : null}
+                {/* Pedido de teste encerrado: sumiu dos paineis operacionais,
+                    mas continua aqui. O badge E o caminho de volta — sem ele,
+                    ninguem acha o que marcou para desfazer. */}
+                {proposta.encerradoTesteEm ? (
+                  <span
+                    title={`Teste encerrado em ${formatDateTime(proposta.encerradoTesteEm)}${proposta.encerradoTestePor ? ` por ${proposta.encerradoTestePor}` : ""}. Fora dos paineis de Producao e Expedicao; segue contando no faturamento.`}
+                    className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800 ring-1 ring-inset ring-violet-600/20 whitespace-nowrap"
+                  >
+                    teste encerrado
+                  </span>
+                ) : null}
               </div>
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">

@@ -1,0 +1,253 @@
+-- Encerramento de pedido de TESTE: tira das listas operacionais sem apagar nada
+--
+-- O QUE E
+--   Duas colunas aditivas em public.propostas, nulaveis e sem default:
+--
+--     encerrado_teste_em   timestamptz  quando o pedido foi marcado como teste
+--     encerrado_teste_por  text         email de quem marcou
+--
+--   `encerrado_teste_em IS NULL` e o pedido normal. Preenchida, o pedido some do
+--   painel geral de Producao, do Kanban, da fila de impressao, do painel de
+--   Expedicao e do bloco Producao do dashboard — e SO disso.
+--
+-- POR QUE
+--   A transicao do sistema antigo deixou pedidos de teste nas listas
+--   operacionais. Ninguem quer deleta-los: o historico e a trilha de auditoria
+--   sao reais e precisam continuar existindo. O que incomoda e a POLUICAO das
+--   filas de trabalho.
+--
+--   Hoje o universo dessas filas e pequeno e a sujeira pesa: 22 propostas com
+--   `is_prd_aprovado = true` — que e o painel de Expedicao INTEIRO — e 8 delas
+--   nos status do painel de Producao. Um punhado de pedidos de teste chega a ser
+--   um terco da tela.
+--
+--   Escolhi timestamptz em vez de booleano porque, pelo mesmo custo de escrita,
+--   a coluna responde QUANDO. Com `encerrado_teste_por` ao lado, responde QUEM
+--   sem inventar tabela de auditoria — e a trilha completa continua em
+--   audit.logs_v2, que passa a registrar as duas colunas automaticamente.
+--
+-- POR QUE NAO UM STATUS NOVO (ex.: 'FIM DE TESTE')
+--   Custaria caro e destruiria informacao. Levantado no codigo em 20/08/2026:
+--   20 ocorrencias de listas de status hardcoded em 12 arquivos TS
+--   (STATUS_PRODUCAO_LISTA, STATUS_FUNIL_EXPEDICAO, PROPOSTA_STATUS_PROTEGIDOS,
+--   filtros de card de Orcamentos, status-setor) e 8 funcoes no banco com o
+--   mesmo hardcode, entre elas rpc_dashboard_executivo e rpc_dashboard_vendedor.
+--   Alem do union type PropostaStatus, badges, dropdowns e a base de
+--   conhecimento do Maestro.
+--
+--   O defeito de fundo e outro: gravar o status novo APAGA o status real — o
+--   pedido #20972 deixaria de ser 'EM TRANSITO'. Reverter exigiria guardar o
+--   status anterior, ou seja, uma coluna nova de qualquer jeito, so que agora
+--   acoplada ao fluxo oficial. Por isso o documento
+--   docs/business/FLUXO-OFICIAL-STATUS-PROPOSTAS.md NAO muda: a lista oficial de
+--   status continua com os valores atuais e o diagrama segue intacto.
+--
+-- POR QUE NAO REAPROVEITAR `is_prd_aprovado = false`
+--   Seria de graca — a acao "Retirar da Producao" ja existe no menu Acoes de
+--   Orcamentos e ja tira o pedido das mesmas listas. Mas:
+--
+--   1. Nao e reversivel pela tela. O caminho de volta e
+--      `liberarPropostaParaProducao`, que exige `status_interno = 'REVISAO
+--      ATENDENTE'`. Um pedido em 'EM TRANSITO' marcado por engano nao voltaria
+--      sem UPDATE manual no banco.
+--   2. Apagaria a evidencia de que o pedido chegou a ser liberado para a
+--      fabrica: ficaria indistinguivel de "nunca foi liberado".
+--   3. A flag ja e disputada por dois fluxos (liberacao para producao e
+--      cancelamento de cobranca). Empilhar um terceiro significado nela e como
+--      esses campos viram armadilha.
+--
+--   `is_prd_aprovado` fica INTOCADA por esta migration e pelo codigo que a
+--   acompanha.
+--
+-- ESCOPO / O QUE ESTA MIGRATION NAO FAZ
+--   Estritamente aditiva. Nao cria funcao, view, RPC, trigger, indice, RLS nem
+--   politica. Nao altera nenhuma coluna, CHECK ou FK existente. Nao toca em
+--   is_prd_aprovado, status_interno, pagamentos_v2, boletos nem notas_fiscais.
+--
+--   SEM BACKFILL E SEM DEFAULT, de proposito. As 8.296 linhas nascem com as duas
+--   colunas nulas e NENHUM pedido e marcado aqui: a triagem e manual, um a um,
+--   pela tela, decisao do dono. Nao existe criterio automatico confiavel — os
+--   sinais que separam teste de operacao real (cliente, valor em centavos, forma
+--   de pagamento E-CREDITO, email do criador) coincidem com pedidos reais em
+--   parte dos casos.
+--
+--   SEM INDICE, tambem de proposito. O filtro novo e `encerrado_teste_em is
+--   null`, verdadeiro para quase todas as linhas — um indice nao descartaria
+--   nada. E as duas consultas que ganham o filtro ja partem de
+--   `is_prd_aprovado = true` + lista de status, hoje 22 linhas no total.
+--
+--   NAO MEXE EM SOMA FINANCEIRA. As 22 propostas com `is_prd_aprovado = true`
+--   tem pagamento PAID confirmado em pagamentos_v2 e seguem contando no
+--   faturamento, no relatorio de vendas pagas, no ranking de vendedores, em
+--   Contas a Receber e no bloco Financeiro do dashboard — todos movidos por
+--   pagamentos_v2/boletos, que esta migration nao alcanca. Retirar pedido de
+--   teste do faturamento e tarefa a parte, com decisao propria.
+--
+--   NAO ALTERA O AUTO-OCULTAR DE 'ENTREGUE'. A regra de 30 dias do painel de
+--   Expedicao (src/features/expedicao/services/expedicao.service.ts, constante
+--   DIAS_ENTREGUE_VISIVEL) continua como esta e passa a conviver com o filtro
+--   novo — sao dois cortes independentes.
+--
+--   Verificado no banco em 20/08/2026, ANTES de escrever:
+--
+--   1. Nao existe coluna equivalente. `public.propostas` tem hoje 54 colunas e
+--      nenhuma delas marca teste, homologacao ou arquivamento. Os nomes
+--      `encerrado_teste_em` e `encerrado_teste_por` nao estao em uso.
+--      8.296 linhas no momento da escrita.
+--
+--   2. Os 6 triggers de `public.propostas`, e o que cada um faz diante de um
+--      UPDATE que toque SO as colunas novas:
+--
+--      | trigger                              | momento/eventos      | dispara por         | efeito |
+--      |--------------------------------------|----------------------|---------------------|--------|
+--      | propostas_set_timestamp              | BEFORE UPDATE        | todas as colunas    | carimba updated_at |
+--      | trg_set_updated_at                   | BEFORE UPDATE        | todas as colunas    | carimba updated_at (mesmo efeito, idempotente) |
+--      | tg_propostas_valor_total_avulsa      | BEFORE INSERT/UPDATE | todas as colunas    | retorna de imediato quando is_avulso e falso; quando verdadeiro, so le valor/valor_frete/valor_total |
+--      | tg_registrar_paid_at                 | BEFORE UPDATE        | todas as colunas    | so age se status_interno virar 'RECEBIDO'; num update que nao mexe no status, NEW = OLD e vira no-op |
+--      | trg_audit_propostas                  | AFTER INSERT/DEL/UPD | todas as colunas    | grava a mudanca em audit.logs_v2 |
+--      | trg_sync_cliente_idcliente_pagamentos| AFTER UPDATE         | cliente, id_cliente | NAO dispara: o trigger e escopado por coluna |
+--
+--      Conclusao: NENHUM dos 6 le ou escreve as colunas novas, e nenhum
+--      reescreve status_interno por causa delas. Cinco disparam em qualquer
+--      UPDATE; o sexto nem dispara. Dois efeitos colaterais, ambos aceitos:
+--
+--        a) `updated_at` e recarimbado ao marcar. E o mesmo que acontece em
+--           qualquer edicao de proposta. Consequencia visivel unica: na busca
+--           ampla de Orcamentos, ordenada por updated_at desc, o pedido marcado
+--           sobe para o topo daquela busca.
+--        b) A auditoria passa a registrar as colunas novas — que e exatamente o
+--           comportamento desejado. Confirmado que audit.config_v2 tem
+--           enabled = true para public.propostas e ignored_columns = {updated_at},
+--           e que audit.log_row_changes_v2 monta o diff com to_jsonb(new), sem
+--           lista fixa de colunas: as duas colunas entram sozinhas em
+--           changed_fields, sem alterar a funcao de auditoria.
+--
+--   3. As funcoes de copia nao propagam a marca. `copiar_proposta_v2` e
+--      `duplicar_proposta` nao usam `select *` — enumeram colunas
+--      explicitamente. Uma copia de pedido marcado nasce com as colunas novas
+--      nulas, que e o correto: a copia nao e o teste.
+--
+--   4. Nenhuma funcao e criada aqui, portanto nao ha ACL a conceder ou revogar.
+--      A verificacao (f) abaixo assegura isso. A alteracao do bloco Producao da
+--      `rpc_dashboard_executivo` vira em migration SEPARADA, e la sim com a
+--      verificacao de ACL completa, por ser SECURITY DEFINER.
+
+alter table public.propostas
+  add column if not exists encerrado_teste_em timestamptz;
+
+alter table public.propostas
+  add column if not exists encerrado_teste_por text;
+
+comment on column public.propostas.encerrado_teste_em is
+  'Instante em que um administrador marcou esta proposta como pedido de TESTE encerrado, pela acao "Encerrar teste" do menu Acoes. Preenchida, o pedido some do painel geral de Producao, do Kanban, da fila de impressao, do painel de Expedicao e do bloco Producao do dashboard; continua acessivel por URL direta, por busca por numero e visivel em Orcamentos com badge proprio. Nula = pedido normal. Reversivel: a acao "Reabrir" volta o valor para NULL. Nao altera status_interno nem is_prd_aprovado, e nao remove a proposta de nenhuma soma financeira.';
+
+comment on column public.propostas.encerrado_teste_por is
+  'Email do usuario que marcou a proposta como teste encerrado, gravado pelo servidor na rota POST /api/pedidos/encerrar-teste apos verificar a permissao propostas.release_producao. Nao e fonte de autorizacao, apenas registro de quem agiu — a trilha completa (antes/depois, ator e horario) vive em audit.logs_v2 via trg_audit_propostas. Nula quando encerrado_teste_em e nula.';
+
+-- VERIFICACAO (somente leitura, depois de aplicar)
+--
+-- CRITERIO: DELTA, NAO VALOR ABSOLUTO
+--   Este e um banco de PRODUCAO vivo. Entre escrever a migration e aplica-la,
+--   os vendedores continuam trabalhando: na primeira tentativa de aplicar, em
+--   20/08/2026, as contagens ja tinham mudado sozinhas (8.296 -> 8.297 linhas,
+--   22 -> 23 propostas com is_prd_aprovado, 8 -> 9 no painel de Producao) porque
+--   o pedido #21000 nasceu e foi liberado para producao no intervalo. Nao existe
+--   momento em que um numero absoluto de linhas volte a ser verdade.
+--
+--   Por isso as verificacoes de contagem sao ANTES = DEPOIS, medidas em volta do
+--   `alter table`, e nao comparacoes contra um numero fixo. O que a migration
+--   pode causar e delta; o que a operacao causa nao e problema dela.
+--
+--   Absolutos, esses sim, seguem valendo — porque nao dependem do movimento da
+--   operacao: `marcadas` e `com_autor` em ZERO (prova de que nao houve
+--   backfill), 6 triggers, 4 constraints e exatamente 56 colunas (54 + as duas
+--   novas, o unico delta esperado).
+--
+--   -- a) as duas colunas nasceram nulaveis e sem default
+--   select column_name, data_type, is_nullable,
+--          coalesce(column_default, '(sem default)') as padrao
+--     from information_schema.columns
+--    where table_schema = 'public'
+--      and table_name = 'propostas'
+--      and column_name in ('encerrado_teste_em', 'encerrado_teste_por')
+--    order by column_name;
+--   -- esperado: 2 linhas, is_nullable = YES, padrao = (sem default)
+--   --           e a tabela passa a ter exatamente 56 colunas (54 + 2)
+--
+--   -- b) SEM BACKFILL — criterio ABSOLUTO, nao depende da operacao
+--   select count(encerrado_teste_em) as marcadas,
+--          count(encerrado_teste_por) as com_autor
+--     from public.propostas;
+--   -- esperado: marcadas = 0, com_autor = 0
+--   -- Qualquer valor diferente de zero significa que alguem marcou pedido nesta
+--   -- migration. Parar e investigar: a triagem e manual, um a um, pela tela.
+--
+--   -- c) DELTA ZERO — rodar a MESMA consulta imediatamente ANTES e DEPOIS do
+--   --    `alter table` e comparar as tres colunas duas a duas.
+--   select count(*) as linhas,
+--          count(*) filter (where is_prd_aprovado) as prd_aprovado,
+--          count(*) filter (where is_prd_aprovado
+--                             and status_interno in ('LIBERADO','REVISAO ATENDENTE',
+--                                 'REVISAO PRODUCAO','EM PRODUCAO','EM IMPRESSAO',
+--                                 'EM IMPRESSAO / PENDENTE','EM ACABAMENTO',
+--                                 'EM ACABAMENTO / PENDENTE')) as no_painel_producao
+--     from public.propostas;
+--   -- esperado: os tres valores IDENTICOS antes e depois (delta = 0).
+--   -- Nao comparar com numero fixo: ver a nota CRITERIO acima. Uma migration
+--   -- puramente aditiva nao pode mover nenhum dos tres; se mover, parar.
+--
+--   -- d) nenhuma restricao de propostas foi criada, alterada ou perdida
+--   select conname, pg_get_constraintdef(oid)
+--     from pg_constraint
+--    where conrelid = 'public.propostas'::regclass
+--      and contype in ('c', 'f')
+--    order by conname;
+--   -- esperado: mesma lista de antes, nada com 'encerrado_teste' no nome
+--
+--   -- e) os 6 triggers seguem existindo e habilitados, nenhum novo
+--   select tgname, tgenabled
+--     from pg_trigger t join pg_class c on c.oid = t.tgrelid
+--    where c.relname = 'propostas' and not t.tgisinternal
+--    order by tgname;
+--   -- esperado: 6 linhas, todas com tgenabled = 'O'
+--
+--   -- f) ACL: esta migration nao cria funcao, entao nao ha ACL a conferir.
+--   --    A consulta abaixo prova isso — deve voltar ZERO linhas. Se voltar
+--   --    alguma, alguem acrescentou funcao a esta migration e o ACL precisa ser
+--   --    revisado antes de publicar.
+--   select p.proname,
+--          pg_get_function_identity_arguments(p.oid) as args,
+--          p.prosecdef as security_definer,
+--          coalesce(
+--            (select array_agg(coalesce(r.rolname, 'PUBLIC')
+--                              order by coalesce(r.rolname, 'PUBLIC'))
+--               from aclexplode(p.proacl) x
+--               left join pg_roles r on r.oid = x.grantee),
+--            '{}'::text[]) as grantees
+--     from pg_proc p
+--     join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public'
+--      and p.proname like '%encerrado_teste%';
+--   -- esperado: 0 linhas
+--
+--   -- g) auditoria continua ligada para propostas e ignora apenas updated_at
+--   select schema_name, table_name, enabled, ignored_columns
+--     from audit.config_v2
+--    where schema_name = 'public' and table_name = 'propostas';
+--   -- esperado: enabled = true, ignored_columns = {updated_at}
+--
+--   -- h) PostgREST precisa enxergar as colunas novas (cache de schema).
+--   --    Se o front receber "column propostas.encerrado_teste_em does not exist",
+--   --    recarregar o cache:  notify pgrst, 'reload schema';
+--
+-- ROLLBACK
+--   Seguro a qualquer momento enquanto nenhum pedido estiver marcado. Se ja
+--   houver marcacoes, o DROP as descarta — conferir (b) antes e, se precisar
+--   preservar, guardar a lista:
+--     select id_int, encerrado_teste_em, encerrado_teste_por
+--       from public.propostas where encerrado_teste_em is not null;
+--
+--   alter table public.propostas
+--     drop column if exists encerrado_teste_por;
+--   alter table public.propostas
+--     drop column if exists encerrado_teste_em;

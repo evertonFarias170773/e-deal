@@ -10,7 +10,8 @@
  *    padrão das propostas novas, em 19/08.
  *
  * 2. `divergenciaFreteDoDespacho` — se o envio ainda corresponde ao frete que a
- *    proposta cobra. Informa, nunca bloqueia.
+ *    proposta cobra. BLOQUEIA em CIF; fora de CIF apenas informa, porque ali a
+ *    recotação nem existe e travar prenderia o pedido sem saída.
  *
  * Ambas são puras e rodam nos DOIS lados (tela e `despachar()`), porque não há
  * rota de API no caminho do despacho: é PostgREST direto do browser, com RLS
@@ -42,6 +43,7 @@ const completo = {
   modalidadeFrete: "CIF" as const,
   transportadoraNome: "Correios SEDEX",
   idTransportadoraCliente: null,
+  pesoKg: 3.12,
   qtdVolumes: 1,
   idEnderecoEntrega: "ee5db217-261b-409c-b574-b0c36c1b4917"
 };
@@ -49,14 +51,32 @@ const completo = {
 checar("despacho completo não tem faltantes", camposMinimosDespacho(completo, "DESPACHO"), []);
 
 // O caso do bug: modal recém-aberto, CIF pré-selecionado, nada mais definido.
+// O peso entrou nesta lista em 21/08/2026, quando o campo passou a nascer vazio.
 checar(
-  "modal em branco acusa transportadora, endereço e volumes",
+  "modal em branco acusa transportadora, endereço, peso e volumes",
   camposMinimosDespacho(
-    { ...completo, transportadoraNome: "", idTransportadoraCliente: null, idEnderecoEntrega: null, qtdVolumes: null },
+    {
+      ...completo,
+      transportadoraNome: "",
+      idTransportadoraCliente: null,
+      idEnderecoEntrega: null,
+      pesoKg: null,
+      qtdVolumes: null
+    },
     "DESPACHO"
   ),
-  ["a transportadora", "o endereço de entrega", "a quantidade de volumes"]
+  ["a transportadora", "o endereço de entrega", "o peso aferido", "a quantidade de volumes"]
 );
+
+// Peso aferido: o campo nasce VAZIO de propósito, e sair vazio é o que se
+// impede — senão `expedicoes.peso_kg` iria nulo e a dimensão PESO da
+// divergência nem chegaria a ser calculada.
+checar("peso vazio acusa o peso aferido", camposMinimosDespacho({ ...completo, pesoKg: null }, "DESPACHO"), [
+  "o peso aferido"
+]);
+checar("peso zero não conta como aferido", camposMinimosDespacho({ ...completo, pesoKg: 0 }, "DESPACHO"), [
+  "o peso aferido"
+]);
 
 checar(
   "sem modalidade ela entra na lista",
@@ -91,6 +111,7 @@ checar(
       modalidadeFrete: "RETIRA",
       transportadoraNome: "",
       idTransportadoraCliente: null,
+      pesoKg: null,
       qtdVolumes: null,
       idEnderecoEntrega: null
     },
@@ -106,6 +127,7 @@ checar(
       modalidadeFrete: null,
       transportadoraNome: "",
       idTransportadoraCliente: null,
+      pesoKg: null,
       qtdVolumes: null,
       idEnderecoEntrega: null
     },
@@ -119,7 +141,7 @@ checar(
 checar(
   "modo edição nunca acusa nada",
   camposMinimosDespacho(
-    { ...completo, modalidadeFrete: null, transportadoraNome: "", idEnderecoEntrega: null, qtdVolumes: null },
+    { ...completo, modalidadeFrete: null, transportadoraNome: "", idEnderecoEntrega: null, pesoKg: null, qtdVolumes: null },
     "EDICAO"
   ),
   []
@@ -150,23 +172,90 @@ const fiel = {
 checar("despacho fiel não bloqueia", divergenciaFreteDoDespacho(fiel).bloqueia, false);
 checar("despacho fiel não avisa", divergenciaFreteDoDespacho(fiel).temAviso, false);
 
-// ── Dimensão PESO: margem de 5% para mais ─────────────────────────────────
-// 3120 × 1,05 = 3276 exatos. "Margem SUPERIOR a 5%" — 5% cravado ainda passa.
+// ── Dimensão PESO: tolerância = o MAIOR entre 200 g e 5% do cotado ────────
+// Os dois lados se cruzam em 4 kg: abaixo disso manda o piso de 200 g, acima
+// manda o percentual. "SUPERIOR a" nos dois casos — a tolerância cravada passa.
+
+// ▸ Volume PEQUENO (200 g cotados): 5% seriam 10 g, o piso de 200 g é quem vale.
+const cotacaoPequena = { pesoGramas: 200, cep: "90620130", valor: 18.84, servico: "SEDEX", existe: true };
+const pequeno = { ...fiel, cotacao: cotacaoPequena };
+
 checar(
-  "5% cravado NÃO bloqueia (fronteira exata)",
-  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3276 }).bloqueia,
+  "volume pequeno: a tolerância é o piso de 200 g, não os 5%",
+  divergenciaFreteDoDespacho({ ...pequeno, pesoAferidoGramas: 200 }).toleranciaGramas,
+  200
+);
+// O caso que motivou a mudança: +10 g de embalagem estouravam os 5% de 200 g.
+checar(
+  "volume pequeno: +10 g (5% cravado do antigo) não bloqueia",
+  divergenciaFreteDoDespacho({ ...pequeno, pesoAferidoGramas: 210 }).bloqueia,
   false
 );
 checar(
-  "1 grama acima dos 5% bloqueia",
-  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3277 }).bloqueia,
+  "volume pequeno: 200 g de excesso cravados NÃO bloqueiam (fronteira)",
+  divergenciaFreteDoDespacho({ ...pequeno, pesoAferidoGramas: 400 }).bloqueia,
+  false
+);
+checar(
+  "volume pequeno: 1 grama além dos 200 g bloqueia",
+  divergenciaFreteDoDespacho({ ...pequeno, pesoAferidoGramas: 401 }).bloqueia,
   true
 );
+
+// ▸ Volume GRANDE (10 kg cotados): 5% = 500 g, e é o percentual que manda.
+const cotacaoGrande = { pesoGramas: 10000, cep: "90620130", valor: 84.2, servico: "SEDEX", existe: true };
+const grande = { ...fiel, cotacao: cotacaoGrande };
+
 checar(
-  "4,99% não bloqueia",
-  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3275 }).bloqueia,
+  "volume grande: a tolerância são os 5%, não o piso",
+  divergenciaFreteDoDespacho({ ...grande, pesoAferidoGramas: 10000 }).toleranciaGramas,
+  500
+);
+checar(
+  "volume grande: 5% cravados NÃO bloqueiam (fronteira exata)",
+  divergenciaFreteDoDespacho({ ...grande, pesoAferidoGramas: 10500 }).bloqueia,
   false
 );
+checar(
+  "volume grande: 1 grama acima dos 5% bloqueia",
+  divergenciaFreteDoDespacho({ ...grande, pesoAferidoGramas: 10501 }).bloqueia,
+  true
+);
+// O piso não vira teto: 200 g em cima de 10 kg são 2%, e continuam liberados.
+checar(
+  "volume grande: 200 g de excesso não bloqueiam",
+  divergenciaFreteDoDespacho({ ...grande, pesoAferidoGramas: 10200 }).bloqueia,
+  false
+);
+
+// ▸ O cruzamento, em 4 kg: os dois critérios dão exatamente 200 g.
+checar(
+  "em 4 kg cotados os dois critérios empatam",
+  divergenciaFreteDoDespacho({
+    ...fiel,
+    cotacao: { ...cotacao20961, pesoGramas: 4000 },
+    pesoAferidoGramas: 4000
+  }).toleranciaGramas,
+  200
+);
+
+// ▸ O pedido de referência (3.120 g cotados): abaixo do cruzamento, piso manda.
+checar(
+  "3120 g: 5% (156 g) não bastam mais para bloquear",
+  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3277 }).bloqueia,
+  false
+);
+checar(
+  "3120 g: 200 g de excesso cravados não bloqueiam",
+  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3320 }).bloqueia,
+  false
+);
+checar(
+  "3120 g: 201 g de excesso bloqueiam",
+  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3321 }).bloqueia,
+  true
+);
+
 // Peso MENOR nunca bloqueia: a empresa não perde enviando mais leve que cobrou.
 checar(
   "peso muito menor não bloqueia",
@@ -183,6 +272,7 @@ const d20961 = divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3500 });
 checar("20961 bloqueia por peso", d20961.bloqueia, true);
 checar("20961 marca a dimensão peso", d20961.pesoExcedeuMargem, true);
 checar("20961 mede o excesso", Number((d20961.percentualAcimaDoCotado! * 100).toFixed(1)), 12.2);
+checar("20961 mede o excesso em gramas", d20961.excessoGramas, 380);
 checar("20961 não acusa transporte", d20961.transporteMudou, false);
 checar("20961 não acusa destino", d20961.cepMudou, false);
 

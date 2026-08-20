@@ -46,6 +46,11 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     .eq("is_prd_aprovado", true)
     // Filtra apenas status operacionais para evitar poluir a lista com os que já saíram da produção
     .in("status_interno", ["LIBERADO", "REVISAO ATENDENTE", "REVISAO PRODUCAO", "EM PRODUCAO", "EM IMPRESSAO", "EM IMPRESSAO / PENDENTE", "EM ACABAMENTO", "EM ACABAMENTO / PENDENTE"])
+    // Pedido de teste encerrado sai da fila de trabalho sem ser apagado. Este
+    // filtro serve às TRÊS telas de uma vez: painel geral, Kanban e fila de
+    // impressão — a fila cruza `pedidos_modelos` com esta lista e descarta o
+    // modelo cujo pedido não veio aqui, então não precisa de filtro próprio.
+    .is("encerrado_teste_em", null)
     .order("id_int", { ascending: false });
 
   if (propostasError || !propostasRows) {
@@ -219,6 +224,7 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       quantidade_total: quantidadeTotal,
       pendencias_operacionais: pendencias,
       hasOS: modelosDestaProposta.length > 0,
+      hasPedidoOs: Boolean(osDestaProposta),
       isLegado: false,
       osId: undefined,
       status_pedido: undefined,

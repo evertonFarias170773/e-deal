@@ -1,8 +1,8 @@
 # EXPEDICAO.md
 
-Versão: 1.5
+Versão: 1.6
 Status: Oficial — Correios em produção (prepostagens reais emitidas em 16/08/2026)
-Última atualização: 19/08/2026
+Última atualização: 20/08/2026
 Projeto: Vibe
 
 ---
@@ -27,6 +27,7 @@ O status oficial do pedido continua em `public.propostas.status_interno`, confor
 - 4 chips de alerta — Atrasados, Prometidos hoje, Sem NF, Frete a definir — cada um filtra a lista (`toggleAlerta`).
 - Filtros (busca, etapa, alerta, tipo de frete, empresa) e a visão da lista vivem na URL (`q`, `etapa`, `alerta`, `frete`, `emp`, `visao`), no padrão de `PADRAO-FILTROS-URL-NAVEGACAO.md`. Não existe seletor global de empresa: o filtro `emp` segue o mesmo padrão da Fila Geral — opções derivadas dos próprios dados carregados, não de um cadastro à parte.
 - Padrão da lista: `etapa=ATIVOS` (oculta `ENTREGUE`); pedidos entregues somem do painel depois de 30 dias (seção 3).
+- Pedido de **teste encerrado** (`propostas.encerrado_teste_em` preenchida) não entra no painel: `.is("encerrado_teste_em", null)` no mesmo `select` do universo. Corte independente do auto-ocultar de `ENTREGUE` acima — um trata de pedido que nunca foi real, o outro de pedido real que já terminou. O item **"Encerrar teste"** está no menu de ações da linha (permissão `propostas.release_producao`); **reabrir só em Orçamentos**, onde o pedido continua visível com badge. Regra completa: `PEDIDOS-PRODUCAO.md` §8-A.
 - Botão "Transportadoras" abre um modal (`TransportadorasModal`) de consulta/atalho de cadastro sobre `public.clientes` com `categoria = 'TRANSPORTADORA'` (24 cadastros em 15/08/2026, via `getTransportadoras()`) — não é uma tabela própria da Expedição, reaproveita o cadastro de clientes.
 
 ## 1.1 Menu de ações da linha

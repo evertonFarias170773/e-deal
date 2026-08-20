@@ -39,7 +39,13 @@ export type ModoDespacho = "DESPACHO" | "EDICAO";
 export function camposMinimosDespacho(
   input: Pick<
     DespachoInput,
-    "tipoEntrega" | "modalidadeFrete" | "transportadoraNome" | "idTransportadoraCliente" | "qtdVolumes" | "idEnderecoEntrega"
+    | "tipoEntrega"
+    | "modalidadeFrete"
+    | "transportadoraNome"
+    | "idTransportadoraCliente"
+    | "pesoKg"
+    | "qtdVolumes"
+    | "idEnderecoEntrega"
   >,
   modo: ModoDespacho
 ): string[] {
@@ -61,10 +67,31 @@ export function camposMinimosDespacho(
 
   if (!input.idEnderecoEntrega) faltantes.push("o endereço de entrega");
 
-  // O campo nasce com "1" na tela; o que se impede aqui e esvaziar. Peso e
-  // rastreio seguem OPCIONAIS: o peso tem precedencia propria com fallback
-  // teorico (lib/peso.ts), e o codigo dos Correios so existe depois da
+  // PESO passou a ser obrigatorio em 21/08/2026, junto com o campo do modal
+  // deixar de nascer pre-preenchido.
+  //
+  //   Ate entao ele era opcional porque `lib/peso.ts` tem fallback (bruto da
+  //   Revisao > cotado > teorico dos itens) e "sempre havia um numero". Mas o
+  //   campo se chama "Peso AFERIDO", e o modal entregava justamente esse
+  //   fallback ja digitado: confirmar sem tocar nele gravava o estimado como se
+  //   fosse balanca. Esvaziar o campo sem exigi-lo so trocaria de problema —
+  //   sairia `peso_kg` nulo, e ai a divergencia de peso nem chega a ser
+  //   calculada (`avaliarFreteParaCobranca` devolve SEM_ITENS, e a dimensao
+  //   PESO nao bloqueia nem avisa). O peso deixaria de ser medido em vez de ser
+  //   medido errado.
+  //
+  //   O fallback de `lib/peso.ts` NAO deixa de existir: ele continua servindo
+  //   etiqueta, declaracao de conteudo e prepostagem para pedido que ainda nao
+  //   chegou ao despacho. O que muda e que, no ato de despachar, alguem precisa
+  //   ter posto o volume na balanca.
+  //
+  // RASTREIO segue opcional: o codigo dos Correios so existe depois da
   // prepostagem — exigi-lo impediria o despacho que o gera.
+  if (input.pesoKg === null || !Number.isFinite(input.pesoKg) || input.pesoKg <= 0) {
+    faltantes.push("o peso aferido");
+  }
+
+  // O campo nasce com "1" na tela; o que se impede aqui e esvaziar.
   if (input.qtdVolumes === null || !Number.isFinite(input.qtdVolumes) || input.qtdVolumes < 1) {
     faltantes.push("a quantidade de volumes");
   }

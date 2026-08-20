@@ -109,7 +109,23 @@ export function DespacharModal({
   const [idTransportadoraCliente, setIdTransportadoraCliente] = useState<number | null>(
     exp?.idTransportadoraCliente ?? pedido.idTransportadoraOrcamento ?? null
   );
-  const [pesoKg, setPesoKg] = useState(exp?.pesoKg?.toString() ?? pedido.pesoKg?.toFixed(2) ?? "");
+  /**
+   * NASCE VAZIO quando ninguem aferiu ainda (21/08/2026).
+   *
+   * O campo se chama "Peso aferido" e vinha pre-preenchido com `pedido.pesoKg`
+   * — que, pela precedencia de `lib/peso.ts`, e o cotado ou o teorico dos itens
+   * quando nao ha aferido. Ou seja: o modal ja entregava a resposta pronta, e
+   * confirmar sem tocar no campo gravava o ESTIMADO como se fosse balanca. A
+   * divergencia de peso entao comparava o cotado contra ele mesmo e nunca
+   * acusava nada.
+   *
+   * `exp?.pesoKg` continua preenchendo: esse SIM e peso aferido de verdade,
+   * gravado num despacho anterior ou no rascunho de "Salvar sem despachar" —
+   * apaga-lo obrigaria a expedidora a pesar de novo o que ela ja pesou.
+   *
+   * O estimado nao some da tela: segue no `placeholder` como "previsto X".
+   */
+  const [pesoKg, setPesoKg] = useState(exp?.pesoKg?.toString() ?? "");
   const [qtdVolumes, setQtdVolumes] = useState(exp?.qtdVolumes?.toString() ?? pedido.volumes?.toString() ?? "1");
   const [tipoVolume, setTipoVolume] = useState(exp?.tipoVolume ?? "Pacote");
   const [codigoRastreamento, setCodigoRastreamento] = useState(pedido.codigoRastreamento);
@@ -292,12 +308,13 @@ export function DespacharModal({
           modalidadeFrete: modalidade,
           transportadoraNome,
           idTransportadoraCliente,
+          pesoKg: parsePesoKg(pesoKg),
           qtdVolumes: parseQtdVolumes(qtdVolumes),
           idEnderecoEntrega
         },
         modoEdicao ? "EDICAO" : "DESPACHO"
       ),
-    [tipoEntrega, modalidade, transportadoraNome, idTransportadoraCliente, qtdVolumes, idEnderecoEntrega, modoEdicao]
+    [tipoEntrega, modalidade, transportadoraNome, idTransportadoraCliente, pesoKg, qtdVolumes, idEnderecoEntrega, modoEdicao]
   );
 
   /**
@@ -1054,7 +1071,8 @@ export function DespacharModal({
               <p className="mt-1">
                 Peso: {((divergencia.peso.pesoCotadoGramas ?? 0) / 1000).toFixed(2)} kg cotados contra{" "}
                 {(divergencia.peso.pesoAtualGramas / 1000).toFixed(2)} kg no despacho —{" "}
-                <strong>{((divergencia.percentualAcimaDoCotado ?? 0) * 100).toFixed(1)}% acima</strong> (a margem é 5%).
+                <strong>{((divergencia.percentualAcimaDoCotado ?? 0) * 100).toFixed(1)}% acima</strong> (a tolerância é{" "}
+                {((divergencia.toleranciaGramas ?? 0) / 1000).toFixed(2)} kg — 200 g ou 5%, o que for maior).
               </p>
             )}
             {divergencia.cepMudou && (

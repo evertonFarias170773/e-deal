@@ -23,10 +23,11 @@ import { atualizarFaseSetor } from "./services/boletim-setores.service";
 import { consolidarFases, type FaseSetor } from "./status-setor";
 import { SetorFaseChip } from "./components/SetorFaseChip";
 import { abrirPdfOs } from "./services/imprimir-os.client";
+import { encerrarTeste } from "./services/encerrar-teste.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
-import { liberarPedidoParaFiscal } from "./services/boletim-propostas.service";
+import { liberarPedidoParaFiscal, criarPedidoParaBoletim } from "./services/boletim-propostas.service";
 
 import type { PropostaOperacionalListItem, SetorDoPedido } from "./types";
 import { useRouter } from "next/navigation";
@@ -51,6 +52,47 @@ export function PedidosListPage() {
   // Autorização (V2.1 + Legado V1)
   const canView = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.view");
   const canPrintOS = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.print_os");
+
+  /**
+   * Encerrar pedido de teste. Mesma permissão de "Retirar da Produção"
+   * (`propostas.release_producao`) — mesma natureza: tirar pedido das listas
+   * operacionais. Aqui só existe o "Encerrar": o pedido marcado sai desta lista
+   * na hora, então "Reabrir" mora em Orçamentos, onde ele continua visível com
+   * badge. Esconder o item não protege nada (a RLS de propostas é aberta): quem
+   * tranca é POST /api/pedidos/encerrar-teste.
+   */
+  const canEncerrarTeste = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao");
+  const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
+  async function handleEncerrarTeste(proposta: PropostaOperacionalListItem) {
+    if (encerrandoTesteId !== null) return;
+    const ok = window.confirm(
+      `Encerrar o pedido #${proposta.id_int} como TESTE?\n\n` +
+        `Ele sai do painel de Produção, do Kanban, da fila de impressão e da Expedição.\n` +
+        `Continua acessível por busca e por URL, e segue contando no faturamento.\n\n` +
+        `Para reabrir, use o menu Ações em Orçamentos.`
+    );
+    if (!ok) return;
+    setEncerrandoTesteId(proposta.id_int);
+    try {
+      const res = await encerrarTeste(proposta.id_int);
+      if (res.success) {
+        showToast({
+          type: "success",
+          title: res.idempotente ? "Pedido já estava encerrado" : "Teste encerrado",
+          description: `#${proposta.id_int} saiu das listas operacionais. Reabra em Orçamentos, se precisar.`
+        });
+        await load();
+      } else {
+        showToast({
+          type: "error",
+          title: "Erro ao encerrar",
+          description: res.errorMessage || "Não foi possível encerrar o teste."
+        });
+      }
+    } finally {
+      setEncerrandoTesteId(null);
+    }
+  }
 
   // Rotação do QR público da OS (permissão específica; invalida o QR impresso anterior)
   const canRotateQr = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.qr_rotacionar");
@@ -89,6 +131,42 @@ export function PedidosListPage() {
   async function handleImprimirOS(proposta: PropostaOperacionalListItem) {
     if (printingOsId !== null) return;
     setPrintingOsId(proposta.id_int);
+
+    /**
+     * Sem o pedido pai em `propostas_os` a rota do PDF responde 404, e até hoje
+     * a única saída era abrir o boletim e salvar só para destravar a impressão.
+     * Aqui ele nasce no mesmo clique, com o que dá para derivar da proposta.
+     *
+     * `criarPedidoParaBoletim` é idempotente (OS existente volta como sucesso),
+     * mas continua atrás do `hasPedidoOs`: ela revalida `status_interno` contra
+     * BOLETIM_ELIGIBLE_STATUSES, e chamar sempre quebraria a impressão de
+     * pedido já entregue/faturado — que hoje funciona.
+     *
+     * Fica sem preencher o que não é derivável e nenhum default inventaria:
+     * prazo (`data_termino`), o boletim de setor (`propostas_os_setores`) e as
+     * orientações (`obs`). O PDF sai com prazo "-", sem filtro de setor e com
+     * os blocos de orientação vazios — tudo isso o boletim preenche depois.
+     */
+    if (!proposta.hasPedidoOs) {
+      const criacao = await criarPedidoParaBoletim({
+        id_int: proposta.id_int,
+        descricao: `${proposta.clienteNome} - Boletim de entrada`,
+        obs: null
+      });
+      if (!criacao.success) {
+        setPrintingOsId(null);
+        showToast({
+          type: "error",
+          title: "Não foi possível abrir a OS para impressão",
+          description: criacao.error || "Erro desconhecido ao criar o pedido."
+        });
+        return;
+      }
+      // A linha da lista ainda diz "sem OS": recarrega para o rótulo do menu e o
+      // `hasPedidoOs` refletirem o pedido recém-criado.
+      void load();
+    }
+
     const result = await abrirPdfOs(proposta.id_int);
     setPrintingOsId(null);
     if (!result.success) {
@@ -544,9 +622,11 @@ export function PedidosListPage() {
                   label: proposta.hasOS ? "Editar OS / Boletim" : "Criar OS / Boletim",
                   onClick: () => router.push(`/pedidos/boletim?id_int=${proposta.id_int}&modo=${proposta.hasOS ? "edicao" : "abertura"}`)
                 },
-                // Condição explícita: OS existente E proposta liberada para produção
-                // (não depende só do filtro do service; o servidor revalida com 409).
-                ...(canPrintOS && proposta.hasOS && proposta.is_prd_aprovado === true ? [{
+                // Basta a proposta estar liberada para produção: a OS que faltar
+                // é criada no próprio clique (o servidor ainda revalida com 409).
+                // Exigir `hasOS` aqui escondia o botão justamente de quem ainda
+                // não tinha lote — o caso em que imprimir era impossível.
+                ...(canPrintOS && proposta.is_prd_aprovado === true ? [{
                   label: printingOsId === proposta.id_int ? "Gerando PDF..." : "Imprimir OS (PDF)",
                   onClick: () => { void handleImprimirOS(proposta); }
                 }] : []),
@@ -578,7 +658,12 @@ export function PedidosListPage() {
                       setIsDevolverModalOpen(true);
                     }
                   }
-                ] : [])
+                ] : []),
+                ...(canEncerrarTeste ? [{
+                  label: encerrandoTesteId === proposta.id_int ? "Encerrando teste..." : "Encerrar teste",
+                  destructive: true,
+                  onClick: () => { void handleEncerrarTeste(proposta); }
+                }] : [])
               ];
               return (
                 <div className="flex items-center justify-end gap-1.5">

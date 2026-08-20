@@ -9,7 +9,8 @@ import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
  *
  * TRES DIMENSOES
  *   1. TRANSPORTE  — o "COMO VAI" mudou em relacao ao que originou a cotacao;
- *   2. PESO        — aferido acima do cotado com margem SUPERIOR A 5%;
+ *   2. PESO        — aferido acima do cotado por mais que a tolerancia, que e o
+ *                    MAIOR entre 200 g e 5% do cotado;
  *   3. DESTINO     — CEP de entrega diferente do que originou a cotacao.
  *
  *   Qualquer uma exige recotacao, que por sua vez depende de liberacao de um
@@ -26,13 +27,23 @@ import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
  *   Retirada no balcao cai aqui por consequencia: sem transporte contratado nao
  *   ha o que recotar, e a modalidade RETIRA nunca e CIF.
  *
- * A MARGEM DE 5% VALE SO AQUI
+ * A TOLERANCIA DE PESO VALE SO AQUI
  *   `frete-desatualizado.ts` usa tolerancia de 1 g e bloqueia nos dois sentidos,
  *   porque no fluxo de cobranca qualquer divergencia contra a ancora importa.
  *   No despacho a pergunta e outra — "o frete cobrado ainda paga este envio?" —
- *   e a resposta tolera 5% para mais. O modulo de origem NAO e alterado: dele
+ *   e a resposta tolera um excesso. O modulo de origem NAO e alterado: dele
  *   se reusa `avaliarFreteParaCobranca` apenas para saber se ha o que comparar
  *   (existe cotacao, existe ancora de peso, existe frete a defender).
+ *
+ * POR QUE 200 g OU 5%, O QUE FOR MAIOR (21/08/2026)
+ *   A margem nasceu como 5% puro e era restritiva demais no volume pequeno: 5%
+ *   de 200 g sao 10 g, ou seja, uma etiqueta a mais, um plastico bolha a mais e
+ *   a fita — coisas que nao mudam faixa de frete em transportadora nenhuma —
+ *   ja mandavam o expedidor pedir liberacao de admin para recotar. O piso de
+ *   200 g absorve a embalagem; o teto de 5% continua valendo onde o excesso
+ *   proporcional e que custa dinheiro (5% de 20 kg = 1 kg, e 1 kg pesa na
+ *   fatura). Sao os dois lados da MESMA pergunta, entao a tolerancia e o MAIOR
+ *   dos dois, nunca a soma nem o menor.
  *
  * QUAL E A "COTACAO VIGENTE"
  *   `cotacao_frete` e imutavel para a Expedicao (secao 2 do EXPEDICAO.md): os
@@ -64,10 +75,14 @@ export type DivergenciaFreteDespacho = {
   temAviso: boolean;
   /** Frases do que divergiu, para a tela e para a mensagem de recusa. */
   motivos: string[];
-  /** Peso aferido excede o cotado em mais de 5%. */
+  /** Peso aferido excede o cotado alem da tolerancia (200 g ou 5%, o maior). */
   pesoExcedeuMargem: boolean;
   /** Quanto o aferido esta acima do cotado, em pontos percentuais. */
   percentualAcimaDoCotado: number | null;
+  /** Quanto o aferido esta acima do cotado, em gramas. Negativo = mais leve. */
+  excessoGramas: number | null;
+  /** A tolerancia que valeu para este peso cotado, em gramas. Para a tela. */
+  toleranciaGramas: number | null;
   /** Veredito de `avaliarFreteParaCobranca` — usado so como porteiro. */
   peso: SituacaoFreteCobranca;
   cepMudou: boolean;
@@ -79,8 +94,20 @@ export type DivergenciaFreteDespacho = {
   transporteReferencia: TipoFreteNormalizado | null;
 };
 
-/** Margem tolerada para MAIS no peso. Acima disso, recotar. */
+/** Margem proporcional tolerada para MAIS no peso. */
 export const MARGEM_PESO_PARA_MAIS = 0.05;
+
+/** Piso absoluto da tolerancia, em gramas — a embalagem do volume pequeno. */
+export const MARGEM_PESO_MINIMA_GRAMAS = 200;
+
+/**
+ * A tolerancia que vale para um dado peso cotado, em gramas: o MAIOR entre os
+ * 200 g e os 5%. Cruzam-se em 4 kg — abaixo disso manda o piso, acima manda o
+ * percentual.
+ */
+export function toleranciaPesoGramas(pesoCotadoGramas: number): number {
+  return Math.max(MARGEM_PESO_MINIMA_GRAMAS, pesoCotadoGramas * MARGEM_PESO_PARA_MAIS);
+}
 
 /** Os unicos tipos que o despacho oferece — e portanto os unicos comparaveis. */
 const TIPOS_COMPARAVEIS: TipoFreteNormalizado[] = ["CORREIOS", "MOTOBOY", "TRANSPORTADORA"];
@@ -154,13 +181,16 @@ export function divergenciaFreteDoDespacho(entrada: {
     peso.pesoCotadoGramas > 0 &&
     peso.pesoAtualGramas > 0;
 
+  const excessoGramas = haComparacaoDePeso ? peso.pesoAtualGramas - peso.pesoCotadoGramas! : null;
   const percentualAcimaDoCotado = haComparacaoDePeso
     ? (peso.pesoAtualGramas - peso.pesoCotadoGramas!) / peso.pesoCotadoGramas!
     : null;
+  const toleranciaGramas = haComparacaoDePeso ? toleranciaPesoGramas(peso.pesoCotadoGramas!) : null;
 
-  // "margem SUPERIOR a 5%": exatamente 5% ainda passa.
+  // "SUPERIOR a": a tolerancia cravada ainda passa. Peso menor da excesso
+  // negativo e nunca ultrapassa — continua nao bloqueando.
   const pesoExcedeuMargem =
-    percentualAcimaDoCotado !== null && percentualAcimaDoCotado > MARGEM_PESO_PARA_MAIS;
+    excessoGramas !== null && toleranciaGramas !== null && excessoGramas > toleranciaGramas;
 
   const cepCotado = soDigitos(entrada.cotacao.cep);
   const cepDespacho = soDigitos(entrada.cepDestino);
@@ -185,6 +215,8 @@ export function divergenciaFreteDoDespacho(entrada: {
     motivos,
     pesoExcedeuMargem,
     percentualAcimaDoCotado,
+    excessoGramas,
+    toleranciaGramas,
     peso,
     cepMudou,
     cepCotado,

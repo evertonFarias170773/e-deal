@@ -32,12 +32,14 @@ import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { listarPainelExpedicao } from "./services/expedicao.service";
+import { encerrarTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import { marcarPronto, marcarEntregue } from "./services/expedicao-acoes.service";
 import { liberarRecotacao, revogarRecotacao } from "./services/recotacao.client";
 import { abrirDeclaracaoConteudo, abrirEtiqueta } from "./services/etiqueta.client";
 import { abrirEtiquetaCorreios } from "./services/correios.client";
 import { ConfirmarAcaoModal } from "./components/ConfirmarAcaoModal";
 import { labelTipoFrete, TIPOS_FRETE } from "./lib/tipo-frete";
+import { rotuloClienteComNumero } from "./lib/cliente-rotulo";
 import { DespacharModal } from "./components/DespacharModal";
 import { RetiradaModal } from "./components/RetiradaModal";
 import { VoltarStatusModal } from "./components/VoltarStatusModal";
@@ -174,6 +176,37 @@ export function ExpedicaoPage() {
     void recarregar();
   }
 
+  async function handleEncerrarTeste(p: PedidoExpedicao) {
+    if (encerrandoTesteId !== null) return;
+    const ok = window.confirm(
+      `Encerrar o pedido #${p.idInt} como TESTE?\n\n` +
+        `Ele sai deste painel, do painel de Produção, do Kanban e da fila de impressão.\n` +
+        `Continua acessível por busca e por URL, e segue contando no faturamento.\n\n` +
+        `Para reabrir, use o menu Ações em Orçamentos.`
+    );
+    if (!ok) return;
+    setEncerrandoTesteId(p.idInt);
+    try {
+      const res = await encerrarTeste(p.idInt);
+      if (res.success) {
+        showToast({
+          type: "success",
+          title: res.idempotente ? "Pedido já estava encerrado" : "Teste encerrado",
+          description: `#${p.idInt} saiu das listas operacionais. Reabra em Orçamentos, se precisar.`
+        });
+        void recarregar();
+      } else {
+        showToast({
+          type: "error",
+          title: "Erro ao encerrar",
+          description: res.errorMessage || "Não foi possível encerrar o teste."
+        });
+      }
+    } finally {
+      setEncerrandoTesteId(null);
+    }
+  }
+
   /** Itens do menu "⋯" contextual — compartilhado entre a coluna "Ações" e o card mobile. */
   function itensMenu(p: PedidoExpedicao) {
     return [
@@ -244,6 +277,16 @@ export function ExpedicaoPage() {
       // Sem retorno definido a partir de PRODUCAO/ACABAMENTO no service (voltarStatus) — affordance morta.
       ...(canOperar && p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO"
         ? [{ label: "Voltar status", destructive: true, onClick: () => setPedidoVoltar(p) }]
+        : []),
+      // Encerrar pedido de teste: sai deste painel na hora. Só "Encerrar" aqui —
+      // "Reabrir" mora em Orcamentos, onde o pedido marcado continua visivel com
+      // badge; nesta lista ele ja nao existe mais.
+      ...(canEncerrarTeste
+        ? [{
+            label: encerrandoTesteId === p.idInt ? "Encerrando teste..." : "Encerrar teste",
+            destructive: true,
+            onClick: () => void handleEncerrarTeste(p)
+          }]
         : [])
     ];
   }
@@ -258,6 +301,16 @@ export function ExpedicaoPage() {
    * existe para poder delegar a liberacao sem dar admin geral do ERP.
    */
   const canAdminExpedicao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.admin");
+
+  /**
+   * Encerrar pedido de teste. Chave `propostas.release_producao`, a MESMA de
+   * "Retirar da Producao" — mesma natureza, tirar pedido das listas
+   * operacionais. Nao e `expedicao.admin`: a marcacao vale para todos os
+   * paineis, nao so para este. Esconder o item nao protege nada (a RLS de
+   * propostas e aberta); quem tranca e POST /api/pedidos/encerrar-teste.
+   */
+  const canEncerrarTeste = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao");
+  const [encerrandoTesteId, setEncerrandoTesteId] = useState<number | null>(null);
 
   // Filtros na URL — padrão docs/technical/PADRAO-FILTROS-URL-NAVEGACAO.md
   const filtrosSchema = useMemo(
@@ -623,8 +676,11 @@ export function ExpedicaoPage() {
             header: "Cliente",
             cell: (p) => (
               <div className="flex max-w-[190px] flex-col">
-                <span className="truncate font-medium text-slate-900 dark:text-slate-100" title={p.cliente}>
-                  {p.cliente}
+                <span
+                  className="truncate font-medium text-slate-900 dark:text-slate-100"
+                  title={rotuloClienteComNumero(p.idCliente, p.cliente)}
+                >
+                  {rotuloClienteComNumero(p.idCliente, p.cliente)}
                 </span>
                 {p.cidadeUf && <span className="text-[11px] text-slate-500">{p.cidadeUf}</span>}
               </div>
@@ -762,7 +818,9 @@ export function ExpedicaoPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     #{p.idInt} · {p.empresa}
                   </p>
-                  <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-100">{p.cliente}</h3>
+                  <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-100">
+                    {rotuloClienteComNumero(p.idCliente, p.cliente)}
+                  </h3>
                   {p.cidadeUf && <p className="text-xs text-slate-500">{p.cidadeUf}</p>}
                 </div>
                 <StatusBadge status={p.statusInterno} />
