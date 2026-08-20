@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { FormSection } from "@/features/orcamentos/OrcamentoFormPage";
 import { listarDesigners } from "@/features/pedidos/services/boletim-propostas.service";
+import { contarTrabalhoPorDesigner, type TrabalhoDoDesigner } from "@/features/pedidos/services/pedidos-artes.service";
 
 interface Designer {
   user_id: string;
@@ -22,13 +23,25 @@ export function ArtesDesignersListCard({
   setSelectedDesignerNome 
 }: ArtesDesignersListCardProps) {
   const [designers, setDesigners] = useState<Designer[]>([]);
+  // Contagem real de trabalho por designer. Antes de 20/08/2026 os dois numeros
+  // do card eram "0" fixo no JSX — nao existia consulta.
+  const [trabalho, setTrabalho] = useState<Record<string, TrabalhoDoDesigner>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchDesigners() {
       try {
-        const data = await listarDesigners();
+        // A contagem nao pode derrubar a lista: se ela falhar, o card ainda
+        // serve para escolher o designer, so sem os numeros.
+        const [data, contagem] = await Promise.all([
+          listarDesigners(),
+          contarTrabalhoPorDesigner().catch((err) => {
+            console.error("Erro ao contar trabalho por designer:", err);
+            return {} as Record<string, TrabalhoDoDesigner>;
+          })
+        ]);
         setDesigners(data);
+        setTrabalho(contagem);
       } catch (err) {
         console.error("Erro ao buscar designers:", err);
       } finally {
@@ -52,6 +65,7 @@ export function ArtesDesignersListCard({
           <div className="flex flex-col gap-4">
             {designers.map((designer) => {
               const isSelected = selectedDesignerId === designer.user_id;
+              const doDesigner = trabalho[designer.user_id];
               return (
                 <div 
                   key={designer.user_id}
@@ -87,11 +101,11 @@ export function ArtesDesignersListCard({
                   <div className="mt-4 flex flex-col sm:mt-0 sm:flex-row sm:items-center sm:gap-6 text-xs text-slate-600">
                     <div className="flex justify-between sm:justify-start items-center gap-2">
                       <span className="font-medium">Pedidos:</span>
-                      <span className="font-bold text-slate-800">0</span>
+                      <span className="font-bold text-slate-800">{doDesigner?.pedidos ?? 0}</span>
                     </div>
                     <div className="flex justify-between sm:justify-start items-center gap-2 mt-1 sm:mt-0">
                       <span className="font-medium">Modelos:</span>
-                      <span className="font-bold text-slate-800">0</span>
+                      <span className="font-bold text-slate-800">{doDesigner?.modelos ?? 0}</span>
                     </div>
                   </div>
                 </div>

@@ -297,3 +297,72 @@ export async function excluirArquivo(idInt: number, arquivoId: string): Promise<
 
   return { success: true };
 }
+
+/** Quantos pedidos e quantos modelos cada designer acumula, por `designer_uid`. */
+export interface TrabalhoDoDesigner {
+  pedidos: number;
+  modelos: number;
+}
+
+/**
+ * Contagem de trabalho por designer, para o card "Designers Ideal" da aba Artes.
+ *
+ * Antes de 20/08/2026 o card mostrava "Pedidos: 0" e "Modelos: 0" fixos no JSX —
+ * nao havia consulta nenhuma por tras. Os dados sempre existiram:
+ * `pedidos_artes.designer_uid` e quem responde pelo briefing da proposta.
+ *
+ * Pedidos = propostas distintas com briefing daquele designer.
+ * Modelos = linhas de `pedidos_modelos` dessas propostas.
+ *
+ * Somente leitura. Uma consulta por tabela, agregadas em memoria: o volume e
+ * pequeno (41 briefings em 20/08/2026) e assim nao depende de RPC nova.
+ */
+export async function contarTrabalhoPorDesigner(): Promise<Record<string, TrabalhoDoDesigner>> {
+  const client = getSupabaseClient();
+  if (!client) return {};
+
+  const { data: artes, error: artesError } = await client
+    .from("pedidos_artes")
+    .select("id_int, designer_uid")
+    .not("designer_uid", "is", null);
+
+  if (artesError || !artes) {
+    console.warn("[PedidosArtesService] Erro ao contar pedidos por designer:", artesError);
+    return {};
+  }
+
+  // Propostas distintas por designer — o mesmo pedido pode ter mais de uma
+  // linha de arte, e contar linha em vez de pedido inflaria o numero.
+  const pedidosPorDesigner = new Map<string, Set<number>>();
+  for (const linha of artes) {
+    const uid = String(linha.designer_uid);
+    const idInt = Number(linha.id_int);
+    if (!uid || !Number.isFinite(idInt)) continue;
+    if (!pedidosPorDesigner.has(uid)) pedidosPorDesigner.set(uid, new Set());
+    pedidosPorDesigner.get(uid)!.add(idInt);
+  }
+
+  const todosIdInt = Array.from(new Set(artes.map((a) => Number(a.id_int)).filter(Number.isFinite)));
+  const modelosPorIdInt = new Map<number, number>();
+  if (todosIdInt.length > 0) {
+    const { data: modelos, error: modelosError } = await client
+      .from("pedidos_modelos")
+      .select("id_int")
+      .in("id_int", todosIdInt);
+    if (modelosError) {
+      console.warn("[PedidosArtesService] Erro ao contar modelos por designer:", modelosError);
+    }
+    for (const m of modelos ?? []) {
+      const idInt = Number(m.id_int);
+      modelosPorIdInt.set(idInt, (modelosPorIdInt.get(idInt) ?? 0) + 1);
+    }
+  }
+
+  const resultado: Record<string, TrabalhoDoDesigner> = {};
+  for (const [uid, idsDoDesigner] of pedidosPorDesigner) {
+    let modelos = 0;
+    for (const idInt of idsDoDesigner) modelos += modelosPorIdInt.get(idInt) ?? 0;
+    resultado[uid] = { pedidos: idsDoDesigner.size, modelos };
+  }
+  return resultado;
+}

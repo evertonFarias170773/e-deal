@@ -189,6 +189,21 @@ function canStartProduction(proposal: Proposta): boolean {
   return proposal.cobrancaStatus === "PAGA";
 }
 
+/**
+ * Rótulo do tipo de numeração para leitura. Na edição do boletim o campo é só
+ * exibido — quem escolhe é o orçamento —, e sem o `<select>` não há mais a
+ * lista de `<option>` para traduzir o código gravado.
+ *
+ * Valor desconhecido volta cru de propósito: some ler "ALEATORIO" (legado) do
+ * que esconder atrás de um rótulo inventado o que está no banco.
+ */
+function rotuloTipoNumeracao(tipo: string): string {
+  if (tipo === "SEM_NUMERACAO") return "Sem Numeração";
+  if (tipo === "SEQUENCIAL") return "Sequencial";
+  if (tipo === "CUSTOMIZADA") return "Customizada (CSV)";
+  return tipo || "Sem Numeração";
+}
+
 function generateUniqueId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 }
@@ -2490,17 +2505,24 @@ export function BoletimFormPage() {
 
                               <div className="space-y-1.5">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Tipo de Numeração</label>
-                                <div className="relative w-full">
-                                  <select
-                                    value={m.configImpressao.tipoNumeracao}
-                                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
-                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none transition bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                  >
-                                    <option value="SEM_NUMERACAO">Sem Numeração</option>
-                                    <option value="SEQUENCIAL">Sequencial</option>
-                                    <option value="CUSTOMIZADA">Customizada (CSV)</option>
-                                  </select>
-                                </div>
+                                {/* Definido no orçamento: na edição do boletim só se lê. */}
+                                {isEditing ? (
+                                  <div className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 opacity-80 select-none cursor-not-allowed">
+                                    {rotuloTipoNumeracao(m.configImpressao.tipoNumeracao)}
+                                  </div>
+                                ) : (
+                                  <div className="relative w-full">
+                                    <select
+                                      value={m.configImpressao.tipoNumeracao}
+                                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateModelConfigField(p.id, m.id, "tipoNumeracao", e.target.value)}
+                                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold outline-none transition bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                    >
+                                      <option value="SEM_NUMERACAO">Sem Numeração</option>
+                                      <option value="SEQUENCIAL">Sequencial</option>
+                                      <option value="CUSTOMIZADA">Customizada (CSV)</option>
+                                    </select>
+                                  </div>
+                                )}
                               </div>
                             </div>
                             )}
@@ -2508,7 +2530,11 @@ export function BoletimFormPage() {
                             {/* Linha 3: Gabarito e Faixas / CSV */}
                             {!p.isEstoque && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                              {/* Gabarito Combobox */}
+                              {/* Gabarito Operacional: escolha do orçamento (pedidos_modelos.gabarito_operacional,
+                                  campo "Numerador" da aba Modelos). Na edição do boletim o card não o oferece —
+                                  a OS já saiu com ele definido e trocar aqui faria a produção divergir do vendido.
+                                  Na ABERTURA continua editável: é onde o lote nasce. */}
+                              {!isEditing && (
                               <div className="space-y-1.5 relative">
                                 <label className="text-xs font-semibold text-slate-500 uppercase block">Gabarito Operacional</label>
                                 <div className="flex items-center gap-1">
@@ -2622,6 +2648,7 @@ export function BoletimFormPage() {
                                   )}
                                 </div>
                               </div>
+                              )}
 
                               {/* Faixas de Numeração ou CSV */}
                               <div className="space-y-1.5">
@@ -2629,28 +2656,41 @@ export function BoletimFormPage() {
                                   <div>
                                     <label className="text-xs font-semibold text-slate-500 uppercase block mb-1">Faixa Numérica (Início / Fim)</label>
                                     <div className="flex gap-2 w-full">
-                                      <div className="relative w-1/2">
-                                        <input
-                                          type="number"
-                                          placeholder="Início"
-                                          required
-                                          value={m.numeracaoInicial || ""}
-                                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
-                                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-right font-mono text-xs font-semibold outline-none transition bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
-                                        />
-                                      </div>
-                                      <div className="relative w-1/2">
-                                        <div className="absolute inset-0 flex items-center justify-end px-3 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
-                                          <span className="text-sm font-bold font-mono text-slate-800 truncate">{m.numeracaoFinal || ""}</span>
+                                      {/* Início é do orçamento: na edição só se lê, como o Fim sempre foi. */}
+                                      {isEditing ? (
+                                        <div className="w-1/2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-right font-mono text-xs font-semibold text-slate-800 opacity-80 select-none cursor-not-allowed">
+                                          {m.numeracaoInicial || ""}
                                         </div>
-                                        <input
-                                          type="number"
-                                          placeholder="Fim"
-                                          readOnly
-                                          value={m.numeracaoFinal || ""}
-                                          className="w-full h-full opacity-0 cursor-not-allowed"
-                                        />
-                                      </div>
+                                      ) : (
+                                        <div className="relative w-1/2">
+                                          <input
+                                            type="number"
+                                            placeholder="Início"
+                                            required
+                                            value={m.numeracaoInicial || ""}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateModelField(p.id, m.id, "numeracaoInicial", Number(e.target.value) || 0)}
+                                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-right font-mono text-xs font-semibold outline-none transition bg-white text-slate-700 focus:border-[#0f9f9a] focus:ring-4 focus:ring-[#dff8f6]"
+                                          />
+                                        </div>
+                                      )}
+                                      {isEditing ? (
+                                        <div className="w-1/2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-right font-mono text-xs font-semibold text-slate-800 opacity-80 select-none cursor-not-allowed">
+                                          {m.numeracaoFinal || ""}
+                                        </div>
+                                      ) : (
+                                        <div className="relative w-1/2">
+                                          <div className="absolute inset-0 flex items-center justify-end px-3 rounded-xl border border-slate-200 bg-slate-100 cursor-not-allowed pointer-events-none z-10">
+                                            <span className="text-sm font-bold font-mono text-slate-800 truncate">{m.numeracaoFinal || ""}</span>
+                                          </div>
+                                          <input
+                                            type="number"
+                                            placeholder="Fim"
+                                            readOnly
+                                            value={m.numeracaoFinal || ""}
+                                            className="w-full h-full opacity-0 cursor-not-allowed"
+                                          />
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 ) : m.configImpressao.tipoNumeracao === "CUSTOMIZADA" ? (

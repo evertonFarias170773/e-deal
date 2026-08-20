@@ -214,6 +214,45 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     };
   }, []);
 
+  /**
+   * Cadastro NOVO aberto por um vendedor ja nasce com ele proprio no campo
+   * Atendente (item 2, 20/08/2026).
+   *
+   * E preenchimento, nao trava: o campo continua editavel e o usuario pode
+   * trocar de atendente normalmente. So age quando o campo esta VAZIO — nunca
+   * sobrescreve escolha do usuario, nem o valor que veio da importacao do
+   * sistema antigo (`handleApplyImport`), que roda depois e tem precedencia.
+   *
+   * Espera `vendedorOptions` carregar porque o valor gravado e o NOME da opcao:
+   * escrever um nome fora da lista deixaria o select sem correspondencia e o
+   * `id_vendedor` nulo no salvamento.
+   */
+  useEffect(() => {
+    if (mode !== "new") return;
+    if (isLoadingVendedores || vendedorOptions.length === 0) return;
+    if (!user?.isSeller) return;
+    if (form.atendente.trim() !== "") return;
+
+    // Casar por UID e o caminho confiavel: `idVendedor` cai em `user_id` quando
+    // `id_vendedor` e nulo. O nome e a rede de seguranca, porque o rotulo da
+    // opcao pode vir de `meu_vendedor`, que nem sempre e igual a `nome_usuario`.
+    const porUid = vendedorOptions.find(
+      (opcao) => opcao.idVendedor != null && String(opcao.idVendedor) === String(user.id)
+    );
+    const nomeUsuario = (user.name || "").trim().toLowerCase();
+    const porNome = nomeUsuario
+      ? vendedorOptions.find((opcao) => opcao.nome.trim().toLowerCase() === nomeUsuario)
+      : undefined;
+    const escolhida = porUid ?? porNome;
+    if (!escolhida) return;
+
+    setForm((atual) =>
+      atual.atendente.trim() === ""
+        ? { ...atual, atendente: escolhida.nome, idVendedor: String(escolhida.idVendedor ?? "") }
+        : atual
+    );
+  }, [mode, isLoadingVendedores, vendedorOptions, user, form.atendente]);
+
   function updateField<K extends keyof CadastroFormState>(field: K, value: CadastroFormState[K]) {
     if (isDocumentoLocked && (field === "documento" || field === "tipoCliente")) {
       return;
