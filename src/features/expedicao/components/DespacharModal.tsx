@@ -11,6 +11,8 @@ import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.s
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
+import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
+import { divergenciaFreteDoDespacho, formatarCep } from "../lib/divergencia-frete-despacho";
 import { recotarFrete, aplicarRecotacao } from "../services/recotacao.client";
 import type { RecotacaoResult, OpcaoRecotacao, AplicacaoRecotacao } from "../services/recotacao.client";
 import { LABEL_MODALIDADE, MODALIDADES_OFERECIDAS, TRANSPORTES_POR_MODALIDADE } from "../types";
@@ -245,6 +247,56 @@ export function DespacharModal({
   const tipoEntrega: "TRANSPORTE" | "RETIRADA" = modalidade === "RETIRA" ? "RETIRADA" : "TRANSPORTE";
 
   /**
+   * O que ainda falta para despachar. O botao passa a olhar isto, e nao so o
+   * `salvando` — ate 20/08/2026 dava para confirmar sem definir nada, porque a
+   * unica guarda de campo obrigatorio era a modalidade, e ela parou de barrar
+   * quando CIF virou o padrao das propostas novas.
+   *
+   * Em modo edicao a lista e sempre vazia de proposito: o pedido ja saiu, e
+   * exigir campo agora impediria corrigir o que existe.
+   */
+  const faltantes = useMemo(
+    () =>
+      camposMinimosDespacho(
+        {
+          tipoEntrega,
+          modalidadeFrete: modalidade,
+          transportadoraNome,
+          idTransportadoraCliente,
+          qtdVolumes: parseQtdVolumes(qtdVolumes),
+          idEnderecoEntrega
+        },
+        modoEdicao ? "EDICAO" : "DESPACHO"
+      ),
+    [tipoEntrega, modalidade, transportadoraNome, idTransportadoraCliente, qtdVolumes, idEnderecoEntrega, modoEdicao]
+  );
+
+  /**
+   * O envio que esta na tela ainda corresponde ao frete que a proposta cobra?
+   * Recalculado a cada mudanca de peso ou de endereco. INFORMA, nao bloqueia —
+   * mesma regra da falta de NF-e.
+   */
+  const cepDoEnderecoEscolhido = useMemo(
+    () => enderecos.find((e) => e.id === idEnderecoEntrega)?.cep ?? pedido.freteCep ?? null,
+    [enderecos, idEnderecoEntrega, pedido.freteCep]
+  );
+
+  const divergencia = useMemo(() => {
+    const pesoNum = parsePesoKg(pesoKg);
+    return divergenciaFreteDoDespacho({
+      cotacao: {
+        pesoGramas: pedido.pesoCotadoGramas,
+        cep: pedido.freteCep,
+        valor: pedido.freteValor,
+        servico: pedido.freteServico,
+        existe: pedido.freteValor !== null
+      },
+      pesoAferidoGramas: pesoNum !== null ? Math.round(pesoNum * 1000) : null,
+      cepDestino: cepDoEnderecoEscolhido
+    });
+  }, [pesoKg, cepDoEnderecoEscolhido, pedido.pesoCotadoGramas, pedido.freteCep, pedido.freteValor, pedido.freteServico]);
+
+  /**
    * Pedido cujo envio JÁ existe nos Correios. Marcar FOB nele significaria
    * rebaixar o transporte para TRANSPORTADORA e perder a informação de que a
    * encomenda foi postada pelos Correios — por isso a troca nunca acontece
@@ -340,6 +392,14 @@ export function DespacharModal({
     }
     if (precisaAvisoNf && !confirmaSemNf) {
       showToast({ type: "warning", title: "Confirme o despacho sem NF", description: "Marque a caixa de confirmação para despachar sem nota autorizada." });
+      return;
+    }
+    if (faltantes.length > 0) {
+      showToast({
+        type: "warning",
+        title: "Faltam dados para despachar",
+        description: `Informe ${frasearFaltantes(faltantes)}.`
+      });
       return;
     }
     const pesoNum = parsePesoKg(pesoKg);
@@ -840,11 +900,36 @@ export function DespacharModal({
           )}
         </div>
 
+        {divergencia.temAviso && !modoEdicao && (
+          <div className="mx-5 mb-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-semibold">⚠ O frete cobrado pode não refletir este envio</p>
+            {divergencia.peso.bloqueia && divergencia.resumoPeso && (
+              <p className="mt-1">Peso: {divergencia.resumoPeso}.</p>
+            )}
+            {divergencia.cepMudou && (
+              <p className="mt-1">
+                Destino: cotado para o CEP {formatarCep(divergencia.cepCotado)}, despacho para{" "}
+                {formatarCep(divergencia.cepDespacho)}.
+              </p>
+            )}
+            <p className="mt-1">
+              O valor na proposta continua <strong>{formatCurrency(pedido.freteValor ?? 0)}</strong>
+              {pedido.freteServico ? ` (${pedido.freteServico})` : ""} — despachar não o altera. Recotar depende de
+              liberação de um administrador.
+            </p>
+          </div>
+        )}
+
         <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900/60">
           <button type="button" onClick={onClose} disabled={salvando} className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
             Cancelar
           </button>
-          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:opacity-50">
+          {faltantes.length > 0 && (
+            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              Falta informar {frasearFaltantes(faltantes)}
+            </span>
+          )}
+          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltantes.length > 0} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
             {salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
           </button>
         </div>

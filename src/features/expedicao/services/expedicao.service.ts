@@ -304,6 +304,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       freteValor: frete?.valor !== null && frete?.valor !== undefined ? Number(frete.valor) : null,
       pesoKg,
       pesoOrigem,
+      pesoCotadoGramas: frete?.peso !== null && frete?.peso !== undefined ? Number(frete.peso) : null,
       volumes: exp?.qtdVolumes ?? (p.volume !== null ? Number(p.volume) : null),
       nfStatus: nf?.status ?? "SEM_NF",
       nfNumero: nf?.numero ?? null,

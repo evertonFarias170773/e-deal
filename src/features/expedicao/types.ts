@@ -121,6 +121,12 @@ export interface PedidoExpedicao {
   freteValor: number | null;
   pesoKg: number | null;
   pesoOrigem: PesoOrigemInterna | null;
+  /**
+   * `cotacao_frete.peso` da linha escolhida, em gramas — o peso que ORIGINOU o
+   * frete cobrado. Exposto para o despacho poder confrontar com o peso aferido
+   * (lib/divergencia-frete-despacho.ts); a precedencia de `pesoKg` nao muda.
+   */
+  pesoCotadoGramas: number | null;
   volumes: number | null;
   /**
    * Liberacao ATIVA da recotacao de frete (Parte C). Null = bloqueado: o

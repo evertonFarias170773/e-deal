@@ -19,6 +19,8 @@ export type DespachoInput = {
   obs: string;
 };
 
+import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
+
 const MSG_CONFLITO =
   "O pedido mudou de status em outra tela. A lista será recarregada.";
 
@@ -109,13 +111,33 @@ export async function despachar(
   const client = getSupabaseClient();
   if (!client) return { success: false, error: "Supabase não inicializado." };
 
-  // Ganha a transição PRIMEIRO: uma aba obsoleta não pode sobrescrever os
-  // dados de um despacho já feito por outra aba. Só grava em expedicoes
-  // depois de confirmar que esta chamada é quem legitimamente despachou.
-  const destino = input.tipoEntrega === "RETIRADA" ? "A RETIRAR" : "EM TRANSITO";
-  const t = await transicionar(idInt, "EXPEDICAO", destino, ator, null, "NATURAL");
-  if (!t.success) return t;
+  // Campos mínimos. Não existe rota de API no caminho do despacho — é PostgREST
+  // direto do browser, e a RLS de `propostas` é permissiva — então esta
+  // checagem é a validação de verdade, não um espelho da tela.
+  const faltantes = camposMinimosDespacho(input, "DESPACHO");
+  if (faltantes.length > 0) {
+    return { success: false, error: `Antes de despachar, informe ${frasearFaltantes(faltantes)}.` };
+  }
 
+  const destino = input.tipoEntrega === "RETIRADA" ? "A RETIRAR" : "EM TRANSITO";
+
+  // Leitura de cortesia: pega a aba obsoleta ANTES de escrever, no caso comum.
+  // Não é garantia — quem garante a transição é o `.eq(status_interno, ...)` do
+  // `transicionar`, preservado abaixo.
+  const { data: atual } = await client
+    .from("propostas")
+    .select("status_interno")
+    .eq("id_int", idInt)
+    .maybeSingle();
+  if (atual && String(atual.status_interno ?? "").trim() !== "EXPEDICAO") {
+    return { success: false, error: MSG_CONFLITO };
+  }
+
+  // GRAVA PRIMEIRO, TRANSICIONA DEPOIS (invertido em 20/08/2026).
+  // Na ordem anterior o status ia primeiro, e uma falha na gravação deixava o
+  // pedido FORA do funil logístico com os dados pela metade — o próprio código
+  // admitia isso na mensagem de erro. Invertido, uma falha de escrita deixa o
+  // pedido exatamente onde estava, e o expedidor tenta de novo.
   const up = await upsertExpedicao(idInt, {
     modalidade_frete: input.modalidadeFrete,
     tipo_frete: input.tipoFrete,
@@ -131,9 +153,16 @@ export async function despachar(
     despachado_por: ator.nome
   });
   if (!up.success) {
+    return { success: false, error: `Não foi possível gravar os dados do despacho (${up.error}). O pedido segue em EXPEDICAO.` };
+  }
+
+  const t = await transicionar(idInt, "EXPEDICAO", destino, ator, null, "NATURAL");
+  if (!t.success) {
+    // Dados gravados, status não. É o lado seguro da inversão: o pedido continua
+    // no funil e os dados estão lá para conferência.
     return {
       success: false,
-      error: `Status atualizado para ${destino}, mas os dados do despacho não foram gravados (${up.error}). Use 'Editar dados de expedição' para regravar.`
+      error: `${t.error} Os dados do despacho foram gravados e o pedido segue em EXPEDICAO.`
     };
   }
 
