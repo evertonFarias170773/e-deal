@@ -731,6 +731,49 @@ deixa `em_arte` desatualizado até o próximo evento de modelo.
 
 `public.pedidos_artes` continua recebendo linha só quando a aba Artes é usada.
 
+## 8.2 Status de arte escrito pelo projeto de Artes
+
+Vigente desde 20/08/2026 (migration `20260820_arte_guardas_promocao_e_lista_aprovados`).
+
+`public.pedidos_modelos.status_arte` é escrito pelo **outro projeto** — o painel
+de Artes e o link de aprovação do cliente. Os valores que ele grava são
+`PENDENTE`, `AGUARDANDO_CLIENTE`, `APROVADA_CLIENTE`, `APROVADA`,
+`REPROVADA_CLIENTE` e `EM_REVISAO_INTERNA`. Três consequências para quem lê este
+fluxo:
+
+**1. `APROVADA` e `APROVADA_CLIENTE` são equivalentes.** As duas funções que
+julgam arte aprovada usavam listas diferentes: `recalcular_status_arte_briefing`
+aceitava `APROVADO` mas não `APROVADA`, e `atualiza_flag_arte_proposta` o
+contrário. Uma proposta com `APROVADA` ficava com `em_arte = false` e
+`pedidos_artes.status = 'EM ARTE'` ao mesmo tempo — nunca promovida, nunca
+liberável, e ainda assim exibida como arte concluída. As duas listas agora são a
+mesma:
+
+```text
+APROVADO, APROVADA, APROVADA_CLIENTE, LIBERADA, IMPRESSA, NAO_NECESSARIA
+```
+
+`PENDENTE`, `AGUARDANDO_CLIENTE`, `REPROVADA_CLIENTE` e `EM_REVISAO_INTERNA`
+seguem fora — todos contam como pendente.
+
+**2. Reescrever o mesmo valor não dispara mais a cadeia.** `UPDATE OF status_arte`
+dispara quando a coluna está no `SET`, mesmo sem mudança de valor — o que fazia
+um write de linha inteira do outro projeto refazer a cadeia inteira a cada
+escrita. `sync_status_arte_to_briefing` e `atualiza_flag_arte_proposta` agora
+retornam cedo quando `status_arte` e `id_int` não mudaram. Só transição real de
+valor (ou INSERT/DELETE de modelo) move alguma coisa.
+
+**3. Pendência aberta — proposta 20927.** Ela tem um modelo único em `APROVADA`
+e ficou justamente no estado descrito no item 1. A correção
+das listas **não** a conserta sozinha: as funções só rodam quando disparadas, e
+não houve backfill. Ela está parada aguardando **um disparo real do lado do
+projeto de Artes** — qualquer mudança de valor de `status_arte` naquele modelo,
+inclusive uma normalização de `APROVADA` para `APROVADA_CLIENTE`. Quando isso
+acontecer ela se resolve inteira sozinha: arte vira `APROVADO`, o gatilho promove
+a proposta a `REVISAO ATENDENTE` e a liberação passa a ser possível pela tela.
+Do nosso lado não há caminho: nenhuma tela nossa altera `status_arte` de modelo
+existente.
+
 ---
 
 # 9. Entrada e Retirada da Produção
