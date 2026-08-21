@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { codecs } from "@/lib/url-state";
-import { AlertTriangle, Copy, ExternalLink, FileText, Play, Send, Loader2, CheckCircle2, X } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, FileText, Play, Loader2, CheckCircle2, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -20,13 +20,12 @@ import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supaba
 import { useRouter } from "next/navigation";
 import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
-import { getSefazRejectionInfo } from "@/features/fiscal/constants/sefaz-rejeicoes";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
-import { FaturamentoPreviewPanel } from "./components/FaturamentoPreviewPanel";
+import { EmissaoNfeModal } from "./components/EmissaoNfeModal";
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 function parseFocusResponse(data: any): { success: boolean; message: string } {
@@ -127,7 +126,6 @@ const STATUS_NFSE = [
   "REJEITADA",
   "CANCELADA"
 ] as const;
-type TrackingStep = "IDLE" | "SENDING" | "SENT_WAITING" | "QUERYING" | "AUTHORIZED" | "STILL_PROCESSING" | "ERROR";
 
 export function NotasFiscaisPage() {
   const router = useRouter();
@@ -144,6 +142,9 @@ export function NotasFiscaisPage() {
       "nfe-q": { codec: codecs.texto(), default: "" },
       "nfe-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
       "nfe-status": { codec: codecs.enumOf(STATUS_NFE), default: "" as const },
+      // Fila: por padrão esconde a proposta que já tem nota viva. Este filtro
+      // traz as escondidas de volta — faturamento parcial precisa do caminho.
+      "fila-faturadas": { codec: codecs.booleano(), default: false },
       "nfse-q": { codec: codecs.texto(), default: "" },
       "nfse-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
       "nfse-status": { codec: codecs.enumOf(STATUS_NFSE), default: "" as const }
@@ -155,25 +156,12 @@ export function NotasFiscaisPage() {
   const activeTab: ActiveTab = filters.aba;
   const [isFaturando, setIsFaturando] = useState(false);
   const [focusConfirmNote, setFocusConfirmNote] = useState<NfeReadModel | null>(null);
-  const [isSendingToFocus, setIsSendingToFocus] = useState(false);
-  const [trackingStep, setTrackingStep] = useState<TrackingStep>("IDLE");
-  const [trackingError, setTrackingError] = useState<string | undefined>(undefined);
-  const [sefazCode, setSefazCode] = useState<string>("");
-  const [sefazMessage, setSefazMessage] = useState<string>("");
-  const hasAutoOpenedDanfe = useRef(false);
-
-  const closeTrackingModal = () => {
-    setFocusConfirmNote(null);
-    setTrackingStep("IDLE");
-    setTrackingError(undefined);
-    setSefazCode("");
-    setSefazMessage("");
-    hasAutoOpenedDanfe.current = false;
-  };
+  // O passo em que o modal de emissao abre: IDLE pede confirmacao, QUERYING
+  // ja entra consultando. Todo o resto do acompanhamento mora no componente.
+  const [passoDoModal, setPassoDoModal] = useState<"IDLE" | "QUERYING">("IDLE");
 
   // State para fila faturável
   const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>([]);
-  const [selectedFaturavel, setSelectedFaturavel] = useState<FaturavelOrigem | null>(null);
   const [isFilaLoading, setIsFilaLoading] = useState(true);
 
   useEffect(() => {
@@ -205,6 +193,7 @@ export function NotasFiscaisPage() {
   const nfeEmpresa = filters["nfe-emp"];
   const nfseStatus = filters["nfse-status"];
   const nfseEmpresa = filters["nfse-emp"];
+  const mostrarFaturadas = filters["fila-faturadas"];
 
   const [nfeSearch, setNfeSearch] = useDebouncedInput(filters["nfe-q"], (valor) =>
     setFilter("nfe-q", valor)
@@ -227,11 +216,9 @@ export function NotasFiscaisPage() {
   const nfseData = useNfseReadOnlyData();
 
   // Históricos adicionados localmente via simulação (Fase 1 MVP)
-  const [simulatedNfes, setSimulatedNfes] = useState<NfeReadModel[]>([]);
-  const [simulatedNfses, setSimulatedNfses] = useState<NfseReadModel[]>([]);
-
-  const nfeListCombined = useMemo(() => [...simulatedNfes, ...nfeData.nfeList], [simulatedNfes, nfeData.nfeList]);
-  const nfseListCombined = useMemo(() => [...simulatedNfses, ...nfseData.nfseList], [simulatedNfses, nfseData.nfseList]);
+  // Sem lista simulada: o que a tela mostra vem do banco, e so.
+  const nfeListCombined = nfeData.nfeList;
+  const nfseListCombined = nfseData.nfseList;
 
   const [nfePaymentsCountMap, setNfePaymentsCountMap] = useState<Record<string, number>>({});
   const [boletosMap, setBoletosMap] = useState<Record<string, SupabaseBoletoRow[]>>({});
@@ -953,16 +940,17 @@ export function NotasFiscaisPage() {
           void handleDanfePreview(item.ref);
         }
       });
-      actions.push({
-        label: "Enviar para Focus",
-        onClick: () => {
-          setTrackingStep("IDLE");
-          setTrackingError(undefined);
-          setSefazCode("");
-          setSefazMessage("");
-          setFocusConfirmNote(item);
-        }
-      });
+      // Quem nao pode emitir nao ve o gatilho. O servidor ja recusava com 403;
+      // esconder evita o clique que so podia dar errado.
+      if (canEmitNfe) {
+        actions.push({
+          label: "Enviar para Focus",
+          onClick: () => {
+            setPassoDoModal("IDLE");
+            setFocusConfirmNote(item);
+          }
+        });
+      }
     }
 
     // 3. PROCESSANDO / PROCESSANDO_AUTORIZACAO
@@ -970,13 +958,8 @@ export function NotasFiscaisPage() {
       actions.push({
         label: "Consultar status",
         onClick: () => {
-          hasAutoOpenedDanfe.current = false;
+          setPassoDoModal("QUERYING");
           setFocusConfirmNote(item);
-          setTrackingStep("QUERYING");
-          setTrackingError(undefined);
-          setSefazCode("");
-          setSefazMessage("");
-          void runStatusQuery(item);
         }
       });
       actions.push({
@@ -1010,13 +993,8 @@ export function NotasFiscaisPage() {
       actions.push({
         label: "Atualizar status",
         onClick: () => {
-          hasAutoOpenedDanfe.current = false;
+          setPassoDoModal("QUERYING");
           setFocusConfirmNote(item);
-          setTrackingStep("QUERYING");
-          setTrackingError(undefined);
-          setSefazCode("");
-          setSefazMessage("");
-          void runStatusQuery(item);
         }
       });
     }
@@ -1089,10 +1067,6 @@ export function NotasFiscaisPage() {
           onClick: () => {
             router.push(`/contas-a-receber?search=${encodeURIComponent(item.ref)}`);
           }
-        });
-        actions.push({
-          label: "Registrar boletos no banco",
-          disabled: true
         });
       }
 
@@ -1233,174 +1207,6 @@ export function NotasFiscaisPage() {
     return actions;
   }
 
-  // Simular sucesso da emissão fiscal
-  function handleEmitSuccess(origemId: string, itemType: FaturavelOrigem["tipo"], simulatedNota: NfeReadModel | NfseReadModel) {
-    // 1. Remover item da fila
-    setFaturaveisList((prev) => prev.filter((i) => i.id !== origemId));
-
-    // 2. Adicionar ao histórico correspondente e mudar aba
-    if (itemType === "PEDIDO" || itemType === "AVULSO") {
-      setSimulatedNfes((prev) => [simulatedNota as NfeReadModel, ...prev]);
-    } else {
-      setSimulatedNfses((prev) => [simulatedNota as NfseReadModel, ...prev]);
-    }
-    setFilter("aba", "HISTORICO_FISCAL");
-
-    setSelectedFaturavel(null);
-  }
-
-  async function runStatusQuery(note: NfeReadModel) {
-    setTrackingStep("QUERYING");
-    setTrackingError(undefined);
-    try {
-      const response = await fetch("https://10074.hostoo.net.br/webhook/consultar-nfe-focus", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          ref: note.ref
-        })
-      });
-
-      // 1. Executa o refresh do nfeData e obtém o resultado atualizado do Supabase
-      const refreshedData = await nfeData.refresh();
-      // 2. Busca a nota atualizada pela referência
-      const updatedNote = refreshedData?.nfeList?.find(n => n.ref === note.ref) || note;
-
-      // 3. Normalização e comparação dos status da nota atualizada
-      const upStatus = String(updatedNote.status || "").toUpperCase();
-      const upStatusFocus = String(updatedNote.status_focus || "").toUpperCase();
-      const hasDanfe = Boolean(updatedNote.url_danfe);
-
-      if (upStatus === "AUTORIZADA" || upStatusFocus === "AUTORIZADO" || hasDanfe) {
-        setTrackingStep("AUTHORIZED");
-        setSefazCode(updatedNote.status_sefaz || "");
-        setSefazMessage("");
-        setTrackingError("");
-        setFocusConfirmNote(updatedNote); // Atualiza os dados da nota no modal (como urls)
-
-        // Abre automaticamente a DANFE apenas na primeira vez
-        if (updatedNote.url_danfe && !hasAutoOpenedDanfe.current) {
-          hasAutoOpenedDanfe.current = true;
-          try {
-            window.open(updatedNote.url_danfe, "_blank");
-          } catch (e) {
-            console.warn("[NotasFiscaisPage] Pop-up de DANFE bloqueado pelo navegador:", e);
-          }
-        }
-
-        showToast({
-          type: "success",
-          title: "NF-e autorizada com sucesso."
-        });
-      } else if (
-        ["ERRO_AUTORIZACAO", "REJEITADA", "ERRO_ENVIO", "DENEGADA", "CANCELADA"].includes(upStatus) ||
-        ["ERRO_AUTORIZACAO", "REJEITADA", "ERRO_ENVIO", "DENEGADA", "CANCELADA"].includes(upStatusFocus) ||
-        Boolean(updatedNote.mensagem_sefaz) ||
-        Boolean(updatedNote.erro_mensagem)
-      ) {
-        setTrackingStep("ERROR");
-        setSefazCode(updatedNote.status_sefaz || "");
-        setSefazMessage(updatedNote.mensagem_sefaz || updatedNote.erro_mensagem || "Rejeição fiscal Sefaz.");
-        setTrackingError("");
-        setFocusConfirmNote(updatedNote);
-      } else if (!response.ok) {
-        // Se a nota no banco não estiver autorizada/rejeitada, mas o webhook falhou, trata como erro técnico
-        let rawGeneralMessage = "";
-        try {
-          const data = await response.json();
-          rawGeneralMessage = String(data.erro || data.error || data.mensagem || data.message || "");
-        } catch {}
-        const httpError = rawGeneralMessage || `Erro na consulta (HTTP ${response.status}).`;
-        throw new Error(httpError);
-      } else {
-        // Se ainda estiver em processamento/pendente
-        setTrackingStep("STILL_PROCESSING");
-        setSefazCode(updatedNote.status_sefaz || "");
-        setSefazMessage("");
-        setTrackingError("");
-        setFocusConfirmNote(updatedNote);
-      }
-    } catch (err) {
-      console.error("[NotasFiscaisPage] Error querying status:", err);
-      const msg = err instanceof Error ? err.message : "Erro desconhecido ao consultar status.";
-      setTrackingStep("ERROR");
-      setTrackingError(msg);
-      setSefazCode("");
-      setSefazMessage("");
-      await nfeData.refresh();
-    }
-  }
-
-  async function handleSendToFocus() {
-    if (!focusConfirmNote) return;
-    if (focusConfirmNote.status !== "PRONTA_PARA_ENVIO") {
-      showToast({ type: "error", title: "Ação não permitida para o status atual da nota." });
-      return;
-    }
-    if (isSendingToFocus) return;
-    setIsSendingToFocus(true);
-    setTrackingStep("SENDING");
-    setTrackingError(undefined);
-    setSefazCode("");
-    setSefazMessage("");
-    hasAutoOpenedDanfe.current = false;
-
-    try {
-      // A emissão passa pelo servidor: é lá que a sessão, a permissão
-      // fiscal.emit_nfe e a trava de duplicidade são conferidas. A tela não
-      // alcança mais o webhook do n8n diretamente.
-      const sessionResult = await getSupabaseClient()?.auth.getSession();
-      const accessToken = sessionResult?.data?.session?.access_token ?? "";
-      if (!accessToken) {
-        throw new Error("Sessão expirada. Faça login novamente.");
-      }
-
-      const response = await fetch("/api/fiscal/emitir-nfe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          ref: focusConfirmNote.ref
-        })
-      });
-
-      if (!response.ok) {
-        let errorMsg = "Erro na comunicação com o servidor.";
-        try {
-          const errData = await response.json();
-          errorMsg = errData.erro || errData.error || errData.mensagem || errData.message || errorMsg;
-        } catch {
-          try {
-            const text = await response.text();
-            if (text) errorMsg = text;
-          } catch {}
-        }
-        throw new Error(errorMsg);
-      }
-
-      setTrackingStep("SENT_WAITING");
-      
-      // Esperar 2 segundos para permitir processamento inicial do n8n
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      await runStatusQuery(focusConfirmNote);
-    } catch (err) {
-      console.error("[NotasFiscaisPage] Error emitting NF-e:", err);
-      const msg = err instanceof Error ? err.message : "Erro desconhecido ao enviar nota.";
-      setTrackingStep("ERROR");
-      setTrackingError(msg);
-      setSefazCode("");
-      setSefazMessage("");
-      await nfeData.refresh();
-    } finally {
-      setIsSendingToFocus(false);
-    }
-  }
-
   async function handleDanfePreview(ref: string) {
     try {
       showToast({ type: "info", title: "Gerando preview da DANFE..." });
@@ -1522,11 +1328,8 @@ export function NotasFiscaisPage() {
       showToast({ type: "success", title: "Nota preparada para reenvio!" });
 
       // 5. Abrir modal de confirmação de envio
+      setPassoDoModal("IDLE");
       setFocusConfirmNote(updatedNote);
-      setTrackingStep("IDLE");
-      setTrackingError(undefined);
-      setSefazCode("");
-      setSefazMessage("");
     } catch (err) {
       console.error("[Reenviar NFe] Erro ao preparar reenvio:", err);
       showToast({
@@ -1537,10 +1340,17 @@ export function NotasFiscaisPage() {
     }
   }
 
-  // Handler para faturamento real (NF-e) ou simulação (NFS-e)
+  // Faturamento de pedido: cria/recupera o rascunho e leva o operador ate ele.
   async function handleFaturarClick(item: FaturavelOrigem) {
+    // OS e CONTRATO virariam NFS-e, que ainda nao tem caminho de emissao real.
+    // Antes isso abria um painel que simulava a nota com Math.random() e DANFE
+    // de exemplo. Sem caminho real, o operador ouve o motivo real.
     if (item.tipo === "OS" || item.tipo === "CONTRATO") {
-      setSelectedFaturavel(item);
+      showToast({
+        type: "warning",
+        title: "Emissão de NFS-e ainda não disponível.",
+        description: "O faturamento de Ordem de Serviço e Contrato depende da integração de NFS-e, que ainda não está ligada."
+      });
       return;
     }
 
@@ -1571,7 +1381,12 @@ export function NotasFiscaisPage() {
   }
 
   // Filtragem da Fila de Faturamento (Unificada: NF-e e NFS-e)
+  const filaJaFaturadas = faturaveisList.filter((item) => (item.notas_vivas ?? 0) > 0).length;
+
   const filteredFilaNfe = faturaveisList.filter((item) => {
+    // Já virou nota viva: sai da fila, a menos que o operador peça para ver.
+    if (!mostrarFaturadas && (item.notas_vivas ?? 0) > 0) return false;
+
     if (nfeSearch) {
       const search = nfeSearch.toLowerCase().trim();
       const refStr = item.ref_origem.toLowerCase();
@@ -1752,6 +1567,23 @@ export function NotasFiscaisPage() {
                 <option value="3">E3 BRINDES</option>
               </select>
             </div>
+            {filaJaFaturadas > 0 && (
+              <label className="sm:col-span-2 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={mostrarFaturadas}
+                  onChange={(e) => setFilter("fila-faturadas", e.target.checked)}
+                  className="h-4 w-4 rounded border-[#d7e5e8] text-[#0b2f4a] focus:ring-[#0b2f4a]"
+                />
+                <span>
+                  Mostrar propostas que já têm nota
+                  <strong className="ml-1 font-semibold text-slate-800">({filaJaFaturadas})</strong>
+                  <span className="ml-1 text-xs text-slate-400">
+                    — faturamento parcial continua possível
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
 
           <ResponsiveList<FaturavelOrigem>
@@ -1765,11 +1597,17 @@ export function NotasFiscaisPage() {
                 header: "Pedido",
                 cell: (item) => {
                   const idInt = item.ref_origem.match(/\d+/)?.[0] || "-";
+                  const jaTemNota = (item.notas_vivas ?? 0) > 0;
                   return (
                     <div className="flex flex-col">
                       <span className="font-medium text-slate-950">#{idInt}</span>
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
+                      )}
+                      {jaTemNota && (
+                        <span className="mt-1 w-fit rounded-lg border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                          Já tem {item.notas_vivas} nota{(item.notas_vivas ?? 0) > 1 ? "s" : ""}
+                        </span>
                       )}
                     </div>
                   );
@@ -2313,274 +2151,22 @@ export function NotasFiscaisPage() {
         </section>
       ) : null}
 
-      {/* Painel lateral de faturamento (Preview & Simulação) */}
-      {selectedFaturavel ? (
-        <FaturamentoPreviewPanel
-          key={selectedFaturavel.id}
-          item={selectedFaturavel}
-          onClose={() => setSelectedFaturavel(null)}
-          onEmitSuccess={handleEmitSuccess}
+      {focusConfirmNote && (
+        <EmissaoNfeModal
+          key={focusConfirmNote.id}
+          nota={focusConfirmNote}
+          passoInicial={passoDoModal}
+          onFechar={() => setFocusConfirmNote(null)}
+          recarregar={async () => {
+            const atualizado = await nfeData.refresh();
+            return atualizado?.nfeList?.find((n) => n.ref === focusConfirmNote.ref) ?? null;
+          }}
+          onAbrirNota={(idNota) => {
+            setFocusConfirmNote(null);
+            router.push(`/notas-fiscais/${idNota}`);
+          }}
         />
-      ) : null}
-
-      {focusConfirmNote && (() => {
-        const isAuthError = 
-          String(focusConfirmNote.erro_codigo) === "401" ||
-          (focusConfirmNote.payload_retorno && (focusConfirmNote.payload_retorno as { statusCode?: number }).statusCode === 401) ||
-          String(focusConfirmNote.erro_mensagem || "").toLowerCase().includes("unauthorized") ||
-          String(sefazMessage || "").toLowerCase().includes("unauthorized") ||
-          String(sefazCode || "") === "401";
-
-        const hasSefazDetails = Boolean(
-          focusConfirmNote.codigo_status_sefaz || 
-          focusConfirmNote.status_sefaz || 
-          focusConfirmNote.mensagem_sefaz
-        );
-
-        return (
-          <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
-              {trackingStep === "IDLE" ? (
-                <>
-                  <div className="px-6 pt-6 pb-4 flex items-center gap-3">
-                    <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl shrink-0">
-                      <Send className="h-6 w-6" />
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900 leading-tight">
-                      Enviar para Focus
-                    </h3>
-                  </div>
-                  <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed">
-                    A nota fiscal com referência <strong className="text-slate-900 font-mono font-semibold">{focusConfirmNote.ref}</strong> será enviada para emissão no sistema Focus API. Deseja prosseguir?
-                  </div>
-                  <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setFocusConfirmNote(null)}
-                      className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSendToFocus}
-                      className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center min-w-[120px]"
-                    >
-                      Enviar para Focus
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="px-6 pt-6 pb-4 flex items-center gap-3">
-                    <div className={`p-3 rounded-2xl shrink-0 ${
-                      trackingStep === "AUTHORIZED"
-                        ? "bg-emerald-50 text-emerald-600"
-                        : trackingStep === "ERROR"
-                        ? "bg-rose-50 text-rose-600"
-                        : trackingStep === "STILL_PROCESSING"
-                        ? "bg-amber-50 text-amber-600"
-                        : "bg-blue-50 text-blue-600"
-                    }`}>
-                      {trackingStep === "AUTHORIZED" ? (
-                        <CheckCircle2 className="h-6 w-6" />
-                      ) : trackingStep === "ERROR" ? (
-                        <AlertTriangle className="h-6 w-6" />
-                      ) : (
-                        <Loader2 className="h-6 w-6 animate-spin" />
-                      )}
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900 leading-tight">
-                      {trackingStep === "ERROR"
-                        ? isAuthError
-                          ? "Falha de autenticação com a Focus NFe"
-                          : hasSefazDetails
-                          ? "NF-e rejeitada pela Sefaz"
-                          : "Falha de processamento"
-                        : "Acompanhamento de Emissão"}
-                    </h3>
-                  </div>
-
-                  <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed space-y-4">
-                    {trackingStep === "ERROR" ? (
-                      isAuthError ? (
-                        <div className="space-y-3">
-                          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Referência</span>
-                              <strong className="text-slate-800 font-mono text-sm">{focusConfirmNote.ref}</strong>
-                            </div>
-                            <hr className="border-slate-100" />
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Mensagem de erro</span>
-                              <span className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block">
-                                A nota não chegou à SEFAZ porque a credencial da empresa emissora foi recusada pela Focus.
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-800 space-y-1">
-                            <span className="font-bold text-blue-900 block">Orientação:</span>
-                            <span>
-                              Verifique a credencial Focus da empresa emissora e tente reenviar.
-                            </span>
-                          </div>
-                        </div>
-                      ) : hasSefazDetails ? (() => {
-                        const rejection = getSefazRejectionInfo(sefazCode);
-                        return (
-                          <div className="space-y-3">
-                            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Referência</span>
-                                <strong className="text-slate-800 font-mono text-sm">{focusConfirmNote.ref}</strong>
-                              </div>
-                              <hr className="border-slate-100" />
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Código Sefaz</span>
-                                <strong className="text-slate-800 font-mono">{sefazCode || "900"}</strong>
-                              </div>
-                              <hr className="border-slate-100" />
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Mensagem Sefaz</span>
-                                <span className="text-rose-700 font-mono bg-rose-50/50 p-2.5 rounded-lg border border-rose-100/50 break-words leading-normal block">
-                                  {sefazMessage}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 text-xs text-blue-900 space-y-2">
-                              <div className="flex items-center gap-1.5 font-bold text-blue-950">
-                                <span className="text-base">💡</span>
-                                <span>{rejection.titulo}</span>
-                              </div>
-                              <div className="text-slate-700 leading-normal">
-                                <strong className="text-slate-800 font-medium block mb-1">O que significa:</strong>
-                                {rejection.explicacao}
-                              </div>
-                              <hr className="border-blue-100/80 my-2" />
-                              <div className="text-slate-700 leading-normal">
-                                <strong className="text-slate-800 font-medium block mb-1">Como resolver:</strong>
-                                {rejection.orientacao}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })() : (
-                        <div className="space-y-2">
-                          <span className="text-rose-700 block font-semibold">Erro Técnico/Comunicação:</span>
-                          <p className="text-xs text-rose-600 bg-rose-50/50 p-3 rounded-xl border border-rose-100 break-words font-mono">
-                            {sefazMessage || trackingError || "Erro de resposta desconhecido."}
-                          </p>
-                        </div>
-                      )
-                    ) : (
-                      <>
-                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-1.5 font-mono text-xs">
-                          <p className="flex justify-between">
-                            <span className="text-slate-400">Referência:</span>
-                            <strong className="text-slate-800">{focusConfirmNote.ref}</strong>
-                          </p>
-                          <p className="flex justify-between">
-                            <span className="text-slate-400">Status Atual:</span>
-                            <strong className="text-slate-800 uppercase">{focusConfirmNote.status}</strong>
-                          </p>
-                        </div>
-
-                        <div className="text-slate-700 font-medium">
-                          {trackingStep === "SENDING" && "Enviando nota para Focus..."}
-                          {trackingStep === "SENT_WAITING" && "Nota enviada. Aguardando processamento da Focus..."}
-                          {trackingStep === "QUERYING" && "Consultando autorização e documentos fiscais..."}
-                          {trackingStep === "AUTHORIZED" && (
-                            <span className="text-emerald-700">NF-e autorizada com sucesso.</span>
-                          )}
-                          {trackingStep === "STILL_PROCESSING" && (
-                            <span className="text-amber-700">A NF-e ainda está em processamento. Consulte novamente em alguns instantes.</span>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
-                    {["SENDING", "SENT_WAITING", "QUERYING"].includes(trackingStep) ? (
-                      <span className="text-xs text-slate-400 flex items-center gap-1.5 animate-pulse">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Não feche esta tela...
-                      </span>
-                    ) : (
-                      <>
-                        {trackingStep === "AUTHORIZED" && (
-                          <>
-                            {focusConfirmNote?.url_danfe && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  window.open(focusConfirmNote.url_danfe!, "_blank");
-                                  closeTrackingModal();
-                                }}
-                                className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition rounded-xl flex items-center gap-1.5"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                                Abrir DANFE
-                              </button>
-                            )}
-                            {focusConfirmNote?.ref && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const xmlUrl = `https://pay.ai-ideal.com.br/functions/v1/download-nfe-xml?ref=${encodeURIComponent(focusConfirmNote.ref)}`;
-                                  window.open(xmlUrl, "_blank");
-                                  closeTrackingModal();
-                                }}
-                                className="px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition rounded-xl flex items-center gap-1.5"
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                                Baixar XML
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {trackingStep === "STILL_PROCESSING" && (
-                          <button
-                            type="button"
-                            onClick={() => void runStatusQuery(focusConfirmNote)}
-                            className="px-4 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] transition rounded-xl flex items-center gap-1.5"
-                          >
-                            Consultar status novamente
-                          </button>
-                        )}
-                        {trackingStep === "ERROR" && !isAuthError && hasSefazDetails && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (focusConfirmNote) {
-                                const noteId = focusConfirmNote.id;
-                                closeTrackingModal();
-                                router.push(`/notas-fiscais/${noteId}`);
-                              }
-                            }}
-                            className="px-4 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] transition rounded-xl"
-                          >
-                            Corrigir rascunho
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={closeTrackingModal}
-                          className="px-5 py-2.5 text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 transition rounded-xl"
-                        >
-                          Fechar
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+      )}
 
       {launchModalOpen && selectedNfeForLaunch && (
         <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">

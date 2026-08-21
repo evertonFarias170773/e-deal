@@ -26,4 +26,11 @@ export interface FaturavelOrigem {
   itens: FaturavelItem[];
   created_at: string;
   tipo_cobranca?: string;
+  /**
+   * Notas fiscais VIVAS que esta origem já tem (cancelada e denegada não
+   * contam). Zero significa "ainda não virou documento fiscal". Maior que zero
+   * some da fila por padrão, e o filtro "Mostrar já faturadas" traz de volta —
+   * faturamento parcial é legítimo e não pode perder o caminho.
+   */
+  notas_vivas?: number;
 }

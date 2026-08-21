@@ -568,7 +568,39 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
 
     if (!data) return [];
 
-    return (data as SupabasePropostaSimple[]).map((row) => {
+    const propostas = data as SupabasePropostaSimple[];
+
+    // Quantas notas VIVAS cada proposta já tem. Cancelada e denegada não contam:
+    // a proposta volta a ser faturável quando a nota morre. Serve para a fila
+    // esconder, por padrão, o que já virou documento fiscal — sem apagar o
+    // caminho, porque faturamento parcial é legítimo (a 15720 tem 5 autorizadas).
+    const idsInt = Array.from(
+      new Set(propostas.map((row) => Number(row.id_int)).filter((id) => Number.isFinite(id) && id > 0))
+    );
+
+    const notasVivasPorProposta = new Map<number, number>();
+    if (idsInt.length > 0) {
+      const { data: notas, error: notasError } = await client
+        .from("notas_fiscais")
+        .select("id_int,status")
+        .in("id_int", idsInt);
+
+      if (notasError) {
+        // Sem a contagem, a fila mostra tudo — o estado de hoje. Errar exibindo
+        // demais é melhor do que esconder um pedido que ainda precisa de nota.
+        console.warn("[NfeService] Nao foi possivel contar notas por proposta:", notasError.message);
+      } else {
+        (notas ?? []).forEach((nota: { id_int: number | null; status: string | null }) => {
+          const status = String(nota.status ?? "").toUpperCase();
+          if (status === "CANCELADA" || status === "DENEGADA") return;
+          const idInt = Number(nota.id_int);
+          if (!Number.isFinite(idInt)) return;
+          notasVivasPorProposta.set(idInt, (notasVivasPorProposta.get(idInt) ?? 0) + 1);
+        });
+      }
+    }
+
+    return propostas.map((row) => {
       let idEmpresa = 1;
       const empresaStr = (row.empresa || "").toUpperCase();
       if (empresaStr.includes("BIRO") || empresaStr.includes("BIRÔ")) {
@@ -590,7 +622,8 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         status: "PENDENTE",
         valor_total: valorTotal,
         itens: [],
-        created_at: row.created_at || new Date().toISOString()
+        created_at: row.created_at || new Date().toISOString(),
+        notas_vivas: notasVivasPorProposta.get(Number(row.id_int)) ?? 0
       };
     });
   } catch (err) {

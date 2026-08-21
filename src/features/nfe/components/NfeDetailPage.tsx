@@ -21,7 +21,8 @@ import {
   Layers,
   MapPin,
   ClipboardList,
-  ArrowLeft
+  ArrowLeft,
+  Send
 } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useAppToast } from "@/components/common/AppToast";
@@ -53,7 +54,11 @@ import {
   type SupabaseNotaEventoRow,
   type SimpleProduct
 } from "../services/nfe.service";
-import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow } from "../types";
+import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow, NfeReadModel } from "../types";
+import { mapSupabaseNfeRowToReadModel } from "../mappers";
+import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 
 interface ClienteData {
   nome?: string | null;
@@ -126,6 +131,10 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
   // DB Data
   const [note, setNote] = useState<SupabaseNfeRow | null>(null);
+  // Emissão a partir daqui: o operador não volta mais à lista para emitir.
+  const [notaParaEmitir, setNotaParaEmitir] = useState<NfeReadModel | null>(null);
+  const { user } = useAuth();
+  const podeEmitirNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
   const isReadOnly = note ? ["AUTORIZADA", "CANCELADA", "DENEGADA", "PROCESSANDO", "PROCESSANDO_AUTORIZACAO"].includes((note.status || "").toUpperCase()) : false;
   const [items, setItems] = useState<SupabaseNfeItemRow[]>([]);
   const [pagamentos, setPagamentos] = useState<SupabaseNfePagamentoRow[]>([]);
@@ -1048,13 +1057,53 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   }
 
   // Save, run final checks, confirm and mark as ready to send
-  async function handleConcludeDraft() {
+  /**
+   * Grava o payload de envio e deixa a nota em PRONTA_PARA_ENVIO.
+   *
+   * É reversível — "Editar última hora" traz a nota de volta a rascunho —, então
+   * não pede confirmação por si. Devolve a nota relida do banco em caso de
+   * sucesso, ou null quando algo falhou (aí a mensagem real já foi ao operador).
+   */
+  async function prepararParaEnvio(): Promise<SupabaseNfeRow | null> {
+    if (!note) return null;
+    setIsSaving(true);
+    try {
+      const resEmit = await prepararEnvioNfe(note.ref);
+      if (!resEmit || !resEmit.ok) {
+        showToast({ type: "error", title: resEmit?.mensagem || "Falha ao preparar envio da nota." });
+        return null;
+      }
+
+      const resUpdate = await updateNfeDraft(note.id, { status: "PRONTA_PARA_ENVIO" }, [], []);
+      if (!resUpdate.success) {
+        showToast({ type: "error", title: resUpdate.error || "Falha ao salvar status final da nota." });
+        return null;
+      }
+
+      await loadData(true);
+      return await getNfeById(note.id);
+    } catch (err) {
+      console.error("[NfeDetail] Falha ao preparar envio:", err);
+      showToast({ type: "error", title: "Erro ao concluir rascunho." });
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  /**
+   * @param emitirDepois quando true, encadeia preparo e emissão: o modal de
+   *   conclusão (que confirmava um ato reversível) some e a única confirmação
+   *   passa a ser a da emissão, dentro do EmissaoNfeModal. A revisão do
+   *   rascunho e a validação continuam obrigatórias nos dois caminhos.
+   */
+  async function handleConcludeDraft(emitirDepois = false) {
     if (!note) return;
     if (isReadOnly) {
       showToast({ type: "warning", title: "Não é possível concluir notas somente leitura." });
       return;
     }
-    
+
     const emissionDateOnly = note.created_at ? note.created_at.split("T")[0] : new Date().toISOString().split("T")[0];
     const hasInvalidVencimento = editedPagamentos.some(pg => {
       if (!pg.data_vencimento) return false;
@@ -1109,6 +1158,10 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             setActiveTab("Validação");
           }
         });
+      } else if (emitirDepois) {
+        // Sem modal de conclusão aqui: quem confirma é a emissão, logo abaixo.
+        const preparada = await prepararParaEnvio();
+        if (preparada) setNotaParaEmitir(mapSupabaseNfeRowToReadModel(preparada));
       } else {
         setConfirmModal({
           isOpen: true,
@@ -1118,46 +1171,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           cancelText: "Cancelar",
           showCancel: true,
           onConfirm: async () => {
-            setIsSaving(true);
-            try {
-              console.log("[ConcludeDraft] Diagnostic - starting confirmation", {
-                ref: note.ref,
-                statusBefore: note.status,
-                payload: { status: "PRONTA_PARA_ENVIO" }
-              });
-
-              // 1. Preparar o envio e gerar o payload (que grava no banco e atualiza status)
-              const resEmit = await prepararEnvioNfe(note.ref);
-              console.log("[ConcludeDraft] prepararEnvioNfe response:", resEmit);
-              
-              if (resEmit && resEmit.ok) {
-                // 2. Executar update com status apenas para garantir status PRONTA_PARA_ENVIO e seguir o comando do usuário sem ref
-                const resUpdate = await updateNfeDraft(note.id, { status: "PRONTA_PARA_ENVIO" }, [], []);
-                console.log("[ConcludeDraft] updateNfeDraft response:", resUpdate);
-
-                if (resUpdate.success) {
-                  showToast({ type: "success", title: "Rascunho concluído. NF-e pronta para envio." });
-                  await loadData(true);
-                  
-                  const dbNoteAfter = await getNfeById(note.id);
-                  console.log("[ConcludeDraft] Status after reload:", dbNoteAfter?.status);
-
-                  setTimeout(() => {
-                    router.push("/notas-fiscais");
-                  }, 1500);
-                } else {
-                  showToast({ type: "error", title: resUpdate.error || "Falha ao salvar status final da nota." });
-                }
-              } else {
-                const errMsg = resEmit?.mensagem || "Falha ao preparar envio da nota.";
-                showToast({ type: "error", title: errMsg });
-              }
-            } catch (err) {
-              console.error("[NfeDetail] Conclude status update failed:", err);
-              showToast({ type: "error", title: "Erro ao concluir rascunho." });
-            } finally {
-              setIsSaving(false);
-            }
+            const preparada = await prepararParaEnvio();
+            if (!preparada) return;
+            showToast({ type: "success", title: "Rascunho concluído. NF-e pronta para envio." });
+            setTimeout(() => {
+              router.push("/notas-fiscais");
+            }, 1500);
           }
         });
       }
@@ -1277,13 +1296,24 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             <>
               <button
                 type="button"
-                onClick={handleConcludeDraft}
+                onClick={() => void handleConcludeDraft(false)}
                 disabled={isValidating || isSaving}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-semibold transition disabled:opacity-50 shadow-sm"
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-600 text-emerald-700 hover:bg-emerald-50 px-4 py-2.5 text-xs font-semibold transition disabled:opacity-50"
               >
                 {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Concluir Rascunho
               </button>
+              {podeEmitirNfe && (
+                <button
+                  type="button"
+                  onClick={() => void handleConcludeDraft(true)}
+                  disabled={isValidating || isSaving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-semibold transition disabled:opacity-50 shadow-sm"
+                >
+                  {isValidating || isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Concluir e Emitir
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleSave}
@@ -2937,6 +2967,20 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           </div>
         )}
       </section>
+
+      {notaParaEmitir && (
+        <EmissaoNfeModal
+          key={notaParaEmitir.id}
+          nota={notaParaEmitir}
+          passoInicial="IDLE"
+          onFechar={() => setNotaParaEmitir(null)}
+          recarregar={async () => {
+            await loadData(true);
+            const row = await getNfeById(notaParaEmitir.id);
+            return row ? mapSupabaseNfeRowToReadModel(row) : null;
+          }}
+        />
+      )}
 
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
