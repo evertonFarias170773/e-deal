@@ -59,7 +59,9 @@ import {
 import { getCadastrosReadOnlyList, getCadastroCompleto } from "@/features/cadastros/services/cadastros.service";
 import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
-import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
+import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
@@ -3062,6 +3064,130 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     }));
   }
 
+  /**
+   * As sete acoes da lista que funcionam DENTRO da proposta aberta.
+   *
+   * Ficaram de fora, de proposito, as quatro que dependem de modal e estado que
+   * so existem na listagem — Gerar cobranca, Cancelar proposta, Liberar para
+   * Producao e Reabrir teste. Traze-las exigiria carregar quatro modais para
+   * dentro deste arquivo, que ja e grande; elas seguem na lista.
+   *
+   * "Copiar proposta informal" reaproveita o `copyInformal` que esta tela ja
+   * tinha, em vez de repetir a montagem do texto.
+   */
+  const { openChat: abrirChatProposta } = useGlobalChat();
+  const [acaoEmCurso, setAcaoEmCurso] = useState<string | null>(null);
+
+  async function handleDuplicarDaProposta() {
+    if (!proposta || acaoEmCurso) return;
+    if (!window.confirm(`Deseja realmente duplicar a proposta #${proposta.id_int}?`)) return;
+    setAcaoEmCurso("duplicar");
+    showToast({ type: "info", title: "Duplicando proposta", description: "Aguarde..." });
+    try {
+      const res = await duplicarProposta(proposta.id_int);
+      if (res.success && res.novoIdInt) {
+        showToast({ type: "success", title: "Proposta duplicada", description: "Redirecionando..." });
+        window.setTimeout(() => router.push(`/orcamentos/${res.novoIdInt}/editar`), 1200);
+      } else {
+        showToast({ type: "error", title: "Erro ao duplicar", description: res.errorMessage || "Nao foi possivel duplicar." });
+      }
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
+
+  async function handleGerarPdfDaProposta() {
+    if (!proposta || acaoEmCurso) return;
+    if (!form.clienteId || form.clienteId === "0") {
+      showToast({
+        type: "warning",
+        title: "Geracao de PDF bloqueada",
+        description: "Para gerar PDF, primeiro cadastre ou vincule um cliente a proposta."
+      });
+      return;
+    }
+    // Mesmo mapeamento empresa->id da lista: o gerador so aceita 1, 2 ou 3.
+    const rotulo = (form.empresa || "").toLowerCase();
+    const idEmpresa =
+      rotulo.includes("grafica") || rotulo.includes("ingresso") ? 1
+      : rotulo.includes("biro") || rotulo.includes("birô") ? 2
+      : rotulo.includes("e3") || rotulo.includes("brindes") ? 3
+      : null;
+    if (idEmpresa === null) {
+      showToast({
+        type: "error",
+        title: "Empresa invalida",
+        description: "A empresa da proposta nao e suportada para PDF (use Ideal Grafica, Ideal Biro ou E3 Brindes)."
+      });
+      return;
+    }
+    setAcaoEmCurso("pdf");
+    showToast({ type: "info", title: "Gerando PDF", description: "Aguarde..." });
+    try {
+      const res = await gerarPDFProposta(proposta.id_int, idEmpresa);
+      if (res.success && res.url) {
+        window.open(res.url, "_blank");
+        showToast({ type: "success", title: "PDF gerado", description: "Aberto em uma nova aba." });
+      } else {
+        showToast({ type: "error", title: "Erro ao gerar PDF", description: res.errorMessage || "Falha na geracao." });
+      }
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
+
+  async function handleRetirarDaProducaoNaProposta() {
+    if (!proposta || acaoEmCurso) return;
+    if (!window.confirm(`Deseja RETIRAR a proposta #${proposta.id_int} da fila de producao?`)) return;
+    setAcaoEmCurso("retirar");
+    try {
+      const res = await retirarPropostaDaProducao(proposta.id_int);
+      if (res.success) {
+        showToast({ type: "success", title: "Proposta retirada", description: "Saiu da lista de Producao." });
+        if (onReload) onReload(true);
+      } else {
+        showToast({ type: "error", title: "Erro ao retirar", description: res.errorMessage || "Nao foi possivel retirar." });
+      }
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  }
+
+  function acoesDaProposta() {
+    if (!proposta) return [];
+    const idInt = proposta.id_int;
+    const podeRetirar =
+      user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao");
+    return [
+      { label: "Ver proposta", onClick: () => router.push(`/orcamentos/${idInt}`) },
+      {
+        label: "Ver chat interno",
+        onClick: () =>
+          abrirChatProposta(idInt, {
+            clienteNome: cliente?.nome ?? form.nomeClienteLivre ?? "Cliente",
+            idCliente: cliente?.idCliente != null ? Number(cliente.idCliente) : undefined
+          })
+      },
+      { label: "Editar proposta", onClick: () => router.push(`/orcamentos/${idInt}/editar`) },
+      {
+        label: acaoEmCurso === "duplicar" ? "Duplicando..." : "Duplicar proposta",
+        onClick: () => void handleDuplicarDaProposta()
+      },
+      { label: "Copiar proposta informal", onClick: () => void copyInformal() },
+      {
+        label: acaoEmCurso === "pdf" ? "Gerando PDF..." : "Gerar PDF da proposta",
+        onClick: () => void handleGerarPdfDaProposta()
+      },
+      ...(proposta.is_prd_aprovado && podeRetirar
+        ? [{
+            label: acaoEmCurso === "retirar" ? "Retirando..." : "Retirar da Produção",
+            destructive: true,
+            onClick: () => void handleRetirarDaProducaoNaProposta()
+          }]
+        : [])
+    ];
+  }
+
   async function copyInformal() {
     await navigator.clipboard?.writeText(informalText);
     showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
@@ -3922,9 +4048,10 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             >
               {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
             </button>
-            <button type="button" onClick={() => void handleSave()} disabled={isSaving || isQuotingSedex || isQuotingAzul || isQuotingTransp || isQuotingVeppo} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
-              {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alterações" : "Salvar proposta"}
-            </button>
+            {/* O "Salvar proposta" saiu daqui: o botao flutuante ja e o unico
+                caminho de salvamento, e este espaco passou a ser das acoes que
+                antes so existiam na lista. */}
+            {proposta && <ActionsMenu items={acoesDaProposta()} />}
           </div>
         }
       />

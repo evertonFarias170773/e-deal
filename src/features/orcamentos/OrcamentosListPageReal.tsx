@@ -17,6 +17,7 @@ import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
+import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
 import {
   gerarPDFProposta,
   duplicarProposta,
@@ -583,6 +584,51 @@ export function OrcamentosListPageReal() {
       ativo = false;
     };
   }, [idsParaRastreio]);
+
+  /**
+   * Socio pagador das linhas da pagina. So entra quem tem `idFaturado`
+   * diferente do proprio cliente — a comparacao e aqui, com os dois ids que ja
+   * vem na linha; a service so resolve nomes.
+   */
+  const idsSocioDaPagina = useMemo(() => {
+    const ids = new Set<number>();
+    for (const p of filteredPropostas) {
+      const faturado = p.idFaturado;
+      if (!faturado) continue;
+      if (faturado === Number(p.clienteId)) continue;
+      ids.add(faturado);
+    }
+    return Array.from(ids);
+  }, [filteredPropostas]);
+
+  const [nomesSocios, setNomesSocios] = useState<Record<number, string>>({});
+  const fetchedSocioIdsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const naoBuscados = idsSocioDaPagina.filter((id) => !fetchedSocioIdsRef.current.has(id));
+    if (naoBuscados.length === 0) return;
+    let ativo = true;
+    void (async () => {
+      try {
+        const nomes = await buscarNomesDosSocios(naoBuscados);
+        if (!ativo) return;
+        naoBuscados.forEach((id) => fetchedSocioIdsRef.current.add(id));
+        setNomesSocios((atual) => ({ ...atual, ...nomes }));
+      } catch (err) {
+        console.error("[OrcamentosListPageReal] Erro ao buscar socios pagadores:", err);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsSocioDaPagina]);
+
+  /** Nome do socio pagador da linha, ou null quando o proprio cliente paga. */
+  function socioDaLinha(item: OrcamentoListItem): string | null {
+    const faturado = item.idFaturado;
+    if (!faturado || faturado === Number(item.clienteId)) return null;
+    return nomesSocios[faturado] ?? null;
+  }
 
   const fetchedChatIdsRef = useRef<Set<number>>(new Set());
 
@@ -1259,6 +1305,13 @@ Ela volta a aparecer nas listas operacionais.`
                       <>{proposta.clienteId} - {proposta.clienteNome}</>
                     )}
                   </p>
+                  {/* Socio pagador: quem assume a fatura quando nao e o proprio
+                      cliente. Sem socio, a linha fica exatamente como estava. */}
+                  {socioDaLinha(proposta) && (
+                    <p className="text-xs font-medium text-indigo-700">
+                      Sócio pagador: {socioDaLinha(proposta)}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-500">{proposta.documento || ""}</p>
                 </div>
               );
@@ -1374,6 +1427,12 @@ Ela volta a aparecer nas listas operacionais.`
                     <>{proposta.clienteId || "—"} - {proposta.clienteNome}</>
                   )}
                 </h3>
+                {/* Mesmo subtitulo da tabela (card do mobile). */}
+                {socioDaLinha(proposta) && (
+                  <p className="mt-1 text-xs font-medium text-indigo-700">
+                    Sócio pagador: {socioDaLinha(proposta)}
+                  </p>
+                )}
                 <p className="mt-1 text-sm text-slate-500">{proposta.vendedor}</p>
               </div>
               <div className="flex flex-col items-end gap-1">

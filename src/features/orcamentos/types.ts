@@ -171,6 +171,12 @@ export type Proposta = {
   clienteNaoCadastrado?: boolean;
   id_faturado?: number | null;
   status_interno?: string;
+  /**
+   * `propostas.is_prd_aprovado` — se a proposta esta na fila produtiva. A tela
+   * de detalhe precisa disso para oferecer "Retirar da Producao" no menu de
+   * acoes, com a MESMA condicao que a lista usa.
+   */
+  is_prd_aprovado?: boolean;
   dbValorTotal?: number | null;
 };
 

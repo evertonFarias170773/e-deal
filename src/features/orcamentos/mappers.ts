@@ -52,6 +52,14 @@ export type OrcamentoListItem = {
    */
   encerradoTesteEm?: string | null;
   encerradoTestePor?: string | null;
+  /**
+   * `propostas.id_faturado` — quem paga. Quando difere de `id_cliente`, e um
+   * SOCIO PAGADOR: outro cadastro, ligado ao cliente por `clientes_socios`,
+   * que assume a fatura. Igual ao `id_cliente` significa que o proprio cliente
+   * paga, que e a esmagadora maioria — por isso a lista so mostra subtitulo
+   * quando os dois diferem.
+   */
+  idFaturado?: number | null;
 };
 
 const EMPRESA_LABELS: Record<number, string> = {
@@ -360,7 +368,10 @@ function mapRowToListItem(row: SupabasePropostaRow): OrcamentoListItem | null {
     rawColumns: Object.keys(row),
     is_prd_aprovado: row.is_prd_aprovado === true,
     encerradoTesteEm: typeof row.encerrado_teste_em === "string" ? row.encerrado_teste_em : null,
-    encerradoTestePor: typeof row.encerrado_teste_por === "string" ? row.encerrado_teste_por : null
+    encerradoTestePor: typeof row.encerrado_teste_por === "string" ? row.encerrado_teste_por : null,
+    idFaturado: Number.isFinite(Number(row.id_faturado)) && Number(row.id_faturado) > 0
+      ? Number(row.id_faturado)
+      : null
   };
 }
 

@@ -291,7 +291,7 @@ async function fetchPropostaRows(
     // `encerrado_teste_em/por` viajam para a lista de proposito: aqui o pedido de
     // teste NAO some, ganha badge. Orcamentos e o unico lugar onde ele continua
     // visivel depois de marcado — e portanto o unico de onde da para reabrir.
-    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por";
+    const columnsToSelect = "id, id_int, id_cliente, cliente, created_at, updated_at, vendedor, status_interno, valor_total, valor, is_avulso, empresa, valor_frete, em_arte, is_prd_aprovado, encerrado_teste_em, encerrado_teste_por, id_faturado";
 
     let query = client
       .from("propostas")
@@ -1289,6 +1289,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       clienteNaoCadastrado: isClienteNaoCadastrado,
       id_faturado: proposalRow.id_faturado ?? null,
       status_interno: proposalRow.status_interno,
+      is_prd_aprovado: proposalRow.is_prd_aprovado === true,
       dbValorTotal: proposalRow.valor_total != null ? Number(proposalRow.valor_total) : null,
     };
 
