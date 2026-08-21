@@ -1026,26 +1026,15 @@ export async function avancarStatusParaEmProducao(
 }
 
 
-export async function liberarPedidoParaFiscal(idInt: number): Promise<{ success: boolean; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) {
-    return { success: false, error: "Supabase client não encontrado." };
-  }
-
-  try {
-    const { error } = await client
-      .from("propostas")
-      .update({ libera_nf: true })
-      .eq("id_int", idInt);
-
-    if (error) {
-      console.error("[BoletimPropostasService] Erro ao liberar para NF:", error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (err: any) {
-    console.error("[BoletimPropostasService] Exception ao liberar para NF:", err);
-    return { success: false, error: err.message || "Erro desconhecido." };
-  }
-}
+/*
+ * `liberarPedidoParaFiscal` foi removida em 20/08/2026.
+ *
+ * Ela só ligava `propostas.libera_nf = true` para a ação "Liberar para NF" do
+ * painel geral da Produção. Com a entrada na Fila de Faturamento acontecendo
+ * junto da liberação para produção (`liberarPropostaParaProducao`, no módulo de
+ * orçamentos), a ação deixou de existir e esta função ficou sem chamador.
+ *
+ * Não foi mantida "por via das dúvidas" de propósito: era o único outro caminho
+ * de escrita em `libera_nf`, e um atalho para a fila que pula as guardas de
+ * pagamento e arte não deve continuar disponível.
+ */

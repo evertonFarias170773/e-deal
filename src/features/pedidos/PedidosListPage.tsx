@@ -27,7 +27,7 @@ import { encerrarTeste } from "./services/encerrar-teste.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
-import { liberarPedidoParaFiscal, criarPedidoParaBoletim } from "./services/boletim-propostas.service";
+import { criarPedidoParaBoletim } from "./services/boletim-propostas.service";
 
 import type { PropostaOperacionalListItem, SetorDoPedido } from "./types";
 import { useRouter } from "next/navigation";
@@ -43,7 +43,6 @@ export function PedidosListPage() {
   const [pedidos, setPedidos] = useState<PropostaOperacionalListItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isDevolverModalOpen, setIsDevolverModalOpen] = useState(false);
-  const [isLiberando, setIsLiberando] = useState(false);
   const [selectedPropostaForDevolver, setSelectedPropostaForDevolver] = useState<PropostaOperacionalListItem | null>(null);
   const [isDevolverSubmitting, setIsDevolverSubmitting] = useState(false);
   /** Chave `id_int:SETOR` do chip que está gravando — trava só aquele chip. */
@@ -272,27 +271,13 @@ export function PedidosListPage() {
   const vendedorOptions = Array.from(new Set(pedidos.map(p => p.vendedor))).filter(Boolean).sort();
   const empresaOptions = Array.from(new Set(pedidos.map(p => p.empresa))).filter(Boolean).sort();
 
-  // Modal Handlers
-  const handleLiberarNF = async (proposta: PropostaOperacionalListItem) => {
-    if (!window.confirm(`Deseja enviar o pedido #${proposta.id_int} (${proposta.clienteNome}) para a Fila de Faturamento Fiscal?`)) return;
-    setIsLiberando(true);
-    try {
-      const res = await liberarPedidoParaFiscal(proposta.id_int);
-      if (res.success) {
-        showToast({ type: "success", title: "Sucesso", description: `Pedido #${proposta.id_int} liberado para Faturamento!` });
-        // Update local state without full reload
-        setPedidos((prev) =>
-          prev.map((p) => (p.id_int === proposta.id_int ? { ...p, libera_nf: true } : p))
-        );
-      } else {
-        showToast({ type: "error", title: "Erro ao liberar", description: res.error || "Erro desconhecido." });
-      }
-    } catch (err: any) {
-      showToast({ type: "error", title: "Exception ao liberar", description: err.message || "Erro desconhecido ao liberar" });
-    } finally {
-      setIsLiberando(false);
-    }
-  };
+  /**
+   * A ação "Liberar para NF" saiu daqui em 20/08/2026. A entrada na Fila de
+   * Faturamento passou a acontecer junto da liberação para produção, na revisão
+   * do atendente (`liberarPropostaParaProducao`), que é onde a decisão de fato
+   * é tomada. O selo "Liberado para NF" continua nesta tela — agora só mostra o
+   * que a liberação já resolveu.
+   */
 
   async function confirmDevolverRevisao() {
     if (!selectedPropostaForDevolver) return;
@@ -614,7 +599,6 @@ export function PedidosListPage() {
           {
             header: "Ações",
             cell: (proposta) => {
-              const canLiberarNF = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.release_nf");
               const canVoltarRevisao = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "pedidos.admin");
 
               const actions = [
@@ -643,12 +627,6 @@ export function PedidosListPage() {
                   label: "Detalhes da proposta",
                   onClick: () => router.push(`/orcamentos/${proposta.id_int}`)
                 },
-                ...(canLiberarNF ? [
-                  ...(proposta.libera_nf ? [] : [{
-                    label: "Liberar para NF",
-                    onClick: () => handleLiberarNF(proposta)
-                  }])
-                ] : []),
                 ...(canVoltarRevisao ? [
                   {
                     label: "Voltar para Revisão Atendente",

@@ -3636,9 +3636,26 @@ export async function liberarPropostaParaProducao(idInt: number): Promise<{ succ
   }
 
   // 4. Efetivar liberação
+  /**
+   * `libera_nf` entra AQUI, no mesmo UPDATE da liberação.
+   *
+   * A Fila de Faturamento é uma consulta sobre `propostas.libera_nf = true`
+   * (`getFaturaveisPropostas`), e até 20/08/2026 essa flag só era ligada por uma
+   * ação manual separada, no painel geral da Produção — uma segunda decisão,
+   * depois e em outro lugar, para quem já tinha decidido liberar o pedido.
+   * Quem revisa e libera para produção já decidiu que o pedido é faturável.
+   *
+   * No mesmo statement de propósito: é uma escrita atômica na mesma linha, então
+   * não existe janela em que o pedido esteja liberado e fora da fila. As guardas
+   * acima (avulsa, status, pagamentos, artes) continuam valendo integralmente —
+   * nada aqui afrouxa validação, e nenhuma proposta avulsa chega a este ponto.
+   *
+   * Não mexe em `status_interno` além do que já mudava, não emite nota e não
+   * dispara integração fiscal: `libera_nf` apenas HABILITA o faturamento.
+   */
   const { error: updateErr } = await client
     .from("propostas")
-    .update({ is_prd_aprovado: true, status_interno: "REVISAO PRODUCAO" })
+    .update({ is_prd_aprovado: true, status_interno: "REVISAO PRODUCAO", libera_nf: true })
     .eq("id_int", idInt);
 
   if (updateErr) return { success: false, errorMessage: "Erro ao atualizar chave de liberação." };
