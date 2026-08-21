@@ -1348,14 +1348,23 @@ export function NotasFiscaisPage() {
     hasAutoOpenedDanfe.current = false;
 
     try {
-      const response = await fetch("https://10074.hostoo.net.br/webhook/emitir-nfe-focus", {
+      // A emissão passa pelo servidor: é lá que a sessão, a permissão
+      // fiscal.emit_nfe e a trava de duplicidade são conferidas. A tela não
+      // alcança mais o webhook do n8n diretamente.
+      const sessionResult = await getSupabaseClient()?.auth.getSession();
+      const accessToken = sessionResult?.data?.session?.access_token ?? "";
+      if (!accessToken) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+      }
+
+      const response = await fetch("/api/fiscal/emitir-nfe", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          ref: focusConfirmNote.ref,
-          supabase_url: "https://vwbtitjlpelrcnsytzqw.supabase.co"
+          ref: focusConfirmNote.ref
         })
       });
 
