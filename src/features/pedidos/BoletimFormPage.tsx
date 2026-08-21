@@ -34,7 +34,6 @@ import {
   serializePedidosObs,
   obterGabaritosOperacionais,
   obterFreteEscolhido,
-  atualizarModelosBoletim,
   avancarStatusParaEmProducao
 } from "./services/boletim-propostas.service";
 import { obterPedidoOperacionalPorIdOuIdInt } from "./services/pedidos-detalhe.service";
@@ -863,6 +862,12 @@ export function BoletimFormPage() {
    * Setores que já receberam a sugestão inicial da conferência. É `ref` de
    * propósito: a sugestão entra UMA vez por setor, então limpar o campo na mão
    * continua valendo — sem isso, o efeito devolveria o valor a cada render.
+   *
+   * A marcação acontece FORA do updater do `setConferenciaPorSetor`. React pode
+   * chamar o updater mais de uma vez com o mesmo estado (é o que o StrictMode
+   * faz em desenvolvimento), e marcar lá dentro fazia a segunda passagem achar o
+   * setor já semeado, devolver o estado intocado e engolir a sugestão inteira —
+   * era exatamente isso que deixava peso e responsável vazios na tela.
    */
   const conferenciaSugerida = useRef<Set<string>>(new Set());
 
@@ -884,15 +889,15 @@ export function BoletimFormPage() {
     if (setores.length === 0) return;
 
     const responsavelPadrao = (user?.name || user?.email || "").trim();
+    const aSemear = setores.filter((setor) => !conferenciaSugerida.current.has(setor));
+    if (aSemear.length === 0) return;
+    aSemear.forEach((setor) => conferenciaSugerida.current.add(setor));
 
     setConferenciaPorSetor((atual) => {
       const proximo = { ...atual };
       let mudou = false;
 
-      for (const setor of setores) {
-        if (conferenciaSugerida.current.has(setor)) continue;
-        conferenciaSugerida.current.add(setor);
-
+      for (const setor of aSemear) {
         const conferencia = proximo[setor] ?? {};
         const sugestao: ConferenciaSetor = { ...conferencia };
 
@@ -1462,26 +1467,19 @@ export function BoletimFormPage() {
           }
         }
 
-        // 2. Update Modelos (Lotes Técnicos)
-        const modelosUpdates = produtos.flatMap(p => p.modelos.map(m => ({
-          id: Number(m.id),
-          tipo_numeracao: m.configImpressao.tipoNumeracao || null,
-          gabarito_operacional: m.gabaritoNumeracao && m.gabaritoNumeracao !== "Sem gabarito" ? m.gabaritoNumeracao : null,
-          numeracao_inicio: m.numeracaoInicial !== undefined && m.numeracaoInicial !== null ? Number(m.numeracaoInicial) : null
-        }))).filter(m => !isNaN(m.id) && m.id > 0);
-
-        if (modelosUpdates.length > 0) {
-          const modelsResult = await atualizarModelosBoletim(modelosUpdates);
-          if (!modelsResult.success) {
-             showToast({
-              type: "error",
-              title: "Erro ao Atualizar Lotes",
-              description: modelsResult.error || "Não foi possível atualizar as informações dos lotes operacionais."
-            });
-            setLoadingDetails(false);
-            return;
-          }
-        }
+        // 2. Numeração e gabarito NÃO são regravados aqui.
+        //
+        // Este ponto mandava tipo_numeracao, gabarito_operacional e
+        // numeracao_inicio de volta para `pedidos_modelos` a cada save. Os três
+        // pertencem ao orçamento (aba Modelos), que grava na MESMA linha — o
+        // boletim só os exibe. Desde que a tela deixou de oferecer os controles,
+        // o valor enviado era sempre igual ao lido, mas a porta de escrita
+        // continuava aberta para qualquer chamada fora da tela; fechá-la é o
+        // ponto. `numeracao_fim` nunca foi enviado daqui.
+        //
+        // O setor do lote continua sendo gravado logo acima: aquele é do PCP,
+        // não do orçamento. A abertura de OS (`salvarModelosBoletim`) segue
+        // enviando os quatro campos — lá o lote nasce.
 
         // Update macro status if currently REVISAO PRODUCAO. O resultante volta
         // da própria chamada e vai direto para a tela — era exatamente isto que
