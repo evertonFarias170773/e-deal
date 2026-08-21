@@ -547,6 +547,13 @@ interface SupabasePropostaSimple {
   libera_nf?: boolean | null;
 }
 
+/**
+ * Status de nota que NÃO tiram a proposta da fila de faturamento.
+ * `RASCUNHO` acompanha `PENDENTE` porque é o mesmo estágio — é assim que
+ * `getNfeActions` já os trata na tela.
+ */
+const STATUS_QUE_NAO_TIRAM_DA_FILA = ["CANCELADA", "DENEGADA", "PENDENTE", "RASCUNHO"];
+
 export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
   const client = getSupabaseClient();
   if (!client) {
@@ -570,10 +577,14 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
 
     const propostas = data as SupabasePropostaSimple[];
 
-    // Quantas notas VIVAS cada proposta já tem. Cancelada e denegada não contam:
-    // a proposta volta a ser faturável quando a nota morre. Serve para a fila
-    // esconder, por padrão, o que já virou documento fiscal — sem apagar o
-    // caminho, porque faturamento parcial é legítimo (a 15720 tem 5 autorizadas).
+    // Quantas notas cada proposta já tem ADIANTE do rascunho. Não contam:
+    //   - CANCELADA e DENEGADA, porque a proposta volta a ser faturável quando
+    //     a nota morre;
+    //   - PENDENTE e RASCUNHO, porque rascunho aberto é trabalho não terminado,
+    //     e a fila é a lista de trabalho do Financeiro.
+    // Serve para a fila esconder, por padrão, o que já saiu das mãos de quem
+    // fatura — sem apagar o caminho, porque faturamento parcial é legítimo
+    // (a 15720 tem 5 autorizadas).
     const idsInt = Array.from(
       new Set(propostas.map((row) => Number(row.id_int)).filter((id) => Number.isFinite(id) && id > 0))
     );
@@ -592,7 +603,7 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
       } else {
         (notas ?? []).forEach((nota: { id_int: number | null; status: string | null }) => {
           const status = String(nota.status ?? "").toUpperCase();
-          if (status === "CANCELADA" || status === "DENEGADA") return;
+          if (STATUS_QUE_NAO_TIRAM_DA_FILA.includes(status)) return;
           const idInt = Number(nota.id_int);
           if (!Number.isFinite(idInt)) return;
           notasVivasPorProposta.set(idInt, (notasVivasPorProposta.get(idInt) ?? 0) + 1);
