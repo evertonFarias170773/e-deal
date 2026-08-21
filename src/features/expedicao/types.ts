@@ -95,6 +95,12 @@ export interface PedidoExpedicao {
   idCliente: number | null;
   cidadeUf: string;
   empresa: string;
+  /**
+   * `propostas.vendedor` — quem vendeu o pedido. Vive na MESMA linha que a lista
+   * já lê; entra aqui para a bancada saber a quem perguntar sem abrir o pedido.
+   * Vazio quando a proposta não registrou vendedor.
+   */
+  vendedor: string;
   statusInterno: string;
   etapa: EtapaExpedicao;
   /** propostas_os.data_termino (ISO) — a promessa exibida. */

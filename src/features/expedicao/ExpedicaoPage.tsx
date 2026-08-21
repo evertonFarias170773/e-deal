@@ -207,6 +207,51 @@ export function ExpedicaoPage() {
     }
   }
 
+  /**
+   * A ÚNICA entrada de etiqueta do menu, resolvida pelo transporte do pedido.
+   *
+   * Antes eram duas — "Imprimir etiqueta 10x15" e "Etiqueta Correios (oficial)"
+   * — e o expedidor escolhia; um envio dos Correios saía com o papel errado sem
+   * o sistema dizer nada. Quem decide o formato é `p.tipoFrete`, que já é o
+   * transporte DECLARADO no despacho (`expedicoes.tipo_frete`) com a cotação
+   * normalizada como reserva. Todos os outros transportes usam a 10x15.
+   *
+   * O rótulo oficial dos Correios só existe DEPOIS da prepostagem — a rota
+   * responde 422 sem `correios_id_prepostagem`. Nesse intervalo a entrada fica
+   * desabilitada dizendo o que fazer, em vez de sumir (o expedidor ficava sem
+   * affordance e sem explicação) ou de cair na 10x15 (voltaria a imprimir o
+   * papel errado, agora sem ninguém ter escolhido).
+   */
+  function etiquetaDoPedido(p: PedidoExpedicao) {
+    if (p.tipoFrete === "CORREIOS") {
+      if (!p.expedicao?.correiosIdPrepostagem) {
+        return {
+          label: "Etiqueta Correios — gere a prepostagem",
+          disabled: true,
+          onClick: () => {}
+        };
+      }
+      return {
+        label: "Etiqueta Correios (oficial)",
+        onClick: () => {
+          void abrirEtiquetaCorreios(p.idInt).then((res) => {
+            if (!res.success) showToast({ type: "error", title: "Erro no rótulo", description: res.errorMessage });
+          });
+        }
+      };
+    }
+    return {
+      label: "Imprimir etiqueta 10x15",
+      onClick: () => {
+        void abrirEtiqueta(p.idInt, p.volumes).then((res) => {
+          if (!res.success) {
+            showToast({ type: "error", title: "Erro na etiqueta", description: res.errorMessage });
+          }
+        });
+      }
+    };
+  }
+
   /** Itens do menu "⋯" contextual — compartilhado entre a coluna "Ações" e o card mobile. */
   function itensMenu(p: PedidoExpedicao) {
     return [
@@ -218,18 +263,9 @@ export function ExpedicaoPage() {
       ...(canOperar && ["A_RETIRAR", "EM_TRANSITO", "ENTREGUE"].includes(p.etapa)
         ? [{ label: "Editar dados de expedição", onClick: () => setPedidoDespacho(p) }]
         : []),
-      ...(p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO"
-        ? [{
-            label: "Imprimir etiqueta 10x15",
-            onClick: () => {
-              void abrirEtiqueta(p.idInt, p.volumes).then((res) => {
-                if (!res.success) {
-                  showToast({ type: "error", title: "Erro na etiqueta", description: res.errorMessage });
-                }
-              });
-            }
-          }]
-        : []),
+      // UMA entrada de etiqueta, nunca duas: o formato sai do transporte do
+      // pedido, não da escolha do expedidor. Ver `etiquetaDoPedido`.
+      ...(p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO" ? [etiquetaDoPedido(p)] : []),
       // Sem NF-e autorizada, a remessa viaja com declaração de conteúdo. O rótulo
       // dos Correios traz só a etiqueta — este é o papel que vai no volume.
       ...(p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO" && p.nfStatus !== "AUTORIZADA"
@@ -240,16 +276,6 @@ export function ExpedicaoPage() {
                 if (!res.success) {
                   showToast({ type: "error", title: "Erro na declaração", description: res.errorMessage });
                 }
-              });
-            }
-          }]
-        : []),
-      ...(p.expedicao?.correiosIdPrepostagem
-        ? [{
-            label: "Etiqueta Correios (oficial)",
-            onClick: () => {
-              void abrirEtiquetaCorreios(p.idInt).then((res) => {
-                if (!res.success) showToast({ type: "error", title: "Erro no rótulo", description: res.errorMessage });
               });
             }
           }]
@@ -687,6 +713,20 @@ export function ExpedicaoPage() {
             )
           },
           {
+            header: "Vendedor",
+            cell: (p) =>
+              p.vendedor ? (
+                <span
+                  className="block max-w-[140px] truncate text-sm text-slate-700 dark:text-slate-300"
+                  title={p.vendedor}
+                >
+                  {p.vendedor}
+                </span>
+              ) : (
+                <span className="text-xs italic text-slate-400">—</span>
+              )
+          },
+          {
             header: "Status",
             cell: (p) => <StatusBadge status={p.statusInterno} />
           },
@@ -822,6 +862,7 @@ export function ExpedicaoPage() {
                     {rotuloClienteComNumero(p.idCliente, p.cliente)}
                   </h3>
                   {p.cidadeUf && <p className="text-xs text-slate-500">{p.cidadeUf}</p>}
+                  {p.vendedor && <p className="text-xs text-slate-500">Vendedor: {p.vendedor}</p>}
                 </div>
                 <StatusBadge status={p.statusInterno} />
               </div>

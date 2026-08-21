@@ -74,7 +74,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   const { data: propostas, error: propError } = await client
     .from("propostas")
     .select(
-      "id_int, cliente, id_cliente, empresa, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente"
+      "id_int, cliente, id_cliente, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente"
     )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
@@ -306,6 +306,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       idCliente,
       cidadeUf: cli?.cidade_uf ?? "",
       empresa: p.empresa || "",
+      vendedor: (p.vendedor as string | null) || "",
       statusInterno,
       etapa,
       dataPromessa,

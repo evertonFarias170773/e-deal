@@ -584,9 +584,23 @@ export function DespacharModal({
    * exatamente o que está na tela.
    */
   async function handleGerarPrepostagem(servico: "SEDEX" | "PAC") {
-    if (gerandoPrepostagem) return;
-    // Mesmo bloqueio do "Confirmar despacho": emitir prepostagem e contratar
-    // transporte. Se o envio nao e o que foi cotado, nao pode ser emitida.
+    if (gerandoPrepostagem || salvando) return;
+    // Emitir prepostagem E contratar transporte: passa pela MESMA porta do
+    // "Confirmar despacho", nao por uma mais larga. Antes só a divergência
+    // barrava aqui, e um pedido sem transportadora, sem endereço ou sem peso
+    // aferido — que o botão de despachar recusava — saía preposto assim mesmo,
+    // porque a rota lê do banco o que este handler acabou de gravar.
+    //
+    // A regra não é reescrita nem afrouxada: são as mesmas duas funções puras
+    // que o rodapé consome, `camposMinimosDespacho` e `divergenciaFreteDoDespacho`.
+    if (faltantes.length > 0) {
+      showToast({
+        type: "warning",
+        title: "Prepostagem bloqueada",
+        description: `Falta informar ${frasearFaltantes(faltantes)}.`
+      });
+      return;
+    }
     if (divergencia.bloqueia) {
       showToast({
         type: "warning",
@@ -985,7 +999,7 @@ export function DespacharModal({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={gerandoPrepostagem || divergencia.bloqueia}
+                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || divergencia.bloqueia}
                       onClick={() => void handleGerarPrepostagem("SEDEX")}
                       className="rounded-2xl bg-[#0f9f9a] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -993,19 +1007,25 @@ export function DespacharModal({
                     </button>
                     <button
                       type="button"
-                      disabled={gerandoPrepostagem || divergencia.bloqueia}
+                      disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || divergencia.bloqueia}
                       onClick={() => void handleGerarPrepostagem("PAC")}
                       className="rounded-2xl border border-[#0f9f9a] px-4 py-2 text-xs font-bold text-[#0f9f9a] transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       PAC
                     </button>
                   </div>
-                  {divergencia.bloqueia && (
+                  {/* Mesma ordem do rodapé: o que falta primeiro, divergência depois. */}
+                  {faltantes.length > 0 ? (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                      Falta informar {frasearFaltantes(faltantes)}. Emitir prepostagem é contratar transporte — o mesmo
+                      que o &quot;Confirmar despacho&quot; exige vale aqui.
+                    </p>
+                  ) : divergencia.bloqueia ? (
                     <p className="text-xs font-medium text-rose-700 dark:text-rose-400">
                       Bloqueado: {frasearMotivos(divergencia.motivos)}. Emitir prepostagem é contratar transporte — não
                       dá para emitir um envio que não é o que foi cotado.
                     </p>
-                  )}
+                  ) : null}
                 </div>
               )}
             </>
