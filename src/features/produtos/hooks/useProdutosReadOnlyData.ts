@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getProdutosReadOnlyList, type ProdutosReadResult } from "@/features/produtos/services/produtos.service";
 
 export function useProdutosReadOnlyData() {
@@ -17,6 +17,18 @@ export function useProdutosReadOnlyData() {
     warnings: []
   });
   const [isLoading, setIsLoading] = useState(true);
+
+  /**
+   * Recarrega a lista do Supabase. Existe desde 21/08/2026, quando "Inativar
+   * produto" deixou de ser mock: sem isto, o produto continuaria aparecendo
+   * como ATIVO na tela ate alguem recarregar a pagina — o que faria a acao
+   * real PARECER que nao funcionou, trocando um mock por uma mentira pior.
+   */
+  const reload = useCallback(async () => {
+    const result = await getProdutosReadOnlyList();
+    setState(result);
+    return result;
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -46,6 +58,7 @@ export function useProdutosReadOnlyData() {
   return {
     ...state,
     isLoading,
+    reload,
     loadedCount: state.produtos.length
   };
 }

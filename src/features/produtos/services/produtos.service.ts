@@ -806,6 +806,34 @@ export async function updateProdutoReal(idProduto: number, input: ProdutoWriteIn
   };
 }
 
+/**
+ * Inativar produto: `ativo = false`, pelo mesmo UPDATE de sempre.
+ *
+ * POR QUE EXISTE COMO FUNCAO PROPRIA
+ *   Ate 21/08/2026 "Inativar produto" era um toast de mock nas duas telas do
+ *   catalogo — e o pior dos tres mocks do modulo, porque a permissao
+ *   `produtos.inativar` era checada de verdade: quem a tinha clicava, lia
+ *   "acao mockada" e o produto seguia vendavel. Inativar so acontecia entrando
+ *   em Editar e desmarcando o campo.
+ *
+ *   `ativo` ja estava em `PRODUTOS_UPDATE_FIELD_WHITELIST`, entao nao ha
+ *   caminho novo aqui: e `updateProdutoReal` com um unico campo. O nome proprio
+ *   existe para a intencao ficar num lugar so, e para deixar explicito o par
+ *   com `deleteProdutoBlocked` logo abaixo — inativar e o que SUBSTITUI o
+ *   DELETE fisico, que continua proibido porque o catalogo tem vinculo com
+ *   propostas.
+ *
+ * O QUE INATIVAR DE FATO FAZ
+ *   Some das buscas que filtram `ativo = true`: o seletor de produtos do
+ *   Orcamento (`listProdutos({ ativo: true })`) e a busca de produtos da NF-e
+ *   (`searchActiveProducts`). NAO afeta pedido nenhum ja existente — producao,
+ *   detalhe e NF-e resolvem produto por `.in("id_produto", ...)`, sem olhar
+ *   `ativo` —, e nao toca o snapshot em `produtos_proposta`.
+ */
+export async function inativarProdutoReal(idProduto: number): Promise<ProdutoWriteResult> {
+  return updateProdutoReal(idProduto, { ativo: false });
+}
+
 export async function deleteProdutoBlocked(idProduto: number): Promise<ProdutoWriteResult> {
   // DELETE físico de produto é proibido nesta fase porque o catálogo pode ter vínculos com propostas.
   return {

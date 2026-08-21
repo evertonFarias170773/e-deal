@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Boxes, ImageIcon, Package, Search, SlidersHorizontal } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
+import { inativarProdutoReal } from "@/features/produtos/services/produtos.service";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -58,7 +60,40 @@ export function ProdutosListPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const { user } = useAuth();
-  const { produtos, source, warnings, resumo, categorias, isLoading, error } = useProdutosReadOnlyData();
+  const { produtos, source, warnings, resumo, categorias, isLoading, error, reload } = useProdutosReadOnlyData();
+
+  /**
+   * Inativacao (21/08/2026). Ate aqui esta acao era um toast de mock, mesmo com
+   * a permissao `produtos.inativar` sendo checada de verdade.
+   *
+   * A confirmacao nao e zelo excessivo: e um clique unico numa linha de lista
+   * que tira o produto do seletor do Orcamento e da busca da NF-e. Reusa o
+   * `ConfirmarAcaoModal`, que ja existe para as acoes de status da Expedicao —
+   * nao ha componente novo aqui.
+   */
+  const [produtoParaInativar, setProdutoParaInativar] = useState<Produto | null>(null);
+  const [inativando, setInativando] = useState(false);
+
+  async function confirmarInativacao() {
+    if (!produtoParaInativar || inativando) return;
+    setInativando(true);
+    const resultado = await inativarProdutoReal(produtoParaInativar.id_produto);
+    setInativando(false);
+
+    if (!resultado.success) {
+      // Erro real do banco, com a mensagem do banco. Nunca "deu certo" falso.
+      showToast({ type: "error", title: "Nao foi possivel inativar", description: resultado.message });
+      return;
+    }
+
+    setProdutoParaInativar(null);
+    showToast({
+      type: "success",
+      title: "Produto inativado",
+      description: `#${produtoParaInativar.id_produto} ${produtoParaInativar.nomeReal} saiu do catalogo ativo.`
+    });
+    await reload();
+  }
 
   // Filtros da tela na URL: sobrevivem a atualizar a página, sair e voltar, ao
   // histórico do navegador e a um link copiado.
@@ -164,8 +199,14 @@ export function ProdutosListPage() {
 
     actions.push({ label: "Testar no Maestro", onClick: () => showMockAction("Teste no Maestro") });
 
-    if (canInativar) {
-      actions.push({ label: "Inativar produto", destructive: true, onClick: () => showMockAction("Inativar produto") });
+    // Produto ja inativo nao reoferece a acao: repetir o UPDATE devolveria
+    // "sucesso" sem mudar nada, que e justamente o caminho que finge sucesso.
+    if (canInativar && produto.ativo) {
+      actions.push({
+        label: "Inativar produto",
+        destructive: true,
+        onClick: () => setProdutoParaInativar(produto)
+      });
     }
 
     return actions;
@@ -402,6 +443,20 @@ export function ProdutosListPage() {
               : (warnings[0] ?? `Dados reais carregados em public.produtos (${produtos.length} registros).`)}
           </p>
         </section>
+      ) : null}
+
+      {produtoParaInativar ? (
+        <ConfirmarAcaoModal
+          titulo="Inativar produto"
+          descricao={`#${produtoParaInativar.id_produto} ${produtoParaInativar.nomeReal} deixa de aparecer no seletor de produtos do Orcamento e na busca da NF-e.`}
+          detalhe="Pedidos e propostas ja existentes nao mudam. Para reativar, use Editar produto e marque Ativo."
+          rotuloConfirmar="Inativar"
+          salvando={inativando}
+          onConfirmar={() => void confirmarInativacao()}
+          onClose={() => {
+            if (!inativando) setProdutoParaInativar(null);
+          }}
+        />
       ) : null}
     </div>
   );

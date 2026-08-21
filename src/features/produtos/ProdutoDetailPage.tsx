@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, BadgeCheck, Bot, Clock, Eye, Package, Scale, ShieldCheck } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
+import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
+import { inativarProdutoReal } from "@/features/produtos/services/produtos.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { SummaryCard } from "@/components/common/SummaryCard";
@@ -18,11 +20,43 @@ type ProdutoDetailPageProps = {
   produto: Produto;
 };
 
-export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
+export function ProdutoDetailPage({ produto: produtoInicial }: ProdutoDetailPageProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const [openOptionsVariationId, setOpenOptionsVariationId] = useState<number | null>(null);
+
+  /**
+   * O produto vive em estado local a partir do prop porque a inativacao
+   * (21/08/2026) precisa refletir na hora. So o campo `ativo` e reescrito: o
+   * retorno de `updateProdutoReal` nao traz fotos nem variacoes (mapeia a linha
+   * sem as relacoes), entao substituir o objeto inteiro apagaria a galeria e a
+   * lista de variacoes da tela.
+   */
+  const [produto, setProduto] = useState(produtoInicial);
+  const [confirmandoInativar, setConfirmandoInativar] = useState(false);
+  const [inativando, setInativando] = useState(false);
+
   const fotoPrincipal = produto.fotos.find((foto) => foto.principal) ?? produto.fotos[0];
+
+  async function confirmarInativacao() {
+    if (inativando) return;
+    setInativando(true);
+    const resultado = await inativarProdutoReal(produto.id_produto);
+    setInativando(false);
+
+    if (!resultado.success) {
+      showToast({ type: "error", title: "Nao foi possivel inativar", description: resultado.message });
+      return;
+    }
+
+    setConfirmandoInativar(false);
+    setProduto((atual) => ({ ...atual, ativo: false }));
+    showToast({
+      type: "success",
+      title: "Produto inativado",
+      description: `#${produto.id_produto} ${produto.nomeReal} saiu do catalogo ativo.`
+    });
+  }
 
   function showMockAction(title: string) {
     showToast({
@@ -60,7 +94,17 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
                 { label: "Gerenciar variacoes", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#variacoes`) },
                 { label: "Testar no Maestro", onClick: () => showMockAction("Teste no Maestro") },
                 { label: "Duplicar produto", onClick: () => showMockAction("Duplicar produto") },
-                { label: "Inativar produto", destructive: true, onClick: () => showMockAction("Inativar produto") }
+                // Produto ja inativo nao reoferece a acao: o UPDATE repetido
+                // devolveria "sucesso" sem mudar nada.
+                ...(produto.ativo
+                  ? [
+                      {
+                        label: "Inativar produto",
+                        destructive: true,
+                        onClick: () => setConfirmandoInativar(true)
+                      }
+                    ]
+                  : [])
               ]}
             />
           </div>
@@ -257,6 +301,20 @@ export function ProdutoDetailPage({ produto }: ProdutoDetailPageProps) {
           ))}
         </div>
       </DetailCard>
+
+      {confirmandoInativar ? (
+        <ConfirmarAcaoModal
+          titulo="Inativar produto"
+          descricao={`#${produto.id_produto} ${produto.nomeReal} deixa de aparecer no seletor de produtos do Orcamento e na busca da NF-e.`}
+          detalhe="Pedidos e propostas ja existentes nao mudam. Para reativar, use Editar produto e marque Ativo."
+          rotuloConfirmar="Inativar"
+          salvando={inativando}
+          onConfirmar={() => void confirmarInativacao()}
+          onClose={() => {
+            if (!inativando) setConfirmandoInativar(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

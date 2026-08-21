@@ -10,10 +10,10 @@ import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { produtoCategoriasMock } from "@/lib/mocks/produtos.mock";
 import {
   PRODUCT_IMAGES_BUCKET,
   createProdutoReal,
+  listCategoriasProdutos,
   listProdutos,
   updateProdutoReal,
   uploadProdutoFotoReal,
@@ -110,6 +110,7 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   const [selectedFiscalSourceId, setSelectedFiscalSourceId] = useState("");
   const [isLoadingFiscalSource, setIsLoadingFiscalSource] = useState(false);
   const [variacoesGlobais, setVariacoesGlobais] = useState<VariacaoGlobalJoin[]>([]);
+  const [categoriasReais, setCategoriasReais] = useState<string[]>([]);
   const [formatos, setFormatos] = useState<FormatoProducao[]>([]);
   const [cores, setCores] = useState<CorProducao[]>([]);
   const [gabaritos, setGabaritos] = useState<GabaritoProducao[]>([]);
@@ -137,9 +138,15 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       return variacao.is_ativo && !linkedIds.has(variacao.id_variacao) && matchesSearch;
     });
   }, [form.variacoes, variacoesGlobais, variationSearch]);
+  /**
+   * A categoria ATUAL do produto continua na frente da lista mesmo que nao
+   * conste em `public.categorias`: sem isso, abrir "Editar" num produto de
+   * categoria orfa trocaria silenciosamente o valor gravado pelo primeiro item
+   * do select. Hoje isso vale para o 9001 "TesteBand" ("Pulseiras").
+   */
   const categoriaOptions = useMemo(
-    () => Array.from(new Set([produto?.categoria, ...produtoCategoriasMock].filter(Boolean))) as ProdutoCategoria[],
-    [produto?.categoria]
+    () => Array.from(new Set([produto?.categoria, ...categoriasReais].filter(Boolean))) as ProdutoCategoria[],
+    [produto?.categoria, categoriasReais]
   );
   const filteredFiscalSourceProdutos = useMemo(() => {
     const search = normalize(fiscalSourceSearch);
@@ -186,6 +193,34 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       const globais = await listVariacoesGlobais();
       if (!active) return;
       setVariacoesGlobais(globais);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /**
+   * Categorias reais de `public.categorias` (21/08/2026).
+   *
+   * Ate aqui este select oferecia quatro valores fixos de
+   * `@/lib/mocks/produtos.mock` — "Pulseiras", "Ingressos", "Cartoes",
+   * "Credenciais" — que nao existem em nenhuma das 14 categorias cadastradas.
+   * O mock nao avisava nada na tela, e ja produziu pelo menos um registro real:
+   * o produto 9001 "TesteBand", com categoria "Pulseiras".
+   *
+   * `listCategoriasProdutos()` ja existia no service e ja era usada pela
+   * listagem — faltava aqui. Ela apara espacos e quebras de linha e deduplica,
+   * o que importa porque "Cordao Credencial" esta gravada com 
+ no fim.
+   */
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      const reais = await listCategoriasProdutos();
+      if (!active) return;
+      setCategoriasReais(reais);
     })();
 
     return () => {
