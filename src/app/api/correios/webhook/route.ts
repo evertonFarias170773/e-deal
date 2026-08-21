@@ -1,9 +1,9 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-// Listas de eventos em ponto único: a consulta de rastreio da tela usa as MESMAS
-// para liberar o botão "marcar ENTREGUE". Duas cópias divergiriam.
-import { EVENTOS_EM_TRANSITO, EVENTOS_ENTREGUE } from "@/lib/correios/eventos";
+// Classificação de evento em ponto único: a consulta de rastreio da tela usa as
+// MESMAS listas para liberar o botão "marcar ENTREGUE". Duas cópias divergiriam.
+import { eventoEhEntrega, eventoEhTransito, separarTipoEvento } from "@/lib/correios/eventos";
 
 /**
  * Receiver do WEBHOOK oficial dos Correios (serviço wh-rastro, API 78/534).
@@ -43,6 +43,63 @@ function criarClientServiceRole() {
   });
 }
 
+type ClientServiceRole = NonNullable<ReturnType<typeof criarClientServiceRole>>;
+
+/** Corpo cru guardado com teto: o registro e diagnostico, nao arquivo. */
+const LIMITE_CORPO = 20_000;
+
+/**
+ * Grava a requisicao ANTES de qualquer decisao e devolve o id da linha.
+ *
+ * Nao lanca NUNCA: o evento vale mais que o registro dele. Se a gravacao
+ * falhar, devolve null, o erro aparece no log e o processamento segue — o que
+ * se perde e a memoria daquela requisicao, nao a atualizacao do pedido.
+ */
+async function registrarRecebimento(
+  supabase: ClientServiceRole | null,
+  corpoBruto: string,
+  tamanhoAssinatura: number
+): Promise<number | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("correios_webhook_eventos")
+      .insert({
+        resultado: "recebido",
+        corpo_bruto: corpoBruto.slice(0, LIMITE_CORPO),
+        assinatura_len: tamanhoAssinatura
+      })
+      .select("id")
+      .single();
+    if (error) {
+      console.error("[correios/webhook] Falha ao registrar o recebimento:", error.message);
+      return null;
+    }
+    return Number(data.id);
+  } catch (e) {
+    console.error("[correios/webhook] Excecao ao registrar o recebimento:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/** Atualiza o desfecho do registro. Mesma regra: falhou, loga e segue. */
+async function marcarRegistro(
+  supabase: ClientServiceRole | null,
+  registroId: number | null,
+  patch: { resultado?: string; detalhe?: string; objeto?: string; tipo_evento?: string; id_int?: number }
+): Promise<void> {
+  if (!supabase || registroId === null) return;
+  // Corpo ilegível não rende objeto nem tipo: um UPDATE sem campo nenhum seria
+  // uma ida ao banco para nada — e o PostgREST recusa.
+  if (Object.keys(patch).length === 0) return;
+  try {
+    const { error } = await supabase.from("correios_webhook_eventos").update(patch).eq("id", registroId);
+    if (error) console.error(`[correios/webhook] Falha ao atualizar o registro ${registroId}:`, error.message);
+  } catch (e) {
+    console.error(`[correios/webhook] Excecao ao atualizar o registro ${registroId}:`, e instanceof Error ? e.message : e);
+  }
+}
+
 /** Compara a assinatura recebida com HMAC-SHA256 do corpo, em hex e base64. */
 function assinaturaValida(corpoBruto: string, header: string, secret: string): boolean {
   const recebida = header.replace(/^sha256=/i, "").trim();
@@ -72,11 +129,23 @@ export async function POST(request: Request) {
 
   const corpoBruto = await request.text();
   const assinatura = request.headers.get("x-correios-signature") ?? "";
+
+  // O cliente sobe ANTES da validação porque a requisição recusada é
+  // justamente a que mais precisa ficar registrada: é ela que distingue
+  // "os Correios não chamaram" de "chamaram e o segredo diverge". Sem
+  // service-role não há registro, e aí só resta o log — mesma situação de antes.
+  const supabase = criarClientServiceRole();
+  const registroId = await registrarRecebimento(supabase, corpoBruto, assinatura.length);
+
   if (!assinatura || !assinaturaValida(corpoBruto, assinatura, secret)) {
     // Log de calibração sem vazar nada sensível: só formato/tamanho do header.
     console.warn(
       `[correios/webhook] Assinatura inválida ou ausente (len=${assinatura.length}, prefixo="${assinatura.slice(0, 7)}").`
     );
+    await marcarRegistro(supabase, registroId, {
+      resultado: "assinatura_invalida",
+      detalhe: assinatura ? "assinatura não confere com o corpo" : "header x-correios-signature ausente"
+    });
     return NextResponse.json({ success: false, message: "Assinatura inválida." }, { status: 401 });
   }
 
@@ -133,13 +202,23 @@ export async function POST(request: Request) {
       payloadInterno.criadoEm as CampoBusca
     ) || new Date().toISOString();
 
+  // O que se conseguiu ler do corpo entra no registro antes de qualquer
+  // desfecho — inclusive quando não deu para reconhecer o objeto.
+  await marcarRegistro(supabase, registroId, {
+    ...(objeto ? { objeto } : {}),
+    ...(tipoEvento ? { tipo_evento: tipoEvento } : {})
+  });
+
   if (!objeto) {
     // 200 de propósito: 4xx faria os Correios reenviarem algo que nunca vamos entender.
     console.warn(`[correios/webhook] Evento sem código de objeto reconhecível (tipo="${tipoEvento}").`);
+    await marcarRegistro(supabase, registroId, {
+      resultado: "ignorado",
+      detalhe: "corpo sem código de objeto reconhecível"
+    });
     return NextResponse.json({ success: true, ignorado: true });
   }
 
-  const supabase = criarClientServiceRole();
   if (!supabase) {
     console.error("[correios/webhook] SUPABASE_SERVICE_ROLE_KEY ausente — evento não processado.");
     return NextResponse.json({ success: false, message: "Backend não configurado." }, { status: 500 });
@@ -163,6 +242,10 @@ export async function POST(request: Request) {
   }
   if (idInt === null) {
     console.warn(`[correios/webhook] Objeto ${objeto} sem pedido correspondente (evento ${tipoEvento}).`);
+    await marcarRegistro(supabase, registroId, {
+      resultado: "objeto_desconhecido",
+      detalhe: "objeto não casa com correios_codigo_objeto nem codigo_rastreamento"
+    });
     return NextResponse.json({ success: true, ignorado: true });
   }
 
@@ -179,8 +262,16 @@ export async function POST(request: Request) {
   if (upErr) console.warn(`[correios/webhook] Falha ao gravar último evento do #${idInt}:`, upErr.message);
 
   // Transições oficiais — guardadas por status esperado, com trilha.
-  const desejaTransito = EVENTOS_EM_TRANSITO.has(tipoEvento);
-  const desejaEntrega = EVENTOS_ENTREGUE.has(tipoEvento);
+  // O par vem colado ("BDE-01") e as listas guardam a forma sem zero ("BDE-1").
+  // Comparar a string crua contra o Set era o suficiente para uma entrega real
+  // gravar `correios_ultimo_evento` e NÃO mudar o status: o SRO devolve o tipo
+  // zero-preenchido. `eventoEh*` normaliza pelo mesmo `chaveEvento` que a tela usa.
+  const [codigoEvento, numeroEvento] = separarTipoEvento(tipoEvento);
+  const desejaTransito = eventoEhTransito(codigoEvento, numeroEvento);
+  const desejaEntrega = eventoEhEntrega(codigoEvento, numeroEvento);
+  // Vira o `detalhe` do registro: diz, sem abrir o log da Vercel, se o evento
+  // mudou status, se era informativo ou se a guarda de status barrou.
+  let desfecho = "evento informativo: só último evento";
   if (desejaTransito || desejaEntrega) {
     const statusNovo = desejaEntrega ? "ENTREGUE" : "EM TRANSITO";
     // Entrega vale a partir de EXPEDICAO também (cobre PO-* perdido); postagem só de EXPEDICAO.
@@ -202,7 +293,9 @@ export async function POST(request: Request) {
         .select("id_int");
       if (trErr) {
         console.error(`[correios/webhook] Falha ao transicionar #${idInt} para ${statusNovo}:`, trErr.message);
+        desfecho = `falha ao transicionar para ${statusNovo}: ${trErr.message}`.slice(0, 300);
       } else if (linhas && linhas.length > 0) {
+        desfecho = `${statusAnterior} -> ${statusNovo}`;
         if (desejaEntrega) {
           const { error: entregaErr } = await supabase
             .from("expedicoes")
@@ -223,9 +316,21 @@ export async function POST(request: Request) {
           tipo_transicao: "NATURAL"
         });
         if (logErr) console.warn(`[correios/webhook] Falha ao logar transição do #${idInt}:`, logErr.message);
+      } else {
+        // Guarda de status barrou: o pedido não estava onde a transição exige.
+        // Não é erro — é o compare-and-swap fazendo o trabalho dele.
+        desfecho = `sem transição: pedido em ${statusAnterior}, ${statusNovo} exige ${statusEsperados.join(" ou ")}`;
       }
+    } else {
+      desfecho = `sem transição: pedido em ${statusAnterior}, ${statusNovo} exige ${statusEsperados.join(" ou ")}`;
     }
   }
+
+  await marcarRegistro(supabase, registroId, {
+    resultado: "aceito",
+    id_int: idInt,
+    detalhe: desfecho.slice(0, 300)
+  });
 
   return NextResponse.json({ success: true });
 }

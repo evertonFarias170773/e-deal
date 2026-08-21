@@ -98,9 +98,13 @@ function onlyDigits(value: unknown) {
   return String(value ?? "").replace(/\D/g, "");
 }
 
-function getSearchableProposalText(item: OrcamentoListItem) {
+function getSearchableProposalText(item: OrcamentoListItem, nomeSocio?: string | null) {
   return normalize(
     [
+      // Socio pagador entra no indice da tela para a busca refinar por ele
+      // depois que o servidor ja trouxe a linha. O servidor tem alcance proprio
+      // (id_faturado.in), porque a tela so filtra o que ja veio.
+      nomeSocio ?? "",
       item.id_int,
       item.clienteId,
       item.clienteNome,
@@ -443,13 +447,24 @@ export function OrcamentosListPageReal() {
     []
   );
 
+  /**
+   * Nomes dos socios pagadores ja resolvidos. Declarado aqui, acima do
+   * `searchIndex`, porque o indice de busca da tela consome estes nomes.
+   */
+  const [nomesSocios, setNomesSocios] = useState<Record<number, string>>({});
+
   const searchIndex = useMemo(() => {
-    return propostas.map((item) => ({
-      text: getSearchableProposalText(item),
-      digits: getSearchableProposalDigits(item),
-      statusNorm: normalizeProposalStatus(item.statusInterno)
-    }));
-  }, [propostas]);
+    return propostas.map((item) => {
+      const faturado = item.idFaturado;
+      const nomeSocio =
+        faturado && faturado !== Number(item.clienteId) ? (nomesSocios[faturado] ?? null) : null;
+      return {
+        text: getSearchableProposalText(item, nomeSocio),
+        digits: getSearchableProposalDigits(item),
+        statusNorm: normalizeProposalStatus(item.statusInterno)
+      };
+    });
+  }, [propostas, nomesSocios]);
 
   const filteredPropostas = useMemo(() => {
     const normalizedSearch = normalize(search.trim());
@@ -601,7 +616,6 @@ export function OrcamentosListPageReal() {
     return Array.from(ids);
   }, [filteredPropostas]);
 
-  const [nomesSocios, setNomesSocios] = useState<Record<number, string>>({});
   const fetchedSocioIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {

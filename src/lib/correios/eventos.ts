@@ -40,6 +40,24 @@ export function chaveEvento(codigo: string | null | undefined, tipo: string | nu
   return `${c}-${Number.isFinite(n) ? String(n) : t}`;
 }
 
+/**
+ * "BDE-01" -> ["BDE", "01"]. O webhook recebe o par JÁ COLADO (no header
+ * `x-correios-hook-event`, no `tpEvento` do corpo ou pela regex do corpo cru),
+ * enquanto o SRO entrega `codigo` e `tipo` separados. Separar aqui é o que
+ * deixa os dois caminhos entrarem pelas mesmas `eventoEhEntrega`/`eventoEhTransito`,
+ * em vez de o receiver comparar a string crua contra as listas — que é como
+ * "BDE-01" deixava de ser reconhecido como entrega.
+ *
+ * Corta no ÚLTIMO hífen: nenhum código dos Correios tem hífen, mas se um dia
+ * tiver, o número continua sendo o que vem depois do último.
+ */
+export function separarTipoEvento(tipoColado: string | null | undefined): [string, string] {
+  const bruto = String(tipoColado ?? "").trim();
+  const corte = bruto.lastIndexOf("-");
+  if (corte <= 0) return [bruto, ""];
+  return [bruto.slice(0, corte), bruto.slice(corte + 1)];
+}
+
 export function eventoEhEntrega(codigo: string | null | undefined, tipo: string | number | null | undefined): boolean {
   return EVENTOS_ENTREGUE.has(chaveEvento(codigo, tipo));
 }

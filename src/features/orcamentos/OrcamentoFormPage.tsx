@@ -3055,10 +3055,35 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     setManualFreteDraft({ servico: "", prazo: "", valor: "", escolhido: true });
   }
 
+  /**
+   * A opcao de retirada da lista de fretes. Mesma deteccao que o salvamento usa
+   * para gravar `frete_escolhido = 'RETIRADA'` (orcamentos.service), para tela e
+   * banco nunca discordarem sobre o que e retirada.
+   */
+  function ehFreteDeRetirada(frete: { id: string; transportadora: string } | undefined | null): boolean {
+    if (!frete) return false;
+    return frete.id === "frete_retirada" || frete.transportadora.toUpperCase().includes("RETIRA");
+  }
+
   async function selectFrete(freteId: string) {
     const updatedFretes = form.fretes.map((frete) => ({ ...frete, escolhido: frete.id === freteId }));
+    // Sincronia (nao substituicao): escolher retirada embaixo marca RETIRA no
+    // topo. Os dois campos continuam existindo — `frete_escolhido` guarda a
+    // cotacao e `modalidade_frete` guarda quem paga. Ponto UNICO: os outros
+    // pontos que mexem em `freteEscolhidoId` sao carga inicial, reset e
+    // recalculo, nao escolha do usuario, e nao sincronizam nada.
+    const escolhido = updatedFretes.find((f) => f.id === freteId);
+    const viraRetira = modalidadeEditavel && ehFreteDeRetirada(escolhido) && form.modalidadeFrete !== "RETIRA";
+    if (viraRetira) {
+      showToast({
+        type: "info",
+        title: "Modalidade ajustada para RETIRA",
+        description: "Você escolheu retirada no balcão, então a modalidade do topo acompanhou. Dá para trocar lá em cima."
+      });
+    }
     setForm((current) => ({
       ...current,
+      ...(viraRetira ? { modalidadeFrete: "RETIRA" as const, idTransportadoraCliente: null } : {}),
       fretes: updatedFretes,
       freteEscolhidoId: freteId
     }));
@@ -5286,6 +5311,23 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                       type="button"
                       disabled={!modalidadeEditavel}
                       onClick={() => {
+                        // Sair de RETIRA com a retirada ainda escolhida embaixo
+                        // deixaria o par incoerente (ex.: FOB com frete de
+                        // retirada). A decisao e do usuario: avisamos e ele
+                        // confirma — nada e limpo por conta propria.
+                        const freteAtual = form.fretes.find((f) => f.id === form.freteEscolhidoId);
+                        if (m !== "RETIRA" && ehFreteDeRetirada(freteAtual)) {
+                          const seguir = window.confirm(
+                            `A cotação escolhida abaixo ainda é "${freteAtual?.transportadora ?? "Retirada Local"}".
+
+` +
+                              `Mudar a modalidade para ${LABEL_MODALIDADE[m]} deixa o pedido com retirada no frete e ${LABEL_MODALIDADE[m]} na modalidade.
+
+` +
+                              `Continuar assim mesmo? Se preferir, cancele e escolha outra cotação primeiro.`
+                          );
+                          if (!seguir) return;
+                        }
                         updateField("modalidadeFrete", m);
                         // Só FOB tem transportadora definida pelo vendedor.
                         if (m !== "FOB") updateField("idTransportadoraCliente", null);

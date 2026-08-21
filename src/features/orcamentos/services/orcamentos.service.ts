@@ -234,6 +234,66 @@ function buildPeriodoFilter(periodo: string): OrcamentosPeriodoFilter | null {
   };
 }
 
+/**
+ * Teto de ids de socio dobrados na busca. A condicao vai na URL do PostgREST;
+ * sem limite, um termo curto como "ltda" traria milhares de ids e estouraria a
+ * requisicao. 200 cobre com folga qualquer busca util — ao atingir o teto,
+ * avisamos no log em vez de truncar em silencio.
+ */
+const LIMITE_IDS_SOCIO_BUSCA = 200;
+
+/**
+ * IDs de clientes cujo nome casa com o termo. Serve so a busca por SOCIO
+ * PAGADOR: `propostas.id_faturado` guarda o id, e o nome vive em `clientes`.
+ * Somente leitura.
+ */
+async function buscarIdsClientesPorNome(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  termo: string
+): Promise<number[]> {
+  const alvo = termo.trim();
+  if (alvo.length < 2) return [];
+  try {
+    const { data, error } = await client
+      .from("clientes")
+      .select("id_cliente")
+      .or(`nome.ilike.%${alvo}%,fantasia.ilike.%${alvo}%,apelido.ilike.%${alvo}%`)
+      .limit(LIMITE_IDS_SOCIO_BUSCA);
+
+    if (error) {
+      console.warn("[OrcamentosService] Falha ao resolver socios na busca:", error.message);
+      return [];
+    }
+    const ids = (data ?? [])
+      .map((linha) => Number(linha.id_cliente))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    // TETO ATINGIDO = DESISTE DA AMPLIACAO, em vez de aplicar um recorte
+    // arbitrario. Medido em 21/08/2026: termos correntes como "silva" (6.831
+    // clientes), "santos" (3.962), "eduardo" (805) e "joao" (526) estouram o
+    // teto com folga. Como a consulta nao tem ordenacao definida, os 200
+    // primeiros seriam um subconjunto imprevisivel — a mesma busca poderia
+    // trazer socios diferentes a cada execucao.
+    //
+    // Desistir e seguro porque a condicao de socio SOMA ao `.or()`: sem ela a
+    // busca continua exatamente como era antes desta mudanca, achando por
+    // numero, cliente e vendedor. O usuario perde so o alcance extra, e o log
+    // diz o porque — nada fica silenciosamente pela metade.
+    if (ids.length >= LIMITE_IDS_SOCIO_BUSCA) {
+      console.warn(
+        `[OrcamentosService] Termo "${alvo}" casa com ${LIMITE_IDS_SOCIO_BUSCA}+ clientes; ` +
+          `a busca por SOCIO PAGADOR foi desligada para este termo (seria um recorte arbitrario). ` +
+          `A busca por numero, cliente e vendedor segue normal. Use um termo mais especifico.`
+      );
+      return [];
+    }
+    return ids;
+  } catch (e) {
+    console.warn("[OrcamentosService] Excecao ao resolver socios na busca:", e);
+    return [];
+  }
+}
+
 async function fetchPropostaRows(
   periodo = "all",
   page = 1,
@@ -350,6 +410,17 @@ async function fetchPropostaRows(
     if (filters?.search && filters.search.trim()) {
       const term = filters.search.trim();
       const num = Number(term);
+
+      // SOCIO PAGADOR na busca: `propostas.id_faturado` guarda o ID de quem
+      // paga, nao o nome — entao o nome so pode ser alcancado invertendo a
+      // consulta. Pre-consulta `clientes` pelo termo e dobra os ids achados no
+      // MESMO `.or()`, como `id_faturado.in.(...)`. Mesmo padrao que o filtro de
+      // tipo de cobranca ja usa com `pagamentos_v2`.
+      //
+      // SOMA, nao substitui: continua achando por numero, cliente e vendedor.
+      const idsSocio = await buscarIdsClientesPorNome(client, term);
+      const condicaoSocio = idsSocio.length > 0 ? `id_faturado.in.(${idsSocio.join(",")})` : null;
+
       if (Number.isInteger(num) && num > 0) {
         // id_int (nº da proposta) e id_cliente são colunas numéricas → comparação exata,
         // igual ao comportamento já existente do nº da proposta.
@@ -357,9 +428,12 @@ async function fetchPropostaRows(
         // id_cliente é integer (int4): fora da faixa o Postgres aborta a consulta inteira.
         if (num <= MAX_INT4) condicoes.push(`id_cliente.eq.${num}`);
         condicoes.push(`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`);
+        if (condicaoSocio) condicoes.push(condicaoSocio);
         query = query.or(condicoes.join(","));
       } else {
-        query = query.or(`cliente.ilike.%${term}%,vendedor.ilike.%${term}%`);
+        const condicoes = [`cliente.ilike.%${term}%`, `vendedor.ilike.%${term}%`];
+        if (condicaoSocio) condicoes.push(condicaoSocio);
+        query = query.or(condicoes.join(","));
       }
     }
 
