@@ -1,0 +1,362 @@
+import React from "react";
+import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
+import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
+import {
+  coresDoSetor,
+  faixaNumeracao,
+  formatarData,
+  formatarDataCurta,
+  formatarHora,
+  formatarPeso,
+  formatarQuantidade,
+  pdfSafe,
+  truncar
+} from "./OsPdfDocument";
+
+/**
+ * Segundo layout do PDF da OS: LISTA RESUMIDA, sem imagem.
+ *
+ * POR QUE EXISTE
+ *   O layout "OS 2027" (OsPdfDocument) monta um card por modelo com a imagem
+ *   grande da arte — é o papel que vai para a bancada. Quem só precisa CONFERIR
+ *   os dados (quantidade, cor, faixa numérica, numerador) recebia o mesmo
+ *   documento pesado. Este aqui é opcional e não substitui aquele: o padrão
+ *   continua sendo o completo, e nada do outro arquivo mudou.
+ *
+ * O QUE MUDA, E SÓ ISSO
+ *   A seção de produtos. Cabeçalho, cliente, observações, forma de envio,
+ *   assinaturas e rodapé são os mesmos campos do layout completo — o documento
+ *   continua sendo a mesma OS, com o mesmo QR e o mesmo número.
+ *
+ * POR QUE OS FORMATADORES VÊM IMPORTADOS
+ *   `faixaNumeracao`, `formatarPeso` e companhia decidem como o dado aparece.
+ *   Copiá-los aqui criaria duas verdades sobre o mesmo campo — o tipo de
+ *   divergência que este projeto já pagou caro. Eles foram apenas EXPORTADOS do
+ *   arquivo original; nenhum corpo mudou e a saída do layout completo é a mesma.
+ *
+ * SEM IMAGEM, DE PROPÓSITO
+ *   Nenhum `<Image>` de arte. A rota nem faz o pré-carregamento das imagens
+ *   quando este layout é pedido — é daí que vem a diferença de tempo e de
+ *   tamanho do arquivo. O QR e o logo continuam (identidade do documento).
+ */
+
+const styles = StyleSheet.create({
+  page: { paddingTop: 22, paddingBottom: 44, paddingHorizontal: 24, fontSize: 8.5, fontFamily: "Helvetica", color: "#111" },
+
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  headerIdentidade: { flexDirection: "row", alignItems: "center", gap: 8 },
+  logo: { height: 26, objectFit: "contain" },
+  osBox: { flexDirection: "row", alignItems: "baseline", gap: 3 },
+  osBoxLabel: { fontSize: 8, color: "#666", fontFamily: "Helvetica-Bold" },
+  osBoxNumero: { fontSize: 15, fontFamily: "Helvetica-Bold" },
+
+  setorBox: { flexDirection: "row", alignItems: "baseline", gap: 4, borderWidth: 1, borderRadius: 3, paddingHorizontal: 6, paddingVertical: 3 },
+  setorLabel: { fontSize: 7, color: "#666" },
+  setorValor: { fontSize: 11, fontFamily: "Helvetica-Bold" },
+  setorOutros: { fontSize: 6.5, color: "#666", marginTop: 2, textAlign: "center" },
+
+  headerPrazo: { flexDirection: "row", gap: 6 },
+  prazoBox: { borderWidth: 1, borderColor: "#ccc", borderRadius: 3, paddingHorizontal: 5, paddingVertical: 3, alignItems: "center" },
+  prazoLabel: { fontSize: 6, color: "#666", fontFamily: "Helvetica-Bold" },
+  prazoValor: { fontSize: 9, fontFamily: "Helvetica-Bold" },
+  qr: { width: 46, height: 46 },
+  qrIndisponivel: { width: 46, height: 46, borderWidth: 1, borderColor: "#ddd", alignItems: "center", justifyContent: "center" },
+
+  faixaResumo: { marginBottom: 6, paddingVertical: 2, borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#ddd" },
+  faixaResumoTexto: { fontSize: 7, color: "#555", fontFamily: "Helvetica-Bold", textAlign: "center" },
+
+  bloco: { borderWidth: 1, borderColor: "#ddd", borderRadius: 3, padding: 6, marginBottom: 6 },
+  linha: { flexDirection: "row", gap: 10 },
+  campo: { flex: 1 },
+  campoLabel: { fontSize: 6, color: "#777", fontFamily: "Helvetica-Bold" },
+  campoValor: { fontSize: 9 },
+
+  produtoBloco: { marginBottom: 6 },
+  produtoBarra: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 2 },
+  produtoNome: { flex: 1, color: "#fff", fontSize: 9, fontFamily: "Helvetica-Bold" },
+  produtoChip: { flexDirection: "row", alignItems: "baseline", gap: 3 },
+  produtoChipLabel: { color: "#fff", fontSize: 6.5, opacity: 0.85 },
+  produtoChipValor: { color: "#fff", fontSize: 9, fontFamily: "Helvetica-Bold" },
+
+  tabelaCabecalho: { flexDirection: "row", borderBottomWidth: 1, borderColor: "#bbb", paddingVertical: 2, paddingHorizontal: 4 },
+  cabecalhoTexto: { fontSize: 6, color: "#666", fontFamily: "Helvetica-Bold" },
+  loteLinha: { flexDirection: "row", borderBottomWidth: 0.5, borderColor: "#e5e5e5", paddingVertical: 3, paddingHorizontal: 4, alignItems: "flex-start" },
+  loteTexto: { fontSize: 8 },
+  loteTextoForte: { fontSize: 8, fontFamily: "Helvetica-Bold" },
+
+  colLote: { width: "26%", paddingRight: 4 },
+  colQtd: { width: "10%", paddingRight: 4, textAlign: "right" },
+  colCor: { width: "14%", paddingRight: 4 },
+  colFaixa: { width: "16%", paddingRight: 4 },
+  colTipo: { width: "14%", paddingRight: 4 },
+  colNum: { width: "20%" },
+
+  loteDetalhe: { paddingLeft: 8, paddingRight: 4, paddingBottom: 3 },
+  loteDetalheTexto: { fontSize: 7, color: "#555" },
+
+  obsBox: { borderWidth: 1, borderColor: "#ddd", borderRadius: 3, padding: 6, marginBottom: 6 },
+  obsTitulo: { fontSize: 7, fontFamily: "Helvetica-Bold", color: "#666", marginBottom: 2 },
+  obsTexto: { fontSize: 8, marginBottom: 1 },
+
+  envioBarra: { backgroundColor: "#f1f5f9", borderRadius: 3, paddingHorizontal: 6, paddingVertical: 3, marginBottom: 8 },
+  envioTexto: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#334155" },
+
+  assinaturaArea: { flexDirection: "row", gap: 14, marginTop: 4 },
+  assinatura: { flex: 1, borderTopWidth: 1, borderColor: "#999", paddingTop: 3, fontSize: 7, textAlign: "center", color: "#555" },
+
+  footer: {
+    position: "absolute",
+    bottom: 18,
+    left: 24,
+    right: 24,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    fontSize: 6.5,
+    color: "#888",
+    borderTopWidth: 1,
+    borderColor: "#eee",
+    paddingTop: 3
+  }
+});
+
+export interface OsPdfResumoDocumentProps {
+  vm: OsPdfViewModel;
+  qrDataUrl: string | null;
+  logoDataUrl: string | null;
+}
+
+function Campo({ label, valor }: { label: string; valor: string | null | undefined }) {
+  return (
+    <View style={styles.campo}>
+      <Text style={styles.campoLabel}>{label}</Text>
+      <Text style={styles.campoValor}>{pdfSafe(valor) || "-"}</Text>
+    </View>
+  );
+}
+
+/**
+ * Uma linha por lote. Prateleira esconde faixa, tipo e numerador pelo mesmo
+ * motivo do card do layout completo: o produto sai pronto do estoque, não há
+ * numeração nem gabarito a conferir.
+ */
+function LoteLinha({
+  modelo,
+  isEstoque,
+  nomeProduto
+}: {
+  modelo: OsPdfModelo;
+  isEstoque: boolean;
+  nomeProduto: string;
+}) {
+  const rotuloLote = pdfSafe(isEstoque ? nomeProduto : modelo.nomeModelo) || "-";
+  const impressao = `${modelo.frenteVerso ? "FxV" : "Frente"}${modelo.rfid ? "  RFID/NFC" : ""}`;
+  const artes = modelo.artes
+    .map((a) => pdfSafe(a.nomeArquivo))
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <View wrap={false}>
+      <View style={styles.loteLinha}>
+        <Text style={[styles.loteTextoForte, styles.colLote]}>{rotuloLote}</Text>
+        <Text style={[styles.loteTextoForte, styles.colQtd]}>{formatarQuantidade(modelo.quantidade)}</Text>
+        <Text style={[styles.loteTexto, styles.colCor]}>{pdfSafe(modelo.corMaterial) || "-"}</Text>
+        <Text style={[styles.loteTexto, styles.colFaixa]}>{isEstoque ? "-" : faixaNumeracao(modelo)}</Text>
+        <Text style={[styles.loteTexto, styles.colTipo]}>
+          {isEstoque ? "-" : pdfSafe(modelo.tipoNumeracao) || "-"}
+        </Text>
+        <Text style={[styles.loteTexto, styles.colNum]}>
+          {isEstoque ? "-" : pdfSafe(modelo.gabarito) || "-"}
+        </Text>
+      </View>
+
+      {isEstoque ? null : (
+        <View style={styles.loteDetalhe}>
+          <Text style={styles.loteDetalheTexto}>IMPRESSAO: {impressao}</Text>
+        </View>
+      )}
+      {modelo.obsTecnicas ? (
+        <View style={styles.loteDetalhe}>
+          <Text style={styles.loteDetalheTexto}>Obs: {truncar(modelo.obsTecnicas, 160)}</Text>
+        </View>
+      ) : null}
+      {artes ? (
+        <View style={styles.loteDetalhe}>
+          <Text style={styles.loteDetalheTexto}>Artes: {truncar(artes, 160)}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Bloco do produto: a mesma barra de título do layout completo, e a lista. */
+function ProdutoLista({ produto, corSetor }: { produto: OsPdfProduto; corSetor: string }) {
+  const codigoNome = [produto.codigo, pdfSafe(produto.nome)]
+    .filter((v) => v !== null && v !== "")
+    .join(" - ");
+  const peso = formatarPeso(produto.pesoTotalGramas);
+
+  return (
+    <View style={styles.produtoBloco}>
+      {/* Barra + cabeçalho da tabela juntos: o título nunca fica órfão no fim da página. */}
+      <View wrap={false}>
+        <View style={[styles.produtoBarra, { backgroundColor: corSetor }]}>
+          <Text style={styles.produtoNome}>{codigoNome || "Produto"}</Text>
+          <View style={styles.produtoChip}>
+            <Text style={styles.produtoChipLabel}>QUANT.:</Text>
+            <Text style={styles.produtoChipValor}>{formatarQuantidade(produto.quantidade)}</Text>
+          </View>
+          {peso ? (
+            <View style={styles.produtoChip}>
+              <Text style={styles.produtoChipLabel}>PESO:</Text>
+              <Text style={styles.produtoChipValor}>{peso}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.tabelaCabecalho}>
+          <Text style={[styles.cabecalhoTexto, styles.colLote]}>LOTE / MODELO</Text>
+          <Text style={[styles.cabecalhoTexto, styles.colQtd]}>QUANT.</Text>
+          <Text style={[styles.cabecalhoTexto, styles.colCor]}>COR</Text>
+          <Text style={[styles.cabecalhoTexto, styles.colFaixa]}>INICIAL/FINAL</Text>
+          <Text style={[styles.cabecalhoTexto, styles.colTipo]}>TIPO</Text>
+          <Text style={[styles.cabecalhoTexto, styles.colNum]}>NUM.</Text>
+        </View>
+      </View>
+
+      {produto.modelos.map((modelo, i) => (
+        <LoteLinha key={i} modelo={modelo} isEstoque={produto.isEstoque} nomeProduto={pdfSafe(produto.nome)} />
+      ))}
+    </View>
+  );
+}
+
+export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoDocumentProps) {
+  const emissao = formatarData(vm.os.emissao);
+  const setor = pdfSafe(vm.boletim.setor).toUpperCase() || "-";
+  const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
+    .map((t) => truncar(t, 200))
+    .filter(Boolean);
+  const entregaFrete = vm.frete
+    ? [vm.frete.servico, vm.frete.transportadora].filter(Boolean).join(" - ")
+    : null;
+
+  const produtosDoBoletim = vm.produtos.filter((produto) => produto.modelos.length > 0);
+  const outrosSetores = vm.boletim.outrosSetores
+    .map((grupo) => pdfSafe(grupo.setor).toUpperCase())
+    .filter(Boolean);
+  const cores = coresDoSetor(vm.boletim.setor);
+  const somenteEstoque =
+    produtosDoBoletim.length > 0 && produtosDoBoletim.every((produto) => produto.isEstoque);
+
+  return (
+    <Document
+      title={`OS ${vm.idInt} - resumo`}
+      author={vm.empresa.nome}
+      subject="Boletim de Producao / Ordem de Servico (lista resumida)"
+    >
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header} wrap={false}>
+          <View style={styles.headerIdentidade}>
+            {logoDataUrl ? (
+              // eslint-disable-next-line jsx-a11y/alt-text
+              <Image style={styles.logo} src={logoDataUrl} />
+            ) : null}
+            <View style={styles.osBox}>
+              <Text style={styles.osBoxLabel}>OS:</Text>
+              <Text style={styles.osBoxNumero}>{vm.idInt}</Text>
+            </View>
+          </View>
+
+          <View>
+            <View style={[styles.setorBox, { borderColor: cores.forte, backgroundColor: cores.claro }]}>
+              <Text style={styles.setorLabel}>Setor:</Text>
+              <Text style={[styles.setorValor, { color: cores.forte }]}>{setor}</Text>
+            </View>
+            {outrosSetores.length > 0 ? (
+              <Text style={styles.setorOutros}>Setor complementar: {outrosSetores.join(" | ")}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.headerPrazo}>
+            <View style={styles.prazoBox}>
+              <Text style={styles.prazoLabel}>PRAZO:</Text>
+              <Text style={styles.prazoValor}>{formatarDataCurta(vm.os.prazo)}</Text>
+            </View>
+            <View style={styles.prazoBox}>
+              <Text style={styles.prazoLabel}>HORA:</Text>
+              <Text style={styles.prazoValor}>{formatarHora(vm.boletim.hora)}</Text>
+            </View>
+          </View>
+
+          {qrDataUrl ? (
+            // eslint-disable-next-line jsx-a11y/alt-text
+            <Image style={styles.qr} src={qrDataUrl} />
+          ) : (
+            <View style={styles.qrIndisponivel}>
+              <Text style={{ fontSize: 6, color: "#999", textAlign: "center" }}>QR{"\n"}indisponivel</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Diz o que este papel é. Sem isto, quem recebe a folha na bancada acha
+            que a OS veio sem as artes. */}
+        <View style={styles.faixaResumo}>
+          <Text style={styles.faixaResumoTexto}>
+            LISTA RESUMIDA - CONFERENCIA DE DADOS - SEM IMAGEM DAS ARTES
+          </Text>
+        </View>
+
+        <View style={styles.bloco} wrap={false}>
+          <View style={styles.linha}>
+            <Campo label="CLIENTE" valor={vm.cliente.nome} />
+            {somenteEstoque ? null : <Campo label="EVENTO" valor={vm.boletim.evento} />}
+          </View>
+          <View style={styles.linha}>
+            <Campo label="VENDEDOR" valor={vm.vendedor} />
+            {somenteEstoque ? null : <Campo label="DESIGNER" valor={vm.designer} />}
+          </View>
+        </View>
+
+        {produtosDoBoletim.map((produto, i) => (
+          <ProdutoLista key={i} produto={produto} corSetor={cores.forte} />
+        ))}
+
+        <View style={styles.obsBox} wrap={false}>
+          <Text style={styles.obsTitulo}>Observações:</Text>
+          {obsLinhas.length > 0 ? (
+            obsLinhas.map((linha, i) => (
+              <Text key={i} style={styles.obsTexto}>
+                {linha}
+              </Text>
+            ))
+          ) : (
+            <Text style={styles.obsTexto}>-</Text>
+          )}
+        </View>
+
+        <View style={styles.envioBarra} wrap={false}>
+          <Text style={styles.envioTexto}>Forma de envio: {pdfSafe(entregaFrete) || "-"}</Text>
+        </View>
+
+        <View style={styles.assinaturaArea} wrap={false}>
+          <View style={styles.assinatura}>
+            <Text>Producao</Text>
+          </View>
+          <View style={styles.assinatura}>
+            <Text>Conferencia</Text>
+          </View>
+          <View style={styles.assinatura}>
+            <Text>Responsavel</Text>
+          </View>
+        </View>
+
+        <View style={styles.footer} fixed>
+          <Text>OS #{vm.idInt} - resumo</Text>
+          <Text render={({ pageNumber, totalPages }) => `Pagina ${pageNumber} de ${totalPages}`} />
+          <Text>Emitido em {emissao}</Text>
+        </View>
+      </Page>
+    </Document>
+  );
+}

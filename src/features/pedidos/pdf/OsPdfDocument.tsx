@@ -42,7 +42,7 @@ const CORES_SETOR: Record<string, { forte: string; claro: string }> = {
 /** Cinza do layout original — usado quando o setor nao tem cor propria. */
 const COR_NEUTRA = { forte: "#58585a", claro: "#ffffff" };
 
-function coresDoSetor(setor: string | null | undefined) {
+export function coresDoSetor(setor: string | null | undefined) {
   const chave = (setor || "").trim().toUpperCase();
   return CORES_SETOR[chave] ?? COR_NEUTRA;
 }
@@ -52,7 +52,7 @@ const nfInteiro = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 const nfDecimal = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Remove caracteres fora do Latin-1 (emoji etc.) — fontes Standard do PDF são WinAnsi. */
-function pdfSafe(value: string | null | undefined): string {
+export function pdfSafe(value: string | null | undefined): string {
   if (!value) return "";
   return String(value)
     .replace(/ /g, " ")
@@ -60,7 +60,7 @@ function pdfSafe(value: string | null | undefined): string {
     .trim();
 }
 
-function truncar(value: string | null | undefined, max: number = OBS_MAX_CHARS): string {
+export function truncar(value: string | null | undefined, max: number = OBS_MAX_CHARS): string {
   const text = pdfSafe(value);
   if (text.length <= max) return text;
   return `${text.slice(0, max)}... (integra no ERP - use o QR Code)`;
@@ -72,7 +72,7 @@ function truncar(value: string | null | undefined, max: number = OBS_MAX_CHARS):
  * America/Sao_Paulo recuaria um dia, porque `new Date` as trata como UTC.
  * Só valores com fuso explícito (Z ou ±HH:MM) passam pela conversão.
  */
-function formatarData(iso: string | null | undefined): string {
+export function formatarData(iso: string | null | undefined): string {
   if (!iso) return "-";
 
   const texto = String(iso).trim();
@@ -92,7 +92,7 @@ function formatarData(iso: string | null | undefined): string {
 }
 
 /** Data curta (dd/mm/aa) usada no selo de PRAZO do cabeçalho. */
-function formatarDataCurta(iso: string | null | undefined): string {
+export function formatarDataCurta(iso: string | null | undefined): string {
   const completa = formatarData(iso);
   if (completa === "-") return "-";
   const partes = completa.split("/");
@@ -100,25 +100,25 @@ function formatarDataCurta(iso: string | null | undefined): string {
 }
 
 /** `hora` do boletim vem como TIME (HH:MM:SS) — exibimos HH:MM. */
-function formatarHora(hora: string | null | undefined): string {
+export function formatarHora(hora: string | null | undefined): string {
   const texto = pdfSafe(hora);
   const match = texto.match(/^(\d{1,2}):(\d{2})/);
   if (!match) return "-";
   return `${match[1].padStart(2, "0")}:${match[2]}`;
 }
 
-function formatarQuantidade(valor: number | null | undefined): string {
+export function formatarQuantidade(valor: number | null | undefined): string {
   return nfInteiro.format(Number(valor) || 0);
 }
 
 /** peso_total é gravado em gramas; acima de 1kg exibimos em kg. */
-function formatarPeso(gramas: number | null | undefined): string | null {
+export function formatarPeso(gramas: number | null | undefined): string | null {
   const valor = Number(gramas);
   if (!Number.isFinite(valor) || valor <= 0) return null;
   return valor >= 1000 ? `${nfDecimal.format(valor / 1000)} kg` : `${nfInteiro.format(valor)} g`;
 }
 
-function faixaNumeracao(modelo: OsPdfModelo): string {
+export function faixaNumeracao(modelo: OsPdfModelo): string {
   const inicio = modelo.numeracaoInicio;
   const fim = modelo.numeracaoFim;
   if (inicio === undefined && fim === undefined) return "-";

@@ -833,9 +833,21 @@ export function CobrancasList() {
           {
             header: "Cliente",
             cell: (cobranca) => (
-              <div>
-                <p className="font-medium text-slate-900">{cobranca.cliente}</p>
-                <p className="text-xs text-slate-500">{cobranca.documento}</p>
+              // CNPJ sai do subtitulo e vai para o `title`: a conferencia visual
+              // continua a um hover, e o subtitulo fica livre para o socio
+              // pagador. `cobranca.documento` segue intocado no indice de busca.
+              <div title={cobranca.documento ? `Documento: ${cobranca.documento}` : undefined}>
+                <p className="font-medium text-slate-900">
+                  {(cobranca.cliente_principal_id ?? cobranca.id_cliente)
+                    ? `${cobranca.cliente_principal_id ?? cobranca.id_cliente} - `
+                    : ""}
+                  {cobranca.cliente_principal_nome || cobranca.cliente}
+                </p>
+                {cobranca.socio_pagador_nome && (
+                  <p className="text-xs font-medium text-indigo-700">
+                    Sócio pagador: {cobranca.socio_pagador_nome}
+                  </p>
+                )}
               </div>
             )
           },
@@ -896,10 +908,20 @@ export function CobrancasList() {
             style={isCobrancaEFaturado(cobranca.tipo_cobranca) ? { background: "var(--row-highlight)" } : undefined}
           >
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div title={cobranca.documento ? `Documento: ${cobranca.documento}` : undefined}>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{getNumeroCobranca(cobranca)}</p>
-                <h3 className="mt-2 font-semibold text-slate-950">{cobranca.cliente}</h3>
-                <p className="mt-1 text-sm text-slate-500">{cobranca.documento}</p>
+                <h3 className="mt-2 font-semibold text-slate-950">
+                  {(cobranca.cliente_principal_id ?? cobranca.id_cliente)
+                    ? `${cobranca.cliente_principal_id ?? cobranca.id_cliente} - `
+                    : ""}
+                  {cobranca.cliente_principal_nome || cobranca.cliente}
+                </h3>
+                {/* Mesmo padrao da tabela (card do mobile). */}
+                {cobranca.socio_pagador_nome && (
+                  <p className="mt-1 text-xs font-medium text-indigo-700">
+                    Sócio pagador: {cobranca.socio_pagador_nome}
+                  </p>
+                )}
               </div>
               <CobrancaStatusBadge cobranca={cobranca} />
             </div>

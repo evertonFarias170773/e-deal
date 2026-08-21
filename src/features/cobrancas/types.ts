@@ -183,6 +183,19 @@ export type Cobranca = {
   historico: CobrancaHistoricoEvento[];
   propostasChat: PropostaChatFinanceiro[];
   creditoAnalise?: CreditoAnaliseMock;
+  /**
+   * Fantasia (ou razao social) de quem PAGA, quando o pagador nao e o proprio
+   * cliente — `propostas.id_faturado` diferente de `id_cliente`. Nulo quando o
+   * cliente paga a propria cobranca, que e o caso da maioria.
+   */
+  socio_pagador_nome?: string | null;
+  /**
+   * Cliente PRINCIPAL da proposta. Existe porque `pagamentos_v2.id_cliente` e
+   * `cliente` guardam o PAGADOR — quando ha socio, os dois divergem, e a linha
+   * precisa dos dois lados: principal no titulo, pagador no subtitulo.
+   */
+  cliente_principal_id?: number | null;
+  cliente_principal_nome?: string;
   cliente_restricao?: boolean;
   cliente_limite_credito?: number;
   cliente_credito?: number;

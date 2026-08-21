@@ -226,13 +226,15 @@ async function fetchClientesInfo(clientIds: number[]) {
     return {};
   }
 
-  const mapping: Record<number, { restricao: boolean; limite_credito: number; credito: number }> = {};
+  const mapping: Record<number, { restricao: boolean; limite_credito: number; credito: number; nome: string; fantasia: string }> = {};
   const limit = 500;
   
   for (let i = 0; i < uniqueIds.length; i += limit) {
     const chunk = uniqueIds.slice(i, i + limit);
     const url = new URL(`${config.url}/rest/v1/clientes`);
-    url.searchParams.set("select", "id_cliente,restricao,limite_credito,credito");
+    // `nome` e `fantasia` entram na MESMA consulta que ja existia: servem ao
+    // rotulo do socio pagador na linha, sem ida extra ao banco.
+    url.searchParams.set("select", "id_cliente,restricao,limite_credito,credito,nome,fantasia");
     url.searchParams.set("id_cliente", `in.(${chunk.join(",")})`);
 
     try {
@@ -248,13 +250,15 @@ async function fetchClientesInfo(clientIds: number[]) {
       if (response.ok) {
         const data = await response.json().catch(() => null);
         if (Array.isArray(data)) {
-          data.forEach((row: { id_cliente: unknown; restricao: unknown; limite_credito: unknown; credito: unknown }) => {
+          data.forEach((row: { id_cliente: unknown; restricao: unknown; limite_credito: unknown; credito: unknown; nome?: unknown; fantasia?: unknown }) => {
             const id = Number(row.id_cliente);
             if (Number.isFinite(id)) {
               mapping[id] = {
                 restricao: Boolean(row.restricao),
                 limite_credito: Number(row.limite_credito) || 0,
-                credito: Number(row.credito) || 0
+                credito: Number(row.credito) || 0,
+                nome: String(row.nome ?? "").trim(),
+                fantasia: String(row.fantasia ?? "").trim()
               };
             }
           });
@@ -265,6 +269,64 @@ async function fetchClientesInfo(clientIds: number[]) {
     }
   }
 
+  return mapping;
+}
+
+/**
+ * Quem PAGA cada proposta, por `id_int`.
+ *
+ * POR QUE PRECISA DE CONSULTA PROPRIA
+ *   `pagamentos_v2` nao tem `id_faturado` — so `id_cliente`, `id_int` e
+ *   `id_fatura` (que e outra coisa). O pagador efetivo mora em
+ *   `propostas.id_faturado`, entao nao da para resolver o socio dentro do
+ *   enriquecimento de clientes que ja existia.
+ *
+ *   E uma leitura a mais, no mesmo formato das outras: roda DEPOIS da consulta
+ *   principal, sobre os `id_int` que ela ja trouxe. Nao toca em `range`,
+ *   `count`, no limite de 500 nem na paginacao.
+ */
+async function fetchFaturadoPorProposta(idInts: number[]) {
+  const config = getSupabaseConfig();
+  const uniqueIds = Array.from(new Set(idInts)).filter(Boolean);
+  const mapping: Record<number, { id_cliente: number | null; cliente: string; id_faturado: number | null }> = {};
+  if (!config || uniqueIds.length === 0) return mapping;
+
+  const limit = 500;
+  for (let i = 0; i < uniqueIds.length; i += limit) {
+    const chunk = uniqueIds.slice(i, i + limit);
+    const url = new URL(`${config.url}/rest/v1/propostas`);
+    url.searchParams.set("select", "id_int,id_cliente,cliente,id_faturado");
+    url.searchParams.set("id_int", `in.(${chunk.join(",")})`);
+
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {
+          apikey: config.anonKey,
+          authorization: `Bearer ${config.anonKey}`,
+          accept: "application/json",
+          "accept-profile": "public"
+        }
+      });
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
+        if (Array.isArray(data)) {
+          data.forEach((row: { id_int: unknown; id_cliente: unknown; cliente: unknown; id_faturado: unknown }) => {
+            const idInt = Number(row.id_int);
+            if (!Number.isFinite(idInt)) return;
+            const idCliente = Number(row.id_cliente);
+            const idFaturado = Number(row.id_faturado);
+            mapping[idInt] = {
+              id_cliente: Number.isFinite(idCliente) ? idCliente : null,
+              cliente: String(row.cliente ?? "").trim(),
+              id_faturado: Number.isFinite(idFaturado) ? idFaturado : null
+            };
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[CobrancasService] Erro ao consultar o faturado das propostas:", err);
+    }
+  }
   return mapping;
 }
 
@@ -354,14 +416,57 @@ export async function getCobrancasReadOnlyData(filters?: {
   }
 
   const mappedCobrancas = mapRowsToCobrancas(rows);
+
+  // Quem paga cada proposta. Precisa vir de `propostas` porque `pagamentos_v2`
+  // nao guarda `id_faturado` (ver fetchFaturadoPorProposta).
+  const faturadoMap = await fetchFaturadoPorProposta(
+    mappedCobrancas.map((c) => Number(c.id_int)).filter(Boolean)
+  );
+
+  // SOCIO PAGADOR DE VERDADE = `id_faturado` DIFERENTE de `id_cliente`.
+  // `id_faturado` preenchido nao basta: na esmagadora maioria das propostas ele
+  // e o proprio cliente, e trata-lo como socio encheria a lista de subtitulos
+  // repetindo o titulo.
+  const idsSocio: number[] = [];
+  for (const c of mappedCobrancas) {
+    const daProposta = faturadoMap[Number(c.id_int)];
+    const faturado = daProposta?.id_faturado ?? null;
+    const principal = daProposta?.id_cliente ?? c.id_cliente;
+    if (faturado && principal && faturado !== principal) idsSocio.push(faturado);
+  }
+
+  // UMA consulta de clientes para os dois usos: os dados de credito do cliente
+  // da cobranca e o rotulo do socio pagador.
   const clientIds = mappedCobrancas.map((c) => c.id_cliente).filter(Boolean);
-  const clientMap = await fetchClientesInfo(clientIds);
+  const clientMap = await fetchClientesInfo([...clientIds, ...idsSocio]);
 
   mappedCobrancas.forEach((c) => {
     const cInfo = clientMap[c.id_cliente];
     c.cliente_restricao = cInfo ? cInfo.restricao : false;
     c.cliente_limite_credito = cInfo ? cInfo.limite_credito : 0;
     c.cliente_credito = cInfo ? cInfo.credito : 0;
+
+    // ATENCAO A INVERSAO: em `pagamentos_v2`, `id_cliente`/`cliente` guardam o
+    // PAGADOR, nao o cliente principal. Verificado em 21/08/2026: nos 62 casos
+    // com socio, a cobranca da proposta 21079 traz "TOY INTERIOR" (o faturado),
+    // enquanto a proposta e de "TOY FORMATURAS". Por isso o TITULO tem de vir da
+    // proposta, e o subtitulo e que recebe o pagador — usar `cobranca.cliente`
+    // no titulo repetiria a mesma empresa nas duas linhas.
+    const daProposta = faturadoMap[Number(c.id_int)];
+    const faturado = daProposta?.id_faturado ?? null;
+    const principal = daProposta?.id_cliente ?? null;
+
+    c.cliente_principal_id = principal ?? c.id_cliente ?? null;
+    c.cliente_principal_nome = daProposta?.cliente || c.cliente || "";
+
+    if (faturado && principal && faturado !== principal) {
+      const socio = clientMap[faturado];
+      // Fantasia primeiro; sem ela, razao social. Um dos 49 socios nao tem
+      // fantasia cadastrada e cai neste fallback.
+      c.socio_pagador_nome = socio ? (socio.fantasia || socio.nome || null) : (c.cliente || null);
+    } else {
+      c.socio_pagador_nome = null;
+    }
   });
 
   const boletosRows = mappedCobrancas.filter((c) => c.tipo_cobranca === "BOLETO" && c.id_pagamento);

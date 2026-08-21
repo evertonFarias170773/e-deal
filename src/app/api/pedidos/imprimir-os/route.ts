@@ -13,6 +13,7 @@ import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-p
 import { montarOsPdfViewModel } from "@/features/pedidos/services/os-viewmodel.service";
 import type { OsPdfArteRef, OsPdfModelo } from "@/features/pedidos/services/os-viewmodel.service";
 import { OsPdfDocument } from "@/features/pedidos/pdf/OsPdfDocument";
+import { OsPdfResumoDocument } from "@/features/pedidos/pdf/OsPdfResumoDocument";
 import { EMPRESA_LOGO_FILES } from "@/features/pedidos/pdf/os-pdf-assets";
 import { carregarImagemComoDataUrl } from "@/features/pedidos/pdf/os-pdf-images";
 import { nomeArquivoOs } from "@/features/pedidos/services/os-nome-arquivo";
@@ -170,6 +171,12 @@ export async function GET(request: Request) {
     return respostaErro(request, "Parâmetro boletim inválido.", 400);
   }
 
+  // Layout do PDF. O completo ("OS 2027", com a imagem de cada arte) é o PADRÃO
+  // e continua sendo o que sai sem parâmetro nenhum — qualquer valor
+  // desconhecido cai nele de propósito, para link antigo nunca mudar de
+  // comportamento. `resumido` é a lista de conferência, sem imagem.
+  const layoutResumido = (searchParams.get("layout") || "").trim().toLowerCase() === "resumido";
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
@@ -233,14 +240,19 @@ export async function GET(request: Request) {
   }
   const { vm } = resultado;
 
-  // Miniaturas de arte (pré-fetch server-side, falha → referência textual).
-  await preencherMiniaturas([
-    vm.artesGerais,
-    ...vm.produtos.flatMap((p) => p.modelos.map((m) => m.artes)),
-  ]);
+  // Imagens só quando o layout as usa. No resumido nenhuma arte é baixada — é
+  // daqui que vem a diferença de tempo e de tamanho do arquivo; o nome dos
+  // arquivos de arte já está no view model e não depende de download.
+  if (!layoutResumido) {
+    // Miniaturas de arte (pré-fetch server-side, falha → referência textual).
+    await preencherMiniaturas([
+      vm.artesGerais,
+      ...vm.produtos.flatMap((p) => p.modelos.map((m) => m.artes)),
+    ]);
 
-  // Imagem grande de cada modelo (card do novo layout).
-  await preencherImagensDosModelos(vm.produtos.flatMap((p) => p.modelos));
+    // Imagem grande de cada modelo (card do novo layout).
+    await preencherImagensDosModelos(vm.produtos.flatMap((p) => p.modelos));
+  }
 
   // Logo da empresa (asset estático — falha não impede a emissão).
   let logoDataUrl: string | null = null;
@@ -280,13 +292,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const elemento = createElement(OsPdfDocument, { vm, qrDataUrl, logoDataUrl }) as unknown as ReactElement<DocumentProps>;
+    const componente = layoutResumido ? OsPdfResumoDocument : OsPdfDocument;
+    const elemento = createElement(componente, { vm, qrDataUrl, logoDataUrl }) as unknown as ReactElement<DocumentProps>;
     const buffer = await renderToBuffer(elemento);
+    // Nome distinto para o resumido: baixar os dois do mesmo pedido não pode
+    // gerar "os_20975_FLEXO(1).pdf" sem dizer qual é qual.
+    const nomeArquivo = layoutResumido
+      ? nomeArquivoOs(idInt, vm.boletim.setor).replace(/\.pdf$/i, "_resumo.pdf")
+      : nomeArquivoOs(idInt, vm.boletim.setor);
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${nomeArquivoOs(idInt, vm.boletim.setor)}"`,
+        "Content-Disposition": `inline; filename="${nomeArquivo}"`,
         "Cache-Control": "no-store",
       },
     });

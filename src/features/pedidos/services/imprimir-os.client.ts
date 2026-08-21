@@ -20,10 +20,25 @@ export interface AbrirPdfOsResult {
   errorMessage?: string;
 }
 
-function urlDoBoletim(idInt: number, idBoletim?: string | null): string {
+/**
+ * Layout do PDF. `completo` e o padrao historico (card por modelo, com a imagem
+ * da arte) e continua saindo quando ninguem escolhe nada — inclusive de link
+ * antigo, que nao tem o parametro. `resumido` e a lista de conferencia.
+ */
+export type LayoutPdfOs = "completo" | "resumido";
+
+function urlDoBoletim(idInt: number, idBoletim?: string | null, layout?: LayoutPdfOs): string {
   const params = new URLSearchParams({ id_int: String(idInt) });
   if (idBoletim) params.set("boletim", idBoletim);
+  // Só viaja quando é o não-padrão: a URL do caminho de sempre não muda.
+  if (layout === "resumido") params.set("layout", "resumido");
   return `/api/pedidos/imprimir-os?${params.toString()}`;
+}
+
+/** O resumido baixa com sufixo proprio — a rota manda o mesmo no Content-Disposition. */
+function nomeDoArquivo(idInt: number, setor: string | null | undefined, layout?: LayoutPdfOs): string {
+  const base = nomeArquivoOs(idInt, setor);
+  return layout === "resumido" ? base.replace(/\.pdf$/i, "_resumo.pdf") : base;
 }
 
 /**
@@ -86,10 +101,11 @@ export async function baixarPdfOs(
 export async function abrirPdfOs(
   idInt: number,
   idBoletim?: string | null,
-  setor?: string | null
+  setor?: string | null,
+  layout?: LayoutPdfOs
 ): Promise<AbrirPdfOsResult> {
-  const nomeArquivo = nomeArquivoOs(idInt, setor);
-  const url = urlDoBoletim(idInt, idBoletim);
+  const nomeArquivo = nomeDoArquivo(idInt, setor, layout);
+  const url = urlDoBoletim(idInt, idBoletim, layout);
 
   // Aberta de forma síncrona no gesto do usuário — não move para depois de um await.
   const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;

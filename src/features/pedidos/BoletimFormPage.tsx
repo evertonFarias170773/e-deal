@@ -47,7 +47,7 @@ import {
   type BoletimSetor,
   type ConferenciaSetor
 } from "./services/boletim-setores.service";
-import { abrirPdfOs, baixarPdfOs } from "./services/imprimir-os.client";
+import { abrirPdfOs, baixarPdfOs, type LayoutPdfOs } from "./services/imprimir-os.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
 import {
@@ -369,6 +369,14 @@ export function BoletimFormPage() {
    * para produção: ali o operacional mostra BLOQUEADO e este, o status real.
    */
   const [statusProposta, setStatusProposta] = useState<string>("");
+
+  /**
+   * Layout do PDF escolhido para o proximo "Imprimir OS". Vive so nesta tela e
+   * nasce sempre em `completo`: o layout com as artes continua sendo o padrao, e
+   * a escolha nao e persistida em lugar nenhum (nao ha coluna para isso, e nao
+   * se criou nenhuma).
+   */
+  const [layoutPdf, setLayoutPdf] = useState<LayoutPdfOs>("completo");
 
   useEffect(() => {
     setIsMounted(true);
@@ -1731,6 +1739,23 @@ export function BoletimFormPage() {
             >
               Voltar
             </Link>
+            {/* Escolha do layout, colada no botao que gera o PDF. Completo =
+                cards com a imagem de cada arte (padrao de sempre); Resumido =
+                lista de conferencia, um lote por linha, sem imagem. */}
+            {isEditing && canPrintOS && isPrdAprovado && (
+              <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
+                <span className="text-xs font-semibold uppercase text-slate-500">Layout</span>
+                <select
+                  value={layoutPdf}
+                  onChange={(e) => setLayoutPdf(e.target.value as LayoutPdfOs)}
+                  disabled={isPrintingOs}
+                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none disabled:opacity-60"
+                >
+                  <option value="completo">Completo (com imagem)</option>
+                  <option value="resumido">Resumido (lista, sem imagem)</option>
+                </select>
+              </label>
+            )}
             {isEditing && canPrintOS && isPrdAprovado && (
               <button
                 type="button"
@@ -1738,7 +1763,7 @@ export function BoletimFormPage() {
                   if (isPrintingOs || !idIntParam) return;
                   setIsPrintingOs(true);
                   // Imprime o boletim aberto: o PDF é do setor, não da proposta.
-                  const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo);
+                  const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo, layoutPdf);
                   setIsPrintingOs(false);
                   if (!result.success) {
                     showToast({
@@ -1761,9 +1786,9 @@ export function BoletimFormPage() {
                 <span>
                   {isPrintingOs
                     ? "Gerando PDF..."
-                    : setorEfetivo
-                      ? `Imprimir OS · ${setorEfetivo}`
-                      : "Imprimir OS"}
+                    : `${setorEfetivo ? `Imprimir OS · ${setorEfetivo}` : "Imprimir OS"}${
+                        layoutPdf === "resumido" ? " · resumido" : ""
+                      }`}
                 </span>
               </button>
             )}
