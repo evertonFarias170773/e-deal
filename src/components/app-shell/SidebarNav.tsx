@@ -56,6 +56,20 @@ function findActiveParentHref(activeHref: string | null): string | null {
   return null;
 }
 
+/**
+ * Linha divisoria entre grupos do menu (21/08/2026). Marcada por
+ * `separatorAfter` na secao que a antecede — ver constants/navigation.ts.
+ */
+function SidebarSeparator() {
+  return (
+    <div
+      className="my-2 h-px w-full shrink-0"
+      style={{ background: "var(--sidebar-border)" }}
+      role="separator"
+    />
+  );
+}
+
 const DEFAULT_SECTION_ID = navigationSections.find((sec) => sec.items.length > 0)?.id ?? "";
 
 export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
@@ -404,16 +418,18 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
       {/* Navegação */}
       {!isCollapsed ? (
         <nav className="mt-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
-          {/* Acesso rápido */}
-          <div className="px-1 pb-2">
-            <p
-              className="px-1 pb-1.5 text-[11px] font-bold uppercase tracking-[0.12em]"
-              style={{ color: "var(--sidebar-text-muted)" }}
-            >
-              Acesso rápido
-            </p>
-            <div className="flex gap-1.5">{quickAccessItems.map(renderQuickAccess)}</div>
-          </div>
+          {/* Acesso rápido — vazio desde 21/08/2026; some junto com o título. */}
+          {quickAccessItems.length > 0 ? (
+            <div className="px-1 pb-2">
+              <p
+                className="px-1 pb-1.5 text-[11px] font-bold uppercase tracking-[0.12em]"
+                style={{ color: "var(--sidebar-text-muted)" }}
+              >
+                Acesso rápido
+              </p>
+              <div className="flex gap-1.5">{quickAccessItems.map(renderQuickAccess)}</div>
+            </div>
+          ) : null}
 
           {/* Seções em acordeão */}
           {visibleSections.map((section) => {
@@ -422,9 +438,8 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
             // Seção-link: item principal sem acordeão (Dashboard, Notas fiscais, Maestro).
             if (section.href) {
               const active = section.href === activeHref;
-              return (
+              const link = (
                 <Link
-                  key={section.id}
                   href={section.href}
                   className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all duration-150"
                   style={
@@ -456,11 +471,17 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
                   </span>
                 </Link>
               );
+              return (
+                <Fragment key={section.id}>
+                  {link}
+                  {section.separatorAfter ? <SidebarSeparator /> : null}
+                </Fragment>
+              );
             }
 
             const open = openSection === section.id;
-            return (
-              <div key={section.id}>
+            const acordeao = (
+              <div>
                 <button
                   type="button"
                   onClick={() => setOpenSection((current) => (current === section.id ? "" : section.id))}
@@ -506,6 +527,12 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
                 )}
               </div>
             );
+            return (
+              <Fragment key={section.id}>
+                {acordeao}
+                {section.separatorAfter ? <SidebarSeparator /> : null}
+              </Fragment>
+            );
           })}
         </nav>
       ) : (
@@ -519,23 +546,31 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
               () => router.push(item.href)
             )
           )}
-          <div className="my-1 h-px w-9" style={{ background: "var(--sidebar-border)" }} />
+          {quickAccessItems.length > 0 ? (
+            <div className="my-1 h-px w-9" style={{ background: "var(--sidebar-border)" }} />
+          ) : null}
           {visibleSections.map((section) => {
             // Seção-link: navega direto, sem flyout.
             if (section.href) {
               const href = section.href;
-              return renderRailIcon(
-                `rail-${section.id}`,
-                section.icon,
-                section.label,
-                href === activeHref,
-                () => router.push(href)
+              return (
+                <Fragment key={section.id}>
+                  {renderRailIcon(
+                    `rail-${section.id}`,
+                    section.icon,
+                    section.label,
+                    href === activeHref,
+                    () => router.push(href)
+                  )}
+                  {section.separatorAfter ? (
+                    <div className="my-1 h-px w-9 shrink-0" style={{ background: "var(--sidebar-border)" }} />
+                  ) : null}
+                </Fragment>
               );
             }
 
-            return (
+            const bloco = (
             <div
-              key={section.id}
               className="relative"
               onMouseEnter={() => setHoverSection(section.id)}
               onMouseLeave={() => setHoverSection(null)}
@@ -554,6 +589,14 @@ export function SidebarNav({ isCollapsed, onToggleCollapse }: SidebarNavProps) {
               )}
               {hoverSection === section.id && renderFlyout(section)}
             </div>
+            );
+            return (
+              <Fragment key={section.id}>
+                {bloco}
+                {section.separatorAfter ? (
+                  <div className="my-1 h-px w-9 shrink-0" style={{ background: "var(--sidebar-border)" }} />
+                ) : null}
+              </Fragment>
             );
           })}
         </nav>

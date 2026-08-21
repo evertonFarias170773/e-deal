@@ -10,7 +10,6 @@ import {
   ClipboardList,
   CreditCard,
   FileText,
-  FolderOpen,
   Gauge,
   KeyRound,
   LayoutDashboard,
@@ -25,8 +24,7 @@ import {
   Truck,
   UserCog,
   Users,
-  Wallet,
-  Zap
+  Wallet
 } from "lucide-react";
 import type { NavigationItem, NavigationSection } from "@/lib/types";
 
@@ -80,13 +78,104 @@ export const navigationItems: NavigationItem[] = [
 // Reutiliza os mesmos hrefs/ícones de navigationItems; labels com acentuação corrigida.
 // navigationItems (acima) é mantido intacto como fallback do menu antigo.
 
-export const quickAccessItems: NavigationItem[] = [
-  { label: "Orçamentos", href: "/orcamentos", icon: ClipboardList },
-  { label: "Conferência", href: "/cobrancas", icon: CreditCard }
-];
+/**
+ * Acesso rapido esvaziado em 21/08/2026.
+ *
+ * Eram atalhos para Orcamentos e Conferencia, as duas telas que agora abrem a
+ * lista do menu (itens 1 e 2) — o atalho repetia o que estava logo abaixo.
+ * A constante continua existindo, e os dois menus continuam mapeando-a, para
+ * que voltar a ter atalhos seja so repopular esta lista.
+ */
+export const quickAccessItems: NavigationItem[] = [];
 
+/**
+ * Ordem do menu definida em 21/08/2026.
+ *
+ * A sequencia segue o caminho do pedido dentro da casa — conferir, vender,
+ * cadastrar cliente, expedir; depois producao e financeiro; depois as telas de
+ * apoio. Os separadores (`separatorAfter`) marcam as tres quebras desse
+ * caminho, sem criar nivel novo de hierarquia.
+ *
+ * ROTULO NAO E ROTA. Tres itens mudaram de NOME e nenhum mudou de ENDERECO:
+ *   - "PEDIDOS"   aponta para /orcamentos  (modulo src/features/orcamentos)
+ *   - "CLIENTES"  aponta para /cadastros
+ *   - "PRODUCAO"  aponta para /pedidos     (o antigo "Painel geral")
+ * Rotas, pastas, chaves de permissao e filtros por URL ficam como estao, entao
+ * link salvo e favorito continuam abrindo a mesma tela.
+ *
+ * Cuidado ao ler: as chaves de permissao `pedidos.*` governam a tela que agora
+ * se chama PRODUCAO, e a tela que agora se chama PEDIDOS e governada por
+ * `propostas.*`. O nome da chave nao acompanhou o rotulo de proposito.
+ */
 export const navigationSections: NavigationSection[] = [
-  // Seções com `href` são links diretos (sem acordeão) — ver NavigationSection em lib/types.
+  // 1
+  {
+    id: "conferencia",
+    label: "Conferência",
+    icon: CreditCard,
+    href: "/cobrancas",
+    items: []
+  },
+  // 2 — era "Orçamentos"; a rota /orcamentos nao muda.
+  {
+    id: "pedidos-comercial",
+    label: "Pedidos",
+    icon: ClipboardList,
+    href: "/orcamentos",
+    items: []
+  },
+  // 3 — era submenu de "Cadastros".
+  {
+    id: "clientes",
+    label: "Clientes",
+    icon: Users,
+    href: "/cadastros",
+    items: []
+  },
+  // 4 — era submenu de "Pedidos".
+  {
+    id: "expedicao",
+    label: "Expedição",
+    icon: Truck,
+    href: "/expedicao",
+    separatorAfter: true,
+    items: []
+  },
+  // 5 — era "Painel geral", dentro de "Pedidos".
+  {
+    id: "producao",
+    label: "Produção",
+    icon: LayoutDashboard,
+    href: "/pedidos",
+    items: []
+  },
+  // 6 — "Notas fiscais" deixa de ser menu proprio e vira o primeiro submenu.
+  {
+    id: "financeiro",
+    label: "Financeiro",
+    icon: Banknote,
+    separatorAfter: true,
+    items: [
+      { label: "Notas fiscais", href: "/notas-fiscais", icon: FileText },
+      { label: "Carteira", href: "/contas-a-receber", icon: ReceiptText },
+      { label: "Registro de recebíveis", href: "/contas-a-receber/registro", icon: ClipboardCheck },
+      { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
+      { label: "Pendências", href: "/pendencias", icon: CheckSquare },
+      { label: "Verificação de CPF/CNPJ", href: "/verificacao", icon: ShieldCheck },
+      // Segue desabilitado, como sempre esteve. Mantido para nao sumir do menu.
+      { label: "Relatórios", href: "/relatorios", icon: BarChart3, disabled: true }
+    ]
+  },
+  // 7
+  {
+    id: "maestro",
+    label: "Maestro",
+    icon: Bot,
+    href: "/maestro",
+    separatorAfter: true,
+    items: []
+  },
+  // 8
   {
     id: "dashboard",
     label: "Dashboard",
@@ -95,6 +184,7 @@ export const navigationSections: NavigationSection[] = [
     hiddenForSeller: true,
     items: []
   },
+  // 9
   {
     id: "meu-desempenho",
     label: "Meu desempenho",
@@ -103,61 +193,15 @@ export const navigationSections: NavigationSection[] = [
     sellerOnly: true,
     items: []
   },
+  // 10 — era submenu de "Cadastros".
   {
-    id: "cadastros",
-    label: "Cadastros",
-    icon: FolderOpen,
-    items: [
-      { label: "Cadastros", href: "/cadastros", icon: Users },
-      { label: "Produtos", href: "/produtos", icon: Package }
-    ]
-  },
-  {
-    id: "operacao",
-    label: "Operação",
-    icon: Zap,
-    items: [
-      { label: "Orçamentos", href: "/orcamentos", icon: ClipboardList },
-      { label: "Conferência", href: "/cobrancas", icon: CreditCard }
-    ]
-  },
-  {
-    id: "pedidos",
-    label: "Pedidos",
-    icon: Boxes,
-    items: [
-      { label: "Painel geral", href: "/pedidos", icon: LayoutDashboard },
-      { label: "Fila de impressão", href: "/pedidos/impressao", icon: Printer },
-      { label: "Expedição", href: "/expedicao", icon: Truck }
-    ]
-  },
-  {
-    id: "financeiro",
-    label: "Financeiro",
-    icon: Banknote,
-    items: [
-      { label: "Carteira", href: "/contas-a-receber", icon: ReceiptText },
-      { label: "Registro de recebíveis", href: "/contas-a-receber/registro", icon: ClipboardCheck },
-      { label: "Conta Corrente", href: "/conta-corrente", icon: Wallet },
-      { label: "Pendências", href: "/pendencias", icon: CheckSquare },
-      { label: "Verificação CPF/CNPJ", href: "/verificacao", icon: ShieldCheck },
-      { label: "Relatórios", href: "/relatorios", icon: BarChart3, disabled: true }
-    ]
-  },
-  {
-    id: "notas-fiscais",
-    label: "Notas fiscais",
-    icon: FileText,
-    href: "/notas-fiscais",
+    id: "produtos",
+    label: "Produtos",
+    icon: Package,
+    href: "/produtos",
     items: []
   },
-  {
-    id: "maestro",
-    label: "Maestro",
-    icon: Bot,
-    href: "/maestro",
-    items: []
-  },
+  // 11
   {
     id: "config",
     label: "Configurações",
@@ -173,6 +217,14 @@ export const navigationSections: NavigationSection[] = [
       // href placeholder: item desabilitado, a rota ainda não existe (não colidir com /configuracoes/usuarios).
       { label: "Usuários", href: "/configuracoes/usuarios-em-breve", icon: Users, disabled: true }
     ]
+  },
+  // 12 — era submenu de "Pedidos".
+  {
+    id: "fila-impressao",
+    label: "Fila de impressão",
+    icon: Printer,
+    href: "/pedidos/impressao",
+    items: []
   }
 ];
 

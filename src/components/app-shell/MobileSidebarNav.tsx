@@ -54,6 +54,17 @@ function findActiveParentHref(activeHref: string | null): string | null {
   return null;
 }
 
+/** Linha divisoria entre grupos do menu (21/08/2026) — ver navigation.ts. */
+function MobileSeparator() {
+  return (
+    <div
+      className="my-2 h-px w-full shrink-0"
+      style={{ background: "var(--sidebar-border)" }}
+      role="separator"
+    />
+  );
+}
+
 const DEFAULT_SECTION_ID = navigationSections.find((sec) => sec.items.length > 0)?.id ?? "";
 
 export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
@@ -251,8 +262,8 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
           </button>
         </div>
 
-        {/* Acesso rápido */}
-        <div className="mb-3">
+        {/* Acesso rápido — vazio desde 21/08/2026; some junto com o título. */}
+        <div className={quickAccessItems.length > 0 ? "mb-3" : "hidden"}>
           <p
             className="px-1 pb-1.5 text-[11px] font-bold uppercase tracking-[0.12em]"
             style={{ color: "var(--sidebar-text-muted)" }}
@@ -294,9 +305,8 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
             // Seção-link: item principal sem acordeão (Dashboard, Notas fiscais, Maestro).
             if (section.href) {
               const active = section.href === activeHref;
-              return (
+              const link = (
                 <Link
-                  key={section.id}
                   href={section.href}
                   onClick={onClose}
                   className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors"
@@ -318,11 +328,17 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
                   </span>
                 </Link>
               );
+              return (
+                <Fragment key={section.id}>
+                  {link}
+                  {section.separatorAfter ? <MobileSeparator /> : null}
+                </Fragment>
+              );
             }
 
             const open = openSection === section.id;
-            return (
-              <div key={section.id}>
+            const acordeao = (
+              <div>
                 <button
                   type="button"
                   onClick={() => setOpenSection((current) => (current === section.id ? "" : section.id))}
@@ -355,6 +371,12 @@ export function MobileSidebarNav({ isOpen, onClose }: MobileSidebarNavProps) {
                   </div>
                 )}
               </div>
+            );
+            return (
+              <Fragment key={section.id}>
+                {acordeao}
+                {section.separatorAfter ? <MobileSeparator /> : null}
+              </Fragment>
             );
           })}
         </nav>

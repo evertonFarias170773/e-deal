@@ -88,6 +88,12 @@ export type NavigationSection = {
   hiddenForSeller?: boolean;
   /** Quando definido, a seção é um link direto (sem acordeão) e `items` fica vazio. */
   href?: string;
+  /**
+   * Desenha uma linha divisória logo abaixo desta seção. Agrupa visualmente o
+   * menu sem criar nível de hierarquia novo — o que exigiria um cabeçalho de
+   * grupo e mais um clique para chegar às páginas.
+   */
+  separatorAfter?: boolean;
   items: NavigationItem[];
 };
 
