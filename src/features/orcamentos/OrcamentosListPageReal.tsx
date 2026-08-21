@@ -15,6 +15,8 @@ import { buildPropostaInformalText } from "@/features/orcamentos/orcamento-utils
 import { useOrcamentosReadOnlyData } from "@/features/orcamentos/hooks/useOrcamentosReadOnlyData";
 import type { OrcamentoListItem } from "@/features/orcamentos/mappers";
 import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerrar-teste.client";
+import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
+import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import {
   gerarPDFProposta,
   duplicarProposta,
@@ -253,10 +255,7 @@ export function OrcamentosListPageReal() {
         codec: codecs.mesIso(),
         default: periodOptions[0]?.value ?? getPeriodValue(new Date())
       },
-      pag: { codec: codecs.numero({ min: 1 }), default: 1 },
-      // Chip "Mostrar encerrados": recorta para SO os pedidos de teste marcados.
-      // Nao existe o inverso — encerrado nunca e escondido desta lista.
-      teste: { codec: codecs.booleano(), default: false }
+      pag: { codec: codecs.numero({ min: 1 }), default: 1 }
     }),
     [periodOptions]
   );
@@ -274,7 +273,13 @@ export function OrcamentosListPageReal() {
   const vendedor = filters.vend;
   const filterTipoCobranca = filters.cob;
   const activeCard = filters.card;
-  const somenteEncerradosTeste = filters.teste;
+  /**
+   * Encerrados fora da lista por padrao (20/08/2026). Duas excecoes:
+   *   - o drop de modelos em "ENCERRADOS" pede so eles;
+   *   - havendo termo de busca, nao escondemos nada: quem procura um numero ou
+   *     nome especifico espera achar, encerrado ou nao.
+   */
+  const somenteEncerrados = modelo === "ENCERRADOS";
   const pageIndex = filters.pag - 1;
 
   // O campo responde a cada tecla; a URL — e a consulta ao banco — só depois da
@@ -309,9 +314,13 @@ export function OrcamentosListPageReal() {
       filterTipoCobranca: filterTipoCobranca !== "TODOS" ? filterTipoCobranca : undefined,
       activeCard: activeCard || undefined,
       ignorarPeriodo: ignorarPeriodo || undefined,
-      somenteEncerradosTeste: somenteEncerradosTeste || undefined
+      encerradosTeste: somenteEncerrados
+        ? ("SOMENTE" as const)
+        : search.trim()
+          ? ("INCLUIR" as const)
+          : ("OCULTAR" as const)
     };
-  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, ignorarPeriodo, somenteEncerradosTeste, user]);
+  }, [search, status, modelo, vendedor, filterTipoCobranca, activeCard, ignorarPeriodo, somenteEncerrados, user]);
 
   const {
     propostas: rawPropostas,
@@ -423,7 +432,12 @@ export function OrcamentosListPageReal() {
     () => [
       { value: "TODOS_MODELOS", label: "Todos modelos" },
       { value: "AVULSO", label: "AVULSO" },
-      { value: "PROPOSTA", label: "PROPOSTA" }
+      { value: "PROPOSTA", label: "PROPOSTA" },
+      // Dimensao diferente das duas de cima (AVULSO/PROPOSTA olham is_avulso;
+      // esta olha encerrado_teste_em). Elas nao se anulam — um encerrado pode
+      // ser avulso ou proposta —, mas sao exclusivas no mesmo drop: escolher
+      // ENCERRADOS abre mao de recortar por avulso.
+      { value: "ENCERRADOS", label: "ENCERRADOS (teste)" }
     ],
     []
   );
@@ -471,8 +485,12 @@ export function OrcamentosListPageReal() {
       }
       if (!matchesStatus) continue;
 
+      // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
+      // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
+      // avulsas encerradas — tanto da lista quanto da contagem dos cards.
       const matchesModelo =
         modelo === "TODOS_MODELOS" ||
+        modelo === "ENCERRADOS" ||
         (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
       if (!matchesModelo) continue;
 
@@ -528,6 +546,34 @@ export function OrcamentosListPageReal() {
     return filteredPropostas.slice(0, 100).map((p) => p.id_int);
   }, [filteredPropostas]);
 
+  /**
+   * Rastreio das linhas visiveis. Consulta a parte porque nem o tipo de frete
+   * nem o codigo moram em `propostas` — mesmo padrao do enriquecimento de chat
+   * logo abaixo, inclusive o cache por id para nao repetir consulta ao paginar.
+   */
+  const [rastreioPorId, setRastreioPorId] = useState<Record<number, RastreioDaProposta>>({});
+  const [pedidoRastreio, setPedidoRastreio] = useState<{ idInt: number; codigo: string } | null>(null);
+  const fetchedRastreioIdsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const naoBuscados = visibleIdInts.filter((id) => !fetchedRastreioIdsRef.current.has(id));
+    if (naoBuscados.length === 0) return;
+    let ativo = true;
+    void (async () => {
+      try {
+        const dados = await buscarRastreioDasPropostas(naoBuscados);
+        if (!ativo) return;
+        naoBuscados.forEach((id) => fetchedRastreioIdsRef.current.add(id));
+        setRastreioPorId((atual) => ({ ...atual, ...dados }));
+      } catch (err) {
+        console.error("[OrcamentosListPageReal] Erro ao buscar rastreio das propostas:", err);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [visibleIdInts]);
+
   const fetchedChatIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
@@ -564,8 +610,12 @@ export function OrcamentosListPageReal() {
     let producaoCnt = 0, producaoTotal = 0;
 
     for (const item of propostas) {
+      // ENCERRADOS nao recorta por is_avulso: a consulta ja trouxe so encerrados,
+      // e cair no `else` da ternaria (item.isAvulsoRaw !== true) sumiria com as
+      // avulsas encerradas — tanto da lista quanto da contagem dos cards.
       const matchesModelo =
         modelo === "TODOS_MODELOS" ||
+        modelo === "ENCERRADOS" ||
         (modelo === "AVULSO" ? item.isAvulsoRaw === true : item.isAvulsoRaw !== true);
       if (!matchesModelo) continue;
 
@@ -937,6 +987,7 @@ Ela volta a aparecer nas listas operacionais.`
 
   function getActions(item: OrcamentoListItem) {
     const isClienteNaoCadastrado = !item.clienteId || item.clienteId === "0" || item.clienteId === "null";
+    const rastreio = rastreioPorId[item.id_int];
     const chatResumo = chatResumos[item.id_int];
     const chatLabel = chatResumo && chatResumo.nao_lidas_count > 0
       ? `Ver chat interno (${chatResumo.nao_lidas_count} não lidas)`
@@ -975,6 +1026,15 @@ Ela volta a aparecer nas listas operacionais.`
       }] : []),
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
       ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : []),
+      // Rastrear: so quando o frete e Correios E ha codigo gravado. Sem uma das
+      // duas coisas o item nem aparece — botao que abre modal para dizer "sem
+      // codigo" e ruido.
+      ...(rastreio?.ehCorreios && rastreio.codigo
+        ? [{
+            label: "Rastrear objeto",
+            onClick: () => setPedidoRastreio({ idInt: item.id_int, codigo: rastreio.codigo })
+          }]
+        : []),
       ...(canEncerrarTeste ? [
         item.encerradoTesteEm
           ? {
@@ -1145,23 +1205,6 @@ Ela volta a aparecer nas listas operacionais.`
               </option>
             ))}
           </select>
-
-          {/* Chip "Mostrar encerrados". Nao e um toggle de esconder/mostrar: o
-              pedido de teste encerrado NUNCA some desta lista — ele aparece com
-              badge, e e por isso que da para reabri-lo. O chip recorta para SO
-              os marcados, que e o atalho para revisar e desfazer. */}
-          <button
-            type="button"
-            onClick={() => setFilters({ teste: !somenteEncerradosTeste, pag: 1 })}
-            aria-pressed={somenteEncerradosTeste}
-            className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
-              somenteEncerradosTeste
-                ? "border-violet-300 bg-violet-100 text-violet-800 hover:bg-violet-200"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            {somenteEncerradosTeste ? "Mostrando so encerrados" : "Mostrar encerrados"}
-          </button>
 
           <button
             type="button"
@@ -1498,6 +1541,14 @@ Ela volta a aparecer nas listas operacionais.`
             setSelectedPropostaForCancel(null);
             triggerRefresh();
           }}
+        />
+      )}
+
+      {pedidoRastreio && (
+        <RastreioPropostaModal
+          idInt={pedidoRastreio.idInt}
+          codigo={pedidoRastreio.codigo}
+          onClose={() => setPedidoRastreio(null)}
         />
       )}
     </div>

@@ -59,14 +59,20 @@ export type OrcamentosReadFilters = {
    */
   ignorarPeriodo?: boolean;
   /**
-   * Chip "Mostrar encerrados": restringe a lista aos pedidos de TESTE marcados.
+   * Visibilidade dos pedidos de TESTE encerrados (`encerrado_teste_em`).
    *
-   * Note que NAO existe o inverso. Em Orcamentos o pedido encerrado nunca e
-   * escondido — ele aparece com badge, e e por isso que da para reabri-lo. Este
-   * filtro serve para ACHAR os marcados rapido (revisar, desfazer), nao para
-   * revelar algo que estava oculto.
+   *   OCULTAR (padrao) — fora da lista. Encerrado nao polui a operacao.
+   *   SOMENTE          — so os encerrados. E a opcao "ENCERRADOS" do drop de
+   *                      modelos, o atalho para revisar e reabrir.
+   *   INCLUIR          — nao filtra. Usado quando ha termo de busca: quem
+   *                      procura um numero ou nome especifico quer achar, mesmo
+   *                      que o registro esteja encerrado.
+   *
+   * Mudou em 20/08/2026: antes o padrao era mostrar tudo com badge, e um botao
+   * separado recortava so os encerrados. O badge continua — ele e o que permite
+   * reconhecer e reabrir o registro depois de encontra-lo.
    */
-  somenteEncerradosTeste?: boolean;
+  encerradosTeste?: "OCULTAR" | "SOMENTE" | "INCLUIR";
 };
 
 /** Teto de registros varridos quando o período é ignorado (busca ampla). */
@@ -307,6 +313,16 @@ async function fetchPropostaRows(
       }
     }
 
+    // Encerrados fora da lista por padrao. Ver `encerradosTeste` no tipo.
+    // Declarado aqui, antes do bloco de status, porque o `else` que exclui
+    // CANCELADO consulta esta mesma decisao.
+    const visibilidadeEncerrados = filters?.encerradosTeste ?? "OCULTAR";
+    if (visibilidadeEncerrados === "SOMENTE") {
+      query = query.not("encerrado_teste_em", "is", null);
+    } else if (visibilidadeEncerrados === "OCULTAR") {
+      query = query.is("encerrado_teste_em", null);
+    }
+
     if (filters?.activeCard) {
       const card = filters.activeCard;
       if (card === "EM_ARTE") {
@@ -324,18 +340,12 @@ async function fetchPropostaRows(
       } else {
         query = query.eq("status_interno", filters.status);
       }
-    } else if (!filters?.somenteEncerradosTeste) {
+    } else if (visibilidadeEncerrados !== "SOMENTE") {
       query = query.neq("status_interno", "CANCELADO");
     }
-    // Com o chip ligado, CANCELADO nao e excluido: quem procura os pedidos de
-    // teste marcados quer a lista COMPLETA deles, inclusive os cancelados —
-    // senao um marcado por engano ficaria fora do unico atalho que o encontra.
-
-    // Chip "Mostrar encerrados": recorta para SO os pedidos de teste marcados.
-    // Sem o chip, nada e escondido — o encerrado aparece junto, com badge.
-    if (filters?.somenteEncerradosTeste) {
-      query = query.not("encerrado_teste_em", "is", null);
-    }
+    // Em "SOMENTE", CANCELADO nao e excluido: quem abre a lista de encerrados
+    // quer a lista COMPLETA deles, inclusive os cancelados — senao um marcado
+    // por engano ficaria fora do unico atalho que o encontra.
 
     if (filters?.search && filters.search.trim()) {
       const term = filters.search.trim();
