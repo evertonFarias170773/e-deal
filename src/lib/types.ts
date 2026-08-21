@@ -16,6 +16,7 @@ export type PerfilSlug =
   | "gerente_comercial"  // V2.1 — gerente com escopo view_all
   | "producao"
   | "fiscal"
+  | "expedidor"          // 21/08/2026 — expedicao; ver PERMISSOES_EXPEDIDOR
   | "operador";
 
 /**

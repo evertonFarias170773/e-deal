@@ -67,7 +67,8 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   isBlocked: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** Resolve com o usuario JA enriquecido (perfil + permissoes), ou null se o enriquecimento falhar. */
+  login: (email: string, password: string) => Promise<MockUser | null>;
   logout: () => Promise<void>;
 };
 
@@ -202,15 +203,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Setar usuário base imediatamente para liberar a UI
     setAuthState({ user: mappedUser, isLoading: false, isBlocked: false });
 
-    // Enriquecimento assíncrono pós-login (não bloqueia o redirecionamento)
-    void enrichUserWithSupabaseData(mappedUser).then((enrichedUser) => {
-      usuarioResolvidoIdRef.current = mappedUser.id;
-      if (enrichedUser) {
-        setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
-      } else {
-        setAuthState({ user: mappedUser, isLoading: false, isBlocked: true });
-      }
-    });
+    // O enriquecimento continua sendo o que traz perfil e permissoes, e continua
+    // publicando o estado assim que chega. O que mudou em 21/08/2026: ele passou
+    // a ser AGUARDADO e devolvido.
+    //
+    // Motivo: a pagina inicial por perfil (`destinoPorPerfil`) precisa de
+    // `perfilSlug`/`permissoes` para decidir. Sem esperar, quem chamasse
+    // `login()` leria o usuario BASE — sem permissao nenhuma — e a regra cairia
+    // sempre no destino padrao, para todo mundo. A UI nao espera: o usuario base
+    // ja foi publicado na linha acima; quem espera e so a decisao de rota.
+    const enrichedUser = await enrichUserWithSupabaseData(mappedUser);
+    usuarioResolvidoIdRef.current = mappedUser.id;
+    if (enrichedUser) {
+      setAuthState({ user: enrichedUser, isLoading: false, isBlocked: false });
+    } else {
+      setAuthState({ user: mappedUser, isLoading: false, isBlocked: true });
+    }
+
+    return enrichedUser;
   }, []);
 
   const logout = useCallback(async () => {

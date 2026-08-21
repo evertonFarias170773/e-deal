@@ -109,6 +109,25 @@ const PERMISSOES_PRODUCAO: string[] = [
   "propostas.view", "cadastros.view"
 ];
 
+/**
+ * Expedidor (21/08/2026) — quem despacha o pedido, e so isso.
+ *
+ * `expedicao.view` e o que a propria tela exige para renderizar; sem ele a
+ * ExpedicaoPage devolve "Acesso Negado" por conta propria. `expedicao.processar`
+ * libera as acoes de despacho. `pedidos.print_os` existe porque expedir sem
+ * poder imprimir a OS nao fecha.
+ *
+ * FICAM DE FORA, de proposito:
+ *   - `expedicao.admin`  — libera recotacao de frete, que e alcada de admin;
+ *   - `conferencia.view` — a Conferencia e financeiro, nao expedicao;
+ *   - qualquer `cobrancas.*` / `financeiro.*`.
+ */
+const PERMISSOES_EXPEDIDOR: string[] = [
+  "expedicao.view", "expedicao.processar",
+  "pedidos.view", "pedidos.print_os",
+  "propostas.view", "cadastros.view"
+];
+
 const PERMISSOES_OPERADOR: string[] = [
   "propostas.view", "pedidos.view", "cadastros.view"
 ];
@@ -141,6 +160,7 @@ const PERMISSOES_POR_SETOR: Record<string, string[]> = {
   FINANCEIRO: PERMISSOES_FINANCEIRO,
   FISCAL: PERMISSOES_FISCAL,
   PRODUCAO: PERMISSOES_PRODUCAO,
+  EXPEDICAO: PERMISSOES_EXPEDIDOR,
   COMERCIAL: PERMISSOES_VENDEDOR,
   ADMIN: PERMISSOES_ADMIN
 };
@@ -189,6 +209,9 @@ function resolvePermissoesFallback(row: UsuarioRow): {
   if (row.setor === "FINANCEIRO") return { perfilSlug: "financeiro", permissoes: PERMISSOES_FINANCEIRO, isAdmin: false, isSuperAdmin: false, isSeller: false };
   if (row.setor === "FISCAL") return { perfilSlug: "fiscal", permissoes: PERMISSOES_FISCAL, isAdmin: false, isSuperAdmin: false, isSeller: false };
   if (row.setor === "PRODUCAO") return { perfilSlug: "producao", permissoes: PERMISSOES_PRODUCAO, isAdmin: false, isSuperAdmin: false, isSeller: false };
+  // Sem este ramo, um expedidor sem perfil resolvido cairia em `operador` — que
+  // nao tem `expedicao.view` e portanto nao abre a propria tela de trabalho.
+  if (row.setor === "EXPEDICAO") return { perfilSlug: "expedidor", permissoes: PERMISSOES_EXPEDIDOR, isAdmin: false, isSuperAdmin: false, isSeller: false };
   return { perfilSlug: "operador", permissoes: PERMISSOES_OPERADOR, isAdmin: false, isSuperAdmin: false, isSeller: false };
 }
 
@@ -221,6 +244,10 @@ function resolveSector(setorLegado: string | null, slug: string): UserSector {
     case "fiscal":
       return "FISCAL";
     case "producao":
+    // `UserSector` nao tem EXPEDICAO e o campo e so rotulo de tela (rodape da
+    // sidebar, Minha conta, filtro de pendencias por setor). PRODUCAO e o
+    // vizinho mais honesto; o default seria ADMIN, que mentiria feio.
+    case "expedidor":
       return "PRODUCAO";
     case "vendedor":
       return "COMERCIAL";

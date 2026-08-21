@@ -6,14 +6,23 @@ import Link from "next/link";
 import { LockKeyhole, Mail } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { sanitizeInternalNext } from "@/features/auth/redirect-utils";
+import { destinoPosLogin, sanitizeInternalNext } from "@/features/auth/redirect-utils";
 import { APP_NAME } from "@/constants/brand";
 
-/** Destino pós-login sanitizado (?next=), lido no momento do clique (client-only). */
+/** O `?next=` cru da URL, quando houver. */
+function lerNextDaUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("next");
+}
+
+/**
+ * Destino do login com e-mail e senha: `?next=` explicito vence; sem ele, vale
+ * a regra de perfil, que precisa do usuario ja enriquecido — por isso e
+ * calculado DEPOIS do `login()`, e nao no clique.
+ */
 function obterDestinoPosLogin(): string {
   if (typeof window === "undefined") return "/dashboard";
-  const params = new URLSearchParams(window.location.search);
-  return sanitizeInternalNext(params.get("next"));
+  return sanitizeInternalNext(lerNextDaUrl());
 }
 
 export function LoginForm() {
@@ -31,8 +40,8 @@ export function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      await login(email, password);
-      router.replace(obterDestinoPosLogin());
+      const usuario = await login(email, password);
+      router.replace(destinoPosLogin(lerNextDaUrl(), usuario));
     } catch (currentError) {
       setError(
         currentError instanceof Error
