@@ -22,7 +22,7 @@ import { listarPedidosOperacionais } from "./services/pedidos-producao.service";
 import { atualizarFaseSetor } from "./services/boletim-setores.service";
 import { consolidarFases, type FaseSetor } from "./status-setor";
 import { SetorFaseChip } from "./components/SetorFaseChip";
-import { abrirPdfOs } from "./services/imprimir-os.client";
+import { abrirPdfOs, type LayoutPdfOs } from "./services/imprimir-os.client";
 import { encerrarTeste } from "./services/encerrar-teste.client";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
@@ -127,7 +127,12 @@ export function PedidosListPage() {
 
   // Impressão da OS em PDF (uma por vez; erros via toast)
   const [printingOsId, setPrintingOsId] = useState<number | null>(null);
-  async function handleImprimirOS(proposta: PropostaOperacionalListItem) {
+  /**
+   * `layout` decide qual PDF sai; TODO o resto do caminho e o mesmo — inclusive
+   * a criacao da OS que falta e a revalidacao do servidor. E o que mantem o
+   * reduzido se comportando igual ao padrao neste ponto.
+   */
+  async function handleImprimirOS(proposta: PropostaOperacionalListItem, layout: LayoutPdfOs = "completo") {
     if (printingOsId !== null) return;
     setPrintingOsId(proposta.id_int);
 
@@ -166,7 +171,7 @@ export function PedidosListPage() {
       void load();
     }
 
-    const result = await abrirPdfOs(proposta.id_int);
+    const result = await abrirPdfOs(proposta.id_int, null, null, layout);
     setPrintingOsId(null);
     if (!result.success) {
       showToast({
@@ -612,7 +617,14 @@ export function PedidosListPage() {
                 // não tinha lote — o caso em que imprimir era impossível.
                 ...(canPrintOS && proposta.is_prd_aprovado === true ? [{
                   label: printingOsId === proposta.id_int ? "Gerando PDF..." : "Imprimir OS (PDF)",
-                  onClick: () => { void handleImprimirOS(proposta); }
+                  onClick: () => { void handleImprimirOS(proposta, "completo"); }
+                }] : []),
+                // Mesma acao, layout reduzido. Sem setor, como o item de cima:
+                // a lista imprime a proposta, e a rota resolve o boletim mais
+                // recente — o caminho legado, que continua valendo.
+                ...(canPrintOS && proposta.is_prd_aprovado === true ? [{
+                  label: printingOsId === proposta.id_int ? "Gerando PDF..." : "Imprimir OS reduzida (PDF)",
+                  onClick: () => { void handleImprimirOS(proposta, "resumido"); }
                 }] : []),
                 ...(canRotateQr && proposta.hasOS && proposta.is_prd_aprovado === true ? [{
                   label: rotacionandoQrId === proposta.id_int ? "Gerando novo QR..." : "Gerar novo QR (invalida o anterior)",

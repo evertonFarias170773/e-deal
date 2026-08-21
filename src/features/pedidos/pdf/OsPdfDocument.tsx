@@ -685,36 +685,23 @@ export interface OsPdfDocumentProps {
   logoDataUrl: string | null;
 }
 
-export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
-  const emissao = formatarData(vm.os.emissao);
+/**
+ * Cabecalho do documento — logo + N da OS | setor do boletim | prazo/hora | QR.
+ *
+ * Virou componente exportado para o layout RESUMIDO usar exatamente este, e nao
+ * uma reimplementacao parecida: cabecalho de OS que diverge entre dois PDFs do
+ * mesmo pedido e papel que a producao nao consegue conferir. O markup foi movido
+ * daqui de dentro sem alterar um no sequer — a saida do layout completo e a mesma.
+ */
+export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
   // Setor é campo próprio do boletim (pedidos_artes.setor) — nunca o setor do produto.
   const setor = pdfSafe(vm.boletim.setor).toUpperCase() || "-";
-  const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
-    .map((t) => truncar(t, 200))
-    .filter(Boolean);
-  const entregaFrete = vm.frete
-    ? [vm.frete.servico, vm.frete.transportadora].filter(Boolean).join(" - ")
-    : null;
-
-  // OS 100% de prateleira: produto pronto, sem arte e sem briefing de evento —
-  // EVENTO e DESIGNER não têm o que informar. Basta um item normal no boletim
-  // para os dois voltarem, porque aí existe arte a rastrear.
-  const produtosDoBoletim = vm.produtos.filter((produto) => produto.modelos.length > 0);
+  const cores = coresDoSetor(vm.boletim.setor);
   const outrosSetores = vm.boletim.outrosSetores
     .map((grupo) => pdfSafe(grupo.setor).toUpperCase())
     .filter(Boolean);
-  const cores = coresDoSetor(vm.boletim.setor);
-  const somenteEstoque =
-    produtosDoBoletim.length > 0 && produtosDoBoletim.every((produto) => produto.isEstoque);
 
   return (
-    <Document
-      title={`OS ${vm.idInt}`}
-      author={vm.empresa.nome}
-      subject="Boletim de Producao / Ordem de Servico"
-    >
-      <Page size="A4" style={styles.page}>
-        {/* Cabeçalho — logo + Nº OS | Setor do boletim | Prazo/Hora | QR */}
         <View style={styles.header} wrap={false}>
           <View style={styles.headerIdentidade}>
             {logoDataUrl ? (
@@ -761,8 +748,12 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
             </View>
           )}
         </View>
+  );
+}
 
-        {/* Cliente e responsáveis (dados da proposta) */}
+/** Cliente e responsáveis (dados da proposta) — o segundo bloco fixo do documento. */
+export function OsPdfBlocoCliente({ vm, somenteEstoque }: { vm: OsPdfViewModel; somenteEstoque: boolean }) {
+  return (
         <View style={styles.bloco} wrap={false}>
           <View style={styles.linha}>
             <Campo label="CLIENTE" valor={vm.cliente.nome} />
@@ -773,6 +764,38 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
             {somenteEstoque ? null : <Campo label="DESIGNER" valor={vm.designer} />}
           </View>
         </View>
+  );
+}
+
+export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
+  const emissao = formatarData(vm.os.emissao);
+  const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
+    .map((t) => truncar(t, 200))
+    .filter(Boolean);
+  const entregaFrete = vm.frete
+    ? [vm.frete.servico, vm.frete.transportadora].filter(Boolean).join(" - ")
+    : null;
+
+  // OS 100% de prateleira: produto pronto, sem arte e sem briefing de evento —
+  // EVENTO e DESIGNER não têm o que informar. Basta um item normal no boletim
+  // para os dois voltarem, porque aí existe arte a rastrear.
+  const produtosDoBoletim = vm.produtos.filter((produto) => produto.modelos.length > 0);
+  const cores = coresDoSetor(vm.boletim.setor);
+  const somenteEstoque =
+    produtosDoBoletim.length > 0 && produtosDoBoletim.every((produto) => produto.isEstoque);
+
+  return (
+    <Document
+      title={`OS ${vm.idInt}`}
+      author={vm.empresa.nome}
+      subject="Boletim de Producao / Ordem de Servico"
+    >
+      <Page size="A4" style={styles.page}>
+        {/* Cabeçalho — logo + Nº OS | Setor do boletim | Prazo/Hora | QR */}
+        <OsPdfCabecalho vm={vm} qrDataUrl={qrDataUrl} logoDataUrl={logoDataUrl} />
+
+        {/* Cliente e responsáveis (dados da proposta) */}
+        <OsPdfBlocoCliente vm={vm} somenteEstoque={somenteEstoque} />
 
         {/* Um card por produto, com os modelos DESTE boletim (setor). Produtos sem
             modelos no setor pertencem a outro boletim e saem do corpo do PDF. */}

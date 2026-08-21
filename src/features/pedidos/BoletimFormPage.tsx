@@ -48,6 +48,7 @@ import {
   type ConferenciaSetor
 } from "./services/boletim-setores.service";
 import { abrirPdfOs, baixarPdfOs, type LayoutPdfOs } from "./services/imprimir-os.client";
+import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
 import {
@@ -369,14 +370,6 @@ export function BoletimFormPage() {
    * para produção: ali o operacional mostra BLOQUEADO e este, o status real.
    */
   const [statusProposta, setStatusProposta] = useState<string>("");
-
-  /**
-   * Layout do PDF escolhido para o proximo "Imprimir OS". Vive so nesta tela e
-   * nasce sempre em `completo`: o layout com as artes continua sendo o padrao, e
-   * a escolha nao e persistida em lugar nenhum (nao ha coluna para isso, e nao
-   * se criou nenhuma).
-   */
-  const [layoutPdf, setLayoutPdf] = useState<LayoutPdfOs>("completo");
 
   useEffect(() => {
     setIsMounted(true);
@@ -940,6 +933,74 @@ export function BoletimFormPage() {
     pesoEstimadoGramasDe,
     user
   ]);
+
+  /**
+   * As tres acoes de PDF desta tela, cada uma parametrizada pelo layout.
+   *
+   * Existem como funcao — e nao inline em cada botao — porque o padrao e o
+   * reduzido precisam se comportar EXATAMENTE igual em cada ponto: mesmo
+   * boletim, mesmo setor, mesmo aviso, mesma trava de `isPrintingOs`. Duas
+   * copias do mesmo handler divergiriam no primeiro ajuste.
+   */
+  async function imprimirOsDoBoletimAberto(layout: LayoutPdfOs) {
+    if (isPrintingOs || !idIntParam) return;
+    setIsPrintingOs(true);
+    // Imprime o boletim aberto: o PDF é do setor, não da proposta.
+    const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo, layout);
+    setIsPrintingOs(false);
+    if (!result.success) {
+      showToast({
+        type: "error",
+        title: "Erro ao gerar PDF da OS",
+        description: result.errorMessage || "Erro desconhecido."
+      });
+    } else {
+      // `abrirPdfOs` volta assim que a aba abre — o PDF ainda está sendo gerado
+      // do outro lado. Sem este aviso o rótulo "Gerando PDF..." pisca por
+      // milissegundos e a aba nova fica em branco sem explicação nenhuma.
+      avisarGeracaoDoPdf();
+    }
+  }
+
+  async function imprimirOsDeOutroSetor(boletimDoSetor: BoletimSetor, layout: LayoutPdfOs) {
+    if (isPrintingOs || !idIntParam) return;
+    setIsPrintingOs(true);
+    const r = await abrirPdfOs(Number(idIntParam), boletimDoSetor.id, boletimDoSetor.setor, layout);
+    setIsPrintingOs(false);
+    if (!r.success) {
+      showToast({
+        type: "error",
+        title: "Erro ao gerar PDF da OS",
+        description: r.errorMessage || "Erro desconhecido."
+      });
+    } else {
+      avisarGeracaoDoPdf();
+    }
+  }
+
+  async function baixarTodosOsBoletins(layout: LayoutPdfOs) {
+    if (isPrintingOs || !idIntParam) return;
+    setIsPrintingOs(true);
+    // Um arquivo por setor. Abrir N abas seria bloqueado pelo navegador depois
+    // da primeira, então cada uma vira download.
+    const falhas: string[] = [];
+    for (const b of boletins) {
+      const r = await baixarPdfOs(Number(idIntParam), b.id, b.setor, layout);
+      if (!r.success) falhas.push(`${b.setor || "sem setor"}: ${r.errorMessage || "erro"}`);
+    }
+    setIsPrintingOs(false);
+    showToast(
+      falhas.length === 0
+        ? {
+            type: "success",
+            title: "PDFs gerados",
+            description: `${boletins.length} boletins baixados, um por setor${
+              layout === "resumido" ? ", em versao reduzida" : ""
+            }.`
+          }
+        : { type: "error", title: "Falha em parte dos PDFs", description: falhas.join(" | ") }
+    );
+  }
 
   async function handleConfirmarRevisao() {
     if (confirmandoRevisao || revisaoLiberada || !idIntParam) return;
@@ -1739,46 +1800,10 @@ export function BoletimFormPage() {
             >
               Voltar
             </Link>
-            {/* Escolha do layout, colada no botao que gera o PDF. Completo =
-                cards com a imagem de cada arte (padrao de sempre); Resumido =
-                lista de conferencia, um lote por linha, sem imagem. */}
-            {isEditing && canPrintOS && isPrdAprovado && (
-              <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
-                <span className="text-xs font-semibold uppercase text-slate-500">Layout</span>
-                <select
-                  value={layoutPdf}
-                  onChange={(e) => setLayoutPdf(e.target.value as LayoutPdfOs)}
-                  disabled={isPrintingOs}
-                  className="bg-transparent text-sm font-semibold text-slate-700 outline-none disabled:opacity-60"
-                >
-                  <option value="completo">Completo (com imagem)</option>
-                  <option value="resumido">Resumido (lista, sem imagem)</option>
-                </select>
-              </label>
-            )}
             {isEditing && canPrintOS && isPrdAprovado && (
               <button
                 type="button"
-                onClick={async () => {
-                  if (isPrintingOs || !idIntParam) return;
-                  setIsPrintingOs(true);
-                  // Imprime o boletim aberto: o PDF é do setor, não da proposta.
-                  const result = await abrirPdfOs(Number(idIntParam), boletimId, setorEfetivo, layoutPdf);
-                  setIsPrintingOs(false);
-                  if (!result.success) {
-                    showToast({
-                      type: "error",
-                      title: "Erro ao gerar PDF da OS",
-                      description: result.errorMessage || "Erro desconhecido."
-                    });
-                  } else {
-                    // `abrirPdfOs` volta assim que a aba abre — o PDF ainda está
-                    // sendo gerado do outro lado. Sem este aviso o rótulo
-                    // "Gerando PDF..." pisca por milissegundos e a aba nova fica
-                    // em branco sem explicação nenhuma.
-                    avisarGeracaoDoPdf();
-                  }
-                }}
+                onClick={() => void imprimirOsDoBoletimAberto("completo")}
                 disabled={isPrintingOs}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm flex items-center gap-1.5 disabled:opacity-60"
               >
@@ -1786,42 +1811,51 @@ export function BoletimFormPage() {
                 <span>
                   {isPrintingOs
                     ? "Gerando PDF..."
-                    : `${setorEfetivo ? `Imprimir OS · ${setorEfetivo}` : "Imprimir OS"}${
-                        layoutPdf === "resumido" ? " · resumido" : ""
-                      }`}
+                    : setorEfetivo
+                      ? `Imprimir OS · ${setorEfetivo}`
+                      : "Imprimir OS"}
                 </span>
               </button>
             )}
             {isEditing && boletins.length > 1 && (
               <button
                 type="button"
-                onClick={async () => {
-                  if (isPrintingOs || !idIntParam) return;
-                  setIsPrintingOs(true);
-                  // Um arquivo por setor. Abrir N abas seria bloqueado pelo
-                  // navegador depois da primeira, então cada uma vira download.
-                  const falhas: string[] = [];
-                  for (const b of boletins) {
-                    const r = await baixarPdfOs(Number(idIntParam), b.id, b.setor);
-                    if (!r.success) falhas.push(`${b.setor || "sem setor"}: ${r.errorMessage || "erro"}`);
-                  }
-                  setIsPrintingOs(false);
-                  showToast(
-                    falhas.length === 0
-                      ? {
-                          type: "success",
-                          title: "PDFs gerados",
-                          description: `${boletins.length} boletins baixados, um por setor.`
-                        }
-                      : { type: "error", title: "Falha em parte dos PDFs", description: falhas.join(" | ") }
-                  );
-                }}
+                onClick={() => void baixarTodosOsBoletins("completo")}
                 disabled={isPrintingOs}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 shadow-sm flex items-center gap-1.5 disabled:opacity-60"
               >
                 <Printer className="h-4 w-4" />
                 <span>Baixar todos ({boletins.length})</span>
               </button>
+            )}
+            {/* Versoes REDUZIDAS das mesmas acoes, num menu.
+                Quatro botoes de PDF lado a lado poluiriam o cabecalho; o menu
+                mantem o caminho comum a um clique e o reduzido a dois, sem
+                mudar nada do que ja existia. */}
+            {isEditing && canPrintOS && isPrdAprovado && (
+              <ActionsMenu
+                label="PDF reduzido"
+                items={[
+                  {
+                    label: isPrintingOs
+                      ? "Gerando PDF..."
+                      : setorEfetivo
+                        ? `PDF reduzido da OS · ${setorEfetivo}`
+                        : "PDF reduzido da OS",
+                    disabled: isPrintingOs,
+                    onClick: () => void imprimirOsDoBoletimAberto("resumido")
+                  },
+                  ...(boletins.length > 1
+                    ? [
+                        {
+                          label: `Baixar todos reduzidos (${boletins.length})`,
+                          disabled: isPrintingOs,
+                          onClick: () => void baixarTodosOsBoletins("resumido")
+                        }
+                      ]
+                    : [])
+                ]}
+              />
             )}
             {selectedProposta && (
               <button
@@ -2278,28 +2312,26 @@ export function BoletimFormPage() {
                         )}
                       </div>
                       {isEditing && boletimDoSetor && !ehDesteBoletim && idIntParam && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (isPrintingOs) return;
-                            setIsPrintingOs(true);
-                            const r = await abrirPdfOs(Number(idIntParam), boletimDoSetor.id, boletimDoSetor.setor);
-                            setIsPrintingOs(false);
-                            if (!r.success) {
-                              showToast({
-                                type: "error",
-                                title: "Erro ao gerar PDF da OS",
-                                description: r.errorMessage || "Erro desconhecido."
-                              });
-                            } else {
-                              avisarGeracaoDoPdf();
-                            }
-                          }}
-                          disabled={isPrintingOs}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
-                        >
-                          Abrir PDF do {grupo.setor}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => void imprimirOsDeOutroSetor(boletimDoSetor, "completo")}
+                            disabled={isPrintingOs}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            Abrir PDF do {grupo.setor}
+                          </button>
+                          {/* Mesma acao, layout reduzido: mesmo boletim, mesmo setor. */}
+                          <button
+                            type="button"
+                            onClick={() => void imprimirOsDeOutroSetor(boletimDoSetor, "resumido")}
+                            disabled={isPrintingOs}
+                            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
+                            title={`PDF reduzido do ${grupo.setor}`}
+                          >
+                            reduzido
+                          </button>
+                        </div>
                       )}
                     </header>
 

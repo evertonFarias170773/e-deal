@@ -50,9 +50,10 @@ function nomeDoArquivo(idInt: number, setor: string | null | undefined, layout?:
 export async function baixarPdfOs(
   idInt: number,
   idBoletim?: string | null,
-  setor?: string | null
+  setor?: string | null,
+  layout?: LayoutPdfOs
 ): Promise<AbrirPdfOsResult> {
-  const nomeArquivo = nomeArquivoOs(idInt, setor);
+  const nomeArquivo = nomeDoArquivo(idInt, setor, layout);
   let objectUrl: string | null = null;
   try {
     const client = getSupabaseClient();
@@ -60,7 +61,7 @@ export async function baixarPdfOs(
     const token = sessionResult?.data?.session?.access_token;
     if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
 
-    const response = await fetch(urlDoBoletim(idInt, idBoletim), {
+    const response = await fetch(urlDoBoletim(idInt, idBoletim, layout), {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (!response.ok) {

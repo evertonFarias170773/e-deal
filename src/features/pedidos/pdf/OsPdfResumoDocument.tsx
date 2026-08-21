@@ -1,12 +1,12 @@
 import React from "react";
-import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import type { OsPdfViewModel, OsPdfProduto, OsPdfModelo } from "../services/os-viewmodel.service";
 import {
+  OsPdfBlocoCliente,
+  OsPdfCabecalho,
   coresDoSetor,
   faixaNumeracao,
   formatarData,
-  formatarDataCurta,
-  formatarHora,
   formatarPeso,
   formatarQuantidade,
   pdfSafe,
@@ -24,9 +24,12 @@ import {
  *   continua sendo o completo, e nada do outro arquivo mudou.
  *
  * O QUE MUDA, E SÓ ISSO
- *   A seção de produtos. Cabeçalho, cliente, observações, forma de envio,
- *   assinaturas e rodapé são os mesmos campos do layout completo — o documento
- *   continua sendo a mesma OS, com o mesmo QR e o mesmo número.
+ *   A seção de produtos. O cabeçalho e o bloco de cliente são LITERALMENTE os
+ *   mesmos componentes do layout completo (`OsPdfCabecalho` e
+ *   `OsPdfBlocoCliente`, importados dali), e não uma reimplementação parecida:
+ *   dois PDFs do mesmo pedido com cabeçalhos diferentes é papel que a produção
+ *   não consegue conferir. Observações, forma de envio, assinaturas e rodapé
+ *   repetem os mesmos campos.
  *
  * POR QUE OS FORMATADORES VÊM IMPORTADOS
  *   `faixaNumeracao`, `formatarPeso` e companhia decidem como o dado aparece.
@@ -41,35 +44,25 @@ import {
  */
 
 const styles = StyleSheet.create({
-  page: { paddingTop: 22, paddingBottom: 44, paddingHorizontal: 24, fontSize: 8.5, fontFamily: "Helvetica", color: "#111" },
+  // Identico ao do layout completo, item a item: com padding ou fonte base
+  // diferentes, o mesmo componente de cabecalho cairia dois pontos acima ou
+  // abaixo, e os dois PDFs do mesmo pedido nao bateriam ao serem sobrepostos.
+  page: {
+    paddingTop: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 46,
+    fontSize: 8,
+    fontFamily: "Helvetica",
+    color: "#111",
+    flexDirection: "column"
+  },
 
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-  headerIdentidade: { flexDirection: "row", alignItems: "center", gap: 8 },
-  logo: { height: 26, objectFit: "contain" },
-  osBox: { flexDirection: "row", alignItems: "baseline", gap: 3 },
-  osBoxLabel: { fontSize: 8, color: "#666", fontFamily: "Helvetica-Bold" },
-  osBoxNumero: { fontSize: 15, fontFamily: "Helvetica-Bold" },
 
-  setorBox: { flexDirection: "row", alignItems: "baseline", gap: 4, borderWidth: 1, borderRadius: 3, paddingHorizontal: 6, paddingVertical: 3 },
-  setorLabel: { fontSize: 7, color: "#666" },
-  setorValor: { fontSize: 11, fontFamily: "Helvetica-Bold" },
-  setorOutros: { fontSize: 6.5, color: "#666", marginTop: 2, textAlign: "center" },
 
-  headerPrazo: { flexDirection: "row", gap: 6 },
-  prazoBox: { borderWidth: 1, borderColor: "#ccc", borderRadius: 3, paddingHorizontal: 5, paddingVertical: 3, alignItems: "center" },
-  prazoLabel: { fontSize: 6, color: "#666", fontFamily: "Helvetica-Bold" },
-  prazoValor: { fontSize: 9, fontFamily: "Helvetica-Bold" },
-  qr: { width: 46, height: 46 },
-  qrIndisponivel: { width: 46, height: 46, borderWidth: 1, borderColor: "#ddd", alignItems: "center", justifyContent: "center" },
 
   faixaResumo: { marginBottom: 6, paddingVertical: 2, borderTopWidth: 1, borderBottomWidth: 1, borderColor: "#ddd" },
   faixaResumoTexto: { fontSize: 7, color: "#555", fontFamily: "Helvetica-Bold", textAlign: "center" },
 
-  bloco: { borderWidth: 1, borderColor: "#ddd", borderRadius: 3, padding: 6, marginBottom: 6 },
-  linha: { flexDirection: "row", gap: 10 },
-  campo: { flex: 1 },
-  campoLabel: { fontSize: 6, color: "#777", fontFamily: "Helvetica-Bold" },
-  campoValor: { fontSize: 9 },
 
   produtoBloco: { marginBottom: 6 },
   produtoBarra: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 2 },
@@ -106,16 +99,16 @@ const styles = StyleSheet.create({
 
   footer: {
     position: "absolute",
-    bottom: 18,
+    bottom: 16,
     left: 24,
     right: 24,
+    borderTopWidth: 0.5,
+    borderTopColor: "#8aa0b3",
+    paddingTop: 4,
     flexDirection: "row",
     justifyContent: "space-between",
-    fontSize: 6.5,
-    color: "#888",
-    borderTopWidth: 1,
-    borderColor: "#eee",
-    paddingTop: 3
+    fontSize: 7,
+    color: "#5a6b7a"
   }
 });
 
@@ -123,15 +116,6 @@ export interface OsPdfResumoDocumentProps {
   vm: OsPdfViewModel;
   qrDataUrl: string | null;
   logoDataUrl: string | null;
-}
-
-function Campo({ label, valor }: { label: string; valor: string | null | undefined }) {
-  return (
-    <View style={styles.campo}>
-      <Text style={styles.campoLabel}>{label}</Text>
-      <Text style={styles.campoValor}>{pdfSafe(valor) || "-"}</Text>
-    </View>
-  );
 }
 
 /**
@@ -233,7 +217,6 @@ function ProdutoLista({ produto, corSetor }: { produto: OsPdfProduto; corSetor: 
 
 export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoDocumentProps) {
   const emissao = formatarData(vm.os.emissao);
-  const setor = pdfSafe(vm.boletim.setor).toUpperCase() || "-";
   const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
     .map((t) => truncar(t, 200))
     .filter(Boolean);
@@ -242,9 +225,6 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
     : null;
 
   const produtosDoBoletim = vm.produtos.filter((produto) => produto.modelos.length > 0);
-  const outrosSetores = vm.boletim.outrosSetores
-    .map((grupo) => pdfSafe(grupo.setor).toUpperCase())
-    .filter(Boolean);
   const cores = coresDoSetor(vm.boletim.setor);
   const somenteEstoque =
     produtosDoBoletim.length > 0 && produtosDoBoletim.every((produto) => produto.isEstoque);
@@ -256,48 +236,7 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
       subject="Boletim de Producao / Ordem de Servico (lista resumida)"
     >
       <Page size="A4" style={styles.page}>
-        <View style={styles.header} wrap={false}>
-          <View style={styles.headerIdentidade}>
-            {logoDataUrl ? (
-              // eslint-disable-next-line jsx-a11y/alt-text
-              <Image style={styles.logo} src={logoDataUrl} />
-            ) : null}
-            <View style={styles.osBox}>
-              <Text style={styles.osBoxLabel}>OS:</Text>
-              <Text style={styles.osBoxNumero}>{vm.idInt}</Text>
-            </View>
-          </View>
-
-          <View>
-            <View style={[styles.setorBox, { borderColor: cores.forte, backgroundColor: cores.claro }]}>
-              <Text style={styles.setorLabel}>Setor:</Text>
-              <Text style={[styles.setorValor, { color: cores.forte }]}>{setor}</Text>
-            </View>
-            {outrosSetores.length > 0 ? (
-              <Text style={styles.setorOutros}>Setor complementar: {outrosSetores.join(" | ")}</Text>
-            ) : null}
-          </View>
-
-          <View style={styles.headerPrazo}>
-            <View style={styles.prazoBox}>
-              <Text style={styles.prazoLabel}>PRAZO:</Text>
-              <Text style={styles.prazoValor}>{formatarDataCurta(vm.os.prazo)}</Text>
-            </View>
-            <View style={styles.prazoBox}>
-              <Text style={styles.prazoLabel}>HORA:</Text>
-              <Text style={styles.prazoValor}>{formatarHora(vm.boletim.hora)}</Text>
-            </View>
-          </View>
-
-          {qrDataUrl ? (
-            // eslint-disable-next-line jsx-a11y/alt-text
-            <Image style={styles.qr} src={qrDataUrl} />
-          ) : (
-            <View style={styles.qrIndisponivel}>
-              <Text style={{ fontSize: 6, color: "#999", textAlign: "center" }}>QR{"\n"}indisponivel</Text>
-            </View>
-          )}
-        </View>
+        <OsPdfCabecalho vm={vm} qrDataUrl={qrDataUrl} logoDataUrl={logoDataUrl} />
 
         {/* Diz o que este papel é. Sem isto, quem recebe a folha na bancada acha
             que a OS veio sem as artes. */}
@@ -307,16 +246,7 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
           </Text>
         </View>
 
-        <View style={styles.bloco} wrap={false}>
-          <View style={styles.linha}>
-            <Campo label="CLIENTE" valor={vm.cliente.nome} />
-            {somenteEstoque ? null : <Campo label="EVENTO" valor={vm.boletim.evento} />}
-          </View>
-          <View style={styles.linha}>
-            <Campo label="VENDEDOR" valor={vm.vendedor} />
-            {somenteEstoque ? null : <Campo label="DESIGNER" valor={vm.designer} />}
-          </View>
-        </View>
+        <OsPdfBlocoCliente vm={vm} somenteEstoque={somenteEstoque} />
 
         {produtosDoBoletim.map((produto, i) => (
           <ProdutoLista key={i} produto={produto} corSetor={cores.forte} />
