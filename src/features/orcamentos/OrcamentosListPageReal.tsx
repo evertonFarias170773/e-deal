@@ -547,16 +547,26 @@ export function OrcamentosListPageReal() {
   }, [filteredPropostas]);
 
   /**
-   * Rastreio das linhas visiveis. Consulta a parte porque nem o tipo de frete
-   * nem o codigo moram em `propostas` — mesmo padrao do enriquecimento de chat
-   * logo abaixo, inclusive o cache por id para nao repetir consulta ao paginar.
+   * Rastreio das linhas da pagina. Consulta a parte porque nem o tipo de frete
+   * nem o codigo moram em `propostas`.
+   *
+   * NAO reaproveita `visibleIdInts`: aquele corta em 100 (limite herdado do
+   * enriquecimento de chat, que e mais caro), mas a lista RENDERIZA a pagina
+   * inteira, ate 200. Enquanto reusou aquele corte, toda linha da metade de
+   * baixo ficava sem dado e a acao Rastrear simplesmente nao aparecia — foi
+   * assim que o #20481, que esta na posicao 523 da lista padrao, ficou sem a
+   * acao mesmo tendo codigo valido gravado nas tres colunas.
    */
+  const idsParaRastreio = useMemo(
+    () => filteredPropostas.map((p) => p.id_int),
+    [filteredPropostas]
+  );
   const [rastreioPorId, setRastreioPorId] = useState<Record<number, RastreioDaProposta>>({});
   const [pedidoRastreio, setPedidoRastreio] = useState<{ idInt: number; codigo: string } | null>(null);
   const fetchedRastreioIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
-    const naoBuscados = visibleIdInts.filter((id) => !fetchedRastreioIdsRef.current.has(id));
+    const naoBuscados = idsParaRastreio.filter((id) => !fetchedRastreioIdsRef.current.has(id));
     if (naoBuscados.length === 0) return;
     let ativo = true;
     void (async () => {
@@ -572,7 +582,7 @@ export function OrcamentosListPageReal() {
     return () => {
       ativo = false;
     };
-  }, [visibleIdInts]);
+  }, [idsParaRastreio]);
 
   const fetchedChatIdsRef = useRef<Set<number>>(new Set());
 
