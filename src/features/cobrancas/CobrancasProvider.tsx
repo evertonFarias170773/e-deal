@@ -1158,7 +1158,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           status: isEFaturado ? "A_VENCER" : "PAID",
           paid_at: cobranca.paid_at || paidAt,
           confirmado: true,
-          confirmado_por: "Financeiro mockado",
+          confirmado_por: "Financeiro",
           data_confirmacao: paidAt,
           creditoPendente: false,
           creditoAnalise: cobranca.creditoAnalise
