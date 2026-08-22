@@ -101,6 +101,21 @@ export interface PedidoExpedicao {
    * Vazio quando a proposta não registrou vendedor.
    */
   vendedor: string;
+  /**
+   * Soma de `propostas_os_setores.peso_real_kg` de TODOS os setores da OS — o
+   * que cada setor pesou na balança durante a Revisão do boletim.
+   *
+   * É a origem do "Peso aferido" no despacho: peso medido, não estimado. Difere
+   * de `expedicoes.peso_bruto_kg` (bruto do pedido inteiro, também da Revisão) e
+   * das fontes de `lib/peso.ts`, que incluem cotado e teórico.
+   *
+   * `null` quando NENHUM setor tem peso — soma de zero medições não é zero quilo.
+   * Setor sem peso apenas não entra na soma; `setoresSemPesoReal` conta quantos
+   * ficaram de fora, para a tela poder dizer que o número está incompleto.
+   */
+  pesoRealSetoresKg: number | null;
+  /** Quantos setores da OS estão sem `peso_real_kg`. 0 = soma completa. */
+  setoresSemPesoReal: number;
   statusInterno: string;
   etapa: EtapaExpedicao;
   /** propostas_os.data_termino (ISO) — a promessa exibida. */

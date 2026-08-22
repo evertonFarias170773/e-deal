@@ -106,7 +106,17 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
 
   // 2..6 em paralelo — cada bloco é tolerante a falha individual (warn + vazio),
   // MENOS cotacao_frete, cujo erro é logado com destaque (foi o bug da tela antiga).
-  const [osRes, fretesRes, nfsRes, expRes, clientesRes, pesosRes, liberacoesRes, recotacoesRes] = await Promise.all([
+  const [
+    osRes,
+    fretesRes,
+    nfsRes,
+    expRes,
+    clientesRes,
+    pesosRes,
+    liberacoesRes,
+    recotacoesRes,
+    setoresRes
+  ] = await Promise.all([
     client
       .from("propostas_os")
       .select("id_int, data_termino, codigo_rastreamento, obs")
@@ -145,7 +155,11 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       .from("expedicao_recotacoes")
       .select("id_int, peso_gramas, cep, aplicado_em")
       .in("id_int", ids)
-      .order("aplicado_em", { ascending: false })
+      .order("aplicado_em", { ascending: false }),
+    // Peso REAL por setor, medido na Revisão do boletim. A soma vira o "Peso
+    // aferido" que o despacho abre preenchido — antes o expedidor tinha de
+    // repetir na bancada uma pesagem que a produção já havia feito.
+    client.from("propostas_os_setores").select("id_int, setor, peso_real_kg").in("id_int", ids)
   ]);
 
   if (fretesRes.error) {
@@ -233,6 +247,25 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   const clienteMap = new Map<number, { nome: string | null; fantasia: string | null; cidade_uf: string | null }>();
   for (const row of clientesRes.data ?? []) clienteMap.set(Number(row.id_cliente), row);
 
+  /**
+   * Peso real somado por pedido, e quantos setores ficaram sem medir.
+   * Setor sem `peso_real_kg` não conta como zero: ele simplesmente não entra na
+   * soma, e o contador diz que o total está incompleto.
+   */
+  const pesoRealSetores = new Map<number, { somaKg: number; medidos: number; semPeso: number }>();
+  for (const linha of setoresRes.data ?? []) {
+    const idInt = Number(linha.id_int);
+    const atual = pesoRealSetores.get(idInt) ?? { somaKg: 0, medidos: 0, semPeso: 0 };
+    const kg = Number(linha.peso_real_kg);
+    if (Number.isFinite(kg) && kg > 0) {
+      atual.somaKg += kg;
+      atual.medidos += 1;
+    } else {
+      atual.semPeso += 1;
+    }
+    pesoRealSetores.set(idInt, atual);
+  }
+
   const pesoTeoricoGramas = new Map<number, number>();
   for (const row of pesosRes.data ?? []) {
     const idInt = Number(row.id_int);
@@ -307,6 +340,10 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       cidadeUf: cli?.cidade_uf ?? "",
       empresa: p.empresa || "",
       vendedor: (p.vendedor as string | null) || "",
+      pesoRealSetoresKg: (pesoRealSetores.get(idInt)?.medidos ?? 0) > 0
+        ? Number(pesoRealSetores.get(idInt)!.somaKg.toFixed(3))
+        : null,
+      setoresSemPesoReal: pesoRealSetores.get(idInt)?.semPeso ?? 0,
       statusInterno,
       etapa,
       dataPromessa,

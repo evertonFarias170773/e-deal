@@ -5,7 +5,7 @@ import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { labelTipoFrete, modalidadeInicialDoDespacho } from "../lib/tipo-frete";
+import { labelTipoFrete, modalidadeInicialDoDespacho, normalizarTipoFrete } from "../lib/tipo-frete";
 import { despachar, salvarDadosExpedicao } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
 import { listarEnderecosCliente } from "../services/enderecos.service";
@@ -119,13 +119,21 @@ export function DespacharModal({
    * divergencia de peso entao comparava o cotado contra ele mesmo e nunca
    * acusava nada.
    *
+   * DESDE 22/08/2026 ele volta a nascer preenchido — mas com a SOMA do
+   * `peso_real_kg` de cada setor, que a Revisao do boletim mediu na balanca.
+   * Isso nao reintroduz o problema acima: o que chega aqui e pesagem, nao
+   * estimativa. O previsto (cotado/teorico) continua a vista logo abaixo do
+   * campo, porque o expedidor precisa dos dois para julgar.
+   *
    * `exp?.pesoKg` continua preenchendo: esse SIM e peso aferido de verdade,
    * gravado num despacho anterior ou no rascunho de "Salvar sem despachar" —
    * apaga-lo obrigaria a expedidora a pesar de novo o que ela ja pesou.
    *
    * O estimado nao some da tela: segue no `placeholder` como "previsto X".
    */
-  const [pesoKg, setPesoKg] = useState(exp?.pesoKg?.toString() ?? "");
+  const [pesoKg, setPesoKg] = useState(
+    exp?.pesoKg?.toString() ?? pedido.pesoRealSetoresKg?.toString() ?? ""
+  );
   const [qtdVolumes, setQtdVolumes] = useState(exp?.qtdVolumes?.toString() ?? pedido.volumes?.toString() ?? "1");
   const [tipoVolume, setTipoVolume] = useState(exp?.tipoVolume ?? "Pacote");
   const [codigoRastreamento, setCodigoRastreamento] = useState(pedido.codigoRastreamento);
@@ -139,6 +147,13 @@ export function DespacharModal({
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
   const [gerandoPrepostagem, setGerandoPrepostagem] = useState(false);
+  /**
+   * Transporte que a recotacao escolheu mas a modalidade atual nao oferece
+   * (na pratica: Correios recotado num pedido FOB). A tela diz o que houve em
+   * vez de trocar a modalidade sozinha — mudar quem paga o frete nao e efeito
+   * colateral de aplicar uma cotacao.
+   */
+  const [transporteRecotadoForaDaModalidade, setTransporteRecotadoForaDaModalidade] = useState<string | null>(null);
 
   /**
    * Recotação (Parte C, Etapa 1) — SÓ CONSULTA. Nada é gravado por este bloco:
@@ -280,6 +295,28 @@ export function DespacharModal({
       // A aplicacao consome a liberacao no banco, na mesma transacao. Refletir
       // aqui evita o selo continuar dizendo "liberado" depois de gasto.
       if (!res.idempotente) setLiberacao(null);
+
+      // O TRANSPORTE RECOTADO passa a ser o do formulario.
+      //
+      // Ate aqui, aplicar "Expresso Sao Miguel - Rodoviario" gravava o novo
+      // frete na proposta e deixava "Como vai" e a transportadora exatamente
+      // como estavam: o despacho saia com um transporte e a proposta cobrava
+      // outro. Quem aplicou tinha de repetir a escolha na mao, e nada avisava.
+      if (o.transportadora) setTransportadoraNome(o.transportadora);
+      setIdTransportadoraCliente(null);
+      const recotado = normalizarTipoFrete(o.servico || o.transportadora);
+      // So seleciona o que a modalidade oferece. CORREIOS em FOB continua fora
+      // (a prepostagem sai do cartao da empresa) — nesse caso a tela avisa em
+      // vez de escolher por conta propria.
+      // Sem modalidade escolhida ainda, a referencia e CIF: e a mais ampla, e a
+      // validacao de campos minimos continua exigindo a escolha antes de despachar.
+      const oferecidos = TRANSPORTES_POR_MODALIDADE[modalidade === "FOB" ? "FOB" : "CIF"];
+      if (oferecidos.includes(recotado)) {
+        setTipoFrete(recotado);
+        setTransporteRecotadoForaDaModalidade(null);
+      } else {
+        setTransporteRecotadoForaDaModalidade(labelTipoFrete(recotado));
+      }
     }
     else setErroAplicacao(res.errorMessage || "Não foi possível aplicar agora.");
   }
@@ -791,6 +828,12 @@ export function DespacharModal({
                     Correios, marque CIF.
                   </p>
                 )}
+                {transporteRecotadoForaDaModalidade && (
+                  <p className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-900">
+                    A recotação aplicada é por {transporteRecotadoForaDaModalidade}, que esta modalidade não oferece.
+                    Ajuste a modalidade antes de confirmar, ou escolha aqui como o pedido vai de fato.
+                  </p>
+                )}
               </div>
 
               {/* PASSO 3 — transportadora só depois de definir como vai. */}
@@ -1034,7 +1077,24 @@ export function DespacharModal({
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <label className={labelClass}>Peso aferido (kg)</label>
-              <input value={pesoKg} onChange={(e) => setPesoKg(e.target.value)} inputMode="decimal" placeholder={pedido.pesoKg ? `previsto ${pedido.pesoKg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "ex.: 12,4"} className={inputClass} />
+              <input value={pesoKg} onChange={(e) => setPesoKg(e.target.value)} inputMode="decimal" placeholder="ex.: 12,4" className={inputClass} />
+              {/* O previsto saiu do placeholder: com o campo nascendo
+                  preenchido, o placeholder nunca mais apareceria — e e
+                  justamente agora que o expedidor precisa comparar os dois. */}
+              {pedido.pesoKg !== null ? (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Previsto: <strong>{pedido.pesoKg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg</strong>
+                  {pedido.pesoOrigem ? ` (${pedido.pesoOrigem})` : ""}
+                  {pedido.pesoRealSetoresKg !== null
+                    ? ` · medido nos setores: ${pedido.pesoRealSetoresKg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`
+                    : ""}
+                </p>
+              ) : null}
+              {pedido.setoresSemPesoReal > 0 ? (
+                <p className="mt-1 text-[11px] font-medium text-amber-700">
+                  {pedido.setoresSemPesoReal} setor(es) sem peso na Revisao — a soma esta incompleta, confira na balanca.
+                </p>
+              ) : null}
             </div>
             <div>
               <label className={labelClass}>Qtd. volumes</label>
