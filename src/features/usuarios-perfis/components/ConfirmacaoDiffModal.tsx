@@ -61,7 +61,7 @@ export function ConfirmacaoDiffModal({
           ) : (
             <>
               <p className="text-muted-foreground font-semibold">
-                Revise as alterações de permissões que serão gravadas no banco de dados:
+                Revise as alterações de permissões antes de salvar:
               </p>
 
               {adicionadas.length > 0 && (

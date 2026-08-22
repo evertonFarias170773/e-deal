@@ -265,7 +265,7 @@ export function RevisarGeracaoBancariaModal({
       showToast({
         type: "error",
         title: "Erro",
-        description: "Cliente Supabase não inicializado."
+        description: "Sistema indisponível no momento. Tente novamente."
       });
       setRegisteringBoletoId(null);
       return;
@@ -498,7 +498,7 @@ export function RevisarGeracaoBancariaModal({
 
     try {
       const client = getSupabaseClient();
-      if (!client) throw new Error("Cliente Supabase não inicializado.");
+      if (!client) throw new Error("Sistema indisponível no momento. Tente novamente.");
 
       for (let i = 0; i < eligible.length; i++) {
         setCurrentRegisterIndex(i);

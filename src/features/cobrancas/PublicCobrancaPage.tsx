@@ -21,9 +21,9 @@ export function PublicCobrancaPage({ token }: PublicCobrancaPageProps) {
     return (
       <main className="min-h-screen bg-slate-100 px-4 py-10">
         <div className="mx-auto max-w-3xl rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Página pública mockada</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Página de pagamento (simulação)</p>
           <h1 className="mt-2 text-2xl font-bold text-slate-950">Cobrança não encontrada</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-600">O token informado não existe no estado mockado atual.</p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">O link informado não existe ou expirou.</p>
         </div>
       </main>
     );
@@ -31,14 +31,14 @@ export function PublicCobrancaPage({ token }: PublicCobrancaPageProps) {
 
   function handleSimulatePayment() {
     confirmPagamento(cobranca.id);
-    showToast({ type: "success", title: "Pagamento confirmado no mock." });
+    showToast({ type: "success", title: "Pagamento confirmado (simulação)." });
   }
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-10">
       <div className="mx-auto max-w-4xl space-y-6">
         <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Página pública mockada</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#0b7774]">Página de pagamento (simulação)</p>
           <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-slate-950">{cobranca.cliente}</h1>
@@ -61,19 +61,19 @@ export function PublicCobrancaPage({ token }: PublicCobrancaPageProps) {
               <InfoRow label="Status" value={cobranca.status} />
               <InfoRow label="Vencimento" value={cobranca.vencimento ? formatDate(cobranca.vencimento) : "Sem vencimento"} />
               <InfoRow label="PIX copia e cola" value={cobranca.pix_copia_cola ?? "Não se aplica"} />
-              <InfoRow label="Checkout / boleto" value={cobranca.cartao_checkout_url ?? cobranca.url_pdf ?? cobranca.url_cobranca ?? "Link mockado indisponível"} />
+              <InfoRow label="Checkout / boleto" value={cobranca.cartao_checkout_url ?? cobranca.url_pdf ?? cobranca.url_cobranca ?? "Link indisponível"} />
             </div>
 
             <div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5">
-              <p className="font-semibold text-slate-900">Ambiente 100% mockado</p>
+              <p className="font-semibold text-slate-900">Ambiente de simulação</p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Este token público existe apenas para validar o fluxo visual. Nenhum gateway, banco ou backend externo foi acionado.
+                Esta página serve apenas para conferir o fluxo. Nenhuma cobrança real foi feita.
               </p>
             </div>
           </div>
 
           <aside className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Ações mockadas</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Ações de simulação</p>
             <div className="mt-4 space-y-3">
               <button
                 type="button"

@@ -37,7 +37,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
     try {
       const client = getSupabaseClient();
       if (!client) {
-        setError("Cliente Supabase não inicializado.");
+        setError("Sistema indisponível no momento. Tente novamente.");
         return;
       }
 
@@ -136,7 +136,7 @@ export function AnaliseCreditoModal({ isOpen, onClose, cobranca, onCreditApprove
     try {
       const client = getSupabaseClient();
       if (!client) {
-        alert("Cliente Supabase não inicializado.");
+        alert("Sistema indisponível no momento. Tente novamente.");
         return;
       }
 

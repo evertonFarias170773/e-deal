@@ -704,7 +704,7 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       setMessage({
         tone: "success",
         title: successTitle,
-        description: "Alteração confirmada no Supabase com whitelist de campos operacionais."
+        description: "Alterações salvas."
       });
       showToast({
         type: "success",
@@ -756,12 +756,12 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
       setMessage({
         tone: "danger",
         title: "Não foi possível salvar",
-        description: "Ocorreu uma falha inesperada ao comunicar com o Supabase. Tente novamente em alguns segundos."
+        description: "Não foi possível salvar agora. Tente novamente em alguns segundos."
       });
       showToast({
         type: "error",
         title: "Não foi possível salvar",
-        description: "Falha inesperada ao comunicar com o Supabase."
+        description: "Não foi possível salvar agora. Tente novamente."
       });
     } finally {
       setIsSaving(false);
@@ -1004,7 +1004,7 @@ export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPagePr
             <div className="min-w-0 flex-1">
               <p className="font-semibold text-sky-950">Copiar dados fiscais de outro produto</p>
               <p className="mt-1 text-sm text-sky-700">
-                A cópia preenche apenas campos fiscais neste formulário. Salve para gravar no Supabase.
+                A cópia preenche apenas campos fiscais neste formulário. Salve para confirmar.
               </p>
               <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1.4fr]">
                 <label className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-white px-4 py-3">

@@ -180,11 +180,11 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     router.replace(query ? `?${query}` : window.location.pathname, { scroll: false });
   }, [novoVinculoParam, searchParams, router]);
 
-  const title = mode === "new" ? "Novo cadastro" : `Editar cadastro #${cadastro?.idCliente}`;
+  const title = mode === "new" ? "Novo cliente" : `Editar cliente #${cadastro?.idCliente}`;
   const subtitle =
     mode === "new"
-      ? "Preencha os dados principais e salve para criar o cadastro no Supabase."
-      : "Atualize os dados carregados nesta tela em modo simulado, sem persistir em banco real.";
+      ? "Preencha os dados principais e salve para criar o cliente."
+      : "Atualize os dados deste cliente e salve para confirmar as alterações.";
 
   const formattedDocument = useMemo(
     () => maskDocument(form.documento, form.tipoCliente),
@@ -627,12 +627,12 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
       setMessage({
         tone: "danger",
         title: "Nao foi possivel validar duplicidades",
-        description: validationResult.errorMessage || "Falha ao consultar o Supabase."
+        description: validationResult.errorMessage || "Não foi possível validar o documento agora. Tente novamente."
       });
       showToast({
         type: "error",
         title: "Falha na validacao",
-        description: validationResult.errorMessage || "Falha ao consultar o Supabase."
+        description: validationResult.errorMessage || "Não foi possível validar o documento agora. Tente novamente."
       });
       return;
     }
@@ -1092,7 +1092,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
       description:
         relatedWarnings.length > 0
           ? "Cadastro principal salvo, mas houve falha em parte dos dados relacionados."
-          : `Cadastro #${result.cadastro.idCliente} gravado no Supabase.`
+          : `Cliente #${result.cadastro.idCliente} salvo.`
     });
 
     setIsSaving(false);
@@ -1314,7 +1314,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
       <PageHeader
         title={title}
         subtitle={subtitle}
-        context="Cadastros / Clientes"
+        context="Clientes"
         action={
           <div className="flex flex-wrap gap-2">
             <Link
@@ -1351,7 +1351,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
                 {isSaving
                   ? "Salvando..."
                   : mode === "edit"
-                    ? "Salvar campos liberados no Supabase"
+                    ? "Salvar campos liberados"
                     : "Salvar cadastro"}
               </button>
             )}
@@ -1657,7 +1657,7 @@ function CompleteForm({
         <StatusCard title="Atendente" value={form.atendente || "Nao definido"} />
       </section>
 
-      <FormSection title="Identificação e dados gerais" description="Dados principais da tabela `public.clientes`.">
+      <FormSection title="Identificação e dados gerais" description="Dados principais do cliente.">
         {documentChanged ? (
           <div className="mb-4 rounded-3xl border border-orange-200 bg-orange-50 p-4 text-orange-800">
             <div className="flex gap-3">
@@ -1851,7 +1851,7 @@ function CompleteForm({
                         return;
                       }
                       onUpdate("enderecos", form.enderecos.filter((_, itemIndex) => itemIndex !== index));
-                      onToast({ type: "success", title: "Endereço excluído", description: "Endereço removido com sucesso do banco de dados." });
+                      onToast({ type: "success", title: "Endereço excluído", description: "Endereço removido." });
                     }} className="rounded-xl p-2 text-red-600 hover:bg-red-50">
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -2043,7 +2043,7 @@ function CompleteForm({
               {isSaving
                 ? "Salvando..."
                 : mode === "edit"
-                  ? "Salvar campos liberados no Supabase"
+                  ? "Salvar campos liberados"
                   : "Salvar cadastro"}
             </button>
           </div>

@@ -42,7 +42,7 @@ export default function MinhaContaPage() {
             Área de Diagnóstico e Homologação
           </h3>
           <p className="text-xs mt-1" style={{ color: "#78350f" }}>
-            Esta tela é temporária e serve para verificar em tempo real se o enriquecimento de perfis, permissões e fallbacks do banco de dados (Supabase) estão funcionando corretamente.
+            Esta tela é temporária e mostra o perfil e as permissões carregadas para a sua conta.
           </p>
         </div>
       </div>

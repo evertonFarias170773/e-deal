@@ -236,7 +236,7 @@ export function PerfisPermissoesPanel() {
       showToast({
         type: "error",
         title: "Falha ao carregar perfis",
-        description: "Ocorreu um erro ao buscar os perfis cadastrados no Supabase."
+        description: "Não foi possível carregar os perfis. Tente novamente."
       });
     } finally {
       setLoading(false);
@@ -358,7 +358,7 @@ export function PerfisPermissoesPanel() {
       await fetchPerfis();
     } catch (err: unknown) {
       console.error("[Erro RLS/Database] Falha ao executar updatePermissoesPerfil:", err);
-      const errorMessage = err instanceof Error ? err.message : "O banco de dados recusou a atualização.";
+      const errorMessage = err instanceof Error ? err.message : "Não foi possível salvar as permissões. Tente novamente.";
       
       showToast({
         type: "error",

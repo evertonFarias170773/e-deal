@@ -194,7 +194,7 @@ export function ProdutoVariacaoFormPage({ mode, id }: ProdutoVariacaoFormPagePro
       showToast({
         type: "error",
         title: "Erro Inesperado",
-        description: errorMsg || "Erro de conexão com o banco de dados."
+        description: errorMsg || "Não foi possível concluir. Tente novamente."
       });
     } finally {
       setIsSaving(false);
@@ -302,7 +302,7 @@ export function ProdutoVariacaoFormPage({ mode, id }: ProdutoVariacaoFormPagePro
       showToast({
         type: "error",
         title: "Erro de conexão",
-        description: "Falha ao gravar opção no banco de dados."
+        description: "Não foi possível salvar a opção. Tente novamente."
       });
     } finally {
       setIsSavingOpcao(false);
@@ -335,7 +335,7 @@ export function ProdutoVariacaoFormPage({ mode, id }: ProdutoVariacaoFormPagePro
       showToast({
         type: "error",
         title: "Erro ao processar",
-        description: "Falha ao inativar opção no Supabase."
+        description: "Não foi possível inativar a opção. Tente novamente."
       });
     }
   }

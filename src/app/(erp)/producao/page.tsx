@@ -29,7 +29,7 @@ function ProducaoContent() {
           <FileText className="mx-auto h-12 w-12 text-slate-400" />
           <h3 className="mt-4 text-base font-semibold text-slate-900">ID do Pedido Não Informado</h3>
           <p className="mt-2 text-sm text-slate-500">
-            Para visualizar o painel operacional de produção com dados reais do Supabase, informe o parâmetro <code className="bg-slate-200 px-1 py-0.5 rounded">?id_int=ID</code> na URL.
+            Para visualizar o painel operacional de produção, informe o parâmetro <code className="bg-slate-200 px-1 py-0.5 rounded">?id_int=ID</code> na URL.
           </p>
           <div className="mt-6 flex flex-col gap-2">
             <Link
@@ -66,7 +66,7 @@ export default function ProducaoArtesRoute() {
 
       <PageHeader
         title="Controle de Artes e Modelos de Produção"
-        subtitle="Fase 1 - Versionamento de arquivos de pré-impressão integrado com o Supabase."
+        subtitle="Versionamento de arquivos de pré-impressão."
       />
 
       <Suspense fallback={

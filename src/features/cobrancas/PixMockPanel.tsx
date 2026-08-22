@@ -12,7 +12,7 @@ export function PixMockPanel({ values, empresaLabel, onChange }: PixMockPanelPro
   return (
     <PanelCard
       title="Simulação PIX"
-      description="Gera token público, copia e cola e página pública mockada sem acionar backend real."
+      description="Gera link e copia-e-cola de Pix para simulação. Não cobra de verdade."
     >
       <div className="grid gap-4 md:grid-cols-2">
         <InfoBox label="Empresa recebedora" value={empresaLabel} detail="Cada empresa usará credencial própria na integração futura." />

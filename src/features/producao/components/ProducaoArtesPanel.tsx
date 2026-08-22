@@ -80,7 +80,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
       showToast({
         type: "error",
         title: "Erro ao carregar dados",
-        description: err instanceof Error ? err.message : "Falha na comunicação com o banco de dados."
+        description: err instanceof Error ? err.message : "Não foi possível concluir. Tente novamente."
       });
     } finally {
       setLoading(false);
@@ -202,7 +202,7 @@ export function ProducaoArtesPanel({ idInt, idCliente }: ProducaoArtesPanelProps
       showToast({
         type: "error",
         title: "Erro ao atualizar",
-        description: err instanceof Error ? err.message : "Falha na comunicação com o banco de dados."
+        description: err instanceof Error ? err.message : "Não foi possível concluir. Tente novamente."
       });
     } finally {
       setUpdatingStatus(false);

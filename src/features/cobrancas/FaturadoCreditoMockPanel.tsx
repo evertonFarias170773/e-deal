@@ -18,7 +18,7 @@ export function FaturadoCreditoMockPanel({
   return (
     <PanelCard
       title="Simulação de faturado / crédito"
-      description="Analisa limite mockado do cliente e decide entre liberação imediata ou solicitação ao financeiro."
+      description="Analisa o limite do cliente e decide entre liberação imediata ou solicitação ao financeiro."
     >
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <InfoBox label="Limite de crédito" value={formatCurrency(analise.limite)} />

@@ -485,7 +485,7 @@ export function PrepararBoletosModal({
       }
 
       const client = getSupabaseClient();
-      if (!client) throw new Error("Supabase client not initialized");
+      if (!client) throw new Error("Sistema indisponivel no momento. Tente novamente.");
 
       // 4. Inserir boletos
       const payloadBoletos = installments.map((item) => {

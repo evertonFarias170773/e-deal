@@ -201,7 +201,7 @@ export function AlterarPerfilModal({
             >
               <option value="fallback">
                 {perfis.length === 0 
-                  ? "🔄 Usar Fallback Legado (Nenhum perfil disponível - RLS)" 
+                  ? "🔄 Usar perfil padrão (nenhum perfil disponível)" 
                   : "🔄 Usar Fallback Legado (id_perfil = null)"}
               </option>
               {perfis.map((p) => (
@@ -216,7 +216,7 @@ export function AlterarPerfilModal({
             <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/10 p-3.5 text-xs text-red-700 dark:text-red-400 flex items-center gap-2">
               <span>⚠️</span>
               <span>
-                <strong>Aviso RLS:</strong> Não há perfis disponíveis no catálogo do banco para seleção. Apenas o modo fallback legado está acessível.
+                <strong>Atenção:</strong> Nenhum perfil está disponível para seleção. Apenas o perfil padrão pode ser usado.
               </span>
             </div>
           )}

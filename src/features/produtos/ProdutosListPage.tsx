@@ -173,7 +173,7 @@ export function ProdutosListPage() {
     showToast({
       type: "info",
       title,
-      description: "Acao mockada para validacao visual. Nenhum backend real foi acionado."
+      description: "Esta acao ainda nao esta disponivel."
     });
   }
 
@@ -271,7 +271,7 @@ export function ProdutosListPage() {
       ) : (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SummaryCard title="Produtos ativos" value={resumo.ativos.toString()} description="Itens disponiveis para uso comercial." tone="success" icon={Package} />
-          <SummaryCard title="Com variacoes" value={resumo.comVariacoes.toString()} description="Produtos marcados com variações no Supabase." tone="info" icon={SlidersHorizontal} />
+          <SummaryCard title="Com variacoes" value={resumo.comVariacoes.toString()} description="Produtos com variações cadastradas." tone="info" icon={SlidersHorizontal} />
           <SummaryCard title="Com fotos" value={resumo.comFotos.toString()} description="Itens com fotos cadastradas em public.fotosProdutos." tone="special" icon={ImageIcon} />
           <SummaryCard title="Produtos de prateleira" value={resumo.estoque.toString()} description="Vendidos prontos: dispensam o fluxo de arte." tone="neutral" icon={Boxes} />
         </section>
@@ -343,9 +343,9 @@ export function ProdutosListPage() {
           <div className="flex gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
             <div>
-              <h3 className="font-semibold text-red-950">Falha ao carregar produtos do Supabase. Verifique schema, RLS ou conexão.</h3>
+              <h3 className="font-semibold text-red-950">Não foi possível carregar os produtos.</h3>
               <p className="mt-1 text-sm text-red-700">
-                Ocorreu um erro ao consultar a tabela public.produtos. Detalhes técnicos: {error}
+                Tente novamente em alguns instantes. Se continuar, avise o suporte.
               </p>
             </div>
           </div>
@@ -450,8 +450,8 @@ export function ProdutosListPage() {
         <section className={`rounded-3xl border border-dashed p-4 text-sm ${error ? "border-red-300 bg-red-50 text-red-800" : "border-slate-300 bg-slate-50 text-slate-600"}`}>
           <p>
             {error 
-              ? `Falha na leitura real do Supabase: ${error}`
-              : (warnings[0] ?? `Dados reais carregados em public.produtos (${produtos.length} registros).`)}
+              ? "Não foi possível carregar os produtos."
+              : (warnings[0] ?? `${produtos.length} produtos carregados.`)}
           </p>
         </section>
       ) : null}

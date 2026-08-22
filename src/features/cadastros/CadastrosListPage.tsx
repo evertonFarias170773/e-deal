@@ -243,7 +243,7 @@ export function CadastrosListPage() {
     showToast({
       type: "info",
       title,
-      description: "Ação de apoio para validação visual. Nenhum backend real foi acionado."
+      description: "Esta ação ainda não está disponível."
     });
   }
 
@@ -286,14 +286,14 @@ export function CadastrosListPage() {
       <PageHeader
         title="Cadastros"
         subtitle="Busca por ID, documento, nome fantasia ou nome, com filtro de tipo, em páginas de 100 registros."
-        context="Cadastros / Comercial"
+        context="Clientes"
         action={
           <button
             type="button"
             onClick={() => router.push("/cadastros/novo")}
             className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61]"
           >
-            + Novo cadastro
+            + Novo cliente
           </button>
         }
       />

@@ -1125,7 +1125,7 @@ Ela volta a aparecer nas listas operacionais.`
       <PageHeader
         title="Orcamentos"
         subtitle="Monte e acompanhe propostas comerciais com cliente, cobrança vinculada e resumo operacional."
-        context="Orcamentos / Propostas"
+        context="Pedidos"
         action={
           <button
             type="button"
@@ -1570,8 +1570,8 @@ Ela volta a aparecer nas listas operacionais.`
             <div>
               <p className="font-semibold">
                 {errorMessage
-                  ? "Erro ao conectar com o banco de dados Supabase"
-                  : `Dados reais carregados em public.propostas (${loadedCount} registros).`}
+                  ? "Não foi possível carregar os pedidos. Tente novamente."
+                  : `${loadedCount} pedidos carregados.`}
               </p>
               {errorMessage && (
                 <p className="mt-1 text-xs">

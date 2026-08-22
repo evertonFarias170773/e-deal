@@ -824,14 +824,6 @@ export function NotasFiscaisPage() {
     ? nfeData.isLoading
     : nfseData.isLoading;
 
-  const activeSource = activeTab === "FILA_FATURAMENTO"
-    ? "supabase"
-    : false
-    ? "mock"
-    : activeTab === "HISTORICO_FISCAL"
-    ? nfeData.source
-    : nfseData.source;
-
   async function copyToClipboard(text: string, title: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -2241,8 +2233,7 @@ export function NotasFiscaisPage() {
 
       {!isLoading ? (
         <section className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500 flex justify-between items-center">
-          <span>Fonte ativa de dados: <strong className="uppercase">{activeSource}</strong></span>
-          <span>Leitura restrita e protegida do banco de dados do ERP.</span>
+          <span>Notas fiscais atualizadas.</span>
         </section>
       ) : null}
 

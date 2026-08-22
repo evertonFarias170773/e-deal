@@ -19,7 +19,7 @@ export default function AtualizarSenhaPage() {
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) {
-      setError("Cliente Supabase não inicializado.");
+      setError("Sistema indisponível no momento. Avise o suporte.");
       setHasSession(false);
       return;
     }
@@ -90,7 +90,7 @@ export default function AtualizarSenhaPage() {
     try {
       const client = getSupabaseClient();
       if (!client) {
-        throw new Error("Cliente Supabase não inicializado.");
+        throw new Error("Sistema indisponível no momento. Avise o suporte.");
       }
 
       const { error: updateError } = await client.auth.updateUser({

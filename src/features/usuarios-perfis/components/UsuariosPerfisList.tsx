@@ -108,7 +108,7 @@ export function UsuariosPerfisList() {
         setErrorMsg(error.message || "Erro desconhecido ao carregar os dados.");
         showToast({
           title: "Erro de Conexão",
-          description: "Não foi possível carregar as informações do Supabase.",
+          description: "Não foi possível carregar as informações. Tente novamente.",
           type: "error"
         });
       } finally {
@@ -306,7 +306,7 @@ export function UsuariosPerfisList() {
             disabled={perfis.length === 0}
           >
             <option value="">
-              {perfis.length === 0 ? "Nenhum perfil carregado (Erro RLS)" : "Todos os Perfis"}
+              {perfis.length === 0 ? "Nenhum perfil disponível" : "Todos os Perfis"}
             </option>
             {perfis.map(p => (
               <option key={p.id} value={p.slug}>{p.nome}</option>
@@ -330,7 +330,7 @@ export function UsuariosPerfisList() {
           <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/50 dark:bg-amber-950/10 p-3 text-xs text-amber-700 dark:text-amber-400 flex items-center gap-2">
             <span>⚠️</span>
             <span>
-              <strong>Atenção:</strong> Nenhum perfil foi carregado do catálogo do banco. Se você está logado, isso pode indicar que a Row Level Security (RLS) da tabela <code>public.perfis</code> está bloqueando a leitura para o seu nível de acesso.
+              <strong>Atenção:</strong> Nenhum perfil foi carregado. Seu nível de acesso pode não permitir ver os perfis — avise o suporte se precisar deles.
             </span>
           </div>
         )}

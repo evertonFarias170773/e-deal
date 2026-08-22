@@ -36,7 +36,7 @@ export default function CadastroPage() {
     try {
       const supabase = getSupabaseClient();
       if (!supabase) {
-        throw new Error("Supabase client não está configurado.");
+        throw new Error("Sistema indisponível no momento. Avise o suporte.");
       }
 
       const origin = typeof window !== "undefined" ? window.location.origin : "";

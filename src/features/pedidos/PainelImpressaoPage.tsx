@@ -656,7 +656,7 @@ export function PainelImpressaoPage() {
           <p className="text-xs text-blue-700 mt-1">
             Fila priorizada de PCP. Atalhos ativos: <strong className="font-extrabold">U</strong> (Alternar Urgência),{" "}
             <strong className="font-extrabold">L</strong> (Fila Geral) e <strong className="font-extrabold">K</strong>{" "}
-            (Kanban). Conectado ao Supabase.
+            (Kanban).
           </p>
         </div>
       </div>

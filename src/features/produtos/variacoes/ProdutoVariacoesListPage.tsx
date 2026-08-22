@@ -335,7 +335,7 @@ export function ProdutoVariacoesListPage() {
         <section className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600 flex items-center gap-2">
           <HelpCircle className="h-4 w-4 text-slate-500" />
           <p>
-            Exibindo {filteredVariacoes.length} variações globais carregadas diretamente do banco de dados ERP.
+            Exibindo {filteredVariacoes.length} variações globais.
           </p>
         </section>
       ) : null}

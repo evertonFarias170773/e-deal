@@ -74,7 +74,7 @@ export function ConfirmarLiberacaoModal({ isOpen, onClose, cobranca, onSuccess }
         showToast({
           type: "error",
           title: "Erro ao confirmar",
-          description: "Não foi possível realizar a liberação no banco de dados."
+          description: "Não foi possível concluir a liberação. Tente novamente."
         });
       }
     } catch (err: any) {

@@ -1034,7 +1034,7 @@ export function CobrancasList() {
         <div className="flex items-start gap-3">
           <CalendarDays className="mt-0.5 h-4 w-4 text-[#0f9f9a]" />
           <p>
-            Esta tela usa leitura read-only quando o Supabase responde e mantém fallback mockado quando a fonte real falha. As ações continuam simuladas nesta fase.
+            Esta tela é somente leitura. As ações continuam simuladas nesta fase.
           </p>
         </div>
       </section>

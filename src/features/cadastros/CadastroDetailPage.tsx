@@ -81,7 +81,7 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
     showToast({
       type: "info",
       title,
-      description: "Acao mockada para validacao visual. Nenhum backend real foi acionado."
+      description: "Esta acao ainda nao esta disponivel."
     });
   }
 

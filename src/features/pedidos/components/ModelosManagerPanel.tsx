@@ -101,7 +101,7 @@ export default function ModelosManagerPanel({
     });
     showToast({
       type: "success",
-      title: "Arte carregada (Mock)",
+      title: "Arte carregada",
       description: `Arquivo ${fileName} enviado para revisão interna.`
     });
   };
@@ -774,7 +774,7 @@ export default function ModelosManagerPanel({
                             <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-200/40 dark:border-slate-800/30 rounded-xl p-3 space-y-3">
                               <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-slate-450">
                                 <ShieldAlert className="h-4 w-4 text-blue-500 shrink-0" />
-                                <span>Simulação de Decisão do Cliente (Mock)</span>
+                                <span>Simulação de decisão do cliente</span>
                               </div>
                               <div className="space-y-2">
                                 <div className="space-y-1">

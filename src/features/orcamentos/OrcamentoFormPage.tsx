@@ -2261,7 +2261,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       updateField("enderecoId", data.id);
       setAddressDraft({ tipo: "entrega", cep: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", recebedor: "", cpfRecebedor: "" });
       setIsAddressModalOpen(false);
-      showToast({ type: "success", title: "Endereço adicionado à proposta e salvo no banco de dados." });
+      showToast({ type: "success", title: "Endereço adicionado à proposta." });
     } catch (err) {
       showToast({ type: "error", title: "Erro na requisição", description: "Ocorreu um problema ao tentar persistir o endereço." });
     } finally {
@@ -2433,7 +2433,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       setIsDeletingProduct(true);
       try {
         const client = getSupabaseClient();
-        if (!client) throw new Error("Cliente Supabase indisponível.");
+        if (!client) throw new Error("Sistema indisponível no momento. Tente novamente.");
 
         const { data: deletedRows, error: deleteError } = await client
           .from("produtos_proposta")
@@ -2449,7 +2449,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           showToast({
             type: "error",
             title: "Erro ao excluir produto",
-            description: "Não foi possível remover o produto do banco de dados. Tente novamente."
+            description: "Não foi possível remover o produto. Tente novamente."
           });
           return; // Produto NÃO some da tela
         }
@@ -4066,8 +4066,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     <div className="space-y-6">
       <PageHeader
         title={tituloDoCabecalho}
-        subtitle="Integração real Supabase (clientes, catálogo de produtos, variações dinâmicas e snapshots históricos)."
-        context="Orçamentos / Propostas"
+        context="Pedidos"
         action={
           <div className="flex flex-wrap gap-2">
             {proposta?.id_int ? (
@@ -4250,7 +4249,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     }
                     
                     if (!aberta) {
-                      showToast({ type: "error", title: "Erro", description: "Pendência não encontrada no banco de dados. Recarregue a página." });
+                      showToast({ type: "error", title: "Erro", description: "Pendência não encontrada. Recarregue a página." });
                       setPendenciaRevisaoAberta(null);
                       return;
                     }
@@ -4597,7 +4596,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
           {activeFormTab === "geral" && (
             <div className="space-y-6">
-              <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente (busca direta no banco de dados)."}>
+              <FormSection title="1. Cliente" description={form.clienteNaoCadastrado ? "Informe o nome livre do cliente e o CEP para entrega / cálculo de frete." : "Busque por ID, nome, apelido/fantasia ou documento do cliente."}>
             {/* Toggle Cliente Cadastrado vs. Sem Cadastro */}
             {mode === "new" ? (
               <div className="mb-4 flex gap-6 border-b border-slate-100 pb-3">
@@ -4830,7 +4829,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                     </p>
                     {!form.clienteNaoCadastrado && !loadingVendedores && dbVendedores.length === 0 && (
                       <p className="text-xs text-rose-600 mt-1 font-semibold">
-                        ⚠️ Aviso: Nenhum vendedor retornado pelo banco de dados.
+                        ⚠️ Aviso: Nenhum vendedor disponível.
                       </p>
                     )}
                   </Field>

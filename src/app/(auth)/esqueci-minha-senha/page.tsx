@@ -22,7 +22,7 @@ export default function EsqueciMinhaSenhaPage() {
     try {
       const client = getSupabaseClient();
       if (!client) {
-        throw new Error("Cliente Supabase não inicializado.");
+        throw new Error("Sistema indisponível no momento. Avise o suporte.");
       }
 
       const { error: resetError } = await client.auth.resetPasswordForEmail(email.trim().toLowerCase(), {

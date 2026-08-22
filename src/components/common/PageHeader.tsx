@@ -2,7 +2,11 @@ import type { ReactNode } from "react";
 
 type PageHeaderProps = {
   title: string;
-  subtitle: string;
+  /**
+   * Opcional: há cabeçalho em que o título já diz tudo (a edição de pedido, que
+   * identifica pedido e cliente) e a linha de apoio só ocuparia espaço.
+   */
+  subtitle?: string;
   context?: string;
   action?: ReactNode;
 };
@@ -34,12 +38,14 @@ export function PageHeader({ title, subtitle, context, action }: PageHeaderProps
         >
           {title}
         </h1>
-        <p
-          className="mt-2 max-w-3xl text-sm leading-6"
-          style={{ color: "color-mix(in srgb, var(--primary-foreground) 78%, transparent)" }}
-        >
-          {subtitle}
-        </p>
+        {subtitle ? (
+          <p
+            className="mt-2 max-w-3xl text-sm leading-6"
+            style={{ color: "color-mix(in srgb, var(--primary-foreground) 78%, transparent)" }}
+          >
+            {subtitle}
+          </p>
+        ) : null}
       </div>
       {action ? (
         <div className="flex shrink-0 items-center gap-2">{action}</div>

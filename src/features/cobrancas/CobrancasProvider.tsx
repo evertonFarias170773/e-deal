@@ -539,7 +539,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
     if (source === "supabase") {
       if (!proposta) {
-        throw new Error("Dados da proposta sao obrigatorios para criar cobranca no Supabase.");
+        throw new Error("Dados da proposta sao obrigatorios para criar a cobranca.");
       }
 
       if (values.tipoCobranca === "BOLETO") {
@@ -551,7 +551,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
 
       const client = getSupabaseClient();
       if (!client) {
-        throw new Error("Cliente do Supabase nao inicializado.");
+        throw new Error("Sistema indisponivel no momento. Tente novamente.");
       }
 
       // ── Idempotência por tentativa ──────────────────────────────────────────
@@ -743,7 +743,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         .returns<Array<{ id: string; id_pagamento?: string }>>();
 
       if (insertError || !createdRows || !createdRows.length) {
-        throw new Error(insertError?.message || "Erro ao criar cobranca inicial no Supabase.");
+        throw new Error(insertError?.message || "Nao foi possivel criar a cobranca. Tente novamente.");
       }
 
       const createdRow = createdRows[0];
@@ -815,7 +815,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         .eq("id", cobrancaId);
 
       if (updateTokenError) {
-        throw new Error(updateTokenError.message || "Erro ao atualizar token publico no Supabase.");
+        throw new Error(updateTokenError.message || "Nao foi possivel gerar o link publico da cobranca.");
       }
 
       let response: Response;
@@ -1172,7 +1172,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
             {
               id: `hist_confirm_${paidAt}`,
               data: paidAt,
-              titulo: isEFaturado ? "Crédito aprovado no mock" : "Pagamento confirmado no mock",
+              titulo: isEFaturado ? "Crédito aprovado" : "Pagamento confirmado",
               descricao: isEFaturado
                 ? "Faturamento aprovado pelo setor financeiro."
                 : "Status alterado para pago via ação manual.",
@@ -1199,7 +1199,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     try {
       const client = getSupabaseClient();
       if (!client) {
-        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+        return { success: false, errorMessage: "Sistema indisponível no momento. Tente novamente." };
       }
       const sessionResponse = await client.auth.getSession();
       const token = sessionResponse.data.session?.access_token || "";
@@ -1263,7 +1263,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     if (source === "supabase") {
       const client = getSupabaseClient();
       if (!client) {
-        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+        return { success: false, errorMessage: "Sistema indisponível no momento. Tente novamente." };
       }
 
       // Revalidar status atual no Supabase para impedir cancelamento indevido
@@ -1336,7 +1336,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
             {
               id: `hist_cancel_${cancelledAt}`,
               data: cancelledAt,
-              titulo: "Cobrança cancelada no mock",
+              titulo: "Cobrança cancelada",
               descricao: motivo,
               tipo: "danger"
             },
@@ -1354,7 +1354,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     try {
       const client = getSupabaseClient();
       if (!client) {
-        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+        return { success: false, errorMessage: "Sistema indisponível no momento. Tente novamente." };
       }
       const sessionResponse = await client.auth.getSession();
       const token = sessionResponse.data.session?.access_token || "";
@@ -1428,7 +1428,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
             {
               id: `hist_liberacao_${cobranca.id}_${liberadoAt}`,
               data: liberadoAt,
-              titulo: "Proposta liberada para pedido no mock",
+              titulo: "Proposta liberada para pedido",
               descricao: "Financeiro conferiu os pagamentos válidos e liberou a proposta para virar pedido.",
               tipo: "success"
             },
@@ -1454,7 +1454,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     if (source === "supabase") {
       const client = getSupabaseClient();
       if (!client) {
-        throw new Error("Cliente Supabase não inicializado.");
+        throw new Error("Sistema indisponível no momento. Tente novamente.");
       }
       const sessionResponse = await client.auth.getSession();
       const token = sessionResponse.data.session?.access_token || "";
@@ -1516,7 +1516,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       });
 
       if (!result.success || !result.updated) {
-        throw new Error(result.errorMessage || "Falha ao estornar cobranca no Supabase.");
+        throw new Error(result.errorMessage || "Nao foi possivel estornar a cobranca. Tente novamente.");
       }
 
       const updated = result.updated;
@@ -1552,7 +1552,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     if (source === "supabase") {
       const client = getSupabaseClient();
       if (!client) {
-        return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+        return { success: false, errorMessage: "Sistema indisponível no momento. Tente novamente." };
       }
 
       // 1. Verificar duplicidade na tabela public.boletos
@@ -1795,7 +1795,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   const alterarCondicaoCobrancaReal = useCallback(async (id: string, novoModelo: ModeloCobranca, operador: string, obs?: string) => {
     if (source !== "supabase") return { success: false, errorMessage: "Ambiente mock não suporta alteração real." };
     const client = getSupabaseClient();
-    if (!client) return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+    if (!client) return { success: false, errorMessage: "Sistema indisponível no momento. Tente novamente." };
 
     try {
       const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
@@ -1844,7 +1844,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   const reprovarCondicaoCobrancaReal = useCallback(async (id: string, motivo: string, operador: string) => {
     if (source !== "supabase") return { success: false, errorMessage: "Ambiente mock não suporta reprovação real." };
     const client = getSupabaseClient();
-    if (!client) return { success: false, errorMessage: "Cliente Supabase não inicializado." };
+    if (!client) return { success: false, errorMessage: "Sistema indisponível no momento. Tente novamente." };
 
     try {
       const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);

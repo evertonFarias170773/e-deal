@@ -32,7 +32,7 @@ export default function LoginPage() {
         <div className="grid grid-cols-3 gap-4 text-sm text-slate-300 relative z-10">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm transition hover:bg-white/10">
             <h3 className="font-semibold text-white mb-1">Acesso Seguro</h3>
-            <p className="text-slate-400 text-xs">Proteção com Supabase Auth.</p>
+            <p className="text-slate-400 text-xs">Acesso protegido.</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm transition hover:bg-white/10">
             <h3 className="font-semibold text-white mb-1">Multiempresa</h3>

@@ -499,7 +499,7 @@ export function BoletimFormPage() {
         showToast({
           type: "error",
           title: "Erro ao Carregar Pedido",
-          description: "Falha na leitura dos dados do pedido no Supabase."
+          description: "Não foi possível carregar os dados do pedido. Tente novamente."
         });
       } finally {
         setLoadingDetails(false);
@@ -1478,7 +1478,7 @@ export function BoletimFormPage() {
           showToast({
             type: "error",
             title: "Erro ao Atualizar Boletim",
-            description: result.error || "Não foi possível atualizar as orientações no Supabase."
+            description: result.error || "Não foi possível atualizar as orientações. Tente novamente."
           });
           setLoadingDetails(false);
           return;
@@ -1670,7 +1670,7 @@ export function BoletimFormPage() {
         showToast({
           type: "error",
           title: "Erro ao Salvar Boletim",
-          description: result.error || "Não foi possível abrir o pedido no Supabase."
+          description: result.error || "Não foi possível abrir o pedido. Tente novamente."
         });
         setLoadingDetails(false);
         return;
@@ -1733,7 +1733,7 @@ export function BoletimFormPage() {
         showToast({
           type: "error",
           title: "Erro ao Salvar Modelos",
-          description: modelsResult.error || "O pedido pai foi criado, mas não foi possível salvar os lotes no Supabase."
+          description: modelsResult.error || "A OS foi criada, mas não foi possível salvar os lotes. Tente novamente."
         });
         setLoadingDetails(false);
         return;
@@ -2690,7 +2690,7 @@ export function BoletimFormPage() {
                                           setSelectedGabaritoPreview({
                                             id: foundInDb,
                                             nome: foundInDb,
-                                            descricao: "Gabarito carregado dinamicamente do banco de dados.",
+                                            descricao: "Gabarito do cadastro.",
                                             previewImageUrl: ""
                                           });
                                         }

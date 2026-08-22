@@ -1486,7 +1486,7 @@ export function PropostaCobrancaPanel({
                 <p className="mt-1 text-xs font-semibold text-orange-700">
                   {source === "supabase"
                     ? "Atenção: o total das cobranças excede o valor total da proposta."
-                    : "Cobranças excedem o valor da proposta no mock."}
+                    : "Cobranças excedem o valor da proposta."}
                 </p>
               ) : null}
             </div>
@@ -1500,7 +1500,7 @@ export function PropostaCobrancaPanel({
               title="Dados da cobrança"
               description={source === "supabase"
                 ? "Preencha os dados essenciais para gerar a cobrança real."
-                : "Preencha os dados essenciais para gerar a cobrança mockada."}
+                : "Preencha os dados essenciais para gerar a cobrança."}
             >
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Empresa recebedora">
@@ -1581,7 +1581,7 @@ export function PropostaCobrancaPanel({
 
             <PanelCard
               title="Forma de pagamento"
-              description="Escolha uma opção operacional. Detalhes técnicos de geração ficam para backend e detalhe da cobrança."
+              description="Escolha uma opção operacional."
             >
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
                 {opcoesPagamento.map((opcao) => {
@@ -1930,7 +1930,7 @@ export function PropostaCobrancaPanel({
                     <p className="text-xs font-semibold text-orange-700">
                       {source === "supabase"
                         ? "Atenção: o total das cobranças excede o valor total da proposta."
-                        : "Cobranças excedem o valor da proposta no mock."}
+                        : "Cobranças excedem o valor da proposta."}
                     </p>
                   ) : null}
                   <div className="flex flex-wrap items-center gap-2">
@@ -2021,7 +2021,7 @@ export function PropostaCobrancaPanel({
                   <p className="mt-1 text-xs font-semibold text-orange-700">
                     {source === "supabase"
                       ? "Atenção: o total das cobranças excede o valor total da proposta."
-                      : "Cobranças excedem o valor da proposta no mock."}
+                      : "Cobranças excedem o valor da proposta."}
                   </p>
                 ) : null}
               </div>
@@ -2035,7 +2035,7 @@ export function PropostaCobrancaPanel({
                 title="Dados da cobrança"
                 description={source === "supabase"
                   ? "Preencha os dados essenciais para gerar a cobrança real."
-                  : "Preencha os dados essenciais para gerar a cobrança mockada."}
+                  : "Preencha os dados essenciais para gerar a cobrança."}
               >
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Empresa recebedora">
@@ -2115,7 +2115,7 @@ export function PropostaCobrancaPanel({
 
               <PanelCard
                 title="Forma de pagamento"
-                description="Escolha uma opção operacional. Detalhes técnicos de geração ficam para backend e detalhe da cobrança."
+                description="Escolha uma opção operacional."
               >
                 <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
                   {opcoesPagamento.map((opcao) => {

@@ -60,7 +60,8 @@ export function LoginForm() {
     try {
       const supabase = getSupabaseClient();
       if (!supabase) {
-        throw new Error("Supabase client não está configurado.");
+        console.error("[LoginForm] Supabase client nao configurado (variaveis de ambiente ausentes).");
+        throw new Error("Sistema indisponível no momento. Avise o suporte.");
       }
 
       const origin = typeof window !== "undefined" ? window.location.origin : "";

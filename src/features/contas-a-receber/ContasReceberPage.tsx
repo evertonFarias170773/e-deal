@@ -470,7 +470,7 @@ export function ContasReceberPage() {
 
     const client = getSupabaseClient();
     if (!client) {
-      showToast({ type: "error", title: "Supabase não configurado." });
+      showToast({ type: "error", title: "Sistema indisponível no momento." });
       return;
     }
 
@@ -645,7 +645,7 @@ export function ContasReceberPage() {
     }
     const client = getSupabaseClient();
     if (!client) {
-      showToast({ type: "error", title: "Supabase não configurado." });
+      showToast({ type: "error", title: "Sistema indisponível no momento." });
       return;
     }
     setIsConvertingDep(true);
@@ -884,7 +884,7 @@ export function ContasReceberPage() {
       }
 
       const client = getSupabaseClient();
-      if (!client) throw new Error("Supabase não configurado.");
+      if (!client) throw new Error("Sistema indisponível no momento.");
 
       const { error: updateError } = await client
         .from("boletos")
@@ -1039,7 +1039,7 @@ export function ContasReceberPage() {
 
       // 3. Baixa local pelo padrão oficial do Contas a Receber (status PAID + paid_at + autoria)
       const client = getSupabaseClient();
-      if (!client) throw new Error("Supabase não configurado.");
+      if (!client) throw new Error("Sistema indisponível no momento.");
 
       const paidAt = new Date().toISOString();
       const confirmadoPor =
@@ -1174,7 +1174,7 @@ export function ContasReceberPage() {
       const { getSupabaseClient } = await import("@/lib/supabase/client");
       const client = getSupabaseClient();
       if (!client) {
-        throw new Error("Conexão com o banco de dados (Supabase) não inicializada.");
+        throw new Error("Sistema indisponível no momento. Tente novamente.");
       }
 
       // Exact update query requested by user:
@@ -1217,7 +1217,7 @@ export function ContasReceberPage() {
       showToast({
         type: "success",
         title: "Boleto liquidado com sucesso!",
-        description: `Status atualizado no Supabase para PAID com pagamento em ${formatLocalDate(paymentDate.slice(0, 10))}.`
+        description: `Boleto marcado como pago em ${formatLocalDate(paymentDate.slice(0, 10))}.`
       });
 
       // Close modal and refresh list
@@ -1273,7 +1273,7 @@ export function ContasReceberPage() {
       const { getSupabaseClient } = await import("@/lib/supabase/client");
       const client = getSupabaseClient();
       if (!client) {
-        throw new Error("Conexão com o banco de dados (Supabase) não inicializada.");
+        throw new Error("Sistema indisponível no momento. Tente novamente.");
       }
 
       // Update na tabela boletos
@@ -1291,7 +1291,7 @@ export function ContasReceberPage() {
       }
 
       if (!updatedData || updatedData.length === 0) {
-        throw new Error("Não foi possível atualizar o boleto no banco de dados.");
+        throw new Error("Não foi possível atualizar o boleto. Tente novamente.");
       }
 
       // Atualizar estado local para feedback imediato
@@ -1641,12 +1641,11 @@ export function ContasReceberPage() {
 
       {isLoadingSource ? (
         <section className="rounded-3xl border border-dashed border-slate-350 bg-sky-50/50 p-4 text-sm leading-6 text-sky-850 animate-pulse">
-          Buscando registros em tempo real na tabela public.boletos no Supabase.
+          Carregando os recebíveis.
         </section>
       ) : (
         <section className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500 flex justify-between items-center">
-          <span>Fonte ativa de dados: <strong className="uppercase">{dataSource}</strong></span>
-          <span>Dados atualizados da tabela public.boletos.</span>
+          <span>Recebíveis atualizados.</span>
         </section>
       )}
 
@@ -2263,7 +2262,7 @@ export function ContasReceberPage() {
                   <div>
                     <h4 className="font-bold text-sm">Pagamento encontrado no C6!</h4>
                     <p className="text-xs mt-1 text-emerald-700 leading-relaxed text-left">
-                      Deseja atualizar este recebível como pago? Esta ação atualizará a tabela local no Supabase.
+                      Deseja marcar este recebível como pago?
                     </p>
                   </div>
                 </div>

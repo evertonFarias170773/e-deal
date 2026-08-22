@@ -285,7 +285,7 @@ export function ImportSistemaAntigoModal({
               <CheckCircle className="h-5 w-5 mt-0.5 shrink-0 text-teal-600" />
               <div className="text-xs">
                 <p className="font-semibold">Cadastro validado para importação</p>
-                <p className="mt-1 leading-relaxed">Nenhum conflito de ID ou Documento encontrado no banco de dados.</p>
+                <p className="mt-1 leading-relaxed">Nenhum conflito de ID ou documento encontrado.</p>
               </div>
             </div>
           )}

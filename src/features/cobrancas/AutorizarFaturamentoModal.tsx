@@ -105,7 +105,7 @@ export function AutorizarFaturamentoModal({ isOpen, onClose, cobranca, onSuccess
         onSuccess?.();
         onClose();
       } else {
-        showToast({ type: "error", title: "Erro ao autorizar", description: "Não foi possível realizar a liberação no banco de dados." });
+        showToast({ type: "error", title: "Erro ao autorizar", description: "Não foi possível concluir a liberação. Tente novamente." });
       }
     } catch (err) {
       showToast({ type: "error", title: "Erro inesperado", description: err instanceof Error ? err.message : "Erro desconhecido." });

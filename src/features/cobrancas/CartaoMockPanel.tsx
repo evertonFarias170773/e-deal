@@ -12,10 +12,10 @@ export function CartaoMockPanel({ values, empresaLabel, onChange }: CartaoMockPa
   return (
     <PanelCard
       title="Simulação de cartão de crédito"
-      description="Cria checkout mockado com captura automática visual e retorno preparado para futura integração."
+      description="Simulação de checkout de cartão. Ainda não cobra de verdade."
     >
       <div className="grid gap-4 md:grid-cols-2">
-        <InfoBox label="Empresa recebedora" value={empresaLabel} detail="Checkout futuro será gerado por backend seguro." />
+        <InfoBox label="Empresa recebedora" value={empresaLabel} detail="Cobrança real de cartão ainda não está disponível." />
         <InfoBox label="Valor" value={formatCurrency(values.valor)} detail="Status inicial previsto: A_RECEBER." />
         <Field label="Descrição">
           <input
@@ -24,7 +24,7 @@ export function CartaoMockPanel({ values, empresaLabel, onChange }: CartaoMockPa
             className={inputClass}
           />
         </Field>
-        <Field label="Captura automática mockada">
+        <Field label="Captura automática (simulada)">
           <select
             value={values.capturaAutomatica ? "SIM" : "NAO"}
             onChange={(event) => onChange({ capturaAutomatica: event.target.value === "SIM" })}

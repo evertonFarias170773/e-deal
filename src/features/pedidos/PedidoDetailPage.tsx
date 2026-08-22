@@ -509,7 +509,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
     return (
       <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center max-w-lg mx-auto mt-12 space-y-4">
         <h2 className="text-lg font-bold text-red-800">Pedido não encontrado</h2>
-        <p className="text-sm text-red-600">Pedido não encontrado no banco de dados.</p>
+        <p className="text-sm text-red-600">Pedido não encontrado.</p>
         <div className="pt-2">
           <Link
             href="/pedidos"
@@ -609,7 +609,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
         <div>
           <h4 className="font-black text-sm uppercase tracking-wider text-blue-600 dark:text-blue-400">Ficha Operacional de OS</h4>
           <p className="text-xs text-slate-605 dark:text-slate-350 mt-1 leading-relaxed font-medium">
-            Visualização consolidada de produção, especificações e acompanhamento de lotes conectados diretamente ao Supabase.
+            Visualização consolidada de produção, especificações e acompanhamento de lotes.
           </p>
         </div>
       </div>
@@ -1305,7 +1305,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                           : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
                       }`}
                     >
-                      Simulador Local (Mock)
+                      Simulação
                     </button>
                     <button
                       onClick={() => setShowRealPanel(true)}
@@ -1315,7 +1315,7 @@ export function PedidoDetailPage({ idInt }: PedidoDetailPageProps) {
                           : "bg-white hover:bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-850 dark:text-slate-400"
                       }`}
                     >
-                      Conexão Real Supabase (Fase 1)
+                      Dados do pedido
                     </button>
                   </div>
                 </div>

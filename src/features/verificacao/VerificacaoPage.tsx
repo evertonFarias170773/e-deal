@@ -126,7 +126,7 @@ export function VerificacaoPage() {
       showToast({
         type: "error",
         title: "Erro de conexão",
-        description: "Falha ao se conectar com a API de verificação."
+        description: "Não foi possível consultar o documento agora. Tente novamente em alguns instantes."
       });
     } finally {
       setIsLoading(false);
@@ -138,7 +138,7 @@ export function VerificacaoPage() {
       <PageHeader
         title="Verificação CPF/CNPJ"
         subtitle="Consulta cadastral de CPF e CNPJ para validação de novos clientes ou restrições."
-        context="Cadastros / Verificação de Documento"
+        context="Financeiro / Verificação de CPF/CNPJ"
       />
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr] items-start">
@@ -212,8 +212,7 @@ export function VerificacaoPage() {
               <div>
                 <h4 className="text-xs font-bold">Ambiente de Diagnóstico</h4>
                 <p className="text-[11px] leading-relaxed mt-0.5">
-                  Esta consulta está configurada como proxy backend preparando a futura integração com Edge Functions / n8n.
-                  Nenhum custo real ou cota de API está ativo nesta etapa visual.
+                  Esta consulta ainda está em fase de validação e não gera custo nem consome cota.
                 </p>
               </div>
             </div>

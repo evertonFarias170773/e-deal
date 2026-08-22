@@ -156,7 +156,7 @@ export default function ConfiguracoesHubPage() {
         />
         <ConfigHubCard
           title="Integrações"
-          description="Configure webhooks, conexões com bancos, gateways de pagamento, APIs de Notas Fiscais e serviços externos."
+          description="Configure integrações, gateways de pagamento e serviços de Nota Fiscal."
           href="/configuracoes/integracoes"
           icon={Cpu}
           disabled

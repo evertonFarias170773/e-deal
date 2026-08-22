@@ -183,7 +183,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const client = getSupabaseClient();
     if (!client) {
-      throw new Error("Supabase nao configurado. Verifique NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      // Detalhe tecnico so no console: a tela de login nunca expoe nome de variavel de ambiente.
+      console.error("[Auth] Supabase nao configurado: verifique NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      throw new Error("Sistema indisponivel no momento. Avise o suporte.");
     }
 
     const { data, error } = await client.auth.signInWithPassword({
@@ -192,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (error) {
-      throw new Error(error.message || "Nao foi possivel autenticar no Supabase.");
+      throw new Error(error.message || "Nao foi possivel entrar. Verifique seu e-mail e senha.");
     }
 
     const mappedUser = mapSessionToUser(data.session);
