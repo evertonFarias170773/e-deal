@@ -1345,7 +1345,7 @@ export function NotasFiscaisPage() {
       showToast({ type: "info", title: "Preparando reenvio da nota..." });
       
       const client = getSupabaseClient();
-      if (!client) throw new Error("Cliente Supabase não inicializado.");
+      if (!client) throw new Error("Sistema indisponível no momento. Tente novamente.");
 
       // 1. Buscar ambiente atual da empresa
       const { data: company, error: compErr } = await client
@@ -1382,7 +1382,7 @@ export function NotasFiscaisPage() {
       console.log("[Reenviar NFe] Executando fn_preparar_envio_nfe");
       const prepRes = await prepararEnvioNfe(item.ref);
       if (!prepRes || !prepRes.ok) {
-        throw new Error(prepRes?.mensagem || "Falha ao preparar envio e remontar payload.");
+        throw new Error(prepRes?.mensagem || "Não foi possível preparar a nota para envio. Tente novamente.");
       }
 
       // 4. Atualizar a listagem para refletir novo status / dados
@@ -1686,7 +1686,7 @@ export function NotasFiscaisPage() {
             getKey={(item) => `fila-nfe-${item.id}`}
             isLoading={isLoading}
             emptyTitle="Nenhuma proposta disponível para faturamento"
-            emptyDescription="Não há pedidos de produtos reais aprovados no banco de dados para faturamento."
+            emptyDescription="Nenhum pedido aprovado aguardando faturamento."
             columns={[
               {
                 header: "Pedido",
@@ -1988,7 +1988,7 @@ export function NotasFiscaisPage() {
             getKey={(item) => `nfe-${item.id}`}
             isLoading={isLoading}
             emptyTitle="Nenhuma NF-e encontrada"
-            emptyDescription="Nenhum registro de nota fiscal de produto consta no banco ou mock."
+            emptyDescription="Nenhuma nota fiscal de produto registrada."
             columns={[
               {
                 header: "Nº Nota",
@@ -2155,7 +2155,7 @@ export function NotasFiscaisPage() {
             getKey={(item) => `nfse-${item.id}`}
             isLoading={isLoading}
             emptyTitle="Nenhuma NFS-e encontrada"
-            emptyDescription="Nenhum registro de nota fiscal de serviço consta no banco ou mock."
+            emptyDescription="Nenhuma nota fiscal de serviço registrada."
             columns={[
               {
                 header: "Nº NFS-e",

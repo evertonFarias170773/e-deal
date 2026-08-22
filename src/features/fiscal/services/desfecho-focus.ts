@@ -14,8 +14,22 @@
  *   `mensagem_sefaz`) é gravado pelo n8n, e está sendo gravado corretamente.
  */
 
+/**
+ * Os documentos que a Focus devolve junto com a autorizacao. Vêm no mesmo bloco
+ * e nao dependem de o n8n ter gravado nada — foi o que faltou na NFE-20481-001,
+ * autorizada na SEFAZ e ainda em PROCESSANDO no banco.
+ */
+export interface DocumentosDaFocus {
+  chave: string;
+  numero: string;
+  serie: string;
+  protocolo: string;
+  caminhoDanfe: string;
+  caminhoXml: string;
+}
+
 export type DesfechoFocus =
-  | { tipo: "AUTORIZADO"; status: string; codigo: string; mensagem: string }
+  | { tipo: "AUTORIZADO"; status: string; codigo: string; mensagem: string; documentos: DocumentosDaFocus }
   | { tipo: "REJEITADO"; status: string; codigo: string; mensagem: string }
   | { tipo: "PROCESSANDO"; status: string }
   /** O campo veio, mas não deu para ler. Isso é falha visível, não sucesso. */
@@ -92,6 +106,17 @@ function extrairData(corpo: Bruto): { dados: Bruto | null; havia: boolean; erroD
   return { dados: null, havia: false };
 }
 
+function extrairDocumentos(dados: Bruto): DocumentosDaFocus {
+  return {
+    chave: texto(dados.chave_nfe),
+    numero: texto(dados.numero),
+    serie: texto(dados.serie),
+    protocolo: texto(dados.protocolo),
+    caminhoDanfe: texto(dados.caminho_danfe),
+    caminhoXml: texto(dados.caminho_xml_nota_fiscal) || texto(dados.caminho_xml)
+  };
+}
+
 export function lerDesfechoDaFocus(corpoBruto: unknown): DesfechoFocus {
   const corpo = comoObjeto(corpoBruto);
   if (!corpo) return { tipo: "INDETERMINADO" };
@@ -124,7 +149,7 @@ export function lerDesfechoDaFocus(corpoBruto: unknown): DesfechoFocus {
   }
 
   if (AUTORIZACOES.includes(status)) {
-    return { tipo: "AUTORIZADO", status, codigo, mensagem };
+    return { tipo: "AUTORIZADO", status, codigo, mensagem, documentos: extrairDocumentos(dados) };
   }
 
   if (EM_CURSO.includes(status)) {
@@ -133,7 +158,15 @@ export function lerDesfechoDaFocus(corpoBruto: unknown): DesfechoFocus {
 
   // Sem `status` legível, mas com código da SEFAZ: só 100 é autorização.
   if (codigo) {
-    if (codigo === "100") return { tipo: "AUTORIZADO", status: status || "autorizado", codigo, mensagem };
+    if (codigo === "100") {
+      return {
+        tipo: "AUTORIZADO",
+        status: status || "autorizado",
+        codigo,
+        mensagem,
+        documentos: extrairDocumentos(dados)
+      };
+    }
     return {
       tipo: "REJEITADO",
       status: status || "erro_autorizacao",

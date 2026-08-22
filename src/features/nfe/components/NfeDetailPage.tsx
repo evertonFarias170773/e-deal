@@ -687,7 +687,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       }
     } catch (err) {
       console.error("[NfeDetail] Trocar empresa error:", err);
-      const msg = err instanceof Error ? err.message : "Erro ao invocar RPC de troca de empresa.";
+      const msg = err instanceof Error ? err.message : "Não foi possível trocar a empresa da nota.";
       showToast({ type: "error", title: msg });
     } finally {
       setIsSaving(false);
@@ -1182,7 +1182,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       setIsPayloadOpen(true);
     } catch (err) {
       console.error("[NfeDetail] Payload generation failed:", err);
-      const msg = err instanceof Error ? err.message : "Erro ao gerar payload técnico.";
+      const msg = err instanceof Error ? err.message : "Não foi possível gerar o arquivo técnico da nota.";
       showToast({ type: "error", title: msg });
     } finally {
       setIsPayloadLoading(false);
@@ -1516,7 +1516,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               </div>
             </div>
             <p className="text-xs text-slate-500 italic">
-              * Nota: Os dados cadastrais da empresa emitente são de preenchimento global. Use o seletor acima para trocar qual empresa emite a nota fiscal (a operação disparará a RPC `fn_trocar_empresa_nfe`).
+              * Nota: Os dados cadastrais da empresa emitente são de preenchimento global. Use o seletor acima para trocar qual empresa emite a nota fiscal.
             </p>
           </div>
         )}
@@ -1644,7 +1644,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   </div>
                 ) : (
                   <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-dashed">
-                    Nenhum endereço principal cadastrado para este cliente no banco de dados.
+                    Nenhum endereço principal cadastrado para este cliente.
                   </p>
                 )}
                 <p className="text-xs text-slate-400 italic">
@@ -2918,7 +2918,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               >
                 <span className="flex items-center gap-2">
                   {isPayloadLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCode className="h-4 w-4" />}
-                  Visualizar Payload Focus JSON Gerado no Banco (RPC)
+                  Visualizar arquivo técnico da nota (JSON)
                 </span>
                 {isPayloadOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
@@ -2941,9 +2941,16 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           key={notaParaEmitir.id}
           nota={notaParaEmitir}
           passoInicial="IDLE"
-          onFechar={() => setNotaParaEmitir(null)}
+          onFechar={() => {
+            setNotaParaEmitir(null);
+            // Agora sim, com a tela livre: reflete o novo estado da nota.
+            void loadData(true);
+          }}
           recarregar={async () => {
-            await loadData(true);
+            // NAO chama loadData aqui: ele liga o spinner de tela cheia, que
+            // fica antes do modal no render. Com o modal aberto, isso o
+            // desmontava e o remontava no passo inicial - a confirmacao. Era por
+            // isso que a tela "nao saia do modal" mesmo com desfecho resolvido.
             const row = await getNfeById(notaParaEmitir.id);
             return row ? mapSupabaseNfeRowToReadModel(row) : null;
           }}

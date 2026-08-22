@@ -61,6 +61,10 @@ export function EmissaoNfeModal({
   const [erroTecnico, setErroTecnico] = useState<string>("");
   const [sefazCode, setSefazCode] = useState<string>("");
   const [sefazMessage, setSefazMessage] = useState<string>("");
+  // Links vindos do proprio retorno da Focus. Existem mesmo quando o banco ainda
+  // nao foi escrito - foi o caso da NFE-20481-001, autorizada na SEFAZ e ainda em
+  // PROCESSANDO na tabela.
+  const [danfeDoRetorno, setDanfeDoRetorno] = useState("");
   const jaAbriuDanfe = useRef(false);
   const jaConsultouNaAbertura = useRef(false);
 
@@ -73,11 +77,51 @@ export function EmissaoNfeModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [passoInicial]);
 
+  /** Endereço público de um documento da Focus, conforme o ambiente da nota. */
+  function urlDaFocus(caminho: string): string {
+    if (!caminho) return "";
+    const base =
+      String(notaAtual.ambiente || "").toLowerCase() === "producao"
+        ? "https://api.focusnfe.com.br"
+        : "https://homologacao.focusnfe.com.br";
+    return caminho.startsWith("http") ? caminho : `${base}${caminho}`;
+  }
+
   /**
-   * Mostra a recusa vinda da própria resposta, sem depender de o banco já ter
-   * sido escrito. Devolve true quando tratou — aí quem chamou para por aqui.
+   * Resolve o desfecho pela PRÓPRIA resposta, sem depender de o banco já ter sido
+   * escrito. Devolve true quando concluiu — aí quem chamou para por aqui.
+   *
+   * Vale para os dois lados. A rejeição da NFE-20872-001 estava no retorno e o
+   * banco também a tinha; a autorização da NFE-20481-001 estava no retorno e o
+   * banco NÃO tinha — a nota seguiu em PROCESSANDO, sem número, sem chave e sem
+   * caminhos. Esperar o banco deixaria o operador sem desfecho nos dois casos.
    */
-  async function tratarDesfechoDeFalha(desfecho: DesfechoFocus): Promise<boolean> {
+  async function tratarDesfecho(desfecho: DesfechoFocus): Promise<boolean> {
+    if (desfecho.tipo === "AUTORIZADO") {
+      const danfe = urlDaFocus(desfecho.documentos.caminhoDanfe);
+      setPasso("AUTHORIZED");
+      setSefazCode(desfecho.codigo);
+      setSefazMessage("");
+      setErroTecnico("");
+      setDanfeDoRetorno(danfe);
+
+      if (danfe && !jaAbriuDanfe.current) {
+        jaAbriuDanfe.current = true;
+        try {
+          window.open(danfe, "_blank");
+        } catch (e) {
+          console.warn("[EmissaoNfeModal] Pop-up de DANFE bloqueado pelo navegador:", e);
+        }
+      }
+
+      showToast({ type: "success", title: "NF-e autorizada com sucesso." });
+
+      // Melhor esforço: se o banco já tiver o retorno, a tela usa os dados dele.
+      const atualizada = await recarregar();
+      if (atualizada) setNotaAtual(atualizada);
+      return true;
+    }
+
     if (desfecho.tipo === "REJEITADO") {
       setPasso("ERROR");
       setSefazCode(desfecho.codigo);
@@ -131,7 +175,7 @@ export function EmissaoNfeModal({
       }
 
       const desfecho = lerDesfechoDaFocus(corpoConsulta);
-      if (await tratarDesfechoDeFalha(desfecho)) return;
+      if (await tratarDesfecho(desfecho)) return;
 
       const atualizada = (await recarregar()) ?? notaAtual;
 
@@ -248,7 +292,7 @@ export function EmissaoNfeModal({
       // mesmo com 201 da Focus.
       const dados = (await response.json().catch(() => null)) as { retorno?: unknown } | null;
       const desfecho = lerDesfechoDaFocus(dados?.retorno);
-      if (await tratarDesfechoDeFalha(desfecho)) return;
+      if (await tratarDesfecho(desfecho)) return;
 
       setPasso("SENT_WAITING");
 
@@ -480,11 +524,11 @@ export function EmissaoNfeModal({
                 <>
                   {passo === "AUTHORIZED" && (
                     <>
-                      {notaAtual.url_danfe && (
+                      {(notaAtual.url_danfe || danfeDoRetorno) && (
                         <button
                           type="button"
                           onClick={() => {
-                            window.open(notaAtual.url_danfe!, "_blank");
+                            window.open(notaAtual.url_danfe || danfeDoRetorno, "_blank");
                             onFechar();
                           }}
                           className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition rounded-xl flex items-center gap-1.5"
