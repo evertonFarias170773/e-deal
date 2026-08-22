@@ -180,6 +180,7 @@ export function ProdutosListPage() {
   function getActions(produto: Produto) {
     const isSup = user?.isSuperAdmin || user?.isAdmin;
     const canEdit = isSup || hasPermissao(user, "produtos.edit");
+    const canCreate = isSup || hasPermissao(user, "produtos.create");
     const canUploadFoto = isSup || hasPermissao(user, "produtos.upload_foto");
     const canInativar = isSup || hasPermissao(user, "produtos.inativar");
 
@@ -190,7 +191,17 @@ export function ProdutosListPage() {
     if (canEdit) {
       actions.push({ label: "Editar produto", onClick: () => router.push(`/produtos/${produto.id_produto}/editar`) });
       actions.push({ label: "Gerenciar variacoes", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#variacoes`) });
-      actions.push({ label: "Duplicar produto", onClick: () => showMockAction("Duplicar produto") });
+    }
+
+    // Duplicar CRIA produto, entao pede `produtos.create` — nao `produtos.edit`,
+    // sob o qual vivia enquanto era mock. Abre o formulario de novo produto ja
+    // preenchido, com o ID em branco: a numeracao segue faixa por categoria e
+    // nao e gerada automaticamente.
+    if (canCreate) {
+      actions.push({
+        label: "Duplicar produto",
+        onClick: () => router.push(`/produtos/novo?duplicarDe=${produto.id_produto}`)
+      });
     }
     
     if (canUploadFoto) {

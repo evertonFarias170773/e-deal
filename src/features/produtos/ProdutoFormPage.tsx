@@ -12,7 +12,9 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
 import {
   PRODUCT_IMAGES_BUCKET,
+  copiarFotosProduto,
   createProdutoReal,
+  getProdutoByIdProduto,
   listCategoriasProdutos,
   listProdutos,
   updateProdutoReal,
@@ -44,7 +46,44 @@ import { parseDecimalInput } from "@/features/produtos/mappers";
 type ProdutoFormPageProps = {
   mode: "new" | "edit";
   produto?: Produto;
+  /**
+   * `id_produto` da ORIGEM quando a tela foi aberta por "Duplicar produto"
+   * (22/08/2026). So vale em `mode === "new"`: carrega o original, preenche o
+   * formulario e deixa o ID em branco para alguem digitar.
+   */
+  duplicarDe?: number;
 };
+
+/** Sufixo do nome do duplicado, para os dois nao ficarem indistinguiveis. */
+export const SUFIXO_DUPLICADO = " (copia)";
+
+/**
+ * Estado inicial de um DUPLICADO, a partir do produto de origem.
+ *
+ * Reusa `createInitialState` e sobrescreve so o que nao pode ser copiado:
+ *
+ *   id_produto  vazio  — e o unico UNIQUE da tabela, segue faixa por categoria
+ *                        (1xx pulseira de evento, 6xx cordao, 8xx cartao...),
+ *                        convencao de negocio que o sistema nao tem como
+ *                        adivinhar. Fica em branco de proposito: quem duplica
+ *                        digita, e `createProdutoReal` recusa colisao.
+ *   cod_bar     vazio  — codigo de barras e unico por natureza.
+ *   ativo       false  — copia nasce fora do catalogo vendavel, para ninguem
+ *                        orcar em cima de um produto ainda por revisar.
+ *   nomeReal    + sufixo
+ *   fotos       []     — as fotos da tela sao so exibicao; a copia de verdade
+ *                        acontece depois do INSERT, com `copiarFotosProduto`.
+ */
+export function createDuplicadoState(origem: Produto): ProdutoFormState {
+  return {
+    ...createInitialState(origem),
+    id_produto: "",
+    cod_bar: "",
+    ativo: false,
+    nomeReal: `${origem.nomeReal}${SUFIXO_DUPLICADO}`,
+    fotos: []
+  };
+}
 
 type FormMessage = {
   tone: "success" | "warning" | "danger" | "info";
@@ -90,7 +129,7 @@ function parseNumericInput(value: string) {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
+export function ProdutoFormPage({ mode, produto, duplicarDe }: ProdutoFormPageProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
   const [form, setForm] = useState<ProdutoFormState>(() => createInitialState(produto));
@@ -111,15 +150,26 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   const [isLoadingFiscalSource, setIsLoadingFiscalSource] = useState(false);
   const [variacoesGlobais, setVariacoesGlobais] = useState<VariacaoGlobalJoin[]>([]);
   const [categoriasReais, setCategoriasReais] = useState<string[]>([]);
+
+  /**
+   * Duplicacao (22/08/2026). `origemDuplicacao` fica guardado ate o fim porque
+   * a copia das FOTOS so pode acontecer depois do INSERT — antes disso nao
+   * existe `id_produto` de destino.
+   */
+  const [origemDuplicacao, setOrigemDuplicacao] = useState<Produto | null>(null);
+  const [carregandoOrigem, setCarregandoOrigem] = useState(Boolean(duplicarDe));
   const [formatos, setFormatos] = useState<FormatoProducao[]>([]);
   const [cores, setCores] = useState<CorProducao[]>([]);
   const [gabaritos, setGabaritos] = useState<GabaritoProducao[]>([]);
   const [isLoadingCatalogos, setIsLoadingCatalogos] = useState(false);
 
-  const title = mode === "new" ? "Novo produto" : `Editar produto #${produto?.id_produto}`;
+  const duplicando = mode === "new" && Boolean(duplicarDe);
+  const title = mode === "new" ? (duplicando ? "Duplicar produto" : "Novo produto") : `Editar produto #${produto?.id_produto}`;
   const subtitle =
     mode === "new"
-      ? "Crie produtos reais em public.produtos com valores, dados fiscais e foto via Storage."
+      ? duplicando
+        ? "Cópia de um produto existente. Revise os dados, informe o id_produto e salve — o original não é alterado."
+        : "Crie produtos reais em public.produtos com valores, dados fiscais e foto via Storage."
       : "Edite produto real em public.produtos. Código operacional e exclusões seguem bloqueados.";
   const criticalChanged = Boolean(
     produto &&
@@ -199,6 +249,57 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
       active = false;
     };
   }, []);
+
+  /**
+   * Carrega o produto de origem quando a tela foi aberta por "Duplicar".
+   *
+   * Os vinculos de variacao vem por `listProdutoVariacaoVinculos` (a mesma
+   * funcao que o modo edicao usa), e nao pelo relacionamento do `Produto`:
+   * `saveProdutoVariacoes`, que ja roda depois do salvar, espera exatamente
+   * esse formato. Assim o duplicado herda os vinculos sem caminho de escrita
+   * novo — a tabela global `variacoes` nao e tocada, so o vinculo em
+   * `produto_variacoes`.
+   */
+  useEffect(() => {
+    if (mode !== "new" || !duplicarDe) return;
+    let active = true;
+
+    void (async () => {
+      setCarregandoOrigem(true);
+
+      const origem = await getProdutoByIdProduto(duplicarDe);
+      if (!active) return;
+
+      if (!origem) {
+        setCarregandoOrigem(false);
+        // Motivo real, nunca um formulario em branco fingindo ser "Novo produto".
+        setMessage({
+          tone: "danger",
+          title: "Duplicação não carregada",
+          description: `O produto #${duplicarDe} não foi encontrado em public.produtos. Volte à lista e tente de novo.`
+        });
+        return;
+      }
+
+      const vinculos = await listProdutoVariacaoVinculos(origem.id_produto);
+      if (!active) return;
+
+      setOrigemDuplicacao(origem);
+      setForm({ ...createDuplicadoState(origem), variacoes: vinculos });
+      setCarregandoOrigem(false);
+      setMessage({
+        tone: "info",
+        title: `Duplicando #${origem.id_produto} ${origem.nomeReal}`,
+        description:
+          "Informe o id_produto do novo item — ele segue faixa por categoria e não é gerado automaticamente. " +
+          "A cópia nasce inativa; fotos e vínculos de variação são criados ao salvar. Código de barras não é copiado."
+      });
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [mode, duplicarDe]);
 
   /**
    * Categorias reais de `public.categorias` (21/08/2026).
@@ -503,6 +604,10 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
   }
 
   async function handleSave() {
+    // Enquanto a origem da duplicacao nao chegou, salvar criaria um produto em
+    // branco com o ID digitado. O botao ja fica desabilitado; isto e a trava.
+    if (carregandoOrigem) return;
+
     const parsedIdProduto = Number(form.id_produto);
     const parsedCodOrigem = parseNumericInput(form.cod_origem);
     const parsedQtdMin = form.quantidade_minima_venda.trim() ? Number(form.quantidade_minima_venda) : null;
@@ -628,6 +733,21 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
         await uploadSelectedFoto(result.produto?.id_produto ?? produto?.id_produto ?? parsedIdProduto, result.produto?.nomeReal ?? form.nomeReal);
       }
 
+      // Fotos do duplicado: linhas novas apontando para a MESMA URL publica do
+      // original, sem reupload. So depois do INSERT, porque antes nao existe
+      // id_produto de destino. Falhar aqui nao invalida o produto criado — o
+      // aviso e explicito e as fotos podem ser enviadas na edicao.
+      if (origemDuplicacao) {
+        const copia = await copiarFotosProduto(
+          origemDuplicacao.id_produto,
+          targetIdProduto,
+          result.produto?.nomeReal ?? form.nomeReal
+        );
+        if (!copia.success) {
+          showToast({ type: "warning", title: "Fotos nao copiadas", description: copia.message });
+        }
+      }
+
       window.setTimeout(() => {
         router.push(redirectTarget);
       }, 900);
@@ -659,8 +779,8 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
             <Link href={mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos"} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
               {mode === "edit" ? "Voltar ao detalhe" : "Voltar para lista"}
             </Link>
-            <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
-              {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
+            <button type="button" onClick={handleSave} disabled={isSaving || carregandoOrigem} className="rounded-2xl bg-[#0b2f4a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123f61] disabled:opacity-60">
+              {carregandoOrigem ? "Carregando origem..." : isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
             </button>
           </div>
         }
@@ -1087,8 +1207,8 @@ export function ProdutoFormPage({ mode, produto }: ProdutoFormPageProps) {
           <div className="flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={() => router.push(mode === "edit" && produto ? `/produtos/${produto.id_produto}` : "/produtos")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
             <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700">Voltar ao topo</button>
-            <button type="button" onClick={handleSave} disabled={isSaving} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
-              {isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
+            <button type="button" onClick={handleSave} disabled={isSaving || carregandoOrigem} className="rounded-2xl bg-[#0b2f4a] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+              {carregandoOrigem ? "Carregando origem..." : isSaving ? "Salvando..." : mode === "edit" ? "Salvar alteracoes" : "Salvar produto"}
             </button>
           </div>
         </div>

@@ -807,6 +807,74 @@ export async function updateProdutoReal(idProduto: number, input: ProdutoWriteIn
 }
 
 /**
+ * Copia as fotos de um produto para outro (22/08/2026, para o "Duplicar produto").
+ *
+ * NAO REENVIA IMAGEM NENHUMA. `public.fotosProdutos` guarda so `idProduto`,
+ * `nomeProduto` e `imagensURL` — a imagem em si vive no Storage, e a URL publica
+ * ja aponta para ela. Copiar e inserir uma linha nova com a MESMA URL: o
+ * duplicado passa a exibir as mesmas fotos, sem custo de upload e sem duplicar
+ * bytes no bucket.
+ *
+ * CONSEQUENCIA QUE PRECISA ESTAR CLARA
+ *   Original e copia passam a APONTAR PARA O MESMO ARQUIVO. Apagar o objeto do
+ *   Storage quebraria a foto nos dois. Nenhum fluxo do modulo apaga objeto do
+ *   bucket hoje (`deleteProdutoBlocked` recusa ate o DELETE do produto), entao
+ *   isso e uma nota de futuro, nao um risco de agora.
+ *
+ * Nao e transacional: e um SELECT seguido de um INSERT em lote. Se falhar, o
+ * produto duplicado ja existe e fica sem fotos — quem chama avisa, e refazer e
+ * so subir as fotos na tela de edicao. Nao ha estado invalido possivel aqui.
+ */
+export async function copiarFotosProduto(
+  idProdutoOrigem: number,
+  idProdutoDestino: number,
+  nomeProdutoDestino: string
+): Promise<{ success: boolean; copiadas: number; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, copiadas: 0, message: "Cliente Supabase indisponível para copiar fotos." };
+  }
+
+  const { data: origem, error: erroLeitura } = await client
+    .from("fotosProdutos")
+    .select(FOTOS_SELECT)
+    .eq("idProduto", idProdutoOrigem)
+    .returns<SupabaseProdutoFotoRow[]>();
+
+  if (erroLeitura) {
+    return {
+      success: false,
+      copiadas: 0,
+      message: erroLeitura.message || "Não foi possível ler as fotos do produto de origem."
+    };
+  }
+
+  const linhas = (origem ?? [])
+    .map((row) => String(row.imagensURL ?? "").trim())
+    .filter((url) => url.length > 0)
+    .map((url) => ({
+      idProduto: idProdutoDestino,
+      nomeProduto: nomeProdutoDestino || `Produto ${idProdutoDestino}`,
+      imagensURL: url
+    }));
+
+  if (linhas.length === 0) {
+    return { success: true, copiadas: 0, message: "O produto de origem não tem fotos." };
+  }
+
+  const { error: erroInsert } = await client.from("fotosProdutos").insert(linhas);
+  if (erroInsert) {
+    return {
+      success: false,
+      copiadas: 0,
+      message: erroInsert.message || "Não foi possível registrar as fotos copiadas."
+    };
+  }
+
+  return { success: true, copiadas: linhas.length, message: `${linhas.length} foto(s) copiada(s).` };
+}
+
+/**
  * Inativar produto: `ativo = false`, pelo mesmo UPDATE de sempre.
  *
  * POR QUE EXISTE COMO FUNCAO PROPRIA

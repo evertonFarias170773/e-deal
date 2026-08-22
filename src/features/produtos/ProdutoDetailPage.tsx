@@ -8,6 +8,8 @@ import { ArrowLeft, BadgeCheck, Bot, Clock, Eye, Package, Scale, ShieldCheck } f
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { ConfirmarAcaoModal } from "@/features/expedicao/components/ConfirmarAcaoModal";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { hasPermissao } from "@/features/auth/usuarios.service";
 import { inativarProdutoReal } from "@/features/produtos/services/produtos.service";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -33,6 +35,8 @@ export function ProdutoDetailPage({ produto: produtoInicial }: ProdutoDetailPage
    * lista de variacoes da tela.
    */
   const [produto, setProduto] = useState(produtoInicial);
+  const { user } = useAuth();
+  const podeCriar = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "produtos.create");
   const [confirmandoInativar, setConfirmandoInativar] = useState(false);
   const [inativando, setInativando] = useState(false);
 
@@ -93,7 +97,15 @@ export function ProdutoDetailPage({ produto: produtoInicial }: ProdutoDetailPage
                 { label: "Gerenciar fotos", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#fotos`) },
                 { label: "Gerenciar variacoes", onClick: () => router.push(`/produtos/${produto.id_produto}/editar#variacoes`) },
                 { label: "Testar no Maestro", onClick: () => showMockAction("Teste no Maestro") },
-                { label: "Duplicar produto", onClick: () => showMockAction("Duplicar produto") },
+                // Duplicar CRIA produto: pede `produtos.create`, nao `produtos.edit`.
+                ...(podeCriar
+                  ? [
+                      {
+                        label: "Duplicar produto",
+                        onClick: () => router.push(`/produtos/novo?duplicarDe=${produto.id_produto}`)
+                      }
+                    ]
+                  : []),
                 // Produto ja inativo nao reoferece a acao: o UPDATE repetido
                 // devolveria "sucesso" sem mudar nada.
                 ...(produto.ativo
