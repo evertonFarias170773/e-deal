@@ -6,10 +6,12 @@ export interface NfeMock {
   ambiente: "homologacao" | "producao" | string;
   modelo: "55" | string;
   status: string;
-  status_focus: string;
-  status_sefaz: string;
-  mensagem_sefaz: string;
-  codigo_status_sefaz: string;
+  // Anulaveis: 17 das 48 notas ja tem esses campos nulos no banco, e devolver
+  // uma nota para rascunho apaga o retorno da tentativa anterior.
+  status_focus: string | null;
+  status_sefaz: string | null;
+  mensagem_sefaz: string | null;
+  codigo_status_sefaz: string | null;
   numero_nf: number | null;
   serie: number | null;
   chave_nfe: string | null;

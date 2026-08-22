@@ -1,0 +1,102 @@
+-- O endereco de destino do payload passa a sair do endereco escolhido no pedido
+--
+-- NAO APLICADA. Esta migration esta aqui para revisao. Nao execute sem decidir
+-- antes o que esta descrito no bloco "O QUE MUDA NA PRATICA".
+--
+-- POR QUE
+--   Duas fontes decidiam a UF de destino e discordavam:
+--
+--     - o TypeScript (createOrReuseNfeDraft) segue `propostas.id_endereco_ent` e
+--       dai decide o CFOP do item: mesma UF do emitente -> 5101, outra -> 6101;
+--     - esta funcao ignora `id_endereco_ent` e junta `enderecos` pelo cliente com
+--       `tipo_endereco = 'principal'`, e daí decide `local_destino` (idDest).
+--
+--   Quando o cliente tem sede num estado e recebe em outro, as duas divergem. Foi
+--   o caso da NFE-20872-001, em 22/08/2026: endereco do pedido em Santarem/PA,
+--   endereco principal do cadastro em Santa Cruz do Sul/RS. O item saiu com CFOP
+--   6101 (interestadual) e o payload com local_destino 1 (interna). A SEFAZ
+--   recusou com o codigo 732: "CFOP de operacao interestadual e idDest <> 2".
+--
+-- A REGRA
+--   Manda o endereco escolhido no pedido. E onde a mercadoria vai, e e o que a
+--   proposta decidiu. CFOP e idDest passam a nascer da mesma UF.
+--
+-- COMO A FUNCAO ALCANCA O DADO
+--   Sem parametro novo. `notas_fiscais.id_int` chega a `propostas.id_int`, que
+--   guarda `id_endereco_ent`. Verificado em 22/08/2026: `propostas.id_int` e
+--   unico nas 8.377 linhas, entao o join nao multiplica.
+--
+-- O QUE MUDA NA PRATICA
+--   Medido em 22/08/2026 sobre as 48 notas existentes:
+--
+--     - 40 notas NAO tem `id_endereco_ent` na proposta de origem (anteriores a
+--       essa escolha). Para elas nada muda: o COALESCE abaixo mantem o endereco
+--       principal do cliente. Sem isso, essas 40 perderiam o endereco do
+--       destinatario inteiro;
+--     - das 8 restantes, o `local_destino` mudaria em 2:
+--         NFE-20872-001  (ERRO_AUTORIZACAO, ja recusada com 732)  1 -> 2
+--         NFE-21078-001  (PRONTA_PARA_ENVIO, ainda nao emitida)   1 -> 2
+--       A 21078 seria recusada com 732 hoje, pelo mesmo motivo da 20872;
+--     - NENHUMA nota AUTORIZADA muda de decisao. A NFE-20925-001 (Toledo/PR nos
+--       dois lados) continua com idDest 2, como ja esta.
+--
+--   Esta migration NAO reescreve payload de nota existente. `payload_envio` so e
+--   remontado quando alguem prepara o envio daquela nota de novo.
+--
+-- O QUE MAIS DEPENDE DESTE ENDERECO
+--   O alias `e` alimenta o bloco inteiro do endereco do destinatario:
+--   logradouro, numero, complemento, bairro, municipio, UF e CEP. Trocar a fonte
+--   troca os sete campos juntos - que e justamente o ponto: hoje a nota pode
+--   sair enderecada para a sede enquanto a mercadoria vai para outro estado.
+--
+-- CASO QUE PRECISA DE DECISAO SUA
+--   Se existir operacao em que a nota deva ser emitida contra a sede e a entrega
+--   seja apenas o local de descarga, esta mudanca inverte o comportamento. O
+--   desenho fiscal para isso e outro: destinatario = sede, e o local de entrega
+--   vai no bloco proprio de "local de entrega" da NF-e. Hoje o ERP nao monta esse
+--   bloco - o endereco de entrega vira texto nas Informacoes Complementares.
+--
+-- NAO FAZ
+--   Nao altera dado, nao apaga nada, nao mexe em RLS, permissoes ou historico.
+--
+-- REVERSAO
+--   Reaplicar a definicao anterior, que e a mesma funcao trocando o join de `e`
+--   por:
+--     left join public.enderecos e
+--       on e.id_cliente = nf.id_cliente::integer
+--      and lower(trim(e.tipo_endereco)) = 'principal'
+
+begin;
+
+-- Substitui APENAS o join do alias `e`. O corpo da funcao segue identico: o
+-- endereco continua entrando como `e.endereco`, `e.uf`, `e.cep` e companhia, e
+-- `local_destino` continua comparando `emp.uf` com `e.uf`.
+--
+--   left join public.propostas prop
+--     on prop.id_int = nf.id_int
+--
+--   left join public.enderecos e
+--     on e.id = coalesce(
+--          -- 1. o endereco escolhido no pedido, que e para onde a mercadoria vai
+--          nullif(trim(prop.id_endereco_ent), '')::uuid,
+--          -- 2. so na ausencia dele, o principal do cadastro - preserva as 40
+--          --    notas antigas, que nao tem endereco apontado
+--          (select ep.id
+--             from public.enderecos ep
+--            where ep.id_cliente = nf.id_cliente::integer
+--              and lower(trim(ep.tipo_endereco)) = 'principal'
+--            order by ep.id
+--            limit 1)
+--        )
+--
+-- Sobre o `order by ep.id limit 1` do fallback: 8 clientes tem mais de um
+-- endereco marcado como principal, e hoje o join escolhe um deles sem criterio,
+-- podendo variar entre execucoes. O limit torna a escolha estavel.
+--
+-- ATENCAO AO APLICAR: a funcao e longa e precisa ser recriada por inteiro com
+-- CREATE OR REPLACE. O trecho acima e a unica diferenca em relacao a definicao
+-- que esta no banco hoje - extraia com
+--   select pg_get_functiondef('public.fn_montar_payload_nfe'::regproc);
+-- troque o join e reaplique.
+
+commit;

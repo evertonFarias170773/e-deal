@@ -20,10 +20,12 @@ export interface SupabaseNfeRow {
   ambiente: string;
   modelo: string;
   status: string;
-  status_focus: string;
-  status_sefaz: string;
-  mensagem_sefaz: string;
-  codigo_status_sefaz: string;
+  // As quatro sao anulaveis no banco, e precisam ser anulaveis aqui: devolver a
+  // nota para rascunho apaga o retorno da tentativa anterior.
+  status_focus: string | null;
+  status_sefaz: string | null;
+  mensagem_sefaz: string | null;
+  codigo_status_sefaz: string | null;
   numero_nf: number | null;
   serie: number | null;
   chave_nfe: string | null;

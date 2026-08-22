@@ -359,6 +359,76 @@ export function ehEnderecoDeEntrega(tipoEndereco: string | null | undefined): bo
   return String(tipoEndereco ?? "").trim().toLowerCase().startsWith("entrega");
 }
 
+/**
+ * Para onde a mercadoria vai, segundo o que a proposta decidiu.
+ *
+ * POR QUE EXISTE
+ *   A UF de destino era decidida em três lugares que discordavam: aqui, pelo
+ *   endereço apontado no pedido; na tela de detalhe, pelo `uf` do cadastro do
+ *   cliente; e na RPC do payload, pelo endereço marcado como principal. Quando o
+ *   cliente tem sede num estado e recebe em outro, o CFOP saía interestadual e o
+ *   `local_destino` saía interno — a rejeição 732 da NFE-20872-001.
+ *
+ *   Manda `propostas.id_endereco_ent`: é onde a mercadoria vai, e é a escolha do
+ *   pedido. CFOP e idDest passam a nascer da mesma UF.
+ *
+ * NÃO CHUTA
+ *   Sem endereço apontado, devolve null. Quem chama decide o que fazer — e a
+ *   conferência do Faturar já barra esse caso antes de chegar aqui.
+ */
+export interface DestinoFiscal {
+  /** UF do endereço escolhido no pedido, em maiúsculas. */
+  uf: string;
+  idEndereco: string;
+  /** O endereço apontado é de entrega (e não o principal do cliente). */
+  ehEntrega: boolean;
+}
+
+export async function resolverDestinoFiscal(idInt: number): Promise<DestinoFiscal | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  const { data: propostaRow } = await client
+    .from("propostas")
+    .select("id_endereco_ent")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  const idEndereco = String(
+    (propostaRow as { id_endereco_ent?: string | null } | null)?.id_endereco_ent ?? ""
+  ).trim();
+  if (!idEndereco) return null;
+
+  const { data: enderecoRow } = await client
+    .from("enderecos")
+    .select("uf,tipo_endereco")
+    .eq("id", idEndereco)
+    .maybeSingle();
+
+  const endereco = enderecoRow as { uf: string | null; tipo_endereco: string | null } | null;
+  const uf = String(endereco?.uf ?? "").trim().toUpperCase();
+  if (!uf) return null;
+
+  return { uf, idEndereco, ehEntrega: ehEnderecoDeEntrega(endereco?.tipo_endereco) };
+}
+
+/** CFOP de venda conforme a operação seja interna ou interestadual. */
+export function cfopDeVenda(ufDestino: string, ufEmitente: string): string {
+  return ufDestino.trim().toUpperCase() === ufEmitente.trim().toUpperCase() ? "5101" : "6101";
+}
+
+/**
+ * UF da empresa emitente, lida de `empresas`. Não é constante no código de
+ * propósito: um mapa fixo aqui viraria uma quarta fonte, livre para divergir do
+ * cadastro — que é exatamente o problema que esta rodada resolve.
+ */
+export async function ufDaEmpresaEmitente(idEmpresa: number): Promise<string> {
+  const client = getSupabaseClient();
+  if (!client) return "";
+  const { data } = await client.from("empresas").select("uf").eq("id", idEmpresa).maybeSingle();
+  return String((data as { uf?: string | null } | null)?.uf ?? "").trim().toUpperCase();
+}
+
 export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeRow> {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client not initialized");
@@ -410,33 +480,25 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   //     para um endereço marcado como tal; caso contrário a nota usa o principal.
   const tipoCobranca = await getTipoCobrancaDoPedido(idInt);
 
-  let entregaEmEnderecoProprio = false;
-  const { data: propostaEndereco } = await client
-    .from("propostas")
-    .select("id_endereco_ent")
-    .eq("id_int", idInt)
-    .maybeSingle();
-
-  const idEnderecoEnt = String(
-    (propostaEndereco as { id_endereco_ent?: string | null } | null)?.id_endereco_ent ?? ""
-  ).trim();
-
-  if (idEnderecoEnt) {
-    const { data: enderecoRow } = await client
-      .from("enderecos")
-      .select("tipo_endereco")
-      .eq("id", idEnderecoEnt)
-      .maybeSingle();
-    entregaEmEnderecoProprio = ehEnderecoDeEntrega(
-      (enderecoRow as { tipo_endereco?: string | null } | null)?.tipo_endereco
+  // O destino sai de uma fonte só: o endereço apontado no pedido. Dele nascem a
+  //  UF, o CFOP e — depois de a RPC ser alinhada — o local_destino.
+  const destino = await resolverDestinoFiscal(idInt);
+  if (!destino) {
+    throw new Error(
+      "O pedido não aponta um endereço de destino válido. Escolha o endereço no orçamento antes de faturar."
     );
   }
+  const entregaEmEnderecoProprio = destino.ehEntrega;
 
   // 5. Determinar parametrização fiscal básica e CFOP
-  const ufDest = proposta.enderecoEntrega?.uf?.toUpperCase() || proposta.cliente?.cidadeUf?.split("/")?.[1]?.trim()?.toUpperCase() || "RS";
-  const isRS = ufDest === "RS";
-  const cfopDefault = isRS ? "5101" : "6101";
-  const naturezaDefault = isRS ? "VENDA DE PRODUCAO PROPRIA" : "VENDA DE PRODUCAO PROPRIA DEST. OUTRO ESTADO";
+  const ufEmitente = await ufDaEmpresaEmitente(idEmpresa);
+  if (!ufEmitente) {
+    throw new Error("A empresa emitente está sem UF cadastrada. Corrija em Empresas antes de faturar.");
+  }
+  const ufDest = destino.uf;
+  const operacaoInterna = ufDest === ufEmitente;
+  const cfopDefault = cfopDeVenda(ufDest, ufEmitente);
+  const naturezaDefault = operacaoInterna ? "VENDA DE PRODUCAO PROPRIA" : "VENDA DE PRODUCAO PROPRIA DEST. OUTRO ESTADO";
 
   const isCNPJ = (proposta.cliente?.documento || "").replace(/\D/g, "").length > 11;
   const consumidorFinal = isCNPJ ? 0 : 1;

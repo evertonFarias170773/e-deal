@@ -49,6 +49,10 @@ import {
   invalidateNfePayments,
   getAlertasNfe,
   getNfeDisplayStatus,
+  resolverDestinoFiscal,
+  ufDaEmpresaEmitente,
+  cfopDeVenda,
+  type DestinoFiscal,
   getNotaEventos,
   type SupabaseNotaEventoRow,
   type SimpleProduct
@@ -132,6 +136,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [note, setNote] = useState<SupabaseNfeRow | null>(null);
   // Emissão a partir daqui: o operador não volta mais à lista para emitir.
   const [notaParaEmitir, setNotaParaEmitir] = useState<NfeReadModel | null>(null);
+  // Destino e UF do emitente resolvidos pela MESMA fonte do rascunho: o endereco
+  // apontado no pedido. Antes esta tela decidia o CFOP pelo uf do cadastro do
+  // cliente, que e outra coisa.
+  const [destinoFiscal, setDestinoFiscal] = useState<DestinoFiscal | null>(null);
+  const [ufEmitente, setUfEmitente] = useState<string>("");
   const { user } = useAuth();
   const podeEmitirNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
   const isReadOnly = note ? ["AUTORIZADA", "CANCELADA", "DENEGADA", "PROCESSANDO", "PROCESSANDO_AUTORIZACAO"].includes((note.status || "").toUpperCase()) : false;
@@ -490,6 +499,29 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     }
   }, [noteId, router, showToast]);
 
+  // Destino fiscal em efeito proprio: fica fora do loadData memoizado e depende
+  // so do pedido e da empresa da nota.
+  useEffect(() => {
+    const idInt = note?.id_int;
+    const idEmpresa = note?.id_empresa;
+    if (!idInt || !idEmpresa) return;
+
+    let vivo = true;
+    void (async () => {
+      const [destino, ufEmp] = await Promise.all([
+        resolverDestinoFiscal(idInt),
+        ufDaEmpresaEmitente(idEmpresa)
+      ]);
+      if (!vivo) return;
+      setDestinoFiscal(destino);
+      setUfEmitente(ufEmp);
+    })();
+
+    return () => {
+      vivo = false;
+    };
+  }, [note]);
+
   useEffect(() => {
     let isMounted = true;
     const fetchDraft = async () => {
@@ -676,8 +708,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     const proceed = async () => {
       setIsAddingItem(true);
       try {
-        const isRS = (cliente?.uf || "RS").toUpperCase() === "RS";
-        const cfopDefault = newItemCfop || (isRS ? "5101" : "6101");
+        // CFOP do destino apontado no pedido. Sem destino resolvido nao assume
+        // operacao interna: deixa vazio e a validacao fiscal cobra.
+        const cfopDefault = newItemCfop || (destinoFiscal && ufEmitente ? cfopDeVenda(destinoFiscal.uf, ufEmitente) : "");
         const nextItemNum = items.length + 1;
         const qty = Number(newItemQty) || 1;
         const price = Number(newItemPrice) || 0;
@@ -845,7 +878,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           quantidade_tributavel: qty,
           valor_unitario_tributavel: price,
           ncm: edited.ncm || "49119900",
-          cfop: edited.cfop || "5101",
+          cfop: edited.cfop || (destinoFiscal && ufEmitente ? cfopDeVenda(destinoFiscal.uf, ufEmitente) : ""),
           peso_unitario_gramas: pesoUnit,
           peso_total_gramas: pesoTotal
         };

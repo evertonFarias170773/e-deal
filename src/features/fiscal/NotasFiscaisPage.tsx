@@ -166,6 +166,25 @@ function EtiquetaCobranca({ tipo }: { tipo?: string | null }) {
   );
 }
 
+/**
+ * Devolver a nota para rascunho apaga tambem os campos da rejeicao anterior.
+ *
+ * Sem isso a nota volta para PENDENTE carregando status_focus, status_sefaz e
+ * mensagem_sefaz da tentativa que falhou, e passa a parecer rascunho comum na
+ * lista - foi o que aconteceu com a NFE-17536-001, que guarda uma rejeicao 539
+ * invisivel. O historico da tentativa continua em payload_retorno e nos eventos
+ * da nota; o que se limpa e so o estado atual.
+ */
+const VOLTA_PARA_RASCUNHO = {
+  status: "PENDENTE",
+  status_focus: null,
+  status_sefaz: null,
+  codigo_status_sefaz: null,
+  mensagem_sefaz: null,
+  erro_codigo: null,
+  erro_mensagem: null
+} as const;
+
 export function NotasFiscaisPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -1290,7 +1309,7 @@ export function NotasFiscaisPage() {
   async function handleEditarUltimaHora(item: NfeReadModel) {
     try {
       showToast({ type: "info", title: "Retornando nota ao status de rascunho..." });
-      const res = await updateNfeDraft(item.id, { ref: item.ref, status: "PENDENTE" }, [], []);
+      const res = await updateNfeDraft(item.id, { ref: item.ref, ...VOLTA_PARA_RASCUNHO }, [], []);
       if (res.success) {
         showToast({ type: "success", title: "Rascunho reaberto. Redirecionando..." });
         await nfeData.refresh();
@@ -1307,7 +1326,7 @@ export function NotasFiscaisPage() {
   async function handleCorrigirRascunho(item: NfeReadModel) {
     try {
       showToast({ type: "info", title: "Retornando nota ao status de rascunho..." });
-      const res = await updateNfeDraft(item.id, { ref: item.ref, status: "PENDENTE" }, [], []);
+      const res = await updateNfeDraft(item.id, { ref: item.ref, ...VOLTA_PARA_RASCUNHO }, [], []);
       if (res.success) {
         showToast({ type: "success", title: "Rascunho reaberto para correção. Redirecionando..." });
         await nfeData.refresh();
