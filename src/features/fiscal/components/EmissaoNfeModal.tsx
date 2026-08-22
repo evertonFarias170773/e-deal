@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink, FileText, Loader2, Send } fr
 import { useAppToast } from "@/components/common/AppToast";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { getSefazRejectionInfo } from "@/features/fiscal/constants/sefaz-rejeicoes";
+import { lerDesfechoDaFocus, type DesfechoFocus } from "@/features/fiscal/services/desfecho-focus";
 import type { NfeReadModel } from "@/features/nfe/types";
 
 /**
@@ -72,6 +73,34 @@ export function EmissaoNfeModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [passoInicial]);
 
+  /**
+   * Mostra a recusa vinda da própria resposta, sem depender de o banco já ter
+   * sido escrito. Devolve true quando tratou — aí quem chamou para por aqui.
+   */
+  async function tratarDesfechoDeFalha(desfecho: DesfechoFocus): Promise<boolean> {
+    if (desfecho.tipo === "REJEITADO") {
+      setPasso("ERROR");
+      setSefazCode(desfecho.codigo);
+      setSefazMessage(desfecho.mensagem);
+      setErroTecnico("");
+      const atualizada = await recarregar();
+      if (atualizada) setNotaAtual(atualizada);
+      return true;
+    }
+
+    if (desfecho.tipo === "ILEGIVEL") {
+      setPasso("ERROR");
+      setSefazCode("");
+      setSefazMessage("");
+      setErroTecnico(desfecho.motivo);
+      const atualizada = await recarregar();
+      if (atualizada) setNotaAtual(atualizada);
+      return true;
+    }
+
+    return false;
+  }
+
   async function consultarStatus(marcarPasso = true) {
     if (marcarPasso) {
       setPasso("QUERYING");
@@ -84,6 +113,25 @@ export function EmissaoNfeModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ref: notaAtual.ref })
       });
+
+      // A consulta sofre do mesmo mal da emissão: o código HTTP é o da chamada,
+      // e a recusa da SEFAZ vem no corpo. Lê-se o corpo antes do banco.
+      let corpoConsulta: unknown = null;
+      try {
+        const texto = await response.clone().text();
+        if (texto) {
+          try {
+            corpoConsulta = JSON.parse(texto);
+          } catch {
+            corpoConsulta = texto;
+          }
+        }
+      } catch {
+        /* sem corpo legível: decide-se pelo banco, como antes */
+      }
+
+      const desfecho = lerDesfechoDaFocus(corpoConsulta);
+      if (await tratarDesfechoDeFalha(desfecho)) return;
 
       const atualizada = (await recarregar()) ?? notaAtual;
 
@@ -194,6 +242,13 @@ export function EmissaoNfeModal({
         }
         throw new Error(mensagem);
       }
+
+      // O 200 da rota é o sucesso da CHAMADA. A autorização — ou a recusa — vem
+      // dentro do corpo, em `retorno_focus.data`. Rejeição da SEFAZ é falha,
+      // mesmo com 201 da Focus.
+      const dados = (await response.json().catch(() => null)) as { retorno?: unknown } | null;
+      const desfecho = lerDesfechoDaFocus(dados?.retorno);
+      if (await tratarDesfechoDeFalha(desfecho)) return;
 
       setPasso("SENT_WAITING");
 

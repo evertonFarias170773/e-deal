@@ -239,10 +239,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message }, { status: 502 });
     }
 
+    // O corpo vai junto. O 200 aqui é o sucesso da CHAMADA, não da autorização:
+    // o resultado fiscal vem dentro de `retorno_focus.data` e quem julga é a
+    // tela. Descartar este corpo foi o que fez a rejeição 732 da NFE-20872-001
+    // passar por sucesso.
+    let retorno: unknown = null;
+    try {
+      const texto = await response.text();
+      if (texto) {
+        try {
+          retorno = JSON.parse(texto);
+        } catch {
+          retorno = texto;
+        }
+      }
+    } catch (err) {
+      console.warn("[API][EmitirNfe] Nao foi possivel ler o corpo do webhook:", err);
+    }
+
     return NextResponse.json({
       success: true,
       ref: nota.ref,
       tentativas_envio: reserva[0]?.tentativas_envio ?? tentativasAntes + 1,
+      retorno,
     });
   } catch (err) {
     console.error("[API][EmitirNfe] Erro inesperado:", err);
