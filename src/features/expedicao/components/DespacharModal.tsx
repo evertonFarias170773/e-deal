@@ -11,7 +11,11 @@ import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.s
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
-import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
+import {
+  camposMinimosDespacho,
+  frasearFaltantes,
+  TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA
+} from "../lib/campos-minimos-despacho";
 import { divergenciaFreteDoDespacho, formatarCep, frasearMotivos } from "../lib/divergencia-frete-despacho";
 import { recotarFrete, aplicarRecotacao, buscarLiberacaoAtiva } from "../services/recotacao.client";
 import type { RecotacaoResult, OpcaoRecotacao, AplicacaoRecotacao } from "../services/recotacao.client";
@@ -347,11 +351,22 @@ export function DespacharModal({
           idTransportadoraCliente,
           pesoKg: parsePesoKg(pesoKg),
           qtdVolumes: parseQtdVolumes(qtdVolumes),
-          idEnderecoEntrega
+          idEnderecoEntrega,
+          tipoFrete
         },
         modoEdicao ? "EDICAO" : "DESPACHO"
       ),
-    [tipoEntrega, modalidade, transportadoraNome, idTransportadoraCliente, pesoKg, qtdVolumes, idEnderecoEntrega, modoEdicao]
+    [
+      tipoEntrega,
+      modalidade,
+      transportadoraNome,
+      idTransportadoraCliente,
+      pesoKg,
+      qtdVolumes,
+      idEnderecoEntrega,
+      tipoFrete,
+      modoEdicao
+    ]
   );
 
   /**
@@ -826,6 +841,13 @@ export function DespacharModal({
                   <p className="mt-1.5 text-xs text-slate-500">
                     Correios não entra em FOB: a prepostagem sai pelo cartão de postagem da empresa. Para enviar pelos
                     Correios, marque CIF.
+                  </p>
+                )}
+                {TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA.includes(pedido.tipoFrete) && (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    O frete cotado deste pedido ({labelTipoFrete(pedido.tipoFrete)}) não diz por onde a mercadoria vai.
+                    Escolha o transporte e informe a transportadora — o despacho exige, como em FOB. Nada disso altera o
+                    valor do frete da proposta.
                   </p>
                 )}
                 {transporteRecotadoForaDaModalidade && (

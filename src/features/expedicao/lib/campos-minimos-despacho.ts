@@ -1,4 +1,5 @@
 import type { DespachoInput } from "../services/expedicao-acoes.service";
+import type { TipoFreteNormalizado } from "../types";
 
 /**
  * O que precisa estar preenchido para DESPACHAR de fato.
@@ -28,6 +29,21 @@ import type { DespachoInput } from "../services/expedicao-acoes.service";
 export type ModoDespacho = "DESPACHO" | "EDICAO";
 
 /**
+ * Transportes que NAO nomeiam um transportador e, por isso, exigem que alguem
+ * diga quem leva — a mesma exigencia que FOB sempre teve.
+ *
+ * `SEM_CUSTO` e `INDEFINIDO` saem da normalizacao do texto livre de
+ * `cotacao_frete.servico` ("FRETE INCLUSO", "SEM CUSTO", lixo digitado). Sao
+ * categorias de COBRANCA, nao de transporte: dizem que ninguem paga a mais ou
+ * que ninguem decidiu, e nao por onde a mercadoria vai. Despachar assim grava um
+ * envio que ninguem consegue rastrear nem cobrar depois.
+ *
+ * Decisao do dono em 22/08/2026. Vale so no despacho: nada aqui reescreve
+ * `propostas.modalidade_frete`, nem toca no valor do frete da proposta.
+ */
+export const TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA: TipoFreteNormalizado[] = ["SEM_CUSTO", "INDEFINIDO"];
+
+/**
  * Devolve a lista do que falta, em linguagem de tela. Vazia = pode despachar.
  *
  * `modo`:
@@ -46,6 +62,7 @@ export function camposMinimosDespacho(
     | "pesoKg"
     | "qtdVolumes"
     | "idEnderecoEntrega"
+    | "tipoFrete"
   >,
   modo: ModoDespacho
 ): string[] {
@@ -61,9 +78,20 @@ export function camposMinimosDespacho(
   // id_transportadora_cliente null — exigir os campos aqui contradiria isso.
   if (input.tipoEntrega === "RETIRADA") return faltantes;
 
+  // A transportadora e exigida em TODO despacho de transporte, qualquer que seja
+  // o tipo — inclusive `SEM_CUSTO` e `INDEFINIDO`, que desde 22/08/2026 sao
+  // tratados como FOB para este fim (ver TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA).
+  // A regra e a mesma linha: o que muda e a mensagem, que nomeia o caso para o
+  // expedidor entender por que o campo virou obrigatorio num pedido "sem custo".
   const temTransportadora =
     Boolean(input.transportadoraNome && input.transportadoraNome.trim()) || input.idTransportadoraCliente !== null;
-  if (!temTransportadora) faltantes.push("a transportadora");
+  if (!temTransportadora) {
+    faltantes.push(
+      TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA.includes(input.tipoFrete)
+        ? "a transportadora (o frete cotado nao diz por onde vai)"
+        : "a transportadora"
+    );
+  }
 
   if (!input.idEnderecoEntrega) faltantes.push("o endereço de entrega");
 

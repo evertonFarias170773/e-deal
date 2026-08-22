@@ -45,7 +45,8 @@ const completo = {
   idTransportadoraCliente: null,
   pesoKg: 3.12,
   qtdVolumes: 1,
-  idEnderecoEntrega: "ee5db217-261b-409c-b574-b0c36c1b4917"
+  idEnderecoEntrega: "ee5db217-261b-409c-b574-b0c36c1b4917",
+  tipoFrete: "CORREIOS" as const
 };
 
 checar("despacho completo não tem faltantes", camposMinimosDespacho(completo, "DESPACHO"), []);
@@ -154,6 +155,65 @@ checar(
   "a transportadora, o endereço de entrega e a quantidade de volumes"
 );
 checar("fraseado de lista vazia", frasearFaltantes([]), "");
+
+// ── 1b. SEM CUSTO e A DEFINIR exigem transportadora, como FOB (22/08/2026) ──
+//
+// `SEM_CUSTO` e `INDEFINIDO` saem da normalizacao do texto livre da cotacao e
+// dizem quem PAGA (ou que ninguem decidiu), nao por onde vai. Despachar assim
+// gravava um envio sem transportador — sem rastreio e sem a quem cobrar depois.
+// A exigencia ja valia para todo transporte; o que muda e a regra ficar escrita
+// com nome proprio e a mensagem dizer ao expedidor por que o campo pesa aqui.
+
+const semCustoSemTransportadora = {
+  ...completo,
+  tipoFrete: "SEM_CUSTO" as const,
+  transportadoraNome: "",
+  idTransportadoraCliente: null
+};
+checar(
+  "SEM CUSTO sem transportadora e barrado, com mensagem propria",
+  camposMinimosDespacho(semCustoSemTransportadora, "DESPACHO"),
+  ["a transportadora (o frete cotado nao diz por onde vai)"]
+);
+
+checar(
+  "A DEFINIR sem transportadora e barrado do mesmo jeito",
+  camposMinimosDespacho(
+    { ...semCustoSemTransportadora, tipoFrete: "INDEFINIDO" as const },
+    "DESPACHO"
+  ),
+  ["a transportadora (o frete cotado nao diz por onde vai)"]
+);
+
+checar(
+  "SEM CUSTO COM transportadora passa",
+  camposMinimosDespacho({ ...semCustoSemTransportadora, transportadoraNome: "Expresso Sao Miguel" }, "DESPACHO"),
+  []
+);
+
+checar(
+  "vinculo de transportadora cadastrada tambem satisfaz",
+  camposMinimosDespacho({ ...semCustoSemTransportadora, idTransportadoraCliente: 4321 }, "DESPACHO"),
+  []
+);
+
+// Retirada segue isenta: o cliente vem buscar, nao ha transportador nenhum —
+// exigir aqui contradiria o submit, que forca RETIRA_BALCAO.
+checar(
+  "retirada com SEM CUSTO nao exige transportadora",
+  camposMinimosDespacho(
+    { ...semCustoSemTransportadora, tipoEntrega: "RETIRADA" as const, modalidadeFrete: "RETIRA" as const },
+    "DESPACHO"
+  ),
+  []
+);
+
+// Edicao de pedido ja despachado continua sem exigir nada.
+checar(
+  "modo edicao nao exige transportadora nem em SEM CUSTO",
+  camposMinimosDespacho(semCustoSemTransportadora, "EDICAO"),
+  []
+);
 
 // ── 2. DIVERGÊNCIA DE FRETE — TRÊS DIMENSÕES, E SÓ CIF BLOQUEIA ───────────
 
