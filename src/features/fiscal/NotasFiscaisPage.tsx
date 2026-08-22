@@ -26,6 +26,8 @@ import { hasPermissao } from "@/features/auth/usuarios.service";
 // Fase 1 MVP
 import type { FaturavelOrigem } from "./types";
 import { EmissaoNfeModal } from "./components/EmissaoNfeModal";
+import { ConferenciaFaturamentoModal } from "./components/ConferenciaFaturamentoModal";
+import { conferirFaturamento, type ResultadoConferencia } from "./services/conferencia-faturamento";
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 function parseFocusResponse(data: any): { success: boolean; message: string } {
@@ -127,6 +129,43 @@ const STATUS_NFSE = [
   "CANCELADA"
 ] as const;
 
+/**
+ * `E-Faturado` e `E-FATURADO` convivem na base — 173 e 104 registros. A leitura
+ * normaliza; os registros ficam como estão.
+ */
+function ehFaturado(tipoCobranca: string | null | undefined): boolean {
+  return String(tipoCobranca ?? "").trim().toUpperCase() === "E-FATURADO";
+}
+
+/** Rótulo legível da forma de cobrança, com destaque suave só no faturado. */
+function EtiquetaCobranca({ tipo }: { tipo?: string | null }) {
+  const texto = String(tipo ?? "").trim();
+  if (!texto) {
+    return <span className="text-xs text-slate-400">Sem cobrança</span>;
+  }
+
+  const NOMES: Record<string, string> = {
+    "E-FATURADO": "Faturado",
+    PIX: "PIX",
+    BOLETO: "Boleto",
+    CARD_PARCELADO: "Cartão parcelado",
+    CREDIT_CARD: "Cartão",
+    "E-CREDITO": "Crédito"
+  };
+  const chave = texto.toUpperCase();
+  const rotulo = NOMES[chave] || texto;
+
+  const estilo = ehFaturado(texto)
+    ? "border-amber-200 bg-amber-50 text-amber-800"
+    : "border-slate-200 bg-slate-50 text-slate-600";
+
+  return (
+    <span className={`inline-block rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${estilo}`}>
+      {rotulo}
+    </span>
+  );
+}
+
 export function NotasFiscaisPage() {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -145,6 +184,8 @@ export function NotasFiscaisPage() {
       // Fila: por padrão esconde a proposta que já tem nota viva. Este filtro
       // traz as escondidas de volta — faturamento parcial precisa do caminho.
       "fila-faturadas": { codec: codecs.booleano(), default: false },
+      // Fila: recorta para as cobranças do tipo faturado, que são as do Financeiro.
+      "fila-so-faturados": { codec: codecs.booleano(), default: false },
       "nfse-q": { codec: codecs.texto(), default: "" },
       "nfse-emp": { codec: codecs.enumOf(EMPRESAS_EMITENTES), default: "" as const },
       "nfse-status": { codec: codecs.enumOf(STATUS_NFSE), default: "" as const }
@@ -159,6 +200,14 @@ export function NotasFiscaisPage() {
   // O passo em que o modal de emissao abre: IDLE pede confirmacao, QUERYING
   // ja entra consultando. Todo o resto do acompanhamento mora no componente.
   const [passoDoModal, setPassoDoModal] = useState<"IDLE" | "QUERYING">("IDLE");
+
+  // Conferência do Faturar: quando trava, a nota não abre e este painel diz por quê.
+  const [conferenciaPendente, setConferenciaPendente] = useState<{
+    idInt: number;
+    pedido: string;
+    resultado: ResultadoConferencia;
+  } | null>(null);
+  const [reconferindo, setReconferindo] = useState(false);
 
   // State para fila faturável
   const [faturaveisList, setFaturaveisList] = useState<FaturavelOrigem[]>([]);
@@ -194,6 +243,7 @@ export function NotasFiscaisPage() {
   const nfseStatus = filters["nfse-status"];
   const nfseEmpresa = filters["nfse-emp"];
   const mostrarFaturadas = filters["fila-faturadas"];
+  const soFaturados = filters["fila-so-faturados"];
 
   const [nfeSearch, setNfeSearch] = useDebouncedInput(filters["nfe-q"], (valor) =>
     setFilter("nfe-q", valor)
@@ -1366,6 +1416,16 @@ export function NotasFiscaisPage() {
         return;
       }
 
+      // A conferência roda ANTES de criar o rascunho. Faltando dado, a nota não
+      // abre: o painel diz o que está errado, quem corrige e onde.
+      showToast({ type: "info", title: "Conferindo os dados do pedido..." });
+      const conferencia = await conferirFaturamento(idInt);
+      if (!conferencia.ok) {
+        setConferenciaPendente({ idInt, pedido: `#${idInt}`, resultado: conferencia });
+        setIsFaturando(false);
+        return;
+      }
+
       showToast({ type: "info", title: "Criando ou recuperando rascunho de NF-e..." });
       const draft = await createOrReuseNfeDraft(idInt);
       showToast({ type: "success", title: `Rascunho ${draft.ref} carregado com sucesso!` });
@@ -1382,10 +1442,13 @@ export function NotasFiscaisPage() {
 
   // Filtragem da Fila de Faturamento (Unificada: NF-e e NFS-e)
   const filaJaFaturadas = faturaveisList.filter((item) => (item.notas_vivas ?? 0) > 0).length;
+  const filaFaturados = faturaveisList.filter((item) => ehFaturado(item.tipo_cobranca)).length;
 
   const filteredFilaNfe = faturaveisList.filter((item) => {
     // Já virou nota viva: sai da fila, a menos que o operador peça para ver.
     if (!mostrarFaturadas && (item.notas_vivas ?? 0) > 0) return false;
+
+    if (soFaturados && !ehFaturado(item.tipo_cobranca)) return false;
 
     if (nfeSearch) {
       const search = nfeSearch.toLowerCase().trim();
@@ -1567,6 +1630,19 @@ export function NotasFiscaisPage() {
                 <option value="3">E3 BRINDES</option>
               </select>
             </div>
+            <label className="sm:col-span-2 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={soFaturados}
+                onChange={(e) => setFilter("fila-so-faturados", e.target.checked)}
+                className="h-4 w-4 rounded border-[#d7e5e8] text-[#0b2f4a] focus:ring-[#0b2f4a]"
+              />
+              <span>
+                Só faturados
+                <strong className="ml-1 font-semibold text-slate-800">({filaFaturados})</strong>
+                <span className="ml-1 text-xs text-slate-400">— as cobranças do Financeiro</span>
+              </span>
+            </label>
             {filaJaFaturadas > 0 && (
               <label className="sm:col-span-2 flex items-center gap-2.5 text-sm text-slate-600 cursor-pointer select-none">
                 <input
@@ -1638,7 +1714,7 @@ export function NotasFiscaisPage() {
               },
               {
                 header: "Tipo de cobrança",
-                cell: (item) => item.tipo_cobranca || "Não informado",
+                cell: (item) => <EtiquetaCobranca tipo={item.tipo_cobranca} />,
                 align: "center"
               },
               {
@@ -2150,6 +2226,33 @@ export function NotasFiscaisPage() {
           <span>Leitura restrita e protegida do banco de dados do ERP.</span>
         </section>
       ) : null}
+
+      {conferenciaPendente && (
+        <ConferenciaFaturamentoModal
+          pedido={conferenciaPendente.pedido}
+          resultado={conferenciaPendente.resultado}
+          reconferindo={reconferindo}
+          onFechar={() => setConferenciaPendente(null)}
+          onIrPara={(rota) => {
+            setConferenciaPendente(null);
+            router.push(rota);
+          }}
+          onReconferir={async () => {
+            setReconferindo(true);
+            try {
+              const resultado = await conferirFaturamento(conferenciaPendente.idInt);
+              if (resultado.ok) {
+                setConferenciaPendente(null);
+                showToast({ type: "success", title: "Pendências resolvidas. Pode faturar." });
+                return;
+              }
+              setConferenciaPendente({ ...conferenciaPendente, resultado });
+            } finally {
+              setReconferindo(false);
+            }
+          }}
+        />
+      )}
 
       {focusConfirmNote && (
         <EmissaoNfeModal

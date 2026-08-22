@@ -257,6 +257,108 @@ export async function getAlertasNfe(ref: string) {
   return data;
 }
 
+/**
+ * Empresa emitente a partir do texto gravado na proposta.
+ * Exportada para a conferência do Faturar julgar exatamente a mesma empresa que
+ * o rascunho vai gravar — se as duas divergirem, a conferência mente.
+ */
+export function resolverEmpresaEmitente(empresaTexto: string | null | undefined): number {
+  const texto = (empresaTexto || "").toUpperCase();
+  if (texto.includes("BIRO") || texto.includes("BIRÔ")) return 2;
+  if (texto.includes("E3")) return 3;
+  return 1;
+}
+
+/**
+ * Código fiscal da forma de pagamento, a partir de `pagamentos_v2.tipo_cobranca`.
+ *
+ * POR QUE EXISTE
+ *   O rascunho lia `propostas.forma_pagamento` — coluna que NÃO existe. O valor
+ *   vinha sempre indefinido, virava "A combinar" e caía no default 15 (boleto).
+ *   Era por isso que nota de PIX nascia como boleto.
+ *
+ * A ORDEM IMPORTA
+ *   `E-CREDITO` contém "CREDITO", mas é uso de crédito do cliente, não cartão.
+ *   Por isso os valores conhecidos são decididos primeiro, e só o que sobra cai
+ *   na busca por palavra.
+ *
+ * SEM CAIXA
+ *   `E-Faturado` e `E-FATURADO` convivem na base (173 e 104 registros). A
+ *   comparação normaliza; os registros ficam como estão.
+ */
+export function codigoFiscalDaCobranca(tipoCobranca: string | null | undefined): string {
+  const texto = String(tipoCobranca ?? "").trim().toUpperCase();
+  if (!texto) return "15";
+
+  // Valores conhecidos de pagamentos_v2.tipo_cobranca, decididos por igualdade.
+  const CONHECIDOS: Record<string, string> = {
+    PIX: "17",
+    BOLETO: "15",
+    CARD_PARCELADO: "03",
+    CREDIT_CARD: "03",
+    "E-FATURADO": "15",
+    "E-CREDITO": "15"
+  };
+  if (CONHECIDOS[texto]) return CONHECIDOS[texto];
+
+  if (texto.includes("PIX") || texto.includes("TRANSFERENCIA") || texto.includes("TED")) return "17";
+  if (texto.includes("DINHEIRO")) return "01";
+  if (
+    texto.includes("CARTAO") ||
+    texto.includes("CARTÃO") ||
+    texto.includes("CARD") ||
+    texto.includes("CREDITO") ||
+    texto.includes("CRÉDITO") ||
+    texto.includes("DEBITO") ||
+    texto.includes("DÉBITO")
+  ) {
+    return "03";
+  }
+  return "15";
+}
+
+/** Modalidade do frete da NF-e a partir da modalidade declarada na proposta. */
+export function codigoModalidadeFrete(
+  modalidadeProposta: string | null | undefined,
+  valorFrete: number
+): number {
+  const texto = String(modalidadeProposta ?? "").trim().toUpperCase();
+  if (texto === "CIF") return 0; // por conta do emitente
+  if (texto === "FOB") return 1; // por conta do destinatário
+  if (texto === "RETIRA") return 9; // sem ocorrência de transporte
+  // Sem modalidade declarada: mantém o comportamento antigo, derivado do valor.
+  // A conferência do Faturar avisa quando há frete e não há modalidade.
+  return valorFrete > 0 ? 0 : 9;
+}
+
+/**
+ * Forma de cobrança negociada de um pedido, lida de pagamentos_v2.
+ * Quando há mais de uma cobrança, vale a mais recente — hoje nenhum pedido da
+ * fila tem formas divergentes, mas a regra precisa ser determinística.
+ */
+export async function getTipoCobrancaDoPedido(idInt: number): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("pagamentos_v2")
+    .select("tipo_cobranca, created_at")
+    .eq("id_int", idInt)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("[NfeService] Nao foi possivel ler a cobranca do pedido:", error.message);
+    return null;
+  }
+  const tipo = String((data as { tipo_cobranca?: string } | null)?.tipo_cobranca ?? "").trim();
+  return tipo || null;
+}
+
+/** `entrega`, `ENTREGA`, `Entrega` — a base guarda as três. */
+export function ehEnderecoDeEntrega(tipoEndereco: string | null | undefined): boolean {
+  return String(tipoEndereco ?? "").trim().toLowerCase().startsWith("entrega");
+}
+
 export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeRow> {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client not initialized");
@@ -300,12 +402,34 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   const ref = `NFE-${idInt}-${String(nextSuffix).padStart(3, "0")}`;
 
   // 4. Mapear empresa emitente
-  let idEmpresa = 1;
-  const empresaStr = proposta.empresa?.toUpperCase() || "";
-  if (empresaStr.includes("BIRO") || empresaStr.includes("BIRÔ")) {
-    idEmpresa = 2;
-  } else if (empresaStr.includes("E3")) {
-    idEmpresa = 3;
+  const idEmpresa = resolverEmpresaEmitente(proposta.empresa);
+
+  // 4b. O que a origem diz sobre cobrança e endereço de entrega.
+  //     A cobrança vem de pagamentos_v2 — `propostas` não tem forma de pagamento.
+  //     O endereço de entrega só é "de entrega" quando `id_endereco_ent` aponta
+  //     para um endereço marcado como tal; caso contrário a nota usa o principal.
+  const tipoCobranca = await getTipoCobrancaDoPedido(idInt);
+
+  let entregaEmEnderecoProprio = false;
+  const { data: propostaEndereco } = await client
+    .from("propostas")
+    .select("id_endereco_ent")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  const idEnderecoEnt = String(
+    (propostaEndereco as { id_endereco_ent?: string | null } | null)?.id_endereco_ent ?? ""
+  ).trim();
+
+  if (idEnderecoEnt) {
+    const { data: enderecoRow } = await client
+      .from("enderecos")
+      .select("tipo_endereco")
+      .eq("id", idEnderecoEnt)
+      .maybeSingle();
+    entregaEmEnderecoProprio = ehEnderecoDeEntrega(
+      (enderecoRow as { tipo_endereco?: string | null } | null)?.tipo_endereco
+    );
   }
 
   // 5. Determinar parametrização fiscal básica e CFOP
@@ -319,7 +443,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   const tipoContribuinte = isCNPJ ? 1 : 9;
 
   const valorFrete = proposta.resumo?.frete || 0;
-  const modalidadeFrete = valorFrete > 0 ? 0 : 9;
+  const modalidadeFrete = codigoModalidadeFrete(proposta.modalidadeFrete, valorFrete);
 
   let totalPeso = 0;
   if (proposta.itens) {
@@ -328,9 +452,12 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     });
   }
 
-  const pgtoConfigurado = proposta.formaPagamento ? (proposta.formaPagamento !== "A combinar" && proposta.formaPagamento !== "") : false;
-  const hasEndereco = proposta.enderecoEntrega ? true : false;
-  const enderecoStr = proposta.enderecoEntrega ? JSON.stringify(proposta.enderecoEntrega) : null;
+  const pgtoConfigurado = Boolean(tipoCobranca);
+  // A nota usa o endereço principal por padrão. O bloco de entrega só entra
+  // quando a proposta aponta um endereço marcado como de entrega — antes disso
+  // `end_entrega` era sempre true, porque a resolução nunca devolve vazio.
+  const hasEndereco = entregaEmEnderecoProprio && Boolean(proposta.enderecoEntrega);
+  const enderecoStr = hasEndereco ? JSON.stringify(proposta.enderecoEntrega) : null;
 
   const nfeInsert = {
     id_int: idInt,
@@ -345,7 +472,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     valor_frete: valorFrete,
     valor_total_nf: proposta.resumo?.valorTotal || 0,
     cond_pgto: pgtoConfigurado,
-    forma_pgto: proposta.formaPagamento || "A Vista",
+    forma_pgto: tipoCobranca || "A Vista",
     end_entrega: hasEndereco,
     endereco_entrega_observacao: enderecoStr,
     natureza_operacao: naturezaDefault,
@@ -420,15 +547,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   }
 
   // 7. Inserir pagamentos da nota
-  const formaPgtoText = proposta.formaPagamento?.toUpperCase() || "";
-  let formaPgtoFocus = "15"; // Boleto
-  if (formaPgtoText.includes("PIX") || formaPgtoText.includes("TRANSFERENCIA") || formaPgtoText.includes("TED")) {
-    formaPgtoFocus = "17"; // PIX
-  } else if (formaPgtoText.includes("DINHEIRO")) {
-    formaPgtoFocus = "01";
-  } else if (formaPgtoText.includes("CARTAO") || formaPgtoText.includes("CRÉDITO") || formaPgtoText.includes("DEBITO")) {
-    formaPgtoFocus = "03"; // Cartão
-  }
+  const formaPgtoFocus = codigoFiscalDaCobranca(tipoCobranca);
 
   const paymentInsert = {
     id_int: idInt,
@@ -589,6 +708,30 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
       new Set(propostas.map((row) => Number(row.id_int)).filter((id) => Number.isFinite(id) && id > 0))
     );
 
+    // A forma de cobrança negociada de cada pedido, para a fila mostrar o que é
+    // faturado sem abrir nada. Uma consulta para toda a fila — a paginação não
+    // muda, porque a lista continua vindo inteira de `propostas`.
+    const cobrancaPorProposta = new Map<number, string>();
+    if (idsInt.length > 0) {
+      const { data: cobrancas, error: cobrancasError } = await client
+        .from("pagamentos_v2")
+        .select("id_int,tipo_cobranca,created_at")
+        .in("id_int", idsInt)
+        .order("created_at", { ascending: true });
+
+      if (cobrancasError) {
+        console.warn("[NfeService] Nao foi possivel ler as cobrancas da fila:", cobrancasError.message);
+      } else {
+        // Ordem crescente: a última escrita vence, que é a cobrança mais recente.
+        (cobrancas ?? []).forEach((linha: { id_int: number | null; tipo_cobranca: string | null }) => {
+          const idInt = Number(linha.id_int);
+          const tipo = String(linha.tipo_cobranca ?? "").trim();
+          if (!Number.isFinite(idInt) || !tipo) return;
+          cobrancaPorProposta.set(idInt, tipo);
+        });
+      }
+    }
+
     const notasVivasPorProposta = new Map<number, number>();
     if (idsInt.length > 0) {
       const { data: notas, error: notasError } = await client
@@ -634,7 +777,8 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         valor_total: valorTotal,
         itens: [],
         created_at: row.created_at || new Date().toISOString(),
-        notas_vivas: notasVivasPorProposta.get(Number(row.id_int)) ?? 0
+        notas_vivas: notasVivasPorProposta.get(Number(row.id_int)) ?? 0,
+        tipo_cobranca: cobrancaPorProposta.get(Number(row.id_int))
       };
     });
   } catch (err) {

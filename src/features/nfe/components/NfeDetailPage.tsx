@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Play,
   CheckCircle2,
   AlertTriangle,
   Loader2,
@@ -181,7 +180,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [deliveryBairro, setDeliveryBairro] = useState("");
   const [deliveryCidade, setDeliveryCidade] = useState("");
   const [deliveryUf, setDeliveryUf] = useState("");
-  const [deliveryIeOverride, setDeliveryIeOverride] = useState("");
 
   // Transportadoras state
   const [transportadoras, setTransportadoras] = useState<TransportadoraSimple[]>([]);
@@ -324,7 +322,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       setIdTransportadoraCliente(dbNote.id_transportadora_cliente);
       // 1. Load client details, principal address and products first
       const client = getSupabaseClient();
-      let mestreIe = "";
       let fetchedEnderecos: EnderecoData[] = [];
       if (client) {
         const { data: cliData } = await client
@@ -334,7 +331,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           .maybeSingle();
         if (cliData) {
           setCliente(cliData);
-          mestreIe = cliData.ins_estadual || cliData.inscricao_estadual || "";
         }
 
         const { data: addrData } = await client
@@ -374,15 +370,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         setDbProducts(productsData);
       }
 
-      // 2. Parse custom delivery address and initialize IE override
+      // 2. Endereco de entrega gravado na nota. A IE nao entra mais aqui:
+      //    ela vem do cadastro do cliente e so de la pode ser corrigida.
       let parsedAddr: Record<string, string> | null = null;
-      let hasCustomIe = false;
       if (dbNote.endereco_entrega_observacao) {
         try {
           parsedAddr = JSON.parse(dbNote.endereco_entrega_observacao) as Record<string, string>;
-          if (parsedAddr && Object.prototype.hasOwnProperty.call(parsedAddr, "inscricao_estadual")) {
-            hasCustomIe = true;
-          }
         } catch {
           // ignore
         }
@@ -427,9 +420,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         setCustomAddressActive(false);
       }
       
-      const ieVal = hasCustomIe ? (parsedAddr?.inscricao_estadual ?? "") : mestreIe;
-      setDeliveryIeOverride(ieVal);
-
       // 3. Load Items
       const dbItems = await getNfeItems(noteId);
       setItems(dbItems);
@@ -578,7 +568,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         bairro: deliveryBairro,
         cidade: deliveryCidade,
         uf: deliveryUf,
-        inscricao_estadual: deliveryIeOverride
       };
 
       const hasDeliveryAddress = useDeliveryAddress && Boolean(deliveryCep && deliveryLogradouro);
@@ -1018,44 +1007,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   }
 
   // Execute DB validation RPC without saving automatically
-  async function handleRunTechnicalValidation() {
-    if (!note) return;
-    setIsValidating(true);
-    try {
-      showToast({ 
-        type: "info", 
-        title: "Validação baseada nos dados já salvos no banco de dados." 
-      });
-      
-      const resVal = await getAlertasNfe(note.ref);
-      
-      const alerts = resVal?.alertas || [];
-      const messages = Array.isArray(alerts)
-        ? alerts.map((a: { mensagem?: string; message?: string } | string) => typeof a === "string" ? a : (a.mensagem || a.message || JSON.stringify(a)))
-        : [];
-      
-      const hasBlockingErrors = resVal?.tem_erros === true || resVal?.pode_emitir_tecnico === false;
-      
-      setValidationData(prev => ({
-        ...prev,
-        pode_emitir: !hasBlockingErrors,
-        pendencias_texto: messages
-      }));
-      
-      if (!hasBlockingErrors) {
-        showToast({ type: "success", title: "Análise concluída! Rascunho sem erros bloqueantes." });
-      } else {
-        showToast({ type: "warning", title: "Erros de validação localizados." });
-      }
-    } catch (err) {
-      console.error("[NfeDetail] Technical validation failed:", err);
-      const msg = err instanceof Error ? err.message : "Falha ao rodar RPC de validação.";
-      showToast({ type: "error", title: msg });
-    } finally {
-      setIsValidating(false);
-    }
-  }
-
   // Save, run final checks, confirm and mark as ready to send
   /**
    * Grava o payload de envio e deixa a nota em PRONTA_PARA_ENVIO.
@@ -1271,9 +1222,24 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           </div>
           <p className="text-sm text-slate-500">
             Origem: Proposta/Pedido <strong>#{note.id_int}</strong> • Vendedor: {note.criado_por_nome || "-"}
+            {" • "}
+            <button
+              type="button"
+              onClick={handleDanfePreview}
+              disabled={isPreviewLoading}
+              className="inline-flex items-center gap-1 text-slate-500 underline underline-offset-2 hover:text-slate-800 transition disabled:opacity-50"
+            >
+              {isPreviewLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ExternalLink className="h-3 w-3" />}
+              DANFE Preview
+            </button>
           </p>
         </div>
 
+        {/*
+          Três botões. "Rodar Validação" saiu da aba: a mesma checagem já roda no
+          Faturar e de novo no Emitir. O preview desceu para o cabeçalho, porque
+          é conferência visual e não etapa do caminho.
+        */}
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -1283,26 +1249,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             <ArrowLeft className="h-4 w-4" />
             Voltar
           </button>
-          <button
-            type="button"
-            onClick={handleDanfePreview}
-            disabled={isPreviewLoading}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
-          >
-            {isPreviewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-            DANFE Preview
-          </button>
           {!isReadOnly && (
             <>
-              <button
-                type="button"
-                onClick={() => void handleConcludeDraft(false)}
-                disabled={isValidating || isSaving}
-                className="inline-flex items-center gap-2 rounded-xl border border-emerald-600 text-emerald-700 hover:bg-emerald-50 px-4 py-2.5 text-xs font-semibold transition disabled:opacity-50"
-              >
-                {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Concluir Rascunho
-              </button>
               {podeEmitirNfe && (
                 <button
                   type="button"
@@ -1311,9 +1259,19 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-semibold transition disabled:opacity-50 shadow-sm"
                 >
                   {isValidating || isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Concluir e Emitir
+                  Emitir NF-e
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => void handleConcludeDraft(false)}
+                disabled={isValidating || isSaving}
+                title="Prepara a nota e deixa pronta para envio, sem emitir agora"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
+              >
+                {isValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Só concluir rascunho
+              </button>
               <button
                 type="button"
                 onClick={handleSave}
@@ -1321,7 +1279,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 className="inline-flex items-center gap-2 rounded-xl bg-[#0b2f4a] hover:bg-[#061d2e] px-4 py-2.5 text-xs font-semibold text-white transition disabled:opacity-50"
               >
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Salvar Rascunho
+                Salvar e sair
               </button>
             </>
           )}
@@ -1532,7 +1490,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
         {/* Aba 3: Destinatário */}
         {activeTab === "Destinatário" && (() => {
-          const isCNPJ = (cliente?.documento || "").replace(/\D/g, "").length > 11;
           return (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -1601,36 +1558,24 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   </select>
                 </div>
 
-                <div className="md:col-span-2 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-slate-500">
-                      Inscrição Estadual (IE) da Nota/Destinatário (Override Fiscal)
-                    </label>
-                    {isCNPJ && (
-                      <button
-                        type="button"
-                        onClick={() => setDeliveryIeOverride("ISENTO")}
-                        className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200 transition"
-                      >
-                        Marcar como ISENTO
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={deliveryIeOverride}
-                    onChange={(e) => setDeliveryIeOverride(e.target.value)}
-                    placeholder="Inscrição Estadual para esta nota fiscal"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
-                  />
-                  <p className="text-xs text-slate-400">
-                    ℹ️ Esta alteração afeta apenas esta nota fiscal (override fiscal) e NÃO altera o cadastro permanente do cliente.
+                {/*
+                  O override de IE saiu daqui. Ele não corrigia a IE do
+                  destinatário: o payload monta essa IE a partir do cadastro do
+                  cliente, e o que era digitado aqui virava texto nas Informações
+                  Complementares. Parecia resolver e não resolvia.
+                  IE vazia agora é pendência bloqueante na conferência do
+                  Faturar, corrigida no cadastro do cliente pelo Comercial.
+                */}
+                <div className="md:col-span-2">
+                  <span className="block text-xs font-semibold text-slate-500">
+                    Inscrição Estadual do destinatário
+                  </span>
+                  <p className="mt-1 text-sm font-mono text-slate-700">
+                    {cliente?.ins_estadual || cliente?.inscricao_estadual || "ISENTO"}
                   </p>
-                  {isCNPJ && !deliveryIeOverride && (
-                    <p className="text-xs text-amber-600 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="h-3.5 w-3.5" /> Para CNPJ, a Inscrição Estadual é obrigatória ou deve ser marcada como ISENTO.
-                    </p>
-                  )}
+                  <p className="text-xs text-slate-400 mt-1">
+                    Vem do cadastro do cliente. Para alterar, corrija no cadastro — o Comercial é quem edita.
+                  </p>
                 </div>
               </div>
 
@@ -2821,28 +2766,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         {/* Aba 9: Validação */}
         {activeTab === "Validação" && (
           <div className="space-y-6">
+            {/*
+              "Rodar Validação" saiu: a mesma checagem já roda no Faturar, antes
+              de a nota abrir, e de novo ao emitir. Um botão a menos para o
+              operador decidir se aperta.
+            */}
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                 <ClipboardList className="h-5 w-5 text-[#0b2f4a]" /> Checklist e Consistência Fiscal
               </h2>
-              <button
-                type="button"
-                onClick={handleRunTechnicalValidation}
-                disabled={isValidating}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 text-white px-4 py-2 text-xs font-semibold hover:bg-slate-900 transition disabled:opacity-50"
-              >
-                {isValidating ? (
-                  <>
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Validando...
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-3 w-3" />
-                    Rodar Validação
-                  </>
-                )}
-              </button>
+              <span className="text-xs text-slate-400">
+                Verificado ao faturar e ao emitir
+              </span>
             </div>
 
             {/* Checklist de Validação */}
