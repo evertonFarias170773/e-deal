@@ -3213,6 +3213,34 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     ];
   }
 
+  /**
+   * Titulo do cabecalho: "N° PEDIDO {id_int} / {id_cliente} - {nome}".
+   *
+   * O nome sai do `cliente` que ja esta no estado da tela — nenhuma consulta
+   * nova. Mesmo par id-nome que a lista usa na coluna "id - Cliente".
+   *
+   * DEGRADACAO, em tres degraus, para nunca exibir "undefined" nem barra solta:
+   *   1. proposta nova ainda sem numero -> "Novo pedido" no lugar do "N° PEDIDO";
+   *   2. orcamento rapido (cliente nao cadastrado) -> mostra o nome digitado,
+   *      sem id, porque id nao existe;
+   *   3. sem cliente nenhum (tela recem-aberta) -> so a parte do numero, sem a
+   *      barra.
+   *
+   * Isto e rotulo: rota, arquivo, permissao e parametro de URL seguem iguais.
+   */
+  const tituloDoCabecalho = (() => {
+    const parteNumero = mode === "new" ? "Novo pedido" : `N° PEDIDO ${proposta?.id_int ?? ""}`.trim();
+
+    const idClienteExibido = cliente?.idCliente ?? null;
+    const nomeCliente =
+      (cliente?.nome ?? "").trim() ||
+      (form.clienteNaoCadastrado ? (form.nomeClienteLivre ?? "").trim() : "");
+
+    if (!nomeCliente) return parteNumero;
+    const parteCliente = idClienteExibido ? `${idClienteExibido} - ${nomeCliente}` : nomeCliente;
+    return `${parteNumero} / ${parteCliente}`;
+  })();
+
   async function copyInformal() {
     await navigator.clipboard?.writeText(informalText);
     showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
@@ -4037,7 +4065,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   return (
     <div className="space-y-6">
       <PageHeader
-        title={mode === "new" ? "Nova proposta" : `Editar proposta #${proposta?.id_int}`}
+        title={tituloDoCabecalho}
         subtitle="Integração real Supabase (clientes, catálogo de produtos, variações dinâmicas e snapshots históricos)."
         context="Orçamentos / Propostas"
         action={
@@ -5641,7 +5669,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
 
         {shouldShowRest && (
           <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-            <FormSection title="8. Resumo da proposta" description="Resumo consolidado incluindo pesos e valores extras das variações.">
+            <FormSection title="8. Resumo do orçamento" description="Resumo consolidado incluindo pesos e valores extras das variações.">
               <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
               <fieldset disabled={isFormBloqueadoPorCobranca} className="group mt-4">
                 <div className="grid gap-3 grid-cols-[75px_1fr] items-start">
@@ -5675,7 +5703,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               </fieldset>
             </FormSection>
 
-            <FormSection title="9. Envio da proposta" description="Texto informal para envio via WhatsApp.">
+            <FormSection title="9. Envio do orçamento" description="Texto informal para envio via WhatsApp.">
               <textarea readOnly value={informalText} className="min-h-72 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 outline-none" />
               <button 
                 type="button" 
