@@ -78,10 +78,23 @@
 --
 --   3. Nenhum pagador da fila esta sem endereco principal.
 --
---   4. UM cadastro tem dois `PRINCIPAL` em caixa alta: AUTOMATECH (66235),
+--   4. UM cadastro tinha dois `PRINCIPAL` em caixa alta: AUTOMATECH (66235),
 --      Porto Alegre/RS e Extrema/MG, criados com uma hora de diferenca no mesmo
---      dia. Cai no criterio 2 e fica com Porto Alegre/RS, o mais recente. Nao
---      tem pedido na fila nem nota emitida — hoje e inerte.
+--      dia. Cairia no criterio 2 e ficaria com Porto Alegre/RS, o mais recente.
+--
+--      ATUALIZADO EM 23/08/2026, ANTES DE APLICAR: o cadastro foi higienizado
+--      pelo dono e agora existe o indice unico
+--      `enderecos_um_principal_por_cliente`, sobre `tipo_endereco = 'PRINCIPAL'`.
+--      Medido no momento da aplicacao: ZERO clientes com mais de um endereco
+--      principal (nem em caixa alta, nem misturando grafias), em 66.213
+--      cadastros que tem principal. O desempate abaixo passa a ser REDE, nao
+--      regra de uso diario — e nao deve disparar. Ele fica porque o indice
+--      cobre a igualdade exata `= 'PRINCIPAL'`: uma grafia `Principal`, ou com
+--      espaco em volta, continua entrando, e sem desempate voltaria o sorteio.
+--
+--      Conferido depois da higiene: os 7 cadastros da revisao resolvem para o
+--      MESMO endereco que o desempate teria escolhido. A higiene e esta
+--      migration concordam caso a caso.
 --
 --   5. `prop` nao e usado em mais nada na funcao: as duas unicas referencias sao
 --      `prop.id_int` (a condicao do join) e `prop.id_endereco_ent` (o coalesce).
@@ -147,22 +160,29 @@ $migracao$;
 
 commit;
 
--- VERIFICACAO (somente leitura, depois de aplicar)
+-- VERIFICACAO — RODADA EM 23/08/2026, DEPOIS DE APLICAR
 --
---   -- a) o bloco novo esta na funcao viva, e o antigo sumiu
---   select (select count(*) from regexp_matches(pg_get_functiondef(p.oid), 'PRINCIPAL', 'g')) as tem_desempate,
+--   Projeto conferido antes de escrever: `vwbtitjlpelrcnsytzqw` (o mesmo de
+--   .env.local), system_identifier 7509146418464602586, PostgreSQL 17.4 —
+--   producao. As leituras de conferencia sairam da mesma conexao que escreveu.
+--
+--   a) O bloco novo esta na funcao viva, e o antigo sumiu.
+--
+--   select md5(pg_get_functiondef(p.oid)) as md5_def,
+--          length(pg_get_functiondef(p.oid)) as bytes,
+--          (select count(*) from regexp_matches(pg_get_functiondef(p.oid), 'PRINCIPAL', 'g')) as tem_desempate,
 --          (select count(*) from regexp_matches(pg_get_functiondef(p.oid), 'id_endereco_ent', 'g')) as resto_do_coalesce,
 --          (select count(*) from regexp_matches(pg_get_functiondef(p.oid), 'prop\.', 'g')) as resto_do_alias
 --     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 --    where n.nspname = 'public' and p.proname = 'fn_montar_payload_nfe';
---   -- esperado: tem_desempate >= 1, resto_do_coalesce = 0, resto_do_alias = 0
 --
---   -- b) ACL COMPLETO preservado pelo CREATE OR REPLACE (o execute reaplica a
---   --    mesma definicao, que ja e um CREATE OR REPLACE). Rodar ANTES e DEPOIS
---   --    e comparar: as duas saidas devem ser IDENTICAS.
---   select p.proname,
---          pg_get_userbyid(p.proowner) as dono,
---          p.prosecdef as security_definer,
+--     antes   md5 abe0143145ae6d109f9fb3843c571538   15.746 bytes  prop.=2  id_endereco_ent=1
+--     depois  md5 a2a9b2732878a1d2a793c39fd91caf5f   15.747 bytes  prop.=0  id_endereco_ent=0
+--     tem_desempate = 1. Um byte de diferenca: e a troca de um bloco so.
+--
+--   b) ACL COMPLETO, com array_agg(grantee). Rodado antes e depois.
+--
+--   select p.proname, pg_get_userbyid(p.proowner) as dono, p.prosecdef,
 --          coalesce(
 --            (select array_agg(coalesce(r.rolname, 'PUBLIC') || '=' || x.privilege_type
 --                              order by coalesce(r.rolname, 'PUBLIC'), x.privilege_type)
@@ -172,28 +192,70 @@ commit;
 --     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 --    where n.nspname = 'public' and p.proname = 'fn_montar_payload_nfe';
 --
---   -- c) AS 3 AUTORIZADAS NAO MUDAM. Rodar ANTES e DEPOIS e comparar o endereco
---   --    que o payload traz para cada uma. Qualquer diferenca: PARAR.
---   select nf.ref,
---          public.fn_montar_payload_nfe(nf.ref) -> 'nfe' -> 'destinatario' as destinatario
---     from public.notas_fiscais nf
---    where upper(coalesce(nf.status,'')) = 'AUTORIZADA'
---    order by nf.ref;
+--     IDENTICO nas duas leituras: dono postgres, security definer,
+--     {PUBLIC=EXECUTE, anon=EXECUTE, authenticated=EXECUTE, postgres=EXECUTE,
+--      service_role=EXECUTE}. O CREATE OR REPLACE nao mexe em privilegio.
 --
---   -- d) o desempate escolhe a caixa alta nos 5 pagadores duplicados
---   select c.id_cliente, coalesce(nullif(trim(c.fantasia),''), c.nome) as nome,
---          e.tipo_endereco, e.cidade || '/' || e.uf as destino
---     from public.clientes c
---     join lateral (
---       select ep.* from public.enderecos ep
---        where ep.id_cliente = c.id_cliente
---          and lower(trim(ep.tipo_endereco)) = 'principal'
---        order by (case when trim(ep.tipo_endereco) = 'PRINCIPAL' then 0 else 1 end),
---                 ep.data_criacao desc nulls last, ep.id
---        limit 1
---     ) e on true
---    where c.id_cliente in (122, 248, 342, 471, 980);
---   -- esperado: Itabuna/BA, Novo Hamburgo/RS, Porto Alegre/RS, Goiania/GO, Santarem/PA
+--   c) AS 3 AUTORIZADAS NAO MUDAM.
+--
+--      ATENCAO: o payload e PLANO. Nao existe `-> 'nfe' -> 'destinatario'`; os
+--      campos sao `nome_destinatario`, `municipio_destinatario`, e assim por
+--      diante. Comparar o md5 do conjunto de campos do destinatario:
+--
+--   with p as (
+--     select nf.ref, public.fn_montar_payload_nfe(nf.ref)::jsonb as j
+--       from public.notas_fiscais nf
+--      where upper(coalesce(nf.status,'')) = 'AUTORIZADA'
+--   )
+--   select ref,
+--          (j ->> 'municipio_destinatario') || '/' || (j ->> 'uf_destinatario') as destino,
+--          j ->> 'local_destino' as local_destino,
+--          md5(concat_ws('|', j->>'nome_destinatario', j->>'cnpj_destinatario', j->>'cpf_destinatario',
+--                        j->>'inscricao_estadual_destinatario', j->>'indicador_inscricao_estadual_destinatario',
+--                        j->>'logradouro_destinatario', j->>'numero_destinatario', j->>'complemento_destinatario',
+--                        j->>'bairro_destinatario', j->>'municipio_destinatario', j->>'uf_destinatario',
+--                        j->>'cep_destinatario', j->>'pais_destinatario', j->>'local_destino')) as md5_destinatario
+--     from p order by ref;
+--
+--     Os tres md5 sao IGUAIS antes e depois:
+--       NFE-20370-003  Santa Cruz Do Sul/RS  local 1  CFOP 5101  b738ef6680019be5f04d2de630e087e1
+--       NFE-20916-001  Porto Alegre/RS       local 1  CFOP 5101  a993562343ea93bd8cbfd4eef2764546
+--       NFE-20925-001  Toledo/PR             local 2  CFOP 6101  ced673a29dd1cef2ef98261512e03a75
+--
+--   d) O desempate resolve os cadastros da revisao. Rodado depois da higiene:
+--      todos com UM principal so, todos em caixa alta, todos no endereco que o
+--      desempate escolheria.
+--
+--        122    GRUPO TERRITORIO   Itabuna/BA
+--        248    FX MIDIA           Novo Hamburgo/RS
+--        342    INGRESSOPRINT      Porto Alegre/RS
+--        471    IMPRIMIX           Goiania/GO
+--        980    STUDIO IAN         Santarem/PA
+--        37152  MILENE             Rio Grande/RS
+--        66235  AUTOMATECH         Porto Alegre/RS
+--
+--      E os tres pedidos da fila que mudam de destino, pelo pagador:
+--        21078 -> GRUPO TERRITORIO  Itabuna/BA   CFOP 6101
+--        21074 -> IMPRIMIX          Goiania/GO   CFOP 6101
+--        20943 -> GRUPO TERRITORIO  Itabuna/BA   CFOP 6101
+--
+-- JANELA ENTRE ESTA MIGRATION E A PUBLICACAO DA ETAPA C
+--
+--   Enquanto a Etapa C nao esta publicada, `notas_fiscais.id_cliente` continua
+--   recebendo o CLIENTE do pedido. Logo, ate publicar, o endereco do payload e
+--   o principal do CLIENTE — e nao mais o `id_endereco_ent`. Isso e o
+--   comportamento anterior a 22/08 e, para o caso comum (cliente e pagador sao
+--   a mesma pessoa), e o endereco fiscalmente certo do destinatario.
+--
+--   O que NAO se deve fazer nessa janela: usar "Reenviar NF-e" nos tres
+--   rascunhos em ERRO_AUTORIZACAO do agenciador 8469 — 20872, 20943 e 21078.
+--   O reenvio chama `fn_preparar_envio_nfe`, que REMONTA o payload; como o
+--   `id_cliente` deles ainda e o agenciador, o endereco sairia Santa Cruz do
+--   Sul/RS. Faturar de novo cria rascunho NOVO (a busca so reaproveita
+--   PENDENTE) e, com a Etapa C publicada, ja sai certo.
+--
+--   Os rascunhos PENDENTE e PROCESSANDO nao mudam de endereco: conferido em
+--   NFE-20481-001, NFE-20481-002, NFE-20928-001, NFE-20370-001 e NFE-20370-002.
 --
 -- ROLLBACK
 --   Reaplicar o bloco anterior, invertendo v_antigo e v_novo no mesmo DO block.
