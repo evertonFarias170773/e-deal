@@ -3229,16 +3229,31 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * Isto e rotulo: rota, arquivo, permissao e parametro de URL seguem iguais.
    */
   const tituloDoCabecalho = (() => {
-    const parteNumero = mode === "new" ? "Novo pedido" : `N° PEDIDO ${proposta?.id_int ?? ""}`.trim();
+    const parteNumero = mode === "new" ? "Novo pedido" : `N° ${proposta?.id_int ?? ""}`.trim();
 
     const idClienteExibido = cliente?.idCliente ?? null;
     const nomeCliente =
       (cliente?.nome ?? "").trim() ||
       (form.clienteNaoCadastrado ? (form.nomeClienteLivre ?? "").trim() : "");
 
+    // Sem cliente: so o numero. Nada de separador orfao nem espaco solto — o
+    // gap so existe quando ha um segundo bloco para separar.
     if (!nomeCliente) return parteNumero;
-    const parteCliente = idClienteExibido ? `${idClienteExibido} - ${nomeCliente}` : nomeCliente;
-    return `${parteNumero} / ${parteCliente}`;
+
+    // Cliente sem id (orcamento rapido): so o nome, sem o " - id".
+    const parteCliente = idClienteExibido ? `${nomeCliente} - ${idClienteExibido}` : nomeCliente;
+
+    // O respiro entre numero e cliente e ESTILO (gap-x-10), nao caractere. Em
+    // tela estreita `flex-wrap` joga o bloco do cliente para a linha de baixo
+    // INTEIRO, em vez de partir o nome no meio; `gap-y-1` da a folga vertical.
+    // O numero fica em destaque por contraste: peso cheio contra o cliente em
+    // peso normal e um tom mais suave.
+    return (
+      <span className="flex flex-wrap items-baseline gap-x-10 gap-y-1">
+        <span>{parteNumero}</span>
+        <span className="text-xl font-normal opacity-90 md:text-2xl">{parteCliente}</span>
+      </span>
+    );
   })();
 
   async function copyInformal() {

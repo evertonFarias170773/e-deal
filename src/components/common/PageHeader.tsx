@@ -1,7 +1,14 @@
 import type { ReactNode } from "react";
 
 type PageHeaderProps = {
-  title: string;
+  /**
+   * Texto simples na maioria das telas. Aceita ReactNode porque a edicao de
+   * pedido compoe o titulo em duas partes com espacamento proprio (numero em
+   * destaque, cliente depois) — e isso e estilo, nao caractere no meio da
+   * string. Alargar o tipo e retrocompativel: toda string continua valida e
+   * nenhuma outra tela muda.
+   */
+  title: ReactNode;
   /**
    * Opcional: há cabeçalho em que o título já diz tudo (a edição de pedido, que
    * identifica pedido e cliente) e a linha de apoio só ocuparia espaço.
