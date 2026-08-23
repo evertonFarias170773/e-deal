@@ -205,31 +205,22 @@ function ClienteComSocio({
   const temSocio = Boolean(String(socio ?? "").trim());
   return (
     <div className="flex flex-col">
-      {temSocio ? (
-        <>
-          <span className="font-medium text-slate-950">{socio}</span>
-          <span className="text-xs text-slate-500">
-            Cliente: {clienteNome}
-            {idCliente ? ` (ID ${idCliente})` : ""}
-          </span>
-        </>
-      ) : (
-        <>
-          <span className="font-medium text-slate-950">{clienteNome}</span>
-          <span className="text-xs text-slate-500">ID: {idCliente ?? "-"}</span>
-        </>
+      <span className="font-medium text-slate-950">
+        {idCliente ? `${idCliente} - ` : ""}
+        {clienteNome}
+      </span>
+      {temSocio && (
+        <span className="text-xs font-medium text-indigo-700">Sócio pagador: {socio}</span>
       )}
     </div>
   );
 }
 
-function TextoOuTraco({ valor }: { valor?: string | null }) {
+/** Vendedor do pedido, dobrado sob o numero do pedido. Some quando nao ha. */
+function VendedorDoPedido({ valor }: { valor?: string | null }) {
   const texto = String(valor ?? "").trim();
-  return texto ? (
-    <span className="text-sm text-slate-700">{texto}</span>
-  ) : (
-    <span className="text-slate-400">-</span>
-  );
+  if (!texto) return null;
+  return <span className="text-xs text-slate-500">Vendedor: {texto}</span>;
 }
 
 /** Status do pedido, só informativo: não barra nem filtra emissão. */
@@ -1762,6 +1753,7 @@ export function NotasFiscaisPage() {
                       {item.os_ideal && (
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}
+                      <VendedorDoPedido valor={item.vendedor} />
                       {jaTemNota && (
                         <span className="mt-1 w-fit rounded-lg border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">
                           Já tem {item.notas_vivas} nota{(item.notas_vivas ?? 0) > 1 ? "s" : ""}
@@ -1799,10 +1791,6 @@ export function NotasFiscaisPage() {
                 header: "Tipo de cobrança",
                 cell: (item) => <EtiquetaCobranca tipo={item.tipo_cobranca} />,
                 align: "center"
-              },
-              {
-                header: "Vendedor",
-                cell: (item) => <TextoOuTraco valor={item.vendedor} />
               },
               {
                 header: "Status do pedido",
@@ -2082,6 +2070,7 @@ export function NotasFiscaisPage() {
                   <div className="flex flex-col">
                     <span className="font-medium text-slate-950">#{item.id_int}</span>
                     <span className="text-xs text-slate-500 font-mono">{item.ref}</span>
+                    <VendedorDoPedido valor={item.vendedor_pedido} />
                   </div>
                 )
               },
@@ -2089,7 +2078,12 @@ export function NotasFiscaisPage() {
                 header: "Status",
                 cell: (item) => {
                   const displayStatus = getNfeDisplayStatus(item);
-                  return <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />;
+                  return (
+                    <div className="flex flex-col items-center gap-1">
+                      <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />
+                      <StatusDoPedido valor={item.status_pedido} />
+                    </div>
+                  );
                 },
                 align: "center"
               },
@@ -2130,15 +2124,6 @@ export function NotasFiscaisPage() {
                   const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
                   return <StatusBadge status={finStatus.label} tone={finStatus.tone} />;
                 },
-                align: "center"
-              },
-              {
-                header: "Vendedor",
-                cell: (item) => <TextoOuTraco valor={item.vendedor_pedido} />
-              },
-              {
-                header: "Status do pedido",
-                cell: (item) => <StatusDoPedido valor={item.status_pedido} />,
                 align: "center"
               },
               {
