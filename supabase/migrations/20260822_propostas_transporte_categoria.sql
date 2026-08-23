@@ -1,0 +1,232 @@
+-- Categoria do transporte da proposta: lista fechada, ao lado do rotulo livre
+--
+-- O QUE E
+--   Uma coluna aditiva em public.propostas, nulavel e sem default:
+--
+--     transporte_categoria  text   RETIRA | MOTOBOY | CORREIOS | TRANSPORTADORA
+--
+--   Guarda a CATEGORIA do transporte, escolhida de lista fechada na tela do
+--   orcamento. Nula = ninguem escolheu ainda.
+--
+-- POR QUE
+--   `propostas.frete_escolhido` e texto livre e acumulou 60 valores distintos em
+--   8.377 linhas: a mesma coisa escrita de varias formas (SEDEX, sedex, Sedex;
+--   RETIRADA, Retira, RETIRA BALCAO, Retirada Local), transportadoras soltas
+--   (VEPPO, VEPPO-RS, veppo), estados temporarios ("Frete Incluso" 1.353 vezes,
+--   "A definir" 186) e lixo de digitacao ("as", "dd", "12", "d", "Nao sei").
+--
+--   As regras de endereco que vem a seguir precisam CLASSIFICAR o transporte, e
+--   classificar texto livre erra. Esta coluna existe para que a classificacao
+--   deixe de ser adivinhacao.
+--
+--   O erro ja acontece hoje, e da para medir: em
+--   `orcamentos.service.ts` (reconstrucao da lista de fretes quando a proposta
+--   nao tem linhas em `cotacao_frete`) a comparacao e exata e sensivel a caixa
+--   (`=== 'RETIRADA'`, `=== 'SEDEX'`, `=== 'PAC'`). As 27 propostas gravadas como
+--   `sedex`, `Sedex`, `RETIRA BALCAO`, `Retirada Local` e `Retira` nao casam,
+--   caem no ramo "transportadora" e levam o `valor_frete` para a opcao errada.
+--
+-- POR QUE COLUNA NOVA, E NAO REAPROVEITAR `frete_escolhido`
+--   Porque `frete_escolhido` ja tem dono e um significado que precisa continuar
+--   existindo. Ela e o ROTULO do transporte, e tres consumidores dependem disso:
+--
+--     1. FOB — `nomeTransporteEfetivo` grava ali o NOME da transportadora que o
+--        cliente contratou, de proposito, para o pedido nao sair rotulado com o
+--        servico cotado. Ha teste dedicado
+--        (scripts/testes/fob-gravacao.test.mts: "frete_escolhido usa a
+--        transportadora, nao o cotado").
+--     2. A "FORMA DE ENVIO" do PDF da OS e a coluna FRETE da Expedicao leem esse
+--        rotulo.
+--     3. A proposta AVULSA grava ali o texto do frete manual — e dai que vem
+--        "Frete Incluso", "Por conta de Dseg", "Acompanha outro pedido".
+--        Sao 1.364 avulsas com valor temporario, mais 207 nao avulsas.
+--
+--   Espremer categoria e rotulo na mesma coluna obrigaria a escolher entre
+--   perder o nome da transportadora em FOB ou manter o texto livre que esta
+--   etapa quer eliminar. Duas colunas resolvem os dois sem exececao: a categoria
+--   e fechada, o rotulo continua livre.
+--
+-- ESCOPO / O QUE ESTA MIGRATION NAO FAZ
+--   Estritamente aditiva. Nao cria funcao, view, RPC, trigger, indice, RLS,
+--   politica nem CHECK. Nao altera nenhuma coluna, constraint ou grant.
+--
+--   NAO TOCA `frete_escolhido`. Nenhuma linha e reescrita, nenhum valor antigo e
+--   convertido, nem agora nem depois: a leitura tolerante do codigo classifica
+--   para EXIBIR e devolve nulo para o que nao encaixa, sem inventar categoria.
+--
+--   SEM BACKFILL E SEM DEFAULT. As 8.377 linhas nascem com a coluna nula. A
+--   categoria passa a existir quando alguem escolher na tela — proposta antiga
+--   segue sendo lida pelo rotulo, como sempre foi.
+--
+--   SEM CHECK, de proposito nesta migration: a lista fechada e garantida pela
+--   tela. Se a decisao for travar tambem no banco (como
+--   `propostas_modalidade_frete_check` faz com RETIRA/FOB/CIF), o CHECK entra em
+--   migration propria, depois que a tela estiver gravando so os quatro valores —
+--   aplicar antes derrubaria qualquer escrita divergente em producao.
+--
+--   NAO MEXE EM `modalidade_frete` (RETIRA/FOB/CIF), que responde outra pergunta:
+--   quem PAGA o transporte. As duas coexistem e nao se substituem — um pedido
+--   pode ser CIF com categoria CORREIOS, ou FOB com categoria TRANSPORTADORA.
+--
+--   Verificado no banco em 22/08/2026, ANTES de escrever:
+--
+--   1. A coluna nao existe. `public.propostas` tem hoje 56 colunas e 8.377
+--      linhas. O nome `transporte_categoria` nao esta em uso.
+--
+--   2. Os 6 triggers de `public.propostas`, diante de um UPDATE que toque so a
+--      coluna nova:
+--
+--      | trigger                              | efeito |
+--      |--------------------------------------|--------|
+--      | propostas_set_timestamp              | carimba updated_at |
+--      | trg_set_updated_at                   | carimba updated_at (idempotente) |
+--      | tg_propostas_valor_total_avulsa      | retorna de imediato se is_avulso e falso; senao so le valor/valor_frete/valor_total |
+--      | tg_registrar_paid_at                 | so age se status_interno virar 'RECEBIDO'; sem mexer no status, NEW = OLD e vira no-op |
+--      | trg_audit_propostas                  | grava a mudanca em audit.logs_v2 |
+--      | trg_sync_cliente_idcliente_pagamentos| NAO dispara: escopado em (cliente, id_cliente) |
+--
+--      Nenhum le ou escreve a coluna nova, e nenhum reescreve status_interno por
+--      causa dela. A auditoria passa a registra-la, que e o desejado:
+--      audit.config_v2 tem enabled = true para public.propostas e
+--      ignored_columns = {updated_at}, e audit.log_row_changes_v2 monta o diff
+--      com to_jsonb(new), sem lista fixa de colunas.
+--
+--   3. ACL — E AQUI HA UM PONTO QUE PRECISA FICAR DITO.
+--
+--      O ACL COMPLETO da tabela hoje, lido com array_agg(grantee):
+--
+--        dono: postgres
+--        anon          = SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+--        authenticated = SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+--        postgres      = (idem)
+--        service_role  = (idem)
+--
+--      `anon` tem DML COMPLETO na tabela, concedido no nivel da TABELA pelo
+--      default privilege do Supabase. Consequencia direta para esta migration:
+--      a coluna nova NASCE alcancavel por `anon`, sem nenhum grant explicito —
+--      grant de tabela vale para as colunas futuras.
+--
+--      `REVOKE ... FROM PUBLIC` nao resolveria: o privilegio nao esta em PUBLIC,
+--      esta concedido nominalmente a `anon`. Tirar exigiria
+--      `REVOKE ... FROM anon`, que afeta a TABELA INTEIRA e todo o app — nao e
+--      efeito colateral de acrescentar coluna, e nao entra aqui.
+--
+--      Confirmado tambem que nao ha grant POR COLUNA a preservar:
+--      information_schema.column_privileges devolve 896 linhas, exatamente
+--      56 colunas x 4 papeis x 4 privilegios (SELECT, INSERT, UPDATE,
+--      REFERENCES) — ou seja, e o grant da tabela expandido, nao concessao
+--      pontual. Depois desta migration o esperado passa a ser 57 x 4 x 4 = 912.
+--
+--      O que de fato protege a linha e a RLS, que esta LIGADA na tabela. Fica
+--      registrado como ponto a revisar em separado: a superficie de escrita de
+--      `anon` em `public.propostas` e maior do que o app precisa.
+
+alter table public.propostas
+  add column if not exists transporte_categoria text;
+
+comment on column public.propostas.transporte_categoria is
+  'Categoria do transporte escolhida em lista fechada no orcamento: RETIRA, MOTOBOY, CORREIOS ou TRANSPORTADORA. SEDEX e PAC sao servicos dos Correios e entram como CORREIOS; "parceira" nao e categoria, e a transportadora com cotacao automatizada (Veppo, Azul, Sao Miguel, Motoboy), que continua classificada nas quatro. Nula enquanto ninguem escolher, inclusive em toda proposta anterior a 22/08/2026 — nao houve backfill. NAO substitui propostas.frete_escolhido, que segue sendo o rotulo livre do transporte (nome da transportadora em FOB, texto do frete manual nas avulsas, estados temporarios como "Frete Incluso"). Tambem nao se confunde com propostas.modalidade_frete (RETIRA/FOB/CIF), que diz quem PAGA.';
+
+-- VERIFICACAO (somente leitura, depois de aplicar)
+--
+-- CRITERIO: DELTA, NAO VALOR ABSOLUTO
+--   Banco de PRODUCAO vivo. Entre escrever e aplicar, os vendedores continuam
+--   trabalhando e a contagem de linhas muda sozinha — ja aconteceu em
+--   20260820_propostas_encerrado_teste.sql, quando o pedido #21000 nasceu no
+--   intervalo e quebrou a baseline. Por isso as contagens sao ANTES = DEPOIS,
+--   medidas em volta do `alter table`, e nao comparacoes com numero fixo.
+--
+--   Absolutos seguem valendo so onde nao dependem do movimento da operacao:
+--   coluna preenchida em ZERO linhas, 6 triggers, 4 constraints, 57 colunas e o
+--   ACL inalterado.
+--
+--   -- a) a coluna nasceu nulavel e sem default
+--   select column_name, data_type, is_nullable,
+--          coalesce(column_default, '(sem default)') as padrao
+--     from information_schema.columns
+--    where table_schema = 'public' and table_name = 'propostas'
+--      and column_name = 'transporte_categoria';
+--   -- esperado: 1 linha, text, is_nullable = YES, padrao = (sem default)
+--   --           e a tabela passa a ter 57 colunas (56 + 1)
+--
+--   -- b) SEM BACKFILL — criterio ABSOLUTO
+--   select count(transporte_categoria) as preenchidas from public.propostas;
+--   -- esperado: 0. Qualquer outro valor significa que alguem gravou categoria
+--   -- nesta migration; parar e investigar.
+--
+--   -- c) `frete_escolhido` INTOCADA — criterio ABSOLUTO sobre a forma dos dados.
+--   --    A contagem de linhas se move sozinha; a de valores DISTINTOS, nao,
+--   --    porque nenhuma escrita nova acontece aqui.
+--   select count(distinct frete_escolhido) as valores_distintos,
+--          count(frete_escolhido) as nao_nulos
+--     from public.propostas;
+--   -- esperado: identico ao medido antes de aplicar — 62 distintos nao nulos e
+--   -- 2.440 nao nulos em 22/08/2026. Se mudar, algo reescreveu o rotulo.
+--   -- (62, e nao 60: o levantamento por `group by nullif(trim(x),'')` junta
+--   -- vazio com nulo e colapsa variantes so de espaco; `count(distinct)` conta o
+--   -- valor cru. A diferenca entre os dois numeros e, ela propria, sintoma do
+--   -- texto livre que esta etapa existe para parar de criar.)
+--
+--   -- d) DELTA ZERO — rodar ANTES e DEPOIS do `alter table` e comparar.
+--   select count(*) as linhas,
+--          (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid
+--            where c.relname = 'propostas' and not t.tgisinternal) as triggers,
+--          (select count(*) from pg_constraint
+--            where conrelid = 'public.propostas'::regclass and contype in ('c','f')) as constraints
+--     from public.propostas;
+--   -- esperado: `linhas` identico antes e depois; triggers = 6; constraints = 4.
+--   -- Uma migration puramente aditiva nao pode mover nenhum dos tres.
+--
+--   -- e) ACL COMPLETO da tabela, com array_agg(grantee).
+--   --    Rodar ANTES e DEPOIS e comparar: as duas saidas devem ser IDENTICAS.
+--   select c.relname,
+--          pg_get_userbyid(c.relowner) as dono,
+--          coalesce(
+--            (select array_agg(coalesce(r.rolname, 'PUBLIC') || '=' || x.privilege_type
+--                              order by coalesce(r.rolname, 'PUBLIC'), x.privilege_type)
+--               from aclexplode(c.relacl) x
+--               left join pg_roles r on r.oid = x.grantee),
+--            '{}'::text[]) as acl
+--     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+--    where n.nspname = 'public' and c.relname = 'propostas';
+--   -- esperado ANTES e DEPOIS: dono = postgres e os 32 pares de privilegio
+--   -- (8 por papel x anon, authenticated, postgres, service_role).
+--   -- LEMBRAR: `anon` ja tinha DML na TABELA, entao a coluna nova nasce
+--   -- alcancavel por ele. Isso NAO e efeito desta migration — e o estado
+--   -- anterior, herdado. Se o ACL ENCOLHER aqui, parar: algo mais rodou junto.
+--
+--   -- f) privilegios por coluna: o grant da tabela expandido, sem concessao pontual
+--   select count(*) as privilegios_por_coluna
+--     from information_schema.column_privileges
+--    where table_schema = 'public' and table_name = 'propostas';
+--   -- esperado: 912 (57 colunas x 4 papeis x 4 privilegios). Antes eram 896.
+--   -- Numero que nao seja multiplo de 16 indica grant pontual em alguma coluna,
+--   -- que precisaria ser revisado.
+--
+--   -- g) nenhuma funcao criada por esta migration
+--   select p.proname
+--     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public' and p.proname like '%transporte_categoria%';
+--   -- esperado: 0 linhas. Se voltar alguma, ha funcao nesta migration e o ACL
+--   -- dela precisa ser conferido antes de publicar.
+--
+--   -- h) auditoria segue ligada e ignorando apenas updated_at
+--   select enabled, ignored_columns from audit.config_v2
+--    where schema_name = 'public' and table_name = 'propostas';
+--   -- esperado: true, {updated_at}
+--
+--   -- i) PostgREST precisa enxergar a coluna nova (cache de schema).
+--   --    Se o front receber "column propostas.transporte_categoria does not
+--   --    exist", recarregar:  notify pgrst, 'reload schema';
+--
+-- ROLLBACK
+--   Seguro enquanto nenhuma proposta tiver categoria gravada. Se ja houver, o
+--   DROP as descarta — conferir (b) antes e, se precisar preservar, guardar:
+--     select id_int, transporte_categoria
+--       from public.propostas where transporte_categoria is not null;
+--
+--   alter table public.propostas
+--     drop column if exists transporte_categoria;
+--
+--   `frete_escolhido` nao e afetada pelo rollback: esta migration nunca a tocou,
+--   entao voltar atras devolve exatamente o estado anterior.
