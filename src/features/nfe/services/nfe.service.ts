@@ -146,6 +146,58 @@ export async function getNfeReadOnlyList(): Promise<NfeReadResult> {
       }
     }
 
+    // O que a lista mostra sem abrir a nota vem da proposta de origem e da
+    // cobrança. Duas consultas para o lote inteiro — a paginação não muda,
+    // porque a lista de notas continua vindo de uma consulta só.
+    const idsInt = Array.from(new Set(rows.map((r) => Number(r.id_int)).filter((n) => Number.isFinite(n) && n > 0)));
+    const propostaPorId = new Map<number, {
+      cliente: string | null; id_cliente: number | null; id_faturado: number | null;
+      vendedor: string | null; status_interno: string | null;
+    }>();
+    let socioPorProposta = new Map<number, string>();
+    const cobrancaPorProposta = new Map<number, string>();
+
+    const client = getSupabaseClient();
+    if (client && idsInt.length > 0) {
+      const [propostasRes, cobrancasRes] = await Promise.all([
+        client.from("propostas")
+          .select("id_int,cliente,id_cliente,id_faturado,vendedor,status_interno")
+          .in("id_int", idsInt),
+        client.from("pagamentos_v2")
+          .select("id_int,tipo_cobranca,created_at")
+          .in("id_int", idsInt)
+          .order("created_at", { ascending: true })
+      ]);
+
+      if (propostasRes.error) {
+        console.warn("[NfeService] Nao foi possivel ler as propostas do historico:", propostasRes.error.message);
+      } else {
+        (propostasRes.data ?? []).forEach((p) => propostaPorId.set(Number(p.id_int), {
+          cliente: p.cliente, id_cliente: p.id_cliente, id_faturado: p.id_faturado,
+          vendedor: p.vendedor, status_interno: p.status_interno
+        }));
+        socioPorProposta = await buscarSociosPagadores(
+          client,
+          [...propostaPorId.entries()].map(([idInt, p]) => ({
+            id_int: idInt,
+            id_cliente: p.id_cliente != null ? Number(p.id_cliente) : null,
+            id_faturado: p.id_faturado != null ? Number(p.id_faturado) : null
+          }))
+        );
+      }
+
+      if (cobrancasRes.error) {
+        console.warn("[NfeService] Nao foi possivel ler as cobrancas do historico:", cobrancasRes.error.message);
+      } else {
+        // Ordem crescente: a última escrita vence, que é a cobrança mais recente.
+        (cobrancasRes.data ?? []).forEach((c: { id_int: number | null; tipo_cobranca: string | null }) => {
+          const idInt = Number(c.id_int);
+          const tipo = String(c.tipo_cobranca ?? "").trim();
+          if (Number.isFinite(idInt) && tipo) cobrancaPorProposta.set(idInt, tipo);
+        });
+      }
+    }
+
     const nfeList = rows.map(row => {
       const model = mapSupabaseNfeRowToReadModel(row);
       const clientInfo = clientMap[row.id_cliente];
@@ -153,6 +205,15 @@ export async function getNfeReadOnlyList(): Promise<NfeReadResult> {
         model.nome = clientInfo.nome;
         model.fantasia = clientInfo.fantasia;
       }
+
+      const daProposta = propostaPorId.get(Number(row.id_int));
+      model.vendedor_pedido = daProposta?.vendedor ?? null;
+      model.status_pedido = daProposta?.status_interno ?? null;
+      model.socio_pagador_nome = socioPorProposta.get(Number(row.id_int)) ?? null;
+      model.cliente_principal_nome = daProposta?.cliente ?? null;
+      model.cliente_principal_id = daProposta?.id_cliente ?? null;
+      model.tipo_cobranca = cobrancaPorProposta.get(Number(row.id_int)) ?? null;
+
       return model;
     });
 
@@ -729,6 +790,56 @@ interface SupabasePropostaSimple {
 }
 
 /**
+ * Nome do sócio pagador por proposta.
+ *
+ * Sócio de verdade é `id_faturado` apontando para OUTRO cadastro que não o
+ * `id_cliente`. `id_faturado` preenchido e igual ao cliente não é sócio — é o
+ * próprio, e nesses casos o mapa não recebe entrada. Uma consulta para o
+ * conjunto todo: não muda a paginação de quem chama.
+ */
+async function buscarSociosPagadores(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  linhas: Array<{ id_int: number | null; id_cliente: number | null; id_faturado: number | null }>
+): Promise<Map<number, string>> {
+  const socioPorProposta = new Map<number, string>();
+
+  const idsSocio = Array.from(
+    new Set(
+      linhas
+        .filter((l) => l.id_faturado != null && l.id_cliente != null && Number(l.id_faturado) !== Number(l.id_cliente))
+        .map((l) => Number(l.id_faturado))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    )
+  );
+  if (idsSocio.length === 0) return socioPorProposta;
+
+  const { data, error } = await client
+    .from("clientes")
+    .select("id_cliente,nome,fantasia")
+    .in("id_cliente", idsSocio);
+
+  if (error) {
+    console.warn("[NfeService] Nao foi possivel ler os socios pagadores:", error.message);
+    return socioPorProposta;
+  }
+
+  const nomePorCliente = new Map<number, string>();
+  (data ?? []).forEach((c: { id_cliente: number; nome: string | null; fantasia: string | null }) => {
+    // Fantasia primeiro; sem ela, razão social — mesmo critério da Conferência.
+    nomePorCliente.set(Number(c.id_cliente), (c.fantasia || c.nome || "").trim());
+  });
+
+  linhas.forEach((l) => {
+    if (l.id_faturado == null || l.id_cliente == null) return;
+    if (Number(l.id_faturado) === Number(l.id_cliente)) return;
+    const nome = nomePorCliente.get(Number(l.id_faturado));
+    if (nome) socioPorProposta.set(Number(l.id_int), nome);
+  });
+
+  return socioPorProposta;
+}
+
+/**
  * Status de nota que NÃO tiram a proposta da fila de faturamento.
  * `RASCUNHO` acompanha `PENDENTE` porque é o mesmo estágio — é assim que
  * `getNfeActions` já os trata na tela.
@@ -745,7 +856,7 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
   try {
     const { data, error } = await client
       .from("propostas")
-      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf")
+      .select("id,id_int,id_cliente,cliente,valor,valor_total,vendedor,status_interno,empresa,created_at,libera_nf,id_faturado")
       .eq("libera_nf", true)
       .order("id_int", { ascending: false });
 
@@ -794,6 +905,15 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
       }
     }
 
+    const socioPorProposta = await buscarSociosPagadores(
+      client,
+      propostas.map((row) => ({
+        id_int: Number(row.id_int),
+        id_cliente: row.id_cliente != null ? Number(row.id_cliente) : null,
+        id_faturado: (row as { id_faturado?: number | null }).id_faturado ?? null
+      }))
+    );
+
     const notasVivasPorProposta = new Map<number, number>();
     if (idsInt.length > 0) {
       const { data: notas, error: notasError } = await client
@@ -840,7 +960,10 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
         itens: [],
         created_at: row.created_at || new Date().toISOString(),
         notas_vivas: notasVivasPorProposta.get(Number(row.id_int)) ?? 0,
-        tipo_cobranca: cobrancaPorProposta.get(Number(row.id_int))
+        tipo_cobranca: cobrancaPorProposta.get(Number(row.id_int)),
+        vendedor: String(row.vendedor || "").trim(),
+        status_interno: String(row.status_interno || "").trim(),
+        socio_pagador_nome: socioPorProposta.get(Number(row.id_int)) ?? null
       };
     });
   } catch (err) {

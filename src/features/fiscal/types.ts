@@ -33,4 +33,14 @@ export interface FaturavelOrigem {
    * faturamento parcial é legítimo e não pode perder o caminho.
    */
   notas_vivas?: number;
+  /** Vendedor do pedido, vindo de `propostas.vendedor`. */
+  vendedor?: string;
+  /** `propostas.status_interno`. Informativo: não barra nem filtra emissão. */
+  status_interno?: string;
+  /**
+   * Nome do sócio pagador, quando `propostas.id_faturado` aponta para OUTRO
+   * cadastro que não o `id_cliente`. `id_faturado` preenchido e igual ao cliente
+   * não é sócio — é o próprio.
+   */
+  socio_pagador_nome?: string | null;
 }

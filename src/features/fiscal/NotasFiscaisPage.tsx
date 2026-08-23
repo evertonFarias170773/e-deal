@@ -12,6 +12,7 @@ import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { humanizeStatus } from "@/lib/formatters/status";
 import { useNfeReadOnlyData } from "@/features/nfe/hooks/useNfeReadOnlyData";
 import { useNfseReadOnlyData } from "@/features/nfse/hooks/useNfseReadOnlyData";
 import type { NfeReadModel, SupabaseNfePagamentoRow } from "@/features/nfe/types";
@@ -184,6 +185,63 @@ const VOLTA_PARA_RASCUNHO = {
   erro_codigo: null,
   erro_mensagem: null
 } as const;
+
+/**
+ * Título com o sócio pagador quando houver; abaixo, o cliente dono da proposta.
+ *
+ * Sócio de verdade é `propostas.id_faturado` apontando para OUTRO cadastro que
+ * não o `id_cliente` — `id_faturado` preenchido e igual ao cliente é o próprio,
+ * e aí só o cliente aparece.
+ */
+function ClienteComSocio({
+  socio,
+  clienteNome,
+  idCliente
+}: {
+  socio?: string | null;
+  clienteNome: string;
+  idCliente?: number | null;
+}) {
+  const temSocio = Boolean(String(socio ?? "").trim());
+  return (
+    <div className="flex flex-col">
+      {temSocio ? (
+        <>
+          <span className="font-medium text-slate-950">{socio}</span>
+          <span className="text-xs text-slate-500">
+            Cliente: {clienteNome}
+            {idCliente ? ` (ID ${idCliente})` : ""}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="font-medium text-slate-950">{clienteNome}</span>
+          <span className="text-xs text-slate-500">ID: {idCliente ?? "-"}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TextoOuTraco({ valor }: { valor?: string | null }) {
+  const texto = String(valor ?? "").trim();
+  return texto ? (
+    <span className="text-sm text-slate-700">{texto}</span>
+  ) : (
+    <span className="text-slate-400">-</span>
+  );
+}
+
+/** Status do pedido, só informativo: não barra nem filtra emissão. */
+function StatusDoPedido({ valor }: { valor?: string | null }) {
+  const texto = String(valor ?? "").trim();
+  if (!texto) return <span className="text-slate-400">-</span>;
+  return (
+    <span className="inline-block rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+      {humanizeStatus(texto)}
+    </span>
+  );
+}
 
 export function NotasFiscaisPage() {
   const router = useRouter();
@@ -1468,11 +1526,16 @@ export function NotasFiscaisPage() {
       const nomeStr = item.cliente_nome.toLowerCase();
       const fantStr = item.cliente_fantasia.toLowerCase();
 
+      const socioStr = String(item.socio_pagador_nome || "").toLowerCase();
+      const vendedorStr = String(item.vendedor || "").toLowerCase();
+
       const matchesSearch =
         refStr.includes(search) ||
         idCliStr.includes(search) ||
         nomeStr.includes(search) ||
-        fantStr.includes(search);
+        fantStr.includes(search) ||
+        socioStr.includes(search) ||
+        vendedorStr.includes(search);
 
       if (!matchesSearch) return false;
     }
@@ -1520,13 +1583,21 @@ export function NotasFiscaisPage() {
       const idCliStr = item.id_cliente ? String(item.id_cliente) : "";
       const nomeStr = item.nome ? item.nome.toLowerCase() : "";
       const fantStr = item.fantasia ? item.fantasia.toLowerCase() : "";
+      // A lista mostra o sócio no título, então a busca tem de achar por ele —
+      // e pelo cliente dono, que virou subtítulo.
+      const socioStr = String(item.socio_pagador_nome || "").toLowerCase();
+      const donoStr = String(item.cliente_principal_nome || "").toLowerCase();
+      const vendedorStr = String(item.vendedor_pedido || "").toLowerCase();
 
       const matchesSearch =
         numNfStr.includes(search) ||
         refStr.includes(search) ||
         idCliStr.includes(search) ||
         nomeStr.includes(search) ||
-        fantStr.includes(search);
+        fantStr.includes(search) ||
+        socioStr.includes(search) ||
+        donoStr.includes(search) ||
+        vendedorStr.includes(search);
 
       if (!matchesSearch) return false;
     }
@@ -1663,10 +1734,10 @@ export function NotasFiscaisPage() {
                   className="h-4 w-4 rounded border-[#d7e5e8] text-[#0b2f4a] focus:ring-[#0b2f4a]"
                 />
                 <span>
-                  Mostrar propostas que já têm nota
+                  Permitir faturar de novo pedidos que já têm nota
                   <strong className="ml-1 font-semibold text-slate-800">({filaJaFaturadas})</strong>
                   <span className="ml-1 text-xs text-slate-400">
-                    — faturamento parcial continua possível
+                    — para faturamento parcial, que emite mais de uma nota no mesmo pedido
                   </span>
                 </span>
               </label>
@@ -1703,10 +1774,11 @@ export function NotasFiscaisPage() {
               {
                 header: "Cliente / Destinatário",
                 cell: (item) => (
-                  <div className="flex flex-col">
-                    <span className="font-medium text-slate-950">{item.cliente_nome}</span>
-                    <span className="text-xs text-slate-500">ID: {item.id_cliente}</span>
-                  </div>
+                  <ClienteComSocio
+                    socio={item.socio_pagador_nome}
+                    clienteNome={item.cliente_nome}
+                    idCliente={item.id_cliente}
+                  />
                 )
               },
               {
@@ -1726,6 +1798,15 @@ export function NotasFiscaisPage() {
               {
                 header: "Tipo de cobrança",
                 cell: (item) => <EtiquetaCobranca tipo={item.tipo_cobranca} />,
+                align: "center"
+              },
+              {
+                header: "Vendedor",
+                cell: (item) => <TextoOuTraco valor={item.vendedor} />
+              },
+              {
+                header: "Status do pedido",
+                cell: (item) => <StatusDoPedido valor={item.status_interno} />,
                 align: "center"
               },
               {
@@ -1758,8 +1839,16 @@ export function NotasFiscaisPage() {
                         <span className="text-xs text-slate-500 font-mono">OS: {item.os_ideal}</span>
                       )}
                     </div>
-                    <h3 className="mt-2 font-semibold text-slate-950">{item.cliente_nome}</h3>
-                    <p className="text-xs text-slate-500">Cliente ID: {item.id_cliente}</p>
+                    <div className="mt-2">
+                      <ClienteComSocio
+                        socio={item.socio_pagador_nome}
+                        clienteNome={item.cliente_nome}
+                        idCliente={item.id_cliente}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Vendedor: {String(item.vendedor || "").trim() || "-"}
+                    </p>
                   </div>
                   <span className="text-xs font-semibold px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg">
                     Pendente
@@ -2007,10 +2096,11 @@ export function NotasFiscaisPage() {
               {
                 header: "Cliente",
                 cell: (item) => (
-                  <div className="flex flex-col">
-                    <span className="font-medium text-slate-950">{item.nome || item.fantasia || "Sem nome cadastrado"}</span>
-                    <span className="text-xs text-slate-500">ID: {item.id_cliente}</span>
-                  </div>
+                  <ClienteComSocio
+                    socio={item.socio_pagador_nome}
+                    clienteNome={item.cliente_principal_nome || item.nome || item.fantasia || "Sem nome cadastrado"}
+                    idCliente={item.cliente_principal_id ?? item.id_cliente}
+                  />
                 )
               },
               {
@@ -2030,7 +2120,9 @@ export function NotasFiscaisPage() {
               {
                 header: "Contas a Receber",
                 cell: (item) => {
-                  if (item.status !== "AUTORIZADA") {
+                  // O alerta so faz sentido no faturado: nas demais formas a
+                  // cobranca ja foi paga na origem e nao ha nada a lancar.
+                  if (item.status !== "AUTORIZADA" || !ehFaturado(item.tipo_cobranca)) {
                     return <span className="text-slate-400 font-medium">-</span>;
                   }
                   const count = nfePaymentsCountMap[item.ref] || 0;
@@ -2038,6 +2130,15 @@ export function NotasFiscaisPage() {
                   const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
                   return <StatusBadge status={finStatus.label} tone={finStatus.tone} />;
                 },
+                align: "center"
+              },
+              {
+                header: "Vendedor",
+                cell: (item) => <TextoOuTraco valor={item.vendedor_pedido} />
+              },
+              {
+                header: "Status do pedido",
+                cell: (item) => <StatusDoPedido valor={item.status_pedido} />,
                 align: "center"
               },
               {
@@ -2066,15 +2167,26 @@ export function NotasFiscaisPage() {
                       </span>
                       <span className="text-xs text-slate-500 font-medium">Pedido #{item.id_int} • {item.ref}</span>
                     </div>
-                    <h3 className="mt-2 font-semibold text-slate-950">{item.nome || item.fantasia || "Sem nome cadastrado"}</h3>
-                    <p className="text-xs text-slate-500">Cliente ID: {item.id_cliente}</p>
+                    <div className="mt-2">
+                      <ClienteComSocio
+                        socio={item.socio_pagador_nome}
+                        clienteNome={item.cliente_principal_nome || item.nome || item.fantasia || "Sem nome cadastrado"}
+                        idCliente={item.cliente_principal_id ?? item.id_cliente}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Vendedor: {String(item.vendedor_pedido || "").trim() || "-"}
+                      {String(item.status_pedido || "").trim()
+                        ? ` • Pedido: ${humanizeStatus(String(item.status_pedido))}`
+                        : ""}
+                    </p>
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
                     {(() => {
                       const displayStatus = getNfeDisplayStatus(item);
                       return <StatusBadge status={displayStatus} tone={getStatusTone(displayStatus)} />;
                     })()}
-                    {item.status === "AUTORIZADA" && (
+                    {item.status === "AUTORIZADA" && ehFaturado(item.tipo_cobranca) && (
                       (() => {
                         const count = nfePaymentsCountMap[item.ref] || 0;
                         const bInfo = boletosMap[item.ref];

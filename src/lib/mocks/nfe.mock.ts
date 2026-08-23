@@ -67,6 +67,14 @@ export interface NfeMock {
   fantasia?: string | null;
   isMock: boolean;
   os_ideal?: string;
+  // Vindos da proposta de origem, para a lista mostrar sem abrir a nota.
+  vendedor_pedido?: string | null;
+  status_pedido?: string | null;
+  socio_pagador_nome?: string | null;
+  cliente_principal_nome?: string | null;
+  cliente_principal_id?: number | null;
+  /** Forma de cobrança negociada, de pagamentos_v2. Decide o alerta de recebíveis. */
+  tipo_cobranca?: string | null;
 }
 
 export const nfeMocks: NfeMock[] = [
