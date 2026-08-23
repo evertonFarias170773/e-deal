@@ -445,32 +445,145 @@ export interface DestinoFiscal {
   ehEntrega: boolean;
 }
 
+/**
+ * Quem PAGA a proposta — e portanto quem recebe o documento fiscal.
+ *
+ * `propostas.id_faturado` quando difere de `id_cliente`; quando nao difere, sao
+ * a mesma pessoa. Sem excecao: a nota nunca sai contra o cliente da proposta
+ * quando ha um pagador distinto (o cliente e quem encomenda; o pagador e quem a
+ * SEFAZ tem de ver).
+ */
+export async function resolverPagador(idInt: number): Promise<number | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data } = await client
+    .from("propostas")
+    .select("id_cliente,id_faturado")
+    .eq("id_int", idInt)
+    .maybeSingle();
+  const linha = data as { id_cliente: number | null; id_faturado: number | null } | null;
+  if (!linha) return null;
+  return linha.id_faturado && linha.id_faturado !== linha.id_cliente
+    ? linha.id_faturado
+    : linha.id_cliente;
+}
+
+/**
+ * O endereco PRINCIPAL de um cliente, com desempate DETERMINISTICO.
+ *
+ * POR QUE PRECISA DE DESEMPATE
+ *   "Principal e unico por cliente" nao se sustenta em producao: 8 cadastros tem
+ *   dois, e 5 deles sao pagadores da fila de faturamento. Cada par tem um
+ *   `Principal` (base antiga) e um `PRINCIPAL` (importacao da Receita Federal),
+ *   em CIDADES E UFS DIFERENTES.
+ *
+ *   Ordenar por `id` — que e UUID — sorteava entre os dois, e a UF escolhida
+ *   decide o CFOP (5101 interno x 6101 interestadual) e o `local_destino`. Em 4
+ *   dos 5 casos o sorteio dava o endereco errado.
+ *
+ * A REGRA, na ordem:
+ *   1. grafia em CAIXA ALTA `PRINCIPAL` vence — e o endereco oficial do CNPJ,
+ *      vindo da Receita. Confirmado num caso concreto: IMPRIMIX tem
+ *      `Principal` em Xangri-La/RS e `PRINCIPAL` em Goiania/GO, e o real e
+ *      Goiania.
+ *   2. empate na caixa alta: o mais recente (`data_criacao`). Acontece hoje em
+ *      UM cadastro (AUTOMATECH, 66235), que nao tem pedido na fila nem nota.
+ *   3. ultimo criterio, so para nunca ser nao-deterministico: o `id`.
+ *
+ * NAO higieniza nada: nenhum endereco e alterado ou apagado, so a LEITURA muda.
+ * O mesmo criterio vive na RPC do payload — se um mudar, o outro tem de mudar
+ * junto, senao a nota sai com destinatario de um endereco e destino de outro.
+ */
+export async function resolverEnderecoPrincipal(
+  idCliente: number
+): Promise<{ id: string; uf: string; tipoEndereco: string | null } | null> {
+  const client = getSupabaseClient();
+  if (!client || !idCliente) return null;
+
+  const { data } = await client
+    .from("enderecos")
+    .select("id,uf,tipo_endereco,data_criacao")
+    .eq("id_cliente", idCliente);
+
+  const candidatos = ((data ?? []) as Array<{
+    id: string;
+    uf: string | null;
+    tipo_endereco: string | null;
+    data_criacao: string | null;
+  }>).filter((e) => String(e.tipo_endereco ?? "").trim().toLowerCase() === "principal");
+
+  if (candidatos.length === 0) return null;
+
+  candidatos.sort((a, b) => {
+    const caixaAltaA = String(a.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
+    const caixaAltaB = String(b.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
+    if (caixaAltaA !== caixaAltaB) return caixaAltaA - caixaAltaB;
+    const dataA = a.data_criacao ? Date.parse(a.data_criacao) : Number.NEGATIVE_INFINITY;
+    const dataB = b.data_criacao ? Date.parse(b.data_criacao) : Number.NEGATIVE_INFINITY;
+    if (dataA !== dataB) return dataB - dataA;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  const escolhido = candidatos[0];
+  const uf = String(escolhido.uf ?? "").trim().toUpperCase();
+  if (!uf) return null;
+  return { id: String(escolhido.id), uf, tipoEndereco: escolhido.tipo_endereco };
+}
+
+/**
+ * Destino fiscal da nota: sai do endereco PRINCIPAL do PAGADOR.
+ *
+ * Antes saia do endereco apontado no pedido (`id_endereco_ent`), que e o de
+ * ENTREGA e pode ser o do agenciador. Destinatario e destino tem de ser a mesma
+ * pessoa, senao a nota sai no nome de um e no endereco de outro — a rejeicao 732.
+ *
+ * `ehEntrega` NAO virou "o principal e de entrega": continua sendo a pergunta do
+ * PEDIDO, porque e ela que decide se a nota leva o bloco de entrega em endereco
+ * distinto do destinatario. Isso preserva o comportamento atual do
+ * `end_entrega`, que nao esta nesta etapa.
+ */
 export async function resolverDestinoFiscal(idInt: number): Promise<DestinoFiscal | null> {
   const client = getSupabaseClient();
   if (!client) return null;
 
   const { data: propostaRow } = await client
     .from("propostas")
-    .select("id_endereco_ent")
+    .select("id_cliente,id_faturado,id_endereco_ent")
     .eq("id_int", idInt)
     .maybeSingle();
 
-  const idEndereco = String(
-    (propostaRow as { id_endereco_ent?: string | null } | null)?.id_endereco_ent ?? ""
-  ).trim();
-  if (!idEndereco) return null;
+  const linha = propostaRow as {
+    id_cliente: number | null;
+    id_faturado: number | null;
+    id_endereco_ent: string | null;
+  } | null;
+  if (!linha) return null;
 
-  const { data: enderecoRow } = await client
-    .from("enderecos")
-    .select("uf,tipo_endereco")
-    .eq("id", idEndereco)
-    .maybeSingle();
+  const idPagador =
+    linha.id_faturado && linha.id_faturado !== linha.id_cliente
+      ? linha.id_faturado
+      : linha.id_cliente;
+  if (!idPagador) return null;
 
-  const endereco = enderecoRow as { uf: string | null; tipo_endereco: string | null } | null;
-  const uf = String(endereco?.uf ?? "").trim().toUpperCase();
-  if (!uf) return null;
+  const principal = await resolverEnderecoPrincipal(idPagador);
+  if (!principal) return null;
 
-  return { uf, idEndereco, ehEntrega: ehEnderecoDeEntrega(endereco?.tipo_endereco) };
+  // O bloco de entrega continua olhando o endereco do PEDIDO — ver o comentario
+  // acima. Sem endereco no pedido, nao ha entrega em endereco proprio.
+  const idEnderecoDoPedido = String(linha.id_endereco_ent ?? "").trim();
+  let ehEntrega = false;
+  if (idEnderecoDoPedido && idEnderecoDoPedido !== principal.id) {
+    const { data: enderecoRow } = await client
+      .from("enderecos")
+      .select("tipo_endereco")
+      .eq("id", idEnderecoDoPedido)
+      .maybeSingle();
+    ehEntrega = ehEnderecoDeEntrega(
+      (enderecoRow as { tipo_endereco?: string | null } | null)?.tipo_endereco
+    );
+  }
+
+  return { uf: principal.uf, idEndereco: principal.id, ehEntrega };
 }
 
 /** CFOP de venda conforme a operação seja interna ou interestadual. */
@@ -561,7 +674,28 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   const cfopDefault = cfopDeVenda(ufDest, ufEmitente);
   const naturezaDefault = operacaoInterna ? "VENDA DE PRODUCAO PROPRIA" : "VENDA DE PRODUCAO PROPRIA DEST. OUTRO ESTADO";
 
-  const isCNPJ = (proposta.cliente?.documento || "").replace(/\D/g, "").length > 11;
+  // ETAPA C — o destinatario da nota e o PAGADOR, nao o cliente da proposta.
+  // O cliente encomenda; em parte dos casos e um agenciador com procuracao para
+  // comprar em nome de outra empresa, e e essa outra que a SEFAZ tem de ver.
+  // Boleto e cobranca ja saiam assim; a nota era a ultima que faltava.
+  //
+  // Vale so para rascunho NOVO: nada existente e reescrito. Rascunho em erro nao
+  // e reaproveitado (a busca acima exige status PENDENTE), entao refaturar um
+  // pedido antigo cria um rascunho novo, ja com o pagador.
+  const idPagador = (await resolverPagador(idInt)) ?? proposta.cliente?.idCliente ?? null;
+  let documentoPagador = proposta.cliente?.documento || "";
+  if (idPagador && idPagador !== proposta.cliente?.idCliente) {
+    const { data: pagadorRow } = await client
+      .from("clientes")
+      .select("documento")
+      .eq("id_cliente", idPagador)
+      .maybeSingle();
+    documentoPagador = String((pagadorRow as { documento?: string | null } | null)?.documento ?? "");
+  }
+
+  // O tipo de contribuinte e o indicador de consumidor final saem do documento
+  // do PAGADOR — sao atributos do destinatario, e o destinatario mudou.
+  const isCNPJ = documentoPagador.replace(/\D/g, "").length > 11;
   const consumidorFinal = isCNPJ ? 0 : 1;
   const tipoContribuinte = isCNPJ ? 1 : 9;
 
@@ -584,7 +718,10 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
 
   const nfeInsert = {
     id_int: idInt,
-    id_cliente: proposta.cliente?.idCliente || null,
+    // Destinatario = pagador (Etapa C). Todo o resto do cadastro — nome, CNPJ,
+    // IE, indicador de IE — acompanha sozinho pelo join da RPC, que casa por
+    // `nf.id_cliente`.
+    id_cliente: idPagador,
     id_empresa: idEmpresa,
     ref,
     ambiente: "homologacao",
