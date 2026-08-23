@@ -77,7 +77,7 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
   const { data: propostaRow, error: propostaError } = await client
     .from("propostas")
     .select(
-      "id_int,id_cliente,cliente,empresa,id_endereco_ent,valor,valor_total,valor_frete,modalidade_frete"
+      "id_int,id_cliente,id_faturado,cliente,empresa,id_endereco_ent,valor,valor_total,valor_frete,modalidade_frete"
     )
     .eq("id_int", idInt)
     .maybeSingle();
@@ -95,6 +95,7 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
 
   const proposta = propostaRow as {
     id_cliente: number | null;
+    id_faturado: number | null;
     cliente: string | null;
     empresa: string | null;
     id_endereco_ent: string | null;
@@ -105,12 +106,40 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
   };
 
   // ---------------------------------------------------------------------------
-  // Cliente e documento
+  // PAGADOR e documento
+  //
+  // Documento fiscal e boleto saem sempre no nome do PAGADOR, nunca do cliente
+  // da proposta. O cliente e quem ENCOMENDA; em parte dos casos ele e um
+  // agenciador com procuracao para comprar em nome de outra empresa, e essa
+  // outra empresa e quem paga e recebe o documento.
+  //
+  // Pagador = `propostas.id_faturado` quando difere de `id_cliente`; quando nao
+  // difere, sao a mesma pessoa. Nao ha excecao.
+  //
+  // Por isso a conferencia valida o cadastro do PAGADOR: cobrar de um cadastro e
+  // conferir outro deixaria passar exatamente o caso que mais erra. Fila medida
+  // em 22/08/2026: 17 pedidos, 7 com pagador diferente do cliente.
+  //
+  // O QUE NAO MUDA AQUI: a nota continua sendo CRIADA contra o cliente da
+  // proposta (`id_cliente`) — isso e Etapa C. Etapa B muda so o que se CONFERE.
   // ---------------------------------------------------------------------------
+  const idPagador =
+    proposta.id_faturado && proposta.id_faturado !== proposta.id_cliente
+      ? proposta.id_faturado
+      : proposta.id_cliente;
+  /** O pagador e um terceiro? Muda so o TEXTO, para o vendedor nao procurar no cadastro errado. */
+  const pagadorEhTerceiro = Boolean(
+    proposta.id_faturado && proposta.id_faturado !== proposta.id_cliente
+  );
+  const quem = pagadorEhTerceiro ? "pagador" : "cliente";
+  const cadastroDoQuem = pagadorEhTerceiro
+    ? "Cadastro do PAGADOR (não é o cliente do pedido)"
+    : "Cadastro do cliente";
+
   let documento = "";
   let ehContribuinte = false;
 
-  if (!proposta.id_cliente) {
+  if (!idPagador) {
     bloqueios.push({
       codigo: "CLIENTE_SEM_CADASTRO",
       titulo: "O pedido não tem cliente cadastrado.",
@@ -120,59 +149,77 @@ export async function conferirFaturamento(idInt: number): Promise<ResultadoConfe
       rota: rotaProposta
     });
   } else {
-    const { data: clienteRow } = await client
+    const { data: pagadorRow } = await client
       .from("clientes")
-      .select("nome,documento,ins_estadual,tipo_contribuinte")
-      .eq("id_cliente", proposta.id_cliente)
+      .select("nome,fantasia,documento,ins_estadual,tipo_contribuinte")
+      .eq("id_cliente", idPagador)
       .maybeSingle();
 
-    const cliente = clienteRow as {
+    const pagador = pagadorRow as {
       nome: string | null;
+      fantasia: string | null;
       documento: string | null;
       ins_estadual: string | null;
       tipo_contribuinte: string | null;
     } | null;
 
-    if (!cliente) {
+    if (!pagador) {
       bloqueios.push({
         codigo: "CLIENTE_SEM_CADASTRO",
-        titulo: "O cliente do pedido não existe mais no cadastro.",
-        encontrado: `id ${proposta.id_cliente}`,
+        titulo: pagadorEhTerceiro
+          ? "O pagador do pedido não existe mais no cadastro."
+          : "O cliente do pedido não existe mais no cadastro.",
+        encontrado: `id ${idPagador}`,
         setor: "Comercial",
         onde: "Cadastros → Clientes",
         rota: "/cadastros"
       });
     } else {
-      documento = apenasDigitos(cliente.documento);
-      ehContribuinte = ehContribuinteIcms(cliente.tipo_contribuinte);
-      const rotaCliente = `/cadastros/${proposta.id_cliente}`;
+      documento = apenasDigitos(pagador.documento);
+      ehContribuinte = ehContribuinteIcms(pagador.tipo_contribuinte);
+      const rotaPagador = `/cadastros/${idPagador}`;
+      const nomePagador =
+        (pagador.fantasia ?? "").trim() || (pagador.nome ?? "").trim() || `id ${idPagador}`;
+      /** Sufixo que nomeia de QUEM e o cadastro — sem isso o vendedor corrige o cadastro errado. */
+      const doPagador = pagadorEhTerceiro ? ` (pagador: ${nomePagador})` : "";
 
       if (documento.length !== 11 && documento.length !== 14) {
         bloqueios.push({
           codigo: "DOCUMENTO_INVALIDO",
-          titulo: "CPF ou CNPJ do cliente é inválido.",
-          encontrado: cliente.documento?.trim() || "vazio",
+          titulo: `CPF ou CNPJ do ${quem} é inválido${doPagador}.`,
+          encontrado: pagador.documento?.trim() || "vazio",
           setor: "Comercial",
-          onde: "Cadastro do cliente → Dados principais",
-          rota: rotaCliente
+          onde: `${cadastroDoQuem} → Dados principais`,
+          rota: rotaPagador
         });
-      } else if (documento.length === 14 && ehContribuinte && vazio(cliente.ins_estadual)) {
+      } else if (documento.length === 14 && ehContribuinte && vazio(pagador.ins_estadual)) {
         bloqueios.push({
           codigo: "CNPJ_CONTRIBUINTE_SEM_IE",
-          titulo: "Cliente CNPJ marcado como contribuinte de ICMS e sem Inscrição Estadual.",
+          titulo: `CNPJ do ${quem} marcado como contribuinte de ICMS e sem Inscrição Estadual${doPagador}.`,
           encontrado: "IE vazia",
           setor: "Comercial",
-          onde: "Cadastro do cliente → Dados fiscais. Informe a IE ou marque como isento.",
-          rota: rotaCliente
+          onde: `${cadastroDoQuem} → Dados fiscais. Informe a IE ou marque como isento.`,
+          rota: rotaPagador
         });
       } else if (documento.length === 11 && ehContribuinte) {
         bloqueios.push({
           codigo: "CPF_CONTRIBUINTE_INCOERENTE",
-          titulo: "Cliente pessoa física marcado como contribuinte de ICMS.",
-          encontrado: cliente.tipo_contribuinte || "",
+          titulo: `${pagadorEhTerceiro ? "Pagador" : "Cliente"} pessoa física marcado como contribuinte de ICMS${doPagador}.`,
+          encontrado: pagador.tipo_contribuinte || "",
           setor: "Comercial",
-          onde: "Cadastro do cliente → Dados fiscais. CPF deve ser não contribuinte.",
-          rota: rotaCliente
+          onde: `${cadastroDoQuem} → Dados fiscais. CPF deve ser não contribuinte.`,
+          rota: rotaPagador
+        });
+      } else if (vazio(pagador.tipo_contribuinte)) {
+        // Regra NOVA. Sem tipo de contribuinte a nota nao sabe se destaca ICMS,
+        // e o campo em branco e indistinguivel de "ainda nao perguntamos".
+        bloqueios.push({
+          codigo: "TIPO_CONTRIBUINTE_INDEFINIDO",
+          titulo: `Tipo de contribuinte do ${quem} não está definido${doPagador}.`,
+          encontrado: "vazio",
+          setor: "Comercial",
+          onde: `${cadastroDoQuem} → Dados fiscais. Informe contribuinte, isento ou não contribuinte.`,
+          rota: rotaPagador
         });
       }
     }
