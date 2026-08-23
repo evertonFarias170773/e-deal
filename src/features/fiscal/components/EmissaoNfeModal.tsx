@@ -34,7 +34,16 @@ interface EmissaoNfeModalProps {
   nota: NfeReadModel;
   /** "IDLE" abre pedindo confirmação; "QUERYING" já entra consultando. */
   passoInicial: "IDLE" | "QUERYING";
-  onFechar: () => void;
+  /**
+   * Fecha o modal, informando em QUE desfecho ele estava.
+   *
+   * Quem abriu decide o que fazer com isso: a lista fica onde está, a tela de
+   * detalhe volta para a Fila quando a nota foi autorizada. O desfecho precisa
+   * vir daqui porque só este componente sabe como a emissão terminou — o passo
+   * também distingue um "Cancelar" antes de emitir (IDLE) de um fechamento
+   * depois do resultado.
+   */
+  onFechar: (desfecho: PassoEmissao) => void;
   /**
    * Relê a nota na fonte de quem abriu o modal — a lista recarrega o hook, a
    * tela de detalhe busca por id. Devolve a versão fresca ou null.
@@ -344,7 +353,7 @@ export function EmissaoNfeModal({
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
               <button
                 type="button"
-                onClick={onFechar}
+                onClick={() => onFechar(passo)}
                 className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl"
               >
                 Cancelar
@@ -522,6 +531,13 @@ export function EmissaoNfeModal({
                 </span>
               ) : (
                 <>
+                  {/*
+                    DANFE e XML abrem em outra aba e NÃO fecham o modal. Fechavam
+                    antes, o que custava caro agora que fechar leva de volta à
+                    Fila: quem clicasse em "Abrir DANFE" para conferir perdia a
+                    tela sem ter pedido, e voltar para baixar o XML exigia achar
+                    a nota no Histórico. Fechar passa a ser gesto explícito.
+                  */}
                   {passo === "AUTHORIZED" && (
                     <>
                       {(notaAtual.url_danfe || danfeDoRetorno) && (
@@ -529,7 +545,6 @@ export function EmissaoNfeModal({
                           type="button"
                           onClick={() => {
                             window.open(notaAtual.url_danfe || danfeDoRetorno, "_blank");
-                            onFechar();
                           }}
                           className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition rounded-xl flex items-center gap-1.5"
                         >
@@ -545,7 +560,6 @@ export function EmissaoNfeModal({
                               notaAtual.ref
                             )}`;
                             window.open(xmlUrl, "_blank");
-                            onFechar();
                           }}
                           className="px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition rounded-xl flex items-center gap-1.5"
                         >
@@ -588,7 +602,7 @@ export function EmissaoNfeModal({
 
                   <button
                     type="button"
-                    onClick={onFechar}
+                    onClick={() => onFechar(passo)}
                     className="px-5 py-2.5 text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 transition rounded-xl"
                   >
                     Fechar

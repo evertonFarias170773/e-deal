@@ -2941,9 +2941,19 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           key={notaParaEmitir.id}
           nota={notaParaEmitir}
           passoInicial="IDLE"
-          onFechar={() => {
+          onFechar={(desfecho) => {
             setNotaParaEmitir(null);
-            // Agora sim, com a tela livre: reflete o novo estado da nota.
+            // Nota autorizada é trabalho concluído: esta tela não serve mais
+            // para nada e o próximo passo do operador está na Fila. Recarregar
+            // a nota antes de sair seria buscar dados para uma tela que já
+            // está saindo, então o retorno acontece direto.
+            if (desfecho === "AUTHORIZED") {
+              router.push("/notas-fiscais");
+              return;
+            }
+            // Rejeitada, ainda processando, erro ou cancelado antes de emitir:
+            // o operador continua aqui, que é onde ele corrige. Agora sim, com
+            // a tela livre: reflete o novo estado da nota.
             void loadData(true);
           }}
           recarregar={async () => {
