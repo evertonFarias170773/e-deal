@@ -39,7 +39,9 @@ import type {
 } from "@/features/orcamentos/types";
 import {
   buildPropostaInformalText,
-  propostaDispensaArte
+  propostaDispensaArte,
+  resumirEnderecoDoOrcamento,
+  type DestinoDoResumo
 } from "@/features/orcamentos/orcamento-utils";
 import { formatCurrency, parseCurrencyBR, formatCurrencyWithoutPrefix } from "@/lib/formatters/currency";
 import { formatWeightFromGrams } from "@/lib/formatters/weight";
@@ -1111,6 +1113,20 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   const currentAddress = useMemo(() => {
     return combinedAddresses.find((a) => a.id === form.enderecoId);
   }, [combinedAddresses, form.enderecoId]);
+
+  // O destino que o bloco 8 mostra. Sai de `currentAddress`, que já está
+  // resolvido aqui para a cotação de frete usar — nenhuma consulta nova.
+  const destinoDoResumo = useMemo(
+    () =>
+      resumirEnderecoDoOrcamento({
+        clienteNaoCadastrado: form.clienteNaoCadastrado,
+        endereco: currentAddress,
+        cepLivre: form.cepLivre,
+        cidadeLivre: form.cidadeLivre,
+        ufLivre: form.ufLivre
+      }),
+    [form.clienteNaoCadastrado, currentAddress, form.cepLivre, form.cidadeLivre, form.ufLivre]
+  );
 
   const isFreightOutdated = useMemo(() => {
     const currentDestKey = getDestinationKey(
@@ -5738,7 +5754,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         {shouldShowRest && (
           <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
             <FormSection title="8. Resumo do orçamento" description="Resumo consolidado incluindo pesos e valores extras das variações.">
-              <ResumoValores resumo={resumo} bonusPercent={bonusPercent} />
+              <ResumoValores resumo={resumo} bonusPercent={bonusPercent} destino={destinoDoResumo} />
               <fieldset disabled={isFormBloqueadoPorCobranca} className="group mt-4">
                 <div className="grid gap-3 grid-cols-[75px_1fr] items-start">
                   <Field label="Tipo">
@@ -6757,7 +6773,15 @@ function SelectorGrid<T extends { id: string }>(props: SelectorGridProps<T>) {
   );
 }
 
-function ResumoValores({ resumo, bonusPercent }: { resumo: ReturnType<typeof calculateResumo>; bonusPercent: number }) {
+function ResumoValores({
+  resumo,
+  bonusPercent,
+  destino
+}: {
+  resumo: ReturnType<typeof calculateResumo>;
+  bonusPercent: number;
+  destino: DestinoDoResumo | null;
+}) {
   const rows = [
     ["Subtotal bruto", formatCurrency(resumo.subtotalBrutoProdutos)],
     [`Tabela especial do cliente aplicada${bonusPercent > 0 ? ` (-${bonusPercent}%)` : ""}`, `-${formatCurrency(resumo.acrescimoBonus)}`],
@@ -6768,6 +6792,37 @@ function ResumoValores({ resumo, bonusPercent }: { resumo: ReturnType<typeof cal
   ];
   return (
     <div className="space-y-3">
+      {/*
+        Destino da entrega, no topo do resumo. Fica aqui, e não entre as linhas
+        de valor, por dois motivos: ocupa a largura inteira sem espremer os
+        números da coluna de 380px, e é o contexto da linha "Frete escolhido"
+        logo abaixo — é por este endereço que o frete foi cotado. Só leitura: a
+        escolha continua na aba Geral.
+      */}
+      <div className="rounded-2xl bg-slate-50 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Entrega em
+          </span>
+          {destino?.rotulo ? (
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+              {destino.rotulo}
+            </span>
+          ) : null}
+        </div>
+        {destino ? (
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {destino.cidadeUf || "Cidade não informada"}
+            {destino.cep ? (
+              <span className="font-normal text-slate-500"> · CEP {destino.cep}</span>
+            ) : null}
+          </p>
+        ) : (
+          <p className="mt-1 text-sm font-semibold text-amber-700">
+            Nenhum endereço escolhido — sem ele não há para onde cotar o frete.
+          </p>
+        )}
+      </div>
       {rows.map(([label, value]) => {
         const isDiscount = value.startsWith("-");
         const valueClass = isDiscount ? "text-teal-600 font-medium" : "text-slate-900";

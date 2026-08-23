@@ -38,6 +38,98 @@ export function sortEnderecosPorPrioridade(enderecos: CadastroEndereco[]): Cadas
   });
 }
 
+/**
+ * Rótulo legível do tipo do endereço — "Principal", "Entrega", "Cobrança"...
+ *
+ * A leitura é tolerante de propósito. O tipo chega em duas chaves e em três
+ * grafias: o banco guarda `tipo_endereco` em caixa alta (`PRINCIPAL`, vindo da
+ * importação da Receita Federal) ou capitalizado (`Principal`, base antiga), e
+ * o mapeamento para `CadastroEndereco` expõe `tipo` em minúscula. Comparar sem
+ * normalizar erra em duas das três. É a mesma normalização que
+ * `sortEnderecosPorPrioridade` faz logo acima; deixei as duas separadas porque
+ * unificá-las mexeria na ordenação, que não é assunto desta mudança.
+ *
+ * Devolve null quando o tipo vem vazio, e aí a tela não mostra rótulo nenhum —
+ * melhor calar do que inventar "Principal" para um endereço que talvez não
+ * seja. Na prática isso quase não acontece: os dois mapeamentos que alimentam a
+ * tela (`mapSupabaseEnderecoRowToCadastroEndereco` e a resolução do endereço da
+ * proposta em orcamentos.service) já preenchem `tipo` com um padrão quando a
+ * coluna está em branco. O caso vazio fica coberto para as leituras que chegam
+ * com a linha crua do banco.
+ */
+export function rotuloTipoEndereco(endereco: CadastroEndereco): string | null {
+  const tipo = ((endereco as { tipo_endereco?: string }).tipo_endereco ?? endereco.tipo ?? "")
+    .trim()
+    .toLowerCase();
+  if (!tipo) return null;
+  if (tipo === "principal") return "Principal";
+  if (tipo === "entrega") return "Entrega";
+  if (tipo === "cobranca" || tipo === "cobrança") return "Cobrança";
+  if (tipo === "fiscal") return "Fiscal";
+  return tipo.charAt(0).toUpperCase() + tipo.slice(1);
+}
+
+export type DestinoDoResumo = {
+  /** "Porto Alegre/RS". Pode vir vazio se o cadastro não tiver cidade nem UF. */
+  cidadeUf: string;
+  /** "90620-130". Vazio quando o endereço não tem CEP. */
+  cep: string;
+  /** "Principal", "Entrega"... Null em orçamento rápido, onde não há cadastro. */
+  rotulo: string | null;
+};
+
+/**
+ * O destino que o resumo do orçamento mostra, em forma compacta.
+ *
+ * Cidade, UF e CEP bastam para o usuário reconhecer por onde o frete está sendo
+ * cotado sem voltar à aba Geral; o logradouro completo continua lá.
+ *
+ * Devolve NULL para "ainda não há endereço" — e só para isso. Um endereço
+ * escolhido com cadastro incompleto devolve objeto com campos vazios, porque
+ * "escolhi um endereço capenga" e "não escolhi endereço" são problemas
+ * diferentes e pedem avisos diferentes.
+ *
+ * Em orçamento rápido não existe cadastro: o destino sai dos campos livres e
+ * vem sem rótulo, já que não há tipo de endereço para nomear.
+ */
+export function resumirEnderecoDoOrcamento(params: {
+  clienteNaoCadastrado?: boolean;
+  endereco?: CadastroEndereco;
+  cepLivre?: string;
+  cidadeLivre?: string;
+  ufLivre?: string;
+}): DestinoDoResumo | null {
+  const montarCidadeUf = (cidade?: string, uf?: string) => {
+    const c = (cidade ?? "").trim();
+    const u = (uf ?? "").trim().toUpperCase();
+    if (c && u) return `${c}/${u}`;
+    return c || u;
+  };
+
+  // "90620130" -> "90620-130". O que não tem 8 dígitos sai como veio: cadastro
+  // antigo às vezes já guarda com traço, e mascarar por cima duplicaria.
+  const formatarCep = (bruto?: string) => {
+    const cep = (bruto ?? "").trim();
+    const digitos = cep.replace(/\D/g, "");
+    return digitos.length === 8 ? `${digitos.slice(0, 5)}-${digitos.slice(5)}` : cep;
+  };
+
+  if (params.clienteNaoCadastrado) {
+    const cidadeUf = montarCidadeUf(params.cidadeLivre, params.ufLivre);
+    const cep = formatarCep(params.cepLivre);
+    if (!cidadeUf && !cep) return null;
+    return { cidadeUf, cep, rotulo: null };
+  }
+
+  if (!params.endereco) return null;
+
+  return {
+    cidadeUf: montarCidadeUf(params.endereco.cidade, params.endereco.uf),
+    cep: formatarCep(params.endereco.cep),
+    rotulo: rotuloTipoEndereco(params.endereco)
+  };
+}
+
 export function buildPropostaInformalText({
   id_int,
   clienteNome,
