@@ -204,6 +204,9 @@ export async function salvarCotacaoComoPropostaReal(
     // CIF não altera dinheiro nem rótulo: quem zera o frete é FOB, e o valor
     // cotado pelo Maestro segue valendo integralmente.
     modalidadeFrete: 'CIF',
+    // O Maestro nao escolhe transporte: deixa nulo e quem abrir a proposta na
+    // tela decide. Nao inventa categoria em nome do usuario.
+    transporteCategoria: null,
     // Transportadora continua nula: só FOB exige uma, e o Maestro não a escolhe.
     idTransportadoraCliente: null,
     descontoGeralTipo: 'PERCENTUAL',

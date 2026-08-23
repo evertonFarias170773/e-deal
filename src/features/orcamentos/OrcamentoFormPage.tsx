@@ -61,6 +61,7 @@ import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
+import { TRANSPORTE_CATEGORIAS, LABEL_TRANSPORTE_CATEGORIA, classificarTransporte } from "@/features/orcamentos/lib/transporte-categoria";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
@@ -3256,6 +3257,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     );
   })();
 
+  /**
+   * Rotulo antigo de `frete_escolhido` que a leitura tolerante NAO reconheceu
+   * como categoria — "Frete Incluso", "A definir", "Por conta de Dseg". Fica a
+   * vista para o vendedor saber o que estava registrado, sem virar categoria.
+   * Quando o rotulo JA classifica, nao ha o que explicar: a categoria aparece
+   * marcada e este aviso some.
+   */
+  const rotuloTransporteAntigo = (() => {
+    const rotulo = (proposta?.frete_escolhido ?? "").trim();
+    if (!rotulo) return null;
+    return classificarTransporte(rotulo) ? null : rotulo;
+  })();
+
   async function copyInformal() {
     await navigator.clipboard?.writeText(informalText);
     showToast({ type: "success", title: "Resumo copiado", description: "Proposta informal copiada para WhatsApp." });
@@ -5386,6 +5400,46 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 </div>
               </div>
 
+              {/* Categoria do transporte — COMO vai, em lista fechada. Nao se
+                  confunde com a modalidade acima, que diz QUEM PAGA: um pedido
+                  pode ser CIF por CORREIOS ou FOB por TRANSPORTADORA.
+                  Nula ate alguem clicar: "nao escolheu" e "escolheu retirada"
+                  sao estados diferentes, e o clique de novo desmarca. */}
+              <div>
+                <span className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">
+                  Transporte — como vai
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {TRANSPORTE_CATEGORIAS.map((categoria) => {
+                    const ativa = form.transporteCategoria === categoria;
+                    return (
+                      <button
+                        key={categoria}
+                        type="button"
+                        disabled={!modalidadeEditavel}
+                        aria-pressed={ativa}
+                        onClick={() => updateField("transporteCategoria", ativa ? null : categoria)}
+                        className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          ativa
+                            ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                            : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        {LABEL_TRANSPORTE_CATEGORIA[categoria]}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Rotulo antigo, quando existe e nao virou categoria: o texto
+                    cru continua a vista, sem ser convertido em categoria falsa. */}
+                {!form.transporteCategoria && rotuloTransporteAntigo && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Registrado como <span className="font-medium">{rotuloTransporteAntigo}</span> — escolha uma
+                    categoria acima para padronizar.
+                  </p>
+                )}
+              </div>
+
               {form.modalidadeFrete === "FOB" && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
@@ -7124,6 +7178,9 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     // tudo que não é FOB. CIF e nulo produzem exatamente o mesmo dinheiro e o
     // mesmo rótulo — quem zera o frete é FOB, nunca CIF.
     modalidadeFrete: proposta ? (proposta.modalidadeFrete ?? null) : "CIF",
+    // Sem default: proposta nova nasce SEM categoria, e proposta antiga sem
+    // coluna gravada tambem. "Nao escolheu" nao vira "escolheu retirada".
+    transporteCategoria: proposta?.transporteCategoria ?? null,
     idTransportadoraCliente: proposta?.idTransportadoraCliente ?? null,
     descontoGeralTipo: proposta?.descontoGeralTipo ?? "VALOR",
     descontoGeralValor: proposta?.descontoGeralValor ? proposta.descontoGeralValor.toString() : "0",

@@ -1,6 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { PROPOSTA_STATUS_GROUP_ATIVO_CLIENTE } from "@/features/orcamentos/constants";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { categoriaEfetiva, ehTransporteCategoria, type TransporteCategoria } from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
 import {
   aplicarModalidadeNosFretes,
@@ -1222,16 +1223,65 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       const rawFreteValor = Number(proposalRow.valor_frete ?? 0);
       const rawFreteEscolhido = proposalRow.frete_escolhido || "RETIRADA";
 
+      // QUAL opcao fica marcada e QUAL carrega o `valor_frete` salvo passou a
+      // sair da CATEGORIA, nao da comparacao de texto.
+      //
+      // Antes eram comparacoes exatas e sensiveis a caixa contra "RETIRADA",
+      // "SEDEX" e "PAC". As 27 propostas gravadas como `sedex`, `Sedex`,
+      // `RETIRA BALCAO`, `Retirada Local` e `Retira` nao casavam, caiam no ramo
+      // "transportadora" e levavam o valor do frete para a opcao errada.
+      //
+      // `categoriaEfetiva` usa `transporte_categoria` quando existe e, quando e
+      // nula — toda proposta anterior a 22/08/2026, porque nao houve backfill —
+      // cai na leitura tolerante. Rotulo que nao nomeia transporte ("Frete
+      // Incluso", "A definir") devolve null e NAO marca opcao nenhuma, que e o
+      // certo: ninguem escolheu.
+      const categoriaDaProposta = categoriaEfetiva(
+        (proposalRow as { transporte_categoria?: unknown }).transporte_categoria as string | null,
+        proposalRow.frete_escolhido as string | null
+      );
+      // PAC nao tem categoria propria (e servico dos Correios, como o SEDEX).
+      // Entre as duas opcoes de Correios da lista reconstruida, o rotulo antigo
+      // e quem desempata; sem rotulo reconhecivel, SEDEX fica como o padrao
+      // historico desta reconstrucao.
+      const ehPac = /(^|[^A-Z])PAC([^A-Z]|$)/.test(String(rawFreteEscolhido).toUpperCase());
+
+      // SEM CATEGORIA E SEM CLASSIFICACAO: repete EXATAMENTE a regra anterior.
+      //
+      // Medido em 22/08/2026 nas 6.114 propostas sem cotacao, que sao as unicas
+      // em que esta reconstrucao roda: 5.930 tem rotulo nulo (a regra antiga
+      // caia no default "RETIRADA") e 184 dizem "A definir" (caia em
+      // transportadora). Deixar essas 184 sem nada marcado trocaria a opcao
+      // pre-selecionada de transportadora para retirada — mudanca visivel, sem
+      // nada a ganhar, num rotulo que significa justamente "ainda nao decidi".
+      //
+      // Entao a categoria manda quando existe, a leitura tolerante corrige as
+      // grafias divergentes, e o que nao classifica fica como sempre esteve.
+      const marcado = categoriaDaProposta
+        ? {
+            retirada: categoriaDaProposta === "RETIRA",
+            sedex: categoriaDaProposta === "CORREIOS" && !ehPac,
+            pac: categoriaDaProposta === "CORREIOS" && ehPac,
+            transportadora:
+              categoriaDaProposta === "TRANSPORTADORA" || categoriaDaProposta === "MOTOBOY"
+          }
+        : {
+            retirada: rawFreteEscolhido === "RETIRADA",
+            sedex: rawFreteEscolhido === "SEDEX",
+            pac: rawFreteEscolhido === "PAC",
+            transportadora: !["RETIRADA", "SEDEX", "PAC"].includes(rawFreteEscolhido)
+          };
+
       fretes = [
         {
           id: "frete_retirada",
           id_int: idInt,
           transportadora: "Retirada Local",
           servico: "Retira na Fábrica",
-          valor: rawFreteEscolhido === "RETIRADA" ? rawFreteValor : 0,
+          valor: marcado.retirada ? rawFreteValor : 0,
           prazo: "Imediato",
           observacao: "Sem custo de entrega",
-          escolhido: rawFreteEscolhido === "RETIRADA",
+          escolhido: marcado.retirada,
           pesoUsado: 0
         },
         {
@@ -1239,10 +1289,10 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
           id_int: idInt,
           transportadora: "Correios SEDEX",
           servico: "Entrega Expressa",
-          valor: rawFreteEscolhido === "SEDEX" ? rawFreteValor : 80,
+          valor: marcado.sedex ? rawFreteValor : 80,
           prazo: "1 a 3 dias úteis",
           observacao: "Entrega rápida pelos Correios",
-          escolhido: rawFreteEscolhido === "SEDEX",
+          escolhido: marcado.sedex,
           pesoUsado: 0
         },
         {
@@ -1250,11 +1300,11 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
           id_int: idInt,
           transportadora: "Correios PAC",
           servico: "Entrega Econômica",
-          valor: rawFreteEscolhido === "PAC" ? rawFreteValor : 45,
+          valor: marcado.pac ? rawFreteValor : 45,
           prazo: "5 a 10 dias úteis",
           observacao: "Entrega econômica pelos Correios",
-          chosen: rawFreteEscolhido === "PAC", // Compatibility
-          escolhido: rawFreteEscolhido === "PAC",
+          chosen: marcado.pac, // Compatibility
+          escolhido: marcado.pac,
           pesoUsado: 0
         },
         {
@@ -1262,10 +1312,10 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
           id_int: idInt,
           transportadora: "Transportadora Parceira",
           servico: "Entrega Padrão",
-          valor: !["RETIRADA", "SEDEX", "PAC"].includes(rawFreteEscolhido) ? rawFreteValor : 120,
+          valor: marcado.transportadora ? rawFreteValor : 120,
           prazo: "4 a 7 dias úteis",
           observacao: "Transportadora parceira do ERP",
-          escolhido: !["RETIRADA", "SEDEX", "PAC"].includes(rawFreteEscolhido),
+          escolhido: marcado.transportadora,
           pesoUsado: 0
         }
       ];
@@ -1364,6 +1414,14 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       id_faturado: proposalRow.id_faturado ?? null,
       status_interno: proposalRow.status_interno,
       is_prd_aprovado: proposalRow.is_prd_aprovado === true,
+      frete_escolhido: (proposalRow.frete_escolhido as string | null) ?? null,
+      // So o valor canonico entra; lixo na coluna cai para null e a tela trata
+      // como "ninguem escolheu", em vez de exibir categoria invalida.
+      transporteCategoria: ehTransporteCategoria(
+        (proposalRow as { transporte_categoria?: unknown }).transporte_categoria
+      )
+        ? ((proposalRow as { transporte_categoria: TransporteCategoria }).transporte_categoria)
+        : null,
       dbValorTotal: proposalRow.valor_total != null ? Number(proposalRow.valor_total) : null,
     };
 
@@ -2007,6 +2065,13 @@ export async function saveProposta(
     // de LIBERADO os campos ficam de fora e o que já está gravado permanece.
     if (modalidadeEditavel) {
       propostaData.modalidade_frete = modalidadeFrete;
+      // Categoria do transporte: lista fechada, e NULA quando ninguem escolheu.
+      // "Nao escolheu" e "escolheu retirada" sao estados diferentes — por isso
+      // NAO se replica aqui o default de "RETIRADA" que `frete_escolhido` tem.
+      // `frete_escolhido` continua sendo gravada como sempre, logo acima.
+      propostaData.transporte_categoria = ehTransporteCategoria(formState.transporteCategoria)
+        ? formState.transporteCategoria
+        : null;
       propostaData.id_transportadora_cliente = idTransportadoraCliente;
     } else if (declaracaoDivergePersistido) {
       // A trava continua valendo — a proposta não é rebaixada e o que já estava

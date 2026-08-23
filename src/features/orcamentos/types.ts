@@ -2,6 +2,8 @@ import type { Cadastro, CadastroContato, CadastroEndereco, CadastroVinculoComerc
 import type { ModalidadeFrete } from "@/features/expedicao/types";
 import type { Produto, TipoVariacao, VariacaoGlobal } from "@/features/produtos/types";
 
+import type { TransporteCategoria } from "@/features/orcamentos/lib/transporte-categoria";
+
 export type PropostaStatus = 
   | "NOVO" 
   | "NOVO / EM ARTE" 
@@ -177,6 +179,20 @@ export type Proposta = {
    * acoes, com a MESMA condicao que a lista usa.
    */
   is_prd_aprovado?: boolean;
+  /**
+   * `propostas.transporte_categoria` — lista fechada (RETIRA/MOTOBOY/CORREIOS/
+   * TRANSPORTADORA). Nula quando ninguem escolheu, inclusive em toda proposta
+   * anterior a 22/08/2026. Nao substitui `frete_escolhido`, que segue sendo o
+   * rotulo livre, nem `modalidadeFrete`, que diz quem paga.
+   */
+  transporteCategoria?: TransporteCategoria | null;
+  /**
+   * `propostas.frete_escolhido` cru — o ROTULO livre, exposto so para leitura.
+   * A tela usa para mostrar o que estava registrado quando o texto nao
+   * classifica em categoria nenhuma ("Frete Incluso", "A definir"). Nunca e
+   * reescrito a partir daqui.
+   */
+  frete_escolhido?: string | null;
   dbValorTotal?: number | null;
 };
 
@@ -207,6 +223,8 @@ export type PropostaFormState = {
   freteEscolhidoId: string;
   /** Quem paga o transporte. Null em proposta anterior a 18/08/2026 ou ainda não declarada. */
   modalidadeFrete: ModalidadeFrete | null;
+  /** Categoria do transporte escolhida na lista fechada. Null = nao escolheu. */
+  transporteCategoria: TransporteCategoria | null;
   /** FK para clientes(id_cliente) — só transportadoras cadastradas e ativas. */
   idTransportadoraCliente: number | null;
   descontoGeralTipo: TipoDescontoProposta;
