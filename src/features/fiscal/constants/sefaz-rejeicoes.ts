@@ -7,6 +7,30 @@ export interface SefazRejectionInfo {
 }
 
 const REJEICOES_MAP: Record<string, Omit<SefazRejectionInfo, "codigo">> = {
+  "210": {
+    titulo: "Inscrição Estadual do destinatário inválida",
+    explicacao:
+      "A Inscrição Estadual vale em um estado só. A SEFAZ confere a IE contra a UF do destinatário desta nota — e recusa uma IE que é válida em outro estado. Costuma acontecer quando o cliente tem sede num estado e a entrega é em outro: a nota sai com a UF da entrega e a IE continua sendo a da sede.",
+    orientacao:
+      "Compare a UF do destinatário desta nota com o estado onde a IE está inscrita (consulte no SINTEGRA). Se a IE for de outro estado, a nota não sai assim: fale com o Fiscal antes de tentar de novo. Se a IE estiver simplesmente errada ou desatualizada, quem corrige é o Comercial, no cadastro do cliente.",
+    severidade: "erro_fiscal"
+  },
+  "537": {
+    titulo: "Desconto total difere da soma dos itens",
+    explicacao:
+      "O desconto informado no total da nota não bate com a soma dos descontos item a item.",
+    orientacao:
+      "Revise os itens e o desconto geral do orçamento. O desconto do cabeçalho tem de ser exatamente a soma do que foi dado em cada item.",
+    severidade: "erro_fiscal"
+  },
+  "732": {
+    titulo: "CFOP interestadual com destino interno",
+    explicacao:
+      "O CFOP dos itens diz que a operação é interestadual (série 6), mas o destino declarado na nota é interno — ou o contrário. As duas coisas nascem da UF de destino e precisam concordar.",
+    orientacao:
+      "Confira o endereço escolhido no pedido: é ele que define a UF de destino, o CFOP e o indicador de destino. Corrigido o endereço, prepare a nota de novo para o payload ser remontado.",
+    severidade: "erro_fiscal"
+  },
   "539": {
     titulo: "Numeração de NF-e já utilizada",
     explicacao: "Já existe uma NF-e transmitida com o mesmo número e série, mas com chave de acesso diferente.",
