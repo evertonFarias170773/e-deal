@@ -36,7 +36,7 @@
 -- tocada. Nenhum codigo depende destas colunas ainda.
 --
 -- CONTEXTO DE DADO na data desta migration: 11 expedicoes possuem
--- correios_id_prepostagem preenchido; nove ja tem data_despacho. Nenhuma sera
+-- correios_id_prepostagem preenchido; dez ja tem data_despacho. Nenhuma sera
 -- alterada aqui. A tabela public.expedicoes nao possui trigger de auditoria, e
 -- por isso o autor do cancelamento e gravado na propria linha.
 
