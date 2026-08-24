@@ -36,7 +36,7 @@ import { encerrarTeste } from "@/features/pedidos/services/encerrar-teste.client
 import { marcarPronto, marcarEntregue } from "./services/expedicao-acoes.service";
 import { marcarPrepostagemCancelada } from "./services/correios.client";
 import { liberarRecotacao, revogarRecotacao } from "./services/recotacao.client";
-import { abrirDeclaracaoConteudo, abrirEtiqueta } from "./services/etiqueta.client";
+import { abrirDeclaracaoConteudo, abrirEtiqueta, abrirEtiquetaRetirada } from "./services/etiqueta.client";
 import { abrirEtiquetaCorreios } from "./services/correios.client";
 import { ConfirmarAcaoModal } from "./components/ConfirmarAcaoModal";
 import { labelTipoFrete, TIPOS_FRETE } from "./lib/tipo-frete";
@@ -250,6 +250,23 @@ export function ExpedicaoPage() {
    * papel errado, agora sem ninguém ter escolhido).
    */
   function etiquetaDoPedido(p: PedidoExpedicao) {
+    // RETIRA NO BALCAO tem etiqueta propria: a 10x15 e documento de envio e
+    // imprimia endereco, transportadora e rastreio para um volume que ninguem
+    // vai despachar. A modalidade e a fonte — e ela que decide o fluxo de
+    // retirada no despacho; `tipo_frete = RETIRA_BALCAO` e consequencia dela,
+    // e por isso os dois valem como sinal.
+    if (p.expedicao?.modalidadeFrete === "RETIRA" || p.tipoFrete === "RETIRA_BALCAO") {
+      return {
+        label: "Etiqueta de retirada",
+        onClick: () => {
+          void abrirEtiquetaRetirada(p.idInt, p.volumes).then((res) => {
+            if (!res.success) {
+              showToast({ type: "error", title: "Erro na etiqueta", description: res.errorMessage });
+            }
+          });
+        }
+      };
+    }
     if (p.tipoFrete === "CORREIOS") {
       // Prepostagem cancelada no portal: o rotulo oficial daquele objeto nao
       // vale mais, e a rota dos Correios ainda o entregaria. Enquanto nao houver

@@ -51,6 +51,53 @@ export async function abrirEtiqueta(idInt: number, volumes?: number | null): Pro
 }
 
 /**
+ * Abre o PDF da etiqueta de RETIRA NO BALCAO. Mesmo desenho anti popup-block da
+ * 10x15 — o que muda e a rota e o nome do arquivo.
+ */
+export async function abrirEtiquetaRetirada(
+  idInt: number,
+  volumes?: number | null
+): Promise<AbrirEtiquetaResult> {
+  const params = new URLSearchParams({ id_int: String(idInt) });
+  if (volumes && volumes > 0) params.set("volumes", String(volumes));
+  const url = `/api/expedicao/etiqueta-retirada?${params.toString()}`;
+
+  const win = typeof window !== "undefined" ? window.open(url, "_blank") : null;
+  if (win) return { success: true };
+
+  try {
+    const client = getSupabaseClient();
+    const sessionResult = client ? await client.auth.getSession() : null;
+    const token = sessionResult?.data?.session?.access_token;
+    if (!token) return { success: false, errorMessage: "Sessão expirada. Faça login novamente." };
+
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      let message = `Falha ao gerar a etiqueta (HTTP ${response.status}).`;
+      try {
+        const body = await response.json();
+        if (body?.message) message = String(body.message);
+      } catch {
+        // resposta sem JSON — mantém a mensagem genérica
+      }
+      return { success: false, errorMessage: message };
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `retirada_${idInt}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    return { success: true };
+  } catch (e) {
+    return { success: false, errorMessage: e instanceof Error ? e.message : "Erro inesperado ao gerar a etiqueta." };
+  }
+}
+
+/**
  * Abre a declaração de conteúdo (A4). Documento que acompanha a remessa quando
  * não há NF-e autorizada — o rótulo dos Correios traz só a etiqueta, conferido
  * num rótulo real: PDF de 1 página.
