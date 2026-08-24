@@ -133,7 +133,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -233,6 +233,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       idEnderecoEntrega: row.id_endereco_entrega ?? null,
       codigoRastreamento: row.codigo_rastreamento ?? null,
       correiosIdPrepostagem: row.correios_id_prepostagem ?? null,
+      prepostagemCanceladaEm: (row.prepostagem_cancelada_em as string | null) ?? null,
+      correiosIdPrepostagemAnterior: (row.correios_id_prepostagem_anterior as string | null) ?? null,
       correiosCodigoObjeto: row.correios_codigo_objeto ?? null,
       dataPronto: row.data_pronto ?? null,
       dataDespacho: row.data_despacho ?? null,
@@ -378,7 +380,18 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       nfStatus: nf?.status ?? "SEM_NF",
       nfNumero: nf?.numero ?? null,
       liberaNf: p.libera_nf === true,
-      codigoRastreamento: exp?.codigoRastreamento || os?.codigo_rastreamento || "",
+      // Prepostagem marcada como cancelada: a lista passa a se comportar como
+      // "sem rastreio" — some da coluna, some da busca e o item "Rastrear
+      // objeto" nao aparece. O banco NAO muda: `expedicoes.codigo_rastreamento`
+      // e o objeto continuam gravados, porque a marcacao e sobre exibicao, nao
+      // sobre apagar a prova de que o objeto existiu.
+      //
+      // O fallback de `propostas_os.codigo_rastreamento` tambem e ignorado aqui:
+      // aquele espelho guarda o codigo do objeto morto e, sem isto, o traria de
+      // volta pela porta dos fundos.
+      codigoRastreamento: exp?.prepostagemCanceladaEm
+        ? ""
+        : exp?.codigoRastreamento || os?.codigo_rastreamento || "",
       obsOs: os?.obs ?? "",
       // "Envio já preparado": prepostagem Correios OU 10x15 registrada OU rastreio (de qualquer origem).
       etiquetaGerada: Boolean(

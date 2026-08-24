@@ -34,6 +34,7 @@ import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { listarPainelExpedicao } from "./services/expedicao.service";
 import { encerrarTeste } from "@/features/pedidos/services/encerrar-teste.client";
 import { marcarPronto, marcarEntregue } from "./services/expedicao-acoes.service";
+import { marcarPrepostagemCancelada } from "./services/correios.client";
 import { liberarRecotacao, revogarRecotacao } from "./services/recotacao.client";
 import { abrirDeclaracaoConteudo, abrirEtiqueta } from "./services/etiqueta.client";
 import { abrirEtiquetaCorreios } from "./services/correios.client";
@@ -87,6 +88,8 @@ export function ExpedicaoPage() {
   const [pedidoRastreio, setPedidoRastreio] = useState<PedidoExpedicao | null>(null);
   const [transportadorasAberto, setTransportadorasAberto] = useState(false);
   const [salvandoAcao, setSalvandoAcao] = useState<number | null>(null);
+  /** Pedido cuja prepostagem esta sendo marcada como cancelada (trava o item). */
+  const [marcandoCanceladaId, setMarcandoCanceladaId] = useState<number | null>(null);
   // Confirmação de mudança de status no modal do sistema, não no confirm() do navegador.
   const [confirmacao, setConfirmacao] = useState<{ pedido: PedidoExpedicao; tipo: "PRONTO" | "ENTREGUE" } | null>(null);
 
@@ -138,6 +141,30 @@ export function ExpedicaoPage() {
             : p.etapa === "EM_TRANSITO"
               ? { rotulo: ocupado ? "Salvando..." : "Marcar entregue", acao: () => setConfirmacao({ pedido: p, tipo: "ENTREGUE" }) }
               : null;
+  }
+
+  /**
+   * Marca no ERP que a prepostagem ja foi cancelada no portal dos Correios.
+   *
+   * Nao chama os Correios: o cancelamento e manual e acontece fora do sistema.
+   * A rota grava a data, o uid e o nome a partir da SESSAO DO SERVIDOR e nao
+   * toca em prepostagem, objeto ou rastreio — que continuam no banco.
+   */
+  async function handleMarcarPrepostagemCancelada(p: PedidoExpedicao) {
+    if (marcandoCanceladaId !== null) return;
+    setMarcandoCanceladaId(p.idInt);
+    const res = await marcarPrepostagemCancelada(p.idInt);
+    setMarcandoCanceladaId(null);
+    if (!res.success) {
+      showToast({ type: "error", title: "Nao foi possivel marcar", description: res.errorMessage });
+      return;
+    }
+    showToast({
+      type: res.jaMarcada ? "info" : "success",
+      title: res.jaMarcada ? "Ja estava marcada" : "Prepostagem marcada como cancelada",
+      description: `Pedido #${p.idInt}: o rastreio e a etiqueta oficial saem da tela e uma nova prepostagem pode ser gerada.`
+    });
+    void recarregar();
   }
 
   /**
@@ -224,7 +251,10 @@ export function ExpedicaoPage() {
    */
   function etiquetaDoPedido(p: PedidoExpedicao) {
     if (p.tipoFrete === "CORREIOS") {
-      if (!p.expedicao?.correiosIdPrepostagem) {
+      // Prepostagem cancelada no portal: o rotulo oficial daquele objeto nao
+      // vale mais, e a rota dos Correios ainda o entregaria. Enquanto nao houver
+      // prepostagem nova, cai na 10x15 — que independe do objeto.
+      if (!p.expedicao?.correiosIdPrepostagem || p.expedicao?.prepostagemCanceladaEm) {
         return {
           label: "Etiqueta Correios — gere a prepostagem",
           disabled: true,
@@ -257,6 +287,21 @@ export function ExpedicaoPage() {
     return [
       ...(p.codigoRastreamento
         ? [{ label: "Rastrear objeto", onClick: () => setPedidoRastreio(p) }]
+        : []),
+      // Marcar que a prepostagem foi cancelada NO PORTAL dos Correios. So faz
+      // sentido enquanto existe prepostagem e ela ainda nao foi marcada; a
+      // permissao vale mesmo — a rota reconfere `expedicao.admin` no servidor.
+      ...(canAdminExpedicao && p.expedicao?.correiosIdPrepostagem && !p.expedicao?.prepostagemCanceladaEm
+        ? [
+            {
+              label:
+                marcandoCanceladaId === p.idInt
+                  ? "Marcando..."
+                  : "Marcar prepostagem como cancelada",
+              destructive: true,
+              onClick: () => { void handleMarcarPrepostagemCancelada(p); }
+            }
+          ]
         : []),
       // Só aparece quando não é redundante com o botão primário: PRODUCAO/ACABAMENTO
       // ainda não têm dados de expedição para editar e PRONTO já tem "Despachar".

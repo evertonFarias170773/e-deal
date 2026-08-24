@@ -52,7 +52,9 @@ export async function POST(request: Request) {
   const [{ data: exp }, { data: frete }, { data: itensPedido }] = await Promise.all([
     supabase
       .from("expedicoes")
-      .select("peso_kg, peso_bruto_kg, id_endereco_entrega")
+      .select(
+        "peso_kg, peso_bruto_kg, id_endereco_entrega, correios_id_prepostagem, correios_codigo_objeto, correios_id_prepostagem_anterior, prepostagem_cancelada_em"
+      )
       .eq("id_int", idInt)
       .maybeSingle(),
     supabase
@@ -91,6 +93,22 @@ export async function POST(request: Request) {
       (lista ?? [])[0] ||
       null;
   }
+  // TERCEIRA GERACAO E BLOQUEADA, e a checagem vem ANTES de falar com os
+  // Correios — barrar depois criaria um objeto de verdade que nao teriamos onde
+  // guardar. So ha espaco para UMA geracao anterior: sobrescreve-la apagaria o
+  // rastro de um objeto emitido, que e pior que travar e exigir decisao humana.
+  if (exp?.correios_id_prepostagem_anterior && exp?.correios_id_prepostagem) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          `Este pedido ja teve duas prepostagens (${exp.correios_id_prepostagem_anterior} e ${exp.correios_id_prepostagem}). ` +
+          "Uma terceira apagaria o registro da anterior — resolva o caso com a Expedicao antes de gerar outra."
+      },
+      { status: 409 }
+    );
+  }
+
   if (!endereco || !endereco.cep) {
     return NextResponse.json(
       { success: false, message: "Pedido sem endereço de entrega com CEP — selecione o endereço no modal Despachar." },
@@ -190,12 +208,29 @@ export async function POST(request: Request) {
     });
 
     // Grava na expedição e espelha o rastreio na OS (tolerante a falha no espelho).
+    // REGERACAO: a prepostagem que estava viva desce para as colunas _anterior
+    // no MESMO upsert que grava a nova. Antes disto, gerar de novo sobrescrevia
+    // `correios_id_prepostagem` e o objeto antigo sumia do banco sem deixar
+    // rastro. `regerando` so e verdadeiro quando ja havia uma — a primeira
+    // geracao de um pedido nao mexe nas colunas _anterior.
+    const regerando = Boolean(exp?.correios_id_prepostagem);
     const { error: upErr } = await supabase.from("expedicoes").upsert(
       {
         id_int: idInt,
         correios_id_prepostagem: resultado.id,
         correios_codigo_objeto: resultado.codigoObjeto,
         codigo_rastreamento: resultado.codigoObjeto,
+        ...(regerando
+          ? {
+              correios_id_prepostagem_anterior: exp?.correios_id_prepostagem ?? null,
+              correios_codigo_objeto_anterior: exp?.correios_codigo_objeto ?? null,
+              // A marcacao de cancelamento era sobre a prepostagem que acabou de
+              // virar "anterior"; mante-la apontaria para a nova, que esta viva.
+              prepostagem_cancelada_em: null,
+              prepostagem_cancelada_por: null,
+              prepostagem_cancelada_por_nome: null
+            }
+          : {}),
         tipo_frete: "CORREIOS",
         updated_at: new Date().toISOString()
       },

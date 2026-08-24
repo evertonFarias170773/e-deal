@@ -78,6 +78,18 @@ export interface ExpedicaoRegistro {
   codigoRastreamento: string | null;
   correiosIdPrepostagem: string | null;
   correiosCodigoObjeto: string | null;
+  /**
+   * Quando o cancelamento da prepostagem foi MARCADO no ERP (o cancelamento em
+   * si acontece no portal dos Correios). Preenchido = o objeto nao vale mais:
+   * a tela esconde rastreio, etiqueta oficial e rastreamento, e a geracao de
+   * uma nova prepostagem fica liberada.
+   */
+  prepostagemCanceladaEm: string | null;
+  /**
+   * Prepostagem da geracao ANTERIOR, preservada quando uma nova e criada.
+   * Preenchida = ja houve uma regeracao, e uma terceira e bloqueada no servidor.
+   */
+  correiosIdPrepostagemAnterior: string | null;
   dataPronto: string | null;
   dataDespacho: string | null;
   dataEntrega: string | null;
