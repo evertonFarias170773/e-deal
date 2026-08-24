@@ -8,7 +8,7 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { labelTipoFrete, modalidadeInicialDoDespacho, normalizarTipoFrete } from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
-import { despachar, salvarDadosExpedicao } from "../services/expedicao-acoes.service";
+import { despachar, salvarDadosExpedicao, transportadoraDerivada } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
@@ -375,7 +375,10 @@ export function DespacharModal({
         {
           tipoEntrega,
           modalidadeFrete: modalidade,
-          transportadoraNome,
+          // O MESMO nome que o service vai gravar. Em MOTOBOY o campo esta
+          // oculto e o valor e derivado la; sem espelhar aqui, a tela pediria
+          // uma transportadora que ninguem tem como informar.
+          transportadoraNome: transportadoraDerivada(tipoFrete, transportadoraNome),
           idTransportadoraCliente,
           pesoKg: parsePesoKg(pesoKg),
           qtdVolumes: parseQtdVolumes(qtdVolumes),
@@ -872,7 +875,9 @@ export function DespacharModal({
                     <option key={t} value={t}>{labelTipoFrete(t)}</option>
                   ))}
                 </select>
-                {modalidade === "FOB" && (
+                {/* O aviso so faz sentido para quem esta escolhendo entre
+                    transportes: em MOTOBOY, Correios nao esta em jogo. */}
+                {modalidade === "FOB" && tipoFrete !== "MOTOBOY" && (
                   <p className="mt-1.5 text-xs text-slate-500">
                     Correios não entra em FOB: a prepostagem sai pelo cartão de postagem da empresa. Para enviar pelos
                     Correios, marque CIF.
@@ -893,8 +898,17 @@ export function DespacharModal({
                 )}
               </div>
 
-              {/* PASSO 3 — transportadora só depois de definir como vai. */}
+              {/* PASSO 3 — transportadora só depois de definir como vai.
+                  QUEM APARECE DEPENDE DO TRANSPORTE (24/08/2026):
+                    MOTOBOY       — nenhum dos dois. O meio ja e a resposta, e o
+                                    nome vai derivado do servidor ("Motoboy").
+                    CORREIOS      — nenhum dos dois. Quem leva e os Correios, e a
+                                    transportadora sai do cartao de postagem.
+                    TRANSPORTADORA — os dois, com o campo livre virando SERVICO.
+                  Campos OCULTOS, nao desabilitados: desabilitado ainda ocupa
+                  espaco e sugere que faltou preencher. */}
               <div className="grid gap-3 sm:grid-cols-2">
+                {tipoFrete === "TRANSPORTADORA" && (
                 <div>
                   <label className={labelClass}>Transportadora cadastrada</label>
                   <select
@@ -914,10 +928,20 @@ export function DespacharModal({
                     ))}
                   </select>
                 </div>
+                )}
+                {tipoFrete === "TRANSPORTADORA" && (
                 <div>
-                  <label className={labelClass}>Nome da transportadora / serviço</label>
-                  <input value={transportadoraNome} onChange={(e) => setTransportadoraNome(e.target.value)} placeholder='Ex.: "Expresso São Miguel"' className={inputClass} />
+                  {/* Com a transportadora escolhida no select ao lado, o que falta
+                      dizer e COMO ela leva — nao o nome dela outra vez. */}
+                  <label className={labelClass}>Serviço</label>
+                  <input
+                    value={transportadoraNome}
+                    onChange={(e) => setTransportadoraNome(e.target.value)}
+                    placeholder="Ex: Rodoviario, Ecomm, Aereo..."
+                    className={inputClass}
+                  />
                 </div>
+                )}
               </div>
               <div>
                 <label className={labelClass}>Endereço de entrega (vai para a etiqueta)</label>
@@ -1119,10 +1143,16 @@ export function DespacharModal({
                   )}
                 </div>
               )}
+              {/* Rastreio e coisa dos Correios: motoboy e transportadora nao
+                  emitem codigo que este campo saiba tratar, e o campo aberto so
+                  convidava a inventar. Valor ja gravado NAO e apagado — some da
+                  tela, permanece no banco. */}
+              {tipoFrete === "CORREIOS" && (
               <div>
                 <label className={labelClass}>Código de rastreio (manual)</label>
                 <input value={codigoRastreamento} onChange={(e) => setCodigoRastreamento(e.target.value)} placeholder="Ex.: AD173823345BR — ou gere pelos Correios na Fase 4" className={inputClass} />
               </div>
+              )}
               {/* Prepostagem é sempre CIF: sai pelo cartão de postagem da
                   empresa. A modalidade entra na condição de propósito, para um
                   pedido legado marcado FOB nunca reabrir o botão. */}

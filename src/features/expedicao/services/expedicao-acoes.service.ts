@@ -112,7 +112,7 @@ export async function marcarPronto(
 /** EXPEDICAO → EM TRANSITO (transporte) ou A RETIRAR (retirada). */
 export async function despachar(
   idInt: number,
-  input: DespachoInput,
+  inputBruto: DespachoInput,
   ator: AtorExpedicao
 ): Promise<ResultadoAcao> {
   const client = getSupabaseClient();
@@ -121,6 +121,18 @@ export async function despachar(
   // Campos mínimos. Não existe rota de API no caminho do despacho — é PostgREST
   // direto do browser, e a RLS de `propostas` é permissiva — então esta
   // checagem é a validação de verdade, não um espelho da tela.
+  // A derivacao vem ANTES da validacao: em MOTOBOY o nome e imposto aqui, e e
+  // ele que `camposMinimosDespacho` enxerga. Sem isto, o campo oculto na tela
+  // deixaria "a transportadora" na lista de faltantes e travaria o despacho.
+  const input = {
+    ...inputBruto,
+    transportadoraNome: transportadoraDerivada(inputBruto.tipoFrete, inputBruto.transportadoraNome),
+    idTransportadoraCliente: vinculoTransportadoraDerivado(
+      inputBruto.tipoFrete,
+      inputBruto.idTransportadoraCliente
+    )
+  };
+
   const faltantes = camposMinimosDespacho(input, "DESPACHO");
   if (faltantes.length > 0) {
     return { success: false, error: `Antes de despachar, informe ${frasearFaltantes(faltantes)}.` };
@@ -227,6 +239,40 @@ export async function despachar(
   return { success: true };
 }
 
+/**
+ * Transportadora que vai para o banco, derivada do COMO VAI.
+ *
+ * MOTOBOY nao tem transportadora a digitar: o proprio meio ja e a resposta, e o
+ * campo so servia para herdar lixo de uma escolha anterior. Foi o que aconteceu
+ * no 21055 — despacho de motoboy gravado com "Retira balcao", porque o pedido
+ * tinha sido retirada antes e o valor sobreviveu no formulario. A etiqueta
+ * imprimiu isso.
+ *
+ * Derivado no momento de GRAVAR, nunca digitado: a tela esconde o campo, e aqui
+ * o valor e imposto — quem chamar o service por outro caminho recebe a mesma
+ * regra. Os demais transportes seguem com o nome informado.
+ */
+export function transportadoraDerivada(
+  tipoFrete: TipoFreteNormalizado,
+  nomeInformado: string | null | undefined
+): string {
+  if (tipoFrete === "MOTOBOY") return "Motoboy";
+  return String(nomeInformado ?? "").trim();
+}
+
+/**
+ * Vinculo com transportadora cadastrada: MOTOBOY nao tem. O select some da tela
+ * nesse caso, e mandar o id anterior gravaria um vinculo orfao, invisivel para
+ * quem for conferir depois. Decisao do dono em 24/08/2026.
+ */
+export function vinculoTransportadoraDerivado(
+  tipoFrete: TipoFreteNormalizado,
+  idInformado: number | null
+): number | null {
+  if (tipoFrete === "MOTOBOY") return null;
+  return idInformado;
+}
+
 /** A RETIRAR → ENTREGUE (quem retirou fica registrado). */
 export async function confirmarRetirada(
   idInt: number,
@@ -319,8 +365,18 @@ export async function salvarDadosExpedicao(
   const campos: Record<string, unknown> = {};
   if (dados.modalidadeFrete !== undefined) campos.modalidade_frete = dados.modalidadeFrete;
   if (dados.tipoFrete !== undefined) campos.tipo_frete = dados.tipoFrete;
-  if (dados.transportadoraNome !== undefined) campos.transportadora_nome = dados.transportadoraNome || null;
-  if (dados.idTransportadoraCliente !== undefined) campos.id_transportadora_cliente = dados.idTransportadoraCliente;
+  // Mesma derivacao do despacho: rascunho de motoboy tambem nao herda nome de
+  // escolha anterior. `tipoFrete` pode nao vir no patch — sem ele, nada a derivar.
+  if (dados.transportadoraNome !== undefined) {
+    campos.transportadora_nome =
+      (dados.tipoFrete ? transportadoraDerivada(dados.tipoFrete, dados.transportadoraNome) : dados.transportadoraNome) ||
+      null;
+  }
+  if (dados.idTransportadoraCliente !== undefined) {
+    campos.id_transportadora_cliente = dados.tipoFrete
+      ? vinculoTransportadoraDerivado(dados.tipoFrete, dados.idTransportadoraCliente)
+      : dados.idTransportadoraCliente;
+  }
   if (dados.pesoKg !== undefined) campos.peso_kg = dados.pesoKg;
   if (dados.qtdVolumes !== undefined) campos.qtd_volumes = dados.qtdVolumes;
   if (dados.tipoVolume !== undefined) campos.tipo_volume = dados.tipoVolume;
