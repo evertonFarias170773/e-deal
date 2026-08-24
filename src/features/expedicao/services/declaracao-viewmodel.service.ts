@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "../lib/peso";
+import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
 
 export type ItemDeclaracao = {
   discriminacao: string;
@@ -57,13 +58,17 @@ export async function montarDeclaracaoViewModel(
 ): Promise<DeclaracaoViewModel | null> {
   const { data: proposta } = await supabase
     .from("propostas")
-    .select("id_int, cliente, id_cliente, empresa, cep")
+    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep")
     .eq("id_int", idInt)
     .maybeSingle();
   if (!proposta) return null;
 
   const [{ data: exp }, { data: frete }, { data: itensPedido }] = await Promise.all([
-    supabase.from("expedicoes").select("peso_kg, peso_bruto_kg, id_endereco_entrega, data_despacho").eq("id_int", idInt).maybeSingle(),
+    supabase
+      .from("expedicoes")
+      .select("peso_kg, peso_bruto_kg, id_endereco_entrega, id_cliente_destinatario_etiqueta, data_despacho")
+      .eq("id_int", idInt)
+      .maybeSingle(),
     supabase
       .from("cotacao_frete")
       .select("peso, cep")
@@ -131,11 +136,30 @@ export async function montarDeclaracaoViewModel(
       null;
   }
 
-  const { data: cliente } = idCliente !== null
+  /**
+   * EM NOME DE QUEM A DECLARACAO SAI (24/08/2026).
+   *
+   * A etiqueta 10x15 e a prepostagem ja respeitavam a escolha do despacho; esta
+   * ficou para tras e imprimia o cliente da proposta no MESMO volume em que a
+   * etiqueta trazia o pagador. Mesma funcao das outras duas, sem regra propria:
+   * id que nao seja o cliente nem o pagador cai no cliente, e coluna nula
+   * mantem o comportamento de sempre.
+   *
+   * Nao ha consulta nova: e o mesmo `SELECT` de `clientes` que ja existia, agora
+   * pelo id resolvido, mais dois campos acrescentados a `SELECT`s existentes.
+   * O REMETENTE nao e tocado — continua saindo de `resolverEmpresaRemetente`.
+   */
+  const idDestinatario = resolverIdDestinatarioEtiqueta(
+    idCliente,
+    proposta.id_faturado !== null && proposta.id_faturado !== undefined ? Number(proposta.id_faturado) : null,
+    exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+  );
+
+  const { data: cliente } = idDestinatario !== null
     ? await supabase
         .from("clientes")
         .select("nome, fantasia, documento, cidade_uf")
-        .eq("id_cliente", idCliente)
+        .eq("id_cliente", idDestinatario)
         .maybeSingle()
     : { data: null };
 
@@ -180,7 +204,14 @@ export async function montarDeclaracaoViewModel(
       cep: formatarCep(empresaRow?.cep)
     },
     destinatario: {
-      nome: String(proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`),
+      // `proposta.cliente` e o nome do CLIENTE: so serve quando o destinatario e
+      // ele. Nome e documento saem do mesmo cadastro — separa-los declararia uma
+      // pessoa que nao existe.
+      nome: String(
+        idDestinatario === idCliente
+          ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
+          : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
+      ),
       documento: formatarDocumento(cliente?.documento),
       endereco: endereco
         ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]
