@@ -51,6 +51,37 @@ function fmtTelefone(bruto: string | null | undefined): string {
   return String(bruto ?? "").trim();
 }
 
+/**
+ * Cliente cujos volumes saem com outro nome de remetente na etiqueta 10x15.
+ * 8469 = LISITON DOCUMENTOS SEGUROS LTDA.
+ */
+const CLIENTE_REMETENTE_ALTERNATIVO = 8469;
+const NOME_REMETENTE_ALTERNATIVO = "DSEG BRASIL";
+
+/**
+ * Nome que aparece no RODAPE da etiqueta 10x15 (24/08/2026).
+ *
+ * E EXIBICAO, E SO AQUI
+ *   Nada de cadastro, proposta, expedicao ou nota fiscal muda por causa disto,
+ *   e o remetente REAL da operacao continua sendo a empresa emitente. A etiqueta
+ *   oficial dos Correios e a Declaracao de Conteudo montam o remetente por
+ *   caminho proprio (`lib/correios/empresa-remetente`), casado com as
+ *   credenciais de quem posta — nenhuma das duas passa por aqui, e nenhuma
+ *   delas muda.
+ *
+ * A CONDICAO E O CLIENTE DA PROPOSTA, NAO O PAGADOR
+ *   `idCliente` vem de `propostas.id_cliente`. `propostas.id_faturado` — o
+ *   pagador, usado quando quem paga difere de quem compra — NAO entra nesta
+ *   conta e sequer e lido por esta funcao. Cliente 8469 com pagador outro: a
+ *   regra VALE. Pagador 8469 com cliente outro: a regra NAO vale. O pedido
+ *   20872 e exatamente o primeiro caso (cliente 8469, pagador 980).
+ *
+ * Cidade e UF seguem sendo os da empresa emitente: so o nome troca.
+ */
+function nomeRemetenteExibido(idCliente: number | null, nomeEmpresa: string): string {
+  return idCliente === CLIENTE_REMETENTE_ALTERNATIVO ? NOME_REMETENTE_ALTERNATIVO : nomeEmpresa;
+}
+
 export async function montarEtiquetaViewModel(
   supabase: SupabaseClient,
   idInt: number
@@ -183,7 +214,7 @@ export async function montarEtiquetaViewModel(
     nfNumero: nfAutorizada?.numero_nf ? String(nfAutorizada.numero_nf) : "",
     tipoVolume: exp?.tipo_volume || "",
     remetenteRodape: [
-      empresaRow?.nome_fantasia || empresaRow?.razao_social || nomeEmpresa,
+      nomeRemetenteExibido(idCliente, empresaRow?.nome_fantasia || empresaRow?.razao_social || nomeEmpresa),
       [empresaRow?.municipio, empresaRow?.uf].filter(Boolean).join(" - ")
     ]
       .filter(Boolean)
