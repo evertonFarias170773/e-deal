@@ -197,6 +197,14 @@ export interface SetorDoPedido {
 export interface PropostaOperacionalListItem {
   id_int: number;
   clienteNome: string;
+  /**
+   * Nome do PAGADOR (`propostas.id_faturado`), e vazio quando quem paga e o
+   * proprio cliente do pedido.
+   *
+   * Entrou em 24/08/2026 para a coluna do cliente dizer quem paga sem abrir o
+   * pedido — e o pagador que recebe o documento fiscal.
+   */
+  pagadorNome?: string;
   empresa: string;
   vendedor: string;
   dataProposta: string;

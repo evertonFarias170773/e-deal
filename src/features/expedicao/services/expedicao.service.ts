@@ -4,6 +4,7 @@ import {
   nomeTransporteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { normalizarTipoFrete } from "../lib/tipo-frete";
+import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { resolverPesoExpedicao } from "../lib/peso";
 import type {
   EtapaExpedicao,
@@ -99,7 +100,12 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     new Set(
       [
         ...propostas.map((p) => Number(p.id_cliente)),
-        ...propostas.map((p) => Number(p.id_transportadora_cliente))
+        ...propostas.map((p) => Number(p.id_transportadora_cliente)),
+        // O PAGADOR entra no MESMO `in`, pela mesma razao que a transportadora:
+        // pagador tambem e um cadastro de `clientes`, e a lista precisa do NOME
+        // dele para a coluna do cliente. Zero consulta a mais — sao alguns ids
+        // no mesmo IN que ja rodava.
+        ...propostas.map((p) => Number(p.id_faturado))
       ].filter((n) => Number.isFinite(n) && n > 0)
     )
   );
@@ -346,6 +352,16 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       // Pagador (24/08/2026): vem na MESMA linha que a lista ja lia, para o modal
       // Despachar poder oferecer os enderecos dele sem consulta extra.
       idFaturado: p.id_faturado !== null && p.id_faturado !== undefined ? Number(p.id_faturado) : null,
+      // Nome do pagador, SO quando ele difere do cliente do pedido. A regra de
+      // "difere" e a mesma `temPagadorDistinto` que o modal Despachar e a
+      // etiqueta usam — os tres precisam concordar sobre quem e o pagador.
+      // `fantasia || nome` e a mesma preferencia de rotulo do resto do cadastro.
+      pagador: (() => {
+        const idPagador = Number(p.id_faturado);
+        if (!temPagadorDistinto(idCliente, Number.isFinite(idPagador) ? idPagador : null)) return "";
+        const cadastro = clienteMap.get(idPagador);
+        return String(cadastro?.fantasia ?? "").trim() || String(cadastro?.nome ?? "").trim() || `#${idPagador}`;
+      })(),
       cidadeUf: cli?.cidade_uf ?? "",
       empresa: p.empresa || "",
       vendedor: (p.vendedor as string | null) || "",

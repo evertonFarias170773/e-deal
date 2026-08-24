@@ -516,9 +516,25 @@ export function PedidosListPage() {
           {
             header: "Cliente",
             cell: (proposta) => (
-              <span className="block truncate max-w-[170px] font-medium text-slate-900" title={proposta.clienteNome}>
-                {proposta.clienteNome}
-              </span>
+              <div className="flex max-w-[170px] flex-col">
+                <span className="block truncate font-medium text-slate-900" title={proposta.clienteNome}>
+                  {proposta.clienteNome}
+                </span>
+                {/* Pagador: quem paga e recebe o documento fiscal, quando nao e
+                    o cliente do pedido. Rotulo e cor propria para nao ler como
+                    um segundo nome do cliente. Esta coluna nao mostra cidade/UF
+                    — diferente da Expedicao —, entao o pagador fica logo abaixo
+                    do nome. Sem pagador distinto, nada e renderizado e a celula
+                    fica exatamente como estava. */}
+                {proposta.pagadorNome && (
+                  <span
+                    className="block truncate text-[11px] font-medium text-indigo-700"
+                    title={`Pagador: ${proposta.pagadorNome}`}
+                  >
+                    Pagador: {proposta.pagadorNome}
+                  </span>
+                )}
+              </div>
             )
           },
           {
@@ -671,6 +687,10 @@ export function PedidosListPage() {
                 <h3 className="mt-2 font-semibold text-slate-950">
                   {proposta.clienteNome}
                 </h3>
+                {/* Mesma leitura do desktop: pagador logo abaixo do cliente. */}
+                {proposta.pagadorNome && (
+                  <p className="mt-0.5 text-xs font-medium text-indigo-700">Pagador: {proposta.pagadorNome}</p>
+                )}
                 <p className="mt-1 text-sm text-slate-500">{proposta.vendedor}</p>
               </div>
               <div className="flex flex-col items-end gap-2">

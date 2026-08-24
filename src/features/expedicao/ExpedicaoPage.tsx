@@ -770,6 +770,16 @@ export function ExpedicaoPage() {
                 >
                   {rotuloClienteComNumero(p.idCliente, p.cliente)}
                 </span>
+                {/* Pagador: quem paga e recebe o documento fiscal, quando nao e
+                    o cliente do pedido. Entra ENTRE o nome e a cidade, com
+                    rotulo e cor propria — sem o rotulo, leria como um segundo
+                    nome do cliente. Sem pagador distinto, a coluna fica
+                    exatamente como estava. */}
+                {p.pagador && (
+                  <span className="truncate text-[11px] font-medium text-indigo-700" title={`Pagador: ${p.pagador}`}>
+                    Pagador: {p.pagador}
+                  </span>
+                )}
                 {p.cidadeUf && <span className="text-[11px] text-slate-500">{p.cidadeUf}</span>}
               </div>
             )
@@ -923,6 +933,8 @@ export function ExpedicaoPage() {
                   <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-100">
                     {rotuloClienteComNumero(p.idCliente, p.cliente)}
                   </h3>
+                  {/* Mesma leitura do desktop: pagador entre o nome e a cidade. */}
+                  {p.pagador && <p className="text-xs font-medium text-indigo-700">Pagador: {p.pagador}</p>}
                   {p.cidadeUf && <p className="text-xs text-slate-500">{p.cidadeUf}</p>}
                   {p.vendedor && <p className="text-xs text-slate-500">Vendedor: {p.vendedor}</p>}
                 </div>

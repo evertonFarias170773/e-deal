@@ -2,6 +2,10 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import type { PedidoProducaoListItem, PedidoStatus, PropostaOperacionalListItem, SetorDoPedido } from "../types";
 import type { PedidoModelo } from "@/features/producao/types";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
+// Mesma pergunta que a lista de Orcamentos ja fazia — "qual o nome de quem
+// paga?" — resolvida pela mesma funcao, em lote e somente leitura, em vez de
+// uma segunda copia que divergiria na preferencia de rotulo.
+import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
 import { SETORES_PCP, normalizarSetor } from "../setores";
 import { normalizarFaseSetor } from "../status-setor";
 import { tituloEventoDoPedido } from "../titulo-evento";
@@ -31,9 +35,11 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   const { data: propostasRows, error: propostasError } = await client
     .from("propostas")
     .select(`
-      id_int, 
-      cliente, 
-      vendedor, 
+      id_int,
+      cliente,
+      id_cliente,
+      id_faturado,
+      vendedor,
       empresa, 
       status_interno, 
       valor_total, 
@@ -63,6 +69,32 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   }
 
   const idInts = propostasRows.map(p => Number(p.id_int));
+
+  /**
+   * Nome do PAGADOR, quando ele nao e o cliente do pedido.
+   *
+   * `id_cliente` e `id_faturado` vieram no SELECT acima, na mesma linha — de
+   * graca. O NOME nao: `propostas` guarda so o texto do cliente, e nao ha chave
+   * estrangeira de `id_faturado` para `clientes` que permitisse embutir a
+   * consulta. Entao ele custa UMA consulta em lote, e so quando alguma linha da
+   * pagina tem pagador distinto. Sem nenhuma, nada e consultado e o numero de
+   * consultas da tela fica exatamente como era.
+   *
+   * Nunca por linha: um `in` com os ids distintos, reaproveitando a funcao que
+   * a lista de Orcamentos ja usa para a mesma pergunta.
+   */
+  const idsPagador = Array.from(
+    new Set(
+      propostasRows
+        .filter((p) => {
+          const idCli = Number(p.id_cliente);
+          const idPag = Number(p.id_faturado);
+          return Number.isFinite(idPag) && idPag > 0 && idPag !== idCli;
+        })
+        .map((p) => Number(p.id_faturado))
+    )
+  );
+  const nomesPagador = idsPagador.length > 0 ? await buscarNomesDosSocios(idsPagador) : {};
 
   // 3. Buscar Modelos (necessário para calcular produto principal e quantidade total)
   let modelos: { id_int: number; status_arte: string; nome_modelo: string; quantidade: number }[] = [];
@@ -211,6 +243,16 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
     resultados.push({
       id_int: idInt,
       clienteNome: p.cliente || `Proposta #${idInt}`,
+      // Vazio quando quem paga e o proprio cliente — a lista nao mostra nada.
+      // `id_cliente` entrou no SELECT so para esta comparacao; NAO e exposto na
+      // linha, porque `idCliente` alimenta o `openChat` e hoje chega indefinido
+      // ali — preenche-lo seria mudar outra coisa de carona.
+      pagadorNome: (() => {
+        const idCli = Number(p.id_cliente);
+        const idPag = Number(p.id_faturado);
+        if (!Number.isFinite(idPag) || idPag <= 0 || idPag === idCli) return "";
+        return nomesPagador[idPag] ?? `#${idPag}`;
+      })(),
       empresa: p.empresa || "Ideal",
       vendedor: p.vendedor || "Não atribuído",
       status_interno: composeStatusEmArte(p.status_interno || "INDEFINIDO", emArte),

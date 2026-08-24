@@ -117,6 +117,15 @@ export interface PedidoExpedicao {
    * aparecia na lista. Null quando a proposta nao registra pagador proprio.
    */
   idFaturado: number | null;
+  /**
+   * Nome do PAGADOR, e vazio quando quem paga e o proprio cliente do pedido.
+   *
+   * Existe para a coluna do cliente poder dizer quem paga sem abrir o pedido: e
+   * o pagador que recebe o documento fiscal, e ate 24/08/2026 a lista nao dava
+   * como perceber que ele era outro. Resolvido no MESMO `in` de `clientes` que
+   * a lista ja fazia — sem consulta a mais.
+   */
+  pagador: string;
   cidadeUf: string;
   empresa: string;
   /**
