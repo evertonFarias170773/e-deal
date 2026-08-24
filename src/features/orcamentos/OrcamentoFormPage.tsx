@@ -7137,7 +7137,26 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
   let fretes = proposta?.fretes ?? (endereco ? createFretesMock(endereco, proposta?.id_int ?? 0, proposta?.resumo.pesoTotal ?? 0) : []);
   const enderecoUf = endereco?.uf ?? (clienteNaoCadastrado ? (proposta?.enderecoEntrega?.uf ?? "") : "");
   if (enderecoUf?.toUpperCase() === "RS") {
-    const hasRetira = fretes.some((f) => f.id === "frete_retira_balcao");
+    // A deteccao e pelo QUE o card e, nao pelo id. O id `frete_retira_balcao`
+    // so existe em memoria: a linha que volta de `cotacao_frete` traz o id
+    // numerico da linha, entao comparar por id dava sempre falso e o card era
+    // acrescentado ao lado do que veio do banco — dois "Retirada Local".
+    //
+    // O criterio e o MESMO que `ehFreteDeRetirada` (na tela) e o salvamento
+    // (orcamentos.service, ao gravar `frete_escolhido = 'RETIRADA'`) ja usam,
+    // para os tres nunca discordarem sobre o que e retirada.
+    //
+    // Vale tambem para a lista reconstruida quando nao ha cotacao: o card
+    // `frete_retirada` de la tambem se chama "Retirada Local", e tambem
+    // ganhava um duplicado aqui.
+    //
+    // As 107 propostas gravadas como "Sem custo" NAO sao reconhecidas — o
+    // titulo delas nao diz retirada — e seguem exibindo o card que tem mais a
+    // opcao de retirada, exatamente como hoje. Reconhece-las exigiria tratar
+    // SEM_CUSTO como retirada, que e justamente a unificacao descartada.
+    const hasRetira = fretes.some(
+      (f) => f.id === "frete_retira_balcao" || (f.transportadora ?? "").toUpperCase().includes("RETIRA")
+    );
     if (!hasRetira) {
       fretes = [...fretes, {
         id: "frete_retira_balcao",
