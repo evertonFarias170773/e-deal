@@ -1537,20 +1537,25 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     return () => window.removeEventListener('popstate', handler);
   }, [isDirty]);
 
-  // Adjust selected address if no longer in combinedAddresses
+  /**
+   * Selecao que saiu da lista e LIMPA, nao substituida (24/08/2026).
+   *
+   * Este efeito elegia sozinho um substituto — principal, depois entrega,
+   * depois o primeiro da lista. Era o segundo mecanismo de troca automatica do
+   * endereco de entrega, ao lado do arrasto que existia em
+   * `handleSelectComprador`. Trocar o pagador reconstroi `combinedAddresses`, o
+   * endereco escolhido some da lista, e o sistema escolhia outro no lugar sem
+   * o usuario pedir.
+   *
+   * Agora: se o endereco selecionado continua na lista, nada acontece — ele
+   * permanece. Se sai, a selecao fica VAZIA e quem escolhe e o usuario, na
+   * propria secao 5. O sistema nunca elege um endereco de entrega.
+   */
   useEffect(() => {
     if (loadingCompradorAddresses) return;
 
-    if (combinedAddresses.length > 0) {
-      const exists = combinedAddresses.some((addr) => addr.id === form.enderecoId);
-      if (!exists) {
-        const defaultAddr = 
-          combinedAddresses.find((e) => (e.tipo || "").trim().toLowerCase() === "principal") || 
-          combinedAddresses.find((e) => (e.tipo || "").trim().toLowerCase() === "entrega") || 
-          combinedAddresses[0];
-        updateField("enderecoId", defaultAddr ? defaultAddr.id : "");
-      }
-    } else {
+    const exists = combinedAddresses.some((addr) => addr.id === form.enderecoId);
+    if (!exists) {
       updateField("enderecoId", "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1871,6 +1876,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     setPendingEnderecoSelection(null);
   }
 
+  /**
+   * Trocar o PAGADOR nao escolhe endereco de entrega (24/08/2026).
+   *
+   * Ate aqui esta funcao calculava o endereco principal do pagador recem
+   * escolhido, gravava no formulario e mandava junto para
+   * `updatePropostaFiscalDados` — que persistia `id_endereco_ent` na mesma
+   * transacao do `id_faturado`. Resultado: a escolha do usuario era
+   * SUBSTITUIDA sem ele pedir. Comprovado na proposta 21055 (21/08/2026
+   * 15:07:23): trocar o pagador de 8469 para 342 arrastou o endereco de
+   * Garanhuns-PE, escolhido, para o principal do pagador em Porto Alegre-RS.
+   *
+   * O QUE CONTINUA
+   *   A lista de opcoes SE RECONSTROI — por isso `setCompradorAddresses` fica:
+   *   e ela que faz os enderecos do novo pagador aparecerem na secao 5. O que
+   *   sai e apenas a ESCOLHA automatica.
+   *
+   *   Se o endereco ja selecionado seguir na lista nova, ele permanece
+   *   selecionado sozinho: ninguem o toca. Se sair da lista, quem limpa e o
+   *   efeito "Adjust selected address", logo acima — que desde hoje limpa em
+   *   vez de eleger um substituto.
+   *
+   * `id_faturado` continua sendo gravado normalmente.
+   */
   async function handleSelectComprador(id: string) {
     const nextId = form.compradorId === id ? "" : id;
     updateField("compradorId", nextId);
@@ -1879,7 +1907,6 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     
     const idIntNum = Number(form.id_int);
     let targetClienteIdRelacionado = cliente.idCliente;
-    let newEnderecoId: string | null = null;
     
     if (nextId && nextId !== cliente.id.toString()) {
        const vinculo = cliente.vinculosComerciais?.find((v) => v.id === nextId);
@@ -1889,14 +1916,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
          try {
            const { cadastro } = await getCadastroCompleto(vinculo.idClienteRelacionado);
            if (cadastro) {
+              // Reconstroi as opcoes da secao 5. NAO escolhe nada.
               setCompradorAddresses(cadastro.enderecos || []);
-              const addrs = sortEnderecosPorPrioridade(cadastro.enderecos || []);
-              const principalAddr = addrs[0];
-              
-              if (principalAddr) {
-                 newEnderecoId = principalAddr.id;
-                 updateField("enderecoId", newEnderecoId);
-              } else {
+
+              // O aviso continua valendo, e agora vale mais: sem endereco do
+              // pagador na lista, quem precisa escolher e o usuario.
+              if ((cadastro.enderecos || []).length === 0) {
                  showToast({ type: "warning", title: "Pagador sem endereço", description: "Pagador alterado, mas ele não possui endereço cadastrado." });
               }
            }
@@ -1904,16 +1929,9 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
            console.error("Erro fetch enderecos do pagador:", e);
          }
        }
-    } else {
-       const addrs = sortEnderecosPorPrioridade(cliente.enderecos || []);
-       const principalAddr = addrs[0];
-       if (principalAddr) {
-          newEnderecoId = principalAddr.id;
-          updateField("enderecoId", newEnderecoId);
-       }
     }
     
-    const { success, errorMessage } = await updatePropostaFiscalDados(idIntNum, targetClienteIdRelacionado, newEnderecoId ?? null);
+    const { success, errorMessage } = await updatePropostaFiscalDados(idIntNum, targetClienteIdRelacionado);
     if (!success) {
       showToast({ type: "error", title: "Falha ao salvar pagador", description: errorMessage || "Não foi possível atualizar os dados fiscais na proposta." });
     }

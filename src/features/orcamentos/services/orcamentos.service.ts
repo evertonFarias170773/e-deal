@@ -3634,10 +3634,25 @@ export async function updateEnderecoProposta(
   return { success: true, data: mappedEndereco };
 }
 
+/**
+ * Grava o PAGADOR da proposta. So o pagador (24/08/2026).
+ *
+ * Ate hoje esta funcao recebia tambem um `idEnderecoEnt` e o gravava junto,
+ * na mesma transacao — foi assim que a troca de pagador passou a SUBSTITUIR o
+ * endereco de entrega que o usuario tinha escolhido (proposta 21055,
+ * 21/08/2026 15:07:23: `id_faturado` 8469→342 e `id_endereco_ent`
+ * Garanhuns-PE → Porto Alegre-RS, no mesmo UPDATE).
+ *
+ * `propostas.id_endereco_ent` passa a ser escrito SO por `saveProposta`, a
+ * partir do que o usuario selecionou na secao 5. Trocar pagador nao mexe em
+ * endereco.
+ *
+ * O parametro saiu da assinatura de proposito: mante-lo opcional deixaria a
+ * porta aberta para o arrasto voltar sem ninguem perceber.
+ */
 export async function updatePropostaFiscalDados(
   idInt: number,
-  idFaturado: number,
-  idEnderecoEnt: string | null
+  idFaturado: number
 ): Promise<{ success: boolean; data?: any; errorMessage?: string }> {
   const client = getSupabaseClient();
   if (!client) {
@@ -3645,9 +3660,6 @@ export async function updatePropostaFiscalDados(
   }
 
   const updatePayload: any = { id_faturado: idFaturado };
-  if (idEnderecoEnt !== null && idEnderecoEnt !== undefined) {
-    updatePayload.id_endereco_ent = idEnderecoEnt;
-  }
 
   const { data, error } = await client
     .from("propostas")

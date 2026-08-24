@@ -669,31 +669,46 @@ export function NotasFiscaisPage() {
     setCancelLoading(true);
     try {
       const isNfse = !!cancelNoteNfse;
-      const url = isNfse 
-        ? "https://10074.hostoo.net.br/webhook/cancelamento-nfse" 
-        : "https://10074.hostoo.net.br/webhook/cancelamento";
 
-      const response = await fetch(url, {
+      // O cancelamento passa pelo servidor: é lá que a sessão, a permissão
+      // fiscal.cancel_nf e a trava contra chamada concorrente são conferidas, e
+      // é lá que a autoria é gravada. A tela não alcança mais o webhook do n8n —
+      // e não escolhe mais entre NF-e e NFS-e: quem decide é o servidor, pela
+      // tabela em que a referência existe.
+      const sessionResult = await getSupabaseClient()?.auth.getSession();
+      const accessToken = sessionResult?.data?.session?.access_token ?? "";
+      if (!accessToken) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+      }
+
+      const response = await fetch("/api/fiscal/cancelar-nfe", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
         body: JSON.stringify({
-          id_empresa: Number(note.id_empresa),
-          referencia: note.ref,
+          ref: note.ref,
           justificativa: cancelJustificativa.trim()
         })
       });
 
-      let data;
+      let envelope;
       try {
-        data = await response.json();
+        envelope = await response.json();
       } catch {
         throw new Error("A resposta da API de cancelamento não é um JSON válido.");
       }
 
       if (!response.ok) {
-        const errorMsg = data.erro?.mensagem || data.error || data.message || `Erro HTTP ${response.status}`;
+        const errorMsg =
+          envelope.message || envelope.erro?.mensagem || envelope.error || `Erro HTTP ${response.status}`;
         throw new Error(errorMsg);
       }
+
+      // A rota repassa o corpo do webhook em `retorno`. O resto do fluxo abaixo
+      // continua lendo o retorno da Focus como sempre leu.
+      const data = envelope?.retorno ?? envelope;
 
       const parsed = parseFocusResponse(data);
       if (!parsed.success) throw new Error(parsed.message);
