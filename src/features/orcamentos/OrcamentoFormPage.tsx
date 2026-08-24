@@ -41,6 +41,7 @@ import {
   buildPropostaInformalText,
   propostaDispensaArte,
   resumirEnderecoDoOrcamento,
+  SERVICO_RETIRA_BALCAO,
   type DestinoDoResumo
 } from "@/features/orcamentos/orcamento-utils";
 import { formatCurrency, parseCurrencyBR, formatCurrencyWithoutPrefix } from "@/lib/formatters/currency";
@@ -1680,7 +1681,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           id: "frete_retira_balcao",
           id_int: proposta?.id_int ?? 0,
           transportadora: "Retirada Local",
-          servico: "Sem custo",
+          servico: SERVICO_RETIRA_BALCAO,
           valor: 0.00,
           prazo: "Imediato",
           observacao: "Retirar pessoalmente no balcão da empresa",
@@ -2891,7 +2892,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         id: "frete_retira_balcao",
         id_int: form.id_int ? Number(form.id_int) : 0,
         transportadora: "Retirada Local",
-        servico: "Sem custo",
+        servico: SERVICO_RETIRA_BALCAO,
         valor: 0.00,
         prazo: "Imediato",
         observacao: "Retirar pessoalmente no balcão da empresa",
@@ -7142,7 +7143,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
         id: "frete_retira_balcao",
         id_int: proposta?.id_int ?? 0,
         transportadora: "Retirada Local",
-        servico: "Sem custo",
+        servico: SERVICO_RETIRA_BALCAO,
         valor: 0.00,
         prazo: "Imediato",
         observacao: "Retirar pessoalmente no balcão da empresa",

@@ -21,6 +21,26 @@ export function getCobrancaLabel(status: Proposta["cobrancaStatus"]) {
   return labels[status];
 }
 
+/**
+ * O `servico` com que a retirada de balcão é GRAVADA em `cotacao_frete`.
+ *
+ * Precisa ser igual ao `transportadora` do card, e é por isso que existe como
+ * constante em vez de três literais soltos. `cotacao_frete` não tem coluna
+ * `transportadora`: o save grava só `servico`, e a leitura reconstrói o título
+ * a partir dele (`mapCotacaoRowToPropostaFrete`). Quando os dois divergem, o
+ * card volta do banco com outro nome — foi exatamente o que aconteceu com
+ * "Sem custo", que era o `servico` enquanto o título era "Retirada Local".
+ *
+ * "Retirada Local" também é o rótulo certo para a Expedição: `normalizarTipoFrete`
+ * testa RETIRA antes de SEM CUSTO, então a cotação passa a classificar como
+ * RETIRA_BALCAO. Isso NÃO unifica as duas categorias — `SEM_CUSTO` continua
+ * existindo em tipo-frete.ts para o que é de fato envio grátis. O que muda é
+ * que a retirada de balcão para de se apresentar como envio grátis.
+ *
+ * As 107 linhas já gravadas como "Sem custo" ficam como estão: sem backfill.
+ */
+export const SERVICO_RETIRA_BALCAO = "Retirada Local";
+
 export function sortEnderecosPorPrioridade(enderecos: CadastroEndereco[]): CadastroEndereco[] {
   return [...enderecos].sort((a, b) => {
     const getPriority = (addr: CadastroEndereco) => {
@@ -479,7 +499,7 @@ export function createFretesMock(endereco?: CadastroEndereco, id_int = 0, pesoUs
       id: "frete_retira_balcao",
       id_int,
       transportadora: "Retirada Local",
-      servico: "Sem custo",
+      servico: SERVICO_RETIRA_BALCAO,
       valor: 0.00,
       prazo: "Imediato",
       observacao: "Retirar pessoalmente no balcão da empresa",
