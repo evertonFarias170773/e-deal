@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
+import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
 
 export type EtiquetaViewModel = {
   idInt: number;
@@ -88,7 +89,7 @@ export async function montarEtiquetaViewModel(
 ): Promise<EtiquetaViewModel | null> {
   const { data: proposta } = await supabase
     .from("propostas")
-    .select("id_int, cliente, id_cliente, empresa, cep")
+    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep")
     .eq("id_int", idInt)
     .maybeSingle();
   if (!proposta) return null;
@@ -96,7 +97,9 @@ export async function montarEtiquetaViewModel(
   const [{ data: exp }, { data: os }, { data: frete }, { data: notas }] = await Promise.all([
     supabase
       .from("expedicoes")
-      .select("peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, codigo_rastreamento, id_endereco_entrega, obs, data_despacho")
+      .select(
+        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, data_despacho"
+      )
       .eq("id_int", idInt)
       .maybeSingle(),
     supabase.from("propostas_os").select("codigo_rastreamento").eq("id_int", idInt).maybeSingle(),
@@ -180,11 +183,30 @@ export async function montarEtiquetaViewModel(
       null;
   }
 
-  const { data: cliente } = idCliente !== null
+  /**
+   * EM NOME DE QUEM A ETIQUETA SAI (24/08/2026).
+   *
+   * Escolhido no despacho quando o pagador difere do cliente; `null` mantem o
+   * cliente da proposta, que e como sempre foi. A validacao vive em
+   * `resolverIdDestinatarioEtiqueta`: id que nao seja o cliente nem o pagador
+   * cai no cliente — a escrita nao passa por servidor nenhum, entao a guarda
+   * precisa estar aqui, na leitura.
+   *
+   * O ENDERECO NAO ENTRA NESTA CONTA. Ele e escolha separada e independente:
+   * a caixa pode ir para um endereco do pagador em nome do cliente, e vice-versa.
+   * Por isso o destinatario e um campo proprio, e nao deduzido do endereco.
+   */
+  const idDestinatario = resolverIdDestinatarioEtiqueta(
+    idCliente,
+    proposta.id_faturado !== null && proposta.id_faturado !== undefined ? Number(proposta.id_faturado) : null,
+    exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+  );
+
+  const { data: cliente } = idDestinatario !== null
     ? await supabase
         .from("clientes")
         .select("nome, fantasia, documento, whatsapp_1, telefone_fixo, cidade_uf")
-        .eq("id_cliente", idCliente)
+        .eq("id_cliente", idDestinatario)
         .maybeSingle()
     : { data: null };
 
@@ -244,9 +266,14 @@ export async function montarEtiquetaViewModel(
     destinatario: {
       // Mesmo rótulo da lista da Expedição: número do cadastro antes do nome.
       // Sem `id_cliente` na proposta, sai só o nome (nada de prefixo vazio).
+      // `proposta.cliente` e o nome do CLIENTE gravado na proposta: so serve
+      // quando o destinatario e ele. Escolhido o pagador, o nome tem de vir do
+      // cadastro dele — usar o texto da proposta imprimiria o nome errado.
       nome: rotuloClienteComNumero(
-        idCliente,
-        proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
+        idDestinatario,
+        idDestinatario === idCliente
+          ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
+          : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
       ),
       recebedor: endereco?.recebedor || "",
       endereco: endereco

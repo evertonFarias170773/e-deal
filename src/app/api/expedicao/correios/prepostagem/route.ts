@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { resolverIdDestinatarioEtiqueta } from "@/features/expedicao/lib/destinatario-etiqueta";
 import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
   // Dados do pedido: mesmas fontes da etiqueta interna.
   const { data: proposta } = await supabase
     .from("propostas")
-    .select("id_int, cliente, id_cliente, empresa, cep")
+    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep")
     .eq("id_int", idInt)
     .maybeSingle();
   if (!proposta) return NextResponse.json({ success: false, message: "Pedido não encontrado." }, { status: 404 });
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     supabase
       .from("expedicoes")
       .select(
-        "peso_kg, peso_bruto_kg, id_endereco_entrega, correios_id_prepostagem, correios_codigo_objeto, correios_id_prepostagem_anterior, prepostagem_cancelada_em"
+        "peso_kg, peso_bruto_kg, id_endereco_entrega, id_cliente_destinatario_etiqueta, correios_id_prepostagem, correios_codigo_objeto, correios_id_prepostagem_anterior, prepostagem_cancelada_em"
       )
       .eq("id_int", idInt)
       .maybeSingle(),
@@ -116,8 +117,28 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: cliente } = idCliente !== null
-    ? await supabase.from("clientes").select("nome, fantasia, whatsapp_1, telefone_fixo").eq("id_cliente", idCliente).maybeSingle()
+  /**
+   * Destinatario escolhido no despacho (24/08/2026). Mesma resolucao da etiqueta
+   * 10x15, pela mesma funcao: id que nao seja o cliente nem o pagador cai no
+   * cliente da proposta.
+   *
+   * SO VALE ANTES DA PREPOSTAGEM. Depois que o objeto e criado, o nome congela do
+   * lado dos Correios — trocar a escolha aqui nao altera objeto ja emitido.
+   */
+  const idDestinatario = resolverIdDestinatarioEtiqueta(
+    idCliente,
+    proposta.id_faturado !== null && proposta.id_faturado !== undefined ? Number(proposta.id_faturado) : null,
+    exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+  );
+
+  // O cadastro lido e o do DESTINATARIO — nome e telefone tem de sair do mesmo
+  // lugar. Buscar pelo cliente e usar o nome do pagador misturaria os dois.
+  const { data: cliente } = idDestinatario !== null
+    ? await supabase
+        .from("clientes")
+        .select("nome, fantasia, whatsapp_1, telefone_fixo")
+        .eq("id_cliente", idDestinatario)
+        .maybeSingle()
     : { data: null };
 
   // Remetente: empresa do pedido em public.empresas (fallback: primeira linha).
@@ -194,7 +215,13 @@ export async function POST(request: Request) {
         telefone: empresaRow.telefone_nfe || ""
       },
       destinatario: {
-        nome: String(proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`),
+        // Escolhido o pagador, o nome vem do cadastro dele: `proposta.cliente` e
+        // o nome do cliente e imprimiria o destinatario errado na etiqueta.
+        nome: String(
+          idDestinatario === idCliente
+            ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
+            : cliente?.nome || cliente?.fantasia || `Pedido ${idInt}`
+        ),
         cep: String(endereco.cep),
         logradouro: String(endereco.endereco ?? ""),
         numero: String(endereco.numero ?? "S/N"),

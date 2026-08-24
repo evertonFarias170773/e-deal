@@ -6,6 +6,8 @@ import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { labelTipoFrete, modalidadeInicialDoDespacho, normalizarTipoFrete } from "../lib/tipo-frete";
+import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
+import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
 import { despachar, salvarDadosExpedicao } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
 import { listarEnderecosCliente } from "../services/enderecos.service";
@@ -162,6 +164,21 @@ export function DespacharModal({
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
   const [gerandoPrepostagem, setGerandoPrepostagem] = useState(false);
+  /**
+   * EM NOME DE QUEM A ETIQUETA SAI.
+   *
+   * So existe quando ha pagador distinto do cliente. O padrao e o PAGADOR
+   * (decisao do dono, 24/08/2026): quando os dois cadastros diferem, e ele quem
+   * costuma receber. Escolha ja gravada sempre vence o padrao — reabrir o modal
+   * nao troca o que o expedidor decidiu.
+   *
+   * Nao mexe no endereco: sao escolhas separadas, e a caixa pode ir para o
+   * endereco de um em nome do outro.
+   */
+  const [idDestinatarioEtiqueta, setIdDestinatarioEtiqueta] = useState<number | null>(
+    exp?.idClienteDestinatarioEtiqueta ??
+      (temPagadorDistinto(pedido.idCliente, pedido.idFaturado) ? pedido.idFaturado : null)
+  );
   /**
    * Transporte que a recotacao escolheu mas a modalidade atual nao oferece
    * (na pratica: Correios recotado num pedido FOB). A tela diz o que houve em
@@ -564,6 +581,7 @@ export function DespacharModal({
       qtdVolumes: volNum,
       tipoVolume,
       idEnderecoEntrega,
+      idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
       obs: obs.trim()
     };
@@ -625,6 +643,7 @@ export function DespacharModal({
       qtdVolumes: volNum,
       tipoVolume,
       idEnderecoEntrega,
+      idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
       obs: obs.trim()
     });
@@ -697,6 +716,7 @@ export function DespacharModal({
       qtdVolumes: volNum,
       tipoVolume,
       idEnderecoEntrega,
+      idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
       obs: obs.trim()
     });
@@ -921,6 +941,32 @@ export function DespacharModal({
                   ))}
                 </select>
               </div>
+
+              {/* EM NOME DE QUEM SAI A ETIQUETA — só quando ha pagador distinto.
+                  Sem pagador distinto o campo nem aparece e nada muda: o
+                  destinatario segue sendo o cliente da proposta, como sempre.
+                  E escolha SEPARADA do endereco acima. */}
+              {temPagadorDistinto(pedido.idCliente, pedido.idFaturado) && (
+                <div>
+                  <label className={labelClass}>Em nome de quem sai a etiqueta</label>
+                  <select
+                    value={idDestinatarioEtiqueta ?? ""}
+                    onChange={(e) => setIdDestinatarioEtiqueta(e.target.value === "" ? null : Number(e.target.value))}
+                    className={inputClass}
+                  >
+                    <option value={String(pedido.idCliente ?? "")}>
+                      {rotuloClienteComNumero(pedido.idCliente, pedido.cliente)}
+                    </option>
+                    {/* Mesmo padrao do dropdown de endereco: o numero do cadastro
+                        identifica o pagador sem depender do nome. */}
+                    <option value={String(pedido.idFaturado ?? "")}>PAGADOR #{pedido.idFaturado}</option>
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Vale para a etiqueta 10x15 e para a etiqueta oficial dos Correios. Na dos Correios só tem efeito se
+                    for definido ANTES de gerar a prepostagem — depois o nome fica congelado do lado deles.
+                  </p>
+                </div>
+              )}
 
               {/* Recotação — SÓ CONSULTA. Fica embaixo do endereço porque é dele
                   que o resultado depende. Nada aqui grava nada. */}

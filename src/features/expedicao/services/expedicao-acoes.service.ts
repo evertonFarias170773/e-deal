@@ -15,6 +15,12 @@ export type DespachoInput = {
   qtdVolumes: number | null;
   tipoVolume: string | null;
   idEnderecoEntrega: string | null;
+  /**
+   * `clientes.id_cliente` em nome de quem a etiqueta sai. So existe quando ha
+   * pagador distinto do cliente; `null` mantem o cliente da proposta, que e o
+   * comportamento de sempre. Independe do endereco escolhido.
+   */
+  idClienteDestinatarioEtiqueta?: number | null;
   codigoRastreamento: string;
   obs: string;
 };
@@ -189,6 +195,7 @@ export async function despachar(
     qtd_volumes: input.qtdVolumes,
     tipo_volume: input.tipoVolume,
     id_endereco_entrega: input.idEnderecoEntrega,
+    id_cliente_destinatario_etiqueta: input.idClienteDestinatarioEtiqueta ?? null,
     codigo_rastreamento: input.codigoRastreamento || null,
     obs: input.obs || null,
     data_despacho: new Date().toISOString(),
@@ -318,6 +325,8 @@ export async function salvarDadosExpedicao(
   if (dados.qtdVolumes !== undefined) campos.qtd_volumes = dados.qtdVolumes;
   if (dados.tipoVolume !== undefined) campos.tipo_volume = dados.tipoVolume;
   if (dados.idEnderecoEntrega !== undefined) campos.id_endereco_entrega = dados.idEnderecoEntrega;
+  if (dados.idClienteDestinatarioEtiqueta !== undefined)
+    campos.id_cliente_destinatario_etiqueta = dados.idClienteDestinatarioEtiqueta;
   if (dados.codigoRastreamento !== undefined) campos.codigo_rastreamento = dados.codigoRastreamento || null;
   if (dados.obs !== undefined) campos.obs = dados.obs || null;
   return upsertExpedicao(idInt, campos);

@@ -76,6 +76,11 @@ export interface ExpedicaoRegistro {
   tipoVolume: string | null;
   idEnderecoEntrega: string | null;
   codigoRastreamento: string | null;
+  /**
+   * `clientes.id_cliente` em nome de quem a etiqueta sai, escolhido no despacho
+   * quando o pagador difere do cliente. Nulo = cliente da proposta.
+   */
+  idClienteDestinatarioEtiqueta: number | null;
   correiosIdPrepostagem: string | null;
   correiosCodigoObjeto: string | null;
   /**
