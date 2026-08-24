@@ -753,11 +753,26 @@ export function OsPdfCabecalho({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProp
 
 /** Cliente e responsáveis (dados da proposta) — o segundo bloco fixo do documento. */
 export function OsPdfBlocoCliente({ vm, somenteEstoque }: { vm: OsPdfViewModel; somenteEstoque: boolean }) {
+  /**
+   * EVENTO com o nome do pagador (24/08/2026), regra do cliente 8469 — ver
+   * `eventoDoPagadorLisiton` em os-viewmodel.service, onde as tres condicoes
+   * moram e onde esta o porque.
+   *
+   * O `nome_evento` da arte continua vencendo: `eventoDoPagador` so vem
+   * preenchido quando nao ha evento nenhum. E ele ATRAVESSA a guarda
+   * `somenteEstoque`, porque justamente em pedido de prateleira e que o campo
+   * ficava vazio — era esse espaco que a regra veio ocupar.
+   *
+   * DESIGNER nao muda: segue oculto em prateleira, como sempre esteve. A guarda
+   * continua valendo para ele, e para todo o resto do bloco.
+   */
+  const eventoImpresso = vm.boletim.evento ?? vm.boletim.eventoDoPagador;
+  const escondeEvento = somenteEstoque && !vm.boletim.eventoDoPagador;
   return (
         <View style={styles.bloco} wrap={false}>
           <View style={styles.linha}>
             <Campo label="CLIENTE" valor={vm.cliente.nome} />
-            {somenteEstoque ? null : <Campo label="EVENTO" valor={vm.boletim.evento} />}
+            {escondeEvento ? null : <Campo label="EVENTO" valor={eventoImpresso} />}
           </View>
           <View style={styles.linha}>
             <Campo label="VENDEDOR" valor={vm.vendedor} />

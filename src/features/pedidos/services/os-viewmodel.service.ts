@@ -82,6 +82,13 @@ export interface OsPdfViewModel {
     setor: string | null;
     hora: string | null;
     evento: string | null;
+    /**
+     * Nome do PAGADOR a imprimir no campo EVENTO, e null fora da regra do
+     * cliente 8469 (ver `eventoDoPagadorLisiton`). Campo proprio, e nao um
+     * `evento` preenchido, porque o PDF precisa distinguir os dois: este passa
+     * pela guarda `somenteEstoque`, o `evento` normal nao.
+     */
+    eventoDoPagador: string | null;
     /** O que os demais boletins da proposta produzem, para o resumo do rodapé. */
     outrosSetores: { setor: string; itens: { produto: string; quantidade: number }[] }[];
   };
@@ -131,6 +138,52 @@ function arquivoParaArteRef(client: SupabaseClient, arquivo: ArquivoJsonb): OsPd
   };
 }
 
+/**
+ * Cliente cujo boletim imprime o PAGADOR no campo EVENTO.
+ * 8469 = LISITON DOCUMENTOS SEGUROS LTDA.
+ */
+const CLIENTE_EVENTO_DO_PAGADOR = 8469;
+
+/**
+ * EVENTO com o nome do pagador, no boletim do cliente 8469 (24/08/2026).
+ *
+ * SEGUNDA REGRA FIXA PARA O 8469 NO SISTEMA
+ *   A primeira e o rodape "DSEG BRASIL" da etiqueta 10x15
+ *   (`etiqueta-viewmodel.service.ts`, `nomeRemetenteExibido`). As duas sao
+ *   EXIBICAO e so valem para este cadastro; nenhuma grava nada. Se aparecer uma
+ *   terceira, e hora de discutir se isso vira cadastro em vez de constante.
+ *
+ * POR QUE
+ *   O 8469 compra so produto de prateleira, que nao tem arte: dos 317 pedidos
+ *   dele, 314 nao tem uma linha em `pedidos_artes`. Sem arte nao ha
+ *   `nome_evento`, e a guarda `somenteEstoque` do PDF corta o campo EVENTO por
+ *   inteiro — o boletim dele sai sempre sem essa informacao. Como boa parte
+ *   desses pedidos e paga por um terceiro, quem esta na bancada nao tem como
+ *   saber para quem aquilo vai. O nome do pagador ocupa o espaco que estaria
+ *   vazio de qualquer jeito.
+ *
+ * AS TRES CONDICOES, TODAS NECESSARIAS
+ *   1. o CLIENTE da proposta e o 8469 — nao o pagador. Pagador 8469 com cliente
+ *      outro NAO ativa a regra, mesmo criterio da etiqueta;
+ *   2. existe pagador distinto do cliente;
+ *   3. NAO ha `nome_evento`. Havendo, ele vence e nada muda — os 3 pedidos do
+ *      8469 que tem arte (19443, 19370, 17974) seguem imprimindo o evento
+ *      deles, e nenhum dos tres tem pagador distinto de qualquer forma.
+ *
+ * Devolve null fora disso, e ai o PDF se comporta exatamente como antes.
+ */
+function eventoDoPagadorLisiton(
+  idCliente: number | null,
+  idFaturado: number | null,
+  nomeEvento: string | null,
+  nomePagador: string | null
+): string | null {
+  if (idCliente !== CLIENTE_EVENTO_DO_PAGADOR) return null;
+  if (idFaturado === null || idFaturado === idCliente) return null;
+  if ((nomeEvento || "").trim() !== "") return null;
+  return (nomePagador || "").trim() || null;
+}
+
 export async function montarOsPdfViewModel(
   client: SupabaseClient,
   idInt: number,
@@ -153,6 +206,8 @@ export async function montarOsPdfViewModel(
     let contato: string | null = null;
     let statusInterno = "";
     let idCliente: number | null = pedido.idCliente || null;
+    /** `propostas.id_faturado` — o pagador. Usado so pela regra do 8469. */
+    let idFaturado: number | null = null;
     /** Modalidade declarada pelo vendedor — decide o rótulo de FORMA DE ENVIO. */
     let modalidadeFrete: ModalidadeFrete | null = null;
     let idTransportadoraCliente: number | null = null;
@@ -174,7 +229,9 @@ export async function montarOsPdfViewModel(
           return await client
             .from("propostas")
             .select(
-              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, modalidade_frete, id_transportadora_cliente"
+              // `id_faturado` (o PAGADOR) entra na MESMA linha que ja era lida:
+              // custo zero. Serve a regra do 8469 logo abaixo.
+              "cliente, cnpjCpf, contato, empresa, vendedor, status_interno, id_cliente, id_faturado, modalidade_frete, id_transportadora_cliente"
             )
             .eq("id_int", idInt)
             .maybeSingle();
@@ -257,6 +314,9 @@ export async function montarOsPdfViewModel(
         if (propostaRow.id_cliente !== null && propostaRow.id_cliente !== undefined) {
           idCliente = Number(propostaRow.id_cliente);
         }
+        if (propostaRow.id_faturado !== null && propostaRow.id_faturado !== undefined) {
+          idFaturado = Number(propostaRow.id_faturado);
+        }
         modalidadeFrete = (propostaRow.modalidade_frete as ModalidadeFrete | null) ?? null;
         if (
           propostaRow.id_transportadora_cliente !== null &&
@@ -270,18 +330,38 @@ export async function montarOsPdfViewModel(
     }
 
     // Telefone/documento do cadastro do cliente (tolerante a falha).
+    //
+    // A consulta busca DOIS cadastros num `in` so — o cliente e, quando existe e
+    // difere, o pagador. Continua sendo UMA ida ao banco, a mesma de antes: o
+    // nome do pagador que a regra do 8469 imprime nao custa consulta nova.
     let telefone: string | null = null;
     let documentoCliente: string | null = null;
-    if (idCliente) {
+    let nomePagador: string | null = null;
+    const idsCadastro = Array.from(
+      new Set([idCliente, idFaturado].filter((n): n is number => Number.isFinite(Number(n)) && Number(n) > 0))
+    );
+    if (idsCadastro.length > 0) {
       try {
-        const { data: clienteRow } = await client
+        const { data: clienteRows } = await client
           .from("clientes")
-          .select("nome, documento, telefone_fixo, whatsapp_1")
-          .eq("id_cliente", idCliente)
-          .maybeSingle();
+          .select("id_cliente, nome, fantasia, documento, telefone_fixo, whatsapp_1")
+          .in("id_cliente", idsCadastro);
+        const linhas = (clienteRows || []) as Record<string, unknown>[];
+        const clienteRow = linhas.find((r) => Number(r.id_cliente) === Number(idCliente));
         if (clienteRow) {
           telefone = String(clienteRow.telefone_fixo || clienteRow.whatsapp_1 || "") || null;
           documentoCliente = clienteRow.documento ? String(clienteRow.documento) : null;
+        }
+        if (idFaturado !== null && idFaturado !== idCliente) {
+          const pagadorRow = linhas.find((r) => Number(r.id_cliente) === Number(idFaturado));
+          // `fantasia` primeiro: e o nome pelo qual a empresa e conhecida e o
+          // que o operador reconhece na bancada. O cadastro 471, por exemplo,
+          // tem razao social "GR GRAFICA EXPRESSA LTDA" e fantasia "IMPRIMIX
+          // GRAFICA EXPRESSA" — imprimir a razao social nao diria nada a
+          // producao. Mesma preferencia de `buscarNomesDosSocios` e da coluna
+          // do pagador nas listas.
+          nomePagador =
+            String(pagadorRow?.fantasia ?? "").trim() || String(pagadorRow?.nome ?? "").trim() || null;
         }
       } catch (e) {
         console.warn("[os-viewmodel] Falha ao buscar cadastro do cliente (não-fatal):", e);
@@ -547,6 +627,7 @@ export async function montarOsPdfViewModel(
         setor: boletimSetor,
         hora: boletimHora,
         evento: boletimEvento,
+        eventoDoPagador: eventoDoPagadorLisiton(idCliente, idFaturado, boletimEvento, nomePagador),
         outrosSetores
       },
       empresa: { id: empresaId, nome: empresaNome, cnpj: empresaCnpj },
