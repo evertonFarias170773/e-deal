@@ -93,6 +93,13 @@ export interface PedidoExpedicao {
   idInt: number;
   cliente: string;
   idCliente: number | null;
+  /**
+   * `propostas.id_faturado` — o PAGADOR, quando difere do cliente. Entrou em
+   * 24/08/2026 para o modal Despachar poder oferecer tambem os enderecos dele:
+   * ha entrega que vai para endereco do pagador, e ate aqui esse endereco nao
+   * aparecia na lista. Null quando a proposta nao registra pagador proprio.
+   */
+  idFaturado: number | null;
   cidadeUf: string;
   empresa: string;
   /**

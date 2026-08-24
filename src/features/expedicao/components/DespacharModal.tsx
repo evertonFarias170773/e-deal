@@ -63,6 +63,17 @@ function transporteInicial(tipo: TipoFreteNormalizado): TipoFreteNormalizado {
   return tipo === "CORREIOS" || tipo === "MOTOBOY" || tipo === "TRANSPORTADORA" ? tipo : "TRANSPORTADORA";
 }
 
+/**
+ * Default do endereco de entrega. SO OLHA ENDERECOS DO CLIENTE DA PROPOSTA.
+ *
+ * Desde 24/08/2026 a lista pode trazer tambem enderecos do pagador, mas eles
+ * NAO entram nesta escolha: aparecem para selecao manual e nada mais. O
+ * automatismo que acertaria a proposta 21055 mudaria o default de todos os
+ * outros pedidos — e o expedidor e quem sabe para onde a caixa vai.
+ *
+ * A ordem nao mudou: CEP igual ao da cotacao > primeiro com tipo contendo
+ * "ENTREG" > primeiro da lista (o mais recente).
+ */
 function escolherEnderecoDefault(lista: EnderecoCliente[], freteCep: string | null): EnderecoCliente | null {
   if (lista.length === 0) return null;
   const cepAlvo = freteCep ? freteCep.replace(/\D/g, "") : "";
@@ -450,13 +461,17 @@ export function DespacharModal({
   useEffect(() => {
     let ativo = true;
     if (pedido.idCliente !== null) {
-      void listarEnderecosCliente(pedido.idCliente).then((lista) => {
+      // Uma consulta só para os dois cadastros — o pagador vem no próprio
+      // `pedido`, pelo pipeline da lista (24/08/2026).
+      void listarEnderecosCliente(pedido.idCliente, pedido.idFaturado).then((lista) => {
         if (!ativo) return;
         setEnderecos(lista);
         // Default (só quando não há endereço já salvo — spec §4.6): CEP da
-        // cotação > tipo de entrega > único/mais recente.
+        // cotação > tipo de entrega > único/mais recente. Restrito aos
+        // endereços DO CLIENTE: os do pagador são escolha manual.
         if (!idEnderecoEntrega && lista.length > 0) {
-          const escolhido = escolherEnderecoDefault(lista, pedido.freteCep);
+          const doCliente = lista.filter((e) => e.idCliente === pedido.idCliente);
+          const escolhido = escolherEnderecoDefault(doCliente, pedido.freteCep);
           if (escolhido) setIdEnderecoEntrega(escolhido.id);
         }
       });
@@ -895,8 +910,14 @@ export function DespacharModal({
                   className={inputClass}
                 >
                   <option value="">— não informar —</option>
+                  {/* Sufixo de origem no mesmo padrão do `[TIPO]` que o rótulo
+                      já usa: o expedidor precisa saber de qual cadastro é cada
+                      endereço para não despachar para o lugar errado. */}
                   {enderecos.map((e) => (
-                    <option key={e.id} value={e.id}>{e.rotulo}</option>
+                    <option key={e.id} value={e.id}>
+                      {e.rotulo}
+                      {e.idCliente !== pedido.idCliente ? ` [PAGADOR #${e.idCliente}]` : ""}
+                    </option>
                   ))}
                 </select>
               </div>
