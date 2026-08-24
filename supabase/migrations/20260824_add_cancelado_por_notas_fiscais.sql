@@ -54,3 +54,11 @@ COMMENT ON COLUMN public.notas_fiscais.cancelado_por_nome IS
 -- Seguro enquanto nenhum codigo publicado ler ou escrever nestas colunas.
 -- Depois que a rota de cancelamento estiver em producao, o rollback derruba a
 -- autoria e exige reverter o codigo antes.
+
+-- APLICADA EM PRODUCAO em 24/08/2026, com autorizacao explicita.
+--   colunas .......... 65 -> 67
+--   notas_fiscais .... 13 antes, 13 depois
+--   cancelado_por .... 0 preenchidos (nasce nula, como previsto)
+--   criado_por ....... 0 preenchidos antes e depois, intacto
+--   sem indice, sem constraint, sem default, sem backfill
+--   3 policies e 6 triggers da tabela inalterados
