@@ -87,13 +87,34 @@ export async function montarDeclaracaoViewModel(
 
   // Mesmo criterio da etiqueta: o destino sai do estado CONFIRMADO, nunca de
   // rascunho. O peso segue a precedencia unica, que considera o rascunho.
-  const expConfirmado = exp?.data_despacho ? exp : null;
 
-  if (expConfirmado?.id_endereco_entrega) {
+  /**
+   * ENDERECO ESCOLHIDO TEM PRECEDENCIA ABSOLUTA (24/08/2026).
+   *
+   * Mesma correcao aplicada na etiqueta 10x15, e pelo mesmo motivo: le
+   * `exp.id_endereco_entrega` direto, sem passar pelo gate de `data_despacho`.
+   * Sem ele, o endereco escolhido no despacho era descartado e a Declaracao
+   * imprimia o mais recente do cliente (casos 21000 e 21055).
+   *
+   * Alinha com `api/expedicao/correios/prepostagem/route.ts:74`, que sempre leu
+   * o campo sem gate.
+   *
+   * Sem escolha gravada, a cadeia de fallback abaixo continua identica: CEP
+   * cotado, depois o mais recente do cliente.
+   *
+   * NOTA SOBRE O GATE NESTE ARQUIVO
+   *   Diferente da etiqueta 10x15 — onde `expConfirmado` continua governando
+   *   transportadora, rastreio e obs —, aqui o endereco era o UNICO campo que
+   *   dependia dele. Com o endereco fora, a variavel ficaria sem uso, entao ela
+   *   sai junto. A Declaracao nao tem nenhum outro campo condicionado a
+   *   despacho confirmado. `data_despacho` continua no SELECT da linha 66, mas
+   *   deixa de influenciar qualquer campo deste documento.
+   */
+  if (exp?.id_endereco_entrega) {
     const { data } = await supabase
       .from("enderecos")
       .select("endereco, numero, complemento, bairro, cidade, uf, cep")
-      .eq("id", expConfirmado.id_endereco_entrega)
+      .eq("id", exp.id_endereco_entrega)
       .maybeSingle();
     endereco = data ?? null;
   }

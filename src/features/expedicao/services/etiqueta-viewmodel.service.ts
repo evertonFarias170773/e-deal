@@ -137,11 +137,33 @@ export async function montarEtiquetaViewModel(
    */
   const expConfirmado = exp?.data_despacho ? exp : null;
 
-  if (expConfirmado?.id_endereco_entrega) {
+  /**
+   * ENDERECO ESCOLHIDO TEM PRECEDENCIA ABSOLUTA (24/08/2026).
+   *
+   * Le `exp.id_endereco_entrega` direto, FORA do gate `expConfirmado`. Antes a
+   * selecao de endereco passava por ele, e sem `data_despacho` o endereco que o
+   * expedidor escolheu era descartado: caia no fallback e a etiqueta imprimia o
+   * mais recente do cliente. Casos comprovados — 21000 (escolhido Santa Cruz do
+   * Sul-RS, impresso Garanhuns-PE, com o recebedor errado junto) e 21055
+   * (escolhido Porto Alegre-RS, impresso Garanhuns-PE).
+   *
+   * Alinha com o que a prepostagem dos Correios ja faz em
+   * `api/expedicao/correios/prepostagem/route.ts:74`: la o campo sempre foi
+   * lido sem gate, e e o comportamento correto — o endereco e escolha explicita
+   * de quem despacha, nao dado que so vale depois de confirmar.
+   *
+   * O GATE NAO FOI REMOVIDO. Ele segue governando transportadora, codigo de
+   * rastreamento e obs, que continuam saindo so com despacho confirmado. Quem
+   * saiu de baixo dele foi apenas o ENDERECO.
+   *
+   * Sem escolha gravada, a cadeia de fallback abaixo continua identica: o
+   * endereco que casa com o CEP cotado, e depois o mais recente do cliente.
+   */
+  if (exp?.id_endereco_entrega) {
     const { data } = await supabase
       .from("enderecos")
       .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor")
-      .eq("id", expConfirmado.id_endereco_entrega)
+      .eq("id", exp.id_endereco_entrega)
       .maybeSingle();
     endereco = data ?? null;
   }
