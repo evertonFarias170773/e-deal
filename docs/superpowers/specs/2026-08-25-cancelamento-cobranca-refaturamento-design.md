@@ -283,19 +283,38 @@ Com `boleto_enviadoo = false`, a cobrança volta a casar com o filtro do Registr
 
 ### Empresa 2 (Ideal Birô — Inter, webhook `cancela-boleto-fat-inter`)
 
-O workflow `VIBE-BOLETO-FATURADO-INTER` cancela no Inter, **exclui a linha de `boletos`** e decide sozinho sobre `pagamentos_v2`: marca a cobrança como `CANCELADO` quando não resta parcela ativa. Em **18 dos 21** títulos faturados da empresa 2 o faturado é de parcela única — ou seja, cancelar o título mata a cobrança junto.
+> **Revisado em 25/08/2026 pela Etapa 0 do plano** (leitura do workflow vivo `8ahqXY8sASxqOETd`, 45 nós). O que esta seção afirmava sobre a cascata estava errado. O texto abaixo é o comportamento verificado.
 
-**Isso quebra a invariante.** A rota precisa reconciliar depois da confirmação do n8n:
+**A cascata não existe.** O ramo do webhook `cancela-boleto-fat-inter` faz:
 
-- reler `pagamentos_v2`;
-- se a cobrança voltou `CANCELADO` (ou outro status inativo), reativá-la: `status = 'A_VENCER'`, `motivo_cancela = null`, `boleto_enviadoo = false`, `confirmado` preservado;
-- devolver `cobrancaReativada: true` para a tela poder dizer o que aconteceu.
+```
+Cancelar PIX (Inter) → Code (cancelado = !temErro) → If
+  ├─ false → Respond to Webhook (409)
+  └─ true  → Busca boleto alvo (por id_boleto_c6, limit 1)
+             → deleta_boleto (DELETE físico em boletos)
+             → Busca parcelas restantes (por id_int, status != CANCELADO)
+             → Conta parcelas ativas → IF Sem parcela ativa
+                  ├─ true  ─┐
+                  └─ false ─┴→ Responde Sucesso    ← as DUAS saídas no mesmo nó
+```
 
-Esse padrão **já existe e está validado** em `faturado-titulos.service.ts:129-160`, no fluxo de salvar o orçamento — inclusive com o tratamento de erro certo ("NÃO salve a proposta — acerte a cobrança na aba Pagamentos"). A spec move essa reconciliação para dentro da rota, onde **os dois** chamadores a herdam: o "Cancelar recebível" de Contas a Receber (o passo 1) e o fluxo de salvar orçamento.
+**Nenhum nó do ramo escreve em `pagamentos_v2`.** O único que escreveria, `Update v2`, está **desativado e órfão** — e é nó de emissão (`cod_solicitacao_inter`, `linha_digitavel`, `url_pdf`), não de cancelamento. Também não há trigger em `boletos` que escreva em `pagamentos_v2`, nem outro workflow atendendo aquele path.
 
-Isso é trabalho **desta rodada** (decisão 12): sem a reativação o passo 1 não funciona na Birô, e a invariante da cobrança viva — que é a base do fluxo em três passos — fica falsa em 18 dos 21 títulos daquela empresa.
+Consequências para o desenho:
 
-**Lacuna medida hoje:** `ContasReceberPage` só grava `boleto_enviadoo = false` e **não reativa**. Cancelar hoje um título de parcela única da Birô por essa tela deixa a cobrança `CANCELADO` — estado que a invariante do passo 1 proíbe.
+1. **A invariante da cobrança viva já é verdadeira na Birô hoje**, porque nada cancela a cobrança. Quem a sustenta é o **lado ERP** — a correção de `boleto_enviadoo` com fallback de vínculo, §12.
+2. **A reativação continua na rodada, como defesa idempotente**, não como o que sustenta a invariante. Ela é barata, não tem efeito quando não há o que reativar, e protege caso a cascata volte num save da UI do n8n. O padrão vem de `faturado-titulos.service.ts:129-160`, herdado pelos dois chamadores: o "Cancelar recebível" de Contas a Receber e o fluxo de salvar orçamento.
+3. **A decisão é sempre por releitura do banco, nunca pelo retorno do webhook.** Ver abaixo.
+
+**`pagamento_cancelado` e `pagamentoCancelado` não são confiáveis.** O nó `Responde Sucesso` devolve `pagamento_cancelado: semParcelaAtiva` — e `semParcelaAtiva` é apenas **calculado**, nunca aplicado. Quando vem `true`, o campo afirma que a cobrança foi cancelada **sem que nada tenha sido escrito**: é informação falsa. A rota `cancelar-boleto-faturado` repassa isso como `pagamentoCancelado`. Nem a rota nem a tela podem decidir por esses campos — **a decisão sai sempre de uma releitura de `pagamentos_v2`.**
+
+**`parcelas_ativas_restantes` é contado por `id_int`, não por cobrança.** O nó `Busca parcelas restantes` filtra `boletos` por `id_int` e `status != CANCELADO`. Numa proposta com duas cobranças faturadas, as parcelas de uma entram na contagem da outra. O número **não pode ser exibido como se fosse da cobrança** — nem usado para decidir. A recusa `VINCULO_AMBIGUO` cobre o caso no nosso lado; o número devolvido pelo webhook segue sendo diagnóstico, não fato.
+
+**Nunca observado em produção.** Nas 18 execuções retidas (a mais recente de 19/08/2026) **nenhum cancelamento chegou ao `deleta_boleto`** — todos foram recusados pelo Inter. Não é possível saber se a cascata já existiu e se perdeu num save, ou se a documentação sempre esteve errada.
+
+**A versão atual do ramo nunca executou.** O workflow foi alterado em **21/08/2026 22:33Z** (o fix do "204 sem corpo", que cita a execução 116724 de 19/08) e a execução retida mais recente é de 19/08. O primeiro cancelamento real na Birô será **também o primeiro teste desta versão do ramo** — ver §13, risco 7.
+
+**Lacuna medida hoje, do lado ERP:** `ContasReceberPage` grava `boleto_enviadoo = false` apenas sob `is_faturado && id_pagamento`. É essa lacuna — não a cascata — que quebra o passo 1 hoje. §12.
 
 ### Empresas 1 e 3 (C6 — legado)
 
@@ -457,10 +476,12 @@ Três ajustes para isso:
 |---|---|---|
 | 1 | **266 títulos faturados sem `id_pagamento`, 255 deles `PAID`.** Olhando só `id_pagamento`, o veredito liberaria o cancelamento de cobranças cujo título já foi pago — falha silenciosa e a mais grave da spec | Fallback por `id_int + is_faturado` (decisão 8) e recusa `VINCULO_AMBIGUO`. Medido: os 266 se espalham por 99 propostas, **98 com uma única cobrança faturada** — o fallback é inequívoco em 98/99 |
 | 2 | **Zero notas de produção no banco.** A regra 1 não bloqueia nada hoje e nunca foi exercitada em produção | O filtro `ambiente = 'producao'` (decisão 5) impede bloqueio por nota de teste. A regra precisa de teste dedicado quando a emissão em produção entrar no ar |
-| 3 | **Cascata do Inter** cancela a cobrança por baixo da rota e grava `motivo_cancela` do workflow | Reconciliação na rota (§7), com o padrão já validado em `faturado-titulos.service.ts`. **Conferir o workflow antes de testar:** correções feitas por API no n8n já foram sobrescritas duas vezes por save/reimport na UI |
-| 4 | **Duplo clique / retry** no passo 1 com vários títulos | Cada título é uma ação do usuário; a idempotência por cobrança já existe. Rever a de título no plano |
-| 5 | **Proposta transita por `CANCELADO`** em 100% dos casos-alvo | §10.1 — pendência registrada, correção fora desta rodada |
-| 6 | **Empresas 1 e 3 cancelam o título pelo navegador** | Fora de escopo (§11). O veredito ainda é consultado no servidor antes |
+| 3 | **Retorno do webhook mente.** `pagamento_cancelado` vem `true` sem que nada tenha sido escrito, e `parcelas_ativas_restantes` é contado por `id_int`, misturando cobranças da mesma proposta | Nunca decidir por esses campos: **releitura de `pagamentos_v2`** sempre (§7). O número de parcelas é diagnóstico, nunca exibido como se fosse da cobrança |
+| 4 | **A cascata pode voltar** num save da UI do n8n, sem aviso — foi assim que correções por API já se perderam duas vezes | A reativação fica na rodada como **defesa idempotente** (§7), inócua enquanto não houver cascata. Reconferir o workflow imediatamente antes de cada teste em produção |
+| 5 | **Duplo clique / retry** no passo 1 com vários títulos | Cada título é uma ação do usuário; a idempotência por cobrança já existe. Rever a de título no plano |
+| 6 | **Proposta transita por `CANCELADO`** em 100% dos casos-alvo | §10.1 — pendência registrada, correção fora desta rodada |
+| 7 | **A versão atual do ramo de cancelamento do Inter nunca executou em produção** (alterada em 21/08, última execução retida em 19/08) | O primeiro cancelamento real na Birô é **também o primeiro teste da versão**. Tratar como estreia: uma cobrança escolhida pelo dono, conferência do resultado no banco antes de qualquer segunda execução |
+| 8 | **Empresas 1 e 3 cancelam o título pelo navegador** | Fora de escopo (§11). O veredito ainda é consultado no servidor antes |
 
 ---
 
@@ -477,8 +498,10 @@ Três ajustes para isso:
 9. "Cancelar recebível", em Contas a Receber, cumpre o passo 1 inteiro — **inclusive num faturado legado sem `id_pagamento`**, em que a cobrança precisa voltar ao Registro de Recebíveis pelo fallback de vínculo. O Registro de Recebíveis não ganhou ação nem mudou de filtro.
 10. Motivo do passo 3 é **texto livre**; nenhum catálogo ou destino do valor é exigido.
 11. Tela e servidor **nunca divergem**: qualquer recusa exibida na UI é a mesma que a rota produziria, porque vêm do mesmo código.
-12. `GET /api/cobrancas/pode-cancelar` não escreve nada.
-13. `/api/cobrancas/cancelar-boleto` deixou de existir.
+12. **Nenhuma decisão da rota ou da tela usa `pagamento_cancelado` / `pagamentoCancelado` do retorno do webhook.** O estado da cobrança após o passo 1 sai sempre de uma releitura de `pagamentos_v2` — verificável por busca no código: esses campos não aparecem em condicional alguma.
+13. **`parcelas_ativas_restantes` não é exibido como número de parcelas da cobrança** nem usado para decidir; segue apenas como diagnóstico, porque é contado por `id_int`.
+14. `GET /api/cobrancas/pode-cancelar` não escreve nada.
+15. `/api/cobrancas/cancelar-boleto` deixou de existir.
 
 ---
 

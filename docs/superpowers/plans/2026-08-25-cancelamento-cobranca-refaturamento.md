@@ -42,7 +42,7 @@ Nenhuma destas acontece sem seu "pode".
 
 | # | Ação | Por que precisa de você | Quando |
 |---|---|---|---|
-| **A1** | **Conferir o workflow `VIBE-BOLETO-FATURADO-INTER` no n8n** (leitura da UI do n8n — só você tem acesso) | É a premissa da Etapa 6 inteira. E: correções feitas por API naquele workflow já foram sobrescritas duas vezes por save/reimport na UI | Antes da Etapa 0 |
+| **A1** | ~~Conferir o workflow `VIBE-BOLETO-FATURADO-INTER` no n8n~~ — **concluída em 25/08/2026** | Era a premissa da Etapa 6. **Correção:** este plano dizia que só o dono alcançava o n8n. Errado — há `API_KEY_N8N` e `URLN8N` no `.env.local`, e a leitura foi feita por GET na API (`/api/v1/workflows`, `/api/v1/executions`). Alterar workflow segue exigindo autorização (A6) | ✔ feita |
 | **A2** | **Apagar `src/app/api/cobrancas/cancelar-boleto/route.ts`** | Remoção de rota, ainda que órfã | Etapa 8 |
 | **A3** | **Primeiro cancelamento de título REAL na empresa 2 (Birô), em produção** | Aciona o Banco Inter de verdade. Irreversível: o título sai do banco e a linha de `boletos` é excluída pelo n8n | Etapa 13 |
 | **A4** | **Primeiro cancelamento de cobrança REAL (passo 3), em produção** | Muda `pagamentos_v2` e rebaixa a proposta para `NOVO`. Reversível só na mão | Etapa 13 |
@@ -55,19 +55,25 @@ Nenhuma destas acontece sem seu "pode".
 
 ## 3. Etapa 0 — Conferência do workflow n8n (**antes de qualquer código**)
 
-**Autorização A1.** Nada nesta rodada começa antes disto, porque a Etapa 6 assume um comportamento específico do workflow.
+**Status: CONCLUÍDA em 25/08/2026** (leitura por GET na API do n8n; nada alterado). Workflow `8ahqXY8sASxqOETd`, ativo, 45 nós.
 
-**O que precisa ser respondido, olhando o `VIBE-BOLETO-FATURADO-INTER` no n8n:**
+| # | Pergunta | Resposta verificada |
+|---|---|---|
+| 1 | Escreve em `pagamentos_v2`? Sob qual condição? | **Não, em condição nenhuma.** O único nó capaz disso, `Update v2`, está desativado e órfão — e é nó de emissão, não de cancelamento |
+| 2 | A escrita é antes ou depois da resposta HTTP? | **Sem objeto** — não há escrita. (No `cancela-boleto-inter-biro`, que escreve: **antes** do respond) |
+| 3 | Exclui a linha de `boletos` sempre ou só no sucesso? | Só no sucesso, e é **DELETE físico** |
+| 4 | Há retry/fila que escreva depois? | Não no ramo de cancelamento; o laço `Aguarda Inter` é do ramo de emissão |
+| 5 | O fix histórico continua lá? | **Sim, intacto.** 45 nós, `Update v2` desativado e órfão, `Cria-boleto` como `update` filtrando `id_pagamento + ext_reference` com os 6 campos bancários e sem `onError`, laço de retry completo — bate com o checklist do estado correto |
 
-1. Ele escreve em `pagamentos_v2` (`status`, `motivo_cancela`)? Sob qual condição — "não resta parcela ativa"?
-2. Essa escrita acontece **antes** de o workflow responder o HTTP, ou depois? *(A releitura da Etapa 6 só enxerga a cascata se for antes.)*
-3. Ele exclui a linha de `boletos` sempre, ou só quando o Inter confirma?
-4. Existe retry, fila ou nó assíncrono que possa escrever **depois** da nossa reativação?
-5. O fix histórico do `VIBE-BOLETO-FATURADO-INTER` ainda está lá, ou foi sobrescrito de novo por save/reimport?
+**Achados adicionais, todos incorporados na §7 da spec:**
 
-**Evidência que já temos** (não substitui a conferência, mas indica o esperado): `docs/business/CHECKOUT-PAGAMENTOS.md:394-410` documenta a cascata e a defesa por releitura, e essa defesa **está em produção hoje** em `excluirTitulosDoFaturado`. Ou seja, a resposta esperada para (2) é "antes de responder" — mas é exatamente isso que precisa ser confirmado, não assumido.
+- `Responde Sucesso` devolve `pagamento_cancelado: semParcelaAtiva`, valor apenas **calculado e nunca aplicado** — informação falsa quando `true`. A rota repassa como `pagamentoCancelado`. **Nenhuma decisão pode usar esses campos**; a fonte é sempre uma releitura de `pagamentos_v2`.
+- `parcelas_ativas_restantes` é contado por **`id_int`**, misturando cobranças da mesma proposta. Diagnóstico, nunca fato, e nunca exibido como parcelas da cobrança.
+- O ramo acha o título por `id_boleto_c6` e conta parcelas por `id_int`; lê `id_pagamento` no contexto e **nunca o usa**. Os 266 títulos legados sem `id_pagamento` **não afetam o workflow** — o problema é exclusivamente do lado ERP (Etapa 10).
+- **A versão atual do ramo nunca executou.** Alterado em 21/08/2026 22:33Z; a execução retida mais recente é de 19/08. Nas 18 retidas, nenhum cancelamento chegou ao `deleta_boleto` — todos recusados pelo Inter. O primeiro cancelamento real na Birô será o primeiro teste desta versão (risco 7 da spec; ver Etapa 13).
+- Empresas 1 e 3 (`del-boleto-vibe`, `del-boleto-av-vibe`): **não tocam o banco**, só o C6 — confirma o que a spec assumia. `cancela-boleto-inter-biro` (boleto à vista da Birô): **escreve** `pagamentos_v2.status='CANCELADO'` por `cod_solicitacao_inter`, antes do respond, e nunca grava `motivo_cancela`.
 
-**Valida antes de seguir:** as cinco respostas por escrito, coladas nesta seção do plano. Se (4) for "sim, existe caminho assíncrono", a Etapa 6 muda de desenho (precisaria de reconciliação posterior, não de releitura imediata) e eu volto para você antes de codar.
+**Consequência para o plano:** a **Etapa 6 deixa de ser crítica** — a invariante da cobrança viva já é verdadeira na Birô, porque nada cancela a cobrança. A reativação segue na rodada como **defesa idempotente**. **A Etapa 10 passa a ser a etapa crítica do passo 1**, porque é a lacuna de `boleto_enviadoo` no lado ERP que hoje quebra o fluxo.
 
 ---
 
@@ -106,17 +112,16 @@ Sessão + escopo (mesmo padrão de `cancelar-externo`), chama o coletor, devolve
 
 **Valida antes de seguir:** `tsc` + `eslint`. Conferir que o contrato de resposta **não mudou** — `CancelCobrancaModal` depende dele.
 
-### Etapa 6 — `cancelar-boleto-faturado`: veredito + invariante do passo 1
-**Aplicação.** A etapa mais delicada. Duas mudanças:
+### Etapa 6 — `cancelar-boleto-faturado`: veredito + defesa idempotente
+**Aplicação.** *(Reclassificada para **secundária** pela Etapa 0: a cascata não existe, então esta etapa não é mais o que sustenta a invariante — ver Etapa 10.)* Três mudanças:
 
-1. **Veredito antes da delegação.** Hoje a rota devolve `delegarLegado: true` no primeiro `if` após reler o título, sem checar nada. O veredito passa a ser consultado **antes** desse retorno, para valer nas três empresas.
-2. **Reativação pós-cascata (empresa 2).** Depois de o n8n confirmar: reler `pagamentos_v2`; se voltou inativa, reabrir com `status='A_VENCER'`, `motivo_cancela=null`, `boleto_enviadoo=false`, `confirmado` preservado; devolver `cobrancaReativada`. Padrão já validado em `faturado-titulos.service.ts:129-160`.
+1. **Veredito antes da delegação.** Hoje a rota devolve `delegarLegado: true` no primeiro `if` após reler o título, sem checar nada. O veredito passa a ser consultado **antes** desse retorno, para valer nas três empresas. *(Esta é a parte que realmente muda comportamento nesta etapa.)*
+2. **Reativação como defesa idempotente.** Depois de o n8n confirmar: reler `pagamentos_v2`; **se** voltou inativa, reabrir com `status='A_VENCER'`, `motivo_cancela=null`, `boleto_enviadoo=false`, `confirmado` preservado; devolver `cobrancaReativada`. Hoje esse ramo **não dispara**, porque nada cancela a cobrança. Fica porque é barato, inócuo quando não há o que reativar, e protege se a cascata voltar num save da UI do n8n. Padrão de `faturado-titulos.service.ts:129-160`.
+3. **Não confiar no retorno do webhook.** A decisão sai da releitura, **nunca** de `pagamento_cancelado` / `pagamentoCancelado` — que vêm `true` sem escrita nenhuma. E `parcelas_ativas_restantes`, contado por `id_int`, não decide nada nem é repassado como parcelas da cobrança.
 
 Extrair `cancelarTituloNoBanco(...)` para os dois chamadores (o "Cancelar recebível" de Contas a Receber e o fluxo de salvar orçamento) usarem a mesma função.
 
-**Depende de:** Etapa 0 respondida.
-
-**Valida antes de seguir:** `tsc` + `eslint`. Empresas 1 e 3: conferir que `delegarLegado` continua saindo igual quando o veredito é `OK` — **não regredir o fluxo legado**, que está fora de escopo. Empresa 2: só em produção, na Etapa 13 (A3).
+**Valida antes de seguir:** `tsc` + `eslint`. Empresas 1 e 3: conferir que `delegarLegado` continua saindo igual quando o veredito é `OK` — **não regredir o fluxo legado**, que está fora de escopo. Busca no código: `pagamentoCancelado` e `parcelas_ativas_restantes` não aparecem em nenhuma condicional. Empresa 2: só em produção, na Etapa 13 (A3).
 
 ### Etapa 7 — `cancelar-proposta` com subconjunto de regras
 **Aplicação.** Substitui as regras próprias (linhas 97-120) pelo veredito, aplicando **só** `COBRANCA_RECEBIDA` e `TITULO_LIQUIDADO` (decisão 13). Nota e produção **não** bloqueiam aqui.
@@ -135,8 +140,10 @@ Extrair `cancelarTituloNoBanco(...)` para os dois chamadores (o "Cancelar receb�
 
 **Valida antes de seguir:** `tsc` + `eslint`. Na tela, para cada `code`, a mensagem exibida é **idêntica** à que a rota devolveria (critério de aceite 11 da spec).
 
-### Etapa 10 — UI: "Cancelar recebível" vira o passo 1
+### Etapa 10 — UI: "Cancelar recebível" vira o passo 1 ⭐ **etapa crítica**
 **Aplicação.** Só `ContasReceberPage`. **O Registro de Recebíveis não é tocado** — nem ação, nem filtro, nem `getRecebiveisParaRegistro` (decisão 14 revisada).
+
+> **Por que é a etapa crítica.** A Etapa 0 mostrou que a cascata do Inter não existe: nada no n8n cancela a cobrança. Logo, o que hoje quebra o passo 1 **não** é o workflow — é a lacuna do item 1 abaixo, no lado ERP. Sem esta etapa, o passo 1 termina pela metade e a cobrança não volta para o Registro de Recebíveis.
 
 Nenhuma ação nova: o passo 1 é o **"Cancelar recebível"** já existente no menu Ações da Carteira, nos dois construtores de menu (linhas 2832 e 2943, ambos `canAdmin`). O que muda em `handleConfirmarCancelamento`:
 
@@ -153,17 +160,23 @@ Cuidado de escopo: **não confundir com "Cancelar boleto"** (`onLifecycle.cancel
 
 **Valida antes de seguir:** `tsc` + `eslint`. Com uma cobrança ativa, o botão abre o modal de cobrança; com duas ou mais, leva para a aba Pagamentos.
 
-### Etapa 12 — Documentação
-**Aplicação.** Atualizar `docs/business/CANCELAMENTO-COBRANCAS.md` com o fluxo em três passos e a tabela de recusas; `docs/DOCUMENTATION_INDEX.md` se necessário.
+### Etapa 12 — Documentação, incluindo três pontos hoje **errados**
+**Aplicação.** Além de atualizar `docs/business/CANCELAMENTO-COBRANCAS.md` com o fluxo em três passos e a tabela de recusas (e `docs/DOCUMENTATION_INDEX.md` se necessário), corrigir os três lugares que afirmam uma cascata que **não existe** — verificado na Etapa 0:
 
-**Valida antes de seguir:** o doc descreve o que o código faz — sem regra inventada, sem regra omitida.
+1. **`src/app/api/cobrancas/cancelar-boleto-faturado/route.ts`**, cabeçalho: diz que o workflow "só marca `pagamentos_v2` como CANCELADO quando não resta parcela ativa". Não marca nunca. Reescrever descrevendo o comportamento real e dizendo explicitamente que `pagamento_cancelado` do retorno não é confiável.
+2. **`docs/business/CHECKOUT-PAGAMENTOS.md:394-410`**, seção "Cancelamento em cascata da cobrança (parcela única)": descreve a cascata como fato. Corrigir, preservando a descrição das duas defesas — que continuam válidas como proteção, não como reação a algo que ocorre hoje.
+3. **`src/features/orcamentos/services/faturado-titulos.service.ts:129-160`**, comentário da reativação: explica o código como resposta a uma cascata observada. Reescrever como defesa idempotente, registrando que o ramo não dispara hoje e por que fica.
+
+**Valida antes de seguir:** o doc descreve o que o código faz — sem regra inventada, sem regra omitida. Busca por "cascata" no repo não retorna afirmação de que o Inter cancela `pagamentos_v2`.
 
 ### Etapa 13 — Validação fim a fim em produção
 **Autorizações A3 e A4**, uma por vez, em cobranças que **você escolher**.
 
+> **Estreia de versão.** O ramo de cancelamento do `VIBE-BOLETO-FATURADO-INTER` foi alterado em 21/08/2026 e **nunca executou**: a execução retida mais recente é de 19/08, e nenhuma das 18 chegou a excluir um título — todas foram recusadas pelo Inter. O passo 2 abaixo é, ao mesmo tempo, o primeiro cancelamento real do fluxo novo **e** a primeira execução desta versão do workflow. Uma cobrança só, escolhida por você, com conferência no banco antes de qualquer segunda execução.
+
 Roteiro, na ordem:
-1. Passo 1 numa cobrança da **empresa 1 ou 3** (fluxo legado, menor risco): título cancelado, cobrança segue `A_VENCER`+confirmada, `boleto_enviadoo=false`, reaparece no Registro de Recebíveis.
-2. Passo 1 numa cobrança da **empresa 2** (**A3** — aciona o Inter): idem, **mais** `cobrancaReativada = true`. Este é o teste que prova a invariante na Birô.
+1. Passo 1 numa cobrança da **empresa 1 ou 3** (fluxo legado, menor risco): título cancelado, cobrança segue `A_VENCER`+confirmada, `boleto_enviadoo=false`, reaparece no Registro de Recebíveis. **Incluir um faturado legado sem `id_pagamento`** — é o caso que a Etapa 10 corrige.
+2. Passo 1 numa cobrança da **empresa 2** (**A3** — aciona o Inter): idem. `cobrancaReativada` deve vir **`false`**, porque não há cascata; se vier `true`, a cascata voltou no workflow e o resultado precisa ser reconferido antes de seguir. Conferir o estado **relendo `pagamentos_v2`**, nunca pelo retorno do webhook.
 3. Passo 3 na mesma cobrança (**A4**): cobrança `CANCELADO`, proposta em `NOVO` com `tipo_cobranca = null`, modal de gerar abre pelo saldo.
 4. Recusas: conferir uma de cada `code` alcançável com dados reais.
 
@@ -173,16 +186,16 @@ Roteiro, na ordem:
 
 ## 5. Onde o n8n pode sobrescrever o resultado
 
-Quatro pontos. Os três primeiros são de escrita concorrente; o quarto é de perda de configuração.
+Quatro pontos, agora **medidos** na Etapa 0 e não mais presumidos.
 
-| # | Webhook / workflow | Risco | Defesa |
+| # | Webhook / workflow | Situação verificada em 25/08/2026 | Defesa |
 |---|---|---|---|
-| 1 | **`cancela-boleto-fat-inter`** → `VIBE-BOLETO-FATURADO-INTER` (empresa 2, passo 1) | Marca `pagamentos_v2` como `CANCELADO` em cascata quando não resta parcela — **quebra a invariante da cobrança viva** em 18 dos 21 títulos faturados da empresa 2 | Releitura + reativação na Etapa 6. Só é correta se a Etapa 0 confirmar que a escrita do n8n acontece **antes** da resposta HTTP |
-| 2 | **`del-boleto-vibe`** (empresas 1 e 3, legado, chamado pelo **navegador**) | Se escrever em `pagamentos_v2`, faria a mesma cascata sem que o servidor saiba | A documentação diz que o legado **não** exclui a linha nem cancela a cobrança (`faturado-titulos.service.ts`: "O caminho do Inter já exclui a linha; o legado e o depósito não"). **Confirmar na Etapa 0** — se escrever, a Etapa 6 precisa da mesma releitura no caminho legado |
-| 3 | **`cancela-boleto-inter-biro`** e **`del-boleto-av-vibe`** (boleto comum, via `cancelar-externo`) | Escrita concorrente em `boletos`/`pagamentos_v2` depois do nosso cancelamento lógico | Conferir na Etapa 0 se algum deles escreve local. Hoje `cancelar-externo` assume que **não** e faz a escrita ele mesmo |
-| 4 | **Qualquer correção feita por API no n8n** | Já aconteceu **duas vezes**: um fix aplicado por API no `VIBE-BOLETO-FATURADO-INTER` foi apagado por save/reimport na UI do n8n | Se A1 mostrar que o workflow precisa mudar (A6), a alteração é feita **na UI do n8n**, por você, e reconferida **imediatamente antes** de qualquer teste. Nunca por API. E a conferência se repete antes da Etapa 13 |
+| 1 | **`cancela-boleto-fat-inter`** → `VIBE-BOLETO-FATURADO-INTER` (empresa 2, passo 1) | **Não escreve em `pagamentos_v2`.** A cascata não existe. Mas o retorno **mente**: `pagamento_cancelado` vem `true` sem escrita, e `parcelas_ativas_restantes` é contado por `id_int` | Decidir **sempre** por releitura do banco, nunca pelo retorno (Etapa 6, item 3). Reativação mantida como defesa idempotente caso a cascata volte |
+| 2 | **`del-boleto-vibe`** (empresas 1 e 3, legado, chamado pelo **navegador**) | **Confirmado: não toca banco nenhum**, só chama o C6. Não exclui nem cancela a linha de `boletos` — quem faz isso é o ERP | Nada muda. O caminho legado segue fora de escopo |
+| 3 | **`cancela-boleto-inter-biro`** (boleto comum da Birô, via `cancelar-externo`) | **Escreve sim**: `pagamentos_v2.status='CANCELADO'`, casando por `cod_solicitacao_inter`, **antes** do respond. Nunca grava `motivo_cancela`. `del-boleto-av-vibe` **não escreve** | Duplicação benigna hoje — `cancelar-externo` grava o mesmo status depois, e o `motivo_cancela` do ERP sobrevive. Não introduzir dependência de ordem; conferir por releitura |
+| 4 | **Qualquer correção feita por API no n8n** | O fix do `VIBE-BOLETO-FATURADO-INTER` está **intacto** (45 nós, checklist do estado correto bate em todos os pontos). Última alteração 21/08/2026 22:33Z | Se o workflow precisar mudar (A6), a alteração é feita **na UI do n8n**, por você, e reconferida **imediatamente antes** de qualquer teste. Nunca por API |
 
-**Regra operacional:** entre a conferência (Etapa 0) e o teste em produção (Etapa 13) pode haver dias. **A conferência do item 4 se repete imediatamente antes da Etapa 13** — se o workflow tiver sido salvo pela UI nesse intervalo, o fix pode ter sumido de novo e o teste mediria outra coisa.
+**Regra operacional:** entre a conferência (Etapa 0) e o teste em produção (Etapa 13) pode haver dias. **A conferência se repete imediatamente antes da Etapa 13** — se o workflow tiver sido salvo pela UI nesse intervalo, tanto o fix pode ter sumido quanto a cascata pode ter voltado, e o teste mediria outra coisa. Checklist mínimo: 45 nós, `Update v2` desativado e órfão, e nenhum nó `pagamentos_v2` alcançável a partir do webhook `cancela-boleto-fat-inter`.
 
 ---
 

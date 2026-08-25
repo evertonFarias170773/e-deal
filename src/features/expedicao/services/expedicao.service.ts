@@ -312,14 +312,38 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     // instantes timestamptz em UTC, como expedicoes.data_entrega acima).
     const promessaDia = dataPromessa ? dataPromessa.slice(0, 10) : null;
     const emAberto = etapa !== "ENTREGUE";
-    const atrasadoDias =
-      emAberto && promessaDia && promessaDia < hoje ? diffDias(promessaDia, hoje) : 0;
-    const prometidoHoje = emAberto && promessaDia === hoje;
 
     // Rascunho (dados gravados sem despachar) NAO vence a cotacao aqui: a lista,
     // a visao por transportadora e a etiqueta mostram o estado CONFIRMADO. Ver
     // `despachoConfirmado` em types.ts.
+    // Subiu para antes do atraso em 25/08/2026: o atraso passou a depender dele.
     const despachoConfirmado = Boolean(exp?.dataDespacho);
+
+    /**
+     * ATRASO CONGELA NO DESPACHO (25/08/2026).
+     *
+     * `data_termino` e a promessa de ENTREGA DA PRODUCAO — a data em que o
+     * pedido devia estar pronto para sair. Enquanto a comparacao era so contra
+     * `hoje`, um pedido despachado continuava contando: 20925, 20928 e 20481
+     * sairam em 20/08 para uma promessa de 21/08 — dentro do prazo — e o painel
+     * marcava os tres como "ATRASADO 4d" em 25/08, porque a conta nao tinha onde
+     * parar antes de `ENTREGUE`. O numero crescia sozinho todo dia, e a linha
+     * ficava vermelha por um atraso que nunca existiu.
+     *
+     * Com `data_despacho` preenchida a mercadoria ja saiu: o que a Expedicao
+     * devia fazer, fez. O que acontece do transporte em diante nao e atraso de
+     * producao — e prazo de transportadora, que este campo nao mede.
+     *
+     * `prometidoHoje` fica INTOCADO de proposito: ele responde "o que promete
+     * sair hoje", e um pedido que ja saiu hoje continua sendo verdade nesse
+     * chip. So o atraso para.
+     */
+    const atrasadoDias =
+      emAberto && !despachoConfirmado && promessaDia && promessaDia < hoje
+        ? diffDias(promessaDia, hoje)
+        : 0;
+    const prometidoHoje = emAberto && promessaDia === hoje;
+
     const expConfirmado = despachoConfirmado ? exp : null;
     const tipoFrete: TipoFreteNormalizado = expConfirmado?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
 

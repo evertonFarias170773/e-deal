@@ -158,7 +158,15 @@ export interface PedidoExpedicao {
   etapa: EtapaExpedicao;
   /** propostas_os.data_termino (ISO) — a promessa exibida. */
   dataPromessa: string | null;
-  /** Dias de atraso (0 = em dia). Só conta para etapa != ENTREGUE. */
+  /**
+   * Dias de atraso (0 = em dia).
+   *
+   * Conta apenas enquanto o pedido está com a Expedição: para em `ENTREGUE` e,
+   * desde 25/08/2026, também no DESPACHO — com `expedicoes.data_despacho`
+   * preenchida a contagem congela em 0. `data_termino` mede a promessa da
+   * PRODUÇÃO; depois que a mercadoria sai, o relógio que corre é o da
+   * transportadora, que este campo não mede.
+   */
   atrasadoDias: number;
   prometidoHoje: boolean;
   /** expedicoes.tipo_frete (definido no despacho) > normalização da cotação. */
