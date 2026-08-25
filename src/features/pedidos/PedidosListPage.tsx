@@ -255,6 +255,13 @@ export function PedidosListPage() {
   const emRevisaoCount = pedidos.filter(p => p.status_interno === "REVISAO PRODUCAO").length;
   const emAcabamentoCount = pedidos.filter(p => p.status_interno === "EM ACABAMENTO").length;
 
+  // Os cards de fase são atalhos para o filtro de Status que já existe: card e
+  // select compartilham o mesmo estado, então clicar num deles reflete no outro.
+  // "Total de OS" é o estado sem recorte de fase — por isso volta o status para
+  // "TODOS" e fica ativo enquanto nenhuma das três fases estiver selecionada.
+  const STATUS_DOS_CARDS: string[] = ["EM IMPRESSAO", "REVISAO PRODUCAO", "EM ACABAMENTO"];
+  const nenhumaFaseSelecionada = !STATUS_DOS_CARDS.includes(filterStatus);
+
   // Filter logic
   const filteredPedidos = pedidos.filter((p) => {
     const matchesSearch =
@@ -417,6 +424,8 @@ export function PedidosListPage() {
             description="Fila geral"
             tone="info"
             icon={FileText}
+            onClick={() => setFilter("status", "TODOS")}
+            ativo={nenhumaFaseSelecionada}
           />
           <SummaryCard
             title="Em impressão"
@@ -424,6 +433,8 @@ export function PedidosListPage() {
             description="Produção ativa"
             tone="warning"
             icon={Clipboard}
+            onClick={() => setFilter("status", "EM IMPRESSAO")}
+            ativo={filterStatus === "EM IMPRESSAO"}
           />
           <SummaryCard
             title="Em revisão"
@@ -431,6 +442,8 @@ export function PedidosListPage() {
             description="Aguardando conclusão do boletim"
             tone="info"
             icon={FileText}
+            onClick={() => setFilter("status", "REVISAO PRODUCAO")}
+            ativo={filterStatus === "REVISAO PRODUCAO"}
           />
           <SummaryCard
             title="Em acabamento"
@@ -438,6 +451,8 @@ export function PedidosListPage() {
             description="Fase final"
             tone="success"
             icon={Clipboard}
+            onClick={() => setFilter("status", "EM ACABAMENTO")}
+            ativo={filterStatus === "EM ACABAMENTO"}
           />
         </section>
       )}
