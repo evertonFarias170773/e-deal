@@ -21,6 +21,29 @@ const toneStylesDark: Record<StatusTone, string> = {
   special: "dark:bg-teal-900/30 dark:text-teal-300 dark:ring-teal-800"
 };
 
+// Card usado como filtro: quando ativo, ganha fundo e borda do próprio tom —
+// mesma leitura dos chips de filtro (borda -600 + fundo do tom), só que com o
+// preenchimento claro, para o número continuar legível.
+const toneStylesAtivo: Record<StatusTone, string> = {
+  success: "border-teal-600 bg-teal-50 dark:bg-teal-900/30",
+  info:    "border-sky-600 bg-sky-50 dark:bg-sky-900/30",
+  warning: "border-orange-600 bg-orange-50 dark:bg-orange-900/30",
+  danger:  "border-red-600 bg-red-50 dark:bg-red-900/30",
+  neutral: "border-slate-700 bg-slate-100 dark:bg-slate-800",
+  special: "border-teal-600 bg-teal-50 dark:bg-teal-900/30"
+};
+
+// No card ativo o selo do ícone vira o preenchimento cheio do tom, igual ao chip
+// de filtro selecionado — sem isso ele sumiria dentro do fundo claro do card.
+const toneStylesAtivoIcone: Record<StatusTone, string> = {
+  success: "bg-teal-600 text-white ring-teal-600",
+  info:    "bg-sky-600 text-white ring-sky-600",
+  warning: "bg-orange-600 text-white ring-orange-600",
+  danger:  "bg-red-600 text-white ring-red-600",
+  neutral: "bg-slate-700 text-white ring-slate-700",
+  special: "bg-teal-600 text-white ring-teal-600"
+};
+
 type SummaryCardProps = {
   title: string;
   value: string;
@@ -32,6 +55,8 @@ type SummaryCardProps = {
   icon?: LucideIcon;
   /** Quando informado, o card vira um atalho de filtro (clique e Enter/Espaço). */
   onClick?: () => void;
+  /** Estado do filtro do card. Só faz sentido junto de `onClick`. */
+  ativo?: boolean;
 };
 
 export function SummaryCard({
@@ -42,21 +67,30 @@ export function SummaryCard({
   trend,
   trendTone,
   icon: Icon,
-  onClick
+  onClick,
+  ativo
 }: SummaryCardProps) {
   const interativo = typeof onClick === "function";
+  const filtravel = interativo && typeof ativo === "boolean";
+  const selecionado = filtravel && ativo === true;
 
   return (
     <article
       className={cn(
         "rounded-2xl p-5 shadow-sm transition hover:shadow-md",
-        interativo && "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+        interativo && "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500",
+        selecionado && cn("border shadow-md", toneStylesAtivo[tone])
       )}
-      style={{
-        background: "var(--card)",
-        border: "1px solid var(--border)"
-      }}
+      style={
+        selecionado
+          ? undefined
+          : {
+              background: "var(--card)",
+              border: "1px solid var(--border)"
+            }
+      }
       role={interativo ? "button" : undefined}
+      aria-pressed={filtravel ? ativo : undefined}
       tabIndex={interativo ? 0 : undefined}
       onClick={onClick}
       onKeyDown={
@@ -89,8 +123,9 @@ export function SummaryCard({
           <span
             className={cn(
               "rounded-2xl p-3 ring-1",
-              toneStyles[tone],
-              toneStylesDark[tone]
+              selecionado
+                ? toneStylesAtivoIcone[tone]
+                : cn(toneStyles[tone], toneStylesDark[tone])
             )}
           >
             <Icon className="h-5 w-5" />

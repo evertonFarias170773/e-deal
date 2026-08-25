@@ -570,6 +570,7 @@ export function ExpedicaoPage() {
             tone="neutral"
             icon={Factory}
             onClick={() => toggleEtapa("PRODUCAO")}
+            ativo={filters.etapa === "PRODUCAO"}
           />
           <SummaryCard
             title="Em acabamento"
@@ -578,6 +579,7 @@ export function ExpedicaoPage() {
             tone="info"
             icon={Clock}
             onClick={() => toggleEtapa("ACABAMENTO")}
+            ativo={filters.etapa === "ACABAMENTO"}
           />
           <SummaryCard
             title="Pronto p/ expedir"
@@ -586,6 +588,7 @@ export function ExpedicaoPage() {
             tone="warning"
             icon={PackageCheck}
             onClick={() => toggleEtapa("PRONTO")}
+            ativo={filters.etapa === "PRONTO"}
           />
           <SummaryCard
             title="A retirar"
@@ -594,6 +597,7 @@ export function ExpedicaoPage() {
             tone="special"
             icon={MapPin}
             onClick={() => toggleEtapa("A_RETIRAR")}
+            ativo={filters.etapa === "A_RETIRAR"}
           />
           <SummaryCard
             title="Em trânsito"
@@ -602,6 +606,7 @@ export function ExpedicaoPage() {
             tone="info"
             icon={Truck}
             onClick={() => toggleEtapa("EM_TRANSITO")}
+            ativo={filters.etapa === "EM_TRANSITO"}
           />
           <SummaryCard
             title="Entregues"
@@ -610,6 +615,7 @@ export function ExpedicaoPage() {
             tone="success"
             icon={CheckCircle2}
             onClick={() => toggleEtapa("ENTREGUE")}
+            ativo={filters.etapa === "ENTREGUE"}
           />
         </section>
       )}

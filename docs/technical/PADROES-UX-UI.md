@@ -349,6 +349,21 @@ Cards de resumo devem ser usados somente quando ajudarem a decisão operacional.
 
 Não adicionar cards apenas para preencher espaço.
 
+## Card de resumo como filtro (estado ativo)
+
+`SummaryCard` aceita `ativo?: boolean` junto de `onClick`. Quando o card estiver
+selecionado ele mostra fundo e borda do próprio tom e o selo do ícone vira o
+preenchimento cheio desse tom — a mesma leitura do chip de filtro selecionado.
+Regras:
+
+- só um card ativo por vez: o estado vem do valor do filtro, nunca de estado próprio do card;
+- o card ativo expõe `aria-pressed`; quando `ativo` não é informado, o atributo não aparece
+  (card meramente clicável continua igual);
+- o fundo é o tom claro (`bg-*-50`), não o cheio dos chips, para o número continuar legível;
+- "Limpar filtros" precisa voltar o filtro ao padrão — o destaque some junto.
+
+Primeiro uso: Expedição → cards do funil (25/08/2026).
+
 ## Destaque de linha por categoria
 
 `ResponsiveList` aceita `getRowHighlight?: (item) => { base, hover } | null` para marcar linhas de
