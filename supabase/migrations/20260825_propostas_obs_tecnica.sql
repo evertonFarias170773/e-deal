@@ -1,0 +1,242 @@
+-- Orientacao tecnica de producao: campo proprio, por pedido
+--
+-- O QUE E
+--   Uma coluna aditiva em public.propostas, nulavel e sem default:
+--
+--     obs_tecnica  text
+--
+--   Guarda a ORIENTACAO TECNICA DE PRODUCAO do pedido: o que a bancada precisa
+--   saber para fabricar. UM registro por pedido, escrito pelo vendedor na
+--   proposta e revisado pelo gerente na edicao do boletim — os dois gravam na
+--   MESMA linha, nao em copias.
+--
+--   Nula = ninguem escreveu ainda. Toda proposta anterior a 25/08/2026 nasce
+--   nula: NAO HA BACKFILL nesta migration.
+--
+-- POR QUE
+--   Esse texto nao tem lugar proprio hoje. O "BLOCO 2 - Briefing Comercial" do
+--   boletim nao e coluna: e um trecho delimitado dentro de `propostas_os.obs`,
+--   um unico `text` que guarda seis campos etiquetados
+--   ([Observacoes criticas], [Designer], [Orientacoes para design],
+--   [Impressao], [Acabamento], [Logistica]), serializado e reparseado por
+--   src/features/pedidos/services/boletim-propostas.service.ts.
+--
+--   Levantado no banco em 25/08/2026, sem alterar nada:
+--
+--     - o campo da tela nasce semeado de `propostas.obs_proposta` na abertura
+--       do boletim, mas NAO e relido quando o boletim e reaberto para edicao;
+--       o save entao grava vazio por cima. Nas 36 linhas de `propostas_os`
+--       (a tabela inteira hoje), 35 tem o bloco [Orientacoes para design]
+--       gravado como "-";
+--     - no mesmo periodo, 1.732 de 3.974 propostas TEM `obs_proposta`
+--       preenchida. O vendedor escreve; o texto nao chega a producao.
+--       Exemplos: pedido 21055 (`obs_proposta` = "via motoboy") e 17823, ambos
+--       com o bloco do boletim em "-";
+--     - o PDF da OS nao imprime esse bloco: `OsPdfDocument.tsx` monta a caixa
+--       "Observacoes:" concatenando obsCriticas + obsImpressao + obsAcabamento.
+--
+--   Uma coluna propria e o que permite que vendedor e gerente editem o MESMO
+--   dado, que a leitura seja direta (sem parse de texto etiquetado) e que a
+--   auditoria registre quem mudou o que.
+--
+-- POR QUE COLUNA NOVA, E NAO REAPROVEITAR UMA EXISTENTE
+--   `propostas.obs_proposta` ja tem dono: e a observacao COMERCIAL da proposta,
+--   editada na aba Geral, secao "10. Observacoes e Condicoes". Misturar
+--   orientacao de fabrica com termo comercial faria os dois textos disputarem o
+--   mesmo campo.
+--
+--   `propostas.obs_pedido` NAO e reaproveitada de proposito. Esta vazia nas
+--   8.443 linhas e nao tem uma unica referencia no codigo do app — e coluna
+--   legada, de origem nao documentada. Herdar um nome sem historia conhecida
+--   custa mais do que criar um com significado explicito.
+--
+--   `propostas_os.obs` continua exatamente como esta. Esta migration NAO le,
+--   NAO reescreve e NAO migra o bloco [Orientacoes para design] ja gravado.
+--
+-- ESCOPO / O QUE ESTA MIGRATION NAO FAZ
+--   Estritamente aditiva. Nao cria funcao, view, RPC, trigger, indice, RLS,
+--   politica, grant, CHECK nem default. Nao altera nenhuma coluna existente.
+--   Nao acompanha mudanca de codigo do app: enquanto a tela nao gravar, a
+--   coluna fica nula em todas as linhas e nada no sistema muda de comportamento.
+--
+--   Verificado no banco em 25/08/2026, ANTES de escrever:
+--
+--   1. O nome esta livre. `obs_tecnica` nao existe em NENHUM schema do banco
+--      (information_schema.columns devolve 0 linhas) nem no repositorio.
+--      `public.propostas` tem hoje 57 colunas e 8.443 linhas.
+--
+--   2. RLS: LIGADA (relrowsecurity = true), nao forcada. 16 politicas, todas
+--      PERMISSIVE. Politica no Postgres e por LINHA — nao existe politica por
+--      coluna —, entao a coluna nova fica coberta pelas mesmas politicas, sem
+--      nada a acrescentar. Duas observacoes que precisam ficar ditas:
+--
+--        - o gerente vai conseguir gravar. `propostas_update_own` limita a
+--          `auth.uid() = user_id`, MAS convive com `update_all_propostas`
+--          (authenticated, using true / with check true) e "UPDATE total
+--          autenticado". Politicas permissivas se somam por OR: qualquer
+--          usuario autenticado atualiza qualquer proposta. Nenhuma politica
+--          nova e necessaria para o fluxo vendedor + gerente;
+--        - a politica "Permitir atualizar texto_whatsapp" NAO e restrita
+--          aquela coluna, apesar do nome: e UPDATE para PUBLIC com
+--          using true / with check true.
+--
+--   3. Os 6 triggers de `public.propostas`, diante de um UPDATE que toque so a
+--      coluna nova:
+--
+--      | trigger                              | efeito |
+--      |--------------------------------------|--------|
+--      | propostas_set_timestamp              | carimba updated_at |
+--      | trg_set_updated_at                   | carimba updated_at (idempotente) |
+--      | tg_propostas_valor_total_avulsa      | retorna de imediato se is_avulso e falso; senao so le/escreve valor, valor_frete e valor_total |
+--      | tg_registrar_paid_at                 | so escreve paid_at quando status_interno vira 'RECEBIDO'; sem mexer no status e no-op |
+--      | trg_audit_propostas                  | AFTER; grava o diff em audit.logs_v2 e devolve NEW inalterado |
+--      | trg_sync_cliente_idcliente_pagamentos| NAO dispara: escopado em UPDATE OF (cliente, id_cliente), e escreve em `pagamentos`, nunca em propostas |
+--
+--      NENHUM copia ou reescreve coluna de texto, e nenhum tem atribuicao
+--      generica (`new := ...`, laco por coluna, SQL dinamico). Confirmado
+--      tambem que `public.propostas` nao tem REGRA (pg_rewrite: 0) e que nao
+--      existe funcao no banco com `execute format` tocando propostas.
+--
+--      A auditoria PASSA a registrar a coluna, que e o desejado —
+--      audit.config_v2 tem enabled = true e ignored_columns = {updated_at}, e
+--      audit.log_row_changes_v2 monta o diff com to_jsonb(new), sem lista fixa.
+--      Consequencia a ter em mente: o CONTEUDO do texto vai para audit.logs_v2
+--      a cada alteracao.
+--
+--   4. ACL — lido com array_agg(grantee), e SEM NOVIDADE BOA.
+--
+--        dono: postgres
+--        anon          = SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+--        authenticated = (idem)
+--        postgres      = (idem)
+--        service_role  = (idem)
+--
+--      32 pares (8 privilegios x 4 papeis), todos no nivel da TABELA. Grant de
+--      tabela alcanca coluna futura: a coluna nova NASCE acessivel a esses
+--      quatro papeis, `anon` inclusive, sem nenhum GRANT adicional. Ou seja,
+--      esta migration NAO precisa de grant — e tambem nao tem como evitar o do
+--      `anon` sem afetar a tabela inteira.
+--
+--      Nao ha grant POR COLUNA a preservar: pg_attribute.attacl e nulo em todas
+--      as colunas de propostas (0 colunas com ACL propria).
+--
+--      NOTA DE METODO: `information_schema.column_privileges` so mostra o que o
+--      papel da sessao concede ou recebe. Sob `supabase_read_only_user` ela
+--      devolve 0 linhas para esta tabela — nao e ausencia de privilegio. A
+--      verificacao (e) abaixo usa pg_attribute.attacl, que independe do papel.
+--
+--      Fica registrado, de novo, o ponto ja levantado em
+--      20260822_propostas_transporte_categoria.sql: a superficie de escrita de
+--      `anon` em `public.propostas` e maior do que o app precisa. Nao e efeito
+--      desta migration, e nao se resolve aqui.
+
+alter table public.propostas
+  add column if not exists obs_tecnica text;
+
+comment on column public.propostas.obs_tecnica is
+  'Orientacao tecnica de producao do pedido: o que a bancada precisa saber para fabricar. Um registro por pedido, editavel pelo vendedor na proposta e pelo gerente na edicao do boletim, sempre na mesma linha. Nula enquanto ninguem escrever, inclusive em toda proposta anterior a 25/08/2026 - nao houve backfill. NAO substitui propostas.obs_proposta, que segue sendo a observacao COMERCIAL da proposta (aba Geral, secao 10). Nao tem relacao com propostas.obs_pedido, coluna legada vazia e sem uso no codigo. Nao migra nem espelha o bloco [Orientacoes para design] de propostas_os.obs, que permanece como esta.';
+
+-- VERIFICACAO (somente leitura, depois de aplicar)
+--
+-- CRITERIO: DELTA, NAO VALOR ABSOLUTO
+--   Banco de PRODUCAO vivo. Entre escrever e aplicar, os vendedores continuam
+--   trabalhando e a contagem de linhas muda sozinha. Por isso as contagens sao
+--   ANTES = DEPOIS, medidas em volta do `alter table`. Absolutos so valem onde
+--   nao dependem do movimento da operacao: coluna preenchida em ZERO linhas,
+--   6 triggers, 4 constraints, 58 colunas e o ACL inalterado.
+--
+--   -- a) a coluna nasceu nulavel e sem default
+--   select column_name, data_type, is_nullable,
+--          coalesce(column_default, '(sem default)') as padrao
+--     from information_schema.columns
+--    where table_schema = 'public' and table_name = 'propostas'
+--      and column_name = 'obs_tecnica';
+--   -- esperado: 1 linha, text, is_nullable = YES, padrao = (sem default)
+--   --           e a tabela passa a ter 58 colunas (57 + 1)
+--
+--   -- b) SEM BACKFILL — criterio ABSOLUTO
+--   select count(obs_tecnica) as preenchidas from public.propostas;
+--   -- esperado: 0. Qualquer outro valor significa que alguem gravou texto
+--   -- nesta migration; parar e investigar.
+--
+--   -- c) `obs_proposta` e `obs_pedido` INTOCADAS — criterio ABSOLUTO sobre a
+--   --    forma dos dados. A contagem de linhas se move sozinha; a de valores
+--   --    distintos, nao, porque nenhuma escrita nova acontece aqui.
+--   select count(*) filter (where coalesce(btrim(obs_proposta), '') <> '') as obs_proposta_preenchidas,
+--          count(distinct obs_proposta) as obs_proposta_distintas,
+--          count(*) filter (where coalesce(btrim(obs_pedido), '') <> '') as obs_pedido_preenchidas
+--     from public.propostas;
+--   -- esperado: identico ao medido antes de aplicar. Em 25/08/2026,
+--   -- obs_pedido_preenchidas = 0 nas 8.443 linhas. Se qualquer um dos tres
+--   -- mudar, algo reescreveu texto que esta migration nao deveria tocar.
+--
+--   -- d) `propostas_os.obs` INTOCADA — impressao digital do texto inteiro.
+--   --    A tabela tem 36 linhas hoje; o md5 e barato e pega qualquer reescrita.
+--   select count(*) as linhas, count(obs) as com_obs,
+--          md5(coalesce(string_agg(coalesce(obs, ''), '|' order by id), '')) as impressao_obs
+--     from public.propostas_os;
+--   -- esperado em 25/08/2026, ANTES de aplicar: 36, 36 e
+--   -- d5441a6c5bf7d9dd7a02041fe31c760e. DEPOIS o md5 deve ser O MESMO, a menos
+--   -- que um boletim tenha sido salvo pela tela no intervalo — nesse caso
+--   -- confirmar pela tela, nao pelo hash. Esta migration nunca escreve aqui.
+--
+--   -- e) ACL COMPLETO da tabela, com array_agg(grantee).
+--   --    Rodar ANTES e DEPOIS e comparar: as duas saidas devem ser IDENTICAS.
+--   select c.relname,
+--          pg_get_userbyid(c.relowner) as dono,
+--          coalesce(
+--            (select array_agg(coalesce(r.rolname, 'PUBLIC') || '=' || x.privilege_type
+--                              order by coalesce(r.rolname, 'PUBLIC'), x.privilege_type)
+--               from aclexplode(c.relacl) x
+--               left join pg_roles r on r.oid = x.grantee),
+--            '{}'::text[]) as acl,
+--          (select count(*) from pg_attribute a
+--            where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+--              and a.attacl is not null) as colunas_com_grant_proprio
+--     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+--    where n.nspname = 'public' and c.relname = 'propostas';
+--   -- esperado ANTES e DEPOIS: dono = postgres, os 32 pares de privilegio
+--   -- (8 por papel x anon, authenticated, postgres, service_role) e
+--   -- colunas_com_grant_proprio = 0.
+--   -- LEMBRAR: `anon` ja tinha DML na TABELA, entao a coluna nova nasce
+--   -- alcancavel por ele. Isso NAO e efeito desta migration — e o estado
+--   -- anterior, herdado. Se o ACL ENCOLHER aqui, parar: algo mais rodou junto.
+--
+--   -- f) RLS segue ligada e com as mesmas politicas
+--   select (select relrowsecurity from pg_class where oid = 'public.propostas'::regclass) as rls,
+--          (select count(*) from pg_policy where polrelid = 'public.propostas'::regclass) as politicas;
+--   -- esperado: true e 16. Politica e por LINHA: nenhuma precisa mudar por
+--   -- causa de uma coluna nova, e nenhuma deveria ter sumido.
+--
+--   -- g) DELTA ZERO — rodar ANTES e DEPOIS do `alter table` e comparar.
+--   select count(*) as linhas,
+--          (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid
+--            where c.relname = 'propostas' and not t.tgisinternal) as triggers,
+--          (select count(*) from pg_constraint
+--            where conrelid = 'public.propostas'::regclass and contype in ('c', 'f')) as constraints
+--     from public.propostas;
+--   -- esperado: `linhas` identico antes e depois; triggers = 6; constraints = 4.
+--   -- Uma migration puramente aditiva nao pode mover nenhum dos tres.
+--
+--   -- h) auditoria segue ligada e ignorando apenas updated_at
+--   select enabled, ignored_columns from audit.config_v2
+--    where schema_name = 'public' and table_name = 'propostas';
+--   -- esperado: true, {updated_at}. A partir daqui o conteudo de obs_tecnica
+--   -- passa a aparecer em audit.logs_v2 a cada alteracao.
+--
+--   -- i) PostgREST precisa enxergar a coluna nova (cache de schema).
+--   --    Se o front receber "column propostas.obs_tecnica does not exist",
+--   --    recarregar:  notify pgrst, 'reload schema';
+--
+-- ROLLBACK
+--   Seguro enquanto nenhuma proposta tiver orientacao gravada. Se ja houver, o
+--   DROP as descarta — conferir (b) antes e, se precisar preservar, guardar:
+--     select id_int, obs_tecnica
+--       from public.propostas where obs_tecnica is not null;
+--
+--   alter table public.propostas
+--     drop column if exists obs_tecnica;
+--
+--   Nada mais precisa ser desfeito: esta migration nao cria politica, grant,
+--   trigger, indice nem funcao, e nao tocou `obs_proposta`, `obs_pedido` nem
+--   `propostas_os.obs`. Voltar atras devolve exatamente o estado anterior.

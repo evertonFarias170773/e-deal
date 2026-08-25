@@ -109,12 +109,15 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
    * for liberada para produção (`is_prd_aprovado`), BLOQUEADO é o estado certo.
    */
   let statusProducao = row?.status_producao || "BLOQUEADO";
+  // Orientacao tecnica: mora na PROPOSTA, nao na OS. Vem junto do mesmo
+  // enriquecimento para o boletim e o PDF nao precisarem de outra consulta.
+  let obsTecnica = "";
 
   if (row?.id_int !== null && row?.id_int !== undefined) {
     try {
       const { data: propostaRow, error: propostaError } = await client
         .from("propostas")
-        .select("cliente, vendedor, empresa, id_cliente, status_interno, is_prd_aprovado")
+        .select("cliente, vendedor, empresa, id_cliente, status_interno, is_prd_aprovado, obs_tecnica")
         .eq("id_int", row?.id_int)
         .maybeSingle();
 
@@ -128,6 +131,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
         const statusInterno = propostaRow.status_interno ? String(propostaRow.status_interno).trim() : "";
         statusProducao =
           propostaRow.is_prd_aprovado === true && statusInterno ? statusInterno : "BLOQUEADO";
+        obsTecnica = propostaRow.obs_tecnica ? String(propostaRow.obs_tecnica) : "";
       }
     } catch (e) {
       console.warn("[pedidos-detalhe.service] Falha ao enriquecer dados do pedido:", e);
@@ -309,6 +313,7 @@ export async function obterPedidoOperacionalPorIdOuIdInt(param: string | number,
     valorTotal: row?.valor_total !== null ? Number(row?.valor_total) : 0,
     pesoTeorico: 0,
     obs: row?.obs || "",
+    obsTecnica,
     produtos,
     modelos
   } as PedidoProducaoListItem;

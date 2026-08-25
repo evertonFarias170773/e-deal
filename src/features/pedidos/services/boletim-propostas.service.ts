@@ -863,6 +863,38 @@ export interface AtualizarBoletimResult {
   code?: string;
 }
 
+/**
+ * Grava a orientacao tecnica de producao em `public.propostas.obs_tecnica`.
+ *
+ * E o MESMO registro que o vendedor edita na aba Producao da proposta: o Bloco 2
+ * do boletim nao guarda copia nem espelho. Por isso a gravacao vai direto na
+ * proposta, e nao em `propostas_os.obs` — o bloco [Orientacoes para design]
+ * daquele texto etiquetado deixou de ser alimentado em 25/08/2026, e o que ja
+ * estava la fica como esta.
+ */
+export async function atualizarObsTecnicaProposta(
+  idInt: number,
+  obsTecnica: string,
+  overrideClient?: SupabaseClient
+): Promise<{ success: boolean; error?: string }> {
+  const client = overrideClient ?? getSupabaseClient();
+  if (!client) {
+    return { success: false, error: "Conexao com o banco de dados nao disponivel." };
+  }
+
+  const { error } = await client
+    .from("propostas")
+    .update({ obs_tecnica: obsTecnica })
+    .eq("id_int", idInt);
+
+  if (error) {
+    console.error("[BoletimPropostasService] Erro ao gravar obs_tecnica:", error);
+    return { success: false, error: error.message || "Falha ao salvar a orientacao tecnica." };
+  }
+
+  return { success: true };
+}
+
 export async function atualizarOrientacoesBoletim(
   idPedidoOuIdInt: string | number,
   obsText: string,

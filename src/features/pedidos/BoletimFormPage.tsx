@@ -30,6 +30,7 @@ import {
   salvarModelosBoletim,
   type PropostaLiberadaBoletim,
   atualizarOrientacoesBoletim,
+  atualizarObsTecnicaProposta,
   parsePedidosObs,
   serializePedidosObs,
   obterGabaritosOperacionais,
@@ -421,6 +422,11 @@ export function BoletimFormPage() {
           const deadlineDate = pedido.dataPrevistaEntrega ? pedido.dataPrevistaEntrega.split("T")[0] : "";
           const sugestao = dataLimitePorPrazos((pedido.produtos || []).map((p) => p.prazoProducao));
           setDataPrevistaEntrega(deadlineDate || sugestao || "");
+
+          // Bloco 2 vem da PROPOSTA (`propostas.obs_tecnica`), nao do texto
+          // etiquetado da OS. E por isso que reabrir o boletim agora mostra o
+          // que foi salvo: nao ha mais um blob para reidratar.
+          setBriefingOperacional(pedido.obsTecnica || "");
 
           const parsed = parsePedidosObs(pedido.obs);
           setObsCriticas(parsed.obsCriticas || "");
@@ -1128,8 +1134,11 @@ export function BoletimFormPage() {
         setVendedor(details.vendedor || "Everton Farias");
         setFormaPagamento(details.formaPagamento || "Pix a vista");
         
-        // Briefing comercial relevante
-        setBriefingOperacional(details.observacoes || "");
+        // Orientacao tecnica da proposta. NAO e mais semeada de
+        // `obs_proposta` (observacao comercial): os dois textos existem para
+        // publicos diferentes, e misturar era o que fazia a instrucao de
+        // fabrica se perder.
+        setBriefingOperacional(details.obsTecnica || "");
         
         // Prazo / Data prevista de entrega — maior prazo de produção entre os
         // produtos do pedido (cadastro em produtos.prazo).
@@ -1456,9 +1465,12 @@ export function BoletimFormPage() {
     if (isEditing) {
       setLoadingDetails(true);
       try {
+        // Sem `orientacoesDesign` no input: o serializador entao repete o que
+        // ja existe em `existingObs`, e o bloco [Orientacoes para design] das
+        // OS antigas fica intacto. O Bloco 2 grava em `propostas.obs_tecnica`,
+        // logo abaixo.
         const serializedObs = serializePedidosObs({
           obsCriticas,
-          orientacoesDesign: briefingOperacional,
           obsImpressao,
           obsAcabamento,
           logistica: {
@@ -1479,6 +1491,20 @@ export function BoletimFormPage() {
             type: "error",
             title: "Erro ao Atualizar Boletim",
             description: result.error || "Não foi possível atualizar as orientações. Tente novamente."
+          });
+          setLoadingDetails(false);
+          return;
+        }
+
+        // 1a'. Bloco 2 — orientação técnica, na proposta. Bloqueia em caso de
+        // erro: é a instrução que a bancada lê, e salvar o resto sem ela deixaria
+        // a tela dizendo "salvo" com o texto perdido.
+        const tecnica = await atualizarObsTecnicaProposta(Number(idIntParam), briefingOperacional);
+        if (!tecnica.success) {
+          showToast({
+            type: "error",
+            title: "Erro ao Salvar a Orientação Técnica",
+            description: tecnica.error || "Não foi possível gravar o Bloco 2."
           });
           setLoadingDetails(false);
           return;
@@ -1644,7 +1670,6 @@ export function BoletimFormPage() {
 
       const formattedObs = serializePedidosObs({
         obsCriticas,
-        orientacoesDesign: briefingOperacional,
         obsImpressao,
         obsAcabamento,
         logistica: {
@@ -1671,6 +1696,19 @@ export function BoletimFormPage() {
           type: "error",
           title: "Erro ao Salvar Boletim",
           description: result.error || "Não foi possível abrir o pedido. Tente novamente."
+        });
+        setLoadingDetails(false);
+        return;
+      }
+
+      // 2a. Bloco 2 — orientação técnica, na proposta (mesmo registro da aba
+      // Produção). Bloqueia em caso de erro, como no caminho de edição.
+      const tecnicaNova = await atualizarObsTecnicaProposta(idInt, briefingOperacional);
+      if (!tecnicaNova.success) {
+        showToast({
+          type: "error",
+          title: "Erro ao Salvar a Orientação Técnica",
+          description: tecnicaNova.error || "Não foi possível gravar o Bloco 2."
         });
         setLoadingDetails(false);
         return;

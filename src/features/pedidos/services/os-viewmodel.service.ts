@@ -97,6 +97,14 @@ export interface OsPdfViewModel {
   vendedor: string;
   designer: string | null;
   obs: ParsedObs;
+  /**
+   * Orientação técnica de produção (`propostas.obs_tecnica`). Vem da PROPOSTA,
+   * não do texto etiquetado de `propostas_os.obs`, e sai INTEIRA no PDF — sem o
+   * corte de 200 caracteres que vale para os outros campos de observação, que
+   * são notas curtas por setor. Esta é a instrução de fabricação: truncar
+   * mudaria o que a bancada faz.
+   */
+  obsTecnica: string;
   frete: { transportadora: string | null; servico: string | null } | null;
   produtos: OsPdfProduto[];
   /** Arquivos do briefing de artes sem vínculo com modelo específico. */
@@ -640,6 +648,7 @@ export async function montarOsPdfViewModel(
       vendedor: pedido.vendedor,
       designer: designerBriefing || obs.designer?.nome || null,
       obs,
+      obsTecnica: pedido.obsTecnica || "",
       frete,
       produtos,
       artesGerais,

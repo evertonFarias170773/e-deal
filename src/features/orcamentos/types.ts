@@ -169,6 +169,13 @@ export type Proposta = {
   formaPagamento: string;
   cobrancaStatus: PropostaCobrancaStatus;
   observacoes: string;
+  /**
+   * `propostas.obs_tecnica` — orientacao tecnica de producao do pedido, um
+   * registro por proposta. Escrita pelo vendedor na aba Producao e revisada
+   * pelo gerente no Bloco 2 do boletim: os dois editam ESTE campo.
+   * Nao se confunde com `observacoes` (`obs_proposta`), que e comercial.
+   */
+  obsTecnica: string;
   is_avulso?: boolean;
   clienteNaoCadastrado?: boolean;
   id_faturado?: number | null;
@@ -231,6 +238,8 @@ export type PropostaFormState = {
   descontoGeralValor: string;
   formaPagamento: string;
   observacoes: string;
+  /** `propostas.obs_tecnica` — orientacao tecnica de producao (aba Producao). */
+  obsTecnica: string;
   isAvulso?: boolean;
   valorProdutosManual?: string;
   valorFreteManual?: string;

@@ -231,6 +231,7 @@ const ABAS_EDITOR = [
   "pagamentos",
   "artes",
   "pedido",
+  "producao",
   "boletim",
   "historico"
 ] as const;
@@ -4359,6 +4360,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
             { id: "fretes", label: "Fretes" },
             { id: "pedido", label: "Pedido" },
             { id: "artes", label: "Artes" },
+            { id: "producao", label: "Produção" },
             { id: "pagamentos", label: "Pagamentos" },
             { id: "historico", label: "Histórico" }
           ].filter(tab => {
@@ -4480,6 +4482,28 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
           )}
           {activeFormTab === "artes" && shouldShowRest && (
             <ArtesTab form={form} onBriefingChange={handleBriefingChange} />
+          )}
+          {/* Producao: a aba NAO some por prateleira nem por avulsa. Produto de
+              estoque tambem e separado, conferido e embalado — a bancada
+              continua precisando da instrucao, mesmo sem arte. */}
+          {activeFormTab === "producao" && shouldShowRest && (
+            <FormSection
+              title="Orientação técnica de produção"
+              description="O que a bancada precisa saber para fabricar este pedido."
+            >
+              <textarea
+                value={form.obsTecnica}
+                onChange={(event) => updateField("obsTecnica", event.target.value)}
+                className={`${inputClass} min-h-56 resize-y`}
+                placeholder="Ex: pulseira de pino sem o pino; entregar em bobina de 100; conferir a cor contra a amostra aprovada..."
+              />
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                Um campo por pedido. O mesmo texto aparece no Bloco 2 do boletim, onde o
+                gerente pode revisá-lo, e sai por inteiro nos dois PDFs da OS. Não se
+                confunde com as <strong>Observações e Condições</strong> da aba Geral, que
+                são comerciais e não chegam à produção.
+              </p>
+            </FormSection>
           )}
           {activeFormTab === "boletim" && shouldShowRest && (
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
@@ -7279,6 +7303,7 @@ function createInitialState(proposta?: Proposta): PropostaFormState {
     descontoGeralValor: proposta?.descontoGeralValor ? proposta.descontoGeralValor.toString() : "0",
     formaPagamento: proposta?.formaPagamento ?? "Pix a vista 3 dias",
     observacoes: proposta?.observacoes ?? "",
+    obsTecnica: proposta?.obsTecnica ?? "",
     isAvulso,
     valorProdutosManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.subtotalProdutos ?? 0) : "",
     valorFreteManual: isAvulso ? formatCurrencyWithoutPrefix(proposta?.resumo.frete ?? 0) : "",

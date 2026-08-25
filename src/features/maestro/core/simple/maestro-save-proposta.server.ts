@@ -213,6 +213,9 @@ export async function salvarCotacaoComoPropostaReal(
     descontoGeralValor: percentualBonus > 0 ? String(percentualBonus) : '0',
     formaPagamento: 'A definir',
     observacoes: 'Orçamento gerado via Maestro.',
+    // O Maestro nao escreve orientacao tecnica: quem conhece a producao e o
+    // vendedor na aba Producao ou o gerente no boletim.
+    obsTecnica: '',
     isAvulso: false,
     clienteNaoCadastrado: false,
   };

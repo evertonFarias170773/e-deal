@@ -1409,6 +1409,7 @@ export async function getPropostaDetailById(idInt: number, overrideClient?: Supa
       formaPagamento: proposalRow.forma_pagamento || "A combinar",
       cobrancaStatus: "NAO_GERADA",
       observacoes: proposalRow.obs_proposta || "",
+      obsTecnica: proposalRow.obs_tecnica || "",
       is_avulso: proposalRow.is_avulso === true,
       clienteNaoCadastrado: isClienteNaoCadastrado,
       id_faturado: proposalRow.id_faturado ?? null,
@@ -1657,7 +1658,11 @@ export async function saveProposta(
           const { error: partialUpdateError } = await client
             .from("propostas")
             .update({
-              obs_proposta: formState.observacoes
+              obs_proposta: formState.observacoes,
+              // A orientacao tecnica acompanha o salvamento parcial: e o
+              // unico texto que a producao le, e travar por causa de
+              // cobranca ativa deixaria a bancada sem a instrucao.
+              obs_tecnica: formState.obsTecnica
             })
             .eq("id_int", id_int);
 
@@ -2040,6 +2045,7 @@ export async function saveProposta(
       vendedor: formState.vendedor,
       status_interno: formState.status,
       obs_proposta: formState.observacoes,
+      obs_tecnica: formState.obsTecnica,
       texto_whatsapp: informalText,
       contato: contatoNome,
       cep: cepText,

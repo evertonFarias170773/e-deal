@@ -821,6 +821,15 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
         {/* O que os demais boletins da proposta produzem */}
         <ResumoDemaisSetores setores={vm.boletim.outrosSetores} />
 
+        {/* Orientacao tecnica de producao (`propostas.obs_tecnica`) — a
+            instrucao que a bancada segue. Sai INTEIRA: sem o corte de 200
+            caracteres dos outros campos, e sem `wrap={false}`, para um texto
+            longo quebrar entre paginas em vez de ser cortado na renderizacao. */}
+        <View style={styles.obsBox}>
+          <Text style={styles.obsTitulo}>Orientação técnica de produção:</Text>
+          <Text style={styles.obsTexto}>{pdfSafe(vm.obsTecnica.trim()) || "-"}</Text>
+        </View>
+
         {/* Observações da OS */}
         <View style={styles.obsBox} wrap={false}>
           <Text style={styles.obsTitulo}>Observações:</Text>

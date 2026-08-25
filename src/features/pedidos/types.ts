@@ -179,6 +179,12 @@ export interface PedidoMock {
 export interface PedidoProducaoListItem extends PedidoMock {
   id?: string;
   descricao?: string;
+  /**
+   * `propostas.obs_tecnica` — orientação técnica de produção do pedido. Vem da
+   * PROPOSTA, não de `propostas_os.obs`: é o mesmo registro que o vendedor
+   * escreve na aba Produção e o gerente revisa no Bloco 2 do boletim.
+   */
+  obsTecnica?: string;
   status_pedido?: string;
   status_pagamento?: string;
   status_arte?: string;
