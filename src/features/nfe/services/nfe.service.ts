@@ -765,7 +765,44 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // 6. Inserir itens da nota
   if (proposta.itens && proposta.itens.length > 0) {
     const itemsInsert = proposta.itens.map((item, idx) => {
-      const valorBruto = item.quantidade * item.valorUnitario;
+      // O TOTAL DO ITEM NA NOTA E O SUBTOTAL DA PROPOSTA — nao `qtd x unitario`.
+      //
+      // `produtos_proposta.valor_sub_total` ja e mantido correto pelo trigger
+      // `calcular_valor_sub_total`, que faz `qtd * (valor_base + valor_extra) + fixo`.
+      // Montar o item da nota por `quantidade * valorUnitario` lia so o `valor_base`
+      // e jogava fora DUAS parcelas do preco:
+      //
+      //   - `fixo`, o custo por LOTE (nao por unidade), presente em 1.129 dos 1.223
+      //     itens da base — no pedido 20928 sao os 40,00 que faziam a nota sair
+      //     160,00 onde a proposta diz 200,00;
+      //   - `valor_extra`, o acrescimo unitario das variacoes escolhidas.
+      //
+      // Partir do subtotal corrige as duas de uma vez, porque as duas ja estao nele.
+      //
+      // POR QUE `subtotalBruto` E NAO `subtotal`
+      //   Os dois nascem de `valor_sub_total`, mas `subtotal` e rebaixado pelo bonus
+      //   do cliente quando ele existe (5 cadastros em 65.929). O bonus NAO entra em
+      //   `produtos_proposta.valor_sub_total` nem em `propostas.valor_total` — que e
+      //   justamente o total com que a nota precisa fechar. `subtotalBruto` e o
+      //   espelho fiel da coluna: mesma formula do trigger, sem o bonus.
+      const quantidade = item.quantidade || 0;
+      const subtotalItem = Number(
+        item.subtotalBruto ?? item.subtotal ?? quantidade * item.valorUnitario
+      );
+
+      // O unitario da nota e esse total diluido na quantidade. Quatro casas porque
+      // `notas_fiscais_itens.valor_unitario` e `numeric(14,4)`: mais precisao seria
+      // truncada pela propria coluna.
+      const valorUnitario =
+        quantidade > 0 ? Number((subtotalItem / quantidade).toFixed(4)) : 0;
+
+      // `valor_bruto` E O SUBTOTAL, mas quem da a palavra final e o banco: o trigger
+      // `fn_calcular_valor_bruto_nfe_item` reescreve esta coluna como
+      // `round(quantidade * valor_unitario, 2)` em todo INSERT/UPDATE. Nos 795 itens
+      // em que a divisao fecha em 4 casas os dois numeros sao o mesmo. Nos outros 426
+      // o trigger vence e o item fica deslocado do subtotal em ate R$ 1,60 — sempre
+      // MUITO menos que o fixo inteiro que se perdia antes, mas nao zero.
+      const valorBruto = subtotalItem;
       const pesoTotal = item.pesoTotal || 0;
       const pesoUnitario = item.pesoUnitario || 0;
 
@@ -783,10 +820,10 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
         unidade_comercial: "UN",
         unidade_tributavel: "UN",
         quantidade: item.quantidade,
-        valor_unitario: item.valorUnitario,
+        valor_unitario: valorUnitario,
         valor_bruto: valorBruto,
         quantidade_tributavel: item.quantidade,
-        valor_unitario_tributavel: item.valorUnitario,
+        valor_unitario_tributavel: valorUnitario,
         icms_origem: 0,
         icms_situacao_tributaria: "102",
         pis_situacao_tributaria: "99",

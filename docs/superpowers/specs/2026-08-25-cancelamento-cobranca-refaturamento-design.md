@@ -88,6 +88,8 @@ Passo 3 — Cancelar a cobrança               [tela: Conferência (/cobrancas),
 | 13 | `cancelar-proposta` aplica **só as regras de dinheiro** — recusa 1 (`COBRANCA_RECEBIDA`) e `TITULO_LIQUIDADO`. Nota autorizada e produção ativa **não** bloqueiam essa rota | Cancelar a proposta é **encerrar o pedido**, não refaturar. Nota e produção existem para proteger o refaturamento, e valem só nas rotas de cancelamento de cobrança |
 | 14 | A ação de cancelar título fica **somente em Contas a Receber**, no menu Ações da Carteira, reusando o **"Cancelar recebível"** que já existe. O Registro de Recebíveis **não** ganha ação de cancelamento e **seu filtro não muda** | Aquela lista mostra só o que ainda **não** virou título; uma ação de cancelamento ali nasceria cobrindo zero casos. Revoga a decisão anterior de colocar a ação nas duas telas |
 | 15 | Motivo do passo 3: **texto livre**, como hoje no fluxo não pago. Sem catálogo | Catálogo de motivo + destino do valor existe porque o fluxo pago mexe em receita reconhecida. Refaturamento não mexe |
+| 16 | São **três** vínculos cobrança↔título, não dois: primário por `id_pagamento`, BOLETO por `id_boleto_c6 + id_int`, e o fallback legado | O vínculo do BOLETO é o mesmo filtro composto que `cancelar-externo` já usa. Sem ele, cobrança BOLETO com título liquidado não seria vista pelo veredito |
+| 17 | Sob `vinculoAmbiguo`, os títulos órfãos **saem do dossiê** | Se ficassem, a recusa exibida seria sobre um título que talvez nem seja daquela cobrança. Saindo, a recusa é `VINCULO_AMBIGUO` — a informação honesta |
 
 ---
 
@@ -111,10 +113,11 @@ Quatro consultas, disparadas em paralelo:
 
 1. **`pagamentos_v2`** pela PK — `id, id_int, id_pagamento, id_cliente, id_empresa, status, confirmado, tipo_cobranca, paid_at, data_confirmacao, cod_solicitacao_inter, reserva_estado, id_pendencia, chave_reserva, valor`
 2. **`propostas`** por `id_int` — `status_interno, is_prd_aprovado, empresa, vendedor`
-3. **`boletos`** — títulos vinculados, pelas duas vias:
-   - primária: `id_pagamento = pagamento.id_pagamento`
-   - fallback legado: `id_int = pagamento.id_int AND is_faturado IS TRUE AND id_pagamento IS NULL`
-   - o fallback só é aceito quando a proposta tem **exatamente uma** cobrança da família faturado; com mais de uma, o dossiê marca `vinculoAmbiguo = true`
+3. **`boletos`** — títulos vinculados, por **três** vias, unidas e deduplicadas por `id` (decisão 16):
+   - **primária**: `id_pagamento = pagamento.id_pagamento`
+   - **BOLETO comum**: `id_boleto_c6 = pagamento.cod_solicitacao_inter AND id_int = pagamento.id_int` — o mesmo filtro composto que `cancelar-externo` já usa (nunca `id_int` isolado)
+   - **fallback legado**: `id_int = pagamento.id_int AND is_faturado IS TRUE AND id_pagamento IS NULL`, e só quando a cobrança é da família faturado — um BOLETO não possui título faturado
+   - o fallback só é aceito quando a proposta tem **exatamente uma** cobrança da família faturado; com mais de uma, o dossiê marca `vinculoAmbiguo = true` e os órfãos **saem do dossiê** (decisão 17)
 4. **`notas_fiscais`** e **`notas_servico`** por `id_int`, com `status = 'AUTORIZADA'` **e** `ambiente = 'producao'` — regra nova, nenhuma rota consulta isso hoje
 
 ### O veredito

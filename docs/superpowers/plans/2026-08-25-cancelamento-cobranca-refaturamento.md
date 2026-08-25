@@ -167,6 +167,11 @@ Cuidado de escopo: **não confundir com "Cancelar boleto"** (`onLifecycle.cancel
 2. **`docs/business/CHECKOUT-PAGAMENTOS.md:394-410`**, seção "Cancelamento em cascata da cobrança (parcela única)": descreve a cascata como fato. Corrigir, preservando a descrição das duas defesas — que continuam válidas como proteção, não como reação a algo que ocorre hoje.
 3. **`src/features/orcamentos/services/faturado-titulos.service.ts:129-160`**, comentário da reativação: explica o código como resposta a uma cascata observada. Reescrever como defesa idempotente, registrando que o ramo não dispara hoje e por que fica.
 
+**Consolidações que se acumularam nas etapas anteriores** (decididas em 25/08/2026, adiadas para cá de propósito, para não misturar refatoração com a entrega):
+
+4. **Três definições divergentes de "família faturado"**: `isCobrancaEFaturado` (só `E-FATURADO`), `TIPOS_SEM_LINK_EXTERNO` (conjunto maior, outro propósito) e a lista literal em `pagamentos-v2.service.ts:159` (`["E-FATURADO","EFATURADO","FATURADO"]`). O coletor da Etapa 2 criou uma quarta, local e comentada, porque nenhuma servia. Consolidar em um predicado único, comparando sobre valor normalizado — o banco guarda `E-Faturado` (173) e `E-FATURADO` (109).
+5. **Acentuação de `mensagemBloqueioProducao`** (`cancelamento-pago.ts`): a mensagem é escrita sem acentos ("Peca ao gerente para retira-la da producao") enquanto as mensagens novas do veredito são acentuadas. Uniformizar — é texto que o usuário lê.
+
 **Valida antes de seguir:** o doc descreve o que o código faz — sem regra inventada, sem regra omitida. Busca por "cascata" no repo não retorna afirmação de que o Inter cancela `pagamentos_v2`.
 
 ### Etapa 13 — Validação fim a fim em produção
