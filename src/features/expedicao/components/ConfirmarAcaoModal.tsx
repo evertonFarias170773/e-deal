@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
 /**
@@ -21,7 +22,8 @@ export function ConfirmarAcaoModal({
 }: {
   titulo: string;
   descricao: string;
-  detalhe?: string;
+  /** Aceita nó, não só texto: há aviso que precisa de código copiável (ver DespacharModal). */
+  detalhe?: ReactNode;
   rotuloConfirmar: string;
   salvando: boolean;
   onConfirmar: () => void;

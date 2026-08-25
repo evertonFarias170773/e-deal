@@ -13,6 +13,7 @@ import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.s
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
+import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
 import {
   camposMinimosDespacho,
   frasearFaltantes,
@@ -164,6 +165,8 @@ export function DespacharModal({
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
   const [gerandoPrepostagem, setGerandoPrepostagem] = useState(false);
+  /** Servico aguardando confirmacao de regeracao; null = nenhum dialogo aberto. */
+  const [confirmarRegeracao, setConfirmarRegeracao] = useState<"SEDEX" | "PAC" | null>(null);
   /**
    * EM NOME DE QUEM A ETIQUETA SAI.
    *
@@ -455,6 +458,12 @@ export function DespacharModal({
    */
   const gravadoComoCorreios = tipoInicial === "CORREIOS";
   const prepostagemCorreios = exp?.correiosCodigoObjeto ?? exp?.correiosIdPrepostagem ?? null;
+  /**
+   * Geracao anterior, a que sera SOBRESCRITA na proxima. So existe uma vaga: e o
+   * ultimo momento em que este codigo aparece para o operador, e por isso a
+   * confirmacao o mostra em texto selecionavel.
+   */
+  const prepostagemAnterior = exp?.correiosCodigoObjetoAnterior ?? exp?.correiosIdPrepostagemAnterior ?? null;
   const trocaCorreiosPendente = gravadoComoCorreios && modalidade === "FOB" && !confirmaTrocaCorreios;
 
   const precisaAvisoNf = !modoEdicao && pedido.nfStatus !== "AUTORIZADA";
@@ -665,6 +674,21 @@ export function DespacharModal({
   }
 
   /**
+   * Porta dos botoes SEDEX/PAC. Gerar de novo NAO cancela nos Correios e
+   * sobrescreve o registro da geracao anterior — entao, quando ja ha prepostagem,
+   * o operador ve os codigos e confirma antes. Sem prepostagem nao ha o que
+   * perder, e gera direto: a confirmacao nao aparece.
+   */
+  function pedirPrepostagem(servico: "SEDEX" | "PAC") {
+    if (gerandoPrepostagem || salvando) return;
+    if (prepostagemCorreios) {
+      setConfirmarRegeracao(servico);
+      return;
+    }
+    void handleGerarPrepostagem(servico);
+  }
+
+  /**
    * A rota de prepostagem lê endereço/peso PERSISTIDOS em expedicoes — num
    * despacho novo a linha nem existe ainda, e mesmo editando, o que está só na
    * tela (não salvo) seria ignorado. Por isso salva o form ANTES de gerar, com
@@ -740,6 +764,7 @@ export function DespacharModal({
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true">
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-slate-800">
@@ -1162,7 +1187,7 @@ export function DespacharModal({
                     <button
                       type="button"
                       disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || divergencia.bloqueia}
-                      onClick={() => void handleGerarPrepostagem("SEDEX")}
+                      onClick={() => pedirPrepostagem("SEDEX")}
                       className="rounded-2xl bg-[#0f9f9a] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {gerandoPrepostagem ? "Gerando..." : "Gerar prepostagem SEDEX"}
@@ -1170,7 +1195,7 @@ export function DespacharModal({
                     <button
                       type="button"
                       disabled={gerandoPrepostagem || salvando || faltantes.length > 0 || divergencia.bloqueia}
-                      onClick={() => void handleGerarPrepostagem("PAC")}
+                      onClick={() => pedirPrepostagem("PAC")}
                       className="rounded-2xl border border-[#0f9f9a] px-4 py-2 text-xs font-bold text-[#0f9f9a] transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       PAC
@@ -1325,5 +1350,38 @@ export function DespacharModal({
         </div>
       </div>
     </div>
+
+    {confirmarRegeracao ? (
+      <ConfirmarAcaoModal
+        titulo="Gerar outra prepostagem?"
+        descricao={`Este pedido ja tem prepostagem nos Correios. Gerar a ${confirmarRegeracao} nao cancela a atual — o cancelamento continua sendo feito por voce no portal dos Correios.`}
+        detalhe={
+          <span className="flex flex-col gap-1.5">
+            <span>
+              Passa a ser a anterior:{" "}
+              <span className="select-all font-mono font-bold">{prepostagemCorreios}</span>
+            </span>
+            {prepostagemAnterior ? (
+              <span>
+                Sai do registro para sempre:{" "}
+                <span className="select-all font-mono font-bold">{prepostagemAnterior}</span> — copie agora se ainda
+                precisar cancelar este objeto no portal.
+              </span>
+            ) : (
+              <span>Nenhum registro anterior sera perdido: esta e a primeira substituicao.</span>
+            )}
+          </span>
+        }
+        rotuloConfirmar={`Gerar ${confirmarRegeracao}`}
+        salvando={gerandoPrepostagem}
+        onConfirmar={() => {
+          const servico = confirmarRegeracao;
+          setConfirmarRegeracao(null);
+          void handleGerarPrepostagem(servico);
+        }}
+        onClose={() => setConfirmarRegeracao(null)}
+      />
+    ) : null}
+    </>
   );
 }

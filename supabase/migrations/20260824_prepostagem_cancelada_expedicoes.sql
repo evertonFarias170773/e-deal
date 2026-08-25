@@ -24,12 +24,27 @@
 -- existiu um objeto emitido nos Correios. As colunas _anterior guardam UMA
 -- geracao anterior.
 --
--- LIMITE DELIBERADO: guarda-se apenas uma anterior. Uma terceira prepostagem
--- para o mesmo pedido deve ser BLOQUEADA pela aplicacao, nunca sobrescrever a
--- coluna _anterior. Perder o rastro de um objeto emitido e pior que travar e
--- exigir decisao humana; um pedido que chega a tres prepostagens tem algo errado
--- que merece ser olhado. O bloqueio e tarefa de aplicacao e nao esta nesta
--- migration.
+-- LIMITE DE UMA ANTERIOR, SEM LIMITE DE GERACOES (revisto em 24/08/2026).
+-- Guarda-se apenas uma geracao anterior, e cada nova prepostagem SOBRESCREVE
+-- estas colunas. O texto original desta migration dizia que a terceira geracao
+-- deveria ser BLOQUEADA pela aplicacao; essa regra foi removida em 24/08/2026 e
+-- este paragrafo corrige o registro.
+--
+-- POR QUE MUDOU: a premissa era que chegar a tres prepostagens indicava algo
+-- errado. A operacao real desmentiu. Enquanto nao houver cancelamento pela API
+-- dos Correios, tres ou quatro tentativas sao normais -- a primeira sai com
+-- endereco errado e e cancelada no portal, a segunda com o destinatario errado,
+-- a terceira acerta. O bloqueio impedia o trabalho legitimo.
+--
+-- O QUE PROTEGE NO LUGAR: o modal Despachar confirma antes de gerar, mostrando
+-- em texto copiavel o codigo que passa a anterior e o que sai do registro. Uma
+-- tabela de historico foi considerada e explicitamente recusada: cancelar no
+-- portal e copiar o codigo e responsabilidade do usuario.
+--
+-- ATENCAO: o COMMENT ON COLUMN de correios_id_prepostagem_anterior, abaixo,
+-- ainda diz que a terceira geracao deve ser bloqueada. E SQL ja aplicado em
+-- producao e nao pode ser editado aqui -- o comentario no banco so muda rodando
+-- um COMMENT ON novo, que nao faz parte desta alteracao. Vale este paragrafo.
 --
 -- ESCOPO: aditivo. Colunas nullable, sem default, sem backfill, sem indice.
 -- Nenhuma linha existente e alterada. Nenhuma policy, constraint ou trigger e

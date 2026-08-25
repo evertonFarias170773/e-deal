@@ -92,9 +92,14 @@ export interface ExpedicaoRegistro {
   prepostagemCanceladaEm: string | null;
   /**
    * Prepostagem da geracao ANTERIOR, preservada quando uma nova e criada.
-   * Preenchida = ja houve uma regeracao, e uma terceira e bloqueada no servidor.
+   * Preenchida = ja houve pelo menos uma regeracao. NAO limita novas geracoes:
+   * desde 24/08/2026 nao ha teto, e cada nova sobrescreve estas duas colunas.
+   * Sao elas que o modal Despachar mostra na confirmacao, para o operador copiar
+   * o codigo antes de ele sumir do registro.
    */
   correiosIdPrepostagemAnterior: string | null;
+  /** correios_codigo_objeto_anterior — o rastreio da geracao anterior. */
+  correiosCodigoObjetoAnterior: string | null;
   dataPronto: string | null;
   dataDespacho: string | null;
   dataEntrega: string | null;

@@ -139,7 +139,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -245,6 +245,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       correiosIdPrepostagem: row.correios_id_prepostagem ?? null,
       prepostagemCanceladaEm: (row.prepostagem_cancelada_em as string | null) ?? null,
       correiosIdPrepostagemAnterior: (row.correios_id_prepostagem_anterior as string | null) ?? null,
+      correiosCodigoObjetoAnterior: (row.correios_codigo_objeto_anterior as string | null) ?? null,
       correiosCodigoObjeto: row.correios_codigo_objeto ?? null,
       dataPronto: row.data_pronto ?? null,
       dataDespacho: row.data_despacho ?? null,

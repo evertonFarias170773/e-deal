@@ -94,21 +94,13 @@ export async function POST(request: Request) {
       (lista ?? [])[0] ||
       null;
   }
-  // TERCEIRA GERACAO E BLOQUEADA, e a checagem vem ANTES de falar com os
-  // Correios — barrar depois criaria um objeto de verdade que nao teriamos onde
-  // guardar. So ha espaco para UMA geracao anterior: sobrescreve-la apagaria o
-  // rastro de um objeto emitido, que e pior que travar e exigir decisao humana.
-  if (exp?.correios_id_prepostagem_anterior && exp?.correios_id_prepostagem) {
-    return NextResponse.json(
-      {
-        success: false,
-        message:
-          `Este pedido ja teve duas prepostagens (${exp.correios_id_prepostagem_anterior} e ${exp.correios_id_prepostagem}). ` +
-          "Uma terceira apagaria o registro da anterior — resolva o caso com a Expedicao antes de gerar outra."
-      },
-      { status: 409 }
-    );
-  }
+  // SEM LIMITE DE GERACOES. Ate 24/08/2026 a terceira era barrada aqui com 409,
+  // sob a premissa de que chegar a tres significava algo errado. A operacao real
+  // desmentiu: enquanto nao houver cancelamento pela API dos Correios, e normal
+  // precisar de tres ou quatro tentativas — a primeira sai com endereco errado e
+  // e cancelada no portal, a segunda com o destinatario errado, a terceira acerta.
+  // Travar na segunda impedia o trabalho. Quem protege o operador agora e a
+  // confirmacao da tela, que mostra os codigos antes de substituir.
 
   if (!endereco || !endereco.cep) {
     return NextResponse.json(
@@ -236,10 +228,14 @@ export async function POST(request: Request) {
 
     // Grava na expedição e espelha o rastreio na OS (tolerante a falha no espelho).
     // REGERACAO: a prepostagem que estava viva desce para as colunas _anterior
-    // no MESMO upsert que grava a nova. Antes disto, gerar de novo sobrescrevia
-    // `correios_id_prepostagem` e o objeto antigo sumia do banco sem deixar
-    // rastro. `regerando` so e verdadeiro quando ja havia uma — a primeira
-    // geracao de um pedido nao mexe nas colunas _anterior.
+    // no MESMO upsert que grava a nova, SOBRESCREVENDO o que estiver la.
+    // `regerando` so e verdadeiro quando ja havia uma — a primeira geracao de um
+    // pedido nao mexe nas colunas _anterior.
+    //
+    // Guardar apenas a ultima anterior e decisao consciente de 24/08/2026, nao
+    // limitacao: cancelar no portal dos Correios e do usuario, e a confirmacao da
+    // tela mostra o codigo que vai sumir do registro para ele copiar antes. A
+    // alternativa — tabela de historico — foi explicitamente recusada.
     const regerando = Boolean(exp?.correios_id_prepostagem);
     const { error: upErr } = await supabase.from("expedicoes").upsert(
       {
