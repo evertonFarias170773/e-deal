@@ -4,9 +4,7 @@ import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
 import { isPropostaStatusProtegido } from "@/features/orcamentos/services/status-protegidos";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
-
-// Status de pagamentos_v2 considerados inativos: cancelamento vira no-op idempotente.
-const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
+import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
 
 /**
  * Não existe coluna de provedor em pagamentos_v2. O cartão Asaas é reconhecido
@@ -286,8 +284,33 @@ export async function POST(request: Request) {
 
     const statusNormalized = String(pagamento.status || "").trim().toUpperCase();
 
-    // 6. Idempotência (protege contra duplo clique): cobrança já inativa é no-op.
-    if (STATUS_INATIVOS.includes(statusNormalized)) {
+    // 6 e 7. PONTO ÚNICO DE DECISÃO.
+    //
+    // Aqui existiam três blocos próprios: idempotência, "bloqueio financeiro"
+    // (PAID / A_VENCER / confirmado) e baixa registrada. Os três saíram e o
+    // critério passou a ser o veredito compartilhado, o mesmo que a tela
+    // consulta em `GET /api/cobrancas/pode-cancelar`. É isso que garante que a
+    // recusa exibida ao usuário seja a recusa que esta rota aplicaria.
+    //
+    // MUDANÇA DE COMPORTAMENTO DESTA ETAPA: `A_VENCER` com `confirmado` deixa
+    // de ser impeditivo por si só (regra 4 da spec). Em produção todo faturado
+    // aprovado está nesse estado — era essa condição que impedia o
+    // refaturamento. O que passa a impedir é nota fiscal autorizada, produção
+    // ativa, dinheiro recebido ou título em aberto.
+    const elegibilidade = await avaliarCancelamentoNoServidor(supabase, id);
+
+    if (!elegibilidade.ok) {
+      return NextResponse.json(
+        { success: false, code: elegibilidade.erro, message: elegibilidade.mensagem },
+        { status: elegibilidade.erro === "NAO_ENCONTRADA" ? 404 : 503 }
+      );
+    }
+
+    const { veredito } = elegibilidade;
+
+    // Idempotência (protege contra duplo clique): cobrança já inativa é no-op
+    // de SUCESSO, não recusa. Mesmo contrato de resposta de antes.
+    if (veredito.jaInativa) {
       return NextResponse.json({
         success: true,
         alreadyCancelled: true,
@@ -295,20 +318,19 @@ export async function POST(request: Request) {
       });
     }
 
-    // 7. Bloqueio financeiro: paga, confirmada ou com faturamento aprovado.
-    if (statusNormalized === "PAID" || statusNormalized === "A_VENCER" || pagamento.confirmado === true) {
+    if (!veredito.pode) {
+      // Nenhuma escrita aconteceu até aqui: a recusa sai antes do provedor e
+      // antes de qualquer UPDATE.
       return NextResponse.json(
-        { success: false, code: "PAGAMENTO_QUITADO", message: "Não é permitido cancelar/excluir cobrança paga, confirmada ou a vencer." },
-        { status: 409 }
-      );
-    }
-
-    // 7b. Baixa ou conciliação registrada no PRÓPRIO pagamento. Até aqui só
-    // `boletos.paid_at` era verificado, e apenas para BOLETO — existem linhas
-    // com status não-pago e `paid_at`/`data_confirmacao` preenchidos.
-    if (pagamento.paid_at != null || pagamento.data_confirmacao != null) {
-      return NextResponse.json(
-        { success: false, code: "PAGAMENTO_QUITADO", message: "Cobrança com baixa ou confirmação registrada. Cancelamento não permitido." },
+        {
+          success: false,
+          code: veredito.code,
+          message: veredito.message,
+          ...(veredito.acao ? { acao: veredito.acao } : {}),
+          ...(veredito.titulosEmAberto.length > 0
+            ? { titulosEmAberto: veredito.titulosEmAberto }
+            : {})
+        },
         { status: 409 }
       );
     }
@@ -405,20 +427,11 @@ export async function POST(request: Request) {
         );
       }
 
-      // Bloqueio adicional: boleto já liquidado (paid_at) não pode ser cancelado.
-      const { data: boletosPagos } = await supabase
-        .from("boletos")
-        .select("id, paid_at")
-        .eq("id_boleto_c6", codC6Final)
-        .eq("id_int", pagamento.id_int as number)
-        .not("paid_at", "is", null);
-
-      if (boletosPagos && boletosPagos.length > 0) {
-        return NextResponse.json(
-          { success: false, code: "PAGAMENTO_QUITADO", message: "Boleto já liquidado (paid_at preenchido). Cancelamento não permitido." },
-          { status: 409 }
-        );
-      }
+      // O bloqueio de boleto liquidado que existia aqui saiu: o veredito já o
+      // aplica (`TITULO_LIQUIDADO`), com o MESMO filtro composto
+      // `id_boleto_c6 + id_int`, e antes de qualquer chamada ao provedor.
+      // Mantê-lo duplicaria a regra nos dois lugares que esta spec existe para
+      // unificar.
 
       const webhookUrl = resolverWebhookCancelamentoBoleto(idEmpresaCobranca);
       console.log("[cancelar-externo][BOLETO] chamando n8n", {

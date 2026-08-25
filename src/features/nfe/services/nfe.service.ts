@@ -6,6 +6,10 @@ import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supaba
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_GROUP_NFE_ELIGIBLE } from "@/features/orcamentos/constants";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
+import {
+  normalizarTipoContribuinte,
+  tipoContribuintePorDocumento
+} from "@/lib/fiscal/tipo-contribuinte";
 
 export const NFE_SELECT_COLUMNS = [
   "id",
@@ -493,7 +497,34 @@ export async function resolverPagador(idInt: number): Promise<number | null> {
  * NAO higieniza nada: nenhum endereco e alterado ou apagado, so a LEITURA muda.
  * O mesmo criterio vive na RPC do payload — se um mudar, o outro tem de mudar
  * junto, senao a nota sai com destinatario de um endereco e destino de outro.
+ *
+ * A REGRA vive nesta funcao PURA, separada da consulta, porque tem DOIS
+ * chamadores: `resolverEnderecoPrincipal` logo abaixo e a aba Destinatario da
+ * NF, que ja carrega todos os enderecos do cliente e nao pode inventar um
+ * criterio proprio.
  */
+export function escolherEnderecoPrincipal<
+  T extends { id?: string | number | null; tipo_endereco?: string | null; data_criacao?: string | null }
+>(enderecos: T[]): T | null {
+  const candidatos = enderecos.filter(
+    (e) => String(e.tipo_endereco ?? "").trim().toLowerCase() === "principal"
+  );
+  if (candidatos.length === 0) return null;
+
+  const ordenados = [...candidatos].sort((a, b) => {
+    const caixaAltaA = String(a.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
+    const caixaAltaB = String(b.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
+    if (caixaAltaA !== caixaAltaB) return caixaAltaA - caixaAltaB;
+    const dataA = a.data_criacao ? Date.parse(a.data_criacao) : Number.NEGATIVE_INFINITY;
+    const dataB = b.data_criacao ? Date.parse(b.data_criacao) : Number.NEGATIVE_INFINITY;
+    if (dataA !== dataB) return dataB - dataA;
+    return String(a.id ?? "").localeCompare(String(b.id ?? ""));
+  });
+
+  return ordenados[0];
+}
+
+/** A regra acima aplicada aos enderecos de UM cliente, lidos do banco. */
 export async function resolverEnderecoPrincipal(
   idCliente: number
 ): Promise<{ id: string; uf: string; tipoEndereco: string | null } | null> {
@@ -505,26 +536,16 @@ export async function resolverEnderecoPrincipal(
     .select("id,uf,tipo_endereco,data_criacao")
     .eq("id_cliente", idCliente);
 
-  const candidatos = ((data ?? []) as Array<{
-    id: string;
-    uf: string | null;
-    tipo_endereco: string | null;
-    data_criacao: string | null;
-  }>).filter((e) => String(e.tipo_endereco ?? "").trim().toLowerCase() === "principal");
+  const escolhido = escolherEnderecoPrincipal(
+    (data ?? []) as Array<{
+      id: string;
+      uf: string | null;
+      tipo_endereco: string | null;
+      data_criacao: string | null;
+    }>
+  );
+  if (!escolhido) return null;
 
-  if (candidatos.length === 0) return null;
-
-  candidatos.sort((a, b) => {
-    const caixaAltaA = String(a.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
-    const caixaAltaB = String(b.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
-    if (caixaAltaA !== caixaAltaB) return caixaAltaA - caixaAltaB;
-    const dataA = a.data_criacao ? Date.parse(a.data_criacao) : Number.NEGATIVE_INFINITY;
-    const dataB = b.data_criacao ? Date.parse(b.data_criacao) : Number.NEGATIVE_INFINITY;
-    if (dataA !== dataB) return dataB - dataA;
-    return String(a.id).localeCompare(String(b.id));
-  });
-
-  const escolhido = candidatos[0];
   const uf = String(escolhido.uf ?? "").trim().toUpperCase();
   if (!uf) return null;
   return { id: String(escolhido.id), uf, tipoEndereco: escolhido.tipo_endereco };
@@ -684,20 +705,46 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // pedido antigo cria um rascunho novo, ja com o pagador.
   const idPagador = (await resolverPagador(idInt)) ?? proposta.cliente?.idCliente ?? null;
   let documentoPagador = proposta.cliente?.documento || "";
-  if (idPagador && idPagador !== proposta.cliente?.idCliente) {
+  let tipoContribuinteDoCadastro: string | null = null;
+  if (idPagador) {
+    // Uma consulta so, sempre — antes ela so acontecia quando o pagador era um
+    // terceiro, porque o documento do proprio cliente ja vinha da proposta. O
+    // `tipo_contribuinte` nao vem: a proposta nao carrega esse campo.
     const { data: pagadorRow } = await client
       .from("clientes")
-      .select("documento")
+      .select("documento,tipo_contribuinte")
       .eq("id_cliente", idPagador)
       .maybeSingle();
-    documentoPagador = String((pagadorRow as { documento?: string | null } | null)?.documento ?? "");
+    const cadastroPagador = pagadorRow as {
+      documento?: string | null;
+      tipo_contribuinte?: string | null;
+    } | null;
+    if (idPagador !== proposta.cliente?.idCliente) {
+      documentoPagador = String(cadastroPagador?.documento ?? "");
+    }
+    tipoContribuinteDoCadastro = cadastroPagador?.tipo_contribuinte ?? null;
   }
 
-  // O tipo de contribuinte e o indicador de consumidor final saem do documento
-  // do PAGADOR — sao atributos do destinatario, e o destinatario mudou.
   const isCNPJ = documentoPagador.replace(/\D/g, "").length > 11;
+
+  // `consumidor_final` continua saindo do documento: CPF e sempre consumidor
+  // final, e isso a RPC do payload reafirma na emissao.
   const consumidorFinal = isCNPJ ? 0 : 1;
-  const tipoContribuinte = isCNPJ ? 1 : 9;
+
+  // O TIPO DE CONTRIBUINTE AGORA SAI DO CADASTRO DO PAGADOR.
+  //
+  // Ate 25/08/2026 ele era puro palpite por documento: CNPJ virava 1
+  // (Contribuinte ICMS) e CPF virava 9. O palpite acerta o CPF e erra o CNPJ com
+  // frequencia — a maioria dos clientes PJ da base nao e contribuinte de ICMS, e
+  // declarar 1 para quem nao tem inscricao estadual e o caminho da rejeicao.
+  //
+  // O cadastro passa na frente; o palpite fica como rede, para quando o cadastro
+  // nao tem valor traduzivel (vazio, NULL ou grafia nao reconhecida). Nenhum
+  // rascunho existente e reescrito: isto roda so na criacao.
+  const tipoContribuinte = Number(
+    normalizarTipoContribuinte(tipoContribuinteDoCadastro) ??
+      tipoContribuintePorDocumento(documentoPagador)
+  );
 
   const valorFrete = proposta.resumo?.frete || 0;
   const modalidadeFrete = codigoModalidadeFrete(proposta.modalidadeFrete, valorFrete);
@@ -1014,6 +1061,59 @@ async function buscarSociosPagadores(
 }
 
 /**
+ * Corta da Fila de Faturamento o pedido cujo CLIENTE esta marcado para NAO
+ * receber nota (`clientes.nota = false`).
+ *
+ * O CLIENTE DO PEDIDO, NAO O PAGADOR. Sao coisas diferentes e a distincao e
+ * deliberada: o destinatario da nota e o pagador (`propostas.id_faturado`), mas
+ * quem decide se aquele pedido gera nota e quem comprou. Um agenciador que paga
+ * por varios clientes nao pode arrastar para a fila o pedido de um cliente que
+ * o Financeiro tirou dela — nem tirar o de quem continua faturando.
+ *
+ * CUSTO: uma consulta a mais, com os `id_cliente` que ja vieram no SELECT das
+ * propostas. Nao ha join novo nem varredura de `clientes` — e o mesmo padrao
+ * das consultas de cobranca e de socio pagador que ja rodam nesta funcao.
+ *
+ * FALHA PARA O LADO DE MOSTRAR: se a consulta der erro, ou se o cadastro do
+ * cliente nao for encontrado, a proposta FICA na fila. Esconder trabalho de quem
+ * fatura e pior do que mostrar demais — mesmo criterio ja adotado na contagem de
+ * notas vivas logo abaixo.
+ */
+async function filtrarPorNotaDoClienteDoPedido(
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  propostas: SupabasePropostaSimple[]
+): Promise<SupabasePropostaSimple[]> {
+  const idsCliente = Array.from(
+    new Set(
+      propostas
+        .map((p) => Number(p.id_cliente))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    )
+  );
+  if (idsCliente.length === 0) return propostas;
+
+  const { data, error } = await client
+    .from("clientes")
+    .select("id_cliente,nota")
+    .in("id_cliente", idsCliente);
+
+  if (error) {
+    console.warn("[NfeService] Nao foi possivel ler a flag `nota` dos clientes da fila:", error.message);
+    return propostas;
+  }
+
+  const naoFatura = new Set<number>();
+  (data ?? []).forEach((linha: { id_cliente: number | null; nota: boolean | null }) => {
+    // Só o `false` EXPLICITO corta. `null` nao corta: a coluna e nulavel e um
+    // NULL significa cadastro que nunca foi decidido, nao decisao de nao faturar.
+    if (linha.nota === false) naoFatura.add(Number(linha.id_cliente));
+  });
+
+  if (naoFatura.size === 0) return propostas;
+  return propostas.filter((p) => !naoFatura.has(Number(p.id_cliente)));
+}
+
+/**
  * Status de nota que NÃO tiram a proposta da fila de faturamento.
  * `RASCUNHO` acompanha `PENDENTE` porque é o mesmo estágio — é assim que
  * `getNfeActions` já os trata na tela.
@@ -1041,7 +1141,7 @@ export async function getFaturaveisPropostas(): Promise<FaturavelOrigem[]> {
 
     if (!data) return [];
 
-    const propostas = data as SupabasePropostaSimple[];
+    const propostas = await filtrarPorNotaDoClienteDoPedido(client, data as SupabasePropostaSimple[]);
 
     // Quantas notas cada proposta já tem ADIANTE do rascunho. Não contam:
     //   - CANCELADA e DENEGADA, porque a proposta volta a ser faturável quando

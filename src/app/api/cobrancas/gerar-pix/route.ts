@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
 
+/**
+ * Identidade do devedor NÃO vem do payload: sai de `pagamentos_v2`, lida aqui
+ * dentro. O front montava `nome`/`cpfCnpj` a partir de `proposta.cliente`,
+ * enquanto a linha da cobrança é gravada com o pagador (`propostas.id_faturado`)
+ * — o Inter recebia uma pessoa e o ERP registrava outra. A rota do Cartão Asaas
+ * já lia da linha; este é o mesmo contrato.
+ */
 type GerarPixRequest = {
   cobrancaId: string;
   idEmpresa?: number;
@@ -9,13 +16,13 @@ type GerarPixRequest = {
   valorNominal: number;
   dataVencimento: string;
   telefone?: string;
-  cpfCnpj: string;
-  nome: string;
   endereco: string;
   cidade: string;
   uf: string;
   cep: string;
 };
+
+const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g, "");
 
 export async function POST(request: Request) {
   let body: GerarPixRequest;
@@ -35,8 +42,6 @@ export async function POST(request: Request) {
     valorNominal,
     dataVencimento,
     telefone,
-    cpfCnpj,
-    nome,
     endereco,
     cidade,
     uf,
@@ -44,7 +49,7 @@ export async function POST(request: Request) {
   } = body;
 
   // Validacoes basicas do payload
-  if (!cobrancaId || !seuNumero || !valorNominal || !cpfCnpj || !nome) {
+  if (!cobrancaId || !seuNumero || !valorNominal) {
     return NextResponse.json(
       { success: false, message: "Campos obrigatorios ausentes no body." },
       { status: 400 }
@@ -83,7 +88,7 @@ export async function POST(request: Request) {
   // 3. Validação da cobrança e RLS
   const { data: cobranca, error: fetchErr } = await supabaseUser
     .from("pagamentos_v2")
-    .select("id, id_empresa, tipo_cobranca, valor, status, pix_copia_cola, linha_digitavel, cod_solicitacao_inter")
+    .select("id, id_empresa, tipo_cobranca, valor, status, pix_copia_cola, linha_digitavel, cod_solicitacao_inter, cliente, documento")
     .eq("id", cobrancaId)
     .maybeSingle();
 
@@ -151,7 +156,28 @@ export async function POST(request: Request) {
     );
   }
 
-  // 4. Executar integração real do PIX
+  // 4. Identidade do devedor — SEMPRE da linha da cobrança, nunca do payload.
+  // Os dois campos saem da mesma linha, então não há como o nome ser de uma
+  // pessoa e o documento de outra (era o caso do retry automático do PIX, que
+  // mandava `pagador.nome` junto com `proposta.cliente.documento`).
+  const nome = String(cobranca.cliente ?? "").trim();
+  const cpfCnpj = soDigitos(cobranca.documento);
+
+  if (!nome) {
+    return NextResponse.json(
+      { success: false, message: "Cobrança sem nome do pagador gravado — não é possível emitir o PIX." },
+      { status: 400 }
+    );
+  }
+
+  if (cpfCnpj.length !== 11 && cpfCnpj.length !== 14) {
+    return NextResponse.json(
+      { success: false, message: "CPF/CNPJ do pagador inválido ou ausente na cobrança." },
+      { status: 400 }
+    );
+  }
+
+  // 5. Executar integração real do PIX
   const resPix = await gerarPixBancoInter(supabaseUser, {
     cobrancaId,
     idEmpresa: idEmpresaReal,

@@ -50,6 +50,7 @@ import {
   getAlertasNfe,
   getNfeDisplayStatus,
   resolverDestinoFiscal,
+  escolherEnderecoPrincipal,
   ufDaEmpresaEmitente,
   cfopDeVenda,
   type DestinoFiscal,
@@ -58,6 +59,7 @@ import {
   type SimpleProduct
 } from "../services/nfe.service";
 import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow, NfeReadModel } from "../types";
+import { OPCOES_TIPO_CONTRIBUINTE } from "@/lib/fiscal/tipo-contribuinte";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -93,6 +95,7 @@ interface EnderecoData {
   cidade?: string | null;
   uf?: string | null;
   tipo_endereco?: string | null;
+  data_criacao?: string | null;
   obs?: string | null;
 }
 
@@ -342,22 +345,22 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           setCliente(cliData);
         }
 
-        const { data: addrData } = await client
-          .from("enderecos")
-          .select("cep, endereco, numero, complemento, bairro, cidade, uf")
-          .eq("id_cliente", dbNote.id_cliente)
-          .eq("tipo_endereco", "Principal")
-          .maybeSingle();
-        if (addrData) {
-          setPrincipalEndereco(addrData);
-        } else {
-          setPrincipalEndereco(null);
-        }
-
-        // Fetch all addresses of the client
+        // UMA consulta para os enderecos do cliente, e o principal sai dela.
+        //
+        // Antes eram duas, e a do endereco principal filtrava
+        // `.eq("tipo_endereco", "Principal")` — grafia que NAO EXISTE no banco:
+        // sao 66.224 linhas `PRINCIPAL` e 3 `principal`, zero `Principal`. O
+        // filtro nunca casava, `principalEndereco` era sempre null e a aba
+        // Destinatario dizia "Nenhum endereco principal cadastrado" para todo
+        // mundo. O endereco so aparecia no DANFE Preview, porque a RPC do
+        // payload compara `lower(trim(...))` e acha.
+        //
+        // A escolha usa `escolherEnderecoPrincipal`, o MESMO criterio do
+        // servico e da RPC (caixa alta vence, depois o mais recente, depois o
+        // id) — a tela nao pode mostrar um endereco e a nota sair com outro.
         const { data: allAddrData } = await client
           .from("enderecos")
-          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, obs")
+          .select("id, cep, endereco, numero, complemento, bairro, cidade, uf, tipo_endereco, data_criacao, obs")
           .eq("id_cliente", dbNote.id_cliente);
         if (allAddrData) {
           fetchedEnderecos = allAddrData;
@@ -365,6 +368,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         } else {
           setAllEnderecos([]);
         }
+        setPrincipalEndereco(escolherEnderecoPrincipal(fetchedEnderecos));
 
         const { data: empData } = await client
           .from("empresas")
@@ -1585,9 +1589,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     onChange={(e) => setTipoContribuinte(Number(e.target.value))}
                     className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
                   >
-                    <option value={1}>1 - Contribuinte ICMS</option>
-                    <option value={2}>2 - Contribuinte Isento</option>
-                    <option value={9}>9 - Não Contribuinte</option>
+                    {OPCOES_TIPO_CONTRIBUINTE.map((opcao) => (
+                      <option key={opcao.valor} value={opcao.valor}>{opcao.rotulo}</option>
+                    ))}
                   </select>
                 </div>
 

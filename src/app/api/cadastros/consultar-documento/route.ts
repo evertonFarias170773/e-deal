@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { validateCadastroInitialStep } from "@/features/cadastros/services/cadastros.service";
 import { normalizeDocumentDigits, validateDocumentByTipo, type DocumentoTipo } from "@/features/cadastros/utils/documento";
+import type { CodigoTipoContribuinte } from "@/lib/fiscal/tipo-contribuinte";
 
 type ConsultaDocumentoRequestBody = {
   tipoPessoa?: string;
@@ -18,7 +19,7 @@ type DocumentoConsultaPayload = {
   telefoneFixo: string;
   cidadeUf: string;
   insEstadual: string;
-  tipoContribuinte: "CONTRIBUINTE" | "ISENTO" | "";
+  tipoContribuinte: CodigoTipoContribuinte | "";
   enderecoPreparado: {
     id_cliente: number;
     cep: string;
@@ -175,7 +176,11 @@ async function consultarCnpj(documentoDigits: string, idCliente: number): Promis
   const cidadeUf = cidade && uf ? `${cidade} - ${uf}` : "";
   const telefoneFixo = `${toText(estabelecimento.ddd1)}${toText(estabelecimento.telefone1)}`;
   const insEstadual = findInscricaoEstadualAtiva(estabelecimento.inscricoes_estaduais);
-  const tipoContribuinte = insEstadual ? "CONTRIBUINTE" : "ISENTO";
+  // Codigo da SEFAZ desde 25/08/2026, o mesmo vocabulario da NF. Com inscricao
+  // estadual ativa na Receita o CNPJ e contribuinte de ICMS (1); sem ela a
+  // consulta nao tem como distinguir isento (2) de nao contribuinte (9), e o
+  // padrao seguro e o 9 — declarar contribuinte quem nao e custa rejeicao.
+  const tipoContribuinte: CodigoTipoContribuinte = insEstadual ? "1" : "9";
   const razaoSocial = toText(result.data.razao_social);
   const nomeFantasia = toText(estabelecimento.nome_fantasia) || razaoSocial;
 

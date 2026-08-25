@@ -158,6 +158,27 @@ function normalizar(valor: string | null | undefined): string {
   return String(valor || "").trim().toUpperCase();
 }
 
+/**
+ * Família faturado — a modalidade em que o título é artefato SEPARADO da
+ * cobrança (Registro de Recebíveis), com ação própria de cancelamento.
+ *
+ * Vive aqui, e não no coletor, porque é regra de decisão: é ela que define a
+ * quem a recusa `TITULO_EM_ABERTO` se aplica.
+ *
+ * O banco guarda duas grafias — "E-Faturado" e "E-FATURADO". A comparação é
+ * sobre o valor normalizado (caixa, espaços e underscore), nunca igualdade
+ * literal, para uma grafia nova não furar a checagem em silêncio.
+ *
+ * NÃO consolida as três definições divergentes que já existem no módulo
+ * (`isCobrancaEFaturado`, `TIPOS_SEM_LINK_EXTERNO`, a lista em
+ * `pagamentos-v2.service.ts:159`) — isso é trabalho da Etapa 12 do plano.
+ */
+const FAMILIA_FATURADO = new Set(["E-FATURADO", "EFATURADO", "FATURADO"]);
+
+export function isFamiliaFaturado(tipo: string | null | undefined): boolean {
+  return FAMILIA_FATURADO.has(String(tipo || "").trim().toUpperCase().replace(/_/g, "-"));
+}
+
 /** "2026-08-30" -> "30/08/2026", sem passar por Date (evita deslocar um dia). */
 function formatarDataIso(valor: string | null | undefined): string {
   const texto = String(valor || "").slice(0, 10);
@@ -294,8 +315,23 @@ function montarRecusas(dossie: DossieCancelamento): Recusa[] {
     });
   }
 
-  // 6. Instrução de fluxo, sempre por último.
-  const emAberto = titulos.filter(isTituloEmAberto);
+  // 6. Instrução de fluxo, sempre por último — e SÓ para a família faturado.
+  //
+  //    Em BOLETO, PIX e cartão o título e a cobrança são o MESMO ato: quem
+  //    cancela a cobrança cancela o título junto, no provedor e no registro,
+  //    numa operação só (é o que `cancelar-externo` sempre fez). Recusar ali
+  //    quebraria o cancelamento de boleto comum — medido em 25/08/2026: 4
+  //    cobranças BOLETO ativas têm título vinculado em aberto — e a mensagem
+  //    seria absurda, porque manda "cancelar o título primeiro em Contas a
+  //    Receber" para algo que não tem existência separada.
+  //
+  //    No faturado é o oposto: o título é artefato do Registro de Recebíveis,
+  //    com ação própria ("Cancelar recebível"), e o fluxo é em três passos.
+  //
+  //    `TITULO_LIQUIDADO` (acima) NÃO tem essa restrição e vale para todos os
+  //    tipos: título pago é dinheiro recebido em qualquer modalidade, e as
+  //    rotas já bloqueavam isso antes desta spec.
+  const emAberto = isFamiliaFaturado(cobranca.tipo_cobranca) ? titulos.filter(isTituloEmAberto) : [];
   if (emAberto.length > 0) {
     const titulo = emAberto[0];
     const parcela = rotuloParcela(titulo);

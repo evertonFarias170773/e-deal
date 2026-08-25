@@ -20,6 +20,7 @@ import {
   type CobrancaParaElegibilidade,
   type DossieCancelamento,
   type NotaParaElegibilidade,
+  isFamiliaFaturado,
   type TituloParaElegibilidade,
   type VereditoCancelamento
 } from "@/features/cobrancas/cancelamento-elegibilidade";
@@ -65,26 +66,6 @@ function vazioLista<T>(): Promise<{ data: T[] | null; error: { message: string }
 export type ResultadoElegibilidade =
   | { ok: true; veredito: VereditoCancelamento; dossie: DossieCancelamento; pagamento: PagamentoRow }
   | { ok: false; erro: "NAO_ENCONTRADA" | "FALHA_LEITURA"; mensagem: string };
-
-/**
- * Família faturado, normalizada. Não existe predicado canônico no módulo: há
- * três definições divergentes (`isCobrancaEFaturado` só cobre E-FATURADO,
- * `TIPOS_SEM_LINK_EXTERNO` cobre um conjunto maior, `pagamentos-v2.service`
- * usa outra lista). Aqui interessa só quem pode possuir título faturado.
- *
- * O banco hoje guarda duas grafias — "E-Faturado" (173) e "E-FATURADO" (109).
- * A comparação é feita sobre o valor normalizado, e não por `.in()` com
- * grafias exatas, para uma grafia nova não furar a checagem em silêncio.
- */
-const FAMILIA_FATURADO = new Set(["E-FATURADO", "EFATURADO", "FATURADO"]);
-
-function normalizarTipo(tipo: string | null | undefined): string {
-  return String(tipo || "").trim().toUpperCase().replace(/_/g, "-");
-}
-
-function isFamiliaFaturado(tipo: string | null | undefined): boolean {
-  return FAMILIA_FATURADO.has(normalizarTipo(tipo));
-}
 
 function toTitulo(row: BoletoRow): TituloParaElegibilidade {
   return {

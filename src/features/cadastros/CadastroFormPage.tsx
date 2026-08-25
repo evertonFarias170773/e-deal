@@ -10,6 +10,11 @@ import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatDocument } from "@/lib/formatters/document";
+import {
+  OPCOES_TIPO_CONTRIBUINTE,
+  normalizarTipoContribuinte,
+  type CodigoTipoContribuinte
+} from "@/lib/fiscal/tipo-contribuinte";
 import { mockCompanies } from "@/lib/mocks/empresas.mock";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -73,7 +78,7 @@ type ConsultaDocumentoApiPayload = {
   telefoneFixo: string;
   cidadeUf: string;
   insEstadual: string;
-  tipoContribuinte: "CONTRIBUINTE" | "ISENTO" | "";
+  tipoContribuinte: CodigoTipoContribuinte | "";
   enderecoPreparado: {
     id_cliente: number;
     cep: string;
@@ -728,7 +733,9 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
             telefoneFixo: payload.telefoneFixo || current.telefoneFixo,
             tipoContribuinte: payload.tipoContribuinte || current.tipoContribuinte,
             inscricaoEstadual: payload.insEstadual || current.inscricaoEstadual,
-            isentoInscricaoEstadual: payload.tipoContribuinte === "ISENTO",
+            // Isento de IE = tudo que nao e `1`. O `1` e o unico codigo que
+            // afirma inscricao estadual ativa; `2` e `9` nao tem IE a declarar.
+            isentoInscricaoEstadual: payload.tipoContribuinte !== "1",
             enderecos
           };
         });
@@ -1730,11 +1737,14 @@ function CompleteForm({
           <Field label="Contato">
             <input value={form.contato} readOnly={!isEditAllowed} onChange={(event) => onUpdate("contato", event.target.value)} className={!isEditAllowed ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass} />
           </Field>
-          <Field label="Tipo de distribuinte">
+          {/* Mesmo vocabulario da NF desde 25/08/2026: os codigos da SEFAZ, e so
+              eles. O rotulo tambem estava errado — dizia "distribuinte". */}
+          <Field label="Tipo de contribuinte">
             <select value={form.tipoContribuinte} disabled={isFiscalBlocked || !isEditAllowed} onChange={(event) => onUpdate("tipoContribuinte", event.target.value)} className={(isFiscalBlocked || !isEditAllowed) ? `${inputClass} bg-slate-100 text-slate-500 cursor-not-allowed` : inputClass}>
               <option value="">Selecione...</option>
-              <option value="CONTRIBUINTE">Contribuinte</option>
-              <option value="ISENTO">Isento</option>
+              {OPCOES_TIPO_CONTRIBUINTE.map((opcao) => (
+                <option key={opcao.valor} value={opcao.valor}>{opcao.rotulo}</option>
+              ))}
             </select>
           </Field>
           <Field label="E-mail principal">
@@ -2010,13 +2020,19 @@ function CompleteForm({
             )}
             <Field label="Percentual bonus"><input value={form.percentualBonus} onChange={(event) => canEditCredito && !form.usaPrecoFixo && onUpdate("percentualBonus", event.target.value)} readOnly={!canEditCredito || form.usaPrecoFixo} className={`${inputClassCredito} ${form.usaPrecoFixo ? "opacity-50" : ""}`} /></Field>
           </div>
-          {/* Toggles "Nota", "Verificado", "CPF invalido", "Receber e-mail" e
-              "Receber WhatsApp" saíram da interface. Os valores seguem no estado
-              (carregados do banco) e no payload — nenhum é zerado ao salvar. */}
+          {/* "Nota" VOLTOU à interface em 25/08/2026 — agora ela decide se o
+              pedido do cliente entra na Fila de Faturamento. Enquanto o booleano
+              era invisível não havia por que mostrá-lo; agora tem.
+              Fica sob `cadastros.edit_credito` como os vizinhos: só o Financeiro
+              altera.
+              Os toggles "Verificado", "CPF invalido", "Receber e-mail" e
+              "Receber WhatsApp" continuam fora da interface. Os valores seguem no
+              estado (carregados do banco) e no payload — nenhum é zerado ao salvar. */}
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Toggle label="Usa Preço Fixo" checked={form.usaPrecoFixo} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("usaPrecoFixo", value)} />
             <Toggle label="Bonus" checked={form.bonusAtivo} disabled={!canEditCredito || form.usaPrecoFixo} onChange={(value) => canEditCredito && onUpdate("bonusAtivo", value)} />
             <Toggle label="Restricao" checked={form.restricao} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("restricao", value)} />
+            <Toggle label="Nota" checked={form.nota} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("nota", value)} />
           </div>
         </FormSection>
       )}
@@ -2179,7 +2195,13 @@ function createInitialState(
     fantasia: cadastro?.fantasia ?? "",
     apelido: cadastro?.apelido ?? "",
     contato: cadastro?.contato ?? "",
-    tipoContribuinte: cadastro?.tipoContribuinte ?? "",
+    // Traduzido na leitura: um cadastro gravado como `ISENTO` ou
+    // `2 = Contribuinte isento` abre no drop ja mostrando o codigo. Grafia nao
+    // reconhecida sobrevive intacta em vez de virar vazio — nada e apagado por
+    // nao ter sido entendido. Vazio continua vazio: quem converte os vazios em
+    // `9` e o SQL de normalizacao, nao o formulario.
+    tipoContribuinte:
+      normalizarTipoContribuinte(cadastro?.tipoContribuinte) ?? cadastro?.tipoContribuinte ?? "",
     email: cadastro?.email ?? "",
     emailFinanceiro: cadastro?.emailFinanceiro ?? "",
     inscricaoEstadual: cadastro?.inscricaoEstadual ?? "",
@@ -2206,7 +2228,11 @@ function createInitialState(
     usaPrecoFixo: cadastro?.usaPrecoFixo ?? false,
     bonusAtivo: cadastro?.bonusAtivo ?? false,
     percentualBonus: cadastro?.percentualBonus?.toString() ?? "0",
-    nota: cadastro?.nota ?? false,
+    // Cadastro NOVO nasce faturavel. O DEFAULT do banco virou `true`, mas o
+    // formulario sempre manda a coluna no INSERT — se o padrao daqui ficasse
+    // `false`, o DEFAULT nunca chegaria a valer e todo cliente novo nasceria
+    // fora da Fila.
+    nota: cadastro?.nota ?? true,
     verificado: cadastro?.verificado ?? false,
     restricao: cadastro?.restricao ?? false,
     cpfInvalido: cadastro?.cpfInvalido ?? false,
