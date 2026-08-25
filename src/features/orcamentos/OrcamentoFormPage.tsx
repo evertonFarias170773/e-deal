@@ -64,7 +64,7 @@ import { listProdutos } from "@/features/produtos/services/produtos.service";
 import { listProdutoVariacaoVinculos } from "@/features/produtos/services/produto-variacoes.service";
 import { saveProposta, listVendedoresReais, insertEnderecoProposta, updateEnderecoProposta, updatePropostaFiscalDados, registrarMensagemSistemaProposta, gerarPDFProposta, duplicarProposta, retirarPropostaDaProducao, type UsuarioVendedor } from "@/features/orcamentos/services/orcamentos.service";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
-import { TRANSPORTE_CATEGORIAS, LABEL_TRANSPORTE_CATEGORIA, classificarTransporte } from "@/features/orcamentos/lib/transporte-categoria";
+import { classificarTransporte } from "@/features/orcamentos/lib/transporte-categoria";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.service";
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
@@ -992,6 +992,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * rebaixaria a proposta para NOVO — ver `lib/modalidade-frete.ts`.
    */
   const modalidadeEditavel = podeEditarModalidade(form.status);
+
+  /**
+   * FOB entregue por motoboy — a outra resposta possivel para "quem leva".
+   *
+   * Nao existe estado novo: o proprio `transporteCategoria` guarda a escolha.
+   * Ele deixou de ser preenchido por botao em 24/08/2026 e passou a sair do
+   * fluxo, e este e o unico ramo em que o usuario ainda o marca diretamente —
+   * porque motoboy nao tem cadastro em `clientes` para sair do drop.
+   */
+  const fobPorMotoboy = form.modalidadeFrete === "FOB" && form.transporteCategoria === "MOTOBOY";
+
+  /**
+   * Liga/desliga o motoboy em FOB. Ligar zera o vinculo da transportadora: sao
+   * respostas mutuamente exclusivas para a mesma pergunta, e deixar o id gravado
+   * mandaria para a Expedicao uma transportadora que ninguem escolheu.
+   */
+  function alternarMotoboyFob(ligar: boolean) {
+    setForm((current) => ({
+      ...current,
+      transporteCategoria: ligar ? "MOTOBOY" : null,
+      ...(ligar ? { idTransportadoraCliente: null } : {})
+    }));
+  }
 
   /**
    * Declaração de frete que a TELA tem e o BANCO ainda não.
@@ -3421,11 +3444,19 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // FOB sem transportadora não fecha: é justamente o dado que a Expedição vai
     // usar no despacho. Só cobra enquanto os campos estão editáveis — proposta
     // já liberada não fica refém de uma regra criada depois dela.
-    if (modalidadeEditavel && faltaTransportadoraEmFob(form.modalidadeFrete, form.idTransportadoraCliente)) {
+    // A regra de `faltaTransportadoraEmFob` segue intacta. O que se acrescenta e
+    // a UNICA excecao: motoboy responde a mesma pergunta ("quem leva") sem ter
+    // cadastro para vincular. Exigir o drop nesse caso seria pedir um dado que
+    // nao existe.
+    if (
+      modalidadeEditavel &&
+      !fobPorMotoboy &&
+      faltaTransportadoraEmFob(form.modalidadeFrete, form.idTransportadoraCliente)
+    ) {
       showToast({
         type: "error",
         title: "Transportadora obrigatória em FOB",
-        description: "Escolha a transportadora que vai retirar antes de salvar o orçamento."
+        description: "Escolha a transportadora que vai retirar, ou marque Motoboy, antes de salvar o orçamento."
       });
       setActiveFormTab("fretes");
       return false;
@@ -5446,6 +5477,12 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                         updateField("modalidadeFrete", m);
                         // Só FOB tem transportadora definida pelo vendedor.
                         if (m !== "FOB") updateField("idTransportadoraCliente", null);
+                        // Trocar de modalidade troca o RAMO da escolha, entao a
+                        // categoria anterior nao vale mais: o motoboy marcado num
+                        // FOB nao pode sobreviver a um CIF. Zerar aqui e seguro
+                        // porque `categoriaDerivadaDaEscolha` recalcula no
+                        // salvamento a partir do que o usuario escolher agora.
+                        updateField("transporteCategoria", null);
                       }}
                       className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                         form.modalidadeFrete === m
@@ -5459,69 +5496,68 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                 </div>
               </div>
 
-              {/* Categoria do transporte — COMO vai, em lista fechada. Nao se
-                  confunde com a modalidade acima, que diz QUEM PAGA: um pedido
-                  pode ser CIF por CORREIOS ou FOB por TRANSPORTADORA.
-                  Nula ate alguem clicar: "nao escolheu" e "escolheu retirada"
-                  sao estados diferentes, e o clique de novo desmarca. */}
-              <div>
-                <span className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">
-                  Transporte — como vai
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {TRANSPORTE_CATEGORIAS.map((categoria) => {
-                    const ativa = form.transporteCategoria === categoria;
-                    return (
-                      <button
-                        key={categoria}
-                        type="button"
-                        disabled={!modalidadeEditavel}
-                        aria-pressed={ativa}
-                        onClick={() => updateField("transporteCategoria", ativa ? null : categoria)}
-                        className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          ativa
-                            ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
-                            : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                        }`}
-                      >
-                        {LABEL_TRANSPORTE_CATEGORIA[categoria]}
-                      </button>
-                    );
-                  })}
-                </div>
-                {/* Rotulo antigo, quando existe e nao virou categoria: o texto
-                    cru continua a vista, sem ser convertido em categoria falsa. */}
-                {!form.transporteCategoria && rotuloTransporteAntigo && (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Registrado como <span className="font-medium">{rotuloTransporteAntigo}</span> — escolha uma
-                    categoria acima para padronizar.
-                  </p>
-                )}
-              </div>
+              {/* Os quatro botoes de "Transporte — como vai" sairam em
+                  24/08/2026. Eles pediam pela SEGUNDA vez um fato que o usuario
+                  ja declara no ramo aberto pela modalidade: o card em CIF, o
+                  drop (ou o Motoboy) em FOB, e nada em RETIRA — o cliente busca.
+                  A categoria agora sai dessa escolha, por
+                  `categoriaDerivadaDaEscolha`, no salvamento.
+
+                  Isto NAO e deduzir um eixo do outro: modalidade e transporte
+                  seguem ortogonais (SEDEX existe em CIF e em FOB, MOTOBOY em CIF
+                  e em RETIRA). O que mudou e que a pergunta e feita UMA vez. */}
+              {/* Rotulo antigo de proposta que nunca teve categoria: continua a
+                  vista, cru, sem virar categoria falsa. */}
+              {!form.transporteCategoria && rotuloTransporteAntigo && (
+                <p className="text-xs text-slate-500">
+                  Transporte registrado como <span className="font-medium">{rotuloTransporteAntigo}</span> — a
+                  categoria será gravada a partir da escolha abaixo ao salvar.
+                </p>
+              )}
 
               {form.modalidadeFrete === "FOB" && (
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
                     Transportadora definida *
                   </label>
-                  <select
-                    value={form.idTransportadoraCliente ?? ""}
-                    disabled={!modalidadeEditavel}
-                    onChange={(e) =>
-                      updateField("idTransportadoraCliente", e.target.value === "" ? null : Number(e.target.value))
-                    }
-                    className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    <option value="">— escolha a transportadora —</option>
-                    {transportadoras.map((t) => (
-                      <option key={t.id_cliente} value={t.id_cliente}>
-                        {t.fantasia || t.nome || `#${t.id_cliente}`}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                    <select
+                      value={form.idTransportadoraCliente ?? ""}
+                      disabled={!modalidadeEditavel || fobPorMotoboy}
+                      onChange={(e) =>
+                        updateField("idTransportadoraCliente", e.target.value === "" ? null : Number(e.target.value))
+                      }
+                      className={`${inputClass} flex-1 disabled:cursor-not-allowed disabled:opacity-60`}
+                    >
+                      <option value="">— escolha a transportadora —</option>
+                      {transportadoras.map((t) => (
+                        <option key={t.id_cliente} value={t.id_cliente}>
+                          {t.fantasia || t.nome || `#${t.id_cliente}`}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Motoboy nao tem cadastro em `clientes` (as 24 transportadoras
+                        sao empresas de carga), entao ele nunca poderia sair do drop.
+                        Fica ao lado como a outra resposta possivel para "quem leva",
+                        dispensa a transportadora e zera o vinculo. */}
+                    <button
+                      type="button"
+                      disabled={!modalidadeEditavel}
+                      aria-pressed={fobPorMotoboy}
+                      onClick={() => alternarMotoboyFob(!fobPorMotoboy)}
+                      className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-40 ${
+                        fobPorMotoboy
+                          ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                          : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      Motoboy
+                    </button>
+                  </div>
                   <p className="mt-1.5 text-xs text-slate-500">
-                    Em FOB o cliente contrata e paga o transporte: a cotação vale zero e o total da proposta sai sem
-                    frete. A transportadora é obrigatória e vai pré-preenchida para a Expedição.
+                    {fobPorMotoboy
+                      ? "Motoboy leva: não há transportadora a vincular. O total da proposta sai sem frete."
+                      : "Em FOB o cliente contrata e paga o transporte: a cotação vale zero e o total da proposta sai sem frete. A transportadora é obrigatória e vai pré-preenchida para a Expedição."}
                   </p>
                 </div>
               )}
@@ -5578,7 +5614,15 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   </Field>
                 </div>
               </div>
-            ) : (
+            ) : form.modalidadeFrete === "CIF" ? (
+              /* Cotacao e cards SO em CIF — e nos que contratamos e pagamos, entao
+                 o preco e a decisao. Em FOB o valor e zerado por `valorFreteEfetivo`
+                 e quem leva sai do drop; em RETIRA o cliente busca. Cotar nos dois
+                 casos era o clique a mais que esta mudanca veio tirar.
+                 O estado NAO muda por esconder: `chosenFrete` continua vindo da
+                 leitura da proposta (fallback `fretes[0]` em orcamentos.service),
+                 entao o bloco de `cotacao_frete` no salvamento segue rodando
+                 exatamente como antes — nenhum trigger novo e disparado. */
               <>
                 {isFreightOutdated &&
                   hasValidCepForFreight &&
@@ -5756,6 +5800,14 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                   ) : null}
                 </div>
               </>
+            ) : (
+              <p className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-300">
+                {form.modalidadeFrete === "FOB"
+                  ? "Em FOB o cliente contrata e paga o transporte — não há cotação a escolher. Defina acima quem leva: a transportadora ou o motoboy."
+                  : form.modalidadeFrete === "RETIRA"
+                  ? "Na retirada em balcão o cliente busca a mercadoria — não há transporte a cotar nem transportadora a definir."
+                  : "Escolha a modalidade do frete acima para continuar."}
+              </p>
             )}
           </FormSection>
                 </fieldset>

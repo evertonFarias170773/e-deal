@@ -133,3 +133,46 @@ export function categoriaEfetiva(
   if (ehTransporteCategoria(transporteCategoria)) return transporteCategoria;
   return classificarTransporte(freteEscolhido);
 }
+
+/**
+ * A categoria que a ESCOLHA DO USUARIO produz, no fluxo da aba Fretes.
+ *
+ * POR QUE EXISTE
+ *   Ate 24/08/2026 a tela pedia a mesma coisa duas vezes: a modalidade em cima,
+ *   e quatro botoes de "Transporte — como vai" logo abaixo. Em FOB o vendedor
+ *   marcava a modalidade, escolhia a transportadora no drop, clicava
+ *   "Transportadora" nos botoes e ainda tinha de marcar um card de cotacao que
+ *   nao mudava nada — o valor e zerado em FOB de qualquer forma. Os botoes
+ *   sumiram; a categoria passa a sair da escolha que o usuario ja faz.
+ *
+ * O QUE ISTO NAO E
+ *   NAO e deducao de um eixo a partir do outro. Modalidade (quem paga) e
+ *   transporte (como vai) sao ortogonais, e os dados provam: SEDEX aparece em
+ *   CIF e em FOB, MOTOBOY em CIF e em RETIRA. O que esta funcao faz e ler a
+ *   escolha REAL do usuario no ramo que a modalidade abriu — o card em CIF, o
+ *   drop (ou o Motoboy) em FOB — nunca adivinhar a partir de dado antigo. Por
+ *   isso ela nao chama `classificarTransporte` fora do ramo CIF, onde ha um
+ *   card de verdade escolhido agora.
+ *
+ * OS TRES RAMOS
+ *   RETIRA — o cliente busca no balcao. Nao ha drop nem card: a categoria e a
+ *            propria modalidade.
+ *   FOB    — o cliente contrata. A escolha e o drop de transportadora, ou o
+ *            Motoboy ao lado dele, que dispensa o drop e zera o vinculo.
+ *   CIF    — nos contratamos. A escolha e o card de cotacao, classificado pelo
+ *            MESMO `classificarTransporte` que o resto do modulo usa.
+ *
+ * Sem modalidade declarada devolve null: nao ha ramo aberto, entao nao ha
+ * escolha a registrar. Proposta anterior a esta mudanca nao e tocada.
+ */
+export function categoriaDerivadaDaEscolha(
+  modalidade: string | null | undefined,
+  rotuloDoCardEscolhido: string | null | undefined,
+  motoboyEmFob: boolean
+): TransporteCategoria | null {
+  const m = normalizar(modalidade);
+  if (m === "RETIRA") return "RETIRA";
+  if (m === "FOB") return motoboyEmFob ? "MOTOBOY" : "TRANSPORTADORA";
+  if (m === "CIF") return classificarTransporte(rotuloDoCardEscolhido);
+  return null;
+}

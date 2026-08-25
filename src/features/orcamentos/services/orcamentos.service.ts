@@ -1,7 +1,12 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { PROPOSTA_STATUS_GROUP_ATIVO_CLIENTE } from "@/features/orcamentos/constants";
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { categoriaEfetiva, ehTransporteCategoria, type TransporteCategoria } from "@/features/orcamentos/lib/transporte-categoria";
+import {
+  categoriaDerivadaDaEscolha,
+  categoriaEfetiva,
+  ehTransporteCategoria,
+  type TransporteCategoria
+} from "@/features/orcamentos/lib/transporte-categoria";
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
 import {
   aplicarModalidadeNosFretes,
@@ -2075,9 +2080,18 @@ export async function saveProposta(
       // "Nao escolheu" e "escolheu retirada" sao estados diferentes — por isso
       // NAO se replica aqui o default de "RETIRADA" que `frete_escolhido` tem.
       // `frete_escolhido` continua sendo gravada como sempre, logo acima.
-      propostaData.transporte_categoria = ehTransporteCategoria(formState.transporteCategoria)
-        ? formState.transporteCategoria
-        : null;
+      //
+      // Desde 24/08/2026 a categoria sai da ESCOLHA do usuario no ramo que a
+      // modalidade abriu — card em CIF, drop ou Motoboy em FOB, nada em RETIRA —
+      // e nao mais de quatro botoes que pediam o mesmo fato uma segunda vez.
+      // O rotulo do card vai com transportadora E servico porque as duas metades
+      // carregam vocabulario: "Correios SEDEX" tem a marca no nome e o servico
+      // em "Entrega Expressa", e a cotacao real inverte isso.
+      propostaData.transporte_categoria = categoriaDerivadaDaEscolha(
+        modalidadeVigente,
+        chosenFrete ? `${chosenFrete.transportadora ?? ""} ${chosenFrete.servico ?? ""}` : null,
+        formState.transporteCategoria === "MOTOBOY"
+      );
       propostaData.id_transportadora_cliente = idTransportadoraCliente;
     } else if (declaracaoDivergePersistido) {
       // A trava continua valendo — a proposta não é rebaixada e o que já estava
