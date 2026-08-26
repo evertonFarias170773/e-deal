@@ -249,7 +249,11 @@ Deixa de ser impeditivo por si só. O que impede são as regras 1, 2 e 3, verifi
 | `POST /api/cobrancas/cancelar-externo` | Os passos 7 e 7b saem e viram a chamada a `avaliarCancelamento`. Passa a aceitar `A_VENCER + confirmado` quando o veredito disser `OK`. **Não cancela títulos** — título em aberto é recusa | `{ success, partial, resultados }`; recusa → 409 com `code` e `message` do veredito |
 | `POST /api/cobrancas/cancelar-pago` | Mantém o que é dele (super admin, motivo de catálogo, destino do valor, mês fechado). O passo 6 (produção) vira a chamada ao veredito com o subconjunto `RECUSAS_COBRANCA_PAGA` = **nota fiscal + produção**. Ganha a checagem de nota, que nenhuma rota fazia | Contrato atual + os códigos `NOTA_AUTORIZADA` e `FALHA_LEITURA` |
 | `POST /api/cobrancas/cancelar-boleto-faturado` | Consulta o veredito da cobrança-mãe **antes** de acionar Inter/legado; e passa a garantir a invariante do passo 1 (§7) | Payload atual + `code` do veredito na recusa + `cobrancaReativada: boolean` |
-| `POST /api/orcamentos/cancelar-proposta` | Consulta o veredito por cobrança ativa mas aplica **só as regras de dinheiro** (`COBRANCA_RECEBIDA`, `TITULO_LIQUIDADO`) — decisão 13. `NOTA_AUTORIZADA` e `PRODUCAO_ATIVA` são **ignoradas** aqui | Recusa passa a dizer o que fazer, não só "não pode" |
+| `POST /api/orcamentos/cancelar-proposta` | Veredito por cobrança ativa com `RECUSAS_DE_DINHEIRO` (decisão 13); `NOTA_AUTORIZADA` e `PRODUCAO_ATIVA` são **ignoradas** aqui. **Mais** uma regra de nível proposta que o veredito não alcança — ver abaixo | Recusa passa a dizer o que fazer, não só "não pode" |
+
+**A regra que fica fora do veredito.** O veredito é de nível **cobrança**; `cancelar-proposta` é de nível **proposta**. Um boleto liquidado cuja cobrança já foi cancelada não aparece em nenhum dossiê de cobrança ativa — e mesmo assim significa que entrou dinheiro naquela proposta. Medido em 25/08/2026: **193 propostas** estão nessa situação. Por isso a checagem "qualquer boleto com `paid_at` no `id_int`" permanece na rota, explícita, antes do laço do veredito.
+
+**Afrouxamento medido.** A regra antiga barrava também por `confirmado === true` isolado. Faturado aprovado é recebimento futuro autorizado, não dinheiro recebido — mesmo critério da regra 4. Isso destrava **268 propostas** que hoje não podem ser canceladas sem ter recebido nada.
 | `GET /api/cobrancas/pode-cancelar` | **Nova.** Leitura pura para a UI | O veredito |
 | `POST /api/cobrancas/cancelar-boleto` | **Apagada** (§8) | — |
 

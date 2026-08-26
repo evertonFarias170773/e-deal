@@ -24,6 +24,7 @@ import {
 } from "@/features/orcamentos/services/faturado-editavel";
 import { listarTitulosDaProposta } from "@/features/orcamentos/services/faturado-titulos.service";
 import { PageHeader } from "@/components/common/PageHeader";
+import { TituloNumeroCliente } from "@/components/common/TituloNumeroCliente";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -3296,24 +3297,18 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       (cliente?.nome ?? "").trim() ||
       (form.clienteNaoCadastrado ? (form.nomeClienteLivre ?? "").trim() : "");
 
-    // Sem cliente: so o numero. Nada de separador orfao nem espaco solto — o
-    // gap so existe quando ha um segundo bloco para separar.
-    if (!nomeCliente) return parteNumero;
+    // Cliente sem id (orcamento rapido): so o nome, sem o " - id". Sem cliente
+    // nenhum, string vazia — o componente entao devolve so o numero.
+    const parteCliente = !nomeCliente
+      ? ""
+      : idClienteExibido
+        ? `${nomeCliente} - ${idClienteExibido}`
+        : nomeCliente;
 
-    // Cliente sem id (orcamento rapido): so o nome, sem o " - id".
-    const parteCliente = idClienteExibido ? `${nomeCliente} - ${idClienteExibido}` : nomeCliente;
-
-    // O respiro entre numero e cliente e ESTILO (gap-x-10), nao caractere. Em
-    // tela estreita `flex-wrap` joga o bloco do cliente para a linha de baixo
-    // INTEIRO, em vez de partir o nome no meio; `gap-y-1` da a folga vertical.
-    // O numero fica em destaque por contraste: peso cheio contra o cliente em
-    // peso normal e um tom mais suave.
-    return (
-      <span className="flex flex-wrap items-baseline gap-x-10 gap-y-1">
-        <span>{parteNumero}</span>
-        <span className="text-xl font-normal opacity-90 md:text-2xl">{parteCliente}</span>
-      </span>
-    );
+    // A FORMA (numero em destaque, cliente ao lado, quebra em tela estreita)
+    // mora em TituloNumeroCliente desde 25/08/2026, para o boletim de OS usar o
+    // mesmo titulo. O HTML e as classes renderizados sao os mesmos de antes.
+    return <TituloNumeroCliente numero={parteNumero} cliente={parteCliente} />;
   })();
 
   /**

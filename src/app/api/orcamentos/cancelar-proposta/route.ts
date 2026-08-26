@@ -109,8 +109,8 @@ export async function POST(request: Request) {
         success: false,
         code: "TITULO_LIQUIDADO",
         message:
-          "Esta proposta tem titulo liquidado. Cancelar a proposta nao devolve o dinheiro — " +
-          "o caso e devolucao, e precisa passar pelo financeiro antes."
+          "Esta proposta tem título liquidado. Cancelar a proposta não devolve o dinheiro — " +
+          "o caso é devolução, e precisa passar pelo financeiro antes."
       },
       { status: 409 }
     );

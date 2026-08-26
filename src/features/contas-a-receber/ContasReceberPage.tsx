@@ -34,6 +34,7 @@ import { getContasReceberReadOnlyData } from "@/features/contas-a-receber/servic
 import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
 import { RevisarGeracaoBancariaModal } from "./components/RevisarGeracaoBancariaModal";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
+import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
 
 type ActiveTab = "CARTEIRA" | "BOLETOS" | "DEPOSITOS" | "CARTOES" | "PREVISAO";
 type TipoFilter = "TODOS" | "BOLETO" | "DEPOSITO" | "CARTAO";
@@ -877,10 +878,23 @@ export function ContasReceberPage() {
 
     setIsCanceling(true);
     try {
+      let cobrancaReativada = false;
+
       if (registradoNoBanco) {
         // Regra oficial: cancelar no C6 via n8n antes de qualquer escrita local
         const { deleteBoletoFromBankViaN8n } = await import("@/features/nfe/services/nfe.service");
-        await deleteBoletoFromBankViaN8n(item.id, String(item.id_boleto_c6), Number(item.id_empresa || 1));
+        const resultadoBanco = await deleteBoletoFromBankViaN8n(
+          item.id,
+          String(item.id_boleto_c6),
+          Number(item.id_empresa || 1)
+        );
+        // Empresa 2 (Birô): a rota devolve `cobrancaReativada` quando teve de
+        // reabrir a cobrança cancelada em cascata pelo n8n. Hoje não acontece —
+        // o workflow não escreve em pagamentos_v2 —, mas se voltar a acontecer
+        // o operador precisa ler isso na tela, não descobrir depois.
+        cobrancaReativada = Boolean(
+          (resultadoBanco?.data as { cobrancaReativada?: boolean } | undefined)?.cobrancaReativada
+        );
       }
 
       const client = getSupabaseClient();
@@ -903,22 +917,50 @@ export function ContasReceberPage() {
           throw new Error(updateError.message);
         }
       } else {
-        // Cancelar o boleto não desfaz o faturamento: a cobrança continua
-        // faturada e volta para o Registro de Recebíveis, para ser refaturada
-        // com o pedido novo. É `boleto_enviadoo` que a traz de volta àquela
-        // lista — o mesmo campo que a emissão marca como true.
-        if (item.is_faturado && item.id_pagamento) {
-          const { error: erroRetorno } = await client
-            .from("pagamentos_v2")
-            .update({ boleto_enviadoo: false })
-            .eq("id_pagamento", item.id_pagamento);
+        // PASSO 1 do refaturamento. Cancelar o título NÃO desfaz o faturamento:
+        // a cobrança continua ativa (`A_VENCER`, confirmada) e volta para o
+        // Registro de Recebíveis, para ser refaturada. É `boleto_enviadoo` que
+        // a traz de volta àquela lista — o mesmo campo que a emissão marca
+        // como true.
+        //
+        // O vínculo sai de `resolverCobrancaDoTitulo`, o MESMO que a rota usa.
+        // Antes daqui a condição era `item.is_faturado && item.id_pagamento`,
+        // com `.eq("id_pagamento", ...)`: nos 266 títulos faturados gravados
+        // sem `id_pagamento` ela é falsa e NADA era gravado — a cobrança não
+        // voltava para a lista e o passo 1 terminava pela metade, em silêncio.
+        // Onze desses títulos estão em aberto hoje.
+        let cobrancaVoltouAoRegistro = false;
 
-          if (erroRetorno) {
+        if (item.is_faturado) {
+          const idCobrancaMae = await resolverCobrancaDoTitulo(client, {
+            id_pagamento: item.id_pagamento || null,
+            id_int: item.id_int ?? null,
+            is_faturado: item.is_faturado ?? null
+          });
+
+          if (idCobrancaMae === "AMBIGUO") {
             showToast({
               type: "warning",
-              title: "Boleto cancelado, mas a cobrança não voltou ao Registro de Recebíveis.",
-              description: erroRetorno.message
+              title: "Título cancelado, mas a cobrança não voltou ao Registro de Recebíveis.",
+              description:
+                "Este é um registro antigo, sem vínculo gravado, e a proposta tem mais de uma cobrança faturada. " +
+                "Peça conferência manual antes de refaturar."
             });
+          } else if (idCobrancaMae) {
+            const { error: erroRetorno } = await client
+              .from("pagamentos_v2")
+              .update({ boleto_enviadoo: false })
+              .eq("id", idCobrancaMae);
+
+            if (erroRetorno) {
+              showToast({
+                type: "warning",
+                title: "Título cancelado, mas a cobrança não voltou ao Registro de Recebíveis.",
+                description: erroRetorno.message
+              });
+            } else {
+              cobrancaVoltouAoRegistro = true;
+            }
           }
         }
 
@@ -927,8 +969,18 @@ export function ContasReceberPage() {
           title: isDeposito
             ? "Depósito em conta cancelado."
             : registradoNoBanco
-              ? "Boleto cancelado no banco e no Contas a Receber."
-              : "Boleto cancelado no Contas a Receber."
+              ? "Título cancelado no banco e no Contas a Receber."
+              : "Título cancelado no Contas a Receber.",
+          description: [
+            cobrancaVoltouAoRegistro
+              ? "A cobrança continua ativa e voltou para o Registro de Recebíveis."
+              : null,
+            cobrancaReativada
+              ? "A cobrança havia sido cancelada em cascata pelo banco e foi reaberta."
+              : null
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
         });
       }
 

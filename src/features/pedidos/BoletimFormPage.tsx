@@ -52,6 +52,7 @@ import { abrirPdfOs, baixarPdfOs, type LayoutPdfOs } from "./services/imprimir-o
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { PageHeader } from "@/components/common/PageHeader";
+import { TituloNumeroCliente } from "@/components/common/TituloNumeroCliente";
 import {
   carregarRevisaoGeral,
   confirmarRevisao,
@@ -838,6 +839,12 @@ export function BoletimFormPage() {
    * mandaria a OS para a bancada errada.
    */
   const setorEfetivo = boletimSetor || gruposPorSetor[0]?.setor || "";
+
+  // Numero do cabecalho: vale a proposta ja carregada (abertura por busca na
+  // tela) e, na falta dela, o parametro da URL. Sem nenhuma das duas, a OS
+  // ainda nao tem numero — mesmo degrau de "Novo pedido" da proposta.
+  const idIntDoCabecalho = selectedProposta?.id_int ?? (idIntParam ? Number(idIntParam) : null);
+  const numeroDoPedidoNoCabecalho = idIntDoCabecalho ? `N° ${idIntDoCabecalho}` : "Nova OS";
 
   /**
    * Peso líquido: soma do peso ESTIMADO de cada setor, derivado dos produtos.
@@ -1825,11 +1832,19 @@ export function BoletimFormPage() {
         </button>
       )}
 
-      {/* Title Header com PageHeader global */}
+      {/* Mesmo cabecalho da edicao de proposta: numero do pedido em destaque e
+          cliente ao lado, pelo `TituloNumeroCliente`. O que era o titulo
+          ("Edicao / Abertura de OS") foi para o badge — o numero precisa do
+          espaco nobre. O subtitle saiu porque repetia o badge, pelo mesmo
+          motivo que a proposta ja o omite. */}
       <PageHeader
-        title={isEditing ? "Edição de OS — Boletim de Entrada" : "Abertura de OS — Boletim de Entrada"}
-        subtitle="Ficha operacional técnica inicial de PCP gráfico e comercial."
-        context="Produção / OS"
+        title={
+          <TituloNumeroCliente
+            numero={numeroDoPedidoNoCabecalho}
+            cliente={clienteNome}
+          />
+        }
+        context={isEditing ? "Produção / OS · Edição" : "Produção / OS · Abertura"}
         action={
           <div className="flex flex-wrap items-center gap-2">
             <Link

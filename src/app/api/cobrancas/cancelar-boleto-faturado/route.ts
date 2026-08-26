@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
-import { RECUSAS_CANCELAMENTO_TITULO, isFamiliaFaturado } from "@/features/cobrancas/cancelamento-elegibilidade";
+import { RECUSAS_CANCELAMENTO_TITULO } from "@/features/cobrancas/cancelamento-elegibilidade";
+import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
 
 /**
  * Cancelamento de UM título faturado do Registro de Recebíveis.
@@ -42,46 +43,6 @@ type BoletoRow = {
 };
 
 const STATUS_COBRANCA_INATIVA = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
-
-/**
- * Qual cobrança de `pagamentos_v2` é a mãe deste título?
- *
- * Duas vias, na mesma ordem do dossiê do veredito:
- *  - `id_pagamento` gravado no título (o normal);
- *  - fallback legado por `id_int`, para os 266 títulos faturados gravados sem
- *    `id_pagamento`. Só vale quando a proposta tem UMA cobrança da família
- *    faturado; com mais de uma não dá para afirmar de quem é o título, e a
- *    resposta é "AMBIGUO" — recusar é mais barato que cancelar o título errado.
- *
- * `null` = a cobrança não foi encontrada. O título é cancelado assim mesmo:
- * título órfão de cobrança não tem mãe para proteger.
- */
-async function resolverCobrancaMae(
-  supabase: SupabaseClient,
-  boleto: BoletoRow
-): Promise<string | "AMBIGUO" | null> {
-  if (boleto.id_pagamento) {
-    const { data } = await supabase
-      .from("pagamentos_v2")
-      .select("id")
-      .eq("id_pagamento", boleto.id_pagamento)
-      .maybeSingle<{ id: string }>();
-    if (data?.id) return data.id;
-  }
-
-  if (boleto.is_faturado !== true || boleto.id_int == null) return null;
-
-  const { data: candidatas } = await supabase
-    .from("pagamentos_v2")
-    .select("id, tipo_cobranca")
-    .eq("id_int", boleto.id_int)
-    .returns<{ id: string; tipo_cobranca: string | null }[]>();
-
-  const faturadas = (candidatas || []).filter((row) => isFamiliaFaturado(row.tipo_cobranca));
-  if (faturadas.length === 1) return faturadas[0].id;
-  if (faturadas.length > 1) return "AMBIGUO";
-  return null;
-}
 
 export async function POST(request: Request) {
   let body: CancelarRequest;
@@ -175,7 +136,7 @@ export async function POST(request: Request) {
   //    boleto faz sentido. Isso agora é regra do núcleo (`COBRANCA_RECEBIDA`
   //    olha `status = PAID` e `paid_at`, nunca `confirmado`), e não mais um
   //    if local.
-  const maeId = await resolverCobrancaMae(supabase, boleto);
+  const maeId = await resolverCobrancaDoTitulo(supabase, boleto);
 
   if (maeId === "AMBIGUO") {
     return NextResponse.json(

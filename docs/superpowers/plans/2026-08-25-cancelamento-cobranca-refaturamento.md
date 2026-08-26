@@ -172,6 +172,12 @@ Cuidado de escopo: **não confundir com "Cancelar boleto"** (`onLifecycle.cancel
 4. **Três definições divergentes de "família faturado"**: `isCobrancaEFaturado` (só `E-FATURADO`), `TIPOS_SEM_LINK_EXTERNO` (conjunto maior, outro propósito) e a lista literal em `pagamentos-v2.service.ts:159` (`["E-FATURADO","EFATURADO","FATURADO"]`). O coletor da Etapa 2 criou uma quarta, local e comentada, porque nenhuma servia. Consolidar em um predicado único, comparando sobre valor normalizado — o banco guarda `E-Faturado` (173) e `E-FATURADO` (109).
 5. **Acentuação de `mensagemBloqueioProducao`** (`cancelamento-pago.ts`): a mensagem é escrita sem acentos ("Peca ao gerente para retira-la da producao") enquanto as mensagens novas do veredito são acentuadas. Uniformizar — é texto que o usuário lê.
 6. **`/api/cobrancas/cancelar-boleto-faturado` verifica apenas SESSÃO, sem permissão granular** (achado da Etapa 6, 25/08/2026). As demais rotas de cancelamento exigem `cobrancas.cancel` — esta aceita qualquer usuário autenticado, e é a rota que cancela título no banco. Alinhar com as outras (`cobrancas.cancel`, ou a cascata que inclui `propostas.cancelar_cobranca_nao_paga`), conferindo antes se os dois chamadores — Contas a Receber e o save do orçamento — têm essa permissão no perfil de quem os usa hoje, para não travar o fluxo ao apertar a regra.
+7. **Referências à rota apagada na Etapa 8.** `/api/cobrancas/cancelar-boleto` deixou de existir, e cinco lugares ainda falam dela como se existisse. Dois são documentação viva e afirmam garantia de segurança que a rota já não presta:
+   - `docs/business/CANCELAMENTO-COBRANCAS.md:197` — "As rotas `cancelar-externo` e `cancelar-boleto` continuam recusando cobrança paga";
+   - `docs/technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md:117` — mesma frase, na matriz de segurança;
+   e três são comentários de código que citam a rota como referência de desenho: `src/app/api/cobrancas/cancelar-pago/route.ts:4`, `src/app/api/fiscal/emitir-nfe/route.ts:89`, `src/features/cobrancas/services/conta-corrente.service.ts:11`.
+
+   **Não tocar** nos registros históricos, que descrevem o passado corretamente: `docs/history/CHANGELOG.md` e a spec/plano de 11/08/2026.
 
 **Valida antes de seguir:** o doc descreve o que o código faz — sem regra inventada, sem regra omitida. Busca por "cascata" no repo não retorna afirmação de que o Inter cancela `pagamentos_v2`.
 
