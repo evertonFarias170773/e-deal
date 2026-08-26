@@ -2289,16 +2289,20 @@ export function BoletimFormPage() {
                 )}
               </div>
             
-            {/* BLOCO 2 — BRIEFING COMERCIAL (não aparece na Revisão: já está em cada setor) */}
+            {/* BLOCO 2 — ORIENTAÇÃO TÉCNICA DE PRODUÇÃO (não aparece na Revisão:
+                já está em cada setor). O campo é `propostas.obs_tecnica`, o mesmo que
+                o vendedor edita na aba Produção da proposta, e sai na OS impressa —
+                por isso o rótulo pede o que a bancada precisa para fabricar, e não
+                mais observação comercial. */}
             {!abaExpedicao && (
             <div className="rounded-3xl border border-[#d7e5e8] bg-white p-7 space-y-5 shadow-sm">
               <h3 className="text-sm font-bold uppercase text-[#0b2f4a] dark:text-slate-200 tracking-wider border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                BLOCO 2 — Briefing Comercial (Vendas)
+                BLOCO 2 — Orientação Técnica de Produção
               </h3>
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Briefing Comercial & Instruções de Venda</label>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Instruções de fabricação · sai na OS impressa</label>
                 <textarea
-                  placeholder="Insira as instruções do cliente, recomendações, observações comerciais e restrições operacionais do pedido..."
+                  placeholder="O que a bancada precisa saber para fabricar. Ex: pulseira de pino sem o pino; entregar em bobina de 100; conferir a cor contra a amostra aprovada..."
                   rows={4}
                   value={briefingOperacional}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBriefingOperacional(e.target.value)}
