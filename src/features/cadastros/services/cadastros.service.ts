@@ -15,6 +15,10 @@ import {
   TIPO_ENDERECO_PRINCIPAL
 } from "@/lib/fiscal/endereco-principal";
 import {
+  montarAssinaturaEndereco,
+  MOTIVO_RECONSULTA_CNPJ
+} from "@/features/cadastros/lib/assinatura-endereco";
+import {
   mapSupabaseClienteRowToCadastro,
   mapSupabaseSocioRowToCadastroVinculoWithRelated,
   mergeSupabaseRelacionamentos
@@ -1633,7 +1637,7 @@ export async function aplicarReconsultaCnpj(input: {
     return { success: true, enderecoAcao: "nao-informado" };
   }
 
-  const assinatura = montarAssinaturaReconsulta(input.autor, input.quandoIso);
+  const assinatura = montarAssinaturaEndereco(MOTIVO_RECONSULTA_CNPJ, input.autor, input.quandoIso);
   const camposEndereco = {
     cep: toNullableText(input.endereco.cep),
     endereco: toNullableText(input.endereco.endereco),
@@ -1698,15 +1702,6 @@ export async function aplicarReconsultaCnpj(input: {
   };
 }
 
-/** A linha de rastro gravada em `enderecos.obs`. Curta, legivel na tela. */
-function montarAssinaturaReconsulta(autor: string, quandoIso: string): string {
-  const quando = new Date(quandoIso);
-  const carimbo = Number.isNaN(quando.getTime())
-    ? quandoIso
-    : `${quando.toLocaleDateString("pt-BR")} ${quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
-  const quem = autor.trim() || "usuario nao identificado";
-  return `Endereco principal atualizado pela reconsulta do CNPJ em ${carimbo} por ${quem}.`;
-}
 
 export async function checkVinculoRemovability(
   idFaturadoSocio: number
@@ -1855,9 +1850,25 @@ export async function createCadastroEndereco(
   };
 }
 
+/**
+ * Grava os enderecos de um cadastro NOVO.
+ *
+ * PASSOU A CHAMAR O SERVIDOR EM 26/08/2026, e nao mais a escrever direto no
+ * PostgREST. O motivo esta em `src/app/api/cadastros/enderecos/route.ts`: a
+ * regra do PRINCIPAL unico tem de valer no servidor, nao so nesta tela. Um
+ * INSERT solto daqui era o caminho pelo qual um cadastro novo herdava o endereco
+ * orfao de um `id_cliente` reaproveitado.
+ *
+ * O resultado devolve o que aconteceu com o principal, para a tela avisar quando
+ * um endereco pre-existente foi SOBRESCRITO — o usuario precisa saber que aquele
+ * numero de cliente ja tinha endereco.
+ */
 export async function createCadastroEnderecos(
   payload: CadastroEnderecoInsertPayload[]
-): Promise<CadastroRelatedCreateResult> {
+): Promise<CadastroRelatedCreateResult & {
+  principalAcao?: "sobrescrito" | "criado" | "nao-informado";
+  principalId?: string | null;
+}> {
   if (!payload.length) {
     return { success: true };
   }
@@ -1870,31 +1881,64 @@ export async function createCadastroEnderecos(
     };
   }
 
-  const rows = payload.map((item) => ({
-    id_cliente: Number(item.id_cliente),
-    cep: toNullableText(item.cep),
-    endereco: toNullableText(item.endereco),
-    numero: toNullableText(item.numero),
-    complemento: toNullableText(item.complemento),
-    bairro: toNullableText(item.bairro),
-    cidade: toNullableText(item.cidade),
-    uf: toNullableText(item.uf),
-    tipo_endereco: toNullableText(item.tipo_endereco) || "ENTREGA",
-    obs: toNullableText(item.obs),
-    recebedor: toNullableText(item.recebedor),
-    cpf_recebedor: toNullableText(item.cpf_recebedor)
-  }));
-
-  const { error } = await client.from("enderecos").insert(rows);
-  if (error) {
+  const idsDistintos = Array.from(new Set(payload.map((item) => Number(item.id_cliente))));
+  if (idsDistintos.length !== 1 || !Number.isInteger(idsDistintos[0]) || idsDistintos[0] <= 0) {
     return {
       success: false,
-      errorMessage: error.message || "Nao foi possivel salvar os enderecos no Supabase.",
-      status: error.code ? Number(error.code) : undefined
+      errorMessage: "Os enderecos de um cadastro precisam pertencer todos ao mesmo id_cliente."
     };
   }
 
-  return { success: true };
+  const sessao = await client.auth.getSession();
+  const token = sessao.data.session?.access_token || "";
+  if (!token) {
+    return { success: false, errorMessage: "Sessao expirada. Entre novamente para salvar os enderecos." };
+  }
+
+  try {
+    const resposta = await fetch("/api/cadastros/enderecos", {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        idCliente: idsDistintos[0],
+        enderecos: payload.map((item) => ({
+          cep: item.cep,
+          endereco: item.endereco,
+          numero: item.numero,
+          complemento: item.complemento,
+          bairro: item.bairro,
+          cidade: item.cidade,
+          uf: item.uf,
+          tipo_endereco: item.tipo_endereco,
+          obs: item.obs,
+          recebedor: item.recebedor ?? null,
+          cpf_recebedor: item.cpf_recebedor ?? null
+        }))
+      })
+    });
+
+    const resultado = await resposta.json().catch(() => null);
+
+    if (!resposta.ok || !resultado?.success) {
+      return {
+        success: false,
+        errorMessage: resultado?.message || "Nao foi possivel salvar os enderecos.",
+        status: resposta.status
+      };
+    }
+
+    return {
+      success: true,
+      principalAcao: resultado.principalAcao,
+      principalId: resultado.principalId ?? null
+    };
+  } catch (erro) {
+    console.error("[CadastrosService] createCadastroEnderecos falhou:", erro);
+    return {
+      success: false,
+      errorMessage: "Falha de rede ao salvar os enderecos do cadastro."
+    };
+  }
 }
 
 export async function createCadastroContatos(

@@ -1082,6 +1082,14 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         relatedWarnings.push(
           "Cadastro criado, mas houve erro ao salvar endereços. Adicione os endereços manualmente."
         );
+      } else if (enderecoResult.principalAcao === "sobrescrito") {
+        // O usuario precisa SABER que aquele numero de cliente ja tinha endereco
+        // principal — quase sempre orfao da importacao de 20/12/2025. Antes o
+        // endereco antigo ficava e o do cadastro novo era o que sumia, em
+        // silencio; agora e o contrario, e o silencio tambem acaba.
+        relatedWarnings.push(
+          `O ID ${result.cadastro.idCliente} já tinha um endereço principal de outro cadastro. Ele foi substituído pelo endereço deste cadastro — nada foi apagado.`
+        );
       }
     }
 
