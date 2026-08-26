@@ -780,11 +780,18 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // sem expedicao pesada continua saindo como sempre saiu.
   const { data: expedicaoRow } = await client
     .from("expedicoes")
-    .select("peso_kg, peso_bruto_kg")
+    .select("peso_kg, peso_bruto_kg, id_transportadora_cliente, transportadora_nome, qtd_volumes, tipo_volume")
     .eq("id_int", idInt)
     .maybeSingle();
 
-  const expedicao = expedicaoRow as { peso_kg?: number | null; peso_bruto_kg?: number | null } | null;
+  const expedicao = expedicaoRow as {
+    peso_kg?: number | null;
+    peso_bruto_kg?: number | null;
+    id_transportadora_cliente?: number | null;
+    transportadora_nome?: string | null;
+    qtd_volumes?: number | null;
+    tipo_volume?: string | null;
+  } | null;
   const freteEscolhido = proposta.fretes?.find(f => f.id === proposta.freteEscolhidoId);
 
   const { pesoKg: pesoResolvidoKg, origem: pesoOrigem } = resolverPesoExpedicao({
@@ -804,6 +811,52 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   );
 
   const pesoPorItem = ratearPesoNosItens(proposta.itens ?? [], pesoNotaGramas);
+
+  // TRANSPORTADORA E VOLUMES NASCEM PREENCHIDOS — Etapa 2.
+  //
+  // O `nfeInsert` nao semeava transportadora nenhuma: toda nota nascia com
+  // `transportadora` e `id_transportadora_cliente` nulos, e alguem escolhia a
+  // mao na aba Transporte/Frete. Media em 26/08/2026: 1 de 19 notas com o dado.
+  // Volumes era pior — `1` e "CAIXA" FIXOS no codigo, ignorando o que o
+  // expedidor contou e classificou na bancada.
+  //
+  // PRECEDENCIA: expedicao primeiro, proposta como fallback.
+  //   A expedicao vem depois no fluxo e ja passou pela conferencia do despacho,
+  //   entao quando ela existe e a fonte mais forte. A proposta cobre o resto —
+  //   e o resto e grande: 10 das 19 notas de hoje foram criadas ANTES de haver
+  //   expedicao (5 sem expedicao ate agora, 5 com expedicao criada depois).
+  //
+  // O ID E O NOME SAO RESOLVIDOS SEPARADAMENTE, de proposito: 16 das 27
+  // expedicoes com nome de transportadora estao SEM o id. Exigir os dois juntos
+  // jogaria fora o nome nesses casos.
+  const idTransportadoraNota =
+    expedicao?.id_transportadora_cliente ?? proposta.idTransportadoraCliente ?? null;
+
+  let transportadoraNota = String(expedicao?.transportadora_nome ?? "").trim();
+  if (!transportadoraNota && idTransportadoraNota) {
+    // Tem vinculo mas ninguem escreveu o nome: busca no cadastro em vez de
+    // deixar o campo vazio numa nota que ja sabe quem e o transportador.
+    const { data: transpRow } = await client
+      .from("clientes")
+      .select("nome, fantasia")
+      .eq("id_cliente", idTransportadoraNota)
+      .maybeSingle();
+    const transp = transpRow as { nome?: string | null; fantasia?: string | null } | null;
+    transportadoraNota = String(transp?.nome ?? transp?.fantasia ?? "").trim();
+  }
+
+  // Volumes: o que a bancada contou. Sem expedicao, os mesmos valores de antes.
+  // `> 0` e nao `??` porque zero volume nao e informacao, e um `0` gravado aqui
+  // sairia no bloco de volumes do payload como carga inexistente.
+  const qtdVolumesExpedicao = Number(expedicao?.qtd_volumes ?? 0);
+  const qtdVolumesNota = qtdVolumesExpedicao > 0 ? qtdVolumesExpedicao : 1;
+  const especieVolumesNota = String(expedicao?.tipo_volume ?? "").trim() || "CAIXA";
+
+  console.log(
+    `[NfeService] Transporte da nota #${idInt}: transportadora="${transportadoraNota || "(vazia)"}" ` +
+      `id=${idTransportadoraNota ?? "null"} volumes=${qtdVolumesNota} especie="${especieVolumesNota}" ` +
+      `(expedicao ${expedicao ? "existe" : "AINDA NAO EXISTE"})`
+  );
 
   const pgtoConfigurado = Boolean(tipoCobranca);
   // A nota usa o endereço principal por padrão. O bloco de entrega só entra
@@ -838,8 +891,10 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     presenca_comprador: 2, // Internet
     tipo_contribuinte: tipoContribuinte,
     modalidade_frete: modalidadeFrete,
-    quantidade_volumes: 1,
-    especie_volumes: "CAIXA",
+    id_transportadora_cliente: idTransportadoraNota,
+    transportadora: transportadoraNota || null,
+    quantidade_volumes: qtdVolumesNota,
+    especie_volumes: especieVolumesNota,
     // Os dois triggers de peso reescrevem estas duas colunas a partir da soma
     // dos itens assim que eles entram. Gravamos aqui o MESMO numero que eles vao
     // impor, para que a linha nunca exista com um peso que ninguem mais defende.
