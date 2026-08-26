@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  RefreshCw,
   Info,
   Save,
   Check,
@@ -70,8 +71,15 @@ import {
   CAMPO_CONSUMIDOR_FINAL,
   CAMPO_TIPO_CONTRIBUINTE,
   CAMPO_MODALIDADE_FRETE,
-  type Pendencia
+  type Pendencia,
+  type BlocoNfe
 } from "../pendencias";
+import {
+  ConferenciaLateral,
+  BlocoConferencia,
+  ancoraDoBloco,
+  type EstadoBloco
+} from "./ConferenciaNfe";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 
@@ -126,17 +134,32 @@ interface NfeDetailPageProps {
   noteId: string;
 }
 
-type TabName =
-  | "Resumo"
-  | "Emitente"
-  | "Destinatário"
-  | "Itens"
-  | "Transporte/Frete"
-  | "Pagamentos"
-  | "Totais"
-  | "Informações adicionais"
-  | "Validação"
-  | "Documentos/Preview";
+/**
+ * As antigas abas viraram os blocos da conferência única. O nome ficou: é o
+ * mesmo rótulo que a lista de pendências usa como bloco de origem.
+ */
+type TabName = BlocoNfe;
+
+/** Ordem em que a conferência acontece — vale para a lateral e para a pilha. */
+const BLOCOS_DA_NOTA: BlocoNfe[] = [
+  "Resumo",
+  "Emitente",
+  "Destinatário",
+  "Itens",
+  "Transporte/Frete",
+  "Pagamentos",
+  "Totais",
+  "Informações adicionais",
+  "Validação",
+  "Documentos/Preview"
+];
+
+/**
+ * Nunca nascem recolhidos, mesmo sem pendência: são os dois blocos que o
+ * operador abre em toda nota para conferir linha a linha. Recolhê-los deixava
+ * a página curta e a conferência mais lenta.
+ */
+const BLOCOS_SEMPRE_ABERTOS: BlocoNfe[] = ["Itens", "Pagamentos"];
 
 export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const router = useRouter();
@@ -144,6 +167,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<TabName>("Resumo");
+  /** Recolher/abrir escolhido na mão. Só o que o operador tocou aparece aqui. */
+  const [blocosAbertos, setBlocosAbertos] = useState<Partial<Record<BlocoNfe, boolean>>>({});
 
   // DB Data
   const [note, setNote] = useState<SupabaseNfeRow | null>(null);
@@ -592,14 +617,116 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           informacoes_complementares: infoComplementares,
           created_at: note.created_at
         },
-        itens: editedItems,
-        pagamentos: editedPagamentos,
+        /*
+          A conferência precisa do item INTEIRO. `editedItems` só carrega o que
+          a aba Itens deixa editar — sem unidade tributável, origem do ICMS e os
+          CSTs de ICMS/PIS/COFINS. Alimentar o módulo só com ele fazia cada item
+          nascer com cinco pendências falsas e travava o Emitir em toda nota.
+          Por isso a linha do banco entra por baixo e a edição por cima.
+        */
+        itens: items.map((original) => ({
+          ...original,
+          ...(editedItems.find((editado) => editado.id === original.id) ?? {})
+        })),
+        pagamentos: pagamentos.map((original) => ({
+          ...original,
+          ...(editedPagamentos.find((editado) => editado.id === original.id) ?? {})
+        })),
         cliente: cliente ? { ...cliente, id_cliente: note.id_cliente } : null,
         enderecoPrincipal: principalEndereco
       })
     : [];
   const pendenciasImpeditivas = pendenciasQueImpedem(pendencias);
   const emissaoBloqueada = pendenciasImpeditivas.length > 0;
+
+  /* ---------------- Estado dos blocos da conferência ---------------- */
+
+  function estadoDoBloco(bloco: BlocoNfe): EstadoBloco {
+    const doBloco = pendencias.filter((pendencia) => pendencia.bloco === bloco);
+    if (doBloco.some((pendencia) => pendencia.severidade === "impede")) return "impede";
+    if (doBloco.length > 0) return "aviso";
+    return "ok";
+  }
+
+  /** Informação curta na lateral: o que o operador confere de relance. */
+  function detalheDoBloco(bloco: BlocoNfe): string | undefined {
+    const impeditivas = pendencias.filter(
+      (pendencia) => pendencia.bloco === bloco && pendencia.severidade === "impede"
+    ).length;
+    if (impeditivas > 0) return impeditivas === 1 ? "1 pendência" : `${impeditivas} pendências`;
+
+    switch (bloco) {
+      case "Emitente":
+        return note ? getEmpresaName(note.id_empresa) : undefined;
+      case "Itens":
+        return `${items.length} ${items.length === 1 ? "item" : "itens"}`;
+      case "Transporte/Frete":
+        return formatCurrency(valorFrete || 0);
+      case "Pagamentos":
+        return pagamentos.length > 0 ? `${pagamentos.length}x` : "sem parcelas";
+      case "Totais":
+        return formatCurrency(computedValorTotalNf);
+      default:
+        return undefined;
+    }
+  }
+
+  /** Resumo do cabeçalho, visível enquanto o bloco está recolhido. */
+  function resumoDoBloco(bloco: BlocoNfe): string | undefined {
+    switch (bloco) {
+      case "Resumo":
+        return note ? `${getEmpresaName(note.id_empresa)} • modelo ${note.modelo}` : undefined;
+      case "Emitente":
+        return note ? getEmpresaName(note.id_empresa) : undefined;
+      case "Destinatário":
+        return cliente?.nome || undefined;
+      case "Itens":
+        return `${items.length} ${items.length === 1 ? "item" : "itens"} • ${formatCurrency(computedValorProdutos)}`;
+      case "Transporte/Frete":
+        return `frete ${formatCurrency(valorFrete || 0)}`;
+      case "Pagamentos":
+        return `${pagamentos.length} ${pagamentos.length === 1 ? "parcela" : "parcelas"} • ${formatCurrency(sumOfPayments)}`;
+      case "Totais":
+        return formatCurrency(computedValorTotalNf);
+      case "Informações adicionais":
+        return infoComplementares ? "preenchido" : "nada informado";
+      case "Validação":
+        return emissaoBloqueada ? "com pendências" : "sem erros bloqueantes";
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * Recolhido por padrão só o que está OK e não é de uso diário. Bloco com
+   * pendência (mesmo que só aviso) nasce aberto, e a escolha manual do operador
+   * vence as duas regras enquanto ele estiver na tela.
+   */
+  function blocoAberto(bloco: BlocoNfe): boolean {
+    const escolhaDoOperador = blocosAbertos[bloco];
+    if (escolhaDoOperador !== undefined) return escolhaDoOperador;
+    if (BLOCOS_SEMPRE_ABERTOS.includes(bloco)) return true;
+    if (bloco === activeTab) return true;
+    return estadoDoBloco(bloco) !== "ok";
+  }
+
+  function alternarBloco(bloco: BlocoNfe) {
+    const abertoAgora = blocoAberto(bloco);
+    setBlocosAbertos((anterior) => ({ ...anterior, [bloco]: !abertoAgora }));
+    if (!abertoAgora) setActiveTab(bloco);
+  }
+
+  /** Clique na lateral: abre o bloco e rola até ele. */
+  function irParaBloco(bloco: BlocoNfe) {
+    setActiveTab(bloco);
+    setBlocosAbertos((anterior) => ({ ...anterior, [bloco]: true }));
+    window.setTimeout(() => {
+      document.getElementById(ancoraDoBloco(bloco))?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }, 60);
+  }
 
   const filteredProducts = dbProducts.filter((p) => {
     if (!productSearchText.trim()) return true;
@@ -1224,7 +1351,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           confirmText: "Visualizar Pendências",
           showCancel: false,
           onConfirm: () => {
-            setActiveTab("Validação");
+            irParaBloco("Validação");
           }
         });
       } else if (emitirDepois) {
@@ -1311,6 +1438,85 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   }
 
   /**
+   * Recarrega cliente, endereço e nota do banco.
+   *
+   * POR QUE EXISTE
+   *   IE e endereço do destinatário NÃO são copiados para `notas_fiscais` — o
+   *   payload lê do cadastro na hora. A tela, não: `loadData` busca uma vez, na
+   *   montagem, e não há listener de foco. Quem corrigia no cadastro e voltava
+   *   ficava com a pendência velha na frente e o Emitir travado por ela.
+   *
+   *   `loadData` reescreve os campos editáveis com o que está no banco, então
+   *   edição não salva se perde. Quando houver alguma, pergunta antes.
+   */
+  function handleReconferir() {
+    if (!existeEdicaoNaoSalva()) {
+      void loadData();
+      return;
+    }
+    setConfirmModal({
+      isOpen: true,
+      title: "Reconferir descarta o que não foi salvo",
+      message:
+        "Esta tela tem alterações que ainda não foram salvas. Reconferir recarrega os dados do banco e do cadastro do cliente, e essas alterações se perdem.",
+      confirmText: "Reconferir mesmo assim",
+      cancelText: "Voltar e salvar antes",
+      showCancel: true,
+      onConfirm: () => {
+        void loadData();
+      }
+    });
+  }
+
+  /** Compara o que está na tela com o que veio do banco na última carga. */
+  function existeEdicaoNaoSalva(): boolean {
+    if (!note) return false;
+
+    const cabecalhoMudou =
+      naturezaOperacao !== (note.natureza_operacao || "") ||
+      finalidadeEmissao !== note.finalidade_emissao ||
+      consumidorFinal !== note.consumidor_final ||
+      presencaComprador !== note.presenca_comprador ||
+      tipoContribuinte !== note.tipo_contribuinte ||
+      modalidadeFrete !== note.modalidade_frete ||
+      transportadora !== (note.transportadora || "") ||
+      Number(valorFrete) !== (note.valor_frete || 0) ||
+      Number(quantidadeVolumes) !== (note.quantidade_volumes || 1) ||
+      especieVolumes !== (note.especie_volumes || "") ||
+      Number(pesoLiquido) !== (note.peso_liquido || 0) ||
+      Number(pesoBruto) !== (note.peso_bruto || 0) ||
+      infoComplementares !== (note.informacoes_complementares || "") ||
+      obsInternas !== (note.observacoes_internas || "");
+    if (cabecalhoMudou) return true;
+
+    const itemMudou = editedItems.some((editado) => {
+      const original = items.find((it) => it.id === editado.id);
+      if (!original) return true;
+      return (
+        editado.descricao !== original.descricao ||
+        editado.ncm !== original.ncm ||
+        editado.cfop !== original.cfop ||
+        editado.unidade_comercial !== original.unidade_comercial ||
+        Number(editado.quantidade) !== original.quantidade ||
+        Number(editado.valor_unitario) !== original.valor_unitario ||
+        Number(editado.valor_bruto) !== original.valor_bruto ||
+        (editado.observacao || "") !== (original.observacao || "")
+      );
+    });
+    if (itemMudou) return true;
+
+    return editedPagamentos.some((editado) => {
+      const original = pagamentos.find((pg) => pg.id === editado.id);
+      if (!original) return true;
+      return (
+        editado.forma_pagamento !== original.forma_pagamento ||
+        Number(editado.valor) !== original.valor ||
+        editado.data_vencimento !== original.data_vencimento
+      );
+    });
+  }
+
+  /**
    * Leva o operador ao lugar onde a pendência se conserta.
    *
    * Endereço e IE do destinatário não se corrigem nesta tela — abrem o cadastro
@@ -1325,11 +1531,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     }
     if (pendencia.destino.tipo !== "aba") return;
 
-    setActiveTab(pendencia.destino.bloco);
+    // Abre o bloco e leva até ele; o campo, quando existe, recebe o foco.
+    irParaBloco(pendencia.destino.bloco);
 
     const campo = pendencia.destino.campo;
     if (!campo) return;
-    // A aba só existe no DOM depois do render seguinte.
+    // O conteúdo do bloco só existe no DOM depois do render seguinte.
     window.setTimeout(() => {
       const alvo = document.getElementById(campo);
       if (!alvo) return;
@@ -1483,6 +1690,16 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 : "Nada impede a emissão. Confira os avisos abaixo."}
             </h2>
             <span className="text-xs text-slate-500">Conferido de novo ao emitir</span>
+            <button
+              type="button"
+              onClick={handleReconferir}
+              disabled={isLoading}
+              title="Recarrega os dados do cadastro do cliente e reconfere a nota"
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-[#0b2f4a] hover:bg-slate-50 transition disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              Reconferir
+            </button>
           </div>
 
           <ul className="divide-y divide-slate-100">
@@ -1526,44 +1743,33 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         </section>
       )}
 
-      {/* Navegação por Abas */}
-      <nav className="flex overflow-x-auto gap-2 border-b border-slate-200 pb-2 scrollbar-none" aria-label="Abas de Edição Fiscal">
-        {(
-          [
-            "Resumo",
-            "Emitente",
-            "Destinatário",
-            "Itens",
-            "Transporte/Frete",
-            "Pagamentos",
-            "Totais",
-            "Informações adicionais",
-            "Validação",
-            "Documentos/Preview"
-          ] as TabName[]
-        ).map((t) => {
-          const isActive = activeTab === t;
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setActiveTab(t)}
-              className={`whitespace-nowrap px-4 py-2 text-sm font-semibold rounded-xl transition ${
-                isActive
-                  ? "bg-[#0b2f4a] text-white"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              {t}
-            </button>
-          );
-        })}
-      </nav>
+      {/*
+        Conferência única: a lateral diz o estado de cada bloco e mantém o total
+        à vista; os blocos ficam empilhados, recolhidos quando não pedem nada.
+        As dez abas viraram estes dez blocos — os mesmos nomes, o mesmo conteúdo.
+      */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <ConferenciaLateral
+          blocos={BLOCOS_DA_NOTA.map((bloco) => ({
+            id: bloco,
+            estado: estadoDoBloco(bloco),
+            detalhe: detalheDoBloco(bloco)
+          }))}
+          emFoco={activeTab}
+          totais={{
+            produtos: computedValorProdutos,
+            frete: valorFrete || 0,
+            desconto: note.valor_desconto || 0,
+            total: computedValorTotalNf
+          }}
+          formatarValor={formatCurrency}
+          onSelecionar={irParaBloco}
+        />
 
-      {/* Conteúdo das Abas */}
-      <section className="bg-white rounded-3xl border border-[#d7e5e8] p-6 shadow-sm min-h-[300px]">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
         {/* Aba 1: Resumo */}
-        {activeTab === "Resumo" && (
+        <BlocoConferencia id="Resumo" estado={estadoDoBloco("Resumo")} resumo={resumoDoBloco("Resumo")} aberto={blocoAberto("Resumo")} onAlternar={() => alternarBloco("Resumo")}>
+        {blocoAberto("Resumo") && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-[#0b2f4a]" /> Resumo do Rascunho
@@ -1666,9 +1872,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 2: Emitente */}
-        {activeTab === "Emitente" && (
+        <BlocoConferencia id="Emitente" estado={estadoDoBloco("Emitente")} resumo={resumoDoBloco("Emitente")} aberto={blocoAberto("Emitente")} onAlternar={() => alternarBloco("Emitente")}>
+        {blocoAberto("Emitente") && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Building className="h-5 w-5 text-[#0b2f4a]" /> Dados do Emitente
@@ -1720,9 +1928,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </p>
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 3: Destinatário */}
-        {activeTab === "Destinatário" && (() => {
+        <BlocoConferencia id="Destinatário" estado={estadoDoBloco("Destinatário")} resumo={resumoDoBloco("Destinatário")} aberto={blocoAberto("Destinatário")} onAlternar={() => alternarBloco("Destinatário")}>
+        {blocoAberto("Destinatário") && (() => {
           return (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -2073,9 +2283,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           );
         })()}
+        </BlocoConferencia>
 
         {/* Aba 4: Itens */}
-        {activeTab === "Itens" && (
+        <BlocoConferencia id="Itens" estado={estadoDoBloco("Itens")} resumo={resumoDoBloco("Itens")} aberto={blocoAberto("Itens")} onAlternar={() => alternarBloco("Itens")}>
+        {blocoAberto("Itens") && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -2488,9 +2700,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             )}
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 5: Transporte/Frete */}
-        {activeTab === "Transporte/Frete" && (
+        <BlocoConferencia id="Transporte/Frete" estado={estadoDoBloco("Transporte/Frete")} resumo={resumoDoBloco("Transporte/Frete")} aberto={blocoAberto("Transporte/Frete")} onAlternar={() => alternarBloco("Transporte/Frete")}>
+        {blocoAberto("Transporte/Frete") && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Truck className="h-5 w-5 text-[#0b2f4a]" /> Parâmetros de Transporte
@@ -2617,9 +2831,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 6: Pagamentos */}
-        {activeTab === "Pagamentos" && (
+        <BlocoConferencia id="Pagamentos" estado={estadoDoBloco("Pagamentos")} resumo={resumoDoBloco("Pagamentos")} aberto={blocoAberto("Pagamentos")} onAlternar={() => alternarBloco("Pagamentos")}>
+        {blocoAberto("Pagamentos") && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-[#0b2f4a]" /> Pagamentos Fiscais (Fatura)
@@ -2926,9 +3142,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             )}
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 7: Totais */}
-        {activeTab === "Totais" && (
+        <BlocoConferencia id="Totais" estado={estadoDoBloco("Totais")} resumo={resumoDoBloco("Totais")} aberto={blocoAberto("Totais")} onAlternar={() => alternarBloco("Totais")}>
+        {blocoAberto("Totais") && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Layers className="h-5 w-5 text-[#0b2f4a]" /> Totais Fiscais Recalculados
@@ -2969,9 +3187,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 8: Informações adicionais */}
-        {activeTab === "Informações adicionais" && (
+        <BlocoConferencia id="Informações adicionais" estado={estadoDoBloco("Informações adicionais")} resumo={resumoDoBloco("Informações adicionais")} aberto={blocoAberto("Informações adicionais")} onAlternar={() => alternarBloco("Informações adicionais")}>
+        {blocoAberto("Informações adicionais") && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-[#0b2f4a]" /> Informações Adicionais / Fisco
@@ -3003,9 +3223,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 9: Validação */}
-        {activeTab === "Validação" && (
+        <BlocoConferencia id="Validação" estado={estadoDoBloco("Validação")} resumo={resumoDoBloco("Validação")} aberto={blocoAberto("Validação")} onAlternar={() => alternarBloco("Validação")}>
+        {blocoAberto("Validação") && (
           <div className="space-y-6">
             {/*
               "Rodar Validação" saiu: a mesma checagem já roda no Faturar, antes
@@ -3088,9 +3310,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           </div>
         )}
+        </BlocoConferencia>
 
         {/* Aba 10: Documentos/Preview */}
-        {activeTab === "Documentos/Preview" && (
+        <BlocoConferencia id="Documentos/Preview" estado={estadoDoBloco("Documentos/Preview")} resumo={resumoDoBloco("Documentos/Preview")} aberto={blocoAberto("Documentos/Preview")} onAlternar={() => alternarBloco("Documentos/Preview")}>
+        {blocoAberto("Documentos/Preview") && (
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <FileCode className="h-5 w-5 text-[#0b2f4a]" /> Preview Técnico e Retorno
@@ -3142,7 +3366,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             </div>
           </div>
         )}
-      </section>
+        </BlocoConferencia>
+        </div>
+      </div>
 
       {notaParaEmitir && (
         <EmissaoNfeModal

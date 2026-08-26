@@ -405,24 +405,31 @@ export function levantarPendencias(rascunho: RascunhoParaPendencias): Pendencia[
     impede(
       "CPF_COM_TIPO_CONTRIBUINTE_INVALIDO",
       "Destinatário",
-      "Destinatário com CPF precisa ser tipo 9 (não contribuinte) e consumidor final 1.",
+      "Destinatário com CPF precisa ser tipo 9 (não contribuinte) e consumidor final 1. Os dois campos estão aqui, na aba Destinatário.",
       { tipo: "aba", bloco: "Destinatário", campo: CAMPO_TIPO_CONTRIBUINTE }
     );
   }
+  /*
+    As duas abaixo dependem do TIPO DE CONTRIBUINTE, que é coluna da própria
+    nota (`notas_fiscais.tipo_contribuinte`) e se corrige na aba Destinatário
+    desta tela — mudar no cadastro do cliente não reflete aqui nem recarregando.
+    Por isso o link vem para a aba, e o texto diz onde fica cada conserto: o
+    tipo aqui, a IE no cadastro.
+  */
   if (tipoContribuinte === "1" && ieAusente(cliente)) {
     impede(
       "CONTRIBUINTE_SEM_IE",
       "Destinatário",
-      "Destinatário marcado como contribuinte de ICMS, mas sem IE válida no cadastro.",
-      noCadastro("ins_estadual")
+      "Destinatário marcado como contribuinte de ICMS e sem IE válida. O tipo de contribuinte se corrige aqui, na aba Destinatário; a IE, no cadastro do cliente.",
+      { tipo: "aba", bloco: "Destinatário", campo: CAMPO_TIPO_CONTRIBUINTE }
     );
   }
   if (documentoDigitos.length === 14 && tipoContribuinte === "2" && ieAusente(cliente)) {
     impede(
       "CNPJ_CONTRIBUINTE_ISENTO_SEM_IE",
       "Destinatário",
-      "CNPJ marcado como contribuinte isento e sem IE informada — a SEFAZ costuma rejeitar.",
-      noCadastro("ins_estadual")
+      "CNPJ marcado como contribuinte isento e sem IE — a SEFAZ costuma rejeitar. O tipo de contribuinte se corrige aqui, na aba Destinatário; a IE, no cadastro do cliente.",
+      { tipo: "aba", bloco: "Destinatário", campo: CAMPO_TIPO_CONTRIBUINTE }
     );
   }
   if (tipoContribuinte === "9" && consumidorFinal !== "1") {
