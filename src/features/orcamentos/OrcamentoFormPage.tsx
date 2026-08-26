@@ -72,6 +72,7 @@ import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDeta
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
+import { PermissionGuard } from "@/components/common/PermissionGuard";
 import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
@@ -862,6 +863,7 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
    * do modal de despacho da Expedição — a proposta grava a FK, não texto livre,
    * justamente para o despacho reaproveitar o vínculo.
    */
+  const [salvandoTransportadoraAdmin, setSalvandoTransportadoraAdmin] = useState(false);
   const [transportadoras, setTransportadoras] = useState<
     { id_cliente: number; nome: string | null; fantasia: string | null }[]
   >([]);
@@ -3126,6 +3128,67 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
   function ehFreteDeRetirada(frete: { id: string; transportadora: string } | undefined | null): boolean {
     if (!frete) return false;
     return frete.id === "frete_retirada" || frete.transportadora.toUpperCase().includes("RETIRA");
+  }
+
+  /**
+   * Grava SÓ a transportadora, direto, para proposta já fora do orçamento.
+   *
+   * Não passa pelo `saveProposta`: o salvamento reescreve `cotacao_frete` e os
+   * três triggers de lá rebaixam o pedido para NOVO. A rota faz um UPDATE mirado
+   * numa coluna de `propostas`, onde nenhum trigger escreve `status_interno`.
+   *
+   * A permissão vale no servidor — o `PermissionGuard` da tela só esconde o
+   * controle de quem não pode.
+   */
+  async function gravarTransportadoraAdmin(idTransportadora: number | null) {
+    if (!proposta?.id_int) return;
+    setSalvandoTransportadoraAdmin(true);
+    try {
+      const { getSupabaseClient } = await import("@/lib/supabase/client");
+      const supabase = getSupabaseClient();
+      const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      const token = session?.access_token ?? "";
+      if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
+      const resposta = await fetch("/api/propostas/transportadora", {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ idInt: proposta.id_int, idTransportadoraCliente: idTransportadora })
+      });
+      const corpo = (await resposta.json()) as {
+        success?: boolean;
+        message?: string;
+        idTransportadoraCliente?: number | null;
+        transportadora?: string | null;
+        canonizada?: boolean;
+      };
+
+      if (!resposta.ok || !corpo.success) {
+        showToast({ type: "error", title: corpo.message || "Não foi possível gravar a transportadora." });
+        return;
+      }
+
+      // O estado da tela acompanha o que o BANCO gravou, não o que foi clicado:
+      // a rota canoniza cadastros substituídos, e o select tem de mostrar o
+      // resultado real para ninguém achar que ficou o outro.
+      const gravado = corpo.idTransportadoraCliente ?? null;
+      setForm((current) => ({ ...current, idTransportadoraCliente: gravado }));
+
+      showToast({
+        type: "success",
+        title: gravado ? `Transportadora gravada: ${corpo.transportadora || gravado}` : "Transportadora removida.",
+        description: corpo.canonizada
+          ? "O cadastro escolhido foi substituído pelo oficial desta transportadora."
+          : "A Expedição lê o valor novo no próximo carregamento da tela."
+      });
+    } catch (erro) {
+      showToast({
+        type: "error",
+        title: erro instanceof Error ? erro.message : "Falha ao gravar a transportadora."
+      });
+    } finally {
+      setSalvandoTransportadoraAdmin(false);
+    }
   }
 
   async function selectFrete(freteId: string) {
@@ -5598,9 +5661,51 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
               )}
 
               {!modalidadeEditavel && (
-                <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                  {motivoBloqueioModalidade(form.status)}
-                </p>
+                <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
+                  <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                    {motivoBloqueioModalidade(form.status)}
+                  </p>
+
+                  {/*
+                    A porta estreita do admin, no lugar onde ele JÁ chega.
+                    Quem vem consertar um pedido parado na Expedição abre a
+                    proposta e cai neste aviso — que até aqui dizia "não dá" e
+                    parava. O controle fica colado nele para a resposta vir junto
+                    com o problema, em vez de num menu que ninguém procura.
+                    Corrige SÓ quem transporta: modalidade e valor seguem travados.
+                  */}
+                  <PermissionGuard permission="expedicao.admin" fallback={null}>
+                    <div className="space-y-2 border-t border-amber-200 pt-3 dark:border-amber-900">
+                      <label className="block text-xs font-bold text-amber-900 dark:text-amber-200">
+                        Corrigir a transportadora (admin)
+                      </label>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <select
+                          value={form.idTransportadoraCliente ?? ""}
+                          disabled={salvandoTransportadoraAdmin}
+                          onChange={(e) => {
+                            void gravarTransportadoraAdmin(
+                              e.target.value ? Number(e.target.value) : null
+                            );
+                          }}
+                          className="flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-amber-500 dark:border-amber-800 dark:bg-slate-900"
+                        >
+                          <option value="">— Sem transportadora —</option>
+                          {transportadoras.map((t) => (
+                            <option key={t.id_cliente} value={t.id_cliente}>
+                              {t.nome || t.fantasia}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                        {salvandoTransportadoraAdmin
+                          ? "Gravando…"
+                          : "Grava na hora, sozinha — não passa pelo Salvar do orçamento e não mexe na modalidade nem no valor do frete. A Expedição lê o valor novo no próximo carregamento da tela."}
+                      </p>
+                    </div>
+                  </PermissionGuard>
+                </div>
               )}
             </div>
 
