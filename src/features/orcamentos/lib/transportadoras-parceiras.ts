@@ -63,6 +63,52 @@ export const TRANSPORTADORAS_PARCEIRAS = {
 
 export type TransportadoraParceira = keyof typeof TRANSPORTADORAS_PARCEIRAS;
 
+/**
+ * Cadastros que NÃO devem constar como transportador, e para quem eles apontam.
+ *
+ * POR QUE EXISTE
+ *   O mesmo transportador chegou ao sistema com dois cadastros, e a Expedição
+ *   vinculou os despachos ao errado. Os Correios são o caso: 9 despachos foram
+ *   para a agência franqueada Beluno (120001, CNPJ 73415572000105), enquanto o
+ *   transportador que deve constar na NF-e é a ECT (663, CNPJ 34028316000103).
+ *   Decisão do dono em 26/08/2026.
+ *
+ *   Como a NF-e semeia a transportadora lendo a expedição PRIMEIRO, sem esta
+ *   tradução a nota levava o CNPJ da franquia. Foi o que aconteceu no rascunho
+ *   NFE-20961-001.
+ *
+ * POR QUE TRADUZIR EM VEZ DE SÓ DESATIVAR O CADASTRO
+ *   Desativar tira o 120001 dos drops daqui para frente, mas não desfaz os 9
+ *   vínculos já gravados — e não se mexe em expedição já despachada. Enquanto
+ *   esses vínculos existirem, alguém vai faturar um deles. A tradução é o que
+ *   protege a nota; a desativação evita vínculos novos. As duas coisas juntas.
+ *
+ * O MAPA DA ETAPA 1 É A FONTE DA VERDADE. Um cadastro só entra aqui quando o
+ * dono decide qual dos dois é o transportador legítimo.
+ */
+const CADASTROS_CANONIZADOS: Readonly<Record<number, number>> = {
+  /** AGENCIA DE CORREIOS FRANQUEADA BELUNO LTDA -> EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS */
+  120001: TRANSPORTADORAS_PARCEIRAS.CORREIOS
+};
+
+/**
+ * O cadastro que deve constar como transportador, dado um id qualquer.
+ *
+ * Devolve o próprio id quando não há substituição — que é o caso de quase todos.
+ * `null` e valores inválidos passam direto como `null`.
+ */
+export function canonizarTransportadora(id: number | null | undefined): number | null {
+  if (id === null || id === undefined || !Number.isFinite(Number(id))) return null;
+  const numero = Number(id);
+  return CADASTROS_CANONIZADOS[numero] ?? numero;
+}
+
+/** Se este id é um cadastro que foi substituído por outro. */
+export function ehCadastroSubstituido(id: number | null | undefined): boolean {
+  if (id === null || id === undefined) return false;
+  return Object.prototype.hasOwnProperty.call(CADASTROS_CANONIZADOS, Number(id));
+}
+
 /** Sem acento, maiúsculas, espaços colapsados. */
 function normalizar(texto: string | null | undefined): string {
   return (texto ?? "")

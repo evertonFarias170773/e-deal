@@ -26,6 +26,8 @@
  */
 import {
   resolverTransportadoraParceira,
+  canonizarTransportadora,
+  ehCadastroSubstituido,
   TRANSPORTADORAS_PARCEIRAS as IDS
 } from "@/features/orcamentos/lib/transportadoras-parceiras";
 
@@ -81,6 +83,20 @@ checar("campos nulos", resolverTransportadoraParceira({ transportadora: null, se
 checar("PACOTE nao e PAC", resolverTransportadoraParceira({ transportadora: "PACOTE ECONOMICO", servico: "PACOTE ECONOMICO" }), null);
 // Retirada vence qualquer outro token no mesmo rotulo.
 checar("RETIRA vence", resolverTransportadoraParceira({ transportadora: "RETIRA BALCÃO", servico: "SEDEX" }), null);
+
+console.log("\n--- canonizacao: cadastro substituido vira o legitimo ---");
+// 120001 = AGENCIA DE CORREIOS FRANQUEADA BELUNO. Nao pode constar como
+// transportador: quem consta e a ECT (663). 9 despachos ja apontam para ele.
+checar("120001 (Beluno) -> 663 (ECT)", canonizarTransportadora(120001), 663);
+checar("120001 e substituido", ehCadastroSubstituido(120001), true);
+checar("663 permanece 663", canonizarTransportadora(663), 663);
+checar("663 nao e substituido", ehCadastroSubstituido(663), false);
+checar("120009 (Braspress) intacto", canonizarTransportadora(120009), 120009);
+checar("808 intacto", canonizarTransportadora(808), 808);
+checar("null continua null", canonizarTransportadora(null), null);
+checar("undefined vira null", canonizarTransportadora(undefined), null);
+checar("NaN vira null", canonizarTransportadora(Number.NaN), null);
+checar("null nao e substituido", ehCadastroSubstituido(null), false);
 
 console.log(falhas === 0 ? "\nTODOS OS TESTES PASSARAM" : `\n${falhas} TESTE(S) FALHARAM`);
 process.exitCode = falhas === 0 ? 0 : 1;

@@ -6,6 +6,7 @@ import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supaba
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_GROUP_NFE_ELIGIBLE } from "@/features/orcamentos/constants";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
+import { canonizarTransportadora, ehCadastroSubstituido } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
 import {
   normalizarTipoContribuinte,
@@ -829,10 +830,21 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // O ID E O NOME SAO RESOLVIDOS SEPARADAMENTE, de proposito: 16 das 27
   // expedicoes com nome de transportadora estao SEM o id. Exigir os dois juntos
   // jogaria fora o nome nesses casos.
-  const idTransportadoraNota =
+  const idTransportadoraBruto =
     expedicao?.id_transportadora_cliente ?? proposta.idTransportadoraCliente ?? null;
 
-  let transportadoraNota = String(expedicao?.transportadora_nome ?? "").trim();
+  // Um cadastro pode ter sido substituido por outro — os Correios chegaram em
+  // dois, e a Expedicao vinculou 9 despachos a agencia franqueada. Quem vale na
+  // nota e o cadastro canonico (ver `transportadoras-parceiras.ts`).
+  const idTransportadoraNota = canonizarTransportadora(idTransportadoraBruto);
+  const transportadoraFoiTraduzida = ehCadastroSubstituido(idTransportadoraBruto);
+
+  // Nome vindo da expedicao NAO serve quando o id foi traduzido: ele descreve o
+  // cadastro antigo, e o payload manda nome e CNPJ juntos. Nome de um, documento
+  // de outro seria pior que campo vazio.
+  let transportadoraNota = transportadoraFoiTraduzida
+    ? ""
+    : String(expedicao?.transportadora_nome ?? "").trim();
   if (!transportadoraNota && idTransportadoraNota) {
     // Tem vinculo mas ninguem escreveu o nome: busca no cadastro em vez de
     // deixar o campo vazio numa nota que ja sabe quem e o transportador.
@@ -855,7 +867,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   console.log(
     `[NfeService] Transporte da nota #${idInt}: transportadora="${transportadoraNota || "(vazia)"}" ` +
       `id=${idTransportadoraNota ?? "null"} volumes=${qtdVolumesNota} especie="${especieVolumesNota}" ` +
-      `(expedicao ${expedicao ? "existe" : "AINDA NAO EXISTE"})`
+      `(expedicao ${expedicao ? "existe" : "AINDA NAO EXISTE"}${transportadoraFoiTraduzida ? `; cadastro ${idTransportadoraBruto} traduzido para ${idTransportadoraNota}` : ""})`
   );
 
   const pgtoConfigurado = Boolean(tipoCobranca);
