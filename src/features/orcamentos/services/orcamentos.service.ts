@@ -10,6 +10,7 @@ import {
 import { calculateResumo, calculateItemSubtotal } from "@/features/orcamentos/orcamento-utils";
 import {
   aplicarModalidadeNosFretes,
+  exigeCotacaoEscolhida,
   faltaTransportadoraEmFob,
   motivoBloqueioModalidade,
   nomeTransportadoraCadastro,
@@ -1796,8 +1797,19 @@ export async function saveProposta(
       !formState.isAvulso &&
       formState.itens.filter((item) => item.statusItem !== "CANCELADO").length === 0;
 
+    /**
+     * A cotação escolhida só é exigida onde a tela oferece cards — ver
+     * `exigeCotacaoEscolhida`. Mesma forma da dispensa por `propostaSemItens`
+     * logo acima, e pelo mesmo motivo: exigir o que a tela não pede trava a
+     * gravação para sempre.
+     *
+     * Lido de `formState`, não da modalidade vigente calculada mais abaixo: o
+     * que vale para a VALIDAÇÃO é o ramo que o vendedor está vendo agora.
+     */
+    const cotacaoObrigatoria = exigeCotacaoEscolhida(formState.modalidadeFrete);
+
     // Find the chosen freight option details
-    if (!formState.isAvulso && !propostaSemItens) {
+    if (!formState.isAvulso && !propostaSemItens && cotacaoObrigatoria) {
       if (!isNonEmpty(formState.freteEscolhidoId)) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
@@ -1811,7 +1823,7 @@ export async function saveProposta(
       if (!isNonEmpty(formState.observacoesFreteManual)) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
-    } else if (!propostaSemItens) {
+    } else if (!propostaSemItens && cotacaoObrigatoria) {
       if (!chosenFrete) {
         return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
       }
@@ -1885,10 +1897,20 @@ export async function saveProposta(
     /** Preenchido quando a trava recusa uma declaração nova — a tela avisa. */
     let avisoModalidade: string | undefined;
 
-    if (modalidadeEditavel && faltaTransportadoraEmFob(modalidadeFrete, idTransportadoraCliente)) {
+    // Motoboy é a exceção declarada: responde a mesma pergunta ("quem leva") sem
+    // ter cadastro em `clientes` para vincular. A tela já abre essa exceção desde
+    // 24/08/2026 ([OrcamentoFormPage] `fobPorMotoboy`); o service ficou para trás
+    // e continuava recusando o salvamento. `faltaTransportadoraEmFob` segue
+    // intacta — a exceção é do chamador, como na tela.
+    const fobPorMotoboy = modalidadeFrete === "FOB" && formState.transporteCategoria === "MOTOBOY";
+    if (
+      modalidadeEditavel &&
+      !fobPorMotoboy &&
+      faltaTransportadoraEmFob(modalidadeFrete, idTransportadoraCliente)
+    ) {
       return {
         success: false,
-        errorMessage: "Em FOB, escolha a transportadora que vai retirar antes de salvar o orçamento."
+        errorMessage: "Em FOB, escolha a transportadora que vai retirar, ou marque Motoboy, antes de salvar o orçamento."
       };
     }
 
@@ -1937,7 +1959,14 @@ export async function saveProposta(
         nomeTransportadoraDeclarada = nomeTransportadoraCadastro(transpRow);
       }
     }
-    freteNome = nomeTransporteEfetivo(freteNome, modalidadeVigente, nomeTransportadoraDeclarada);
+    // FOB por motoboy: o nome é "Motoboy", não o fallback de transportadora
+    // indefinida. Sem isto o teste dos quatro casos gravou "Transportadora a
+    // definir" em `frete_escolhido` e em `cotacao_frete.servico` — texto que diz
+    // o oposto do que foi escolhido, e que a Expedição leria como pendência. É o
+    // mesmo nome que `transportadoraDerivada` já impõe no despacho.
+    freteNome = fobPorMotoboy
+      ? "Motoboy"
+      : nomeTransporteEfetivo(freteNome, modalidadeVigente, nomeTransportadoraDeclarada);
 
     // Calculo de valores resumo e totais
     const activeItens = formState.itens.filter((item) => item.statusItem !== "CANCELADO");
@@ -1984,8 +2013,12 @@ export async function saveProposta(
       }
     }
 
+    // QUARTA guarda de frete, e a mais escondida: peso + CEP presentes passaram a
+    // significar "dava para cotar, então tinha de ter cotado". Em RETIRA e FOB
+    // dava para cotar e NÃO era para cotar — e era esta que continuava recusando
+    // o salvamento depois das outras três serem afrouxadas.
     const hasWeightAndCep = !formState.isAvulso && resumo.pesoTotal > 0 && cepText && isNonEmpty(cepText);
-    if (hasWeightAndCep && !chosenFrete) {
+    if (hasWeightAndCep && cotacaoObrigatoria && !chosenFrete) {
       return { success: false, errorMessage: "Selecione ou informe o frete antes de salvar o orçamento." };
     }
 
@@ -2138,8 +2171,24 @@ export async function saveProposta(
       }
     }
 
+    /**
+     * RETIRA e FOB também gravam a linha, mesmo sem card escolhido.
+     *
+     * Sem isto, dispensar a exigência acima deixaria `cotacao_frete` VAZIA nesses
+     * dois casos — e quem lê a proposta depois (a Expedição, o PDF da OS, a
+     * reconstrução dos fretes) não teria linha nenhuma para encontrar. O que
+     * entra é o que de fato foi decidido: `freteNome` (a transportadora
+     * declarada em FOB, "RETIRADA" no balcão) e `freteValor`, que é zero pelas
+     * regras que já existem.
+     *
+     * MESMO bloco DELETE + INSERT de sempre — nada de caminho novo. Os três
+     * triggers de `cotacao_frete` continuam vendo exatamente a mesma operação
+     * que já viam quando havia card.
+     */
+    const gravaCotacaoSemCard = !formState.isAvulso && !propostaSemItens && !cotacaoObrigatoria;
+
     // Persistir o frete escolhido no banco de dados (public.cotacao_frete)
-    if (formState.isAvulso || chosenFrete) {
+    if (formState.isAvulso || chosenFrete || gravaCotacaoSemCard) {
       try {
         // Deletar os fretes antigos apenas daquela proposta
         const { error: deleteError } = await client
@@ -2155,7 +2204,13 @@ export async function saveProposta(
         // Inserir apenas o frete escolhido atual
         const insertPayload: Record<string, unknown> = {
           id_int: id_int!,
-          servico: formState.isAvulso ? (formState.observacoesFreteManual || "Frete Manual") : (chosenFrete?.servico || ""),
+          // Sem card (RETIRA/FOB), `freteNome` é a decisão real: a transportadora
+          // declarada em FOB — ou "Motoboy" — e "RETIRADA" no balcão. É o mesmo
+          // texto que vai para `propostas.frete_escolhido`, então as duas pontas
+          // não divergem.
+          servico: formState.isAvulso
+            ? formState.observacoesFreteManual || "Frete Manual"
+            : chosenFrete?.servico || freteNome || "",
           valor: freteValor,
           prazo: formState.isAvulso ? "A combinar" : (chosenFrete?.prazo || "A combinar"),
           cep: cepText || null,

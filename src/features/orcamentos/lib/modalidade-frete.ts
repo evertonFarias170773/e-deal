@@ -147,3 +147,28 @@ export function nomeTransportadoraCadastro(
   if (!cadastro) return null;
   return cadastro.fantasia || cadastro.nome || `#${cadastro.id_cliente}`;
 }
+
+/**
+ * A modalidade exige um CARD DE COTAÇÃO escolhido para salvar?
+ *
+ * SÓ CIF EXIGE. Em CIF nós contratamos e pagamos o transporte, então o preço é
+ * uma decisão e precisa estar escolhido. Em RETIRA a mercadoria é buscada no
+ * balcão e em FOB o cliente contrata — nos dois a escolha já foi feita em outro
+ * lugar da tela (o balcão, ou a transportadora do drop / o Motoboy ao lado
+ * dele), e o valor cobrado é zero de qualquer forma.
+ *
+ * POR QUE ISSO PRECISOU VIRAR REGRA
+ *   Desde 24/08/2026 a aba Fretes esconde os cards fora de CIF. As guardas de
+ *   `freteEscolhidoId` continuaram cobrando um card mesmo assim: em proposta
+ *   NOVA o campo nasce vazio, e sem cards na tela o vendedor não tinha como
+ *   preencher — recusa sem saída, tanto em RETIRA quanto em FOB.
+ *
+ * MODALIDADE NULA CONTINUA EXIGINDO, de propósito. É o caso de toda proposta
+ * anterior a 18/08/2026 e o comportamento delas não muda aqui: afrouxar a
+ * exigência para "não declarado" deixaria salvar sem frete um pedido que a
+ * regra antiga barrava, e gravaria zero em `cotacao_frete` por tabela. Só os
+ * dois casos em que a tela realmente não oferece card são dispensados.
+ */
+export function exigeCotacaoEscolhida(modalidade: ModalidadeFrete | null | undefined): boolean {
+  return modalidade !== "RETIRA" && modalidade !== "FOB";
+}

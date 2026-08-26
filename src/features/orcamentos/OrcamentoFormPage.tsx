@@ -73,6 +73,7 @@ import { composeStatusEmArte } from "@/features/orcamentos/mappers";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import {
   aplicarModalidadeNosFretes,
+  exigeCotacaoEscolhida,
   faltaTransportadoraEmFob,
   LABEL_MODALIDADE,
   MODALIDADES_ORCAMENTO,
@@ -3510,8 +3511,11 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
       }
     }
 
-    // Normal proposal freight validation
-    if (!isNonEmpty(form.freteEscolhidoId)) {
+    // Normal proposal freight validation.
+    // Só onde a tela oferece cards — em RETIRA e FOB não há o que escolher, e
+    // exigir aqui recusava o salvamento sem dar ao vendedor como resolver. O
+    // service repete a mesma guarda: esta é a da tela, não a única.
+    if (exigeCotacaoEscolhida(form.modalidadeFrete) && !isNonEmpty(form.freteEscolhidoId)) {
       showToast({
         type: "error",
         title: "Frete não selecionado",
