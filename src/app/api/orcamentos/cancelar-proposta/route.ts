@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { verificarEscopoPropostaServerSide } from "@/lib/auth/verificar-escopo-proposta";
+import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
+import { RECUSAS_DE_DINHEIRO } from "@/features/cobrancas/cancelamento-elegibilidade";
 
 // Status de pagamentos_v2 já inativos: nunca reprocessados.
 const STATUS_INATIVOS = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
@@ -93,17 +95,62 @@ export async function POST(request: Request) {
   const boletos = (boletosRes.data || []) as BoletoRow[];
   const movimentosDebitoAtivos = (movimentosRes.data || []) as MovimentoRow[];
 
-  const pagamentoEfetivado = pagamentos.some((p) => {
-    const s = String(p.status || "").trim().toUpperCase();
-    return s === "PAID" || (s === "A_VENCER" && p.confirmado === true) || p.confirmado === true;
-  });
+  // 1a) REGRA DE NIVEL PROPOSTA: qualquer boleto liquidado no `id_int` bloqueia,
+  //     mesmo que a cobranca dele ja esteja cancelada.
+  //
+  //     Esta checagem NAO pode virar veredito: o veredito raciocina sobre uma
+  //     COBRANCA, e nao enxerga dinheiro que entrou por cobranca ja inativa.
+  //     Medido em 25/08/2026: 193 propostas tem boleto liquidado sem nenhuma
+  //     cobranca ativa paga — todas perderiam a protecao se esta regra saisse.
   const boletoLiquidado = boletos.some((b) => !!b.paid_at);
-
-  if (pagamentoEfetivado || boletoLiquidado) {
+  if (boletoLiquidado) {
     return NextResponse.json(
-      { success: false, code: "PAGAMENTO_EFETIVADO", message: "Proposta possui pagamento efetivado (pago, confirmado ou boleto liquidado). Cancelamento não permitido." },
+      {
+        success: false,
+        code: "TITULO_LIQUIDADO",
+        message:
+          "Esta proposta tem titulo liquidado. Cancelar a proposta nao devolve o dinheiro — " +
+          "o caso e devolucao, e precisa passar pelo financeiro antes."
+      },
       { status: 409 }
     );
+  }
+
+  // 1b) Cobrancas ativas, pelo VEREDITO compartilhado, com o subconjunto de
+  //     dinheiro (RECUSAS_DE_DINHEIRO).
+  //
+  //     Cancelar a proposta e ENCERRAR O PEDIDO, nao refaturar: nota fiscal
+  //     autorizada e producao ativa NAO bloqueiam aqui (decisao 13 da spec).
+  //     Elas protegem o refaturamento e valem nas rotas de cancelamento de
+  //     cobranca.
+  //
+  //     MUDANCA DE COMPORTAMENTO: a regra antiga tambem barrava por
+  //     `confirmado === true` isolado. Faturado aprovado e recebimento futuro
+  //     autorizado, nao dinheiro recebido — mesmo criterio da regra 4. Isso
+  //     destrava 268 propostas que hoje nao podem ser canceladas sem ter
+  //     recebido nada.
+  const cobrancasAtivas = pagamentos.filter(
+    (p) => !STATUS_INATIVOS.includes(String(p.status || "").trim().toUpperCase())
+  );
+
+  // Uma passada por cobranca. Sao 1 ou 2 na esmagadora maioria das propostas,
+  // e isto roda uma vez por acao do usuario.
+  for (const cobranca of cobrancasAtivas) {
+    const elegibilidade = await avaliarCancelamentoNoServidor(supabase, cobranca.id, RECUSAS_DE_DINHEIRO);
+
+    if (!elegibilidade.ok) {
+      return NextResponse.json(
+        { success: false, code: elegibilidade.erro, message: elegibilidade.mensagem },
+        { status: elegibilidade.erro === "NAO_ENCONTRADA" ? 404 : 503 }
+      );
+    }
+
+    if (!elegibilidade.veredito.pode) {
+      return NextResponse.json(
+        { success: false, code: elegibilidade.veredito.code, message: elegibilidade.veredito.message },
+        { status: 409 }
+      );
+    }
   }
 
   if (movimentosDebitoAtivos.length > 0) {

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
+import { RECUSAS_CANCELAMENTO_TITULO, isFamiliaFaturado } from "@/features/cobrancas/cancelamento-elegibilidade";
 
 /**
  * Cancelamento de UM título faturado do Registro de Recebíveis.
@@ -36,13 +38,50 @@ type BoletoRow = {
   id_boleto_c6: string | null;
   status: string | null;
   paid_at: string | null;
+  is_faturado: boolean | null;
 };
 
-type PagamentoRow = {
-  id: string;
-  status: string | null;
-  paid_at: string | null;
-};
+const STATUS_COBRANCA_INATIVA = ["CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"];
+
+/**
+ * Qual cobrança de `pagamentos_v2` é a mãe deste título?
+ *
+ * Duas vias, na mesma ordem do dossiê do veredito:
+ *  - `id_pagamento` gravado no título (o normal);
+ *  - fallback legado por `id_int`, para os 266 títulos faturados gravados sem
+ *    `id_pagamento`. Só vale quando a proposta tem UMA cobrança da família
+ *    faturado; com mais de uma não dá para afirmar de quem é o título, e a
+ *    resposta é "AMBIGUO" — recusar é mais barato que cancelar o título errado.
+ *
+ * `null` = a cobrança não foi encontrada. O título é cancelado assim mesmo:
+ * título órfão de cobrança não tem mãe para proteger.
+ */
+async function resolverCobrancaMae(
+  supabase: SupabaseClient,
+  boleto: BoletoRow
+): Promise<string | "AMBIGUO" | null> {
+  if (boleto.id_pagamento) {
+    const { data } = await supabase
+      .from("pagamentos_v2")
+      .select("id")
+      .eq("id_pagamento", boleto.id_pagamento)
+      .maybeSingle<{ id: string }>();
+    if (data?.id) return data.id;
+  }
+
+  if (boleto.is_faturado !== true || boleto.id_int == null) return null;
+
+  const { data: candidatas } = await supabase
+    .from("pagamentos_v2")
+    .select("id, tipo_cobranca")
+    .eq("id_int", boleto.id_int)
+    .returns<{ id: string; tipo_cobranca: string | null }[]>();
+
+  const faturadas = (candidatas || []).filter((row) => isFamiliaFaturado(row.tipo_cobranca));
+  if (faturadas.length === 1) return faturadas[0].id;
+  if (faturadas.length > 1) return "AMBIGUO";
+  return null;
+}
 
 export async function POST(request: Request) {
   let body: CancelarRequest;
@@ -89,7 +128,7 @@ export async function POST(request: Request) {
   // 1. Título — fonte da verdade é o banco.
   const { data: boleto, error: fetchErr } = await supabase
     .from("boletos")
-    .select("id, id_int, id_empresa, id_pagamento, id_boleto_c6, status, paid_at")
+    .select("id, id_int, id_empresa, id_pagamento, id_boleto_c6, status, paid_at, is_faturado")
     .eq("id", boletoId)
     .maybeSingle<BoletoRow>();
 
@@ -102,12 +141,16 @@ export async function POST(request: Request) {
 
   const idEmpresa = Number(boleto.id_empresa);
 
-  // Empresas 1 e 3: nada muda.
-  if (idEmpresa !== EMPRESA_BIRO) {
-    return NextResponse.json({ success: true, delegarLegado: true, idEmpresa });
-  }
-
   // 2. Bloqueios de liquidação, no título.
+  //
+  // ORDEM MUDOU: estas checagens ficavam DEPOIS do retorno `delegarLegado`, ou
+  // seja, as empresas 1 e 3 saíam daqui sem verificação nenhuma e o navegador
+  // chamava o C6 direto. Agora valem para as três empresas.
+  //
+  // A granularidade é do título ALVO, e é por isso que continua aqui e não no
+  // veredito: o veredito raciocina sobre a COBRANÇA ("algum título pago"), o
+  // que num faturado de 3 parcelas com a primeira paga impediria cancelar a
+  // terceira.
   if (boleto.paid_at != null) {
     return NextResponse.json(
       { success: false, code: "PAGAMENTO_QUITADO", message: "Título já liquidado. Cancelamento não permitido." },
@@ -123,30 +166,53 @@ export async function POST(request: Request) {
     );
   }
 
-  // 3. Bloqueios na cobrança que originou o título.
-  if (boleto.id_pagamento) {
-    const { data: pagamento } = await supabase
-      .from("pagamentos_v2")
-      .select("id, status, paid_at")
-      .eq("id_pagamento", boleto.id_pagamento)
-      .maybeSingle<PagamentoRow>();
+  // 3. Cobrança-mãe, pelo VEREDITO compartilhado. Também vale para as três
+  //    empresas, pelo mesmo motivo do passo 2.
+  //
+  //    O que bloqueia é LIQUIDAÇÃO, não conferência. Num faturado, `confirmado`
+  //    e `data_confirmacao` são preenchidos quando a cobrança passa pela
+  //    Conferência — ela segue em aberto, e é exatamente aí que cancelar o
+  //    boleto faz sentido. Isso agora é regra do núcleo (`COBRANCA_RECEBIDA`
+  //    olha `status = PAID` e `paid_at`, nunca `confirmado`), e não mais um
+  //    if local.
+  const maeId = await resolverCobrancaMae(supabase, boleto);
 
-    if (pagamento) {
-      // O que bloqueia é LIQUIDAÇÃO, não conferência. Num faturado, `confirmado`
-      // e `data_confirmacao` são preenchidos quando a cobrança passa pela
-      // Conferência — ela segue em aberto, e é exatamente aí que cancelar o
-      // boleto faz sentido. Medido em produção: o 20084, pago de verdade, tem
-      // `status = PAID` e `paid_at`; o 20200 e o 20101, em aberto, têm
-      // `confirmado = true` com `paid_at` nulo. Tratar `confirmado` como quitação
-      // travava o cancelamento de todo título já conferido.
-      const statusPagamento = String(pagamento.status ?? "").toUpperCase();
-      if (statusPagamento === "PAID" || pagamento.paid_at != null) {
-        return NextResponse.json(
-          { success: false, code: "PAGAMENTO_QUITADO", message: "Cobrança liquidada. Cancelamento não permitido." },
-          { status: 409 }
-        );
-      }
+  if (maeId === "AMBIGUO") {
+    return NextResponse.json(
+      {
+        success: false,
+        code: "VINCULO_AMBIGUO",
+        message:
+          "Não foi possível identificar com segurança a cobrança deste título (registro antigo, sem vínculo gravado). " +
+          "Peça conferência manual antes de cancelar."
+      },
+      { status: 409 }
+    );
+  }
+
+  if (maeId) {
+    const elegibilidade = await avaliarCancelamentoNoServidor(supabase, maeId, RECUSAS_CANCELAMENTO_TITULO);
+
+    if (!elegibilidade.ok) {
+      return NextResponse.json(
+        { success: false, code: elegibilidade.erro, message: elegibilidade.mensagem },
+        { status: elegibilidade.erro === "NAO_ENCONTRADA" ? 404 : 503 }
+      );
     }
+
+    if (!elegibilidade.veredito.pode) {
+      return NextResponse.json(
+        { success: false, code: elegibilidade.veredito.code, message: elegibilidade.veredito.message },
+        { status: 409 }
+      );
+    }
+  }
+
+  // 4. Empresas 1 e 3 seguem no fluxo legado — o cliente chama o C6. A
+  //    delegação passou para DEPOIS das checagens: o que muda para elas nesta
+  //    etapa é só isso, ganharem verificação antes de acionar o banco.
+  if (idEmpresa !== EMPRESA_BIRO) {
+    return NextResponse.json({ success: true, delegarLegado: true, idEmpresa });
   }
 
   // 4. Sem identificador bancário não há o que cancelar no Inter.
@@ -205,18 +271,68 @@ export async function POST(request: Request) {
     );
   }
 
-  // O n8n já excluiu a linha de `boletos` e decidiu sobre pagamentos_v2.
-  // Aqui só confirmamos a exclusão — nenhuma escrita é repetida.
+  // O n8n excluiu a linha de `boletos`. Aqui confirmamos pelo BANCO — nunca
+  // pelo que ele respondeu.
   const { data: aindaExiste } = await supabase
     .from("boletos")
     .select("id")
     .eq("id", boletoId)
     .maybeSingle<{ id: string }>();
 
+  // Defesa idempotente contra cancelamento em cascata da cobrança.
+  //
+  // Medido em 25/08/2026 lendo o workflow vivo: o ramo de cancelamento do
+  // VIBE-BOLETO-FATURADO-INTER NÃO escreve em `pagamentos_v2` — as duas saídas
+  // do `IF Sem parcela ativa` vão para o mesmo nó de resposta. Ou seja, hoje
+  // este bloco NÃO dispara.
+  //
+  // Fica porque é barato, é no-op quando não há o que reativar, e protege a
+  // invariante do passo 1 (a cobrança continua viva) caso a cascata volte num
+  // save da UI do n8n — já aconteceu de correção sumir assim duas vezes.
+  //
+  // A decisão sai da RELEITURA, nunca de `retorno.pagamento_cancelado`: aquele
+  // campo vem `true` sem que nada tenha sido escrito.
+  let cobrancaReativada = false;
+  if (maeId && maeId !== "AMBIGUO") {
+    const { data: mae } = await supabase
+      .from("pagamentos_v2")
+      .select("status")
+      .eq("id", maeId)
+      .maybeSingle<{ status: string | null }>();
+
+    if (mae && STATUS_COBRANCA_INATIVA.includes(String(mae.status ?? "").toUpperCase())) {
+      const { error: erroReativar } = await supabase
+        .from("pagamentos_v2")
+        .update({ status: "A_VENCER", motivo_cancela: null, boleto_enviadoo: false })
+        .eq("id", maeId);
+
+      if (erroReativar) {
+        console.error("[CancelarBoletoFaturado] Cascata detectada e falha ao reativar:", erroReativar.message);
+        return NextResponse.json(
+          {
+            success: false,
+            code: "FALHA_REATIVACAO",
+            message:
+              "O título foi cancelado no banco, mas a cobrança foi cancelada junto e não foi possível reabri-la. " +
+              "NÃO salve a proposta — acerte a cobrança na aba Pagamentos."
+          },
+          { status: 409 }
+        );
+      }
+      cobrancaReativada = true;
+    }
+  }
+
   return NextResponse.json({
     success: true,
     boletoExcluido: !aindaExiste,
-    parcelasAtivasRestantes: retorno.parcelas_ativas_restantes ?? null,
-    pagamentoCancelado: retorno.pagamento_cancelado ?? null
+    cobrancaReativada,
+    // Repassados só como DIAGNÓSTICO, nunca para decidir: `pagamento_cancelado`
+    // afirma cancelamento sem escrita, e `parcelas_ativas_restantes` é contado
+    // por `id_int`, misturando cobranças da mesma proposta.
+    diagnosticoWebhook: {
+      parcelas_ativas_restantes: retorno.parcelas_ativas_restantes ?? null,
+      pagamento_cancelado: retorno.pagamento_cancelado ?? null
+    }
   });
 }

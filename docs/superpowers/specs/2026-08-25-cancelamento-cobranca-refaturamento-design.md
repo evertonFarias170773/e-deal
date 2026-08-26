@@ -247,7 +247,7 @@ Deixa de ser impeditivo por si só. O que impede são as regras 1, 2 e 3, verifi
 | Rota | O que muda | O que sai |
 |---|---|---|
 | `POST /api/cobrancas/cancelar-externo` | Os passos 7 e 7b saem e viram a chamada a `avaliarCancelamento`. Passa a aceitar `A_VENCER + confirmado` quando o veredito disser `OK`. **Não cancela títulos** — título em aberto é recusa | `{ success, partial, resultados }`; recusa → 409 com `code` e `message` do veredito |
-| `POST /api/cobrancas/cancelar-pago` | Mantém o que é dele (super admin, motivo de catálogo, destino do valor, mês fechado). O passo 6 (produção) vira a chamada ao veredito — e assim **herda nota fiscal e título liquidado**, que hoje não verifica | Contrato atual, inalterado |
+| `POST /api/cobrancas/cancelar-pago` | Mantém o que é dele (super admin, motivo de catálogo, destino do valor, mês fechado). O passo 6 (produção) vira a chamada ao veredito com o subconjunto `RECUSAS_COBRANCA_PAGA` = **nota fiscal + produção**. Ganha a checagem de nota, que nenhuma rota fazia | Contrato atual + os códigos `NOTA_AUTORIZADA` e `FALHA_LEITURA` |
 | `POST /api/cobrancas/cancelar-boleto-faturado` | Consulta o veredito da cobrança-mãe **antes** de acionar Inter/legado; e passa a garantir a invariante do passo 1 (§7) | Payload atual + `code` do veredito na recusa + `cobrancaReativada: boolean` |
 | `POST /api/orcamentos/cancelar-proposta` | Consulta o veredito por cobrança ativa mas aplica **só as regras de dinheiro** (`COBRANCA_RECEBIDA`, `TITULO_LIQUIDADO`) — decisão 13. `NOTA_AUTORIZADA` e `PRODUCAO_ATIVA` são **ignoradas** aqui | Recusa passa a dizer o que fazer, não só "não pode" |
 | `GET /api/cobrancas/pode-cancelar` | **Nova.** Leitura pura para a UI | O veredito |
@@ -261,8 +261,14 @@ O **modo restrito** (`propostas.cancelar_cobranca_nao_paga`) continua sendo uma 
 
 | Chamador | Recusas aplicadas |
 |---|---|
-| `cancelar-externo`, `cancelar-pago`, `cancelar-boleto-faturado`, `pode-cancelar` | Todas as seis |
-| `cancelar-proposta` | Só `COBRANCA_RECEBIDA` e `TITULO_LIQUIDADO` |
+| `cancelar-externo`, `pode-cancelar` | Todas |
+| `cancelar-proposta` | `RECUSAS_DE_DINHEIRO` — só `COBRANCA_RECEBIDA` e `TITULO_LIQUIDADO` (decisão 13) |
+| `cancelar-pago` | `RECUSAS_COBRANCA_PAGA` — só `NOTA_AUTORIZADA` e `PRODUCAO_ATIVA` |
+| `cancelar-boleto-faturado` | `RECUSAS_CANCELAMENTO_TITULO` — só `COBRANCA_RECEBIDA` |
+
+**Por que `cancelar-boleto-faturado` aplica só uma.** É operação de **título**, não de cobrança, e é o passo 1 — cancelar o título aberto é o serviço que ela presta. `TITULO_LIQUIDADO` tem granularidade de cobrança ("algum título pago") e impediria cancelar a 3ª parcela de um faturado cuja 1ª foi paga (2 casos reais em 25/08/2026); a checagem do título **alvo** continua na própria rota, que é onde a granularidade existe. `NOTA_AUTORIZADA` e `PRODUCAO_ATIVA` bloqueariam o "cancelar título para reemitir", inclusive no fluxo de salvar orçamento, que chama a mesma rota — cancelar um boleto não invalida NF-e, e estar em produção não congela a forma de pagamento. Medido: dos 58 faturados com título aberto, **zero** em produção e **zero** com nota de produção.
+
+**Por que `cancelar-pago` não aplica as recusas de dinheiro.** Ali o dinheiro recebido é a **premissa**, não o impedimento: aquela rota existe para cancelar o que já foi pago e declarar o destino do valor. `COBRANCA_RECEBIDA` e `TITULO_LIQUIDADO` são duas formas de afirmar o mesmo fato que ela trata. Medido em 25/08/2026: aplicar `TITULO_LIQUIDADO` ali recusaria **150 dos 182 boletos pagos** e mais 20 PIX, exibindo "a cobrança inteira vira devolução — não cancele por aqui" justamente no fluxo de devolução. `CREDITO_CONSUMIDO` fica de fora porque a rota já tem bloqueio próprio de tipo, com mensagem e código específicos; e `TITULO_EM_ABERTO` é da família faturado, que ela recusa antes por tipo.
 
 A ordem de §5 continua valendo dentro de cada subconjunto: quem aplica duas recusas exibe a primeira das duas que se aplicar. O que **nunca** é permitido é um chamador inventar recusa própria — se uma regra nova aparecer, ela nasce no núcleo e os chamadores escolhem se a respeitam.
 

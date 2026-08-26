@@ -573,6 +573,36 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       return false;
     }
 
+    // Vencimento vazio é recusado AQUI, e não pelo banco.
+    //
+    // O input de vencimento é um `type="date"`: limpá-lo grava string vazia no
+    // estado, que segue para `updateNfeDraft` e chega ao Postgres. Lá a coluna
+    // `notas_fiscais_pagamentos.data_vencimento` é `date NOT NULL`, então a
+    // escrita é recusada e o `throw` sobe cru — o usuário via a mensagem técnica
+    // do banco ("invalid input syntax for type date") em vez de saber que faltou
+    // preencher uma data.
+    //
+    // A checagem mora em `handleSave` porque ele é o único ponto por onde as
+    // parcelas editadas passam: o botão Salvar chama daqui, e Concluir chama
+    // `handleSave` antes de validar. Uma trava só cobre os dois caminhos.
+    //
+    // A regra do banco continua valendo e NÃO foi afrouxada: isto apenas troca
+    // quem dá a notícia, e em que língua.
+    const semVencimento = editedPagamentos.filter(
+      (pg) => !String(pg.data_vencimento ?? "").trim()
+    ).length;
+
+    if (semVencimento > 0) {
+      showToast({
+        type: "error",
+        title:
+          semVencimento === 1
+            ? "Informe o vencimento do pagamento antes de salvar."
+            : `Informe o vencimento das ${semVencimento} parcelas sem data antes de salvar.`
+      });
+      return false;
+    }
+
     let hasSignificantChanges = false;
     for (const orig of items) {
       const edited = editedItems.find(it => it.id === orig.id);

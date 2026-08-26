@@ -12,14 +12,14 @@
  */
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
+import { RECUSAS_COBRANCA_PAGA } from "@/features/cobrancas/cancelamento-elegibilidade";
 import {
-  bloqueiaCancelamentoPago,
   DESTINOS_VALOR_CANCELADO,
   isConfirmacaoDeMesAnterior,
   isDestinoValorCancelado,
   isMotivoCancelamentoPago,
   isStatusPagoParaCancelamento,
-  mensagemBloqueioProducao,
   mensagemTipoCobrancaBloqueado,
   montarMotivoCancela,
   referenciaConfirmacaoParaMesFechado,
@@ -105,19 +105,35 @@ export async function POST(request: Request) {
       return erro("NAO_PAGA", "Esta cobranca nao esta paga. Use o cancelamento normal.", 409);
     }
 
-    // 6. Producao ativa bloqueia. Le os DOIS campos: o status diz onde a
-    //    proposta esta no fluxo e is_prd_aprovado diz se ela consta na
-    //    producao — ver bloqueiaCancelamentoPago.
-    if (pagamento.id_int != null) {
-      const { data: proposta } = await supabase
-        .from("propostas")
-        .select("status_interno, is_prd_aprovado")
-        .eq("id_int", pagamento.id_int)
-        .maybeSingle();
+    // 6. Nota fiscal autorizada e producao ativa, pelo VEREDITO compartilhado
+    //    (cancelamento-elegibilidade). A regra de producao morava so aqui;
+    //    agora e a mesma que as outras rotas e a tela aplicam, e junto vem a
+    //    checagem de NOTA FISCAL, que nenhuma rota de cancelamento fazia.
+    //
+    //    O subconjunto e proposital — ver RECUSAS_COBRANCA_PAGA. Nesta rota o
+    //    dinheiro recebido e a PREMISSA, nao o impedimento: aplicar
+    //    COBRANCA_RECEBIDA ou TITULO_LIQUIDADO aqui recusaria o proprio caso
+    //    de uso (150 dos 182 boletos pagos tem titulo liquidado).
+    //
+    //    O coletor rele a cobranca por conta propria. E uma leitura a mais
+    //    sobre a linha ja lida no passo 3, e vale o preco: o criterio fica em
+    //    UM lugar so.
+    const elegibilidade = await avaliarCancelamentoNoServidor(supabase, pagamento.id, RECUSAS_COBRANCA_PAGA);
 
-      if (proposta && bloqueiaCancelamentoPago(proposta)) {
-        return erro("PRODUCAO_ATIVA", mensagemBloqueioProducao(Number(pagamento.id_int), proposta), 409);
-      }
+    if (!elegibilidade.ok) {
+      return erro(
+        elegibilidade.erro === "NAO_ENCONTRADA" ? "NAO_ENCONTRADA" : "FALHA_LEITURA",
+        elegibilidade.mensagem,
+        elegibilidade.erro === "NAO_ENCONTRADA" ? 409 : 503
+      );
+    }
+
+    if (!elegibilidade.veredito.pode) {
+      const { code, message } = elegibilidade.veredito;
+      // `code` do veredito ja e um codigo valido do contrato desta rota
+      // (PRODUCAO_ATIVA existia; NOTA_AUTORIZADA foi acrescentado ao union em
+      // CobrancasProvider). Nenhuma escrita aconteceu ate aqui.
+      return erro(code, message, 409);
     }
 
     // 7. Faturamento ja fechado exige confirmacao explicita. Mesmo fallback

@@ -2028,7 +2028,7 @@ function CompleteForm({
               Os toggles "Verificado", "CPF invalido", "Receber e-mail" e
               "Receber WhatsApp" continuam fora da interface. Os valores seguem no
               estado (carregados do banco) e no payload — nenhum é zerado ao salvar. */}
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Toggle label="Usa Preço Fixo" checked={form.usaPrecoFixo} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("usaPrecoFixo", value)} />
             <Toggle label="Bonus" checked={form.bonusAtivo} disabled={!canEditCredito || form.usaPrecoFixo} onChange={(value) => canEditCredito && onUpdate("bonusAtivo", value)} />
             <Toggle label="Restricao" checked={form.restricao} disabled={!canEditCredito} onChange={(value) => canEditCredito && onUpdate("restricao", value)} />

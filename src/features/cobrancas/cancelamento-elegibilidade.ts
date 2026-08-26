@@ -154,6 +154,60 @@ export const RECUSAS_DE_DINHEIRO: readonly CodigoVeredito[] = [
   "TITULO_LIQUIDADO"
 ];
 
+/**
+ * Subconjunto de `/api/cobrancas/cancelar-pago` — o fluxo excepcional da
+ * cobrança JÁ PAGA (super admin, motivo de catálogo, destino do valor).
+ *
+ * Ali o dinheiro recebido é a PREMISSA, não o impedimento: aquela rota existe
+ * justamente para cancelar o que já foi pago e dizer para onde o valor vai
+ * (devolvido, crédito, ou mantido). Então `COBRANCA_RECEBIDA` e
+ * `TITULO_LIQUIDADO` não se aplicam — são duas formas de afirmar o mesmo fato
+ * que a rota trata.
+ *
+ * Aplicar `TITULO_LIQUIDADO` ali recusaria **150 dos 182 boletos pagos** e
+ * mais 20 PIX (medido em 25/08/2026), com uma mensagem invertida: "vira
+ * devolução, não cancele por aqui" dita justamente pelo fluxo de devolução.
+ *
+ * `CREDITO_CONSUMIDO` também fica de fora porque a rota já tem bloqueio
+ * próprio de tipo (`tipoCobrancaBloqueiaCancelamentoPago`), com mensagem e
+ * código específicos. E `TITULO_EM_ABERTO` é da família faturado, que aquela
+ * rota recusa antes por tipo.
+ *
+ * O que ela GANHA do veredito: nota fiscal autorizada — que nenhuma rota de
+ * cancelamento verificava — e a regra de produção, que passa a ser
+ * compartilhada em vez de viver só ali.
+ */
+export const RECUSAS_COBRANCA_PAGA: readonly CodigoVeredito[] = [
+  "NOTA_AUTORIZADA",
+  "PRODUCAO_ATIVA"
+];
+
+/**
+ * Subconjunto de `/api/cobrancas/cancelar-boleto-faturado` — o PASSO 1, que
+ * cancela UM título e mantém a cobrança viva.
+ *
+ * É operação de título, não de cobrança, e isso define o que pode barrá-la:
+ * só a cobrança-mãe já liquidada. As demais recusas ou não se aplicam ou
+ * bloqueariam uso legítimo:
+ *
+ * - `TITULO_LIQUIDADO` tem granularidade de COBRANÇA ("algum título pago"),
+ *   e aqui a pergunta é sobre o título ALVO. Num faturado de 3 parcelas com a
+ *   primeira paga, ele impediria cancelar a terceira — 2 casos reais em
+ *   25/08/2026. A checagem do alvo continua na própria rota, que é onde a
+ *   granularidade existe;
+ * - `NOTA_AUTORIZADA` e `PRODUCAO_ATIVA` bloqueariam o "cancelar título para
+ *   reemitir", que é o uso normal — inclusive no fluxo de salvar orçamento,
+ *   que chama esta mesma rota. Cancelar um boleto não invalida NF-e, e estar
+ *   em produção não congela a forma de pagamento. Medido: dos 58 faturados
+ *   com título aberto hoje, ZERO estão em produção e ZERO têm nota de
+ *   produção — não bloqueariam nada agora, e quebrariam o fluxo depois;
+ * - `TITULO_EM_ABERTO` seria absurdo: cancelar o título aberto é o serviço;
+ * - `VINCULO_AMBIGUO` e `CREDITO_CONSUMIDO` não se aplicam a título.
+ */
+export const RECUSAS_CANCELAMENTO_TITULO: readonly CodigoVeredito[] = [
+  "COBRANCA_RECEBIDA"
+];
+
 function normalizar(valor: string | null | undefined): string {
   return String(valor || "").trim().toUpperCase();
 }

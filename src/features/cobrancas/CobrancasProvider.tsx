@@ -36,6 +36,11 @@ export type CancelamentoPagoErrorCode =
   | "NAO_ENCONTRADA"
   | "NAO_PAGA"
   | "PRODUCAO_ATIVA"
+  // Vieram com o veredito compartilhado (cancelamento-elegibilidade): nota
+  // fiscal autorizada passou a bloquear o cancelamento de cobrança paga, e a
+  // indisponibilidade de leitura recusa em vez de assumir "não há nota".
+  | "NOTA_AUTORIZADA"
+  | "FALHA_LEITURA"
   | "MES_FECHADO"
   | "MOTIVO_INVALIDO"
   | "FALHA_CREDITO";
