@@ -73,6 +73,7 @@ import { composeStatusEmArte } from "@/features/orcamentos/mappers";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
 import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import { PermissionGuard } from "@/components/common/PermissionGuard";
+import { RecotarFreteAdminPanel } from "@/features/orcamentos/components/RecotarFreteAdminPanel";
 import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
@@ -5703,6 +5704,29 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
                           ? "Gravando…"
                           : "Grava na hora, sozinha — não passa pelo Salvar do orçamento e não mexe na modalidade nem no valor do frete. A Expedição lê o valor novo no próximo carregamento da tela."}
                       </p>
+
+                      {/*
+                        Peça B, colada na A: a transportadora tinha destino, o
+                        VALOR do frete não. Reusa a recotação do despacho inteira
+                        — mesmas rotas, mesma RPC — só acrescenta a porta.
+                      */}
+                      <div className="border-t border-amber-200 pt-3 dark:border-amber-900">
+                        <label className="mb-2 block text-xs font-bold text-amber-900 dark:text-amber-200">
+                          Corrigir o valor do frete (admin)
+                        </label>
+                        <RecotarFreteAdminPanel
+                          idInt={proposta?.id_int ?? 0}
+                          statusInterno={form.status}
+                          modalidade={form.modalidadeFrete}
+                          onAplicado={() => {
+                            // O frete novo foi gravado direto em `propostas` pela
+                            // RPC — o formulário em memória não sabe. Recarregar
+                            // do servidor evita a tela seguir mostrando o valor
+                            // velho no Resumo.
+                            router.refresh();
+                          }}
+                        />
+                      </div>
                     </div>
                   </PermissionGuard>
                 </div>
