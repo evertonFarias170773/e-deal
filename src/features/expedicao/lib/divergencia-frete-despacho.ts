@@ -73,8 +73,14 @@ export type DivergenciaFreteDespacho = {
   bloqueia: boolean;
   /** Ha algo a exibir na faixa, bloqueando ou nao? */
   temAviso: boolean;
-  /** Frases do que divergiu, para a tela e para a mensagem de recusa. */
+  /** Frases de TUDO que divergiu, para a faixa de aviso da tela. */
   motivos: string[];
+  /**
+   * Subconjunto de `motivos` que de fato TRAVA o despacho — o que vai nas
+   * mensagens de recusa. Desde o paliativo de 26/08/2026 o peso ficou de fora:
+   * ele continua em `motivos` (e portanto avisa) sem entrar aqui.
+   */
+  motivosBloqueio: string[];
   /** Peso aferido excede o cotado alem da tolerancia (200 g ou 5%, o maior). */
   pesoExcedeuMargem: boolean;
   /** Quanto o aferido esta acima do cotado, em pontos percentuais. */
@@ -206,13 +212,41 @@ export function divergenciaFreteDoDespacho(entrada: {
   }
   if (cepMudou) motivos.push("o endereço de entrega mudou");
 
+  // ===========================================================================
+  // PALIATIVO — 26/08/2026, decisao do dono. REVER quando existir o fluxo de
+  // abono ou de cobranca da diferenca de frete.
+  //
+  // O PESO DEIXOU DE BLOQUEAR O DESPACHO. O calculo continua inteiro: a
+  // tolerancia, o excesso e o percentual seguem sendo apurados e entram em
+  // `motivos`, entao a tela avisa como antes. O que mudou e so que peso divergente
+  // nao entra mais em `bloqueia`.
+  //
+  // POR QUE
+  //   A unica saida que o bloqueio oferecia era recotar — e recotar so aceita o
+  //   que BARATEIA (`exp_recot_dif_etapa2_ck`: diferenca <= 0, e a RPC levanta
+  //   EXP_RECOT_ENCARECE). Peso acima do cotado significa frete MAIS CARO, ou
+  //   seja, exatamente o que a recotacao nao pode aplicar. O pedido ficava parado
+  //   sem caminho, esperando um fluxo de abono/cobranca que ainda nao existe.
+  //   Medido em 26/08/2026 nos pedidos elegiveis da base: a unica opcao com
+  //   diferenca negativa era trocar para retirada no balcao.
+  //
+  // O QUE CONTINUA BLOQUEANDO
+  //   CEP mudado e transporte trocado, exatamente como antes — nesses dois a
+  //   recotacao pode de fato resolver, porque cotar para outro destino ou outro
+  //   transporte pode sair mais barato.
+  // ===========================================================================
+  const motivosBloqueio: string[] = [];
+  if (transporteMudou) motivosBloqueio.push("o transporte mudou em relação ao cotado");
+  if (cepMudou) motivosBloqueio.push("o endereço de entrega mudou");
+
   // Fora de CIF nao ha recotacao possivel — informa, nao trava.
-  const bloqueia = entrada.modalidadeEfetiva === "CIF" && motivos.length > 0;
+  const bloqueia = entrada.modalidadeEfetiva === "CIF" && motivosBloqueio.length > 0;
 
   return {
     bloqueia,
     temAviso: motivos.length > 0,
     motivos,
+    motivosBloqueio,
     pesoExcedeuMargem,
     percentualAcimaDoCotado,
     excessoGramas,

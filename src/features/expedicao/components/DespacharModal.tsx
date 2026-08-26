@@ -568,7 +568,7 @@ export function DespacharModal({
       showToast({
         type: "warning",
         title: "Despacho bloqueado",
-        description: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivos)}.`
+        description: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivosBloqueio)}.`
       });
       return;
     }
@@ -718,7 +718,7 @@ export function DespacharModal({
       showToast({
         type: "warning",
         title: "Prepostagem bloqueada",
-        description: `Recote o frete antes de emitir: ${frasearMotivos(divergencia.motivos)}.`
+        description: `Recote o frete antes de emitir: ${frasearMotivos(divergencia.motivosBloqueio)}.`
       });
       return;
     }
@@ -1209,7 +1209,7 @@ export function DespacharModal({
                     </p>
                   ) : divergencia.bloqueia ? (
                     <p className="text-xs font-medium text-rose-700 dark:text-rose-400">
-                      Bloqueado: {frasearMotivos(divergencia.motivos)}. Emitir prepostagem é contratar transporte — não
+                      Bloqueado: {frasearMotivos(divergencia.motivosBloqueio)}. Emitir prepostagem é contratar transporte — não
                       dá para emitir um envio que não é o que foi cotado.
                     </p>
                   ) : null}
@@ -1311,6 +1311,15 @@ export function DespacharModal({
                   O frete da proposta ({formatCurrency(pedido.freteValor ?? 0)}) não paga este envio. Para destravar,{" "}
                   <strong>recote e aplique</strong> uma opção — o que depende de liberação de um administrador.
                 </>
+              ) : divergencia.pesoExcedeuMargem ? (
+                <>
+                  {/* PALIATIVO 26/08/2026: peso divergente avisa e NAO trava.
+                      Rever quando existir o fluxo de abono ou de cobranca da
+                      diferenca — ver `divergencia-frete-despacho.ts`. */}
+                  O frete da proposta (<strong>{formatCurrency(pedido.freteValor ?? 0)}</strong>) foi calculado para um
+                  peso menor e <strong>pode estar defasado</strong>. O despacho segue liberado: por ora não há como
+                  cobrar nem abonar a diferença, e segurar o pedido não resolveria — recotar só aceita o que barateia.
+                </>
               ) : (
                 <>
                   O valor na proposta continua <strong>{formatCurrency(pedido.freteValor ?? 0)}</strong> — despachar não
@@ -1341,7 +1350,7 @@ export function DespacharModal({
             </span>
           ) : divergencia.bloqueia ? (
             <span className="text-xs font-medium text-rose-700 dark:text-rose-400">
-              Bloqueado: {frasearMotivos(divergencia.motivos)}
+              Bloqueado: {frasearMotivos(divergencia.motivosBloqueio)}
             </span>
           ) : null}
           <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltantes.length > 0 || divergencia.bloqueia} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">

@@ -257,8 +257,8 @@ checar(
   false
 );
 checar(
-  "volume pequeno: 1 grama além dos 200 g bloqueia",
-  divergenciaFreteDoDespacho({ ...pequeno, pesoAferidoGramas: 401 }).bloqueia,
+  "volume pequeno: 1 grama além dos 200 g AVISA (paliativo 26/08/2026: nao bloqueia)",
+  divergenciaFreteDoDespacho({ ...pequeno, pesoAferidoGramas: 401 }).pesoExcedeuMargem,
   true
 );
 
@@ -277,8 +277,8 @@ checar(
   false
 );
 checar(
-  "volume grande: 1 grama acima dos 5% bloqueia",
-  divergenciaFreteDoDespacho({ ...grande, pesoAferidoGramas: 10501 }).bloqueia,
+  "volume grande: 1 grama acima dos 5% AVISA (paliativo 26/08/2026: nao bloqueia)",
+  divergenciaFreteDoDespacho({ ...grande, pesoAferidoGramas: 10501 }).pesoExcedeuMargem,
   true
 );
 // O piso não vira teto: 200 g em cima de 10 kg são 2%, e continuam liberados.
@@ -311,8 +311,8 @@ checar(
   false
 );
 checar(
-  "3120 g: 201 g de excesso bloqueiam",
-  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3321 }).bloqueia,
+  "3120 g: 201 g de excesso AVISAM (paliativo 26/08/2026: nao bloqueiam)",
+  divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3321 }).pesoExcedeuMargem,
   true
 );
 
@@ -329,7 +329,14 @@ checar(
 );
 // O caso real do 20961: 3.120 g cotados, 3.500 g despachados = +12,2%.
 const d20961 = divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3500 });
-checar("20961 bloqueia por peso", d20961.bloqueia, true);
+checar("20961 NAO bloqueia por peso (paliativo 26/08/2026)", d20961.bloqueia, false);
+// PALIATIVO 26/08/2026: peso divergente sai de `bloqueia` e fica so em `motivos`.
+// CEP e transporte seguem travando. Rever com o fluxo de abono/cobranca.
+checar("peso divergente entra em motivos (avisa)", d20961.motivos.some((m) => m.includes("peso")), true);
+checar("peso divergente NAO entra em motivosBloqueio", d20961.motivosBloqueio.some((m) => m.includes("peso")), false);
+checar("so peso divergente: avisa", divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3321 }).temAviso, true);
+checar("so peso divergente: NAO bloqueia", divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3321 }).bloqueia, false);
+checar("so peso divergente: motivosBloqueio vazio", divergenciaFreteDoDespacho({ ...fiel, pesoAferidoGramas: 3321 }).motivosBloqueio.length, 0);
 checar("20961 marca a dimensão peso", d20961.pesoExcedeuMargem, true);
 checar("20961 mede o excesso", Number((d20961.percentualAcimaDoCotado! * 100).toFixed(1)), 12.2);
 checar("20961 mede o excesso em gramas", d20961.excessoGramas, 380);

@@ -182,7 +182,7 @@ export async function despachar(
   if (divergencia.bloqueia) {
     return {
       success: false,
-      error: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivos)}.`
+      error: `Recote o frete antes de despachar: ${frasearMotivos(divergencia.motivosBloqueio)}.`
     };
   }
 
