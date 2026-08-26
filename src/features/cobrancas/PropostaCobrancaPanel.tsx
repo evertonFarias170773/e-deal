@@ -328,6 +328,11 @@ export function PropostaCobrancaPanel({
    * se o PIX já tiver sido gerado por outra tentativa, retorna os dados
    * existentes sem rechamar o Banco Inter. Nunca cria pagamento novo nem
    * mexe em crédito — só (re)tenta a integração para a MESMA cobrança.
+   *
+   * Nome e CPF/CNPJ do devedor NÃO são enviados: a rota lê os dois da linha de
+   * `pagamentos_v2`. Este era o pior caso do bug do pagador — mandava
+   * `pagador.nome` junto com `proposta.cliente.documento`, ou seja, o nome de
+   * uma pessoa com o documento de outra.
    */
   async function tentarGerarPixNovamente(
     cobrancaId: string,
@@ -348,8 +353,6 @@ export function PropostaCobrancaPanel({
           valorNominal,
           dataVencimento: getDefaultVencimento(0),
           telefone: proposta.contato?.whatsapp || proposta.cliente?.whatsapp || "",
-          cpfCnpj: proposta.cliente?.documento || "",
-          nome: pagador?.nome || proposta.cliente?.nome || "Cliente",
           endereco: `${proposta.enderecoEntrega?.endereco || ""}, ${proposta.enderecoEntrega?.numero || ""} ${proposta.enderecoEntrega?.complemento || ""}`.trim(),
           cidade: proposta.enderecoEntrega?.cidade || "",
           uf: proposta.enderecoEntrega?.uf || "",

@@ -211,21 +211,27 @@ const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g,
  *
  * Roteamento por empresa fica na rota /api/cobrancas/gerar-boleto: empresa 2
  * (Ideal Birô) vai para o Inter, as demais seguem no C6.
+ *
+ * A IDENTIDADE DO SACADO NÃO SAI DAQUI. `name`, `documento` e `id_cliente` são
+ * preenchidos pela rota, lendo a linha de `pagamentos_v2` — que é gravada com o
+ * pagador (`propostas.id_faturado`). Este payload montava esses campos a partir
+ * de `proposta.cliente`, e o boleto saía no nome de quem não paga. Só o
+ * `cobrancaId` viaja daqui, para a rota saber QUAL linha ler.
  */
 function montarPayloadBoletoAVista(params: {
   proposta: Proposta;
   valor: number;
   idPagamento: string;
   idEmpresa: number;
+  cobrancaId: string;
 }): Record<string, unknown> {
-  const { proposta, valor, idPagamento, idEmpresa } = params;
+  const { proposta, valor, idPagamento, idEmpresa, cobrancaId } = params;
 
   const payload: Record<string, unknown> = {
     external_reference_id: String(proposta.id_int),
     valor_total: roundMoney(valor),
-    name: proposta.cliente.nome,
+    cobrancaId,
     id_pagamento: idPagamento,
-    documento: proposta.cliente.documento,
     email: proposta.contato?.email?.trim() || proposta.cliente?.email?.trim() || "",
     logradouro: proposta.enderecoEntrega?.endereco || "",
     numero: proposta.enderecoEntrega?.numero || "S/N",
@@ -239,7 +245,6 @@ function montarPayloadBoletoAVista(params: {
     multa: 0,
     juros: 0,
     descricao: "O Pedido entrará em produção após a confirmação do pagamento.",
-    id_cliente: proposta.cliente.idCliente,
     nf: "",
     status: "A_RECEBER",
     "e-faturado": false,
@@ -252,9 +257,9 @@ function montarPayloadBoletoAVista(params: {
   };
 
   // O Inter recusa campos com máscara. O C6 continua recebendo os valores
-  // exatamente como recebia antes.
+  // exatamente como recebia antes. `documento` é limpo na rota, junto com a
+  // leitura do pagador.
   if (idEmpresa === 2) {
-    payload.documento = soDigitos(payload.documento);
     payload.zip_code = soDigitos(payload.zip_code);
     payload.contato = soDigitos(payload.contato);
     payload.whats = soDigitos(payload.whats);
@@ -664,7 +669,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
                   proposta,
                   valor: values.valor,
                   idPagamento: equivalente.id_pagamento,
-                  idEmpresa
+                  idEmpresa,
+                  cobrancaId: equivalente.id
                 })
               )
             });
@@ -837,7 +843,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           proposta,
           valor: values.valor,
           idPagamento: createdRow.id_pagamento || String(proposta.id_int),
-          idEmpresa
+          idEmpresa,
+          cobrancaId
         });
 
         const sessionResponse = await client.auth.getSession();
@@ -860,8 +867,9 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           valorNominal: roundMoney(values.valor),
           dataVencimento: values.vencimento || new Date().toISOString().split("T")[0],
           telefone: proposta.contato?.whatsapp || proposta.cliente.whatsapp || "",
-          cpfCnpj: proposta.cliente.documento,
-          nome: proposta.cliente.nome,
+          // `nome`/`cpfCnpj` não são mais enviados: a rota lê os dois da linha
+          // de pagamentos_v2 (o pagador). Mandar daqui era o que fazia o Inter
+          // receber o cliente da proposta no lugar de quem paga.
           endereco: proposta.enderecoEntrega?.endereco || "",
           cidade: proposta.enderecoEntrega?.cidade || "",
           uf: proposta.enderecoEntrega?.uf || "",
@@ -941,22 +949,27 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           return found;
         }
 
+        // Fallback de exibição: só aparece quando o reload não devolve a linha
+        // recém-criada. Usa o PAGADOR (`payloadInicial`, o mesmo que foi
+        // gravado), e não `proposta.cliente` — o mapper real também lê esses
+        // campos da linha (resolveCliente/resolveDocumento em mappers.ts), então
+        // este objeto passa a mostrar exatamente o que a tela mostraria depois.
         return {
           id: cobrancaId,
           id_pagamento: `${proposta.id_int}-${tokenPublico}`,
           os_ideal: "",
           id_int: proposta.id_int,
-          id_cliente: proposta.cliente.idCliente,
+          id_cliente: payloadInicial.id_cliente,
           valor: values.valor,
           status: isFaturadoType ? "A_VENCER" : "A_RECEBER",
           tipo_cobranca: values.tipoCobranca,
           created_at: new Date().toISOString(),
           paid_at: undefined,
           vencimento: values.vencimento || undefined,
-          cliente: proposta.cliente.nome,
+          cliente: payloadInicial.cliente,
           empresa: proposta.empresa,
           descricao: `Cobrança ${values.tipoCobranca} registrada.`,
-          documento: proposta.cliente.documento || "",
+          documento: payloadInicial.documento || "",
           atendente: proposta.vendedor || "",
           confirmado: false,
           id_empresa: idEmpresa,
@@ -966,8 +979,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           proposta: {
             id_int: proposta.id_int,
             statusProposta: proposta.status,
-            cliente: proposta.cliente.nome,
-            documento: proposta.cliente.documento || "",
+            cliente: payloadInicial.cliente,
+            documento: payloadInicial.documento || "",
             valorTotal: proposta.resumo.valorTotal,
             valorPendente: proposta.resumo.valorTotal - values.valor,
             empresaProposta: proposta.empresa,
@@ -1014,20 +1027,21 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const found = loadResult.cobrancas.find((item) => item.id === cobrancaId) ||
                     loadResult.cobrancasStats.find((item) => item.id === cobrancaId);
 
+      // Mesmo fallback de exibição do ramo acima: pagador, não cliente da proposta.
       return result.data || found || {
         id: cobrancaId,
         id_pagamento: `${proposta.id_int}-${tokenPublico}`,
         os_ideal: "",
         id_int: proposta.id_int,
-        id_cliente: proposta.cliente.idCliente,
+        id_cliente: payloadInicial.id_cliente,
         valor: values.valor,
         status: "A_RECEBER",
         tipo_cobranca: values.tipoCobranca,
         created_at: new Date().toISOString(),
-        cliente: proposta.cliente.nome,
+        cliente: payloadInicial.cliente,
         empresa: proposta.empresa,
         descricao: `Cobrança ${values.tipoCobranca} registrada.`,
-        documento: proposta.cliente.documento || "",
+        documento: payloadInicial.documento || "",
         atendente: proposta.vendedor || "",
         confirmado: false,
         id_empresa: idEmpresa,
@@ -1036,8 +1050,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         proposta: {
           id_int: proposta.id_int,
           statusProposta: proposta.status,
-          cliente: proposta.cliente.nome,
-          documento: proposta.cliente.documento || "",
+          cliente: payloadInicial.cliente,
+          documento: payloadInicial.documento || "",
           valorTotal: proposta.resumo.valorTotal,
           valorPendente: proposta.resumo.valorTotal - values.valor,
           empresaProposta: proposta.empresa,

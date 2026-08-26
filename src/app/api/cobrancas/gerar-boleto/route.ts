@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
+const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g, "");
+
+/**
+ * Emissão do boleto à vista (C6 / Inter Birô).
+ *
+ * A identidade do sacado (`name`, `documento`, `id_cliente`) NÃO vem do corpo
+ * da requisição: é lida de `pagamentos_v2` aqui dentro, antes de falar com o
+ * provedor. O front montava esses campos a partir de `proposta.cliente`,
+ * enquanto a linha da cobrança é gravada com o pagador
+ * (`propostas.id_faturado`) — o boleto saía no nome de quem não paga. A rota do
+ * Cartão Asaas já lia da linha; este é o mesmo contrato.
+ *
+ * O contrato com o n8n não muda: os mesmos campos seguem no payload, só que
+ * preenchidos por quem tem a fonte da verdade.
+ */
 export async function POST(request: Request) {
   let webhookBody: Record<string, unknown>;
 
@@ -25,11 +40,79 @@ export async function POST(request: Request) {
 
   const rotuloProvedor = isBiroInter ? "Inter (Biro)" : "C6";
 
+  // Inicializa o Supabase ANTES do webhook: a identidade do sacado precisa
+  // estar resolvida antes de a cobrança existir no provedor. Antes o cliente
+  // só era criado depois da emissão, para gravar a linha digitável.
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    console.error("[API][GerarBoleto] Nao foi possivel inicializar cliente Supabase no servidor.");
+    return NextResponse.json(
+      { success: false, message: "Erro interno ao conectar ao banco de dados no servidor." },
+      { status: 500 }
+    );
+  }
+
+  // `cobrancaId` (UUID) é a chave preferida; `id_pagamento` fica como fallback
+  // para qualquer chamador que ainda não mande o UUID.
+  const cobrancaId = String(webhookBody.cobrancaId ?? "").trim();
+  const idPagamento = String(webhookBody.id_pagamento ?? "").trim();
+
+  if (!cobrancaId && !idPagamento) {
+    return NextResponse.json(
+      { success: false, message: "Requisicao sem cobrancaId nem id_pagamento — nao da para identificar o pagador." },
+      { status: 400 }
+    );
+  }
+
+  const consulta = supabase.from("pagamentos_v2").select("id, id_pagamento, id_cliente, cliente, documento");
+  const { data: cobranca, error: cobrancaErr } = await (
+    cobrancaId ? consulta.eq("id", cobrancaId) : consulta.eq("id_pagamento", idPagamento)
+  ).maybeSingle<{ id: string; id_pagamento: string | null; id_cliente: number | null; cliente: string | null; documento: string | null }>();
+
+  if (cobrancaErr || !cobranca) {
+    console.error("[API][GerarBoleto] Cobranca nao localizada para emissao:", cobrancaId || idPagamento, cobrancaErr?.message);
+    return NextResponse.json(
+      { success: false, message: "Cobranca nao encontrada para emissao do boleto." },
+      { status: 404 }
+    );
+  }
+
+  const nomePagador = String(cobranca.cliente ?? "").trim();
+  const documentoPagador = String(cobranca.documento ?? "").trim();
+
+  if (!nomePagador) {
+    return NextResponse.json(
+      { success: false, message: "Cobranca sem nome do pagador gravado — nao e possivel emitir o boleto." },
+      { status: 400 }
+    );
+  }
+
+  const digitosDocumento = soDigitos(documentoPagador);
+  if (digitosDocumento.length !== 11 && digitosDocumento.length !== 14) {
+    return NextResponse.json(
+      { success: false, message: "CPF/CNPJ do pagador invalido ou ausente na cobranca." },
+      { status: 400 }
+    );
+  }
+
+  // Sobrescreve a identidade com a da linha. Os três campos saem da MESMA
+  // linha, então nome, documento e id_cliente nunca podem ser de pessoas
+  // diferentes. O Inter recusa documento com máscara; o C6 segue recebendo a
+  // forma gravada, exatamente como antes.
+  webhookBody.name = nomePagador;
+  webhookBody.documento = isBiroInter ? digitosDocumento : documentoPagador;
+  if (cobranca.id_cliente != null) {
+    webhookBody.id_cliente = cobranca.id_cliente;
+  }
+  // Campo de roteamento interno: não faz parte do contrato do n8n.
+  delete webhookBody.cobrancaId;
+
   console.info(`[API][GerarBoleto] Chamando webhook Boleto ${rotuloProvedor}...`, {
     external_reference_id: webhookBody.external_reference_id,
     id_pagamento: webhookBody.id_pagamento,
     valor_total: webhookBody.valor_total,
     empresa: empresaBoleto,
+    id_cliente_pagador: cobranca.id_cliente,
     webhookUrl
   });
 
@@ -61,16 +144,6 @@ export async function POST(request: Request) {
 
     const webhookResult = Array.isArray(parsedData) ? parsedData[0] : parsedData;
 
-    // Inicializa o Supabase Client
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      console.error("[API][GerarBoleto] Nao foi possivel inicializar cliente Supabase no servidor.");
-      return NextResponse.json(
-        { success: false, message: "Erro interno ao conectar ao banco de dados no servidor." },
-        { status: 500 }
-      );
-    }
-
     // Se o webhook retornou uma linha digitavel, atualizamos a tabela,
     // caso contrario, apenas atualizamos boleto_enviadoo = true
     const updatePayload: Record<string, unknown> = {
@@ -83,13 +156,13 @@ export async function POST(request: Request) {
     
     // Nao sobreescrevemos o id_pagamento se nao retornar id, pois no novo padrao o front ja gerou "id_int-token".
 
-    // Para encontrar qual atualizar, o novo payload usa webhookBody.id_pagamento
-    // Opcionalmente podemos buscar por id_int ou assumir sucesso global
-    // Como nao passamos boleto_id (o UUID do pagamentos_v2), precisamos atualizar via id_pagamento
+    // Atualiza pelo UUID da linha já resolvida acima. O filtro anterior era por
+    // `id_pagamento` vindo do corpo, que tem fallback para `id_int` e podia não
+    // casar com nenhuma linha (ou com a errada).
     const { data: updatedData, error: updateError } = await supabase
       .from("pagamentos_v2")
       .update(updatePayload)
-      .eq("id_pagamento", webhookBody.id_pagamento)
+      .eq("id", cobranca.id)
       .select();
 
     if (updateError) {

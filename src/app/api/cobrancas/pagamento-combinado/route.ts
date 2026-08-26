@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     // usado na emissão do PIX — mesma fonte do enderecoEntrega do front)
     const { data: proposta, error: propostaErr } = await supabaseUser
       .from("propostas")
-      .select("id_int, id_cliente, empresa, id_endereco_ent")
+      .select("id_int, id_cliente, empresa, id_endereco_ent, id_faturado")
       .eq("id_int", idInt)
       .maybeSingle();
 
@@ -115,10 +115,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Cliente não encontrado no sistema." }, { status: 404 });
     }
     const nomeClienteReal = clienteData.nome;
-    const documentoClienteReal = String(clienteData.documento || "").replace(/\D/g, "");
     const telefoneClienteReal = clienteData.whatsapp_1 || clienteData.telefone_fixo || "";
     // Mesma precedência do cadastro oficial (getCadastroCompleto): email_contato > email
     const emailClienteReal = String(clienteData.email_contato || clienteData.email || "").trim();
+
+    // B1. Pagador efetivo da cobrança secundária.
+    //
+    // Duas pessoas convivem neste fluxo e não podem ser confundidas:
+    //   - o CLIENTE da proposta (`idCliente`) é o dono do crédito — é dele o
+    //     saldo em movimento_credito e é nele que a parte E-CREDITO é
+    //     registrada. Nada disso muda aqui;
+    //   - o PAGADOR (`propostas.id_faturado`) é quem paga o restante — é o nome
+    //     que tem de constar no PIX/boleto secundário.
+    //
+    // Mesma resolução do fluxo normal (PropostaCobrancaPanel → CobrancasProvider),
+    // com o mesmo fallback seguro para o cliente quando não há id_faturado.
+    let pagador = { idCliente: Number(idCliente), nome: nomeClienteReal, documento: String(clienteData.documento || "") };
+
+    const idFaturado = proposta.id_faturado ? Number(proposta.id_faturado) : null;
+    if (idFaturado && idFaturado !== Number(proposta.id_cliente)) {
+      const { data: faturadoData, error: faturadoErr } = await supabaseUser
+        .from("clientes")
+        .select("id_cliente, nome, documento")
+        .eq("id_cliente", idFaturado)
+        .maybeSingle();
+
+      if (faturadoErr || !faturadoData) {
+        // Cadastro do pagador ilegível: emitir em nome do cliente seria emitir
+        // para a pessoa errada em silêncio. Para antes de consumir crédito.
+        console.error(`[pagamento-combinado] Pagador ${idFaturado} da proposta ${idInt} não pôde ser lido:`, faturadoErr?.message);
+        return NextResponse.json(
+          { success: false, error: "Pagador da proposta não encontrado no cadastro. Verifique o cliente de faturamento e tente novamente." },
+          { status: 404 }
+        );
+      }
+
+      pagador = {
+        idCliente: Number(faturadoData.id_cliente),
+        nome: String(faturadoData.nome || nomeClienteReal),
+        documento: String(faturadoData.documento || "")
+      };
+    }
+
+    // Nome e documento saem SEMPRE do mesmo objeto: não há como um vir do
+    // pagador e o outro do cliente.
+    const nomePagador = pagador.nome;
+    const documentoPagador = String(pagador.documento || "").replace(/\D/g, "");
 
     // B2. Idempotência: chave persistida por tentativa (não por janela de
     // tempo) — repetir a mesma requisição retorna o resultado anterior;
@@ -166,9 +208,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if ((isBoletoSecundario || isCartaoSecundario) && !documentoClienteReal) {
+    if ((isBoletoSecundario || isCartaoSecundario) && !documentoPagador) {
       return NextResponse.json(
-        { success: false, error: "Documento (CPF/CNPJ) do cliente é obrigatório para gerar a cobrança secundária. Complete o cadastro e tente novamente." },
+        { success: false, error: "Documento (CPF/CNPJ) do pagador é obrigatório para gerar a cobrança secundária. Complete o cadastro e tente novamente." },
         { status: 400 }
       );
     }
@@ -354,11 +396,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: `Saldo insuficiente no momento do processamento (restante não coberto: R$ ${restante.toFixed(2)}). Tente novamente.` }, { status: 409 });
     }
 
-    // E. Criar Cobrança Secundária
+    // E. Criar Cobrança Secundária — no nome do PAGADOR.
+    //
+    // A parte E-CREDITO acima fica com o cliente (dono do saldo); o restante a
+    // pagar fica com quem paga, igual ao fluxo normal (CobrancasProvider grava
+    // `values.pagador*` nestes três campos).
+    //
+    // `documento` é gravado para TODOS os tipos, inclusive PIX. Antes só
+    // boleto/cartão o recebiam, e agora a linha é a fonte da identidade: sem
+    // documento, o retry automático do PIX (/api/cobrancas/gerar-pix) não teria
+    // de onde ler o pagador e recusaria a emissão.
     const payloadSecundaria = {
       id_int: idInt,
-      id_cliente: idCliente,
-      cliente: nomeClienteReal,
+      id_cliente: pagador.idCliente,
+      cliente: nomePagador,
+      documento: pagador.documento || null,
       valor: valorSecundario,
       status: tipoSecundario === "E-FATURADO" ? "A_VENCER" : "A_RECEBER",
       tipo_cobranca: tipoSecundario,
@@ -370,10 +422,7 @@ export async function POST(request: NextRequest) {
       vencimento: vencimento || new Date().toISOString().split("T")[0],
       token_publico: crypto.randomBytes(16).toString("hex"),
       forma_pgto: forma_pgto,
-      forma_fatu: forma_fatu,
-      // Fluxo normal (CobrancasProvider) grava documento na cobrança real de
-      // boleto/cartão — espelhado aqui; PIX permanece como está.
-      ...(isBoletoSecundario || isCartaoSecundario ? { documento: clienteData.documento || null } : {})
+      forma_fatu: forma_fatu
     };
 
     const { data: insertedSecundaria, error: errPagSecundaria } = await supabaseUser
@@ -484,11 +533,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Identidade enviada ao provedor: lida da LINHA recém-criada, não das
+    // variáveis do escopo. Mesma regra das rotas gerar-pix/gerar-boleto — a
+    // fonte é sempre a cobrança gravada, então nome e documento não têm como
+    // divergir entre si nem do que o ERP registrou.
+    const nomeSacado = String(insertedSecundaria.cliente ?? "").trim();
+    const documentoSacado = String(insertedSecundaria.documento ?? "").replace(/\D/g, "");
+
     // Nunca chamar a integração com documento/endereço obrigatório vazio — o
     // webhook falharia com resposta vazia e sem diagnóstico (caso #19514).
     const camposFaltando: string[] = [];
     if (isPix || isBoletoSecundario) {
-      if (!documentoClienteReal) camposFaltando.push("CPF/CNPJ do cliente");
+      if (!nomeSacado) camposFaltando.push("nome do pagador");
+      if (!documentoSacado) camposFaltando.push("CPF/CNPJ do pagador");
       if (!enderecoRow?.endereco?.trim()) camposFaltando.push("endereço");
       if (!enderecoRow?.cidade?.trim()) camposFaltando.push("cidade");
       if (!enderecoRow?.uf?.trim()) camposFaltando.push("UF");
@@ -508,8 +565,8 @@ export async function POST(request: NextRequest) {
           valorNominal: valorSecundario,
           dataVencimento: vencimento || new Date().toISOString().split("T")[0],
           telefone: telefoneClienteReal,
-          cpfCnpj: documentoClienteReal,
-          nome: nomeClienteReal,
+          cpfCnpj: documentoSacado,
+          nome: nomeSacado,
           endereco: `${enderecoRow?.endereco || ""}, ${enderecoRow?.numero || ""} ${enderecoRow?.complemento || ""}`.trim(),
           cidade: enderecoRow?.cidade || "",
           uf: enderecoRow?.uf || "",
@@ -534,9 +591,9 @@ export async function POST(request: NextRequest) {
         const boletoWebhookPayload = {
           external_reference_id: String(idInt),
           valor_total: Math.round(Number(valorSecundario) * 100) / 100,
-          name: nomeClienteReal,
+          name: nomeSacado,
           id_pagamento: insertedSecundaria.id_pagamento || String(idInt),
-          documento: clienteData.documento,
+          documento: documentoSacado,
           email: emailClienteReal,
           logradouro: enderecoRow?.endereco || "",
           numero: enderecoRow?.numero || "S/N",
@@ -550,7 +607,7 @@ export async function POST(request: NextRequest) {
           multa: 0,
           juros: 0,
           descricao: "O Pedido entrará em produção após a confirmação do pagamento.",
-          id_cliente: idCliente,
+          id_cliente: insertedSecundaria.id_cliente,
           nf: "",
           status: "A_RECEBER",
           "e-faturado": false,
