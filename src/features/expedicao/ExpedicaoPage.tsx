@@ -54,6 +54,17 @@ const filterClass =
 
 type AlertaFiltro = "TODOS" | "ATRASADOS" | "HOJE" | "SEM_NF" | "FRETE_INDEFINIDO";
 
+/**
+ * Filtro do card "Em fabricação" — o único que cobre mais de uma etapa.
+ *
+ * Não é uma `EtapaExpedicao`: é um valor de FILTRO, que vive junto dos outros
+ * (`ATIVOS`, `TODAS`) no estado da URL. As etapas continuam as mesmas, e o funil
+ * de status não muda — só a leitura do painel, onde PRODUCAO e ACABAMENTO
+ * significam a mesma coisa para quem despacha: ainda não chegou na bancada.
+ */
+const ETAPA_FABRICACAO = "FABRICACAO";
+const ETAPAS_FABRICACAO: EtapaExpedicao[] = ["PRODUCAO", "ACABAMENTO"];
+
 const ICONE_TIPO_FRETE: Record<TipoFreteNormalizado, typeof Truck> = {
   CORREIOS: Send,
   MOTOBOY: Bike,
@@ -432,8 +443,12 @@ export function ExpedicaoPage() {
   const porEtapa = useMemo(() => {
     const contar = (etapas: EtapaExpedicao[]) => pedidos.filter((p) => etapas.includes(p.etapa)).length;
     return {
-      producao: contar(["PRODUCAO"]),
-      acabamento: contar(["ACABAMENTO"]),
+      // "Em fabricação" reúne PRODUCAO e ACABAMENTO num card só (26/08/2026):
+      // para a Expedição os dois são o mesmo estado — pedido que ainda não
+      // chegou na bancada. A separação interessava à Produção, não a quem
+      // despacha. Os dois sempre contaram pelo MESMO critério (`p.etapa` sobre o
+      // conjunto todo), então a soma é exata, não uma aproximação.
+      fabricacao: contar(["PRODUCAO", "ACABAMENTO"]),
       pronto: contar(["PRONTO"]),
       aRetirar: contar(["A_RETIRAR"]),
       emTransito: contar(["EM_TRANSITO"]),
@@ -459,7 +474,16 @@ export function ExpedicaoPage() {
     const q = search.trim().toLowerCase();
     return pedidos.filter((p) => {
       if (filters.etapa === "ATIVOS" && p.etapa === "ENTREGUE") return false;
-      if (filters.etapa !== "ATIVOS" && filters.etapa !== "TODAS" && p.etapa !== filters.etapa) return false;
+      // `FABRICACAO` é o único filtro de card que cobre DUAS etapas — os demais
+      // continuam casando 1 para 1 com `p.etapa`.
+      if (filters.etapa === ETAPA_FABRICACAO && !ETAPAS_FABRICACAO.includes(p.etapa)) return false;
+      if (
+        filters.etapa !== "ATIVOS" &&
+        filters.etapa !== "TODAS" &&
+        filters.etapa !== ETAPA_FABRICACAO &&
+        p.etapa !== filters.etapa
+      )
+        return false;
 
       if (filters.alerta === "ATRASADOS" && !(p.atrasadoDias > 0 && p.etapa !== "ENTREGUE")) return false;
       if (filters.alerta === "HOJE" && !p.prometidoHoje) return false;
@@ -562,24 +586,15 @@ export function ExpedicaoPage() {
 
       {/* Cards do funil (clicáveis = filtro de etapa) */}
       {isLoaded && (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <SummaryCard
-            title="Em produção"
-            value={porEtapa.producao.toString()}
-            description="Antes do acabamento"
+            title="Em fabricação"
+            value={porEtapa.fabricacao.toString()}
+            description="Antes da expedição"
             tone="neutral"
             icon={Factory}
-            onClick={() => toggleEtapa("PRODUCAO")}
-            ativo={filters.etapa === "PRODUCAO"}
-          />
-          <SummaryCard
-            title="Em acabamento"
-            value={porEtapa.acabamento.toString()}
-            description="Chegando na bancada"
-            tone="info"
-            icon={Clock}
-            onClick={() => toggleEtapa("ACABAMENTO")}
-            ativo={filters.etapa === "ACABAMENTO"}
+            onClick={() => toggleEtapa(ETAPA_FABRICACAO)}
+            ativo={filters.etapa === ETAPA_FABRICACAO}
           />
           <SummaryCard
             title="Pronto p/ expedir"
