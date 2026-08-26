@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, AlertCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { X, AlertCircle, Ban, Loader2 } from "lucide-react";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
 import { useAppToast } from "@/components/common/AppToast";
+import { getSupabaseClient } from "@/lib/supabase/client";
+import { formatCurrency } from "@/lib/formatters/currency";
 import {
   DESTINOS_VALOR_CANCELADO,
   MOTIVOS_CANCELAMENTO_PAGO,
@@ -26,6 +29,45 @@ interface CancelCobrancaModalProps {
 // sempre); cobranca paga exige motivo de catalogo + destino do valor, porque e
 // operacao excepcional de super admin que mexe em receita ja reconhecida.
 
+/** Resposta de GET /api/cobrancas/pode-cancelar. */
+type TituloEmAberto = {
+  id: string;
+  parcela: number | null;
+  total_parcelas: number | null;
+  valor: number | null;
+  vencimento: string | null;
+};
+
+type Veredito = {
+  pode: boolean;
+  code: string;
+  message: string;
+  acao?: string;
+  fluxo: "NORMAL" | "PAGO";
+  jaInativa: boolean;
+  titulosEmAberto: TituloEmAberto[];
+};
+
+/**
+ * Para onde o usuario vai resolver a pendencia. A recusa so serve se disser o
+ * que fazer — e o botao leva a tela certa em vez de mandar o financeiro
+ * procurar.
+ */
+const ACOES: Record<string, { rotulo: string; destino?: string }> = {
+  CANCELAR_NOTA: { rotulo: "Ir para Notas Fiscais", destino: "/notas-fiscais" },
+  DEVOLVER_OS: { rotulo: "Ir para Pedidos", destino: "/pedidos" },
+  RETIRAR_PRODUCAO: { rotulo: "Ir para Pedidos", destino: "/pedidos" },
+  CANCELAR_TITULO: { rotulo: "Ir para Contas a Receber", destino: "/contas-a-receber" },
+  ABRIR_DEVOLUCAO: { rotulo: "" },
+  CONFERIR_MANUAL: { rotulo: "" }
+};
+
+/** "2026-08-30" -> "30/08/2026", sem passar por Date (evita deslocar um dia). */
+function dataBr(valor: string | null): string {
+  const [ano, mes, dia] = String(valor || "").slice(0, 10).split("-");
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : "";
+}
+
 export function CancelCobrancaModal({
   isOpen,
   onClose,
@@ -36,6 +78,13 @@ export function CancelCobrancaModal({
 }: CancelCobrancaModalProps) {
   const { cancelCobranca } = useCobrancas();
   const { showToast } = useAppToast();
+  const router = useRouter();
+
+  // O veredito do SERVIDOR. A tela nao decide mais nada sobre poder cancelar —
+  // ela reflete o que a rota responderia, porque as duas chamam o mesmo codigo.
+  const [veredito, setVeredito] = useState<Veredito | null>(null);
+  const [erroVeredito, setErroVeredito] = useState<string | null>(null);
+  const [carregandoVeredito, setCarregandoVeredito] = useState(false);
 
   // Fluxo antigo (cobrança não paga): motivo em texto livre.
   const [motivo, setMotivo] = useState("");
@@ -60,9 +109,53 @@ export function CancelCobrancaModal({
       setMotivoTexto("");
       setDestino("");
       setConfirmaMesFechado(false);
+      // O veredito e reconsultado a cada abertura: o estado da cobranca pode
+      // ter mudado desde a ultima vez que este modal esteve aberto.
+      setVeredito(null);
+      setErroVeredito(null);
+      setCarregandoVeredito(true);
     }
   }, [isOpen]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!isOpen || !cobrancaId) return;
+
+    // Nada de setState sincrono aqui: o estado inicial da consulta e posto pelo
+    // efeito de reset acima, e o resto so muda dentro do assincrono.
+    let ativo = true;
+
+    void (async () => {
+      try {
+        const client = getSupabaseClient();
+        if (!client) throw new Error("Sistema indisponível no momento.");
+        const sessao = await client.auth.getSession();
+        const token = sessao.data.session?.access_token || "";
+        if (!token) throw new Error("Sessão não encontrada. Faça login novamente.");
+
+        const resposta = await fetch(
+          `/api/cobrancas/pode-cancelar?id=${encodeURIComponent(cobrancaId)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const dados = await resposta.json();
+        if (!ativo) return;
+
+        if (!resposta.ok || !dados?.success) {
+          setErroVeredito(dados?.message || "Não foi possível verificar se esta cobrança pode ser cancelada.");
+          return;
+        }
+        setVeredito(dados as Veredito);
+      } catch (err) {
+        if (ativo) setErroVeredito(err instanceof Error ? err.message : "Erro desconhecido.");
+      } finally {
+        if (ativo) setCarregandoVeredito(false);
+      }
+    })();
+
+    return () => {
+      ativo = false;
+    };
+  }, [isOpen, cobrancaId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -86,9 +179,15 @@ export function CancelCobrancaModal({
     }
   }
 
-  const podeConfirmar = isCobrancaPaga
+  // O formulario so vale se o SERVIDOR liberou. Enquanto o veredito nao chega,
+  // ou se ele recusa, Confirmar fica desabilitado.
+  const liberadoPeloServidor = veredito?.pode === true;
+
+  const formularioPreenchido = isCobrancaPaga
     ? Boolean(motivoCodigo) && (!exigeTexto || motivoTexto.trim().length > 0) && (!mesFechadoLabel || confirmaMesFechado)
     : motivo.trim().length > 0;
+
+  const podeConfirmar = liberadoPeloServidor && formularioPreenchido;
 
   async function handleConfirmNaoPaga() {
     if (!motivo.trim()) {
@@ -197,6 +296,58 @@ export function CancelCobrancaModal({
 
         {/* Content */}
         <div className="space-y-4">
+          {carregandoVeredito ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-600 flex gap-3 items-center">
+              <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+              <p className="text-xs">Verificando se esta cobrança pode ser cancelada...</p>
+            </div>
+          ) : erroVeredito ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 flex gap-3 items-start">
+              <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
+              <div className="text-xs">
+                <p className="font-semibold">Não foi possível verificar</p>
+                <p className="mt-1 leading-relaxed">{erroVeredito}</p>
+                <p className="mt-1 leading-relaxed">
+                  Sem essa verificação o cancelamento não é liberado. Feche e tente de novo.
+                </p>
+              </div>
+            </div>
+          ) : veredito && !veredito.pode ? (
+            /* RECUSA — a mesma que a rota de escrita produziria, porque vem do
+               mesmo veredito. O texto diz o que fazer, e o botão leva lá. */
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 flex gap-3 items-start">
+              <Ban className="h-5 w-5 mt-0.5 shrink-0" />
+              <div className="text-xs w-full">
+                <p className="font-semibold">
+                  {veredito.jaInativa ? "Esta cobrança já está cancelada" : "Não é possível cancelar agora"}
+                </p>
+                <p className="mt-1 leading-relaxed">{veredito.message}</p>
+
+                {veredito.titulosEmAberto.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {veredito.titulosEmAberto.map((titulo) => (
+                      <li key={titulo.id} className="rounded-xl bg-white/70 px-3 py-2">
+                        Título {titulo.parcela ?? 1}/{titulo.total_parcelas ?? 1}
+                        {titulo.valor != null ? ` · ${formatCurrency(Number(titulo.valor))}` : ""}
+                        {dataBr(titulo.vencimento) ? ` · vence ${dataBr(titulo.vencimento)}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {veredito.acao && ACOES[veredito.acao]?.destino ? (
+                  <button
+                    type="button"
+                    onClick={() => router.push(ACOES[veredito.acao as string].destino as string)}
+                    className="mt-3 rounded-2xl border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                  >
+                    {ACOES[veredito.acao as string].rotulo}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <>
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 flex gap-3 items-start">
             <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
             <div className="text-xs">
@@ -205,6 +356,20 @@ export function CancelCobrancaModal({
                 Você está prestes a cancelar a cobrança ativa. É necessário preencher um motivo para auditoria.
               </p>
             </div>
+          </div>
+
+          {/* O que vai acontecer, antes de confirmar. */}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
+            <p className="text-xs font-semibold text-slate-900">Ao confirmar</p>
+            <ul className="mt-1.5 space-y-1 text-xs leading-relaxed list-disc pl-4">
+              <li>A cobrança passa a CANCELADO e sai da lista de ativas.</li>
+              <li>O saldo da proposta reabre, e o modal de gerar cobrança volta a permitir uma nova.</li>
+              {isCobrancaPaga ? (
+                <li>O valor recebido segue o destino escolhido acima.</li>
+              ) : (
+                <li>Se não restar nenhuma cobrança ativa, a proposta volta para NOVO e o tipo de cobrança é limpo.</li>
+              )}
+            </ul>
           </div>
 
           {!isCobrancaPaga ? (
@@ -302,6 +467,8 @@ export function CancelCobrancaModal({
                 </label>
               ) : null}
             </div>
+          )}
+            </>
           )}
         </div>
 

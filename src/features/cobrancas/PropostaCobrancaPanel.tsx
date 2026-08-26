@@ -2712,14 +2712,10 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
 
                 <button
                   type="button"
-                  disabled={!podeCancelarCobranca || cobranca.status === "PAID" || cobranca.status === "A_VENCER" || cobranca.confirmado}
+                  disabled={!podeCancelarCobranca}
                   onClick={() => setCobrancaParaExcluir(cobranca)}
                   title={
-                    !podeCancelarCobranca ? "Sem permissão para cancelar cobrança"
-                    : cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
-                    : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
-                    : cobranca.confirmado ? "Não é possível excluir cobrança confirmada"
-                    : "Excluir cobrança"
+                    !podeCancelarCobranca ? "Sem permissão para cancelar cobrança" : "Cancelar cobrança"
                   }
                   className="h-10 min-w-[120px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold whitespace-nowrap bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
@@ -2780,14 +2776,10 @@ function CobrancasDaPropostaList({ cobrancas, onSelectCobranca, onRefreshPropost
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
                   <button
                     type="button"
-                    disabled={!podeCancelarCobranca || cobranca.status === "PAID" || cobranca.status === "A_VENCER" || cobranca.confirmado}
+                    disabled={!podeCancelarCobranca}
                     onClick={() => setCobrancaParaExcluir(cobranca)}
                     title={
-                      !podeCancelarCobranca ? "Sem permissão para cancelar cobrança"
-                      : cobranca.status === "PAID" ? "Não é possível excluir cobrança paga"
-                      : cobranca.status === "A_VENCER" ? "Não é possível excluir faturamento aprovado"
-                      : cobranca.confirmado ? "Não é possível excluir cobrança confirmada"
-                      : "Excluir cobrança"
+                      !podeCancelarCobranca ? "Sem permissão para cancelar cobrança" : "Cancelar cobrança"
                     }
                     className="inline-flex items-center justify-center rounded-xl bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed border border-red-200"
                   >

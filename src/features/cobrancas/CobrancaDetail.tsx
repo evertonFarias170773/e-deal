@@ -400,23 +400,26 @@ export function CobrancaDetail({ cobrancaId, onClose, onRefreshProposta }: Cobra
                 </button>
               )}
 
-              {cobrancaAtual.status !== "CANCELADO" && (
-                <button
-                  type="button"
-                  onClick={() => setIsCancelModalOpen(true)}
-                  disabled={isCobrancaPaga && !user?.isSuperAdmin}
-                  title={
-                    isCobrancaPaga
-                      ? (user?.isSuperAdmin
-                          ? "Cobrança já paga: cancelamento com motivo de catálogo e destino do valor."
-                          : "Cobrança já paga: cancelamento restrito a super administradores.")
-                      : undefined
-                  }
-                  className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-50"
-                >
-                  Cancelar cobrança
-                </button>
-              )}
+              {/* Sempre visivel. O botao deixou de ser escondido por status
+                  ("CANCELADO" tirava ele da tela): quem explica o caso e o
+                  modal, que consulta o veredito do servidor ao abrir —
+                  inclusive para dizer que a cobranca ja esta cancelada.
+                  O `disabled` que resta e PERMISSAO, nao estado. */}
+              <button
+                type="button"
+                onClick={() => setIsCancelModalOpen(true)}
+                disabled={isCobrancaPaga && !user?.isSuperAdmin}
+                title={
+                  isCobrancaPaga
+                    ? (user?.isSuperAdmin
+                        ? "Cobrança já paga: cancelamento com motivo de catálogo e destino do valor."
+                        : "Cobrança já paga: cancelamento restrito a super administradores.")
+                    : undefined
+                }
+                className="w-full rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-red-700 hover:bg-red-100 transition font-semibold text-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-50"
+              >
+                Cancelar cobrança
+              </button>
               
             </div>
           </div>

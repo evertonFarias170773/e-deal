@@ -239,8 +239,12 @@ export function CobrancaActionsMenu({ cobranca, label }: CobrancaActionsMenuProp
     {
       label: "Cancelar cobrança",
       destructive: true,
+      // Habilitado por PERMISSAO apenas. O estado da cobranca (paga, a vencer,
+      // ja cancelada, com nota, em producao) deixou de decidir aqui: quem
+      // decide e o veredito do servidor, que o modal consulta ao abrir e
+      // reflete com a mensagem e a acao certas. Antes, "CANCELADO" desabilitava
+      // o item e o usuario ficava sem saber por que.
       disabled:
-        cobranca.status === "CANCELADO" ||
         (isCobrancaPaga
           // Cobranca paga: so super admin, mesma regra da rota. Nao usa as
           // permissoes abaixo — aquelas sao do fluxo de cobranca NAO paga.
