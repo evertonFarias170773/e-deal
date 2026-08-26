@@ -71,6 +71,7 @@ import { salvarBriefingArtes } from "@/features/pedidos/services/pedidos-artes.s
 import { useOrcamentoDetail } from "@/features/orcamentos/hooks/useOrcamentoDetail";
 import { composeStatusEmArte } from "@/features/orcamentos/mappers";
 import { solicitarCotacaoSedex, solicitarCotacaoAzulCargo, solicitarCotacaoTransportadoras, solicitarCotacaoVeppo } from "@/features/orcamentos/services/frete.service";
+import { resolverTransportadoraParceira } from "@/features/orcamentos/lib/transportadoras-parceiras";
 import {
   aplicarModalidadeNosFretes,
   exigeCotacaoEscolhida,
@@ -3143,9 +3144,37 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
         description: "Você escolheu retirada no balcão, então a modalidade do topo acompanhou. Dá para trocar lá em cima."
       });
     }
+    // QUEM É A TRANSPORTADORA, e não só qual é o rótulo do frete.
+    //
+    // Escolher o card já gravava `frete_escolhido` ("SEDEX", "VEPPO"...), mas
+    // nunca o VÍNCULO com o cadastro. Resultado medido em 26/08/2026: nas 291
+    // propostas CIF de agosto o `id_transportadora_cliente` era nulo em 100% dos
+    // casos, inclusive nas marcadas CORREIOS — e a NF-e, que não tem outra
+    // fonte, obrigava alguém a escolher a transportadora à mão na emissão.
+    //
+    // Por modalidade:
+    //   FOB ....... nada muda. Lá o vínculo vem do drop, que é escolha explícita
+    //               do vendedor e vale mais que a inferência pelo nome do card.
+    //   RETIRA .... nulo. Não há transporte, logo não há transportador.
+    //   CIF ....... resolve pela cotação escolhida.
+    //   sem modalidade .. tratado como CIF: houve escolha de card, e o vínculo
+    //               resolvido é melhor que nada. São 915 propostas de agosto
+    //               nessa situação, e nenhuma delas tem drop para consultar.
+    //
+    // Card que não é de parceira devolve null e o rótulo segue em
+    // `frete_escolhido`, exatamente como hoje.
+    const modalidadeResultante = viraRetira ? "RETIRA" : form.modalidadeFrete;
+    const vinculoParceira =
+      modalidadeResultante === "FOB"
+        ? undefined
+        : modalidadeResultante === "RETIRA"
+          ? null
+          : resolverTransportadoraParceira(escolhido);
+
     setForm((current) => ({
       ...current,
       ...(viraRetira ? { modalidadeFrete: "RETIRA" as const, idTransportadoraCliente: null } : {}),
+      ...(vinculoParceira !== undefined ? { idTransportadoraCliente: vinculoParceira } : {}),
       fretes: updatedFretes,
       freteEscolhidoId: freteId
     }));
