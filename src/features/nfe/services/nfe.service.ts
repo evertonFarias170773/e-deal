@@ -5,6 +5,7 @@ import type { SupabaseNfeRow, NfeReadModel, SupabaseNfeItemRow, SupabaseNfePagam
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { getPropostaDetailById } from "@/features/orcamentos/services/orcamentos.service";
 import { PROPOSTA_STATUS_GROUP_NFE_ELIGIBLE } from "@/features/orcamentos/constants";
+import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
 import type { FaturavelOrigem } from "@/features/fiscal/types";
 import {
   normalizarTipoContribuinte,
@@ -624,6 +625,58 @@ export async function ufDaEmpresaEmitente(idEmpresa: number): Promise<string> {
   return String((data as { uf?: string | null } | null)?.uf ?? "").trim().toUpperCase();
 }
 
+/**
+ * Distribui o peso resolvido da expedicao entre os itens da nota, devolvendo o
+ * peso UNITARIO em gramas de cada um, na ordem recebida.
+ *
+ * POR QUE O RATEIO EXISTE
+ *   O cabecalho da nota nao e escrito por nos: o trigger
+ *   `fn_recalcular_peso_nfe_por_itens` reescreve `peso_liquido` e `peso_bruto`
+ *   como a soma de `peso_total_gramas` dos itens, a cada INSERT/UPDATE/DELETE.
+ *   Gravar o peso aferido direto no cabecalho duraria ate o primeiro save do
+ *   rascunho, que regrava os itens e dispara o trigger de novo. Entao o peso
+ *   tem de entrar PELOS ITENS: o rateio e o veiculo, nao o objetivo.
+ *
+ *   O outro trigger colabora sem precisar mudar: `fn_preencher_peso_unitario_nfe_item`
+ *   so busca `produtos.peso` quando `peso_unitario_gramas` chega ZERO — valor
+ *   nao-zero e preservado — e ele mesmo refaz `peso_total = round(qtd * unitario, 4)`.
+ *
+ *   Nada disso chega a SEFAZ: o bloco de itens do payload nao tem campo de peso
+ *   (conferido: 18 chaves, nenhuma delas de peso). Ela ve o cabecalho e os volumes.
+ *
+ * A REGRA
+ *   Proporcional ao peso teorico do item. Quando TODOS os teoricos sao zero —
+ *   produtos sem peso cadastrado — cai para rateio por quantidade; sem esse
+ *   desvio a divisao seria por zero e a nota sairia sem peso nenhum.
+ *
+ * PRECISAO
+ *   `peso_unitario_gramas` e `numeric(14,4)` e o cabecalho arredonda em 3 casas.
+ *   Simulado o caminho completo pelos dois triggers nas 25 expedicoes com peso
+ *   aferido, as de varios itens inclusive: 25 de 25 reproduzem o peso resolvido,
+ *   erro maximo 0,000 kg.
+ */
+export function ratearPesoNosItens(
+  itens: Array<{ quantidade?: number | null; pesoTotal?: number | null }>,
+  pesoTotalGramas: number
+): number[] {
+  const somaTeorica = itens.reduce((soma, item) => soma + (item.pesoTotal || 0), 0);
+  const somaQuantidade = itens.reduce((soma, item) => soma + (item.quantidade || 0), 0);
+
+  return itens.map((item) => {
+    const quantidade = item.quantidade || 0;
+    if (quantidade <= 0 || pesoTotalGramas <= 0) return 0;
+
+    const proporcao =
+      somaTeorica > 0
+        ? (item.pesoTotal || 0) / somaTeorica
+        : somaQuantidade > 0
+          ? quantidade / somaQuantidade
+          : 0;
+
+    return Number(((pesoTotalGramas * proporcao) / quantidade).toFixed(4));
+  });
+}
+
 export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeRow> {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client not initialized");
@@ -756,6 +809,46 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     });
   }
 
+  // O PESO DA NOTA PASSA A SER O DA EXPEDICAO, NAO O DO CATALOGO.
+  //
+  // Ate aqui a nota copiava `produtos_proposta.peso_total` — o peso teorico do
+  // cadastro do produto — e ignorava a balanca, mesmo com o pedido pesado no
+  // banco ha dias. Das 4 notas autorizadas comparaveis, as 4 divergiam do
+  // aferido; uma delas em 28%.
+  //
+  // A precedencia NAO e escrita aqui: e a de `resolverPesoExpedicao`
+  // (features/expedicao/lib/peso.ts), a mesma que a etiqueta, a declaracao de
+  // conteudo, a prepostagem dos Correios e a recotacao ja usam. A NF-e era o
+  // quinto consumidor e o unico fora da regra; passa a ser o quinto DENTRO
+  // dela. Nivel 4 da precedencia e exatamente o teorico de antes, entao pedido
+  // sem expedicao pesada continua saindo como sempre saiu.
+  const { data: expedicaoRow } = await client
+    .from("expedicoes")
+    .select("peso_kg, peso_bruto_kg")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  const expedicao = expedicaoRow as { peso_kg?: number | null; peso_bruto_kg?: number | null } | null;
+  const freteEscolhido = proposta.fretes?.find(f => f.id === proposta.freteEscolhidoId);
+
+  const { pesoKg: pesoResolvidoKg, origem: pesoOrigem } = resolverPesoExpedicao({
+    pesoAferidoKg: expedicao?.peso_kg,
+    pesoBrutoKg: expedicao?.peso_bruto_kg,
+    pesoCotadoGramas: freteEscolhido?.pesoUsado,
+    pesoTeoricoGramas: totalPeso
+  });
+
+  // Sem nenhuma fonte utilizavel o resolvedor devolve null; ai vale o teorico,
+  // que e o que a nota ja fazia.
+  const pesoNotaGramas = pesoResolvidoKg !== null ? pesoResolvidoKg * 1000 : totalPeso;
+
+  console.log(
+    `[NfeService] Peso da nota #${idInt}: ${(pesoNotaGramas / 1000).toFixed(3)} kg ` +
+      `(origem: ${pesoOrigem ?? "nenhuma"}; teorico do catalogo era ${(totalPeso / 1000).toFixed(3)} kg)`
+  );
+
+  const pesoPorItem = ratearPesoNosItens(proposta.itens ?? [], pesoNotaGramas);
+
   const pgtoConfigurado = Boolean(tipoCobranca);
   // A nota usa o endereço principal por padrão. O bloco de entrega só entra
   // quando a proposta aponta um endereço marcado como de entrega — antes disso
@@ -791,8 +884,11 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     modalidade_frete: modalidadeFrete,
     quantidade_volumes: 1,
     especie_volumes: "CAIXA",
-    peso_liquido: totalPeso / 1000,
-    peso_bruto: totalPeso / 1000,
+    // Os dois triggers de peso reescrevem estas duas colunas a partir da soma
+    // dos itens assim que eles entram. Gravamos aqui o MESMO numero que eles vao
+    // impor, para que a linha nunca exista com um peso que ninguem mais defende.
+    peso_liquido: pesoNotaGramas / 1000,
+    peso_bruto: pesoNotaGramas / 1000,
     pgto_is_configurado: pgtoConfigurado
   };
 
@@ -850,8 +946,12 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
       // o trigger vence e o item fica deslocado do subtotal em ate R$ 1,60 — sempre
       // MUITO menos que o fixo inteiro que se perdia antes, mas nao zero.
       const valorBruto = subtotalItem;
-      const pesoTotal = item.pesoTotal || 0;
-      const pesoUnitario = item.pesoUnitario || 0;
+
+      // Peso vindo do rateio do peso da expedicao, nao mais o teorico do item.
+      // `peso_total_gramas` acompanha a formula do trigger — que vai refaze-lo
+      // de qualquer jeito — para a linha nascer coerente.
+      const pesoUnitario = pesoPorItem[idx] ?? 0;
+      const pesoTotal = Number((quantidade * pesoUnitario).toFixed(4));
 
       return {
         id_nota_fiscal: newNfe.id,

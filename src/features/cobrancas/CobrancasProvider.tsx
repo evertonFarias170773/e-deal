@@ -1280,34 +1280,26 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     }
 
     if (source === "supabase") {
-      const client = getSupabaseClient();
-      if (!client) {
-        return { success: false, errorMessage: "Sistema indisponível no momento. Tente novamente." };
-      }
-
-      // Revalidar status atual no Supabase para impedir cancelamento indevido
-      const { data: dbRow, error: fetchError } = await client
-        .from("pagamentos_v2")
-        .select("status")
-        .eq("id", id)
-        .maybeSingle();
-
-      if (fetchError || !dbRow) {
-        console.error("[cancelCobranca] Erro ao buscar status atual da cobrança:", fetchError);
-        return {
-          success: false,
-          errorMessage: fetchError?.message || "Não foi possível verificar o status atual da cobrança no banco."
-        };
-      }
-
-      const dbStatusNorm = String(dbRow.status || "").trim().toUpperCase();
-      // Cobranca paga tem fluxo proprio: rota dedicada, so super admin, motivo de
-      // catalogo e destino do valor. O guard antigo continua valendo para tudo que
-      // nao for paga.
-      if (dbStatusNorm === "PAID" || dbStatusNorm === "A_VENCER") {
-        if (!dadosPago) {
-          return { success: false, errorMessage: "Não é permitido cancelar cobrança paga ou com faturamento aprovado (A_VENCER)." };
-        }
+      // A DECISAO de "pode cancelar?" nao mora mais aqui.
+      //
+      // Ate esta etapa havia neste ponto uma releitura de `pagamentos_v2` que
+      // recusava PAID e A_VENCER no proprio navegador — sem que requisicao
+      // nenhuma saisse, e sem conhecer nota fiscal autorizada, producao ativa
+      // ou titulo em aberto. Era a trava que impedia o refaturamento, e era
+      // tambem a origem da divergencia entre o que a tela dizia e o que o
+      // servidor faria.
+      //
+      // Quem decide agora e o veredito compartilhado
+      // (`cancelamento-elegibilidade`), aplicado nas rotas. A tela apenas o
+      // REFLETE: `CancelCobrancaModal` consulta `GET /api/cobrancas/pode-cancelar`
+      // ao abrir e mostra a mesma mensagem que a rota produziria.
+      //
+      // O que sobra aqui e ROTEAMENTO. `dadosPago` e o sinal do formulario de
+      // cobranca paga (motivo de catalogo + destino do valor), atendido por
+      // rota propria e restrita a super admin. Sem ele, segue o fluxo normal.
+      // Se a escolha do formulario estiver errada por dado velho em tela, quem
+      // recusa e a rota, com a mensagem certa — nunca um `if` daqui.
+      if (dadosPago) {
         return await cancelarCobrancaPaga(id, dadosPago);
       }
 
