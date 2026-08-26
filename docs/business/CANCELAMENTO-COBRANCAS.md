@@ -184,6 +184,14 @@ status = A_VENCER
 AND confirmado = true
 ```
 
+> **Revisado em 26/08/2026 — esta segunda regra deixou de valer sozinha.**
+> `A_VENCER` com `confirmado = true` é o estado normal de todo faturado
+> aprovado: é recebimento futuro autorizado, não dinheiro recebido. Bloquear por
+> ele impedia o refaturamento. O que impede agora é **nota fiscal autorizada,
+> produção ativa, dinheiro recebido ou título em aberto** — ver "Cancelamento
+> para refaturamento" abaixo. `status = PAID` e `paid_at` preenchido continuam
+> bloqueando sem exceção.
+
 Também deve ser bloqueada quando:
 
 - `paid_at` estiver preenchido;
@@ -194,9 +202,98 @@ Também deve ser bloqueada quando:
 ## Exceção autorizada: cancelamento de cobrança já paga
 
 > **Exceção autorizada (11/08/2026): cancelamento de cobrança paga.**
-> Restrito a super admin, pela rota `POST /api/cobrancas/cancelar-pago`, com motivo de catálogo e destino definido para o valor. Não passa por provedor externo, porque cobrança paga não tem título em aberto. Bloqueado quando a proposta já passou pela revisão do gerente (`REVISAO PRODUCAO` em diante) ou consta liberada para a produção (`is_prd_aprovado = true`) — nesse caso o gerente devolve a proposta para `REVISAO ATENDENTE` (ou a retira da produção) e só então o financeiro cancela. Exige confirmação explícita quando a confirmação for de mês anterior. As rotas `cancelar-externo` e `cancelar-boleto` continuam recusando cobrança paga.
+> Restrito a super admin, pela rota `POST /api/cobrancas/cancelar-pago`, com motivo de catálogo e destino definido para o valor. Não passa por provedor externo, porque cobrança paga não tem título em aberto. Bloqueado quando a proposta já passou pela revisão do gerente (`REVISAO PRODUCAO` em diante) ou consta liberada para a produção (`is_prd_aprovado = true`) — nesse caso o gerente devolve a proposta para `REVISAO ATENDENTE` (ou a retira da produção) e só então o financeiro cancela. Exige confirmação explícita quando a confirmação for de mês anterior. A rota `cancelar-externo` continua recusando cobrança recebida. (`cancelar-boleto` foi apagada em 26/08/2026: era órfã, divergia das demais e apontava para o webhook do C6 sem roteamento por empresa.)
 
 Esta rota é o **único ponto oficial** para esse caso excepcional. Ela não enfraquece a regra geral desta seção — cobrança paga continua bloqueada em todos os demais fluxos, sem exceção — e não deve ser lida como o "cancelamento paralelo" que a seção Fonte da Verdade deste documento proíbe. Qualquer alteração de `status` ou `motivo_cancela` de uma cobrança paga fora desta rota permanece não autorizada.
+
+
+---
+
+# Cancelamento para refaturamento (26/08/2026)
+
+O financeiro cancela uma cobrança faturada para refazê-la. O refaturamento em si
+já funcionava — o modal de gerar reabre pelo saldo assim que a cobrança sai de
+ativa. O que faltava era o cancelamento.
+
+## Ponto único de decisão
+
+A pergunta "esta cobrança pode ser cancelada?" tem **uma** resposta, em
+`src/features/cobrancas/cancelamento-elegibilidade.ts` (regras puras) +
+`services/cancelamento-elegibilidade.server.ts` (monta o dossiê). Todas as rotas
+de escrita chamam o coletor; a tela consulta `GET /api/cobrancas/pode-cancelar`.
+É o mesmo código nos dois caminhos — por isso a recusa exibida ao usuário é
+exatamente a que a rota aplicaria.
+
+Antes disso a decisão estava em quatro lugares que discordavam entre si, e a
+trava da tela recusava no navegador sem que requisição nenhuma saísse.
+
+## O fluxo em três passos
+
+Cada passo é uma ação do usuário. **Nenhum dispara o seguinte.**
+
+1. **Cancelar o título** — em Contas a Receber, "Cancelar recebível". Cancela no
+   banco e no registro. A **cobrança continua viva**: `A_VENCER`, confirmada,
+   com `boleto_enviadoo = false`, e volta a aparecer no Registro de Recebíveis.
+2. **O financeiro decide** — gerar título novo, ou seguir.
+3. **Cancelar a cobrança** — na Conferência, na lista dos confirmados.
+
+Consequência: `cancelar-externo` **não cancela títulos em cascata**. Havendo
+título em aberto vinculado, o veredito **recusa** e manda cancelar o título
+primeiro.
+
+## Ordem das recusas
+
+A ordem define qual mensagem o usuário lê quando mais de uma se aplica: primeiro
+o que nenhuma ação dele destrava, depois o que ele mesmo resolve, depois o que
+depende de terceiros, e por último a instrução de fluxo.
+
+| # | Código | Quando | O que a mensagem manda fazer |
+|---|---|---|---|
+| 0 | `JA_INATIVA` | cobrança já cancelada | nada — é sucesso no-op |
+| 1 | `COBRANCA_RECEBIDA` | `PAID` ou `paid_at` preenchido | abrir devolução |
+| 1 | `TITULO_LIQUIDADO` | algum título vinculado liquidado | abrir devolução |
+| 2 | `NOTA_AUTORIZADA` | NF-e ou NFS-e **de produção** autorizada na proposta | cancelar a nota em Fiscal › Notas Fiscais |
+| 3 | `PRODUCAO_ATIVA` | proposta em estágio produtivo ou `is_prd_aprovado` | pedir ao gerente para devolver a OS ou retirá-la da produção |
+| 4 | `VINCULO_AMBIGUO` | título legado sem `id_pagamento` e mais de uma faturada na proposta | conferência manual |
+| 5 | `CREDITO_CONSUMIDO` | `E-CREDITO` | usar o estorno de crédito |
+| 6 | `TITULO_EM_ABERTO` | título vinculado em aberto (**só família faturado**) | cancelar o título primeiro, em Contas a Receber |
+
+Notas de precisão, todas medidas em produção:
+
+- **`ambiente = 'homologacao'` não bloqueia.** Só nota de produção. As 10 notas
+  autorizadas do banco são de homologação.
+- **A nota é da proposta, não da cobrança** — não existe vínculo nota↔cobrança.
+  Numa proposta com várias cobranças, a nota bloqueia todas.
+- **`TITULO_EM_ABERTO` é exclusiva da família faturado.** Em BOLETO, PIX e
+  cartão o título e a cobrança são o mesmo ato, e recusar ali quebraria o
+  cancelamento de boleto comum.
+- **`TITULO_LIQUIDADO` vale para todos os tipos** — dinheiro recebido é dinheiro
+  recebido em qualquer modalidade.
+
+## Subconjuntos por rota
+
+Nem toda rota respeita todas as recusas. O veredito é granular e cada chamador
+declara o que aplica:
+
+| Rota | Recusas |
+|---|---|
+| `cancelar-externo`, `pode-cancelar` | todas |
+| `cancelar-proposta` | só `COBRANCA_RECEBIDA` e `TITULO_LIQUIDADO` — cancelar a proposta é encerrar o pedido, não refaturar |
+| `cancelar-pago` | só `NOTA_AUTORIZADA` e `PRODUCAO_ATIVA` — ali dinheiro recebido é a premissa, não o impedimento |
+| `cancelar-boleto-faturado` | só `COBRANCA_RECEBIDA` — é operação de título, e cancelar o título aberto é o serviço |
+
+`cancelar-proposta` mantém, além disso, uma regra de nível **proposta** que o
+veredito não alcança: qualquer boleto com `paid_at` no `id_int` bloqueia, mesmo
+que a cobrança dele já esteja cancelada.
+
+## Estado final
+
+Cancelada a última cobrança ativa, a proposta volta para `NOVO` com
+`tipo_cobranca` limpo, e o saldo reabre. Cobrança morta significa condição
+financeira a renegociar — o rebaixamento a partir de `APROVADO`/`LIBERADO` é o
+comportamento pretendido.
+
+**Spec e plano:** `docs/superpowers/specs/2026-08-25-cancelamento-cobranca-refaturamento-design.md`.
 
 ---
 

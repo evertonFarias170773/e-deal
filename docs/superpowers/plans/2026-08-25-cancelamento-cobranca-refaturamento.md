@@ -196,6 +196,18 @@ Cuidado de escopo: **não confundir com "Cancelar boleto"** (`onLifecycle.cancel
 
    **A regra 3 não muda: título pago continua NÃO cancelável.** Este item trata do título que já saiu de circulação sem ter sido pago, não do título liquidado.
 
+   ---
+
+   **SITUAÇÃO EM 26/08/2026 — entregue só o lado C6.**
+
+   **Feito:** `POST /api/cobrancas/titulo-inativo-no-banco`. O cliente relata a recusa do banco; **quem decide é o servidor** — o predicado da recusa, a confirmação de não-pagamento via `consulta-paid-c6`, o cancelamento local e o registro. O predicado saiu do cliente (`nfe.service.ts`) e virou módulo puro (`src/features/cobrancas/recusa-bancaria.ts`), que reconhece as redações do **C6 e do Inter**. A regra 3 fica intacta: título liquidado é recusado antes de qualquer consulta, e falha ao confirmar mantém o erro.
+
+   **PENDENTE — lado Inter (empresa 2, Birô).** A rota recusa explicitamente com `PROVEDOR_SEM_CONSULTA`. O motivo é concreto: aceitar a recusa como "já inativo" exige confirmar que não houve pagamento, e **não existe consulta de pagamento do Inter** — só `consulta-paid-c6`, específico do C6. Implementar sem essa confirmação cancelaria no ERP um título que pode ter sido PAGO, violando a regra 3. O predicado já reconhece a redação do Inter; falta apenas a confirmação.
+
+   **Até lá, seguem presos, para tratamento manual:** o boleto do pedido **20087** (o caso que originou este item) e os demais títulos vencidos da Birô. Medido em 25/08/2026: 6 títulos faturados vencidos e ainda ativos, sendo **2 na empresa 2**.
+
+   **Criar o webhook de consulta do Inter é rodada própria, com autorização A6** (alterar workflow no n8n). Feito isso, o lado Inter se resume a trocar o bloqueio `PROVEDOR_SEM_CONSULTA` pela consulta equivalente — o resto da rota já serve aos dois provedores.
+
 **Valida antes de seguir:** o doc descreve o que o código faz — sem regra inventada, sem regra omitida. Busca por "cascata" no repo não retorna afirmação de que o Inter cancela `pagamentos_v2`.
 
 ### Etapa 13 — Validação fim a fim em produção
@@ -244,11 +256,11 @@ Sugestão de corte, se você preferir publicar em duas partes:
 ## 7. Fora deste plano
 
 - Trazer o webhook legado das empresas 1 e 3 para o servidor — rodada própria.
-- Corrigir `atualizar_status_financeiro_proposta` e o acoplamento de `/api/orcamentos/cancelar-proposta` ao efeito colateral do trigger (§10.1 da spec). **Saiu de "rodada própria sem dono": está em execução em trabalho paralelo autorizado**, na migration `supabase/migrations/20260826_funcao_financeira_nao_cancela_proposta.sql`, junto com o ajuste da rota — os dois entram juntos, porque hoje a rota depende do trigger para gravar `CANCELADO` quando há cobrança pendente.
+- ~~Corrigir `atualizar_status_financeiro_proposta` e o acoplamento de `/api/orcamentos/cancelar-proposta`~~ — **CONCLUÍDO em 26/08/2026** (commit `fd000a0`), em trabalho paralelo autorizado, na migration `supabase/migrations/20260826_funcao_financeira_nao_cancela_proposta.sql`, junto com o ajuste da rota — os dois entram juntos, porque hoje a rota depende do trigger para gravar `CANCELADO` quando há cobrança pendente.
 
 **Divisão de escopo, a partir de 26/08/2026:** a sessão paralela cuida da função de banco e de `cancelar-proposta/route.ts`; **este plano cuida do modal e da UI de cancelamento de cobrança**. Não tocar naqueles dois.
 
-**Efeito quando a correção entrar:** o estado final `NOVO` validado nas Etapas 7 e 9 passa a ser **estável**. Hoje ele é correto no instante seguinte ao cancelamento e o trigger o reescreve no próximo salvamento do orçamento. Nenhuma etapa deste plano muda por causa disso — muda a durabilidade do resultado. Por isso a **Etapa 13 deve rodar depois** dessa correção: senão o passo 3 seria validado num estado que não persiste.
+**Efeito, já valendo:** o estado final `NOVO` validado nas Etapas 7 e 9 é **estável**. Nenhuma etapa deste plano mudou por causa disso — mudou a durabilidade do resultado. A ressalva que existia para a **Etapa 13** caiu: o passo 3 já é validado num estado que persiste. Provado em produção pelo dono — cancelar a cobrança e salvar o orçamento não derruba mais a proposta.
 
 ---
 

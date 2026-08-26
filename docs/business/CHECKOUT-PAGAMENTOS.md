@@ -391,15 +391,24 @@ Consequências, sempre confirmadas em modal antes de salvar:
   Recebíveis para ser registrada de novo com o valor novo;
 - a alteração é registrada na timeline da proposta.
 
-### Cancelamento em cascata da cobrança (parcela única)
+### Cancelamento em cascata da cobrança (parcela única) — NÃO ACONTECE HOJE
 
-O workflow `VIBE-BOLETO-FATURADO-INTER` marca `pagamentos_v2` inteiro como
-`CANCELADO` quando não resta parcela ativa. Num faturado de parcela única —
-a maioria — excluir o título mata a cobrança junto, o que não é o que este
-fluxo quer.
+> **Corrigido em 26/08/2026.** Esta seção afirmava a cascata como fato. O fluxo
+> vivo foi lido (`VIBE-BOLETO-FATURADO-INTER`, 45 nós, 25 e 26/08/2026) e o
+> ramo de cancelamento **não escreve em `pagamentos_v2`**: as duas saídas do
+> `IF Sem parcela ativa` vão para o mesmo nó de resposta, e o único nó capaz de
+> escrever (`Update v2`) está desativado e órfão. Nas 18 execuções retidas,
+> nenhum cancelamento sequer chegou a excluir um título — todas foram recusadas
+> pelo Inter.
 
-Duas defesas, porque o desfecho silencioso seria grave (proposta com valor
-novo, cobrança com valor velho, receita fora do faturamento e sem histórico):
+Se a cascata voltasse — e ela já se perdeu e voltou por save/reimport na UI do
+n8n —, num faturado de parcela única excluir o título mataria a cobrança junto,
+o que não é o que este fluxo quer.
+
+**As duas defesas abaixo continuam no código**, agora como proteção preventiva e
+não como reação a algo observado. O desfecho silencioso seria grave (proposta
+com valor novo, cobrança com valor velho, receita fora do faturamento e sem
+histórico):
 
 1. `excluirTitulosDoFaturado` relê a cobrança depois da exclusão e, se ela
    tiver sido cancelada em cascata, reabre como `A_VENCER` com

@@ -1,9 +1,9 @@
 /**
  * Cancelamento de cobranca JA PAGA — caso excepcional, restrito a super admin.
  *
- * Por que uma rota separada: cancelar-externo e cancelar-boleto existem para
- * orquestrar o provedor e recusam cobranca paga, protegendo milhares de
- * registros. Cobranca paga nao tem titulo em aberto para baixar no provedor
+ * Por que uma rota separada: cancelar-externo existe para orquestrar o
+ * provedor e recusa cobranca paga, protegendo milhares de registros. (Havia
+ * tambem cancelar-boleto, apagada em 26/08/2026 por ser orfa e divergente.) Cobranca paga nao tem titulo em aberto para baixar no provedor
  * (o PIX ja caiu, o boleto ja liquidou) — a devolucao acontece por fora do
  * ERP. Entao este fluxo e 100% local e nasce isolado, sem afrouxar aquela
  * trava.

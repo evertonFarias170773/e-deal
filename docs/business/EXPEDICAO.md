@@ -263,6 +263,16 @@ Consequência prática: **`camposMinimosDespacho` é a única trava que existe**
 
 A mesma RPC que fecharia a janela de concorrência resolveria isto junto, movendo a validação para o banco. As duas coisas são o mesmo trabalho, e é por isso que estão registradas no mesmo lugar.
 
+### A mesma dívida no Orçamento: `editar-paga` (26/08/2026)
+
+Desde 26/08/2026 esta pendência tem uma **terceira** ocorrência, fora da Expedição, e pelo mesmo motivo — vale registrar aqui porque o conserto é o mesmo trabalho.
+
+`POST /api/orcamentos/editar-paga` recusa edição de proposta com cobrança ativa não confirmada quando a edição **muda o valor**: o link de pagamento já está com o cliente, tem valor fixo no provedor e não pode ser ajustado, só cancelado e reemitido. A checagem compara **campo a campo** o `formState` contra o banco (`src/features/orcamentos/lib/edicao-financeira.ts`), e não pelo total — o `novoTotal` que chega na requisição é o cálculo do client, e a própria rota registra que ele "serviu só para escolher o caminho": quem decide o valor gravado é o banco, depois dos triggers de `produtos_proposta` e `cotacao_frete` e da consolidação final do `saveProposta`.
+
+A comparação campo a campo **reduz** a janela, mas não a fecha: entre a validação e a gravação o estado ainda pode mudar, e `saveProposta` roda várias escritas por PostgREST, sem transação que as una. Se a divergência aparecer depois, a proposta já foi gravada e não há `ROLLBACK` — sobra proposta e cobrança com valores diferentes.
+
+Fechar de vez é o mesmo desenho das duas pendências acima: **RPC `SECURITY DEFINER` com `SELECT ... FOR UPDATE` na proposta, validação e escrita na mesma transação**. Não implementado.
+
 ---
 
 # 4. Regra de Nota Fiscal

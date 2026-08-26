@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { avaliarCancelamentoNoServidor } from "@/features/cobrancas/services/cancelamento-elegibilidade.server";
 import { RECUSAS_CANCELAMENTO_TITULO } from "@/features/cobrancas/cancelamento-elegibilidade";
 import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca-do-titulo";
+import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 
 /**
  * Cancelamento de UM título faturado do Registro de Recebíveis.
@@ -15,9 +16,28 @@ import { resolverCobrancaDoTitulo } from "@/features/cobrancas/services/cobranca
  * legado: a rota devolve `delegarLegado: true` e o cliente chama
  * `deleteBoletoFromBankViaN8n` exatamente como antes.
  *
- * A regra de banco é do n8n, não daqui — o workflow VIBE-BOLETO-FATURADO-INTER
- * exclui somente o boleto cancelado e só marca pagamentos_v2 como CANCELADO
- * quando não resta parcela ativa. Esta rota NÃO duplica isso.
+ * O QUE O WORKFLOW REALMENTE FAZ (lido no fluxo vivo em 25 e 26/08/2026,
+ * `8ahqXY8sASxqOETd`, 45 nós):
+ *
+ *   cancela no Inter → localiza o título por `id_boleto_c6` → DELETE FÍSICO da
+ *   linha de `boletos` → conta parcelas restantes → responde.
+ *
+ * Ele **NÃO escreve em `pagamentos_v2`**. As duas saídas do `IF Sem parcela
+ * ativa` vão para o mesmo nó de resposta, e o único nó capaz de escrever
+ * (`Update v2`) está desativado e órfão — e é de emissão, não de cancelamento.
+ *
+ * O cabeçalho anterior afirmava que ele "só marca pagamentos_v2 como CANCELADO
+ * quando não resta parcela ativa". Isso nunca acontece, e a afirmação errada
+ * custou horas de diagnóstico.
+ *
+ * `diagnosticoWebhook.pagamento_cancelado` NÃO É CONFIÁVEL: vem `true` quando
+ * não resta parcela, mas nada foi escrito — é `semParcelaAtiva`, calculado e
+ * nunca aplicado. `parcelas_ativas_restantes` também não decide: é contado por
+ * `id_int`, misturando cobranças da mesma proposta. Os dois são repassados só
+ * como diagnóstico. Qualquer decisão sai de uma RELEITURA de `pagamentos_v2`.
+ *
+ * A reativação pós-cascata que esta rota faz é DEFESA IDEMPOTENTE: hoje não
+ * dispara, e fica porque a cascata pode voltar num save da UI do n8n.
  */
 
 const WEBHOOK_CANCELA_BIRO_FATURADO = "https://10074.hostoo.net.br/webhook/cancela-boleto-fat-inter";
@@ -84,6 +104,46 @@ export async function POST(request: Request) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+  }
+
+  // 0. PERMISSÃO. Até 26/08/2026 esta rota checava apenas SESSÃO — qualquer
+  //    usuário autenticado podia cancelar título no banco, enquanto
+  //    `cancelar-externo` e `cancelar-boleto` (apagada) exigiam permissão. Era o
+  //    ponto mais permissivo do módulo, e o único que aciona o provedor.
+  //
+  //    A cascata é a MESMA de `cancelar-externo`, e foi conferida contra os
+  //    perfis antes de apertar, para não travar os dois chamadores:
+  //      - Contas a Receber: a ação exige `contas_receber.admin`, que NINGUÉM
+  //        tem hoje — só Admin/Super Admin chegam lá, e Admin tem
+  //        `cobrancas.cancel`;
+  //      - save do orçamento (LiberarFaturadoModal): exige `propostas.edit`,
+  //        que só Vendedor e Administrador têm — e ambos têm `cobrancas.cancel`.
+  //    Designer, Operador e Expedidor não alcançam nenhum dos dois caminhos.
+  const { data: usuarioRow } = await supabase
+    .from("usuarios")
+    .select("is_super_adm")
+    .eq("user_id", authData.user.id)
+    .maybeSingle<{ is_super_adm: boolean | null }>();
+
+  if (!usuarioRow?.is_super_adm) {
+    const temCancelamentoFinanceiro = await verificarPermissaoServerSide(
+      supabase,
+      authData.user.id,
+      "cobrancas.cancel"
+    );
+    if (!temCancelamentoFinanceiro) {
+      const temCancelamentoRestrito = await verificarPermissaoServerSide(
+        supabase,
+        authData.user.id,
+        "propostas.cancelar_cobranca_nao_paga"
+      );
+      if (!temCancelamentoRestrito) {
+        return NextResponse.json(
+          { success: false, message: "Sem permissão para cancelar título (cobrancas.cancel)." },
+          { status: 403 }
+        );
+      }
+    }
   }
 
   // 1. Título — fonte da verdade é o banco.

@@ -3,7 +3,7 @@ import { clonePagamentosMock } from "@/lib/mocks/pagamentos.mock";
 import type { Cobranca } from "@/features/cobrancas/types";
 import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
 import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
-import { getDataReferenciaCobranca, getEmpresaRecebedoraFixaById } from "@/features/cobrancas/cobrancas-utils";
+import { getDataReferenciaCobranca, getEmpresaRecebedoraFixaById, FAMILIA_FATURADO_TIPOS } from "@/features/cobrancas/cobrancas-utils";
 import { resolverUrlPdfBoleto } from "@/lib/boletos/pdf-url";
 
 export const PAGAMENTOS_V2_SELECT_COLUMNS = [
@@ -165,7 +165,9 @@ async function fetchPagamentosV2Rows(filters?: {
       } else if (filters.tipo === "BOLETO") {
         query = query.eq("tipo_cobranca", "BOLETO");
       } else if (filters.tipo === "FATURADO") {
-        query = query.in("tipo_cobranca", ["E-FATURADO", "EFATURADO", "FATURADO"]);
+        // Lista canônica (cobrancas-utils). Era um literal aqui — uma das
+        // quatro definições divergentes consolidadas na Etapa 12.
+        query = query.in("tipo_cobranca", [...FAMILIA_FATURADO_TIPOS]);
       } else if (filters.tipo === "CARTAO") {
         query = query.in("tipo_cobranca", ["CREDIT_CARD", "CARD_PARCELADO"]);
       }

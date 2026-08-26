@@ -11,7 +11,7 @@
  * Spec: docs/superpowers/specs/2026-08-25-cancelamento-cobranca-refaturamento-design.md
  */
 import { formatCurrency } from "@/lib/formatters/currency";
-import { getLocalDateInSaoPaulo } from "@/features/cobrancas/cobrancas-utils";
+import { getLocalDateInSaoPaulo, isFamiliaFaturado } from "@/features/cobrancas/cobrancas-utils";
 import {
   bloqueiaCancelamentoPago,
   mensagemBloqueioProducao,
@@ -214,24 +214,16 @@ function normalizar(valor: string | null | undefined): string {
 
 /**
  * Família faturado — a modalidade em que o título é artefato SEPARADO da
- * cobrança (Registro de Recebíveis), com ação própria de cancelamento.
+ * cobrança (Registro de Recebíveis), com ação própria de cancelamento. É ela
+ * que define a quem a recusa `TITULO_EM_ABERTO` se aplica.
  *
- * Vive aqui, e não no coletor, porque é regra de decisão: é ela que define a
- * quem a recusa `TITULO_EM_ABERTO` se aplica.
- *
- * O banco guarda duas grafias — "E-Faturado" e "E-FATURADO". A comparação é
- * sobre o valor normalizado (caixa, espaços e underscore), nunca igualdade
- * literal, para uma grafia nova não furar a checagem em silêncio.
- *
- * NÃO consolida as três definições divergentes que já existem no módulo
- * (`isCobrancaEFaturado`, `TIPOS_SEM_LINK_EXTERNO`, a lista em
- * `pagamentos-v2.service.ts:159`) — isso é trabalho da Etapa 12 do plano.
+ * O predicado é CANÔNICO em `cobrancas-utils` desde a Etapa 12 (26/08/2026),
+ * quando as quatro definições divergentes foram consolidadas. Reexportado aqui
+ * porque o coletor e a rota de cancelamento de título já importavam deste
+ * módulo — trocar o caminho de import não mudaria comportamento e só geraria
+ * ruído no diff.
  */
-const FAMILIA_FATURADO = new Set(["E-FATURADO", "EFATURADO", "FATURADO"]);
-
-export function isFamiliaFaturado(tipo: string | null | undefined): boolean {
-  return FAMILIA_FATURADO.has(String(tipo || "").trim().toUpperCase().replace(/_/g, "-"));
-}
+export { isFamiliaFaturado };
 
 /** "2026-08-30" -> "30/08/2026", sem passar por Date (evita deslocar um dia). */
 function formatarDataIso(valor: string | null | undefined): string {

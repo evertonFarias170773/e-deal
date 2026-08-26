@@ -478,14 +478,48 @@ export function montarTextoConferenciaOsIdeal(
 }
 
 /**
+ * PREDICADO CANÔNICO da família faturado — a modalidade em que o título é
+ * artefato separado da cobrança (Registro de Recebíveis), com ação própria de
+ * cancelamento.
+ *
+ * Consolidado aqui em 26/08/2026 (Etapa 12 do plano de refaturamento). Existiam
+ * QUATRO definições divergentes espalhadas: `isCobrancaEFaturado` (só
+ * `E-FATURADO`), a lista literal do filtro de banco em `pagamentos-v2.service`,
+ * uma cópia local no núcleo do veredito e outra no coletor. Divergência aqui é
+ * silenciosa: a cobrança some de uma lista e aparece em outra.
+ *
+ * NÃO confundir com `TIPOS_SEM_LINK_EXTERNO`, logo abaixo: aquele conjunto
+ * responde outra pergunta ("tem checkout para abrir?") e inclui E-CREDITO e a
+ * família de brindes. São propósitos diferentes e continuam separados.
+ *
+ * A comparação é sobre o valor normalizado (caixa, espaços e underscore),
+ * nunca igualdade literal: o banco guarda "E-Faturado" (173) e "E-FATURADO"
+ * (109), e uma grafia nova não pode furar a checagem em silêncio.
+ */
+const FAMILIA_FATURADO = new Set(["E-FATURADO", "EFATURADO", "FATURADO"]);
+
+export function isFamiliaFaturado(tipo: string | null | undefined): boolean {
+  return FAMILIA_FATURADO.has(String(tipo || "").trim().toUpperCase().replace(/_/g, "-"));
+}
+
+/**
+ * Grafias da família faturado como estão gravadas em `pagamentos_v2`, para uso
+ * em filtro de banco (`.in(...)`), onde não dá para rodar predicado.
+ *
+ * Mantido ao lado de `isFamiliaFaturado` de propósito: mexer numa lista sem
+ * mexer na outra foi o que produziu as definições divergentes.
+ */
+export const FAMILIA_FATURADO_TIPOS = ["E-FATURADO", "E-Faturado", "EFATURADO", "FATURADO"] as const;
+
+/**
  * Identifica cobrança E-Faturado.
  *
- * A comparação é normalizada porque `pagamentos_v2.tipo_cobranca` guarda duas
- * grafias da MESMA modalidade — "E-Faturado" e "E-FATURADO" —, exatamente como
- * `getTipoCobrancaLabel` acima já trata. Não abrange outros tipos.
+ * @deprecated Use `isFamiliaFaturado`. Mantido porque é o nome usado no
+ * destaque de linha da Conferência; delega para o predicado canônico. A
+ * diferença prática é nula: o banco só tem "E-Faturado" e "E-FATURADO".
  */
 export function isCobrancaEFaturado(tipo: string | null | undefined) {
-  return (tipo || "").trim().toUpperCase().replace(/_/g, "-") === "E-FATURADO";
+  return isFamiliaFaturado(tipo);
 }
 
 export function isPagamentoAprovado(cobranca: Cobranca) {

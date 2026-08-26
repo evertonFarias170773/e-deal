@@ -28,6 +28,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { saveProposta } from "@/features/orcamentos/services/orcamentos.service";
 import type { PropostaFormState } from "@/features/orcamentos/types";
+import {
+  divergenciasFinanceiras,
+  type SnapshotFinanceiro
+} from "@/features/orcamentos/lib/edicao-financeira";
 import { aplicarStatusRecomendadoProposta } from "@/features/orcamentos/services/status-writer.service";
 import {
   avaliarEdicaoFaturado,
@@ -112,6 +116,73 @@ async function verificarPermissaoEditarPaga(
   }
 
   return { autorizado: false, motivo: "Sem permissão para editar proposta paga." };
+}
+
+/** R$ 1.234,56 — para a mensagem dizer o valor que o cliente tem em mãos. */
+function formatarBRL(valor: number): string {
+  return (Number(valor) || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+
+/**
+ * Estado financeiro da proposta no banco AGORA, para comparar campo a campo com
+ * o formulário que chegou. Ver `lib/edicao-financeira.ts`.
+ *
+ * Devolve `null` em erro de leitura: sem o snapshot não dá para afirmar que a
+ * edição é inofensiva, e o chamador recusa em vez de adivinhar.
+ */
+async function lerSnapshotFinanceiro(
+  supabase: SupabaseClient,
+  idInt: number,
+  propostaBanco: { is_avulso?: boolean | null; modalidade_frete?: string | null; valor_frete?: number | null }
+): Promise<SnapshotFinanceiro | null> {
+  const [{ data: itens, error: itensErro }, { data: desconto, error: descontoErro }] = await Promise.all([
+    supabase
+      .from("produtos_proposta")
+      .select("id, id_produto, qtd, valor_unt, fixo, valor_sub_total, status_item")
+      .eq("id_int", idInt),
+    supabase
+      .from("desconto_proposta")
+      .select("valor_percentual, valor_nominal")
+      .eq("id_int", idInt)
+      .eq("tipo_desconto", "DESCONTO_GERAL")
+      .maybeSingle()
+  ]);
+
+  if (itensErro) {
+    console.error(`[editar-paga] Falha ao ler itens da proposta #${idInt}:`, itensErro.message);
+    return null;
+  }
+  // `desconto_proposta` ausente é normal (proposta sem desconto); erro de LEITURA
+  // não é — sem ele, um desconto existente passaria despercebido.
+  if (descontoErro) {
+    console.error(`[editar-paga] Falha ao ler desconto da proposta #${idInt}:`, descontoErro.message);
+    return null;
+  }
+
+  const percentual = Number(desconto?.valor_percentual ?? 0);
+  const nominal = Number(desconto?.valor_nominal ?? 0);
+
+  return {
+    isAvulso: Boolean(propostaBanco.is_avulso),
+    modalidadeFrete: propostaBanco.modalidade_frete ?? null,
+    valorFrete: Number(propostaBanco.valor_frete) || 0,
+    // Mesma leitura que `saveProposta` faz ao abrir a proposta: percentual > 0
+    // manda; senão vale o nominal.
+    descontoGeralTipo: percentual > 0 ? "PERCENTUAL" : "VALOR",
+    descontoGeralValor: percentual > 0 ? percentual : nominal,
+    itens: (itens ?? []).map((i) => ({
+      id: Number(i.id),
+      idProduto: Number(i.id_produto),
+      quantidade: Number(i.qtd) || 0,
+      valorUnitario: Number(i.valor_unt) || 0,
+      valorFixo: Number(i.fixo) || 0,
+      subtotal: Number(i.valor_sub_total) || 0,
+      statusItem: String(i.status_item ?? "PENDENTE")
+    }))
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +273,7 @@ export async function POST(request: NextRequest) {
   // ── 4. Validação Server-Side da Proposta no Banco ────────────────────────
   const { data: propostaBanco, error: propostaError } = await supabase
     .from("propostas")
-    .select("id_int, id_cliente, valor_total, is_avulso")
+    .select("id_int, id_cliente, valor_total, is_avulso, modalidade_frete, valor_frete")
     .eq("id_int", idInt)
     .maybeSingle();
 
@@ -364,15 +435,57 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Se houver cobranças mas nenhum pagamento confirmado, impede gravação.
-  // O faturado a vencer é a exceção: ele é justamente a cobrança que ainda não
-  // foi paga e que mesmo assim pode ser ajustada — exigir confirmação aqui
-  // travaria o caso principal deste fluxo.
+  // Se houver cobranças mas nenhum pagamento confirmado, impede gravação —
+  // MAS só quando a edição mexe em dinheiro (26/08/2026).
+  //
+  // O faturado a vencer é a exceção de sempre: ele é justamente a cobrança que
+  // ainda não foi paga e que mesmo assim pode ser ajustada — exigir confirmação
+  // aqui travaria o caso principal daquele fluxo. Intocado.
+  //
+  // O que mudou: a recusa cobria QUALQUER edição, inclusive trocar contato,
+  // endereço ou observação. O que a proteção defende é o link de pagamento que
+  // já está com o cliente — ele tem valor fixo no provedor e pode ser pago a
+  // qualquer momento, então proposta e cobrança não podem divergir de valor.
+  // Edição que não toca nenhuma entrada do cálculo não ameaça isso.
+  //
+  // A comparação é CAMPO A CAMPO contra o banco, nunca pelo total: o `novoTotal`
+  // que chega aqui é o cálculo do client, e esta mesma rota documenta mais
+  // abaixo que ele "serviu só para escolher o caminho" — quem decide o valor
+  // gravado é o banco, depois dos triggers. Ver `lib/edicao-financeira.ts`,
+  // inclusive a dívida técnica da checagem transacional que falta.
   if (temCobrancasAtivas && valorPagoRealArredondado <= 0 && !ehCaminhoFaturado) {
-    return NextResponse.json(
-      { success: false, error: "Esta proposta possui cobranças ativas mas não possui pagamento confirmado de fato. Cancele as cobranças antes de editar." },
-      { status: 400 }
-    );
+    const snapshot = await lerSnapshotFinanceiro(supabase, idInt, propostaBanco);
+    if (!snapshot) {
+      return NextResponse.json(
+        { success: false, error: "Não foi possível conferir os valores desta proposta no servidor. Tente de novo." },
+        { status: 500 }
+      );
+    }
+
+    const divergencias = divergenciasFinanceiras(formState, snapshot);
+    if (divergencias.length > 0) {
+      const valorCobranca = cobrancas.reduce((s, c) => s + (Number(c.valor) || 0), 0);
+      const plural = cobrancas.length > 1;
+      console.info(
+        `[editar-paga] Proposta #${idInt}: edicao recusada por mexer em dinheiro — ${divergencias
+          .map((d) => `${d.campo} (${d.antes} -> ${d.depois})`)
+          .join("; ")}`
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          code: "EDICAO_ALTERA_VALOR",
+          error:
+            `Esta proposta tem ${plural ? "cobranças enviadas" : "uma cobrança enviada"} ao cliente no valor de ` +
+            `${formatarBRL(valorCobranca)}. Alterar o valor exige cancelar ${plural ? "essas cobranças" : "essa cobrança"} ` +
+            `primeiro — o link deixa de funcionar e será preciso gerar ${plural ? "novas" : "uma nova"}. ` +
+            `O que mudou: ${divergencias.map((d) => d.campo).join(", ")}.`
+        },
+        { status: 400 }
+      );
+    }
+
+    console.info(`[editar-paga] Proposta #${idInt}: edicao sem efeito financeiro — liberada com cobranca ativa.`);
   }
 
   // ── 5b. Proposta avulsa ou sem produtos + paga: edição PROIBIDA ──────────

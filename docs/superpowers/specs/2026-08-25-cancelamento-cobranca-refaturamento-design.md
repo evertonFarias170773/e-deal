@@ -386,10 +386,10 @@ UPDATE pagamentos_v2 → CANCELADO
    └─ trigger grava  propostas.status_interno = 'CANCELADO'     ← ramo 2 (§10.1)
 app: reverterStatusPropostaSeSemCobranca lê 'CANCELADO'
    └─ 'CANCELADO' não é protegido → grava 'NOVO', tipo_cobranca = null
-estado: proposta NOVO, saldo reaberto, pronta para refaturar
-   …mas NÃO estável: o próximo save do orçamento dispara o trigger de novo
-      e o ramo 2 reescreve 'CANCELADO' (medido: 150 ms, proposta 21232)
+estado final: proposta NOVO, saldo reaberto, pronta para refaturar
 ```
+
+Até 26/08/2026 esse `NOVO` **não era estável**: o próximo save do orçamento disparava o trigger e o ramo 2 reescrevia `CANCELADO` (medido em 150 ms, proposta 21232). Corrigido fora deste plano — §10.1.
 
 **`NOVO` com `tipo_cobranca = null` é o estado final desejado** (decisão 11), não um efeito colateral tolerado: uma cobrança morta significa condição financeira a renegociar, e o rebaixamento a partir de `APROVADO`/`LIBERADO` diz exatamente isso. O comportamento atual de `reverterStatusPropostaSeSemCobranca` já entrega esse estado e **não muda** nesta rodada.
 
@@ -401,7 +401,15 @@ O que continua sendo pendência é o **caminho** até ele — e ele é pior do q
 
 ### 10.1 `atualizar_status_financeiro_proposta` escreve status que ninguém pediu
 
-> **Revisado em 26/08/2026.** A versão anterior desta seção descrevia a passagem por `CANCELADO` como **transitória**, corrigida logo depois pela aplicação. Estava errado, e subestimava o problema em dois pontos. O texto abaixo é o comportamento verificado, e **a correção está sendo feita fora deste plano** — ver §10.1.4.
+> **RESOLVIDA em 26/08/2026.** Deixou de ser pendência. A correção foi feita **fora deste plano**, em trabalho paralelo autorizado, e está em produção no commit `fd000a0` — *fix(propostas): funcao financeira nao cancela nem reabre proposta*.
+>
+> Verificado no banco em 26/08/2026, nas duas sobrecargas de `atualizar_status_financeiro_proposta`: a função **não grava mais `CANCELADO`** e ganhou a guarda que a impede de tirar uma proposta desse status. Do lado da aplicação, `/api/orcamentos/cancelar-proposta` deixou de depender do efeito colateral do trigger — relê o status imediatamente antes do `UPDATE` e trava nele.
+>
+> **Consequência para este plano:** o estado final `NOVO` validado nas Etapas 7 e 9 **é estável**. Antes ele era correto no instante seguinte ao cancelamento e o trigger o reescrevia no próximo salvamento do orçamento; agora permanece. Provado em produção pelo dono: cancelar a cobrança e salvar o orçamento não derruba mais a proposta.
+>
+> O histórico abaixo fica registrado porque explica um comportamento que ainda aparece no audit de propostas antigas — e porque dois pontos **não** foram resolvidos pela correção (§10.1.4).
+>
+> *(Nota anterior, 26/08: a primeira versão desta seção descrevia a passagem por `CANCELADO` como transitória, corrigida pela aplicação. Estava errado, e subestimava o problema em dois pontos.)*
 
 A função (nas duas sobrecargas, `integer` e `bigint`) tem dois ramos de "não há cobrança válida", e os dois escrevem status por conta própria:
 
@@ -439,18 +447,18 @@ Proposta cancelada pela rota própria fica, na prática, sem nenhuma linha em `p
 
 As consequências que esta spec já registrava — leitura concorrente vendo um cancelamento que não aconteceu, e dois eventos no audit indistinguíveis de cancelamento manual — continuam valendo, e são **maiores** do que o descrito: não é uma janela por operação, é um estado que se reinstala a cada salvamento.
 
-#### 10.1.4 A correção vem de fora deste plano
+#### 10.1.4 A correção — aplicada em 26/08/2026, fora deste plano
 
-Está sendo feita em trabalho paralelo autorizado, na migration `supabase/migrations/20260826_funcao_financeira_nao_cancela_proposta.sql`, junto com o ajuste da rota `/api/orcamentos/cancelar-proposta`. **Não é escopo deste plano e não deve ser tocada aqui** (§10.1.5).
+Feita em trabalho paralelo autorizado: migration `supabase/migrations/20260826_funcao_financeira_nao_cancela_proposta.sql` + ajuste da rota `/api/orcamentos/cancelar-proposta`, publicados juntos no commit `fd000a0`. **Não é escopo deste plano e não deve ser tocada aqui** (§10.1.5).
 
-O que ela faz: os ramos 1 e 2 viram a mesma regra — *não há cobrança válida → `NOVO`, e só se a proposta não estiver `CANCELADA`*. A função nunca mais escreve `CANCELADO` nem tira uma proposta de `CANCELADO`. A reativação por cobrança nova continua funcionando, porque cai nos ramos 3/4 (`AGUARDANDO`/`APROVADO`), que não têm guarda.
+O que ela fez: os ramos 1 e 2 viram a mesma regra — *não há cobrança válida → `NOVO`, e só se a proposta não estiver `CANCELADA`*. A função nunca mais escreve `CANCELADO` nem tira uma proposta de `CANCELADO`. A reativação por cobrança nova continua funcionando, porque cai nos ramos 3/4 (`AGUARDANDO`/`APROVADO`), que não têm guarda.
 
-**Efeito sobre este plano, quando ela entrar:** o estado final `NOVO` validado nas Etapas 7 e 9 **passa a ser estável**. Hoje ele é correto no instante seguinte ao cancelamento e se perde no próximo save; depois da correção, ele permanece. Nada nas Etapas 4-10 precisa mudar por causa disso — o que muda é a durabilidade do resultado.
+**Efeito sobre este plano:** o estado final `NOVO` validado nas Etapas 7 e 9 **é estável**. Nada nas Etapas 4-10 mudou por causa disso — o que mudou é a durabilidade do resultado. A Etapa 13 pode ser executada sem a ressalva que existia: o passo 3 já é validado num estado que persiste.
 
-Dois pontos que ela **não** resolve, e que ficam registrados:
+Dois pontos que ela **não** resolveu, e que ficam registrados:
 
 - **Sem backfill.** As 31 propostas já em `CANCELADO` não se corrigem sozinhas: a consulta de propostas filtra `status_interno <> 'CANCELADO'`, então ninguém as abre nem as salva. Precisam de ação separada.
-- **Acoplamento na rota.** `/api/orcamentos/cancelar-proposta` hoje **depende** do ramo 2 para gravar o `CANCELADO` quando há cobrança pendente; a trava otimista do passo 6 falha e a rota trata o `CANCELADO` do trigger como sucesso. Com a migration, a reconsulta encontraria `NOVO` e a rota devolveria 409 com as cobranças canceladas e a proposta **não** cancelada. Por isso a migration e o ajuste da rota entram **juntos** — e ambos são da outra sessão.
+- **Acoplamento na rota — resolvido junto.** A rota **dependia** do ramo 2 para gravar o `CANCELADO` quando havia cobrança pendente: a trava otimista do passo 6 falhava e a rota tratava o `CANCELADO` do trigger como sucesso. Sem o ajuste, a reconsulta passaria a encontrar `NOVO` e a rota devolveria 409 com as cobranças canceladas e a proposta **não** cancelada. Por isso migration e rota entraram **juntas**, no mesmo commit.
 
 #### 10.1.5 Divisão de escopo (26/08/2026)
 
@@ -476,7 +484,7 @@ Provedor → `boletos` → `pagamentos_v2` → `propostas`. Uma falha no meio de
 ## 11. Fora desta rodada
 
 - **Trazer o webhook legado das empresas 1 e 3 para o servidor.** Rodada própria. Nesta spec, o cancelamento de título dessas empresas segue como é hoje: rota devolve `delegarLegado: true` e o navegador chama `del-boleto-vibe`.
-- **Corrigir `atualizar_status_financeiro_proposta`** (§10.1) e o acoplamento de `/api/orcamentos/cancelar-proposta` ao efeito colateral do trigger. **Não é mais "rodada futura sem dono": está sendo feito em trabalho paralelo autorizado**, na migration `20260826_funcao_financeira_nao_cancela_proposta.sql`. Este plano não toca nesses dois — ver a divisão de escopo em §10.1.5.
+- ~~Corrigir `atualizar_status_financeiro_proposta` e o acoplamento de `/api/orcamentos/cancelar-proposta`~~ — **feito em 26/08/2026**, fora deste plano (commit `fd000a0`). Este plano segue não tocando nesses dois — divisão de escopo em §10.1.5.
 
 ---
 
@@ -542,7 +550,7 @@ Três ajustes para isso:
 | 3 | **Retorno do webhook mente.** `pagamento_cancelado` vem `true` sem que nada tenha sido escrito, e `parcelas_ativas_restantes` é contado por `id_int`, misturando cobranças da mesma proposta | Nunca decidir por esses campos: **releitura de `pagamentos_v2`** sempre (§7). O número de parcelas é diagnóstico, nunca exibido como se fosse da cobrança |
 | 4 | **A cascata pode voltar** num save da UI do n8n, sem aviso — foi assim que correções por API já se perderam duas vezes | A reativação fica na rodada como **defesa idempotente** (§7), inócua enquanto não houver cascata. Reconferir o workflow imediatamente antes de cada teste em produção |
 | 5 | **Duplo clique / retry** no passo 1 com vários títulos | Cada título é uma ação do usuário; a idempotência por cobrança já existe. Rever a de título no plano |
-| 6 | **Proposta transita por `CANCELADO`** em 100% dos casos-alvo — e o trigger **reescreve** esse status a cada salvamento do orçamento, então o `NOVO` final não é estável hoje | §10.1 — correção em andamento em trabalho paralelo autorizado (migration + ajuste da rota `cancelar-proposta`). Fora do escopo deste plano |
+| 6 | ~~Proposta transita por `CANCELADO` e o trigger reescreve o status a cada save~~ — **RESOLVIDO em 26/08/2026** (commit `fd000a0`, fora deste plano) | §10.1. A função não grava mais `CANCELADO`; o `NOVO` das Etapas 7 e 9 é estável. Resta sem backfill as 31 propostas já marcadas |
 | 7 | **A versão atual do ramo de cancelamento do Inter nunca executou em produção** (alterada em 21/08, última execução retida em 19/08) | O primeiro cancelamento real na Birô é **também o primeiro teste da versão**. Tratar como estreia: uma cobrança escolhida pelo dono, conferência do resultado no banco antes de qualquer segunda execução |
 | 8 | **Empresas 1 e 3 cancelam o título pelo navegador** | Fora de escopo (§11). O veredito ainda é consultado no servidor antes |
 

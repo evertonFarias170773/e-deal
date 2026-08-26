@@ -174,14 +174,14 @@ export function mensagemBloqueioProducao(
   const status = String(proposta.status_interno || "").trim().toUpperCase();
 
   if (STATUS_QUE_BLOQUEIAM_CANCELAMENTO_PAGO.includes(status)) {
-    return `${prefixo} esta ${status}. ` +
-      "Peca ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobranca.";
+    return `${prefixo} está ${status}. ` +
+      "Peça ao gerente para devolver a proposta para REVISAO ATENDENTE antes de cancelar a cobrança.";
   }
 
   // Sobrou o caso da flag: status ainda anterior a producao, mas a proposta
   // consta liberada. A acao do gerente aqui e retirar da producao, nao devolver.
-  return `${prefixo} consta liberada para a producao. ` +
-    "Peca ao gerente para retira-la da producao antes de cancelar a cobranca.";
+  return `${prefixo} consta liberada para a produção. ` +
+    "Peça ao gerente para retirá-la da produção antes de cancelar a cobrança.";
 }
 
 /**

@@ -8,7 +8,7 @@
  * cc_abrir_pendencia / cc_usar_pendencia / cc_encerrar_pendencia, chamadas a
  * partir das rotas server-side (src/app/api/conta-corrente/*, editar-paga,
  * resolver-diferenca, usar-credito, pagamento-combinado, confirmar,
- * cancelar-boleto, cancelar-externo).
+ * cancelar-externo).
  */
 
 import { getSupabaseClient } from "@/lib/supabase/client";

@@ -2008,8 +2008,7 @@ export async function deleteBoletoFromBankViaN8n(
     }
     return await resolverRecusaDoBanco(
       legivel || errorText || `Erro no processamento da exclusão do boleto: ${response.statusText}`,
-      idBoletoC6,
-      Number(idEmpresa) || 1
+      boletoId
     );
   }
 
@@ -2027,8 +2026,7 @@ export async function deleteBoletoFromBankViaN8n(
   if (resData.error || resData.message || resData.status === "error" || resData.success === false) {
     return await resolverRecusaDoBanco(
       mensagemDoRetornoBancario(resData.error ?? resData.message, "Erro retornado pelo webhook."),
-      idBoletoC6,
-      Number(idEmpresa) || 1
+      boletoId
     );
   }
 
@@ -2036,66 +2034,48 @@ export async function deleteBoletoFromBankViaN8n(
 }
 
 /**
- * O C6 dá baixa automática no boleto alguns dias depois do vencimento. A partir
- * daí ele recusa o cancelamento — não existe mais título ativo para cancelar.
+ * O banco dá baixa automática no boleto alguns dias depois do vencimento. A
+ * partir daí ele recusa o cancelamento — não existe mais título ativo para
+ * cancelar.
  *
  * Isso NÃO é falha: o objetivo, tirar o boleto de circulação, já está cumprido.
  * Tratar como erro deixava o financeiro sem saída no caso mais comum (cliente
  * não paga no vencimento e depois quer pagar por PIX) e obrigava a corrigir o
  * banco de dados na mão.
  *
- * A recusa só é aceita como "já inativo" depois de confirmar no C6 que NÃO há
- * pagamento. Se o cliente pagou o boleto, registrar outro recebimento contaria o
- * mesmo dinheiro duas vezes — aí o erro continua de pé. Falha ao consultar
- * também mantém o erro: sem confirmação, o lado seguro é não seguir.
+ * A DECISÃO MUDOU DE LUGAR EM 26/08/2026. Ela vivia aqui, no cliente: o
+ * predicado da recusa, a consulta de pagamento e a conclusão. Agora quem decide
+ * é `POST /api/cobrancas/titulo-inativo-no-banco`, no servidor — inclusive a
+ * confirmação de que não houve pagamento, que é o que separa "saiu de
+ * circulação" de "foi pago". Esta função só RELATA a recusa do banco.
  *
- * O reconhecimento depende do texto do banco porque o `GET /v1/bank_slips` não
- * distingue ativo de baixado — medido em produção: 689 consultas devolveram
- * apenas `CREATED` e `PAID`. Recusa fora do padrão é registrada em log, para uma
- * mudança de redação do C6 aparecer em vez de voltar a travar em silêncio.
+ * O webhook do C6 continua sendo chamado daqui porque trazê-lo para o servidor
+ * é rodada própria; por isso o relato precisa existir.
  */
-function ehRecusaPorTituloInativo(motivo: string): boolean {
-  // O C6 manda a recusa sem acentos ("Titulo esta em situacao que nao permite"),
-  // entao basta comparar em minusculas — sem normalizacao, sem classe de
-  // caracteres combinantes. A variante acentuada entra ao lado por seguranca,
-  // caso o banco reescreva a mensagem.
-  const texto = motivo.toLowerCase();
-  return (
-    texto.includes("situacao que nao permite") ||
-    texto.includes("situação que não permite")
-  );
-}
+async function resolverRecusaDoBanco(motivo: string, boletoId: string) {
+  const client = getSupabaseClient();
+  if (!client) throw new Error(motivo);
 
-async function resolverRecusaDoBanco(motivo: string, idBoletoC6: string, idEmpresa: number) {
-  if (!ehRecusaPorTituloInativo(motivo)) {
-    throw new Error(motivo);
+  const sessao = await client.auth.getSession();
+  const token = sessao.data.session?.access_token || "";
+  if (!token) throw new Error(motivo);
+
+  const resposta = await fetch("/api/cobrancas/titulo-inativo-no-banco", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ boletoId, motivoRecusa: motivo })
+  });
+
+  const dados = await resposta.json().catch(() => null);
+
+  if (!resposta.ok || !dados?.success) {
+    // Inclui o caso em que a recusa NÃO é de inatividade: aí é erro mesmo, e o
+    // servidor devolve a mensagem que o operador precisa ler.
+    throw new Error(dados?.message || motivo);
   }
 
-  let status = "";
-  let temPagamento = false;
-  try {
-    const { consultarDetalhesBoletoC6 } = await import("@/features/cobrancas/services/pagamentos-v2.service");
-    const detalhes = await consultarDetalhesBoletoC6(idBoletoC6, idEmpresa);
-    status = String(detalhes?.status ?? "").toUpperCase();
-    temPagamento = Array.isArray(detalhes?.payments) && detalhes.payments.length > 0;
-  } catch (erroConsulta) {
-    console.error("[deleteBoletoFromBankViaN8n] Falha ao confirmar a situacao no C6:", erroConsulta);
-    throw new Error(
-      `${motivo} Não foi possível confirmar no banco se o título já foi pago, então nada foi alterado.`
-    );
-  }
-
-  if (status === "PAID" || temPagamento) {
-    throw new Error(
-      "O banco informa este boleto como PAGO. Não é possível cancelar nem registrar outro recebimento — " +
-        "use 'Consultar pagamento C6' para liquidar com a data oficial do banco."
-    );
-  }
-
-  console.warn(
-    `[deleteBoletoFromBankViaN8n] ${idBoletoC6}: o C6 ja havia baixado o titulo e nao ha pagamento; seguindo sem cancelamento.`
-  );
-  return { success: true, jaInativoNoBanco: true, data: { motivo } };
+  console.warn(`[deleteBoletoFromBankViaN8n] ${boletoId}: título já inativo no banco, cancelado no ERP.`);
+  return { success: true, jaInativoNoBanco: true, data: dados };
 }
 
 export function getNfeDisplayStatus(note: {

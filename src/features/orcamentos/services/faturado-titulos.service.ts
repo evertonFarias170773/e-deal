@@ -124,15 +124,23 @@ export async function excluirTitulosDoFaturado(params: {
     return { success: false, excluidos, falhas };
   }
 
-  // Cancelamento em cascata: o workflow VIBE-BOLETO-FATURADO-INTER marca a
-  // cobrança inteira como CANCELADO quando não resta parcela ativa (está no
-  // cabeçalho de api/cobrancas/cancelar-boleto-faturado). Num faturado de
-  // parcela única — que é a maioria — tirar o título mata a cobrança junto.
+  // DEFESA IDEMPOTENTE contra cancelamento em cascata da cobrança.
   //
-  // Isso não é o que o financeiro pediu: ele quer trocar o valor e registrar
-  // de novo, não cancelar. Pior, uma cobrança cancelada some da lista de
-  // ativas e o save seguinte deixaria a proposta com o valor novo e a cobrança
-  // com o valor velho, fora do faturamento e sem rastro. Então reativamos.
+  // Este bloco nasceu descrito como reação a algo observado: "o workflow marca
+  // a cobrança inteira como CANCELADO quando não resta parcela ativa". Lido o
+  // fluxo vivo em 25 e 26/08/2026, o ramo de cancelamento do
+  // VIBE-BOLETO-FATURADO-INTER **não escreve em `pagamentos_v2`** — a cascata
+  // não acontece, e este ramo NÃO dispara hoje.
+  //
+  // Fica assim mesmo, por três razões: é barato, é no-op quando não há o que
+  // reativar, e o workflow já perdeu correções duas vezes por save/reimport na
+  // UI do n8n — se a cascata voltar, o efeito seria exatamente o que o
+  // financeiro não pediu: ele quer trocar o valor e registrar de novo, não
+  // cancelar. Uma cobrança cancelada sai da lista de ativas e o save seguinte
+  // deixaria a proposta com o valor novo e a cobrança com o valor velho, fora
+  // do faturamento e sem rastro.
+  //
+  // A decisão sai da RELEITURA abaixo, nunca do retorno do webhook.
   const { data: cobrancaAtual } = await client
     .from("pagamentos_v2")
     .select("status, motivo_cancela")

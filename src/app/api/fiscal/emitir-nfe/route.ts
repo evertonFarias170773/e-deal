@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Sessão. Mesmo desenho de gerar-pix e cancelar-boleto: JWT do usuário,
+    // 2. Sessão. Mesmo desenho de gerar-pix e cancelar-externo: JWT do usuário,
     //    sem service role — as políticas de RLS continuam valendo.
     const authHeader = request.headers.get("authorization") ?? "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
