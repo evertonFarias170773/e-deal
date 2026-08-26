@@ -62,6 +62,15 @@ export type CobrancasReadResult = {
    * significa consulta bem-sucedida e realmente sem cobranças.
    */
   errorMessage?: string;
+  /**
+   * A consulta concluiu SEM ERRO e sem nenhuma cobrança no conjunto inteiro.
+   *
+   * Distinto de `errorMessage`: aqui a leitura funcionou. Mas o efeito na tela
+   * é o mesmo — nenhuma proposta consegue exibir cobrança —, e por isso quem
+   * consome precisa saber que a lista vazia NÃO autoriza afirmar "esta
+   * proposta não tem cobrança".
+   */
+  vazia?: boolean;
 };
 
 export type UpdatePagamentoV2EmpresaResult = {
@@ -390,6 +399,7 @@ export async function getCobrancasReadOnlyData(filters?: {
   atendente?: string;
   tipo?: string;
 }): Promise<CobrancasReadResult> {
+  const inicioMs = Date.now();
   const rows = await fetchPagamentosV2Rows(filters);
 
   if (!rows) {
@@ -483,15 +493,39 @@ export async function getCobrancasReadOnlyData(filters?: {
   const cobrancasStats = sortByConferenceRecency(mappedCobrancas);
   const cobrancas = cobrancasStats.slice(0, 500);
 
-  // Consulta concluiu com sucesso e não há cobranças: isso é um resultado
-  // legítimo (ex.: filtro sem correspondência). Antes caía em mock e a tela
-  // passava a exibir dados fictícios como se fossem reais.
+  // Consulta concluiu com sucesso e não há cobranças: é um resultado legítimo
+  // (ex.: filtro sem correspondência), e por isso NÃO é `errorMessage`. Mas
+  // também não é inócuo: com o conjunto vazio, TODA proposta passa a parecer
+  // sem cobrança na aba Pagamentos.
+  //
+  // Até 26/08/2026 este ramo devolvia `warnings: []`, e `loadData` só loga
+  // quando há warnings — então uma carga vazia não deixava rastro NENHUM: sem
+  // erro, sem log, e a tela afirmando que não havia cobrança. O diagnóstico da
+  // proposta 21223 levou horas por causa disso. Agora ela é registrada com o
+  // contexto necessário para diagnosticar depois, sem precisar reproduzir.
   if (cobrancasStats.length === 0) {
+    const contexto = {
+      origem: "getCobrancasReadOnlyData",
+      filtros: filters ?? "(sem filtros)",
+      linhasRecebidas: rows.length,
+      linhasMapeadas: mappedCobrancas.length,
+      duracaoMs: Date.now() - inicioMs
+    };
+    console.warn(
+      "[Cobrancas][CargaVazia] A consulta concluiu SEM NENHUMA cobrança. " +
+        "Enquanto este for o estado, nenhuma proposta consegue exibir cobrança.",
+      contexto
+    );
+
     return {
       source: "supabase",
       cobrancas: [],
       cobrancasStats: [],
-      warnings: []
+      vazia: true,
+      warnings: [
+        `Carga sem nenhuma cobrança (${rows.length} linha(s) recebidas, ` +
+          `${contexto.duracaoMs}ms). A tela não pode afirmar que uma proposta está sem cobrança.`
+      ]
     };
   }
 

@@ -179,6 +179,23 @@ Cuidado de escopo: **não confundir com "Cancelar boleto"** (`onLifecycle.cancel
 
    **Não tocar** nos registros históricos, que descrevem o passado corretamente: `docs/history/CHANGELOG.md` e a spec/plano de 11/08/2026.
 
+8. **Título já inativo no banco: hoje o ERP não tem saída.** Quando o banco recusa o cancelamento porque o título já não está ativo (`EXPIRADO`, `BAIXADO`, `CANCELADO`), a rota devolve a recusa e nada acontece localmente. O título fica **preso na lista de atrasados**: a única via de baixa exige um cancelamento bancário que nunca vai acontecer, porque não há mais título para cancelar.
+
+   **Caso real (26/08/2026):** boleto do pedido **20087** (empresa 2, Birô, `id_pagamento` `20087-E`, status `VENCIDO`), recusado pelo Inter com *"A cobrança não pode ser cancelada, pois se encontra na situação EXPIRADO."*
+
+   **Não é isolado:** das **18 execuções retidas** do `VIBE-BOLETO-FATURADO-INTER`, **nenhuma** chegou a excluir um título — todas foram recusadas assim (ver Etapa 0). Dimensão atual: 65 títulos faturados ativos em aberto, dos quais **6 já vencidos** (4 na empresa 1, 2 na empresa 2) são candidatos a ficar presos.
+
+   **Decisão do dono:** nesses casos o ERP **cancela localmente assim mesmo**, marcando `CANCELADO` e gravando no motivo a situação informada pelo banco. **Não fingir que houve cancelamento bancário** — o registro tem de dizer que o banco recusou por título já inativo e qual situação ele informou.
+
+   **Cuidado obrigatório — distinguir "já inativo" de "erro".** Uma recusa por erro (rede, credencial, payload, indisponibilidade) **não** pode virar cancelamento local: isso deixaria o título vivo no banco e morto no ERP. Duas armadilhas concretas:
+
+   - `ehRecusaPorTituloInativo` já existe, mas **mora no cliente** (`src/features/nfe/services/nfe.service.ts:2057`) e só é alcançada por `resolverRecusaDoBanco`, no caminho **legado** (empresas 1 e 3). A decisão precisa valer no **servidor**, para as três empresas;
+   - ela casa apenas a redação do **C6** — `"situacao que nao permite"`. A do **Inter é outra**: `"se encontra na situação {SITUACAO}"`, com `EXPIRADO` e `CANCELADO` observados em produção. Hoje o predicado **não reconheceria** a recusa do Inter, e o caminho da empresa 2 (`cancelar-boleto-faturado`) sequer chama `resolverRecusaDoBanco` — apenas repassa a mensagem do banco.
+
+   Reaproveitar a defesa que já existe no caminho legado: antes de aceitar a recusa como "já inativo", **confirmar no banco que não houve pagamento**. Falha ao confirmar mantém o erro — sem confirmação, o lado seguro é não cancelar.
+
+   **A regra 3 não muda: título pago continua NÃO cancelável.** Este item trata do título que já saiu de circulação sem ter sido pago, não do título liquidado.
+
 **Valida antes de seguir:** o doc descreve o que o código faz — sem regra inventada, sem regra omitida. Busca por "cascata" no repo não retorna afirmação de que o Inter cancela `pagamentos_v2`.
 
 ### Etapa 13 — Validação fim a fim em produção

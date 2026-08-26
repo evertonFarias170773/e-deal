@@ -45,10 +45,28 @@ export type CancelamentoPagoErrorCode =
   | "MOTIVO_INVALIDO"
   | "FALHA_CREDITO";
 
+/**
+ * Em que pé está a leitura das cobranças.
+ *
+ * Existe porque `source` sozinho não distingue os casos: uma carga que conclui
+ * SEM NENHUMA cobrança também executa `setSource("supabase")`, e a tela passava
+ * a tratar o conjunto vazio como verdade — afirmando "nenhuma cobrança criada"
+ * e oferecendo "Gerar cobrança" para propostas que tinham cobrança emitida.
+ *
+ * - `CARREGANDO`: ainda não houve leitura real concluída;
+ * - `OK`: leitura concluída com cobranças — o único estado em que a ausência de
+ *   uma cobrança na lista significa que ela realmente não existe;
+ * - `VAZIA`: leitura concluiu sem erro e sem nenhuma cobrança no conjunto;
+ * - `FALHA`: a consulta falhou; o estado anterior foi preservado.
+ */
+export type StatusCargaCobrancas = "CARREGANDO" | "OK" | "VAZIA" | "FALHA";
+
 type CobrancasContextValue = {
   cobrancas: Cobranca[];
   cobrancasStats: Cobranca[];
   source: CobrancasReadSource;
+  statusCarga: StatusCargaCobrancas;
+  mensagemCarga?: string;
   createCobranca: (values: CriarCobrancaFormValues, proposta?: Proposta) => Promise<Cobranca>;
   confirmPagamento: (id: string) => void;
   cancelCobranca: (
@@ -350,6 +368,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
   const [cobrancas, setCobrancas] = useState<Cobranca[]>(createInitialState);
   const [cobrancasStats, setCobrancasStats] = useState<Cobranca[]>(createInitialState);
   const [source, setSource] = useState<CobrancasReadSource>("mock");
+  const [statusCarga, setStatusCarga] = useState<StatusCargaCobrancas>("CARREGANDO");
+  const [mensagemCarga, setMensagemCarga] = useState<string | undefined>(undefined);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [existingBoletoIdInts, setExistingBoletoIdInts] = useState<Set<number>>(new Set());
   const [hasBoletoHistoryIdInts, setHasBoletoHistoryIdInts] = useState<Set<number>>(new Set());
@@ -373,6 +393,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     // sumirem até o usuário dar F5.
     if (result.errorMessage) {
       console.error("[CobrancasProvider] Recarga de cobranças falhou; estado anterior preservado:", result.errorMessage);
+      setStatusCarga("FALHA");
+      setMensagemCarga(result.errorMessage);
       return result;
     }
 
@@ -380,14 +402,27 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       setCobrancas(result.cobrancas);
       setCobrancasStats(result.cobrancasStats);
       setSource("supabase");
+      // `source` vira "supabase" mesmo com conjunto vazio — foi por isso que a
+      // guarda da tela (`cobrancasIndefinidas`) se desarmava numa carga vazia.
+      // O status separa os dois casos.
+      setStatusCarga(result.vazia || result.cobrancasStats.length === 0 ? "VAZIA" : "OK");
+      setMensagemCarga(
+        result.vazia || result.cobrancasStats.length === 0
+          ? "A última leitura não trouxe nenhuma cobrança."
+          : undefined
+      );
     } else if (stored) {
       setCobrancas(stored);
       setCobrancasStats(result.cobrancasStats);
       setSource("mock");
+      setStatusCarga("OK");
+      setMensagemCarga(undefined);
     } else {
       setCobrancas(result.cobrancas.length > 0 ? result.cobrancas : createInitialState());
       setCobrancasStats(result.cobrancasStats.length > 0 ? result.cobrancasStats : createInitialState());
       setSource(result.source);
+      setStatusCarga("OK");
+      setMensagemCarga(undefined);
     }
 
     // Buscar todos os id_int da tabela public.boletos no banco de dados
@@ -1969,6 +2004,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       getCobrancaById: (id: string) => cobrancas.find((item) => item.id === id) ?? cobrancasStats.find((item) => item.id === id),
       getCobrancaByToken: (token: string) =>
         cobrancas.find((item) => item.token_publico === token) ?? cobrancasStats.find((item) => item.token_publico === token),
+      statusCarga,
+      mensagemCarga,
       getCobrancasByProposta: (idInt: number) => cobrancasStats.filter((item) => item.id_int === idInt),
       liberarCobrancaReal,
       voltarCobrancaFilaReal,
@@ -1984,6 +2021,8 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       cobrancas,
       cobrancasStats,
       source,
+      statusCarga,
+      mensagemCarga,
       cancelCobranca,
       cancelarExterno,
       confirmPagamento,

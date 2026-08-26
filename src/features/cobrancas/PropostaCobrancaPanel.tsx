@@ -165,7 +165,7 @@ export function PropostaCobrancaPanel({
   onPagamentoIntegralConcluido
 }: PropostaCobrancaPanelProps) {
   const { showToast } = useAppToast();
-  const { createCobranca, getCobrancasByProposta, source, cobrancas, refreshCobrancas } = useCobrancas();
+  const { createCobranca, getCobrancasByProposta, source, cobrancas, refreshCobrancas, statusCarga, mensagemCarga } = useCobrancas();
   const { user } = useAuth();
   
   const router = useRouter();
@@ -1416,16 +1416,28 @@ export function PropostaCobrancaPanel({
 
   /**
    * `getCobrancasByProposta` filtra `cobrancasStats`, que nasce com o mock e só
-   * vira dado real quando o provider conclui a leitura (`source === "supabase"`).
-   * Enquanto isso, a lista desta proposta vem vazia — e vazio NÃO é o mesmo que
-   * "não existe cobrança".
+   * vira dado real quando o provider conclui a leitura. Enquanto isso, a lista
+   * desta proposta vem vazia — e vazio NÃO é o mesmo que "não existe cobrança".
    *
    * Tratar os dois como iguais fazia a aba Pagamentos anunciar "Nenhuma cobrança
    * criada" e oferecer "Gerar cobrança" para propostas que já tinham cobrança
    * emitida, convidando à duplicidade — e a lista "aparecia sozinha" quando a
    * carga terminava, dando a impressão de bug intermitente.
+   *
+   * `source !== "supabase"` sozinho NÃO bastava, e foi o furo que produziu o
+   * caso da proposta 21223 (26/08/2026): uma carga que conclui SEM NENHUMA
+   * cobrança também executa `setSource("supabase")`, desarmando a guarda. A
+   * leitura tinha "funcionado", o conjunto estava vazio, e a tela afirmava que
+   * a proposta não tinha cobrança — havendo um PIX de R$ 11,00 pago.
+   *
+   * Por isso a condição passa a ser o STATUS DA CARGA: só `OK` (leitura
+   * concluída COM cobranças) autoriza afirmar ausência.
    */
-  const cobrancasIndefinidas = Boolean(getSupabaseClient()) && source !== "supabase";
+  const cobrancasIndefinidas =
+    Boolean(getSupabaseClient()) && (source !== "supabase" || statusCarga !== "OK");
+
+  /** Ainda carregando × carregou e não dá para confiar no resultado. */
+  const cargaFalhou = cobrancasIndefinidas && statusCarga !== "CARREGANDO";
 
   // Declarado antes dos returns porque o painel tem três saídas — modo só
   // modal (lista de Orçamentos), detalhe de cobrança e painel completo — e o
@@ -1876,10 +1888,36 @@ export function PropostaCobrancaPanel({
         title="Cobranças já geradas"
         description="A cobrança continua nascendo dentro da proposta. O modal de criação foi simplificado para um fluxo rápido e operacional."
       >
-        {cobrancasIndefinidas ? (
-          // Sem dado real ainda: não afirma que a proposta está sem cobrança e
-          // não oferece "Gerar cobrança" — criar aqui poderia duplicar uma
-          // cobrança já existente que simplesmente não terminou de carregar.
+        {cargaFalhou ? (
+          // A leitura terminou e NÃO dá para confiar no resultado (falhou, ou
+          // voltou sem nenhuma cobrança). Aqui a tela nao pode dizer "nenhuma
+          // cobranca criada" nem oferecer "Gerar cobranca": criar as cegas
+          // duplicaria uma cobranca existente que so nao foi carregada.
+          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-8 text-center flex flex-col items-center justify-center gap-3">
+            <AlertTriangle className="h-6 w-6 text-amber-600" />
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                Não foi possível carregar as cobranças desta proposta.
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                A lista não foi carregada, então não dá para afirmar que esta proposta está sem cobrança.
+                Recarregue antes de gerar qualquer cobrança — criar agora pode duplicar uma existente.
+              </p>
+              {mensagemCarga ? (
+                <p className="mt-1 text-[11px] text-amber-700">{mensagemCarga}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => void refreshCobrancas()}
+              className="rounded-2xl border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+            >
+              Recarregar cobranças
+            </button>
+          </div>
+        ) : cobrancasIndefinidas ? (
+          // Ainda carregando: mesma regra — não afirma ausência nem oferece
+          // "Gerar cobrança".
           <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center flex flex-col items-center justify-center gap-3">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-[#0b2f4a]" />
             <p className="text-sm font-medium text-slate-600">Carregando as cobranças desta proposta...</p>
