@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
-import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
 import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
 
 export type EtiquetaViewModel = {
@@ -301,17 +300,25 @@ export async function montarEtiquetaViewModel(
       .filter(Boolean)
       .join("  ·  "),
     destinatario: {
-      // Mesmo rótulo da lista da Expedição: número do cadastro antes do nome.
-      // Sem `id_cliente` na proposta, sai só o nome (nada de prefixo vazio).
+      // NOME PURO, SEM O NÚMERO DO CADASTRO (26/08/2026, layout aprovado).
+      //
+      // A etiqueta 10x15 deixou de usar `rotuloClienteComNumero`: o "28449 - "
+      // na frente serve à CONFERÊNCIA INTERNA, onde cadastros de nome parecido
+      // precisam ser desambiguados. Colado no volume, o número não é lido por
+      // ninguém — nem pelo entregador, nem por quem recebe — e disputa espaço
+      // com o nome, que é o que importa ali.
+      //
+      // A regra continua valendo em TODO o resto: lista da Expedição,
+      // DespacharModal e etiqueta de retirada seguem chamando o helper, que
+      // ficou intocado. O que mudou é só este documento.
+      //
       // `proposta.cliente` e o nome do CLIENTE gravado na proposta: so serve
       // quando o destinatario e ele. Escolhido o pagador, o nome tem de vir do
       // cadastro dele — usar o texto da proposta imprimiria o nome errado.
-      nome: rotuloClienteComNumero(
-        idDestinatario,
+      nome:
         idDestinatario === idCliente
           ? proposta.cliente || cliente?.nome || cliente?.fantasia || `Pedido #${idInt}`
-          : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`
-      ),
+          : cliente?.nome || cliente?.fantasia || `Cadastro ${idDestinatario}`,
       recebedor: endereco?.recebedor || "",
       endereco: endereco
         ? [[endereco.endereco, endereco.numero].filter(Boolean).join(", "), endereco.complemento]
