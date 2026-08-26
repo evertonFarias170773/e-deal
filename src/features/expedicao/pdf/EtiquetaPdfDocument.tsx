@@ -252,10 +252,15 @@ export function EtiquetaPdfDocument({ vm }: { vm: EtiquetaViewModel; qrDataUrl?:
   const telefone = vm.destinatario.telefone ? `Fone ${vm.destinatario.telefone}` : "";
   const docELinha = [documento, telefone].filter(Boolean).join("   ·   ");
 
-  const rodape = [
-    `NF-e ${vm.nfNumero || "000.000.000"}`,
-    vm.tipoVolume ? `Embalagem: ${vm.tipoVolume}` : ""
-  ]
+  /**
+   * Rodapé: NF-e e embalagem, cada trecho só quando existe.
+   *
+   * Sem nota, o trecho da NF-e SOME — não vira `000.000.000`, traço nem "sem
+   * nota". O placeholder era um número com cara de número: quem confere na doca
+   * lê zeros e não sabe se a nota falta ou se saiu errada. Ausência é a
+   * informação mais honesta, e a linha continua com o resto.
+   */
+  const rodape = [vm.nfNumero ? `NF-e ${vm.nfNumero}` : "", vm.tipoVolume ? `Embalagem: ${vm.tipoVolume}` : ""]
     .filter(Boolean)
     .join("   ·   ");
 
@@ -315,7 +320,7 @@ export function EtiquetaPdfDocument({ vm }: { vm: EtiquetaViewModel; qrDataUrl?:
 
             <CodigoDeBarras valor={valorBarras} />
 
-            <Text style={styles.rodape}>{rodape}</Text>
+            {rodape ? <Text style={styles.rodape}>{rodape}</Text> : null}
           </View>
         </Page>
       ))}

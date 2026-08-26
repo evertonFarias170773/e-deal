@@ -110,12 +110,49 @@ export async function montarEtiquetaViewModel(
       .eq("escolhido", true)
       .limit(1)
       .maybeSingle(),
-    supabase.from("notas_fiscais").select("numero_nf, status").eq("id_int", idInt)
+    // `data_autorizacao` e `created_at` entram no MESMO select que já existia —
+    // nenhuma consulta a mais, nenhum round-trip a mais. Servem ao desempate
+    // logo abaixo.
+    supabase
+      .from("notas_fiscais")
+      .select("numero_nf, status, data_autorizacao, created_at")
+      .eq("id_int", idInt)
   ]);
 
-  // NF: só a AUTORIZADA vai para a etiqueta. Nota pendente ou cancelada impressa
-  // no volume induziria a conferência a erro.
-  const nfAutorizada = (notas ?? []).find((n) => String(n.status ?? "").toUpperCase() === "AUTORIZADA");
+  /**
+   * A nota que vai para a etiqueta.
+   *
+   * SÓ AUTORIZADA — nota pendente ou cancelada impressa no volume induziria a
+   * conferência a erro. Isso já valia antes.
+   *
+   * SÓ COM NÚMERO. O pedido 20925 tem uma linha `AUTORIZADA` com `numero_nf`
+   * nulo: o número é justamente o que a conferência lê, e uma autorizada sem ele
+   * não serve para nada na doca. Sem este filtro, o `.find()` podia parar nela e
+   * esconder uma nota boa do mesmo pedido.
+   *
+   * MAIS RECENTE POR `data_autorizacao`, com `created_at` como desempate — nessa
+   * ordem porque o que importa é quando a SEFAZ autorizou, não quando o rascunho
+   * nasceu. Antes era `.find()` sobre uma query SEM `order`: com duas
+   * autorizadas o resultado dependia da ordem que o Postgres devolvesse, e podia
+   * mudar de uma impressão para outra. Existe caso real hoje — o pedido 20370
+   * tem a NF 1003 (22/08) e a NF 1005 (23/08), e a etiqueta tem de imprimir a
+   * 1005. Nota sem `data_autorizacao` vai para o fim da fila, nunca ganha de uma
+   * que tem data.
+   */
+  const nfAutorizada = (notas ?? [])
+    .filter(
+      (n) =>
+        String(n.status ?? "").toUpperCase() === "AUTORIZADA" &&
+        String(n.numero_nf ?? "").trim() !== ""
+    )
+    .sort((a, b) => {
+      const ta = Date.parse(String(a.data_autorizacao ?? "")) || 0;
+      const tb = Date.parse(String(b.data_autorizacao ?? "")) || 0;
+      if (ta !== tb) return tb - ta;
+      const ca = Date.parse(String(a.created_at ?? "")) || 0;
+      const cb = Date.parse(String(b.created_at ?? "")) || 0;
+      return cb - ca;
+    })[0];
 
   // Endereço: o escolhido no despacho > o que casa com o CEP cotado > o mais recente.
   const idCliente = proposta.id_cliente !== null ? Number(proposta.id_cliente) : null;
