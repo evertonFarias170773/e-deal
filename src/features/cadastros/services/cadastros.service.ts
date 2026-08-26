@@ -11,6 +11,10 @@ import type {
 } from "@/features/cadastros/types.supabase";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
+  escolherEnderecoPrincipal,
+  TIPO_ENDERECO_PRINCIPAL
+} from "@/lib/fiscal/endereco-principal";
+import {
   mapSupabaseClienteRowToCadastro,
   mapSupabaseSocioRowToCadastroVinculoWithRelated,
   mergeSupabaseRelacionamentos
@@ -1517,66 +1521,191 @@ export async function inativarCadastro(
   return { success: true };
 }
 
-export async function updateCadastroReceita(
-  idCliente: number,
-  payload: {
-    fantasia: string;
-    email_contato: string;
-    email: string;
-    telefone_fixo: string;
-    whatsapp_1: string;
-    whatsapp_2: string;
-  },
-  enderecoPreparado?: any
-): Promise<{ success: boolean; errorMessage?: string }> {
+/**
+ * Campos do cadastro que a reconsulta do CNPJ pode sobrescrever.
+ *
+ * So estes. A Receita nao sabe nada sobre WhatsApp, limite de credito, vendedor
+ * ou padrao de pagamento — e o que ela nao sabe nao pode apagar.
+ */
+export type ReconsultaCamposCadastro = Partial<{
+  nome: string;
+  fantasia: string;
+  data_fundacao: string;
+  email_contato: string;
+  /** A mesma informacao de `email_contato`; as duas colunas andam juntas desde antes desta rodada. */
+  email: string;
+  telefone_fixo: string;
+  cidade_uf: string;
+  ins_estadual: string;
+  tipo_contribuinte: string;
+}>;
+
+/** O endereco que a consulta devolveu, ja no formato da tabela `enderecos`. */
+export type ReconsultaEnderecoReceita = {
+  cep: string;
+  endereco: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+};
+
+export type ReconsultaResultado = {
+  success: boolean;
+  errorMessage?: string;
+  /** O que aconteceu com o endereco PRINCIPAL — para a tela contar ao usuario. */
+  enderecoAcao?: "atualizado" | "criado" | "nao-informado";
+  /**
+   * `id` da linha gravada e a assinatura escrita em `obs`. A tela precisa dos
+   * dois para espelhar no formulario o que foi para o banco: sem o `id`, um
+   * endereco recem-criado ficaria com id temporario e o "Salvar" seguinte
+   * INSERIRIA uma segunda linha principal.
+   */
+  enderecoId?: string;
+  enderecoObs?: string;
+};
+
+/**
+ * APLICA a reconsulta do CNPJ num cadastro que ja existe.
+ *
+ * POR QUE EXISTE (26/08/2026)
+ *   Nao havia como corrigir o endereco principal de um cliente ja cadastrado. A
+ *   consulta a Receita so acontecia na CRIACAO; depois disso o bloco do endereco
+ *   principal e somente-leitura na tela. Cadastros que herdaram endereco orfao
+ *   de outro cliente — porque `enderecos` nao tem chave estrangeira e o
+ *   `id_cliente` e digitado a mao — ficavam com endereco errado, e esse endereco
+ *   e exatamente o que alimenta a etiqueta dos Correios e o destinatario da
+ *   NF-e.
+ *
+ * O QUE ELA FAZ
+ *   1. sobrescreve em `clientes` SO os campos recebidos em `campos` — quem monta
+ *      o objeto e a tela, que so inclui o que a consulta devolveu preenchido e o
+ *      que o usuario confirmou. Campo vazio na Receita nunca chega aqui, entao
+ *      dado bom nunca e trocado por vazio;
+ *   2. sobrescreve o endereco marcado PRINCIPAL com o da consulta;
+ *   3. se nao houver PRINCIPAL, CRIA um.
+ *
+ * O QUE ELA NAO FAZ, POR DECISAO
+ *   - nao encosta em endereco de outro tipo (ENTREGA, COBRANCA, FISCAL). O
+ *     UPDATE e por `id` da linha eleita, e o INSERT nasce PRINCIPAL;
+ *   - nao apaga endereco nenhum, em hipotese nenhuma. Endereco errado vira
+ *     endereco certo por cima; nada e removido;
+ *   - nao roda para CPF. Pessoa fisica nao tem consulta de CNPJ, e a tela nem
+ *     oferece o botao.
+ *
+ * QUEM FEZ E QUANDO
+ *   Em `clientes` isso ja e automatico: a tabela tem `trg_audit_clientes`, e
+ *   cada UPDATE grava em `audit.logs_v2` o `actor_email`, o `occurred_at` e o
+ *   diff dos campos.
+ *
+ *   `enderecos` NAO e auditada (nao esta em `audit.config_v2`), e por isso a
+ *   assinatura vai no proprio registro, em `enderecos.obs`. Sem ela, sobrescrever
+ *   o endereco principal seria uma alteracao sem rastro em lugar nenhum — e foi
+ *   justamente a falta de rastro que tornou o bug do endereco orfao tao dificil
+ *   de enxergar.
+ */
+export async function aplicarReconsultaCnpj(input: {
+  idCliente: number;
+  campos: ReconsultaCamposCadastro;
+  endereco: ReconsultaEnderecoReceita | null;
+  autor: string;
+  quandoIso: string;
+}): Promise<ReconsultaResultado> {
   const client = getSupabaseClient();
   if (!client) {
     return { success: false, errorMessage: "Cliente Supabase indisponivel." };
   }
 
-  const { error: errorCli } = await client
-    .from("clientes")
-    .update({
-      fantasia: payload.fantasia || null,
-      email_contato: payload.email_contato || null,
-      email: payload.email || null,
-      telefone_fixo: payload.telefone_fixo || null,
-      whatsapp_1: payload.whatsapp_1 || null,
-      whatsapp_2: payload.whatsapp_2 || null
-    })
-    .eq("id_cliente", idCliente);
-
-  if (errorCli) {
-    return { success: false, errorMessage: errorCli.message || "Erro ao atualizar cliente." };
+  const idCliente = Number(input.idCliente);
+  if (!Number.isInteger(idCliente) || idCliente <= 0) {
+    return { success: false, errorMessage: "ID de cliente invalido para a reconsulta." };
   }
 
-  if (enderecoPreparado) {
-    // Buscar endereço PRINCIPAL existente para esse id_cliente
-    const { data: endList } = await client
-      .from("enderecos")
-      .select("id")
-      .eq("id_cliente", idCliente)
-      .ilike("tipo_endereco", "PRINCIPAL")
-      .limit(1);
-
-    if (endList && endList.length > 0) {
-      await client
-        .from("enderecos")
-        .update({
-          cep: enderecoPreparado.cep || null,
-          endereco: enderecoPreparado.endereco || null,
-          numero: enderecoPreparado.numero || null,
-          complemento: enderecoPreparado.complemento || null,
-          bairro: enderecoPreparado.bairro || null,
-          cidade: enderecoPreparado.cidade || null,
-          uf: enderecoPreparado.uf || null,
-          obs: enderecoPreparado.obs || null
-        })
-        .eq("id", endList[0].id);
+  if (Object.keys(input.campos).length > 0) {
+    const { error } = await client.from("clientes").update(input.campos).eq("id_cliente", idCliente);
+    if (error) {
+      return { success: false, errorMessage: error.message || "Erro ao atualizar os dados do cliente." };
     }
   }
 
-  return { success: true };
+  if (!input.endereco) {
+    return { success: true, enderecoAcao: "nao-informado" };
+  }
+
+  const assinatura = montarAssinaturaReconsulta(input.autor, input.quandoIso);
+  const camposEndereco = {
+    cep: toNullableText(input.endereco.cep),
+    endereco: toNullableText(input.endereco.endereco),
+    numero: toNullableText(input.endereco.numero),
+    complemento: toNullableText(input.endereco.complemento),
+    bairro: toNullableText(input.endereco.bairro),
+    cidade: toNullableText(input.endereco.cidade),
+    uf: toNullableText(input.endereco.uf),
+    obs: assinatura
+  };
+
+  // Todos os enderecos do cliente, para a ESCOLHA usar a mesma regra da NF e da
+  // etiqueta. Filtrar por `tipo_endereco` aqui daria uma quarta regra na casa.
+  const { data: linhas, error: erroLeitura } = await client
+    .from("enderecos")
+    .select("id,tipo_endereco,data_criacao")
+    .eq("id_cliente", idCliente);
+
+  if (erroLeitura) {
+    return {
+      success: false,
+      errorMessage: erroLeitura.message || "Erro ao localizar o endereco principal do cliente."
+    };
+  }
+
+  const principal = escolherEnderecoPrincipal(
+    (linhas ?? []) as Array<{ id: string; tipo_endereco: string | null; data_criacao: string | null }>
+  );
+
+  if (principal) {
+    const { error } = await client.from("enderecos").update(camposEndereco).eq("id", principal.id);
+    if (error) {
+      return { success: false, errorMessage: error.message || "Erro ao gravar o endereco principal." };
+    }
+    return {
+      success: true,
+      enderecoAcao: "atualizado",
+      enderecoId: String(principal.id),
+      enderecoObs: assinatura
+    };
+  }
+
+  // Sem principal: cria. Nao e o caso comum, mas existe — 55 cadastros estavam
+  // assim em 26/08/2026, e sem endereco principal a NF-e sai sem destinatario.
+  const { data: criado, error } = await client
+    .from("enderecos")
+    .insert({
+      id_cliente: idCliente,
+      tipo_endereco: TIPO_ENDERECO_PRINCIPAL,
+      ...camposEndereco
+    })
+    .select("id")
+    .single();
+  if (error) {
+    return { success: false, errorMessage: error.message || "Erro ao criar o endereco principal." };
+  }
+  return {
+    success: true,
+    enderecoAcao: "criado",
+    enderecoId: String((criado as { id?: string } | null)?.id ?? ""),
+    enderecoObs: assinatura
+  };
+}
+
+/** A linha de rastro gravada em `enderecos.obs`. Curta, legivel na tela. */
+function montarAssinaturaReconsulta(autor: string, quandoIso: string): string {
+  const quando = new Date(quandoIso);
+  const carimbo = Number.isNaN(quando.getTime())
+    ? quandoIso
+    : `${quando.toLocaleDateString("pt-BR")} ${quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+  const quem = autor.trim() || "usuario nao identificado";
+  return `Endereco principal atualizado pela reconsulta do CNPJ em ${carimbo} por ${quem}.`;
 }
 
 export async function checkVinculoRemovability(

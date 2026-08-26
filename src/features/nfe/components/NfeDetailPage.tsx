@@ -50,7 +50,6 @@ import {
   getAlertasNfe,
   getNfeDisplayStatus,
   resolverDestinoFiscal,
-  escolherEnderecoPrincipal,
   ufDaEmpresaEmitente,
   cfopDeVenda,
   type DestinoFiscal,
@@ -60,6 +59,7 @@ import {
 } from "../services/nfe.service";
 import type { SupabaseNfeRow, SupabaseNfeItemRow, SupabaseNfePagamentoRow, NfeReadModel } from "../types";
 import { OPCOES_TIPO_CONTRIBUINTE } from "@/lib/fiscal/tipo-contribuinte";
+import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
 import { useAuth } from "@/features/auth/AuthProvider";

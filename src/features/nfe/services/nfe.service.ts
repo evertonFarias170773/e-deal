@@ -11,6 +11,7 @@ import {
   normalizarTipoContribuinte,
   tipoContribuintePorDocumento
 } from "@/lib/fiscal/tipo-contribuinte";
+import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 
 export const NFE_SELECT_COLUMNS = [
   "id",
@@ -474,58 +475,13 @@ export async function resolverPagador(idInt: number): Promise<number | null> {
 }
 
 /**
- * O endereco PRINCIPAL de um cliente, com desempate DETERMINISTICO.
+ * O endereco PRINCIPAL de um cliente, lido do banco.
  *
- * POR QUE PRECISA DE DESEMPATE
- *   "Principal e unico por cliente" nao se sustenta em producao: 8 cadastros tem
- *   dois, e 5 deles sao pagadores da fila de faturamento. Cada par tem um
- *   `Principal` (base antiga) e um `PRINCIPAL` (importacao da Receita Federal),
- *   em CIDADES E UFS DIFERENTES.
- *
- *   Ordenar por `id` — que e UUID — sorteava entre os dois, e a UF escolhida
- *   decide o CFOP (5101 interno x 6101 interestadual) e o `local_destino`. Em 4
- *   dos 5 casos o sorteio dava o endereco errado.
- *
- * A REGRA, na ordem:
- *   1. grafia em CAIXA ALTA `PRINCIPAL` vence — e o endereco oficial do CNPJ,
- *      vindo da Receita. Confirmado num caso concreto: IMPRIMIX tem
- *      `Principal` em Xangri-La/RS e `PRINCIPAL` em Goiania/GO, e o real e
- *      Goiania.
- *   2. empate na caixa alta: o mais recente (`data_criacao`). Acontece hoje em
- *      UM cadastro (AUTOMATECH, 66235), que nao tem pedido na fila nem nota.
- *   3. ultimo criterio, so para nunca ser nao-deterministico: o `id`.
- *
- * NAO higieniza nada: nenhum endereco e alterado ou apagado, so a LEITURA muda.
- * O mesmo criterio vive na RPC do payload — se um mudar, o outro tem de mudar
- * junto, senao a nota sai com destinatario de um endereco e destino de outro.
- *
- * A REGRA vive nesta funcao PURA, separada da consulta, porque tem DOIS
- * chamadores: `resolverEnderecoPrincipal` logo abaixo e a aba Destinatario da
- * NF, que ja carrega todos os enderecos do cliente e nao pode inventar um
- * criterio proprio.
+ * A REGRA de escolha (e o porque do desempate) vive em
+ * `@/lib/fiscal/endereco-principal` — modulo proprio porque tres features
+ * dependem dela: esta, a aba Destinatario da NF e a reconsulta de CNPJ do
+ * cadastro, que sobrescreve exatamente a linha que esta funcao elege.
  */
-export function escolherEnderecoPrincipal<
-  T extends { id?: string | number | null; tipo_endereco?: string | null; data_criacao?: string | null }
->(enderecos: T[]): T | null {
-  const candidatos = enderecos.filter(
-    (e) => String(e.tipo_endereco ?? "").trim().toLowerCase() === "principal"
-  );
-  if (candidatos.length === 0) return null;
-
-  const ordenados = [...candidatos].sort((a, b) => {
-    const caixaAltaA = String(a.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
-    const caixaAltaB = String(b.tipo_endereco ?? "").trim() === "PRINCIPAL" ? 0 : 1;
-    if (caixaAltaA !== caixaAltaB) return caixaAltaA - caixaAltaB;
-    const dataA = a.data_criacao ? Date.parse(a.data_criacao) : Number.NEGATIVE_INFINITY;
-    const dataB = b.data_criacao ? Date.parse(b.data_criacao) : Number.NEGATIVE_INFINITY;
-    if (dataA !== dataB) return dataB - dataA;
-    return String(a.id ?? "").localeCompare(String(b.id ?? ""));
-  });
-
-  return ordenados[0];
-}
-
-/** A regra acima aplicada aos enderecos de UM cliente, lidos do banco. */
 export async function resolverEnderecoPrincipal(
   idCliente: number
 ): Promise<{ id: string; uf: string; tipoEndereco: string | null } | null> {

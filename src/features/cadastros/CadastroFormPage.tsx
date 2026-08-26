@@ -32,7 +32,9 @@ import {
   deleteCadastroEndereco,
   updateCadastroVinculoComercial,
   validateCadastroInitialStep,
-  updateCadastroReceita,
+  aplicarReconsultaCnpj,
+  type ReconsultaCamposCadastro,
+  type ReconsultaEnderecoReceita,
   getModelosCobranca,
   type CadastroContatoInsertPayload,
   type CadastroUpdatePayload,
@@ -41,6 +43,13 @@ import {
   type CadastroVinculoComercialInsertPayload,
   type VendedorOption
 } from "@/features/cadastros/services/cadastros.service";
+import { ReconsultaCnpjModal } from "@/features/cadastros/components/ReconsultaCnpjModal";
+import {
+  aplicarReconsultaNoFormulario,
+  montarPreviaReconsulta,
+  type ConsultaDocumentoApiPayload,
+  type ReconsultaPrevia
+} from "@/features/cadastros/lib/reconsulta-cnpj";
 import { normalizeDocumentDigits, validateDocumentByTipo, isValidCpf } from "@/features/cadastros/utils/documento";
 import type {
   Cadastro,
@@ -68,30 +77,6 @@ type FormMessage = {
   actionLabel?: string;
 };
 
-type ConsultaDocumentoApiPayload = {
-  nome: string;
-  fantasia: string;
-  documento: string;
-  tipoPessoa: "FISICA" | "JURIDICA";
-  dataFundacao: string;
-  emailContato: string;
-  telefoneFixo: string;
-  cidadeUf: string;
-  insEstadual: string;
-  tipoContribuinte: CodigoTipoContribuinte | "";
-  enderecoPreparado: {
-    id_cliente: number;
-    cep: string;
-    endereco: string;
-    numero: string;
-    complemento: string;
-    bairro: string;
-    cidade: string;
-    uf: string;
-    tipo_endereco: "PRINCIPAL";
-    obs: string;
-  } | null;
-};
 
 
 const categoriaLabel: Record<CadastroCategoria, string> = {
@@ -173,6 +158,11 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     mode === "edit" ? normalizeDocumentDigits(cadastro?.documento ?? "") : null
   );
   const [hasImportedApiData, setHasImportedApiData] = useState(false);
+  // Reconsulta do CNPJ em dois passos: `reconsulta` guarda a previa enquanto o
+  // usuario decide. Null = modal fechado, nada pendente.
+  const [reconsulta, setReconsulta] = useState<ReconsultaPrevia | null>(null);
+  const [isReconsultando, setIsReconsultando] = useState(false);
+  const [isAplicandoReconsulta, setIsAplicandoReconsulta] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const originalDocument = cadastro?.documento ?? "";
 
@@ -369,9 +359,21 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     setIsInitialValidated(true);
   }
 
+  /**
+   * PASSO 1 da reconsulta: consulta a Receita e MONTA A COMPARACAO. Nao grava.
+   *
+   * POR QUE EM DOIS PASSOS (26/08/2026)
+   *   Antes o botao "Reconsultar" consultava e gravava no mesmo clique, sem
+   *   mostrar nada. Como a gravacao SOBRESCREVE o endereco principal — a linha
+   *   que a etiqueta dos Correios e o destinatario da NF-e leem — trocar um
+   *   endereco por outro as cegas e caro demais. Agora abre o comparativo e o
+   *   usuario confirma.
+   *
+   * SO PARA CNPJ. Cadastro com CPF nao tem consulta; o botao nem aparece.
+   */
   async function handleReconsultarCnpj() {
     if (form.tipoCliente !== "CNPJ" || !form.documento || !form.idCliente) return;
-    setIsSaving(true);
+    setIsReconsultando(true);
     try {
       const response = await fetch("/api/cadastros/consultar-documento", {
         method: "POST",
@@ -379,7 +381,10 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         body: JSON.stringify({
           tipoPessoa: "JURIDICA",
           documento: form.documento,
-          idCliente: Number(form.idCliente)
+          idCliente: Number(form.idCliente),
+          // Sem isto a rota barra o cadastro por "ja existe" — o proprio cadastro
+          // que estamos reconsultando. Era o 409 que travava este botao.
+          modo: "reconsulta"
         })
       });
 
@@ -391,41 +396,10 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
           title: "Consulta indisponível",
           description: data?.message || "Não foi possível consultar os dados da Receita."
         });
-        setIsSaving(false);
         return;
       }
 
-      const payload = data.payload;
-      const updateData = {
-        fantasia: payload.fantasia,
-        email_contato: payload.emailContato,
-        email: payload.emailContato,
-        telefone_fixo: payload.telefoneFixo,
-        whatsapp_1: payload.telefoneFixo, 
-        whatsapp_2: ""
-      };
-
-      const result = await updateCadastroReceita(Number(form.idCliente), updateData, payload.enderecoPreparado);
-
-      if (result.success) {
-        updateField("fantasia", payload.fantasia);
-        updateField("emailFinanceiro", payload.emailContato);
-        updateField("telefoneFixo", payload.telefoneFixo);
-        updateField("whatsapp", payload.telefoneFixo);
-        updateField("email", payload.emailContato);
-
-        showToast({
-          type: "success",
-          title: "Consulta finalizada",
-          description: "Cadastro atualizado pela Receita."
-        });
-      } else {
-        showToast({
-          type: "error",
-          title: "Erro ao atualizar",
-          description: result.errorMessage || "Falha ao gravar os novos dados no banco."
-        });
-      }
+      setReconsulta(montarPreviaReconsulta(form, data.payload));
     } catch (error) {
       console.error(error);
       showToast({
@@ -433,10 +407,66 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         title: "Erro de consulta",
         description: "Falha de rede ou instabilidade na Receita Federal."
       });
+    } finally {
+      setIsReconsultando(false);
     }
-    setIsSaving(false);
   }
 
+  /**
+   * PASSO 2: o usuario confirmou. Grava.
+   *
+   * O estado do formulario e atualizado junto para a tela refletir o que foi
+   * gravado sem recarregar — inclusive o endereco principal, que e somente
+   * leitura no formulario e so muda por aqui.
+   */
+  async function handleConfirmarReconsulta() {
+    if (!reconsulta) return;
+    setIsAplicandoReconsulta(true);
+    try {
+      const resultado = await aplicarReconsultaCnpj({
+        idCliente: Number(form.idCliente),
+        campos: reconsulta.camposParaGravar,
+        endereco: reconsulta.enderecoParaGravar,
+        autor: [user?.name, user?.email].filter(Boolean).join(" — "),
+        quandoIso: new Date().toISOString()
+      });
+
+      if (!resultado.success) {
+        showToast({
+          type: "error",
+          title: "Erro ao aplicar",
+          description: resultado.errorMessage || "Falha ao gravar os dados da Receita."
+        });
+        return;
+      }
+
+      setForm((atual) =>
+        aplicarReconsultaNoFormulario(atual, reconsulta, resultado.enderecoId, resultado.enderecoObs)
+      );
+      setReconsulta(null);
+
+      const sobreEndereco =
+        resultado.enderecoAcao === "criado"
+          ? " Endereço principal criado."
+          : resultado.enderecoAcao === "atualizado"
+            ? " Endereço principal sobrescrito."
+            : "";
+      showToast({
+        type: "success",
+        title: "Cadastro atualizado pela Receita",
+        description: `Dados gravados.${sobreEndereco}`
+      });
+    } catch (error) {
+      console.error(error);
+      showToast({
+        type: "error",
+        title: "Erro ao aplicar",
+        description: "Falha de rede ao gravar os dados da Receita."
+      });
+    } finally {
+      setIsAplicandoReconsulta(false);
+    }
+  }
   function handleResetDocumentoValidation() {
     setIsInitialValidated(false);
     setValidatedDocumentoDigits(null);
@@ -1399,6 +1429,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
           modelosCobranca={modelosCobranca}
           onResetDocumento={handleResetDocumentoValidation}
           onReconsultar={form.tipoCliente === "CNPJ" ? handleReconsultarCnpj : undefined}
+          isReconsultando={isReconsultando}
           onToast={showToast}
           canViewCredito={canViewCredito}
           canEditCredito={canEditCredito}
@@ -1413,6 +1444,21 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
         onClose={() => setIsImportModalOpen(false)}
         onApply={handleApplyImport}
         vendedorOptions={vendedorOptions}
+      />
+
+      <ReconsultaCnpjModal
+        isOpen={reconsulta !== null}
+        idCliente={Number(form.idCliente) || 0}
+        nomeCliente={form.nome}
+        documentoFormatado={formattedDocument}
+        campos={reconsulta?.campos ?? []}
+        enderecoAtual={reconsulta?.enderecoAtualTexto ?? null}
+        enderecoNovo={reconsulta?.enderecoNovoTexto ?? null}
+        enderecoMudou={reconsulta?.enderecoMudou ?? false}
+        criaEnderecoPrincipal={reconsulta?.criaEnderecoPrincipal ?? false}
+        isAplicando={isAplicandoReconsulta}
+        onClose={() => setReconsulta(null)}
+        onConfirm={handleConfirmarReconsulta}
       />
     </div>
   );
@@ -1551,6 +1597,7 @@ function CompleteForm({
   modelosCobranca,
   onResetDocumento,
   onReconsultar,
+  isReconsultando,
   onToast,
   canViewCredito,
   canEditCredito,
@@ -1574,6 +1621,7 @@ function CompleteForm({
   modelosCobranca: { id: string; resultado: string }[];
   onResetDocumento: () => void;
   onReconsultar?: () => void;
+  isReconsultando?: boolean;
   onToast: (toast: { type: "success" | "error" | "warning" | "info"; title: string; description?: string }) => void;
   canViewCredito: boolean;
   canEditCredito: boolean;
@@ -1715,13 +1763,18 @@ function CompleteForm({
                     : `${getInputClass(errorFields.includes("documento"))} w-full`
                 }
               />
+              {/* So CNPJ chega aqui: a pagina passa `onReconsultar` apenas quando
+                  o cadastro e pessoa juridica. O clique NAO grava — abre o
+                  comparativo para o usuario confirmar. */}
               {mode === "edit" && onReconsultar && isEditAllowed && !isFiscalBlocked && (
                 <button
                   type="button"
                   onClick={onReconsultar}
-                  className="shrink-0 rounded-xl bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                  disabled={isReconsultando}
+                  title="Consultar a Receita e comparar com o que esta gravado"
+                  className="shrink-0 rounded-xl bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Reconsultar
+                  {isReconsultando ? "Consultando..." : "Reconsultar"}
                 </button>
               )}
             </div>
