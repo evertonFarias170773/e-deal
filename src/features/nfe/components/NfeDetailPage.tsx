@@ -8,6 +8,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Info,
   Save,
   Check,
@@ -62,6 +63,15 @@ import { OPCOES_TIPO_CONTRIBUINTE } from "@/lib/fiscal/tipo-contribuinte";
 import { escolherEnderecoPrincipal } from "@/lib/fiscal/endereco-principal";
 import { mapSupabaseNfeRowToReadModel } from "../mappers";
 import { EmissaoNfeModal } from "@/features/fiscal/components/EmissaoNfeModal";
+import {
+  levantarPendencias,
+  pendenciasQueImpedem,
+  campoDoItem,
+  CAMPO_CONSUMIDOR_FINAL,
+  CAMPO_TIPO_CONTRIBUINTE,
+  CAMPO_MODALIDADE_FRETE,
+  type Pendencia
+} from "../pendencias";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
 
@@ -549,6 +559,47 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const computedValorTotalNf = computedValorProdutos + (valorFrete || 0) - (note?.valor_desconto || 0);
   const sumOfPayments = editedPagamentos.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
   const isPaymentMismatch = Math.abs(computedValorTotalNf - sumOfPayments) > 0.01;
+
+  /*
+    Conferência antecipada: a MESMA lista que `fn_alertas_nfe` e as views de
+    validação aplicam ao preparar o envio, calculada aqui para o operador ver
+    antes de clicar. O servidor continua bloqueando do mesmo jeito — isto não
+    substitui trava nenhuma.
+
+    Os totais de cabeçalho (valor_produtos, valor_total_nf) entram como estão
+    GRAVADOS, e não recalculados na tela: é o que o banco vai conferir. Enquanto
+    houver edição não salva, a divergência aparece — e o texto da pendência pede
+    para salvar.
+  */
+  const pendencias: Pendencia[] = note
+    ? levantarPendencias({
+        nota: {
+          ref: note.ref,
+          id_int: note.id_int,
+          id_cliente: note.id_cliente,
+          status: note.status,
+          natureza_operacao: naturezaOperacao,
+          tipo_documento: note.tipo_documento,
+          finalidade_emissao: finalidadeEmissao,
+          consumidor_final: consumidorFinal,
+          presenca_comprador: presencaComprador,
+          tipo_contribuinte: tipoContribuinte,
+          modalidade_frete: modalidadeFrete,
+          valor_produtos: note.valor_produtos,
+          valor_frete: valorFrete,
+          valor_total_nf: note.valor_total_nf,
+          peso_liquido: pesoLiquido,
+          informacoes_complementares: infoComplementares,
+          created_at: note.created_at
+        },
+        itens: editedItems,
+        pagamentos: editedPagamentos,
+        cliente: cliente ? { ...cliente, id_cliente: note.id_cliente } : null,
+        enderecoPrincipal: principalEndereco
+      })
+    : [];
+  const pendenciasImpeditivas = pendenciasQueImpedem(pendencias);
+  const emissaoBloqueada = pendenciasImpeditivas.length > 0;
 
   const filteredProducts = dbProducts.filter((p) => {
     if (!productSearchText.trim()) return true;
@@ -1259,6 +1310,40 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     }
   }
 
+  /**
+   * Leva o operador ao lugar onde a pendência se conserta.
+   *
+   * Endereço e IE do destinatário não se corrigem nesta tela — abrem o cadastro
+   * do cliente em outra aba. Natureza, finalidade, presença do comprador e
+   * status não têm campo em lugar nenhum da tela: entram na lista sem link.
+   */
+  function irParaPendencia(pendencia: Pendencia) {
+    if (pendencia.destino.tipo === "cadastro-cliente") {
+      const idCliente = pendencia.destino.idCliente;
+      if (idCliente) window.open(`/cadastros/${idCliente}/editar`, "_blank", "noopener");
+      return;
+    }
+    if (pendencia.destino.tipo !== "aba") return;
+
+    setActiveTab(pendencia.destino.bloco);
+
+    const campo = pendencia.destino.campo;
+    if (!campo) return;
+    // A aba só existe no DOM depois do render seguinte.
+    window.setTimeout(() => {
+      const alvo = document.getElementById(campo);
+      if (!alvo) return;
+      alvo.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (
+        alvo instanceof HTMLInputElement ||
+        alvo instanceof HTMLSelectElement ||
+        alvo instanceof HTMLTextAreaElement
+      ) {
+        alvo.focus();
+      }
+    }, 80);
+  }
+
   // Helpers
   function getEmpresaName(id: number) {
     if (id === 1) return "INGRESSO IDEAL";
@@ -1322,12 +1407,24 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 <button
                   type="button"
                   onClick={() => void handleConcludeDraft(true)}
-                  disabled={isValidating || isSaving}
+                  disabled={isValidating || isSaving || emissaoBloqueada}
+                  title={
+                    emissaoBloqueada
+                      ? `${pendenciasImpeditivas.length} ${pendenciasImpeditivas.length === 1 ? "pendência impede" : "pendências impedem"} a emissão`
+                      : undefined
+                  }
                   className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-semibold transition disabled:opacity-50 shadow-sm"
                 >
                   {isValidating || isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   Emitir NF-e
                 </button>
+              )}
+              {podeEmitirNfe && emissaoBloqueada && (
+                <p className="w-full text-right text-xs font-semibold text-amber-700">
+                  {pendenciasImpeditivas.length === 1
+                    ? "1 pendência impede a emissão — veja a lista abaixo."
+                    : `${pendenciasImpeditivas.length} pendências impedem a emissão — veja a lista abaixo.`}
+                </p>
               )}
               <button
                 type="button"
@@ -1358,6 +1455,75 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           <Info className="h-5 w-5 text-slate-500 shrink-0" />
           <span>Esta Nota Fiscal está no status <strong>{note.status}</strong> e não pode ser editada diretamente.</span>
         </div>
+      )}
+
+      {/*
+        Painel de pendências — a mesma conferência que roda ao preparar o envio,
+        mostrada antes do clique. Cada linha leva ao lugar do conserto; as que
+        não têm campo na tela (natureza, finalidade, presença, status) aparecem
+        sem link, porque a lista precisa ser a verdade completa do que trava.
+      */}
+      {!isReadOnly && pendencias.length > 0 && (
+        <section className="overflow-hidden rounded-3xl border border-[#d7e5e8] bg-white shadow-sm">
+          <div
+            className={`flex items-center gap-2.5 border-b px-6 py-4 ${
+              emissaoBloqueada ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-slate-50"
+            }`}
+          >
+            {emissaoBloqueada ? (
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+            ) : (
+              <Info className="h-5 w-5 shrink-0 text-slate-500" />
+            )}
+            <h2 className={`flex-1 text-base font-bold ${emissaoBloqueada ? "text-amber-900" : "text-slate-800"}`}>
+              {emissaoBloqueada
+                ? pendenciasImpeditivas.length === 1
+                  ? "Falta resolver 1 coisa antes de emitir"
+                  : `Falta resolver ${pendenciasImpeditivas.length} coisas antes de emitir`
+                : "Nada impede a emissão. Confira os avisos abaixo."}
+            </h2>
+            <span className="text-xs text-slate-500">Conferido de novo ao emitir</span>
+          </div>
+
+          <ul className="divide-y divide-slate-100">
+            {pendencias.map((pendencia, indice) => {
+              const temLink = pendencia.destino.tipo !== "sem-destino";
+              const impeditiva = pendencia.severidade === "impede";
+              return (
+                <li key={`${pendencia.codigo}-${indice}`} className="flex items-center gap-4 px-6 py-3.5">
+                  {impeditiva ? (
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                  ) : (
+                    <Info className="h-4 w-4 shrink-0 text-slate-400" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm ${impeditiva ? "font-semibold text-slate-900" : "text-slate-600"}`}>
+                      {pendencia.texto}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {pendencia.bloco}
+                      {impeditiva ? " • impede a emissão" : " • apenas aviso"}
+                    </p>
+                  </div>
+                  {temLink && (
+                    <button
+                      type="button"
+                      onClick={() => irParaPendencia(pendencia)}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-[#0b2f4a] hover:bg-slate-50 transition"
+                    >
+                      {pendencia.destino.tipo === "cadastro-cliente" ? "Abrir cadastro" : `Abrir em ${pendencia.bloco}`}
+                      {pendencia.destino.tipo === "cadastro-cliente" ? (
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {/* Navegação por Abas */}
@@ -1603,6 +1769,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">Consumidor Final</label>
                   <select
+                    id={CAMPO_CONSUMIDOR_FINAL}
                     value={consumidorFinal}
                     onChange={(e) => setConsumidorFinal(Number(e.target.value))}
                     className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
@@ -1615,6 +1782,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1">Tipo de Contribuinte</label>
                   <select
+                    id={CAMPO_TIPO_CONTRIBUINTE}
                     value={tipoContribuinte}
                     onChange={(e) => setTipoContribuinte(Number(e.target.value))}
                     className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-medium"
@@ -1981,6 +2149,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                         <td className="px-3 py-2.5 align-middle">
                           <input
                             type="number"
+                            id={campoDoItem(item.id, "quantidade")}
                             value={edited?.quantidade !== undefined ? edited.quantidade : ""}
                             disabled={isReadOnly}
                             onChange={(e) => {
@@ -2008,6 +2177,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           <input
                             type="number"
                             step="0.0001"
+                            id={campoDoItem(item.id, "valor-unitario")}
                             value={edited?.valor_unitario !== undefined ? edited.valor_unitario : ""}
                             disabled={isReadOnly}
                             onChange={(e) => {
@@ -2033,6 +2203,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           <input
                             type="number"
                             step="0.01"
+                            id={campoDoItem(item.id, "valor-bruto")}
                             value={edited?.valor_bruto !== undefined ? edited.valor_bruto : valTotal}
                             disabled={isReadOnly}
                             onChange={(e) => {
@@ -2058,6 +2229,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           <input
                             type="text"
                             maxLength={8}
+                            id={campoDoItem(item.id, "ncm")}
                             value={edited?.ncm || ""}
                             disabled={isReadOnly}
                             onChange={(e) => {
@@ -2073,6 +2245,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           <input
                             type="text"
                             maxLength={4}
+                            id={campoDoItem(item.id, "cfop")}
                             value={edited?.cfop || ""}
                             disabled={isReadOnly}
                             onChange={(e) => {
@@ -2326,6 +2499,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Modalidade do Frete</label>
                 <select
+                  id={CAMPO_MODALIDADE_FRETE}
                   value={modalidadeFrete}
                   disabled={isReadOnly}
                   onChange={(e) => setModalidadeFrete(Number(e.target.value))}
