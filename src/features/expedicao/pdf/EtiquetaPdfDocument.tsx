@@ -22,7 +22,13 @@ const MOLDURA_PADDING = 8;
 const LARGURA_BARRAS =
   LARGURA - 2 * PADDING_PAGINA - 2 * MOLDURA_BORDA - 2 * MOLDURA_PADDING;
 
-const ALTURA_BARRAS = 46;
+/**
+ * Altura das barras. Encolheu de 46 para 38 quando a transportadora passou a
+ * ocupar o quadrante logo acima: a moldura tem altura FIXA, então o espaço da
+ * linha nova sai daqui, e não do resto da hierarquia. 38pt continua muito acima
+ * do mínimo que um leitor de código exige.
+ */
+const ALTURA_BARRAS = 38;
 
 /**
  * ############################################################################
@@ -203,6 +209,25 @@ const styles = StyleSheet.create({
 
   // Código de barras
   areaBarras: { marginTop: "auto" },
+  /**
+   * Transportadora sobre as barras — repetida de propósito.
+   *
+   * O canto superior direito continua com ela, para quem lê a etiqueta na mão.
+   * Esta é para quem lê de LONGE: na hora de separar por transportadora, o
+   * conferente varre a pilha olhando a base da etiqueta, onde a mão já aponta o
+   * leitor. Corpo grande e bold porque é isso que se lê a um metro.
+   *
+   * Uma linha só, com ellipsis: a moldura tem altura fixa, e um nome longo que
+   * quebrasse empurraria as barras para fora da folha.
+   */
+  barrasTransportadora: {
+    fontSize: 15,
+    fontFamily: "Helvetica-Bold",
+    letterSpacing: 0.4,
+    marginBottom: 5,
+    maxLines: 1,
+    textOverflow: "ellipsis"
+  },
   barras: { flexDirection: "row", height: ALTURA_BARRAS, alignItems: "stretch" },
   barraPreta: { backgroundColor: "#000" },
   barraBranca: { backgroundColor: "#fff" },
@@ -216,8 +241,13 @@ const styles = StyleSheet.create({
   rodape: { fontSize: 7.5, letterSpacing: 0.5, marginTop: 8 }
 });
 
-/** Desenha o símbolo como retângulos: barra preta e espaço branco alternados. */
-function CodigoDeBarras({ valor }: { valor: string }) {
+/**
+ * Quadrante inferior: transportadora, símbolo e o texto sob as barras.
+ *
+ * Sem símbolo válido o bloco inteiro sai — inclusive a transportadora, que já
+ * aparece no topo. Meia área, com rótulo e sem código, só ocuparia altura.
+ */
+function CodigoDeBarras({ valor, transportadora }: { valor: string; transportadora: string }) {
   const simbolo = codificarCode128B(valor);
   if (!simbolo) return null;
 
@@ -225,6 +255,7 @@ function CodigoDeBarras({ valor }: { valor: string }) {
 
   return (
     <View style={styles.areaBarras}>
+      {transportadora ? <Text style={styles.barrasTransportadora}>{transportadora}</Text> : null}
       <View style={styles.barras}>
         {simbolo.modulos.map((larguraEmModulos, i) => (
           <View
@@ -245,6 +276,8 @@ export function EtiquetaPdfDocument({ vm }: { vm: EtiquetaViewModel; qrDataUrl?:
   const paginas = Array.from({ length: vm.volumes }, (_, i) => i + 1);
   const { cidade, uf } = separarCidadeUf(vm.destinatario.cidadeUf);
   const valorBarras = conteudoCodigoBarras();
+  /** Mesmo texto nos dois lugares — topo e quadrante das barras — sem divergir. */
+  const transportadoraExibida = (vm.transportadora || "A DEFINIR").toUpperCase();
 
   const documento = vm.destinatario.documento
     ? `${rotuloDocumento(vm.destinatario.documento)} ${mascararDocumento(vm.destinatario.documento)}`
@@ -271,9 +304,7 @@ export function EtiquetaPdfDocument({ vm }: { vm: EtiquetaViewModel; qrDataUrl?:
           <View style={styles.moldura}>
             <View style={styles.cabecalho}>
               <Text style={styles.cabecalhoTexto}>{vm.remetenteRodape.toUpperCase()}</Text>
-              <Text style={styles.cabecalhoTransp}>
-                {(vm.transportadora || "A DEFINIR").toUpperCase()}
-              </Text>
+              <Text style={styles.cabecalhoTransp}>{transportadoraExibida}</Text>
             </View>
 
             <View style={styles.reguaGrossa} />
@@ -318,7 +349,7 @@ export function EtiquetaPdfDocument({ vm }: { vm: EtiquetaViewModel; qrDataUrl?:
 
             <View style={styles.reguaGrossa} />
 
-            <CodigoDeBarras valor={valorBarras} />
+            <CodigoDeBarras valor={valorBarras} transportadora={transportadoraExibida} />
 
             {rodape ? <Text style={styles.rodape}>{rodape}</Text> : null}
           </View>
