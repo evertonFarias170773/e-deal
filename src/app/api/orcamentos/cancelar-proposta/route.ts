@@ -208,12 +208,32 @@ export async function POST(request: Request) {
     }
   }
 
+  // 5) Releitura do status IMEDIATAMENTE antes de gravar.
+  //
+  // O lock otimista precisa travar no status de AGORA, não no que foi lido lá no
+  // início da requisição. Entre os dois momentos o passo 3 cancelou as cobranças,
+  // e o trigger de pagamentos_v2 (atualizar_status_financeiro_proposta) reage a
+  // isso mexendo em status_interno. Travar no valor antigo garantia que o UPDATE
+  // desta rota NUNCA batesse quando havia cobrança pendente: quem gravava o
+  // CANCELADO era o trigger, e o passo 6 caía no fallback tolerante. A rota
+  // precisa cancelar por conta própria — o trigger deixou de gravar CANCELADO.
+  //
+  // A proteção contra concorrência real continua: se OUTRA sessão mexer no status
+  // entre esta releitura e o UPDATE, o lock falha e o fallback decide.
+  const { data: propostaPreUpdate } = await supabase
+    .from("propostas")
+    .select("status_interno")
+    .eq("id_int", idInt)
+    .maybeSingle();
+
+  const statusParaLock = propostaPreUpdate?.status_interno ?? proposta.status_interno;
+
   // 6) Somente após sucesso das cobranças, cancela a proposta (optimistic lock).
   const { data: updatedProposta, error: updateErr } = await supabase
     .from("propostas")
     .update({ status_interno: "CANCELADO" })
     .eq("id_int", idInt)
-    .eq("status_interno", proposta.status_interno)
+    .eq("status_interno", statusParaLock)
     .select("id_int")
     .maybeSingle();
 

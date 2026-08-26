@@ -32,7 +32,7 @@ Verificado em 25/08/2026:
 - `UPDATE boletos SET status='CANCELADO'` (já existe)
 - `INSERT propostas_chat` (histórico — já existe)
 
-**O único item de banco desta linha de trabalho — o ramo `todas canceladas → propostas.status_interno = 'CANCELADO'` em `atualizar_status_financeiro_proposta`** — está registrado como pendência conhecida na §10.1 da spec e **fica fora desta rodada** por decisão do dono.
+**O único item de banco desta linha de trabalho — `atualizar_status_financeiro_proposta`** — está descrito na §10.1 da spec e **não é executado por este plano**. Desde 26/08/2026 ele tem dono: está em execução em **trabalho paralelo autorizado** (migration `20260826_funcao_financeira_nao_cancela_proposta.sql` + ajuste de `cancelar-proposta/route.ts`). Este plano segue com zero migration.
 
 ---
 
@@ -244,7 +244,11 @@ Sugestão de corte, se você preferir publicar em duas partes:
 ## 7. Fora deste plano
 
 - Trazer o webhook legado das empresas 1 e 3 para o servidor — rodada própria.
-- Corrigir o ramo `todas canceladas → propostas.status_interno = 'CANCELADO'` — migration, rodada própria (§10.1 da spec).
+- Corrigir `atualizar_status_financeiro_proposta` e o acoplamento de `/api/orcamentos/cancelar-proposta` ao efeito colateral do trigger (§10.1 da spec). **Saiu de "rodada própria sem dono": está em execução em trabalho paralelo autorizado**, na migration `supabase/migrations/20260826_funcao_financeira_nao_cancela_proposta.sql`, junto com o ajuste da rota — os dois entram juntos, porque hoje a rota depende do trigger para gravar `CANCELADO` quando há cobrança pendente.
+
+**Divisão de escopo, a partir de 26/08/2026:** a sessão paralela cuida da função de banco e de `cancelar-proposta/route.ts`; **este plano cuida do modal e da UI de cancelamento de cobrança**. Não tocar naqueles dois.
+
+**Efeito quando a correção entrar:** o estado final `NOVO` validado nas Etapas 7 e 9 passa a ser **estável**. Hoje ele é correto no instante seguinte ao cancelamento e o trigger o reescreve no próximo salvamento do orçamento. Nenhuma etapa deste plano muda por causa disso — muda a durabilidade do resultado. Por isso a **Etapa 13 deve rodar depois** dessa correção: senão o passo 3 seria validado num estado que não persiste.
 
 ---
 
