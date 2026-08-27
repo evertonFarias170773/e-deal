@@ -82,8 +82,17 @@ export type OrcamentosReadFilters = {
   encerradosTeste?: "OCULTAR" | "SOMENTE" | "INCLUIR";
 };
 
-/** Teto de registros varridos quando o período é ignorado (busca ampla). */
-const LOTE_BUSCA_AMPLA = 200;
+/**
+ * Teto de registros varridos quando o período é ignorado (busca ampla).
+ *
+ * PRECISA SER IGUAL AO `PAGE_SIZE` DA LISTA (OrcamentosListPageReal). Na busca
+ * ampla o lote é único e `from` é sempre 0, então `totalPages` só resulta em 1
+ * — a página única que este modo sabe entregar — enquanto o tamanho de página
+ * não for menor que este lote. Baixar um sem o outro faz a tela oferecer uma
+ * página seguinte que repete a primeira: com página de 100 e lote de 200,
+ * qualquer visão filtrada com mais de 100 resultados anunciava 2 páginas.
+ */
+const LOTE_BUSCA_AMPLA = 100;
 
 export type OrcamentosReadResult = {
   source: OrcamentoListSource;

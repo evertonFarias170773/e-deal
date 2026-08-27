@@ -241,7 +241,15 @@ export function OrcamentosListPageReal() {
   const [isCancelPropostaModalOpen, setIsCancelPropostaModalOpen] = useState(false);
   const [selectedPropostaForCancel, setSelectedPropostaForCancel] = useState<OrcamentoListItem | null>(null);
 
-  const PAGE_SIZE = 200;
+  // 100, e nao 200: a consulta custa menos de 1 ms, mas cada linha e DOM e
+  // payload — 200 linhas eram ~96 kB e o dobro de render antes de a tela ficar
+  // utilizavel.
+  //
+  // CASADO COM `LOTE_BUSCA_AMPLA` (orcamentos.service.ts): na busca ampla o
+  // lote e unico e a paginacao e ignorada, entao `totalPages` so continua
+  // valendo 1 enquanto os dois numeros forem iguais. Mudar um sem o outro faz a
+  // tela prometer uma pagina que a consulta nao entrega.
+  const PAGE_SIZE = 100;
 
   const periodOptions = useMemo(() => buildLastSixPeriodOptions(), []);
 
@@ -544,10 +552,11 @@ export function OrcamentosListPageReal() {
       // de a proposta seguir. Vem antes de qualquer outro critério — dentro do
       // grupo, a data continua mandando como sempre.
       //
-      // O pin vale sobre o que ESTÁ carregado. O servidor pagina em 200 e ordena
-      // por updated_at/id_int (intocado): uma proposta desse status que caia numa
-      // página seguinte não sobe para o topo da primeira. Hoje são 3 em 8.198,
-      // todas recentes, então caem na primeira página de qualquer jeito.
+      // O pin vale sobre o que ESTÁ carregado. O servidor pagina em PAGE_SIZE e
+      // ordena por updated_at/id_int (intocado): uma proposta desse status que
+      // caia numa página seguinte não sobe para o topo da primeira. Hoje são 3
+      // em 8.198, todas recentes, então caem na primeira página de qualquer
+      // jeito — o que continua valendo com a página em 100.
       const pinA = ehRevisaoAtendente(a) ? 0 : 1;
       const pinB = ehRevisaoAtendente(b) ? 0 : 1;
       if (pinA !== pinB) return pinA - pinB;
@@ -566,9 +575,12 @@ export function OrcamentosListPageReal() {
    * Rastreio das linhas da pagina. Consulta a parte porque nem o tipo de frete
    * nem o codigo moram em `propostas`.
    *
-   * NAO reaproveita `visibleIdInts`: aquele corta em 100 (limite herdado do
-   * enriquecimento de chat, que e mais caro), mas a lista RENDERIZA a pagina
-   * inteira, ate 200. Enquanto reusou aquele corte, toda linha da metade de
+   * NAO reaproveita `visibleIdInts`: aquele corta em 100 por conta do
+   * enriquecimento de chat, que e mais caro, enquanto a lista RENDERIZA a
+   * pagina inteira. Com PAGE_SIZE em 100 os dois passaram a coincidir, mas a
+   * separacao FICA: sao tetos de coisas diferentes, e reuni-los devolveria o
+   * defeito assim que a pagina voltasse a ser maior que o corte do chat.
+   * Enquanto reusou aquele corte com a pagina em 200, toda linha da metade de
    * baixo ficava sem dado e a acao Rastrear simplesmente nao aparecia — foi
    * assim que o #20481, que esta na posicao 523 da lista padrao, ficou sem a
    * acao mesmo tendo codigo valido gravado nas tres colunas.
