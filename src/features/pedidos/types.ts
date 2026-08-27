@@ -214,6 +214,15 @@ export interface PropostaOperacionalListItem {
   empresa: string;
   vendedor: string;
   dataProposta: string;
+  /**
+   * Quando o atendente liberou este pedido para a produção
+   * (`propostas.liberado_producao_em`). Responde há quanto tempo ele está na
+   * fila da fábrica — `dataProposta` é a criação da proposta, que é outra coisa.
+   *
+   * Nulo quando não há carimbo: pedido liberado antes de 27/08/2026 sem evento
+   * na auditoria, ou linha que nunca passou pela liberação.
+   */
+  liberadoProducaoEm: string | null;
   /** Prazo prometido (`propostas_os.data_termino`). Nulo enquanto não houver. */
   dataPrevistaEntrega: string | null;
   valorTotal: number;

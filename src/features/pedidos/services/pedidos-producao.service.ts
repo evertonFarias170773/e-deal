@@ -47,7 +47,8 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       is_avulso,
       em_arte,
       is_prd_aprovado,
-      libera_nf
+      libera_nf,
+      liberado_producao_em
     `)
     .eq("is_prd_aprovado", true)
     // Filtra apenas status operacionais para evitar poluir a lista com os que já saíram da produção
@@ -257,6 +258,9 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       vendedor: p.vendedor || "Não atribuído",
       status_interno: composeStatusEmArte(p.status_interno || "INDEFINIDO", emArte),
       dataProposta: p.created_at || new Date().toISOString(),
+      // Carimbo da liberacao. Veio na mesma linha do SELECT, sem consulta extra.
+      // Ausencia e null — nao string vazia, que viraria "Invalid Date" na coluna.
+      liberadoProducaoEm: typeof p.liberado_producao_em === "string" ? p.liberado_producao_em : null,
       // Mesma regra do detalhe: sem promessa gravada, ausência — não string
       // vazia, que virava `new Date("")` e "Invalid Date" no Kanban e no painel.
       dataPrevistaEntrega: dataTermino,

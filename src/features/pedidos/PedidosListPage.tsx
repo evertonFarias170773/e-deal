@@ -567,6 +567,36 @@ export function PedidosListPage() {
             cell: (proposta) => <span className="text-sm text-slate-700 truncate max-w-[120px] block" title={proposta.vendedor}>{proposta.vendedor}</span>
           },
           {
+            /**
+             * Ha quanto tempo o pedido esta na fila da fabrica. Fica ao lado de
+             * "Data entrega" de proposito: as duas datas do pedido lado a lado
+             * respondem juntas se o prazo esta apertado.
+             *
+             * Nao e ordenavel nesta etapa — a lista segue fixa em id_int desc.
+             */
+            header: "Liberado em",
+            cell: (proposta) => {
+              const carimbo = proposta.liberadoProducaoEm;
+              if (!carimbo) return <span className="text-xs font-medium text-slate-400">-</span>;
+              const quando = new Date(carimbo);
+              if (Number.isNaN(quando.getTime())) return <span className="text-xs font-medium text-slate-400">-</span>;
+              // Data acima e hora menor abaixo, mesmo padrao que a coluna Cliente
+              // usa para o pagador. Fuso local: o carimbo e um instante real, e
+              // nao uma data solta como o prazo de entrega — por isso aqui NAO
+              // entra o timeZone: "UTC" que "Data entrega" usa.
+              return (
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-slate-700">
+                    {quando.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              );
+            }
+          },
+          {
             header: "Data entrega",
             cell: (proposta) => {
               const dateStr = proposta.dataPrevistaEntrega;

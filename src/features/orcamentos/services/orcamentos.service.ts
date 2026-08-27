@@ -3880,15 +3880,47 @@ export async function liberarPropostaParaProducao(idInt: number): Promise<{ succ
    * Não mexe em `status_interno` além do que já mudava, não emite nota e não
    * dispara integração fiscal: `libera_nf` apenas HABILITA o faturamento.
    */
+  /**
+   * `liberado_producao_em` entra AQUI pelo mesmo motivo de `libera_nf`: é o
+   * único instante em que a decisão de liberar existe, e escrever na mesma linha
+   * do UPDATE não abre janela entre "está liberado" e "sabe-se desde quando".
+   *
+   * RE-LIBERAÇÃO SOBRESCREVE, de propósito. A coluna responde há quanto tempo o
+   * pedido está na produção AGORA, não quando entrou pela primeira vez. O
+   * histórico completo das idas e vindas continua em `audit.logs_v2`.
+   *
+   * O carimbo NÃO é apagado por `retirarPropostaDaProducao` nem por
+   * `devolverPropostaParaRevisaoAtendente` — ver o comentário nas duas.
+   *
+   * A hora vem do RELÓGIO DO NAVEGADOR, e não do banco. Toda esta função é
+   * PostgREST direto do cliente: não há servidor no caminho para chamar `now()`,
+   * e criar uma RPC só para o carimbo custaria mais do que o campo vale. O desvio
+   * é detectável quando importar — `audit.logs_v2.occurred_at` registra o mesmo
+   * evento com o relógio do banco, e as 41 linhas do backfill vieram de lá.
+   */
   const { error: updateErr } = await client
     .from("propostas")
-    .update({ is_prd_aprovado: true, status_interno: "REVISAO PRODUCAO", libera_nf: true })
+    .update({
+      is_prd_aprovado: true,
+      status_interno: "REVISAO PRODUCAO",
+      libera_nf: true,
+      liberado_producao_em: new Date().toISOString()
+    })
     .eq("id_int", idInt);
 
   if (updateErr) return { success: false, errorMessage: "Erro ao atualizar chave de liberação." };
   return { success: true };
 }
 
+/**
+ * PRESERVA `liberado_producao_em` de propósito.
+ *
+ * Desligar `is_prd_aprovado` já apaga a evidência de que o pedido chegou a
+ * entrar na fábrica: retirado fica indistinguível de nunca liberado. O carimbo é
+ * o que sobra dessa passagem, então ele NÃO entra neste UPDATE. Quem lê a coluna
+ * com `is_prd_aprovado = false` está lendo histórico, não estado atual — as duas
+ * se leem juntas, como diz o `comment on column` da migration.
+ */
 export async function retirarPropostaDaProducao(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
@@ -3901,6 +3933,12 @@ export async function retirarPropostaDaProducao(idInt: number): Promise<{ succes
   if (updateErr) return { success: false, errorMessage: "Erro ao retirar proposta da produção." };
   return { success: true };
 }
+/**
+ * PRESERVA `liberado_producao_em`, pela mesma razão de
+ * `retirarPropostaDaProducao`: a devolução para o atendente tira o pedido da
+ * fila, não desfaz o fato de ele ter sido liberado. Se ele voltar,
+ * `liberarPropostaParaProducao` sobrescreve o carimbo com a data nova.
+ */
 export async function devolverPropostaParaRevisaoAtendente(idInt: number): Promise<{ success: boolean; errorMessage?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, errorMessage: "Cliente Supabase indisponível." };
