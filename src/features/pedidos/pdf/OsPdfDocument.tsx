@@ -67,6 +67,86 @@ export function truncar(value: string | null | undefined, max: number = OBS_MAX_
 }
 
 /**
+ * Quebra o texto em linhas, PRESERVANDO as que o usuário digitou.
+ *
+ * POR QUE ISTO EXISTE
+ *   `pdfSafe` remove tudo abaixo de 0x20 (`[^ -ÿ]`) — e `\n` é 0x0A. Para um
+ *   campo de uma linha isso é o certo: nome de cliente não deve carregar quebra.
+ *   Mas a orientação técnica é digitada em várias linhas, muitas vezes como
+ *   lista ("* SEPARAR AS CAIXAS POR DIA"), e saía no papel como parágrafo
+ *   corrido — a bancada perdia a separação dos itens.
+ *
+ *   `pdfSafe` fica INTOCADA: ela é usada em dezenas de campos onde comer a
+ *   quebra é o comportamento desejado. Aqui a mesma limpeza é aplicada LINHA A
+ *   LINHA, e o `\n` deixa de ser lixo para virar a divisão entre elas.
+ *
+ * O que se preserva: quebra simples, linha em branco (vira espaço vertical no
+ * componente) e o recuo à esquerda de sub-itens — por isso o `trimEnd()` em vez
+ * do `trim()` de `pdfSafe`. O texto armazenado não é tocado: só a exibição.
+ */
+export function linhasDoTexto(value: string | null | undefined): string[] {
+  return String(value ?? "")
+    // CRLF e CR isolado viram LF antes do split — o banco hoje só tem LF, mas
+    // texto colado de outro editor pode trazer as outras formas.
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((linha) =>
+      linha
+        .replace(/ /g, " ")
+        .replace(/[^ -ÿ]/g, "")
+        .trimEnd()
+    );
+}
+
+/**
+ * Mesmo corte de `truncar`, mas sem passar por `pdfSafe` — que comeria as
+ * quebras antes de o texto chegar ao componente. O limite de caracteres e a
+ * frase do QR Code continuam idênticos; `truncar` fica intocada para os campos
+ * de uma linha que a usam.
+ */
+export function truncarPreservandoLinhas(
+  value: string | null | undefined,
+  max: number = OBS_MAX_CHARS
+): string {
+  const texto = linhasDoTexto(value).join("\n").trim();
+  if (texto.length <= max) return texto;
+  return `${texto.slice(0, max)}... (integra no ERP - use o QR Code)`;
+}
+
+/**
+ * Renderiza texto de várias linhas respeitando o que foi digitado.
+ *
+ * Cada linha é um `<Text>` próprio — é assim que o @react-pdf quebra de fato;
+ * um `<Text>` único com `\n` dentro sairia corrido. Linha em branco vira um
+ * `<Text>` com espaço, que ocupa a altura de uma linha e mantém a separação
+ * entre parágrafos.
+ */
+export function OsPdfTextoMultilinha({
+  valor,
+  estilo,
+  vazio = "-"
+}: {
+  valor: string | null | undefined;
+  // Tipo tirado do próprio StyleSheet: `ComponentProps<typeof Text>["style"]`
+  // inclui a variante SVG do @react-pdf e não casa com `<Text>` comum.
+  estilo: (typeof styles)["obsTexto"];
+  vazio?: string;
+}) {
+  const linhas = linhasDoTexto(valor);
+  const temConteudo = linhas.some((l) => l.trim() !== "");
+  if (!temConteudo) return <Text style={estilo}>{vazio}</Text>;
+  return (
+    <>
+      {linhas.map((linha, i) => (
+        <Text key={i} style={estilo}>
+          {linha === "" ? " " : linha}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+/**
  * Datas sem fuso ("2026-08-14" de uma coluna `date`, ou "...T00:00:00" de um
  * timestamp without time zone) são lidas literalmente: convertê-las para
  * America/Sao_Paulo recuaria um dia, porque `new Date` as trata como UTC.
@@ -224,6 +304,11 @@ const styles = StyleSheet.create({
   campo: { flexDirection: "row", marginRight: 16, marginBottom: 1.5 },
   campoLabel: { fontFamily: "Helvetica-Bold", fontSize: 8.5 },
   campoValor: { fontSize: 8.5 },
+  // CLIENTE e EVENTO em destaque (27/08/2026): são o que identifica o boletim
+  // de longe na bancada. Vendedor e designer, na mesma faixa, seguem em 8.5 —
+  // é o contraste entre as duas linhas que faz o destaque funcionar.
+  campoLabelDestaque: { fontFamily: "Helvetica-Bold", fontSize: 11 },
+  campoValorDestaque: { fontSize: 11 },
   // ── Card do produto ────────────────────────────────────────────────────────
   produtoCard: { marginBottom: 7 },
   produtoBarra: {
@@ -384,22 +469,24 @@ const styles = StyleSheet.create({
   resumoItemNome: { fontSize: 7, flex: 1, paddingRight: 5, color: "#3f4b58" },
   resumoItemQtd: { fontSize: 7.5, fontFamily: "Helvetica-Bold" },
   // ── Observações / envio ────────────────────────────────────────────────────
+  // Contorno removido em 27/08/2026: o texto passou a ser o que delimita o
+  // bloco. O recuo horizontal saiu junto com a borda para o texto manter o
+  // alinhamento à esquerda da faixa acima; o vertical e o `minHeight` ficam,
+  // porque separam este bloco do seguinte.
   obsBox: {
-    borderWidth: 1,
-    borderColor: "#3f3f42",
-    borderRadius: 6,
     paddingVertical: 6,
-    paddingHorizontal: 9,
     marginTop: 4,
     minHeight: 46
   },
+  // +20% em 27/08/2026: 8.5 -> 10.2
   obsTitulo: {
-    fontSize: 8.5,
+    fontSize: 10.2,
     fontFamily: "Helvetica-Bold",
     marginBottom: 3,
     textTransform: "uppercase"
   },
-  obsTexto: { fontSize: 8, marginBottom: 1 },
+  // +20% em 27/08/2026: 8 -> 9.6
+  obsTexto: { fontSize: 9.6, marginBottom: 1 },
   envioBarra: {
     borderWidth: 1,
     borderColor: "#3f3f42",
@@ -434,11 +521,20 @@ const styles = StyleSheet.create({
   }
 });
 
-function Campo({ label, valor }: { label: string; valor: string | null | undefined }) {
+function Campo({
+  label,
+  valor,
+  destaque = false
+}: {
+  label: string;
+  valor: string | null | undefined;
+  /** Corpo maior — só CLIENTE e EVENTO. Ver `campoValorDestaque` nos estilos. */
+  destaque?: boolean;
+}) {
   return (
     <View style={styles.campo}>
-      <Text style={styles.campoLabel}>{label}: </Text>
-      <Text style={styles.campoValor}>{pdfSafe(valor) || "-"}</Text>
+      <Text style={destaque ? styles.campoLabelDestaque : styles.campoLabel}>{label}: </Text>
+      <Text style={destaque ? styles.campoValorDestaque : styles.campoValor}>{pdfSafe(valor) || "-"}</Text>
     </View>
   );
 }
@@ -771,8 +867,8 @@ export function OsPdfBlocoCliente({ vm, somenteEstoque }: { vm: OsPdfViewModel; 
   return (
         <View style={styles.bloco} wrap={false}>
           <View style={styles.linha}>
-            <Campo label="CLIENTE" valor={vm.cliente.nome} />
-            {escondeEvento ? null : <Campo label="EVENTO" valor={eventoImpresso} />}
+            <Campo label="CLIENTE" valor={vm.cliente.nome} destaque />
+            {escondeEvento ? null : <Campo label="EVENTO" valor={eventoImpresso} destaque />}
           </View>
           <View style={styles.linha}>
             <Campo label="VENDEDOR" valor={vm.vendedor} />
@@ -785,7 +881,7 @@ export function OsPdfBlocoCliente({ vm, somenteEstoque }: { vm: OsPdfViewModel; 
 export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps) {
   const emissao = formatarData(vm.os.emissao);
   const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
-    .map((t) => truncar(t, 200))
+    .map((t) => truncarPreservandoLinhas(t, 200))
     .filter(Boolean);
   const entregaFrete = vm.frete
     ? [vm.frete.servico, vm.frete.transportadora].filter(Boolean).join(" - ")
@@ -827,7 +923,7 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
             longo quebrar entre paginas em vez de ser cortado na renderizacao. */}
         <View style={styles.obsBox}>
           <Text style={styles.obsTitulo}>Orientação técnica de produção:</Text>
-          <Text style={styles.obsTexto}>{pdfSafe(vm.obsTecnica.trim()) || "-"}</Text>
+          <OsPdfTextoMultilinha valor={vm.obsTecnica} estilo={styles.obsTexto} />
         </View>
 
         {/* Observações da OS */}
@@ -835,9 +931,7 @@ export function OsPdfDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfDocumentProps
           <Text style={styles.obsTitulo}>Observações:</Text>
           {obsLinhas.length > 0 ? (
             obsLinhas.map((linha, i) => (
-              <Text key={i} style={styles.obsTexto}>
-                {linha}
-              </Text>
+              <OsPdfTextoMultilinha key={i} valor={linha} estilo={styles.obsTexto} />
             ))
           ) : (
             <Text style={styles.obsTexto}>-</Text>

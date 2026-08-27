@@ -9,8 +9,10 @@ import {
   formatarData,
   formatarPeso,
   formatarQuantidade,
+  OsPdfTextoMultilinha,
   pdfSafe,
-  truncar
+  truncar,
+  truncarPreservandoLinhas
 } from "./OsPdfDocument";
 
 /**
@@ -87,9 +89,13 @@ const styles = StyleSheet.create({
   loteDetalhe: { paddingLeft: 8, paddingRight: 4, paddingBottom: 3 },
   loteDetalheTexto: { fontSize: 7, color: "#555" },
 
-  obsBox: { borderWidth: 1, borderColor: "#ddd", borderRadius: 3, padding: 6, marginBottom: 6 },
-  obsTitulo: { fontSize: 7, fontFamily: "Helvetica-Bold", color: "#666", marginBottom: 2 },
-  obsTexto: { fontSize: 8, marginBottom: 1 },
+  // Contorno removido em 27/08/2026; o recuo horizontal saiu junto, para o
+  // texto alinhar a esquerda com o resto da pagina. O vertical fica.
+  obsBox: { paddingVertical: 6, marginBottom: 6 },
+  // +20% em 27/08/2026: 7 -> 8.4
+  obsTitulo: { fontSize: 8.4, fontFamily: "Helvetica-Bold", color: "#666", marginBottom: 2 },
+  // +20% em 27/08/2026: 8 -> 9.6
+  obsTexto: { fontSize: 9.6, marginBottom: 1 },
 
   envioBarra: { backgroundColor: "#f1f5f9", borderRadius: 3, paddingHorizontal: 6, paddingVertical: 3, marginBottom: 8 },
   envioTexto: { fontSize: 8, fontFamily: "Helvetica-Bold", color: "#334155" },
@@ -218,7 +224,7 @@ function ProdutoLista({ produto, corSetor }: { produto: OsPdfProduto; corSetor: 
 export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoDocumentProps) {
   const emissao = formatarData(vm.os.emissao);
   const obsLinhas = [vm.obs.obsCriticas, vm.obs.obsImpressao, vm.obs.obsAcabamento]
-    .map((t) => truncar(t, 200))
+    .map((t) => truncarPreservandoLinhas(t, 200))
     .filter(Boolean);
   const entregaFrete = vm.frete
     ? [vm.frete.servico, vm.frete.transportadora].filter(Boolean).join(" - ")
@@ -258,16 +264,14 @@ export function OsPdfResumoDocument({ vm, qrDataUrl, logoDataUrl }: OsPdfResumoD
             longo quebrar entre paginas em vez de ser cortado na renderizacao. */}
         <View style={styles.obsBox}>
           <Text style={styles.obsTitulo}>Orientação técnica de produção:</Text>
-          <Text style={styles.obsTexto}>{pdfSafe(vm.obsTecnica.trim()) || "-"}</Text>
+          <OsPdfTextoMultilinha valor={vm.obsTecnica} estilo={styles.obsTexto} />
         </View>
 
         <View style={styles.obsBox} wrap={false}>
           <Text style={styles.obsTitulo}>Observações:</Text>
           {obsLinhas.length > 0 ? (
             obsLinhas.map((linha, i) => (
-              <Text key={i} style={styles.obsTexto}>
-                {linha}
-              </Text>
+              <OsPdfTextoMultilinha key={i} valor={linha} estilo={styles.obsTexto} />
             ))
           ) : (
             <Text style={styles.obsTexto}>-</Text>
