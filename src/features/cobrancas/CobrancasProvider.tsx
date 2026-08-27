@@ -1990,6 +1990,36 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     }
   }, [source, cobrancas, cobrancasStats, refreshCobrancas]);
 
+  /**
+   * Indice id_int -> cobrancas da proposta, recalculado SO quando
+   * `cobrancasStats` muda.
+   *
+   * POR QUE
+   *   `getCobrancasByProposta` fazia `cobrancasStats.filter(...)`, O(n) sobre
+   *   7.662 registros. A lista de Orcamentos chama uma vez por linha
+   *   renderizada: com PAGE_SIZE 200 sao ~1,53 milhao de comparacoes por
+   *   render, refeitas a cada re-render.
+   *
+   * ORDEM PRESERVADA: percorre `cobrancasStats` na ordem original e empilha,
+   * entao cada grupo sai na MESMA ordem relativa que o `filter` produzia.
+   *
+   * CHAVE CRUA, de proposito: o `filter` comparava com `===`, e o mapeamento
+   * garante `id_int` numerico (`toNumber(row.id_int, 0)` em mappers.ts) — linha
+   * sem proposta vira 0 e continua agrupada em 0, exatamente como antes.
+   */
+  const cobrancasPorProposta = useMemo(() => {
+    const indice = new Map<number, Cobranca[]>();
+    for (const item of cobrancasStats) {
+      const grupo = indice.get(item.id_int);
+      if (grupo) {
+        grupo.push(item);
+      } else {
+        indice.set(item.id_int, [item]);
+      }
+    }
+    return indice;
+  }, [cobrancasStats]);
+
   const value = useMemo<CobrancasContextValue>(
     () => ({
       cobrancas,
@@ -2006,7 +2036,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         cobrancas.find((item) => item.token_publico === token) ?? cobrancasStats.find((item) => item.token_publico === token),
       statusCarga,
       mensagemCarga,
-      getCobrancasByProposta: (idInt: number) => cobrancasStats.filter((item) => item.id_int === idInt),
+      // `slice()` mantem o contrato de hoje nos minimos detalhes: o `filter`
+      // devolvia um array NOVO a cada chamada, que o consumidor podia ordenar
+      // sem afetar ninguem. Devolver o array do indice partilharia o estado
+      // interno do provider. O grupo tem 1,04 cobranca em media (7.662 para
+      // 7.339 propostas), entao a copia e irrelevante perto do O(n) que saiu.
+      getCobrancasByProposta: (idInt: number) => cobrancasPorProposta.get(idInt)?.slice() ?? [],
       liberarCobrancaReal,
       voltarCobrancaFilaReal,
       emitirBoletoReal,
@@ -2020,6 +2055,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
     [
       cobrancas,
       cobrancasStats,
+      cobrancasPorProposta,
       source,
       statusCarga,
       mensagemCarga,
