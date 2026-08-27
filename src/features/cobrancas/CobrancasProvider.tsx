@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Cobranca, CriarCobrancaFormValues, CreditAnalysisResult, ModeloCobranca } from "@/features/cobrancas/types";
 import type { Proposta } from "@/features/orcamentos/types";
 import { clonePagamentosMock, createCobrancaFromForm } from "@/lib/mocks/pagamentos.mock";
-import { canLiberarParaPedido, resolverEmpresaRecebedora, roundMoney, getTipoCobrancaLabel } from "@/features/cobrancas/cobrancas-utils";
+import { canLiberarParaPedido, resolverEmpresaRecebedora, roundMoney, getTipoCobrancaLabel, montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import {
   getCobrancasReadOnlyData,
@@ -847,9 +847,15 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // 2. Gerar token_publico e url_cobranca a partir do primeiro bloco do UUID
+      // 2. Gerar token_publico e url_cobranca a partir do primeiro bloco do UUID.
+      // `urlCobranca` e nula nos tipos sem checkout (E-CREDITO e a familia
+      // faturado): nao ha pagina a abrir, e gravar identificador nesse campo era
+      // o que fazia a tela oferecer "abrir checkout" para abatimento de saldo.
       const tokenPublico = cobrancaId.split("-")[0];
-      const urlCobranca = `https://pay.ai-ideal.com.br/i/${tokenPublico}`;
+      const urlCobranca = montarUrlPublicaCobranca({
+        tipoCobranca: values.tipoCobranca,
+        tokenPublico
+      });
 
       // 3. Atualizar o registro com token_publico e url_cobranca
       const { error: updateTokenError } = await client
@@ -1014,7 +1020,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
           confirmado: false,
           id_empresa: idEmpresa,
           token_publico: tokenPublico,
-          url_cobranca: urlCobranca,
+          url_cobranca: urlCobranca ?? undefined,
           forma_fatu: isFaturadoType ? (values.modeloFatu || "BOLETO") : undefined,
           proposta: {
             id_int: proposta.id_int,
@@ -1086,7 +1092,7 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         confirmado: false,
         id_empresa: idEmpresa,
         token_publico: tokenPublico,
-        url_cobranca: urlCobranca,
+        url_cobranca: urlCobranca ?? undefined,
         proposta: {
           id_int: proposta.id_int,
           statusProposta: proposta.status,

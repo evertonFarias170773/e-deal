@@ -579,6 +579,47 @@ export function cobrancaTemLinkExterno(cobranca: Pick<Cobranca, "tipo_cobranca">
   return !TIPOS_SEM_LINK_EXTERNO.has(tipo);
 }
 
+/** Edge Function que serve a página pública de pagamento, por `token_publico`. */
+const BASE_PAGAMENTO_PUBLICO = "https://pay.ai-ideal.com.br/functions/v1/pagamento-publico";
+
+/**
+ * URL pública da cobrança — a que vai para `pagamentos_v2.url_cobranca` e chega
+ * ao cliente.
+ *
+ * Devolve `null` quando não há página a abrir, e nesses casos a coluna fica
+ * NULA. São dois motivos distintos:
+ *
+ *   - tipo sem checkout (E-CREDITO e a família faturado, por
+ *     `cobrancaTemLinkExterno`): não existe página de pagamento para abatimento
+ *     de saldo nem para cobrança faturada. Gravar um identificador aqui foi
+ *     justamente o que fez a tela oferecer "abrir checkout" para E-Crédito;
+ *   - sem `token_publico`: sem ele a Edge Function não tem por onde achar a
+ *     cobrança, e a URL abriria em erro.
+ *
+ * O formato ANTERIOR era `https://pay.ai-ideal.com.br/i/{token}`, que nunca
+ * existiu: `/i/` é a abreviação VISUAL de `renderShortUrl` (CobrancaDetail), que
+ * em algum momento foi copiada para dentro dos writers. O cliente recebia um
+ * link que não abria. As 2.207 linhas gravadas assim não são corrigidas aqui.
+ *
+ * O domínio é o mesmo de antes, então `PREFIXO_URL_INTERNA` — a sentinela que
+ * separa cobrança interna de checkout de provedor no Cartão Asaas — continua
+ * valendo sem alteração.
+ */
+export function montarUrlPublicaCobranca(params: {
+  tipoCobranca: string | null | undefined;
+  tokenPublico: string | null | undefined;
+}): string | null {
+  const token = String(params.tokenPublico ?? "").trim();
+  if (!token) return null;
+
+  const temLink = cobrancaTemLinkExterno({
+    tipo_cobranca: String(params.tipoCobranca ?? "").trim() as Cobranca["tipo_cobranca"]
+  });
+  if (!temLink) return null;
+
+  return `${BASE_PAGAMENTO_PUBLICO}?token=${encodeURIComponent(token)}`;
+}
+
 /**
  * Empresa recebedora correspondente a um texto de empresa, ou null quando não dá
  * para afirmar.

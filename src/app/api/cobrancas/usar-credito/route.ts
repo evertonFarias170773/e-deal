@@ -54,6 +54,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
+import { montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 
 type UsuarioMinRow = {
   id_perfil: number | null;
@@ -304,7 +305,12 @@ export async function POST(request: NextRequest) {
       paid_at: agora,
       vencimento: vencimento ?? agora.split("T")[0],
       token_publico: tokenPublico,
-      url_cobranca: `https://pay.ai-ideal.com.br/i/${tokenPublico}`,
+      // E-CREDITO nao tem pagina de pagamento: e abatimento de saldo em conta
+      // corrente, nao cobranca a pagar. `montarUrlPublicaCobranca` devolve null
+      // para os tipos sem checkout, e a coluna fica nula. Antes gravava
+      // `pay.ai-ideal.com.br/i/{token}`, caminho que nunca existiu, e a tela
+      // ainda oferecia "abrir checkout" em cima dele.
+      url_cobranca: montarUrlPublicaCobranca({ tipoCobranca: "E-CREDITO", tokenPublico }),
       obs_v2: obsBase,
     })
     .select("id")

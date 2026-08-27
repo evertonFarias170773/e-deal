@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import crypto from "crypto";
-import { resolveEmpresaIdFromTexto } from "@/features/cobrancas/cobrancas-utils";
+import { resolveEmpresaIdFromTexto, montarUrlPublicaCobranca } from "@/features/cobrancas/cobrancas-utils";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { calcularSituacaoQuitacaoProposta } from "@/features/cobrancas/services/conferencia-financeira.service";
 import { gerarPixBancoInter } from "@/features/cobrancas/services/banco-inter.service";
@@ -478,7 +478,9 @@ export async function POST(request: NextRequest) {
         .from("pagamentos_v2")
         .update({
           token_publico: tokenPublicoSec,
-          url_cobranca: `https://pay.ai-ideal.com.br/i/${tokenPublicoSec}`
+          // Nulo quando o secundario e faturado: nao ha pagina a abrir. Boleto
+          // e cartao recebem a pagina publica por token.
+          url_cobranca: montarUrlPublicaCobranca({ tipoCobranca: tipoSecundario, tokenPublico: tokenPublicoSec })
         })
         .eq("id", insertedSecundaria.id);
       if (tokenErr) {
