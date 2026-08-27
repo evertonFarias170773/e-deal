@@ -117,13 +117,43 @@ export interface FaturamentoOficialResult {
   nota_contagem?: string;
   /** Filtro de vendedor ambíguo (mais de um nome correspondente) */
   aviso?: string;
+  /** Presente só quando `truncado` — texto pronto para o modelo repassar ao usuário. */
+  aviso_truncamento?: string;
   truncado: boolean;
   source: string;
   authError?: boolean;
   error?: string;
 }
 
-const FATURAMENTO_MAX_ROWS = 5000;
+/**
+ * Teto de linhas de UMA leitura, calibrado no teto REAL do PostgREST.
+ *
+ * Era 5000, e por isso a salvaguarda de truncamento nunca disparava: o
+ * PostgREST do projeto corta em 1.000 linhas por requisicao e devolve HTTP 200
+ * sem aviso nenhum — `.limit(5000)` recebe 1.000 e `Content-Range: 0-999/*`.
+ * Medido em producao em 27/08/2026, com `.limit()` e com `Range:`, os dois
+ * cortam igual.
+ *
+ * Com 5000 aqui, `pagamentos.length >= FATURAMENTO_MAX_ROWS` era sempre falso e
+ * o faturamento saia MENOR que o real dizendo estar integro. O filtro desta
+ * consulta casa 1.177 linhas em 30 dias, 3.249 em 90 e 6.847 no total — ou seja,
+ * o corte ja acontece a partir de cerca de 25 dias de janela.
+ *
+ * ISTO NAO CONSERTA O VALOR: a consulta continua sem paginacao nesta etapa. O
+ * que muda e que o resultado passa a se declarar incompleto quando esta.
+ */
+const FATURAMENTO_MAX_ROWS = 1000;
+
+/**
+ * Texto que acompanha `truncado`. Existe porque um booleano no meio de vinte
+ * campos nao chega a quem le o numero: quem redige a resposta e o modelo, e ele
+ * precisa de uma instrucao explicita, nao de uma flag.
+ */
+export const AVISO_FATURAMENTO_TRUNCADO =
+  'ATENCAO — RESULTADO INCOMPLETO: a leitura atingiu o teto de 1.000 linhas por consulta do banco, ' +
+  'entao o faturamento apresentado esta MENOR que o real e as contagens estao subestimadas. ' +
+  'NAO apresente este numero como o faturamento do periodo: diga que o periodo tem mais pagamentos ' +
+  'do que coube em uma leitura e sugira consultar uma janela menor.';
 const FATURAMENTO_LOTE_PROPOSTAS = 400;
 
 export const CRITERIO_FATURAMENTO_OFICIAL =
@@ -307,6 +337,9 @@ export async function calcularFaturamentoOficial(
       : {}),
     ...((vendedoresFiltrados?.size ?? 0) > 1
       ? { aviso: 'O nome informado corresponde a mais de um vendedor — números apresentados SEPARADOS por vendedor; o total soma todos os correspondentes.' }
+      : {}),
+    ...(pagamentos.length >= FATURAMENTO_MAX_ROWS
+      ? { aviso_truncamento: AVISO_FATURAMENTO_TRUNCADO }
       : {}),
     truncado: pagamentos.length >= FATURAMENTO_MAX_ROWS,
   };

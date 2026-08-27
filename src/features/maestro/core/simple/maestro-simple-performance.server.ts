@@ -146,7 +146,9 @@ export async function calcularPerformanceVendedor(
     }
   }
 
-  const avisos = [atualRes.aviso, atualRes.nota_contagem].filter(Boolean).join(' ');
+  // `aviso_truncamento` entra na MESMA composição que já existia: sem isto, a
+  // performance do vendedor mostraria o número cortado sem nenhuma marca.
+  const avisos = [atualRes.aviso_truncamento, atualRes.aviso, atualRes.nota_contagem].filter(Boolean).join(' ');
 
   return {
     ...base,
