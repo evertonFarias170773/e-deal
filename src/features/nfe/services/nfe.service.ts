@@ -1666,43 +1666,90 @@ export async function getNfeFinanceiroStatus(refs: string[]) {
   }
 }
 
-export async function launchBoletosForNfe(
-  nfe: SupabaseNfeRow | NfeReadModel,
-  pagamentos: SupabaseNfePagamentoRow[],
-  clienteNome: string,
-  clienteDocumento: string
-) {
+/**
+ * Tipos de `pagamentos_v2.tipo_cobranca` que representam venda faturada — a
+ * única que vira título em contas a receber. PIX, cartão, crédito e boleto à
+ * vista se resolvem no próprio checkout e não entram aqui.
+ *
+ * O banco guarda grafias mistas ("E-FATURADO" e "E-Faturado") e underscore,
+ * então a comparação é sempre sobre a forma normalizada.
+ */
+const TIPOS_COBRANCA_FATURADA = new Set([
+  "E-FATURADO",
+  "FATURADO",
+  "E-RETRABALHO",
+  "E-PERMUTA",
+  "E-AMOSTRA"
+]);
+
+/** Status em que a cobrança não está mais em aberto. */
+const STATUS_COBRANCA_QUITADA_OU_MORTA = new Set([
+  "PAID",
+  "CANCELADO",
+  "CANCELADA",
+  "EXTORNADO",
+  "RECUSADO"
+]);
+
+const normalizarTipoCobranca = (valor: unknown): string =>
+  String(valor ?? "").trim().toUpperCase().replace(/_/g, "-");
+
+export type FaturadoEmAberto = {
+  /** Quantas cobranças faturadas não pagas existem para o id_int. */
+  qtd: number;
+  /** Soma dos valores dessas cobranças — o total que o título tem de fechar. */
+  soma: number;
+};
+
+/**
+ * Total faturado EM ABERTO por proposta (`id_int`).
+ *
+ * Serve a duas coisas em NotasFiscaisPage: decidir se a nota pode oferecer
+ * "Lançar no Contas a Receber" (só venda faturada oferece) e dar o total contra
+ * o qual a soma das parcelas fiscais é conferida.
+ *
+ * A conferência é por TOTAIS do id_int, não por cobrança individual: a mesma
+ * venda pode ter sido dividida em vários pagamentos, e o que precisa fechar é a
+ * soma.
+ */
+export async function getFaturadoEmAbertoPorIdInt(
+  idInts: number[]
+): Promise<Record<number, FaturadoEmAberto>> {
   const client = getSupabaseClient();
-  if (!client) throw new Error("Supabase client not initialized");
+  const mapa: Record<number, FaturadoEmAberto> = {};
+  if (!client || idInts.length === 0) return mapa;
 
-  const records = pagamentos.map((pg) => {
-    return {
-      id_int: nfe.id_int,
-      parcela: pg.numero_parcela,
-      total_parcelas: pg.total_parcelas,
-      valor: pg.valor,
-      vencimento: pg.data_vencimento,
-      status: "A_VENCER",
-      nome_cliente: clienteNome || null,
-      documento: clienteDocumento || null,
-      id_cliente: nfe.id_cliente,
-      id_empresa: nfe.id_empresa,
-      n_nf: nfe.numero_nf ? String(nfe.numero_nf) : null,
-      ext_reference: nfe.ref,
-      descricao: `Vencimento fiscal ${pg.numero_parcela}/${pg.total_parcelas} - Ref: ${nfe.ref}`,
-      is_faturado: true,
-      // Encargos sempre explícitos: omitir estas colunas fazia o título herdar o
-      // DEFAULT antigo da tabela (multa 2% / mora 0,033% ao dia) e acumular
-      // encargo no vencimento, sem ninguém ter pedido.
-      multa: 0,
-      juros_dia: 0,
-      id_pagamento: null // Sempre nulo neste fluxo, conforme ressalva obrigatória
-    };
-  });
+  const unicos = Array.from(new Set(idInts.filter((n) => Number.isFinite(n) && n > 0)));
+  const LOTE = 200;
 
-  const { data, error } = await client.from("boletos").insert(records);
-  if (error) throw error;
-  return data;
+  for (let i = 0; i < unicos.length; i += LOTE) {
+    const lote = unicos.slice(i, i + LOTE);
+    const { data, error } = await client
+      .from("pagamentos_v2")
+      .select("id_int, valor, tipo_cobranca, status, paid_at")
+      .in("id_int", lote)
+      .returns<Array<{ id_int: number | null; valor: number | null; tipo_cobranca: string | null; status: string | null; paid_at: string | null }>>();
+
+    if (error) {
+      console.error("[NfeService] getFaturadoEmAbertoPorIdInt failed:", error);
+      return mapa;
+    }
+
+    for (const linha of data || []) {
+      const idInt = Number(linha.id_int);
+      if (!Number.isFinite(idInt) || idInt <= 0) continue;
+      if (!TIPOS_COBRANCA_FATURADA.has(normalizarTipoCobranca(linha.tipo_cobranca))) continue;
+      if (STATUS_COBRANCA_QUITADA_OU_MORTA.has(String(linha.status ?? "").trim().toUpperCase())) continue;
+      if (linha.paid_at) continue;
+
+      const atual = mapa[idInt] || { qtd: 0, soma: 0 };
+      atual.qtd += 1;
+      atual.soma = Math.round((atual.soma + (Number(linha.valor) || 0)) * 100) / 100;
+      mapa[idInt] = atual;
+    }
+  }
+
+  return mapa;
 }
 
 export async function updateBoletoInDb(

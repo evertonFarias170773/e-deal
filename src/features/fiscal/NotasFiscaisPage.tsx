@@ -5,7 +5,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { codecs } from "@/lib/url-state";
-import { AlertTriangle, Copy, ExternalLink, FileText, Play, Loader2, CheckCircle2, X } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, FileText, Play, Loader2, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
@@ -15,11 +15,16 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { humanizeStatus } from "@/lib/formatters/status";
 import { useNfeReadOnlyData } from "@/features/nfe/hooks/useNfeReadOnlyData";
 import { useNfseReadOnlyData } from "@/features/nfse/hooks/useNfseReadOnlyData";
-import type { NfeReadModel, SupabaseNfePagamentoRow } from "@/features/nfe/types";
+import type { NfeReadModel } from "@/features/nfe/types";
 import type { NfseReadModel } from "@/features/nfse/types";
 import type { SupabaseBoletoRow } from "@/features/contas-a-receber/types.supabase";
 import { useRouter } from "next/navigation";
-import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, launchBoletosForNfe, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
+import { createOrReuseNfeDraft, getFaturaveisPropostas, updateNfeDraft, previewNfeRascunho, getNfeFinanceiroStatus, getFaturadoEmAbertoPorIdInt, getNfePagamentos, getNfeDisplayStatus, prepararEnvioNfe, insertNotaEvento, getNotaEventosForRefs, type FaturadoEmAberto, type SupabaseNotaEventoRow } from "@/features/nfe/services/nfe.service";
+import { PrepararBoletosModal, type OrigemNfeLancamento } from "@/features/cobrancas/PrepararBoletosModal";
+import { PAGAMENTOS_V2_SELECT } from "@/features/cobrancas/services/pagamentos-v2.service";
+import { mapSupabasePagamentoV2RowToCobranca } from "@/features/cobrancas/mappers";
+import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
+import type { Cobranca } from "@/features/cobrancas/types";
 import { RevisarGeracaoBancariaModal } from "@/features/contas-a-receber/components/RevisarGeracaoBancariaModal";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
@@ -74,25 +79,6 @@ function parseFocusResponse(data: any): { success: boolean; message: string } {
   }
 
   return { success: true, message: "Operação realizada com sucesso." };
-}
-
-function getFormaPagamentoLabel(forma: string) {
-  if (forma === "01") return "Dinheiro";
-  if (forma === "02") return "Cheque";
-  if (forma === "03") return "Cartão de Crédito";
-  if (forma === "04") return "Cartão de Débito";
-  if (forma === "05") return "Crédito Loja";
-  if (forma === "10") return "Vale Alimentação";
-  if (forma === "11") return "Vale Refeição";
-  if (forma === "12") return "Vale Presente";
-  if (forma === "13") return "Vale Combustível";
-  if (forma === "14") return "Duplicata Mercantil";
-  if (forma === "15") return "Boleto Bancário";
-  if (forma === "16") return "Depósito Bancário";
-  if (forma === "17") return "PIX";
-  if (forma === "18") return "Transferência Bancária";
-  if (forma === "19") return "Fidelidade";
-  return `Outros (${forma})`;
 }
 
 type ActiveTab = "FILA_FATURAMENTO" | "HISTORICO_FISCAL";
@@ -341,6 +327,18 @@ export function NotasFiscaisPage() {
   const [nfePaymentsCountMap, setNfePaymentsCountMap] = useState<Record<string, number>>({});
   const [boletosMap, setBoletosMap] = useState<Record<string, SupabaseBoletoRow[]>>({});
 
+  /**
+   * Faturado em aberto por proposta (`id_int`).
+   *
+   * Decide se a nota pode oferecer "Lançar no Contas a Receber": só venda
+   * faturada vira título. PIX, cartão, crédito e boleto à vista se resolvem no
+   * próprio checkout e não entram em contas a receber.
+   *
+   * Serve só para MOSTRAR a ação — os números que valem no lançamento são
+   * reconsultados no clique, nunca lidos deste mapa.
+   */
+  const [faturadoEmAbertoMap, setFaturadoEmAbertoMap] = useState<Record<number, FaturadoEmAberto>>({});
+
   const refreshFinanceiroStatusForRef = async (ref: string) => {
     try {
       const { paymentsCountMap, boletosMap: bMap } = await getNfeFinanceiroStatus([ref]);
@@ -367,6 +365,25 @@ export function NotasFiscaisPage() {
         }
       })();
     }
+    return () => {
+      active = false;
+    };
+  }, [nfeListCombined]);
+
+  useEffect(() => {
+    let active = true;
+    const idInts = nfeListCombined.map((n) => Number(n.id_int)).filter((n) => Number.isFinite(n) && n > 0);
+    if (idInts.length === 0) return;
+
+    void (async () => {
+      try {
+        const mapa = await getFaturadoEmAbertoPorIdInt(idInts);
+        if (active) setFaturadoEmAbertoMap((prev) => ({ ...prev, ...mapa }));
+      } catch (err) {
+        console.error("[NotasFiscaisPage] loadFaturadoEmAberto failed:", err);
+      }
+    })();
+
     return () => {
       active = false;
     };
@@ -426,49 +443,98 @@ export function NotasFiscaisPage() {
     };
   }, [nfeListCombined]);
 
-  const [selectedNfeForLaunch, setSelectedNfeForLaunch] = useState<NfeReadModel | null>(null);
-  const [launchModalOpen, setLaunchModalOpen] = useState(false);
-  const [vencimentosForLaunch, setVencimentosForLaunch] = useState<SupabaseNfePagamentoRow[]>([]);
-  const [isLoadingVencimentos, setIsLoadingVencimentos] = useState(false);
-  const [selectedClientForLaunch, setSelectedClientForLaunch] = useState<{ nome: string; fantasia: string; documento: string } | null>(null);
-  const [isLaunchingBoleto, setIsLaunchingBoleto] = useState(false);
+  /**
+   * Lançamento em contas a receber a partir da NF — sempre pelo
+   * PrepararBoletosModal, o único ponto de lançamento do sistema.
+   *
+   * O modal quer uma `Cobranca`. Vindo da NF, ela é montada sobre a PRIMEIRA
+   * cobrança faturada em aberto do `id_int` (para trazer cliente, documento e
+   * empresa reais, via o mesmo mapper do resto do módulo) com o `valor`
+   * substituído pela SOMA de todas — porque a conferência é por totais da
+   * proposta, e a venda pode ter sido dividida em vários pagamentos.
+   */
+  const [lancamentoNfe, setLancamentoNfe] = useState<{ cobranca: Cobranca; origem: OrigemNfeLancamento } | null>(null);
+  const [isPreparandoLancamento, setIsPreparandoLancamento] = useState(false);
 
   const handleOpenLaunchBoletoModal = async (item: NfeReadModel) => {
-    setSelectedNfeForLaunch(item);
-    setLaunchModalOpen(true);
-    setIsLoadingVencimentos(true);
-    setSelectedClientForLaunch(null);
-    setVencimentosForLaunch([]);
+    if (isPreparandoLancamento) return;
+    setIsPreparandoLancamento(true);
     try {
-      const pgs = await getNfePagamentos(item.id);
-      setVencimentosForLaunch(pgs || []);
-
       const client = getSupabaseClient();
-      if (client) {
-        const { data: cData } = await client
-          .from("clientes")
-          .select("nome, fantasia, documento")
-          .eq("id_cliente", item.id_cliente)
-          .single();
+      if (!client) throw new Error("Sistema indisponível no momento.");
 
-        if (cData) {
-          setSelectedClientForLaunch({
-            nome: cData.nome || "",
-            fantasia: cData.fantasia || "",
-            documento: cData.documento || ""
-          });
-        }
+      // Parcelas fiscais: `getNfePagamentos` já filtra ativo = true e ordena por
+      // numero_parcela.
+      const parcelasFiscais = await getNfePagamentos(item.id);
+      if (!parcelasFiscais || parcelasFiscais.length === 0) {
+        showToast({
+          type: "error",
+          title: "Nota sem parcela fiscal ativa",
+          description: "Esta NF-e não tem vencimento fiscal gravado. Não há o que lançar no contas a receber."
+        });
+        return;
       }
+
+      // Cobranças faturadas do id_int — RECONSULTADAS AQUI, no clique. Nunca do
+      // mapa em memória: era exatamente isso que deixava o lançamento passar da
+      // tela e estourar no índice do Postgres.
+      const { data: linhasV2, error: erroV2 } = await client
+        .from("pagamentos_v2")
+        .select(PAGAMENTOS_V2_SELECT)
+        .eq("id_int", item.id_int)
+        .returns<SupabasePagamentoV2Row[]>();
+
+      if (erroV2) throw new Error(erroV2.message || "Falha ao consultar o financeiro da proposta.");
+
+      const TIPOS_FATURADOS = new Set(["E-FATURADO", "FATURADO", "E-RETRABALHO", "E-PERMUTA", "E-AMOSTRA"]);
+      const MORTAS = new Set(["PAID", "CANCELADO", "CANCELADA", "EXTORNADO", "RECUSADO"]);
+      const faturadasEmAberto = (linhasV2 || []).filter((linha) => {
+        const tipo = String(linha.tipo_cobranca ?? "").trim().toUpperCase().replace(/_/g, "-");
+        const status = String(linha.status ?? "").trim().toUpperCase();
+        return TIPOS_FATURADOS.has(tipo) && !MORTAS.has(status) && !linha.paid_at;
+      });
+
+      if (faturadasEmAberto.length === 0) {
+        showToast({
+          type: "warning",
+          title: "Sem faturado em aberto",
+          description: "Esta proposta não tem cobrança faturada em aberto. Só venda faturada entra em contas a receber."
+        });
+        setFaturadoEmAbertoMap((prev) => ({ ...prev, [Number(item.id_int)]: { qtd: 0, soma: 0 } }));
+        return;
+      }
+
+      const base = mapSupabasePagamentoV2RowToCobranca(faturadasEmAberto[0]);
+      if (!base) throw new Error("Não foi possível interpretar a cobrança faturada da proposta.");
+
+      const somaFaturado =
+        Math.round(faturadasEmAberto.reduce((acc, linha) => acc + (Number(linha.valor) || 0), 0) * 100) / 100;
+
+      setLancamentoNfe({
+        cobranca: { ...base, valor: somaFaturado },
+        origem: {
+          ref: item.ref,
+          numeroNf: item.numero_nf ? String(item.numero_nf) : null,
+          parcelas: parcelasFiscais.map((pg) => ({
+            numero_parcela: pg.numero_parcela,
+            total_parcelas: pg.total_parcelas,
+            data_vencimento: pg.data_vencimento,
+            valor: Number(pg.valor) || 0
+          })),
+          totalFaturadoEmAberto: somaFaturado
+        }
+      });
     } catch (err) {
-      console.error("[NotasFiscaisPage] failed to load vencimentos or client for launch:", err);
-      showToast({ type: "error", title: "Erro ao carregar vencimentos fiscais." });
+      console.error("[NotasFiscaisPage] failed to prepare launch from NF-e:", err);
+      showToast({
+        type: "error",
+        title: "Erro ao preparar o lançamento",
+        description: err instanceof Error ? err.message : String(err)
+      });
     } finally {
-      setIsLoadingVencimentos(false);
+      setIsPreparandoLancamento(false);
     }
   };
-
-  const [launchSuccessModalOpen, setLaunchSuccessModalOpen] = useState(false);
-  const [justLaunchedNfe, setJustLaunchedNfe] = useState<NfeReadModel | null>(null);
 
   const [selectedNfeForReview, setSelectedNfeForReview] = useState<NfeReadModel | null>(null);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -835,43 +901,6 @@ export function NotasFiscaisPage() {
     }
   };
 
-  const handleLaunchBoletos = async () => {
-    if (!selectedNfeForLaunch) return;
-    const launchedParcelas = boletosMap[selectedNfeForLaunch.ref]?.map(b => Number(b.parcela)) || [];
-    const toLaunch = vencimentosForLaunch.filter(pg => !launchedParcelas.includes(pg.numero_parcela));
-    if (toLaunch.length === 0) return;
-
-    setIsLaunchingBoleto(true);
-    try {
-      await launchBoletosForNfe(
-        selectedNfeForLaunch,
-        toLaunch,
-        selectedClientForLaunch?.nome || selectedNfeForLaunch.nome || selectedNfeForLaunch.fantasia || "",
-        selectedClientForLaunch?.documento || ""
-      );
-
-      showToast({
-        type: "success",
-        title: "Sucesso!",
-        description: `${toLaunch.length} boleto(s) lançado(s) com sucesso no Contas a Receber.`
-      });
-
-      setJustLaunchedNfe(selectedNfeForLaunch);
-      setLaunchModalOpen(false);
-      setLaunchSuccessModalOpen(true);
-      void refreshFinanceiroStatusForRef(selectedNfeForLaunch.ref);
-    } catch (err) {
-      console.error("[NotasFiscaisPage] Error launching boletos:", err);
-      showToast({
-        type: "error",
-        title: "Erro ao lançar boletos",
-        description: err instanceof Error ? err.message : String(err)
-      });
-    } finally {
-      setIsLaunchingBoleto(false);
-    }
-  };
-
   const isMockActive = activeTab === "FILA_FATURAMENTO"
     ? false
     : false
@@ -1166,7 +1195,15 @@ export function NotasFiscaisPage() {
       const bInfo = boletosMap[item.ref];
       const finStatus = getFinanceiroStatus(item.ref, item.valor_total_nf, count, bInfo);
 
+      // Contas a receber é só para venda faturada: precisa existir cobrança
+      // faturada EM ABERTO para este id_int. PIX, cartão, crédito e boleto à
+      // vista se resolvem no próprio checkout e não geram título — oferecer a
+      // ação neles convidava a um lançamento sem lastro.
+      const faturado = faturadoEmAbertoMap[Number(item.id_int)];
+      const vendaFaturada = Boolean(faturado && faturado.qtd > 0);
+
       if (
+        vendaFaturada &&
         finStatus.status !== "BOLETO_REGISTRADO" &&
         finStatus.status !== "DEPOSITO_CONTA" &&
         finStatus.status !== "A_RECEBER_CRIADO" &&
@@ -2393,219 +2430,22 @@ export function NotasFiscaisPage() {
         />
       )}
 
-      {launchModalOpen && selectedNfeForLaunch && (
-        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-lg w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 pt-6 pb-4 flex items-center gap-3 border-b border-slate-100">
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl shrink-0">
-                <FileText className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900 leading-tight">
-                  Lançar no Contas a Receber
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5 font-mono">Ref: {selectedNfeForLaunch.ref}</p>
-              </div>
-            </div>
-
-            <div className="px-6 py-6 overflow-y-auto max-h-[60vh] space-y-4">
-              {isLoadingVencimentos ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
-                  <Loader2 className="h-8 w-8 animate-spin text-[#0b2f4a]" />
-                  <span className="text-sm font-medium">Carregando vencimentos fiscais...</span>
-                </div>
-              ) : vencimentosForLaunch.length === 0 ? (
-                <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5 text-rose-800 space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-rose-900">
-                    <AlertTriangle className="h-5 w-5 text-rose-700" />
-                    Aviso de Bloqueio
-                  </div>
-                  <p className="text-sm leading-relaxed">
-                    Esta NF-e não possui vencimentos fiscais para lançar no Contas a Receber.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Detalhes do Cliente e Nota */}
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2.5 text-xs text-slate-600">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Cliente</span>
-                        <strong className="text-slate-800 text-sm block truncate font-medium">
-                          {selectedClientForLaunch?.nome || selectedNfeForLaunch.nome || selectedNfeForLaunch.fantasia || "Sem nome cadastrado"}
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">CPF/CNPJ Documento</span>
-                        <strong className="text-slate-800 text-sm block truncate font-mono">
-                          {selectedClientForLaunch?.documento || "Não disponível"}
-                        </strong>
-                      </div>
-                    </div>
-                    <hr className="border-slate-100" />
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Nº Nota</span>
-                        <strong className="text-slate-800 text-sm block font-mono font-medium">{selectedNfeForLaunch.numero_nf ?? "****"}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Valor Total</span>
-                        <strong className="text-slate-800 text-sm block font-medium">{formatCurrency(selectedNfeForLaunch.valor_total_nf)}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block uppercase tracking-wider text-[9px] font-bold">Empresa</span>
-                        <strong className="text-slate-800 text-sm block truncate font-medium">{getEmpresaName(selectedNfeForLaunch.id_empresa)}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Lista de Parcelas */}
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Parcelas do Vencimento Fiscal</h4>
-                    <div className="border border-slate-100 rounded-2xl overflow-hidden divide-y divide-slate-100">
-                      {vencimentosForLaunch.map((pg) => {
-                        const alreadyLaunched = boletosMap[selectedNfeForLaunch.ref]?.some(b => Number(b.parcela) === pg.numero_parcela) || false;
-                        return (
-                          <div key={pg.id} className="p-3.5 flex items-center justify-between gap-3 bg-white text-xs hover:bg-slate-50/50 transition">
-                            <div className="space-y-1">
-                              <p className="font-semibold text-slate-800">
-                                Parcela {pg.numero_parcela}/{pg.total_parcelas}
-                                {pg.forma_pagamento === "17" && (
-                                  <span className="ml-1.5 px-1.5 py-0.5 bg-blue-50 text-blue-700 font-bold rounded text-[9px]">PIX</span>
-                                )}
-                              </p>
-                              <p className="text-slate-400">
-                                Vencimento: <strong className="text-slate-600 font-mono font-medium">{formatDate(pg.data_vencimento)}</strong>
-                              </p>
-                              <p className="text-[10px] text-slate-400">
-                                Forma: {getFormaPagamentoLabel(pg.forma_pagamento)}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="font-bold text-slate-900 font-mono">{formatCurrency(pg.valor)}</span>
-                              {alreadyLaunched ? (
-                                <span className="px-2 py-1 bg-slate-100 text-slate-500 font-bold rounded-lg text-[10px] border border-slate-200">
-                                  Já lançado
-                                </span>
-                              ) : (
-                                <span className="px-2 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg text-[10px] border border-blue-200">
-                                  A lançar
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Resumo do Lançamento */}
-                  {(() => {
-                    const toLaunch = vencimentosForLaunch.filter(pg => !boletosMap[selectedNfeForLaunch.ref]?.some(b => Number(b.parcela) === pg.numero_parcela));
-                    if (toLaunch.length === 0) {
-                      return (
-                        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs text-amber-800 space-y-1">
-                          <span className="font-bold text-amber-900 block font-medium">Todas as parcelas já lançadas</span>
-                          <span>Não há novas parcelas a serem lançadas no Contas a Receber para esta NF-e.</span>
-                        </div>
-                      );
-                    }
-                    const totalValorToLaunch = toLaunch.reduce((acc, pg) => acc + pg.valor, 0);
-                    return (
-                      <div className="bg-[#0b2f4a]/5 border border-[#0b2f4a]/10 rounded-2xl p-4 space-y-2 text-xs">
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Novos boletos a gerar:</span>
-                          <strong className="text-slate-900 font-medium">{toLaunch.length} de {vencimentosForLaunch.length}</strong>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-600">
-                          <span>Valor total a lançar:</span>
-                          <strong className="text-slate-900 font-mono text-sm font-bold">{formatCurrency(totalValorToLaunch)}</strong>
-                        </div>
-                        <hr className="border-[#0b2f4a]/10" />
-                        <p className="text-[10px] text-slate-500 italic leading-normal">
-                          Os boletos serão criados com status <strong className="text-slate-700 font-semibold">&apos;A_VENCER&apos;</strong> no Contas a Receber. Nenhuma entrada será enviada para pagamentos_v2.
-                        </p>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setLaunchModalOpen(false)}
-                disabled={isLaunchingBoleto}
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 disabled:opacity-50 transition rounded-xl"
-              >
-                Cancelar
-              </button>
-              {vencimentosForLaunch.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleLaunchBoletos}
-                  disabled={
-                    isLaunchingBoleto ||
-                    isLoadingVencimentos ||
-                    vencimentosForLaunch.filter(pg => !boletosMap[selectedNfeForLaunch.ref]?.some(b => Number(b.parcela) === pg.numero_parcela)).length === 0
-                  }
-                  className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] disabled:opacity-50 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 min-w-[150px]"
-                >
-                  {isLaunchingBoleto ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Lançando...
-                    </>
-                  ) : (
-                    "Confirmar Lançamento"
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Lançamento em contas a receber: PrepararBoletosModal, o mesmo do
+          Registro de Recebíveis. A `key` pela ref garante que as parcelas de
+          uma nota não vazem para a próxima abertura. */}
+      {lancamentoNfe && (
+        <PrepararBoletosModal
+          key={lancamentoNfe.origem.ref}
+          isOpen
+          onClose={() => setLancamentoNfe(null)}
+          cobranca={lancamentoNfe.cobranca}
+          origemNfe={lancamentoNfe.origem}
+          onSuccess={(extReference) => {
+            void refreshFinanceiroStatusForRef(extReference);
+          }}
+        />
       )}
 
-      {/* Modal de confirmação pós-lançamento */}
-      {launchSuccessModalOpen && (
-        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full overflow-hidden flex flex-col transform transition-all scale-100 animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 pt-6 pb-4 flex items-center gap-3">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl shrink-0">
-                <CheckCircle2 className="h-6 w-6" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900 leading-tight">
-                Lançamento Concluído
-              </h3>
-            </div>
-            <div className="px-6 pb-6 text-sm text-slate-600 leading-relaxed">
-              Contas a receber criado com sucesso. Deseja revisar e registrar os boletos no banco agora?
-            </div>
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setLaunchSuccessModalOpen(false)}
-                className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition rounded-xl"
-              >
-                Agora não
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLaunchSuccessModalOpen(false);
-                  if (justLaunchedNfe) {
-                    void handleOpenReviewModal(justLaunchedNfe);
-                  }
-                }}
-                className="px-5 py-2.5 text-xs font-bold text-white bg-[#0b2f4a] hover:bg-[#061d2e] rounded-xl shadow-sm transition flex items-center justify-center"
-              >
-                Revisar e registrar boletos
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal de Revisão e Edição de Boletos */}
       <RevisarGeracaoBancariaModal

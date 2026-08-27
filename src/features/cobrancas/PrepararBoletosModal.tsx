@@ -10,6 +10,38 @@ import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
 
+/** Uma linha ativa de `notas_fiscais_pagamentos`, do jeito que foi gravada. */
+export interface ParcelaFiscalOrigem {
+  numero_parcela: number;
+  total_parcelas: number;
+  data_vencimento: string;
+  valor: number;
+}
+
+/**
+ * Abertura a partir de uma NF-e autorizada.
+ *
+ * Quando esta prop vem preenchida, as parcelas do contas a receber NÃO são
+ * calculadas: são as parcelas fiscais já gravadas em `notas_fiscais_pagamentos`
+ * (ativo = true), com a data e o valor exatos de cada linha. A duplicata já foi
+ * transmitida à SEFAZ com essas datas — recalcular aqui faria o título divergir
+ * do documento fiscal.
+ */
+export interface OrigemNfeLancamento {
+  /** `notas_fiscais.ref` — vai para `boletos.ext_reference`. */
+  ref: string;
+  /** `notas_fiscais.numero_nf` — vai para `boletos.n_nf`. */
+  numeroNf: string | null;
+  /** Linhas ativas, já ordenadas por `numero_parcela`. */
+  parcelas: ParcelaFiscalOrigem[];
+  /**
+   * Soma das cobranças faturadas EM ABERTO do mesmo `id_int`. A conferência é
+   * por totais da proposta, não por cobrança: a venda pode ter sido dividida em
+   * vários pagamentos.
+   */
+  totalFaturadoEmAberto: number;
+}
+
 interface PrepararBoletosModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -18,6 +50,8 @@ interface PrepararBoletosModalProps {
   defaultQtdParcelas?: number;
   defaultDiasPraInicio?: number;
   defaultIntervalo?: number;
+  /** Ausente = fluxo do Registro de Recebíveis, com gerador automático ativo. */
+  origemNfe?: OrigemNfeLancamento;
 }
 
 /** Empresa do grupo habilitada a emitir boleto. */
@@ -51,6 +85,26 @@ function formatDateBrFromIso(dateStr: string): string {
   return `${day}/${month}/${year}`;
 }
 
+/**
+ * Converte as parcelas fiscais em parcelas do contas a receber, uma para uma.
+ *
+ * Nada é calculado: `data_vencimento` e `valor` saem como estão na linha. Multa
+ * e juros nascem zerados, igual ao gerador manual — a coluna tem DEFAULT antigo
+ * (2% / 0,033% ao dia) que entraria sozinho se estes campos fossem omitidos.
+ */
+function montarParcelasFiscais(origem: OrigemNfeLancamento): GeneratedInstallment[] {
+  return origem.parcelas.map((parcela) => ({
+    parcela: parcela.numero_parcela,
+    total_parcelas: parcela.total_parcelas,
+    valor: Number(parcela.valor) || 0,
+    vencimento: String(parcela.data_vencimento ?? "").split("T")[0],
+    descricao: `Vencimento fiscal ${parcela.numero_parcela}/${parcela.total_parcelas} - Ref: ${origem.ref}`,
+    multa: 0,
+    juros_dia: 0,
+    deposito_conta: false
+  }));
+}
+
 function addDaysToLocalDateString(dateStr: string, days: number): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   const date = new Date(year, month - 1, day);
@@ -69,7 +123,8 @@ export function PrepararBoletosModal({
   onSuccess,
   defaultQtdParcelas,
   defaultDiasPraInicio,
-  defaultIntervalo
+  defaultIntervalo,
+  origemNfe
 }: PrepararBoletosModalProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -122,13 +177,56 @@ export function PrepararBoletosModal({
   const [diasPraInicio, setDiasPraInicio] = useState<number>(defaultDiasPraInicio !== undefined && defaultDiasPraInicio >= 0 ? defaultDiasPraInicio : 30);
   const [intervalo, setIntervalo] = useState<number>(defaultIntervalo !== undefined && defaultIntervalo >= 0 ? defaultIntervalo : 30);
 
-  // Generated installments list
-  const [installments, setInstallments] = useState<GeneratedInstallment[]>([]);
+  // Generated installments list. Vindo de NF, nasce já preenchida com as
+  // parcelas fiscais — não há passo de "gerar".
+  const [installments, setInstallments] = useState<GeneratedInstallment[]>(() =>
+    origemNfe ? montarParcelasFiscais(origemNfe) : []
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  /** Origem NF: parcelas vêm do documento fiscal e não podem ser recalculadas. */
+  const origemEhNfe = Boolean(origemNfe);
+
+  // Mesmo padrão do `cobrancaAnterior` acima: o modal não é desmontado ao
+  // fechar, então sem isto as parcelas de uma nota vazariam para a próxima.
+  const [refNfeAnterior, setRefNfeAnterior] = useState<string | null>(origemNfe?.ref ?? null);
+  if ((origemNfe?.ref ?? null) !== refNfeAnterior) {
+    setRefNfeAnterior(origemNfe?.ref ?? null);
+    setInstallments(origemNfe ? montarParcelasFiscais(origemNfe) : []);
+    setValidationError(null);
+  }
+
+  /**
+   * Conferência por totais da proposta: soma das parcelas fiscais ativas contra
+   * a soma das cobranças faturadas em aberto do mesmo `id_int`. Mesma tolerância
+   * de 1 centavo do fluxo manual.
+   */
+  const somaParcelasFiscais = origemNfe
+    ? Math.round(installments.reduce((acc, item) => acc + (Number(item.valor) || 0), 0) * 100) / 100
+    : 0;
+  const divergenciaNfe =
+    origemNfe && Math.abs(somaParcelasFiscais - origemNfe.totalFaturadoEmAberto) > 0.01
+      ? Math.round((somaParcelasFiscais - origemNfe.totalFaturadoEmAberto) * 100) / 100
+      : null;
+  const mensagemDivergenciaNfe = origemNfe
+    ? `As parcelas fiscais da NF somam ${formatCurrency(somaParcelasFiscais)} e as cobranças faturadas em aberto desta proposta somam ${formatCurrency(origemNfe.totalFaturadoEmAberto)} — diferença de ${formatCurrency(Math.abs(divergenciaNfe ?? 0))}. O lançamento está bloqueado. Regularize a nota ou o financeiro antes de lançar; os valores não são ajustáveis por aqui.`
+    : "";
 
   // Load origin details (NF-e ref/number or fallback safely without fake NFE- prefix)
   useEffect(() => {
     async function loadOriginDetails() {
+      // Aberto pela NF: a origem já veio resolvida por quem abriu, com a nota
+      // exata que o operador escolheu. Buscar de novo por `id_int` poderia
+      // devolver OUTRA nota da mesma proposta (a mais recente), e o título sairia
+      // com número e ref de uma nota diferente da que gerou as parcelas.
+      if (origemNfe) {
+        setExtReference(origemNfe.ref);
+        setNumeroNf(origemNfe.numeroNf);
+        setHasNfe(true);
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       try {
         const client = getSupabaseClient();
@@ -172,7 +270,7 @@ export function PrepararBoletosModal({
     }
 
     void loadOriginDetails();
-  }, [cobranca]);
+  }, [cobranca, origemNfe]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -421,18 +519,33 @@ export function PrepararBoletosModal({
   const handleConfirmarFaturamento = async () => {
     setValidationError(null);
     if (installments.length === 0) {
-      setValidationError("Gere as parcelas antes de confirmar o lançamento.");
+      setValidationError(
+        origemEhNfe
+          ? "Esta nota não tem parcela fiscal ativa para lançar."
+          : "Gere as parcelas antes de confirmar o lançamento."
+      );
       return;
     }
 
-    // 1. Validar soma das parcelas
-    const soma = installments.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
-    const totalCobranca = Number(cobranca.valor) || 0;
-    if (Math.abs(soma - totalCobranca) > 0.01) {
-      setValidationError(
-        `A soma das parcelas (R$ ${soma.toFixed(2)}) deve ser exatamente igual ao total (R$ ${totalCobranca.toFixed(2)}).`
-      );
-      return;
+    // 1. Validar soma das parcelas.
+    // Vindo de NF a conferência é por TOTAIS da proposta — soma das parcelas
+    // fiscais contra a soma das cobranças faturadas em aberto do mesmo id_int —
+    // e não contra uma cobrança isolada: a venda pode ter sido dividida em
+    // vários pagamentos. Mesma tolerância de 1 centavo dos dois lados.
+    if (origemNfe) {
+      if (divergenciaNfe !== null) {
+        setValidationError(mensagemDivergenciaNfe);
+        return;
+      }
+    } else {
+      const soma = installments.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
+      const totalCobranca = Number(cobranca.valor) || 0;
+      if (Math.abs(soma - totalCobranca) > 0.01) {
+        setValidationError(
+          `A soma das parcelas (R$ ${soma.toFixed(2)}) deve ser exatamente igual ao total (R$ ${totalCobranca.toFixed(2)}).`
+        );
+        return;
+      }
     }
 
     // 2. Validar parcelas com vencimento pendente, vencimento no passado ou valor <= 0
@@ -442,7 +555,11 @@ export function PrepararBoletosModal({
         setValidationError(`A parcela ${item.parcela}/${item.total_parcelas} não possui vencimento definido.`);
         return;
       }
-      if (item.vencimento < hojeStr) {
+      // Vencimento no passado só barra o fluxo manual. Vindo de NF a data é a da
+      // duplicata já transmitida à SEFAZ: pode ter vencido enquanto a nota
+      // esperava lançamento, e empurrar para hoje faria o título divergir do
+      // documento fiscal.
+      if (!origemEhNfe && item.vencimento < hojeStr) {
         setValidationError("O vencimento não pode ser anterior à data atual.");
         return;
       }
@@ -508,6 +625,19 @@ export function PrepararBoletosModal({
           ? extReference
           : `P${item.parcela}${item.total_parcelas}${cobranca.id_int}`;
 
+        /*
+         * `ext_reference` é a ref da nota, igual para todas as parcelas — é o
+         * vínculo com o documento fiscal.
+         *
+         * `n_doc_boleto` NÃO pode repetir: `idx_boletos_n_doc_boleto_ativo` é
+         * UNIQUE nessa coluna. Uma nota com duas parcelas mandaria o mesmo valor
+         * duas vezes e a segunda linha estouraria a constraint no Postgres. Por
+         * isso o caminho da NF sufixa com a parcela. O fluxo do Registro de
+         * Recebíveis segue exatamente como estava.
+         */
+        const extReferenceFinal = origemNfe ? origemNfe.ref : referencia;
+        const nDocBoleto = origemNfe ? `${origemNfe.ref}-P${item.parcela}` : referencia;
+
         return {
           id_int: cobranca.id_int,
           id_cliente: cobranca.id_cliente,
@@ -515,9 +645,15 @@ export function PrepararBoletosModal({
           empresa: empresaEscolhidaNome,
           nome_cliente: cobranca.cliente,
           documento: cobranca.documento,
-          n_nf: numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null,
-          ext_reference: referencia,
-          n_doc_boleto: referencia,
+          // Vindo de NF, número e ref saem da nota escolhida, não do campo da
+          // tela (que nem é editável neste modo).
+          n_nf: origemNfe
+            ? (origemNfe.numeroNf && origemNfe.numeroNf.trim() !== "" ? origemNfe.numeroNf.trim() : null)
+            : numeroNf && numeroNf.trim() !== ""
+            ? numeroNf.trim()
+            : null,
+          ext_reference: extReferenceFinal,
+          n_doc_boleto: nDocBoleto,
           parcela: item.parcela,
           total_parcelas: item.total_parcelas,
           valor: Number(item.valor),
@@ -550,7 +686,16 @@ export function PrepararBoletosModal({
         throw new Error(error.message || 'Erro desconhecido ao inserir boletos');
       }
 
-      // Sucesso na transação real do Supabase: fazer update do boleto_enviadoo em pagamentos_v2
+      // Sucesso na transação real do Supabase: fazer update do boleto_enviadoo em pagamentos_v2.
+      //
+      // Só no fluxo do Registro de Recebíveis, onde `cobranca` É a cobrança que
+      // o operador escolheu. Vindo da NF a prop é um agregado do id_int montado
+      // sobre a primeira cobrança faturada: marcar `boleto_enviadoo` nela
+      // esconderia UMA das cobranças do Registro e deixaria as outras, dando a
+      // impressão de que a proposta foi parcialmente lançada. Quem protege
+      // contra lançamento repetido é `checkDuplicateBoletos` + o índice, que
+      // valem para os dois caminhos.
+      if (!origemEhNfe) {
       console.log('[PrepararBoletosModal] Iniciando UPDATE pagamentos_v2. Set boleto_enviadoo = true. ID:', cobranca.id, 'id_int:', cobranca.id_int);
       try {
         const { data: patchData, error: patchError } = await client
@@ -582,6 +727,7 @@ export function PrepararBoletosModal({
 
       // Independentemente do PATCH de boleto_enviadoo, marcamos como preparado localmente
       marcarComoBoletosPreparadosLocal(cobranca.id, Number(cobranca.id_int));
+      }
 
       showToast({
         type: "success",
@@ -612,14 +758,25 @@ export function PrepararBoletosModal({
 
   const hojeLocal = getTodayLocalDateString();
   const somaParcelas = installments.reduce((acc, item) => acc + (Number(item.valor) || 0), 0);
+  /**
+   * Total contra o qual a soma é conferida. Vindo de NF é o agregado das
+   * cobranças faturadas em aberto do id_int; no fluxo manual é a cobrança que o
+   * operador abriu.
+   */
+  const totalConferencia = origemNfe ? origemNfe.totalFaturadoEmAberto : Number(cobranca.valor) || 0;
   const somaConfere =
-    installments.length > 0 && Math.abs(somaParcelas - (Number(cobranca.valor) || 0)) <= 0.01;
+    installments.length > 0 && Math.abs(somaParcelas - totalConferencia) <= 0.01;
   const parcelasValidas =
     installments.length > 0 &&
     installments.every(
-      (item) => Boolean(item.vencimento) && item.vencimento >= hojeLocal && Number(item.valor) > 0
+      (item) =>
+        Boolean(item.vencimento) &&
+        // Data no passado só invalida o fluxo manual: a duplicata da NF já foi
+        // transmitida e pode ter vencido esperando o lançamento.
+        (origemEhNfe || item.vencimento >= hojeLocal) &&
+        Number(item.valor) > 0
     );
-  const revisaoValida = somaConfere && parcelasValidas;
+  const revisaoValida = somaConfere && parcelasValidas && divergenciaNfe === null;
   const nfAplicada = numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null;
   const arredondamentoAtivo = arredondarParcelas && podeArredondar && installments.length > 1;
   const ultimaParcelaAjustada =
@@ -712,7 +869,57 @@ export function PrepararBoletosModal({
                 </div>
               </div>
 
-              {/* Formulário de Parcelamento */}
+              {/* Divergência de totais na origem NF: bloqueia a confirmação e
+                  diz exatamente quais são os dois números. */}
+              {origemNfe && divergenciaNfe !== null && (
+                <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-5">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 mt-0.5" />
+                    <div className="space-y-2 min-w-0">
+                      <p className="text-sm font-bold text-red-800">Lançamento bloqueado: totais não fecham</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <span className="block text-red-500 uppercase tracking-wider text-[10px] font-bold">Parcelas fiscais da NF</span>
+                          <strong className="block font-mono text-red-900 text-sm">{formatCurrency(somaParcelasFiscais)}</strong>
+                        </div>
+                        <div>
+                          <span className="block text-red-500 uppercase tracking-wider text-[10px] font-bold">Faturado em aberto</span>
+                          <strong className="block font-mono text-red-900 text-sm">{formatCurrency(origemNfe.totalFaturadoEmAberto)}</strong>
+                        </div>
+                        <div>
+                          <span className="block text-red-500 uppercase tracking-wider text-[10px] font-bold">Diferença</span>
+                          <strong className="block font-mono text-red-900 text-sm">{formatCurrency(Math.abs(divergenciaNfe))}</strong>
+                        </div>
+                      </div>
+                      <p className="text-xs text-red-700 leading-relaxed">
+                        Regularize a nota ou o financeiro antes de lançar. Os valores não são
+                        ajustáveis por aqui — as parcelas vêm da NF-e já autorizada.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Formulário de Parcelamento — só existe fora da origem NF, onde
+                  as parcelas vêm prontas do documento fiscal. */}
+              {origemEhNfe ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-5 w-5 shrink-0 text-slate-500 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800">
+                        Parcelas definidas pela NF-e {origemNfe?.numeroNf ? `nº ${origemNfe.numeroNf}` : `(ref ${origemNfe?.ref})`}
+                      </p>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        O gerador automático está desabilitado: os vencimentos e valores abaixo são
+                        os da duplicata já transmitida à SEFAZ. Recalcular aqui faria o título
+                        divergir do documento fiscal. Para mudar as parcelas, use a aba Pagamentos
+                        da nota — o que não é possível com a nota já autorizada.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -864,6 +1071,7 @@ export function PrepararBoletosModal({
                   </div>
                 </div>
               </div>
+              )}
 
               {/* Grade de Parcelas Editáveis */}
               {installments.length > 0 && (
@@ -903,7 +1111,9 @@ export function PrepararBoletosModal({
                                 step="0.01"
                                 value={item.valor}
                                 onChange={(e) => handleInstallmentChange(idx, "valor", Number(e.target.value))}
-                                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
+                                disabled={origemEhNfe}
+                                title={origemEhNfe ? "Valor da parcela fiscal da NF-e. Não editável." : undefined}
+                                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                               />
                             </div>
                           </div>
@@ -916,9 +1126,11 @@ export function PrepararBoletosModal({
                             <input
                               type="date"
                               value={item.vencimento}
-                              min={hojeLocal}
+                              min={origemEhNfe ? undefined : hojeLocal}
                               onChange={(e) => handleInstallmentChange(idx, "vencimento", e.target.value)}
-                              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono"
+                              disabled={origemEhNfe}
+                              title={origemEhNfe ? "Vencimento da duplicata da NF-e. Não editável." : undefined}
+                              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:border-[#0b2f4a] outline-none font-mono disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                             />
                           </div>
 
@@ -1087,8 +1299,8 @@ export function PrepararBoletosModal({
                             </td>
                             <td className="px-4 py-2 text-[10px] text-slate-500" colSpan={2}>
                               {somaConfere
-                                ? `Confere com o total de ${formatCurrency(Number(cobranca.valor) || 0)}.`
-                                : `Deve ser igual ao total de ${formatCurrency(Number(cobranca.valor) || 0)}.`}
+                                ? `Confere com o total de ${formatCurrency(totalConferencia)}.`
+                                : `Deve ser igual ao total de ${formatCurrency(totalConferencia)}.`}
                             </td>
                           </tr>
                         </tfoot>
@@ -1140,8 +1352,10 @@ export function PrepararBoletosModal({
                 disabled={isSaving || installments.length === 0 || !revisaoValida}
                 title={
                   installments.length === 0
-                    ? "Gere as parcelas antes de confirmar."
-                    : !revisaoValida
+                    ? (origemEhNfe ? "Esta nota nao tem parcela fiscal ativa para lancar." : "Gere as parcelas antes de confirmar.")
+                    : divergenciaNfe !== null
+                      ? mensagemDivergenciaNfe
+                      : !revisaoValida
                       ? "Revise as parcelas: soma igual ao total, valores válidos e vencimento a partir de hoje."
                       : undefined
                 }
