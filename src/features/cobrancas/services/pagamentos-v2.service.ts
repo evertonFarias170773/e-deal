@@ -122,6 +122,45 @@ function buildRestUrl(table: string, params: Record<string, string>) {
   return url;
 }
 
+/**
+ * Teto de requisicoes simultaneas por lote. Os lotes eram buscados um apos o
+ * outro: medido no navegador, em producao, 8 fetches de ~250 kB, cada um com
+ * 175-275 ms mais o preflight, espalhados de 500 ms ate depois de 11.000 ms. O
+ * custo nao estava em cada requisicao, estava na fila.
+ *
+ * 5 e um meio-termo deliberado: corta a fila sem abrir conexoes demais contra o
+ * PostgREST a partir de toda aba aberta.
+ */
+const LOTES_SIMULTANEOS = 5;
+
+/**
+ * Roda `tarefa` sobre `itens` com no maximo `limite` execucoes simultaneas e
+ * devolve os resultados NA ORDEM DE ENTRADA — nao na ordem de chegada.
+ */
+async function mapComConcorrencia<T, R>(
+  itens: T[],
+  limite: number,
+  tarefa: (item: T, indice: number) => Promise<R>
+): Promise<R[]> {
+  const resultados = new Array<R>(itens.length);
+  let proximo = 0;
+
+  const trabalhador = async () => {
+    while (true) {
+      const indice = proximo;
+      proximo += 1;
+      if (indice >= itens.length) return;
+      resultados[indice] = await tarefa(itens[indice], indice);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(limite, itens.length) }, () => trabalhador())
+  );
+
+  return resultados;
+}
+
 async function fetchPagamentosV2Rows(filters?: {
   fetchInicio?: string;
   fetchFim?: string;
@@ -138,8 +177,11 @@ async function fetchPagamentosV2Rows(filters?: {
   const rows: SupabasePagamentoV2Row[] = [];
   const pageSize = 1000;
 
-  for (let from = 0; from < limit; from += pageSize) {
-    const to = from + pageSize - 1;
+  /**
+   * Monta a consulta de UM lote. Colunas, filtros e ordenacao continuam
+   * exatamente os de antes — o unico parametro e a faixa.
+   */
+  const montarConsulta = (from: number, to: number) => {
     let query = client
       .from("pagamentos_v2")
       .select(PAGAMENTOS_V2_SELECT);
@@ -173,19 +215,52 @@ async function fetchPagamentosV2Rows(filters?: {
       }
     }
 
-    query = query
+    return query
       .order("created_at", { ascending: false })
       .range(from, to);
+  };
 
-    const { data, error } = await query.returns<SupabasePagamentoV2Row[]>();
+  /**
+   * ONDAS, e nao um disparo unico de todos os lotes.
+   *
+   * O laco sequencial parava no primeiro lote incompleto (`data.length <
+   * pageSize`), entao a quantidade de lotes so era conhecida percorrendo. O que
+   * SEMPRE foi conhecido de antemao e o TETO: `from < limit` com pageSize 1000
+   * da no maximo `limit / pageSize` faixas fixas.
+   *
+   * Cada onda dispara `LOTES_SIMULTANEOS` faixas juntas e so avanca para a
+   * proxima se TODAS vierem cheias. Lote incompleto encerra — e o que viria
+   * depois dele estaria vazio de qualquer jeito, entao o conjunto de linhas e o
+   * mesmo do laco sequencial. O preco e no maximo `LOTES_SIMULTANEOS - 1`
+   * requisicoes vazias, na onda em que os dados acabam.
+   */
+  const faixas: Array<{ from: number; to: number }> = [];
+  for (let from = 0; from < limit; from += pageSize) {
+    faixas.push({ from, to: from + pageSize - 1 });
+  }
 
-    if (error || !data || !Array.isArray(data)) {
+  for (let inicio = 0; inicio < faixas.length; inicio += LOTES_SIMULTANEOS) {
+    const onda = faixas.slice(inicio, inicio + LOTES_SIMULTANEOS);
+
+    // `mapComConcorrencia` devolve na ordem de entrada, entao concatenar aqui
+    // reproduz a mesma sequencia que o `rows.push(...)` do laco produzia.
+    const respostas = await mapComConcorrencia(onda, LOTES_SIMULTANEOS, async (faixa) => {
+      const { data, error } = await montarConsulta(faixa.from, faixa.to).returns<SupabasePagamentoV2Row[]>();
+      return { data, error };
+    });
+
+    // Falha de UM lote nao descarta os demais no meio do caminho: a onda inteira
+    // termina antes da decisao. O desfecho continua o de antes — erro em
+    // qualquer lote invalida a leitura, e o provider preserva o estado anterior.
+    if (respostas.some((r) => r.error || !r.data || !Array.isArray(r.data))) {
       return null;
     }
 
-    rows.push(...data);
+    for (const { data } of respostas) {
+      rows.push(...(data as SupabasePagamentoV2Row[]));
+    }
 
-    if (data.length < pageSize) {
+    if (respostas.some((r) => (r.data as SupabasePagamentoV2Row[]).length < pageSize)) {
       break;
     }
   }
@@ -239,9 +314,16 @@ async function fetchClientesInfo(clientIds: number[]) {
 
   const mapping: Record<number, { restricao: boolean; limite_credito: number; credito: number; nome: string; fantasia: string }> = {};
   const limit = 500;
-  
+
+  // Quantidade de lotes conhecida de antemao (`ceil(n / 500)`) e sem dependencia
+  // entre eles: vao todos em paralelo, respeitado o teto. Os `chunk` sao
+  // disjuntos, entao a ordem de chegada nao muda o mapa resultante.
+  const lotes: number[][] = [];
   for (let i = 0; i < uniqueIds.length; i += limit) {
-    const chunk = uniqueIds.slice(i, i + limit);
+    lotes.push(uniqueIds.slice(i, i + limit));
+  }
+
+  await mapComConcorrencia(lotes, LOTES_SIMULTANEOS, async (chunk) => {
     const url = new URL(`${config.url}/rest/v1/clientes`);
     // `nome` e `fantasia` entram na MESMA consulta que ja existia: servem ao
     // rotulo do socio pagador na linha, sem ida extra ao banco.
@@ -276,9 +358,11 @@ async function fetchClientesInfo(clientIds: number[]) {
         }
       }
     } catch (err) {
+      // Mesmo tratamento de antes: o lote que falha e registrado e ignorado,
+      // sem derrubar os outros nem a leitura inteira.
       console.error("[CobrancasService] Erro ao consultar clientes em lote:", err);
     }
-  }
+  });
 
   return mapping;
 }
@@ -303,8 +387,14 @@ async function fetchFaturadoPorProposta(idInts: number[]) {
   if (!config || uniqueIds.length === 0) return mapping;
 
   const limit = 500;
+  // Mesma logica de `fetchClientesInfo`: lotes disjuntos, contagem conhecida,
+  // nenhuma dependencia de ordem — paralelos com o mesmo teto.
+  const lotes: number[][] = [];
   for (let i = 0; i < uniqueIds.length; i += limit) {
-    const chunk = uniqueIds.slice(i, i + limit);
+    lotes.push(uniqueIds.slice(i, i + limit));
+  }
+
+  await mapComConcorrencia(lotes, LOTES_SIMULTANEOS, async (chunk) => {
     const url = new URL(`${config.url}/rest/v1/propostas`);
     url.searchParams.set("select", "id_int,id_cliente,cliente,id_faturado");
     url.searchParams.set("id_int", `in.(${chunk.join(",")})`);
@@ -335,9 +425,10 @@ async function fetchFaturadoPorProposta(idInts: number[]) {
         }
       }
     } catch (err) {
+      // Igual ao anterior: falha de um lote nao interrompe os demais.
       console.error("[CobrancasService] Erro ao consultar o faturado das propostas:", err);
     }
-  }
+  });
   return mapping;
 }
 
