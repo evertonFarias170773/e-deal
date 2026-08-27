@@ -212,6 +212,24 @@ export function PrepararBoletosModal({
     ? `As parcelas fiscais da NF somam ${formatCurrency(somaParcelasFiscais)} e as cobranças faturadas em aberto desta proposta somam ${formatCurrency(origemNfe.totalFaturadoEmAberto)} — diferença de ${formatCurrency(Math.abs(divergenciaNfe ?? 0))}. O lançamento está bloqueado. Regularize a nota ou o financeiro antes de lançar; os valores não são ajustáveis por aqui.`
     : "";
 
+  /**
+   * Nota com duas parcelas ou mais não pode ser lançada por este caminho.
+   *
+   * `ext_reference` e `n_doc_boleto` precisam receber o MESMO valor, senão o
+   * link público do boleto devolve 404 (ver o comentário no INSERT). Como a
+   * única referência disponível é a ref da nota, que não distingue parcela, duas
+   * linhas ativas levariam o mesmo valor e a segunda colidiria em
+   * `idx_boletos_n_doc_boleto_ativo`.
+   *
+   * Barrar aqui é deliberado: dá uma mensagem em vez do erro cru da constraint,
+   * e deixa explícito que o caso precisa de decisão — não é uma falha a
+   * contornar na tela.
+   */
+  const notaParcelada = Boolean(origemNfe && origemNfe.parcelas.length > 1);
+  const mensagemNotaParcelada = origemNfe
+    ? `Esta NF-e tem ${origemNfe.parcelas.length} parcelas fiscais e ainda não pode ser lançada por aqui. O contas a receber usa a referência da nota como identificador do boleto, e ela é a mesma para todas as parcelas — lançar as ${origemNfe.parcelas.length} criaria títulos com o mesmo identificador e quebraria o link de pagamento do cliente. Lançamento de nota parcelada depende de uma decisão sobre como referenciar cada parcela. Enquanto isso, use o Registro de Recebíveis.`
+    : "";
+
   // Load origin details (NF-e ref/number or fallback safely without fake NFE- prefix)
   useEffect(() => {
     async function loadOriginDetails() {
@@ -532,6 +550,14 @@ export function PrepararBoletosModal({
     // fiscais contra a soma das cobranças faturadas em aberto do mesmo id_int —
     // e não contra uma cobrança isolada: a venda pode ter sido dividida em
     // vários pagamentos. Mesma tolerância de 1 centavo dos dois lados.
+    // Nota parcelada: barra ANTES de qualquer consulta ou INSERT. Não é só o
+    // botão desabilitado — este caminho tem de recusar mesmo se a tela for
+    // contornada.
+    if (notaParcelada) {
+      setValidationError(mensagemNotaParcelada);
+      return;
+    }
+
     if (origemNfe) {
       if (divergenciaNfe !== null) {
         setValidationError(mensagemDivergenciaNfe);
@@ -626,17 +652,21 @@ export function PrepararBoletosModal({
           : `P${item.parcela}${item.total_parcelas}${cobranca.id_int}`;
 
         /*
-         * `ext_reference` é a ref da nota, igual para todas as parcelas — é o
-         * vínculo com o documento fiscal.
+         * `ext_reference` e `n_doc_boleto` recebem O MESMO valor — a ref da nota,
+         * no caminho da NF. Não é redundância: é invariante do link público.
          *
-         * `n_doc_boleto` NÃO pode repetir: `idx_boletos_n_doc_boleto_ativo` é
-         * UNIQUE nessa coluna. Uma nota com duas parcelas mandaria o mesmo valor
-         * duas vezes e a segunda linha estouraria a constraint no Postgres. Por
-         * isso o caminho da NF sufixa com a parcela. O fluxo do Registro de
-         * Recebíveis segue exatamente como estava.
+         * As rotas de registro mandam `ext_reference` ao banco emissor
+         * (registrar-boleto-faturado e registerBoletoViaN8n), o n8n usa esse
+         * valor como `codigo` do link, e a Edge Function `boleto-publico` acha o
+         * título por `n_doc_boleto`, com match EXATO. Divergir os dois campos
+         * devolve 404 ao cliente — foi o que um sufixo por parcela causaria.
+         * Nas linhas em que ambos existem hoje, são idênticos em 100% dos casos.
+         *
+         * A consequência é que nota com duas parcelas ou mais não passa por aqui:
+         * o mesmo valor colidiria em `idx_boletos_n_doc_boleto_ativo`. O bloqueio
+         * está em `notaParcelada`, avaliado antes deste INSERT.
          */
-        const extReferenceFinal = origemNfe ? origemNfe.ref : referencia;
-        const nDocBoleto = origemNfe ? `${origemNfe.ref}-P${item.parcela}` : referencia;
+        const referenciaFinal = origemNfe ? origemNfe.ref : referencia;
 
         return {
           id_int: cobranca.id_int,
@@ -652,8 +682,8 @@ export function PrepararBoletosModal({
             : numeroNf && numeroNf.trim() !== ""
             ? numeroNf.trim()
             : null,
-          ext_reference: extReferenceFinal,
-          n_doc_boleto: nDocBoleto,
+          ext_reference: referenciaFinal,
+          n_doc_boleto: referenciaFinal,
           parcela: item.parcela,
           total_parcelas: item.total_parcelas,
           valor: Number(item.valor),
@@ -776,7 +806,7 @@ export function PrepararBoletosModal({
         (origemEhNfe || item.vencimento >= hojeLocal) &&
         Number(item.valor) > 0
     );
-  const revisaoValida = somaConfere && parcelasValidas && divergenciaNfe === null;
+  const revisaoValida = somaConfere && parcelasValidas && divergenciaNfe === null && !notaParcelada;
   const nfAplicada = numeroNf && numeroNf.trim() !== "" ? numeroNf.trim() : null;
   const arredondamentoAtivo = arredondarParcelas && podeArredondar && installments.length > 1;
   const ultimaParcelaAjustada =
@@ -869,9 +899,35 @@ export function PrepararBoletosModal({
                 </div>
               </div>
 
+              {/* Nota parcelada: bloqueio próprio, antes do de totais. A
+                  referência da nota é a mesma para todas as parcelas e serve de
+                  identificador do boleto — duas linhas colidiriam. */}
+              {origemNfe && notaParcelada && (
+                <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-5">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                    <div className="space-y-2 min-w-0">
+                      <p className="text-sm font-bold text-amber-900">
+                        Nota parcelada ainda não é suportada neste caminho
+                      </p>
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        Esta NF-e tem <strong>{origemNfe.parcelas.length} parcelas fiscais</strong>. O contas a
+                        receber usa a referência da nota como identificador do boleto, e ela é a mesma
+                        para todas as parcelas — lançar as {origemNfe.parcelas.length} criaria títulos com o
+                        mesmo identificador e quebraria o link de pagamento do cliente.
+                      </p>
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        Lançar nota parcelada depende de uma decisão sobre como referenciar cada
+                        parcela. Enquanto isso, use o Registro de Recebíveis.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Divergência de totais na origem NF: bloqueia a confirmação e
                   diz exatamente quais são os dois números. */}
-              {origemNfe && divergenciaNfe !== null && (
+              {origemNfe && !notaParcelada && divergenciaNfe !== null && (
                 <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-5">
                   <div className="flex items-start gap-3">
                     <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 mt-0.5" />
@@ -1353,7 +1409,9 @@ export function PrepararBoletosModal({
                 title={
                   installments.length === 0
                     ? (origemEhNfe ? "Esta nota nao tem parcela fiscal ativa para lancar." : "Gere as parcelas antes de confirmar.")
-                    : divergenciaNfe !== null
+                    : notaParcelada
+                      ? mensagemNotaParcelada
+                      : divergenciaNfe !== null
                       ? mensagemDivergenciaNfe
                       : !revisaoValida
                       ? "Revise as parcelas: soma igual ao total, valores válidos e vencimento a partir de hoje."
