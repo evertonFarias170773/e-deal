@@ -23,6 +23,7 @@ import {
   MapPin,
   ClipboardList,
   ArrowLeft,
+  FileText,
   Send
 } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase/client";
@@ -56,6 +57,8 @@ import {
   cfopDeVenda,
   type DestinoFiscal,
   getNotaEventos,
+  getBoletosAtivosDaProposta,
+  type BoletoAtivoDaProposta,
   type SupabaseNotaEventoRow,
   type SimpleProduct
 } from "../services/nfe.service";
@@ -240,6 +243,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const [pgtoFormaPagamento, setPgtoFormaPagamento] = useState("15");
   const [isGeneratingPgto, setIsGeneratingPgto] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  // Formato do modal Preparar Cobrança, espelhado aqui: parcela única com
+  // vencimento escolhido e arredondamento de valores. Quem calcula continua
+  // sendo a RPC — estes campos só viajam como parâmetro.
+  const [pgtoParcelaUnica, setPgtoParcelaUnica] = useState(false);
+  const [pgtoVencimentoUnico, setPgtoVencimentoUnico] = useState("");
+  const [pgtoArredondar, setPgtoArredondar] = useState(false);
+
+  /**
+   * Títulos já lançados em contas a receber para esta proposta.
+   *
+   * Servem de SUGESTÃO de vencimento: quando a proposta já tem título, o cliente
+   * já recebeu aquelas datas, e redigitá-las na mão é como as duas coisas
+   * divergem. Nada aqui trava a gravação — quem confere no fim é o financeiro.
+   */
+  const [boletosAtivos, setBoletosAtivos] = useState<BoletoAtivoDaProposta[]>([]);
+  const [sugestaoAplicada, setSugestaoAplicada] = useState(false);
 
   // New item states
   const [newItemDesc, setNewItemDesc] = useState("");
@@ -519,6 +539,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         }
       }
 
+      // 4b. Títulos já lançados desta proposta — sugestão de vencimento. Uma
+      // consulta por `id_int`, nunca por linha. Falha aqui não derruba a tela:
+      // sem sugestão, a aba continua funcionando como antes.
+      try {
+        const titulos = await getBoletosAtivosDaProposta(Number(dbNote.id_int));
+        setBoletosAtivos(titulos);
+      } catch (err) {
+        console.warn("[NfeDetail] Falha ao carregar títulos da proposta para sugestão:", err);
+        setBoletosAtivos([]);
+      }
+      setSugestaoAplicada(false);
+
       // 5. Load transportadoras list
       const transportadorasData = await getTransportadoras();
       setTransportadoras(transportadorasData);
@@ -584,6 +616,218 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const computedValorTotalNf = computedValorProdutos + (valorFrete || 0) - (note?.valor_desconto || 0);
   const sumOfPayments = editedPagamentos.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
   const isPaymentMismatch = Math.abs(computedValorTotalNf - sumOfPayments) > 0.01;
+
+  // --- Sugestão a partir dos títulos já lançados -------------------------
+  const totalTitulosAtivos =
+    Math.round(boletosAtivos.reduce((acc, item) => acc + (Number(item.valor) || 0), 0) * 100) / 100;
+  const temTitulosAtivos = boletosAtivos.length > 0;
+  /** Diferença entre o que a nota vai declarar e o que já foi cobrado. Aviso, não trava. */
+  const divergenciaTitulos =
+    temTitulosAtivos && Math.abs(sumOfPayments - totalTitulosAtivos) > 0.01
+      ? Math.round((sumOfPayments - totalTitulosAtivos) * 100) / 100
+      : null;
+
+  /** YYYY-MM-DD → DD/MM/AAAA, sem passar por Date (que desloca por fuso). */
+  const vencimentoBr = (iso: string) => {
+    const [ano, mes, dia] = String(iso ?? "").split("-");
+    return ano && mes && dia ? `${dia}/${mes}/${ano}` : String(iso ?? "");
+  };
+
+  /** Parcela fiscal ↔ título, por número de parcela. */
+  const tituloDaParcela = (numeroParcela: number | null | undefined) =>
+    boletosAtivos.find((item) => item.parcela === Number(numeroParcela)) ?? null;
+
+  /**
+   * Copia data e valor dos títulos para as parcelas fiscais de mesmo número.
+   * Só preenche a tela: nada é gravado até o operador salvar, e cada campo
+   * continua editável depois.
+   */
+  function aplicarSugestaoDosTitulos() {
+    setEditedPagamentos((prev) =>
+      prev.map((editado) => {
+        const original = pagamentos.find((pg) => pg.id === editado.id);
+        const titulo = tituloDaParcela(original?.numero_parcela);
+        if (!titulo) return editado;
+        return { ...editado, data_vencimento: titulo.vencimento, valor: titulo.valor };
+      })
+    );
+    setSugestaoAplicada(true);
+  }
+
+  /** Volta as parcelas ao que está gravado no banco. */
+  function descartarSugestaoDosTitulos() {
+    setEditedPagamentos(
+      pagamentos.map((pg) => ({
+        id: pg.id,
+        forma_pagamento: pg.forma_pagamento,
+        valor: pg.valor,
+        data_vencimento: pg.data_vencimento
+      }))
+    );
+    setSugestaoAplicada(false);
+  }
+
+  /** Quantas parcelas fiscais têm título correspondente para sugerir. */
+  const parcelasComTitulo = pagamentos.filter((pg) => tituloDaParcela(pg.numero_parcela)).length;
+
+  /**
+   * Controles que espelham o modal Preparar Cobrança: parcela única com
+   * vencimento escolhido e arredondamento. Os dois blocos do gerador na aba
+   * renderizam o mesmo conjunto — daí a função, para não divergirem.
+   */
+  function renderControlesFormatoModal() {
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="pgto-parcela-unica"
+              checked={pgtoParcelaUnica}
+              onChange={(e) => setPgtoParcelaUnica(e.target.checked)}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="pgto-parcela-unica" className="text-xs font-semibold text-slate-700 cursor-pointer select-none">
+              Parcela única com vencimento específico
+              <span className="block text-[10px] font-normal text-slate-400">
+                Gera 1 parcela com o valor total da nota no vencimento escolhido.
+              </span>
+            </label>
+          </div>
+          {pgtoParcelaUnica && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Vencimento da parcela única</label>
+              <input
+                type="date"
+                value={pgtoVencimentoUnico}
+                onChange={(e) => setPgtoVencimentoUnico(e.target.value)}
+                className="w-full md:w-48 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
+              />
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="pgto-arredondar"
+            checked={pgtoArredondar}
+            disabled={pgtoParcelaUnica}
+            onChange={(e) => setPgtoArredondar(e.target.checked)}
+            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+          />
+          <label htmlFor="pgto-arredondar" className="text-xs font-semibold text-slate-700 cursor-pointer select-none">
+            Arredondar valores das parcelas
+            <span className="block text-[10px] font-normal text-slate-400">
+              Diferença ajustada na última parcela; o total da nota é preservado.
+            </span>
+          </label>
+        </div>
+        <p className="text-[10px] text-slate-400">
+          A contagem de dias parte de hoje.
+        </p>
+      </div>
+    );
+  }
+
+  /**
+   * Painel de sugestão a partir dos títulos já lançados, mais o aviso de
+   * divergência de totais. Renderizado nos dois ramos da aba.
+   */
+  function renderSugestaoTitulos() {
+    if (!temTitulosAtivos) return null;
+
+    return (
+      <div className="space-y-3">
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="flex items-start gap-3 min-w-0">
+              <FileText className="h-5 w-5 shrink-0 text-sky-600 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-sky-900">
+                  Esta proposta já tem {boletosAtivos.length} {boletosAtivos.length === 1 ? "título lançado" : "títulos lançados"} no contas a receber
+                </p>
+                <p className="text-xs text-sky-800 mt-1 leading-relaxed">
+                  Total de {formatCurrency(totalTitulosAtivos)}
+                  {boletosAtivos.length > 0 && (
+                    <>
+                      {" — "}
+                      {boletosAtivos
+                        .map((titulo) => `parcela ${titulo.parcela}: ${formatCurrency(titulo.valor)} em ${vencimentoBr(titulo.vencimento)}`)
+                        .join(" · ")}
+                    </>
+                  )}
+                  . O cliente já recebeu essas datas.
+                </p>
+                {sugestaoAplicada && (
+                  <p className="text-xs font-semibold text-sky-900 mt-2">
+                    Aplicado: as parcelas abaixo estão com os valores e vencimentos dos títulos. Ainda dá para editar antes de salvar.
+                  </p>
+                )}
+              </div>
+            </div>
+            {!isReadOnly && (
+              <div className="flex shrink-0 gap-2">
+                {sugestaoAplicada ? (
+                  <button
+                    type="button"
+                    onClick={descartarSugestaoDosTitulos}
+                    className="rounded-xl border border-sky-300 bg-white px-4 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100 transition"
+                  >
+                    Descartar sugestão
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={aplicarSugestaoDosTitulos}
+                    disabled={parcelasComTitulo === 0}
+                    title={
+                      parcelasComTitulo === 0
+                        ? "Nenhuma parcela fiscal tem título correspondente. Gere as parcelas primeiro."
+                        : undefined
+                    }
+                    className="rounded-xl bg-sky-700 hover:bg-sky-800 px-4 py-2 text-xs font-semibold text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Usar datas e valores dos títulos
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {divergenciaTitulos !== null && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-amber-900">
+                  As parcelas da nota não batem com os títulos já lançados
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-2">
+                  <div>
+                    <span className="block text-amber-600 uppercase tracking-wider text-[10px] font-bold">Parcelas desta NF-e</span>
+                    <strong className="block font-mono text-amber-900 text-sm">{formatCurrency(sumOfPayments)}</strong>
+                  </div>
+                  <div>
+                    <span className="block text-amber-600 uppercase tracking-wider text-[10px] font-bold">Títulos já lançados</span>
+                    <strong className="block font-mono text-amber-900 text-sm">{formatCurrency(totalTitulosAtivos)}</strong>
+                  </div>
+                  <div>
+                    <span className="block text-amber-600 uppercase tracking-wider text-[10px] font-bold">Diferença</span>
+                    <strong className="block font-mono text-amber-900 text-sm">{formatCurrency(Math.abs(divergenciaTitulos))}</strong>
+                  </div>
+                </div>
+                <p className="text-xs text-amber-800 mt-2 leading-relaxed">
+                  É só um aviso — dá para salvar assim mesmo. Confira se a diferença é esperada
+                  antes de transmitir a nota.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   /*
     Conferência antecipada: a MESMA lista que `fn_alertas_nfe` e as views de
@@ -1206,16 +1450,27 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       showToast({ type: "warning", title: "Valor total da NF-e está zerado. Adicione itens primeiro." });
       return;
     }
+    if (pgtoParcelaUnica && !pgtoVencimentoUnico) {
+      showToast({ type: "warning", title: "Selecione a data de vencimento da parcela única." });
+      return;
+    }
     setIsGeneratingPgto(true);
     try {
       showToast({ type: "info", title: "Gerando parcelas fiscais..." });
+      // Gerar substitui as parcelas: qualquer sugestão aplicada e ainda não
+      // gravada deixa de valer a partir daqui.
+      setSugestaoAplicada(false);
       const res = await gerarPagamentosNfe(
         note.ref,
         Number(pgtoValorEntrada),
         Number(pgtoQtdParcelas),
         Number(pgtoDiasPraInicio),
         Number(pgtoIntervalo),
-        pgtoFormaPagamento
+        pgtoFormaPagamento,
+        {
+          vencimentoUnico: pgtoParcelaUnica ? pgtoVencimentoUnico : null,
+          arredondar: pgtoArredondar
+        }
       );
       if (res && res.ok) {
         showToast({ type: "success", title: "Parcelas fiscais geradas com sucesso!" });
@@ -2874,7 +3129,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
             )}
 
             {pagamentos.length === 0 ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
+              <div className="space-y-4">
+                {renderSugestaoTitulos()}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
                 <div className="text-sm font-medium text-slate-600">
                   Selecione a forma de pagamento para configurar o faturamento fiscal da NF-e.
                 </div>
@@ -2899,6 +3156,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 {!isReadOnly && pgtoFormaPagamento === "15" && (
                   <div className="border-t border-slate-200 pt-4 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
                     <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
+                    {renderControlesFormatoModal()}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 mb-1">Valor de entrada</label>
@@ -2907,6 +3165,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           step="0.01"
                           value={pgtoValorEntrada}
                           onChange={(e) => setPgtoValorEntrada(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                         />
                       </div>
@@ -2917,6 +3176,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           min={1}
                           value={pgtoQtdParcelas}
                           onChange={(e) => setPgtoQtdParcelas(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                         />
                       </div>
@@ -2927,6 +3187,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           min={0}
                           value={pgtoDiasPraInicio}
                           onChange={(e) => setPgtoDiasPraInicio(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                         />
                       </div>
@@ -2937,6 +3198,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           min={1}
                           value={pgtoIntervalo}
                           onChange={(e) => setPgtoIntervalo(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                         />
                       </div>
@@ -2954,8 +3216,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                   </div>
                 )}
               </div>
+              </div>
             ) : (
               <>
+                {renderSugestaoTitulos()}
+
                 <div className="overflow-x-auto rounded-2xl border border-[#d7e5e8] bg-white">
                   <table className="w-full text-left text-sm text-slate-700">
                     <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-[#d7e5e8]">
@@ -3058,6 +3323,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 {!isReadOnly && (
                   <div className="border-t border-slate-100 pt-6 space-y-4">
                     <h3 className="text-sm font-bold text-slate-800">Gerar Parcelas Automaticamente</h3>
+                    {renderControlesFormatoModal()}
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 mb-1">Forma de Pagamento</label>
@@ -3086,6 +3352,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                               step="0.01"
                               value={pgtoValorEntrada}
                               onChange={(e) => setPgtoValorEntrada(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                             />
                           </div>
@@ -3096,6 +3363,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                               min={1}
                               value={pgtoQtdParcelas}
                               onChange={(e) => setPgtoQtdParcelas(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                             />
                           </div>
@@ -3106,6 +3374,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                               min={0}
                               value={pgtoDiasPraInicio}
                               onChange={(e) => setPgtoDiasPraInicio(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                             />
                           </div>
@@ -3116,6 +3385,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                               min={1}
                               value={pgtoIntervalo}
                               onChange={(e) => setPgtoIntervalo(Number(e.target.value))}
+                          disabled={pgtoParcelaUnica}
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                             />
                           </div>

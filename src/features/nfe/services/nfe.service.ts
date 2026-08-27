@@ -1385,13 +1385,40 @@ export async function trocarEmpresaNfe(
   return data;
 }
 
+/** Data de hoje no fuso local, em YYYY-MM-DD. */
+function hojeLocalIso(): string {
+  const agora = new Date();
+  const ano = agora.getFullYear();
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+export type GerarPagamentosNfeOpcoes = {
+  /** Parcela única com vencimento escolhido (YYYY-MM-DD). Ignora qtd/dias/intervalo. */
+  vencimentoUnico?: string | null;
+  /** Valor inteiro por parcela, com a diferença na última. Só vale de 2 parcelas em diante. */
+  arredondar?: boolean;
+};
+
+/**
+ * Gera as parcelas fiscais da nota. O cálculo é do servidor — esta função só
+ * repassa os parâmetros para `fn_gerar_pagamentos_nfe`.
+ *
+ * `p_data_base` vai sempre com HOJE. Antes a RPC contava os dias a partir de
+ * `notas_fiscais.created_at`, então uma nota criada há duas semanas gerava a
+ * primeira parcela já vencida ou quase. O modal Preparar Cobrança sempre contou
+ * a partir de hoje; a aba passa a fazer o mesmo. O default `null` da RPC segue
+ * preservando o comportamento antigo para qualquer chamador que não mande nada.
+ */
 export async function gerarPagamentosNfe(
   ref: string,
   valorEntrada: number,
   qtdParcelas: number,
   diasPraInicio: number,
   intervalo: number,
-  formaPagamento: string
+  formaPagamento: string,
+  opcoes?: GerarPagamentosNfeOpcoes
 ): Promise<{ ok: boolean; mensagem?: string; error?: string }> {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase client not initialized");
@@ -1401,10 +1428,62 @@ export async function gerarPagamentosNfe(
     p_qtd_parcelas: qtdParcelas,
     p_dias_pra_inicio: diasPraInicio,
     p_intervalo: intervalo,
-    p_forma_pagamento: formaPagamento
+    p_forma_pagamento: formaPagamento,
+    p_vencimento_unico: opcoes?.vencimentoUnico || null,
+    p_arredondar: Boolean(opcoes?.arredondar),
+    p_data_base: hojeLocalIso()
   });
   if (error) throw error;
   return data;
+}
+
+/** Título de contas a receber já lançado, usado como sugestão de vencimento. */
+export type BoletoAtivoDaProposta = {
+  id: string;
+  parcela: number;
+  total_parcelas: number | null;
+  valor: number;
+  vencimento: string;
+  status: string | null;
+  n_nf: string | null;
+};
+
+/**
+ * Títulos ATIVOS da proposta, para sugerir vencimentos na aba Pagamentos.
+ *
+ * "Ativo" usa o mesmo predicado dos índices `boletos_unico_parcela_ativo` e
+ * `idx_boletos_n_doc_boleto_ativo`: tudo que não é CANCELADO, com status nulo
+ * contando como ativo. Divergir dessa normalização faria a tela sugerir a partir
+ * de um título que o banco considera morto — ou ignorar um que ele considera vivo.
+ *
+ * Uma consulta só, por `id_int`. Nunca por linha.
+ */
+export async function getBoletosAtivosDaProposta(idInt: number): Promise<BoletoAtivoDaProposta[]> {
+  const client = getSupabaseClient();
+  if (!client || !Number.isFinite(idInt) || idInt <= 0) return [];
+
+  const { data, error } = await client
+    .from("boletos")
+    .select("id, parcela, total_parcelas, valor, vencimento, status, n_nf")
+    .eq("id_int", idInt)
+    .order("parcela", { ascending: true });
+
+  if (error) {
+    console.error("[NfeService] getBoletosAtivosDaProposta failed:", error);
+    return [];
+  }
+
+  return (data || [])
+    .filter((linha) => String(linha.status ?? "").trim().toUpperCase() !== "CANCELADO")
+    .map((linha) => ({
+      id: String(linha.id),
+      parcela: Number(linha.parcela) || 0,
+      total_parcelas: linha.total_parcelas === null ? null : Number(linha.total_parcelas),
+      valor: Number(linha.valor) || 0,
+      vencimento: String(linha.vencimento ?? "").split("T")[0],
+      status: linha.status === null ? null : String(linha.status),
+      n_nf: linha.n_nf === null ? null : String(linha.n_nf)
+    }));
 }
 
 export async function getTransportadoras() {
