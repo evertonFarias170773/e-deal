@@ -305,10 +305,24 @@ function sortByConferenceRecency(items: Cobranca[]) {
   });
 }
 
+/**
+ * Enriquecimento dos clientes das cobrancas.
+ *
+ * USA O MESMO supabase-js DO RESTO DO PROVIDER, e nao `fetch` cru. O cache de
+ * preflight do navegador e indexado por origem, URL, metodo e LISTA DE
+ * CABECALHOS: `fetch` montado a mao mandava um conjunto (`apikey`,
+ * `authorization`, `accept`, `accept-profile`) e o supabase-js manda outro
+ * (com `x-client-info`), entao a mesma API precisava de duas entradas de cache.
+ *
+ * O papel no banco tambem muda, e foi conferido antes da migracao: o `fetch`
+ * cru mandava sempre a anon key, o supabase-js manda o JWT da sessao. Em
+ * `public.clientes` as duas politicas de SELECT sao PUBLIC com `using true`, e
+ * `anon` e `authenticated` tem o mesmo grant — o conjunto de linhas nao muda.
+ */
 async function fetchClientesInfo(clientIds: number[]) {
-  const config = getSupabaseConfig();
+  const client = getSupabaseClient();
   const uniqueIds = Array.from(new Set(clientIds)).filter(Boolean);
-  if (!config || uniqueIds.length === 0) {
+  if (!client || uniqueIds.length === 0) {
     return {};
   }
 
@@ -324,38 +338,30 @@ async function fetchClientesInfo(clientIds: number[]) {
   }
 
   await mapComConcorrencia(lotes, LOTES_SIMULTANEOS, async (chunk) => {
-    const url = new URL(`${config.url}/rest/v1/clientes`);
-    // `nome` e `fantasia` entram na MESMA consulta que ja existia: servem ao
-    // rotulo do socio pagador na linha, sem ida extra ao banco.
-    url.searchParams.set("select", "id_cliente,restricao,limite_credito,credito,nome,fantasia");
-    url.searchParams.set("id_cliente", `in.(${chunk.join(",")})`);
-
     try {
-      const response = await fetch(url.toString(), {
-        headers: {
-          apikey: config.anonKey,
-          authorization: `Bearer ${config.anonKey}`,
-          accept: "application/json",
-          "accept-profile": "public"
-        }
-      });
+      // `nome` e `fantasia` entram na MESMA consulta que ja existia: servem ao
+      // rotulo do socio pagador na linha, sem ida extra ao banco.
+      const { data, error } = await client
+        .from("clientes")
+        .select("id_cliente,restricao,limite_credito,credito,nome,fantasia")
+        .in("id_cliente", chunk)
+        .returns<Array<{ id_cliente: unknown; restricao: unknown; limite_credito: unknown; credito: unknown; nome?: unknown; fantasia?: unknown }>>();
 
-      if (response.ok) {
-        const data = await response.json().catch(() => null);
-        if (Array.isArray(data)) {
-          data.forEach((row: { id_cliente: unknown; restricao: unknown; limite_credito: unknown; credito: unknown; nome?: unknown; fantasia?: unknown }) => {
-            const id = Number(row.id_cliente);
-            if (Number.isFinite(id)) {
-              mapping[id] = {
-                restricao: Boolean(row.restricao),
-                limite_credito: Number(row.limite_credito) || 0,
-                credito: Number(row.credito) || 0,
-                nome: String(row.nome ?? "").trim(),
-                fantasia: String(row.fantasia ?? "").trim()
-              };
-            }
-          });
-        }
+      // Mesma forma do `response.ok` de antes: lote que nao volta utilizavel e
+      // ignorado em silencio; so excecao e registrada, no catch.
+      if (!error && Array.isArray(data)) {
+        data.forEach((row) => {
+          const id = Number(row.id_cliente);
+          if (Number.isFinite(id)) {
+            mapping[id] = {
+              restricao: Boolean(row.restricao),
+              limite_credito: Number(row.limite_credito) || 0,
+              credito: Number(row.credito) || 0,
+              nome: String(row.nome ?? "").trim(),
+              fantasia: String(row.fantasia ?? "").trim()
+            };
+          }
+        });
       }
     } catch (err) {
       // Mesmo tratamento de antes: o lote que falha e registrado e ignorado,
@@ -381,10 +387,14 @@ async function fetchClientesInfo(clientIds: number[]) {
  *   `count`, no limite de 500 nem na paginacao.
  */
 async function fetchFaturadoPorProposta(idInts: number[]) {
-  const config = getSupabaseConfig();
+  // Mesmo cliente do resto do provider, pelo mesmo motivo de
+  // `fetchClientesInfo`. Em `public.propostas` o SELECT tambem esta liberado
+  // para PUBLIC (`Enable read access for all`) alem de `propostas_select_all`
+  // para `authenticated`: trocar a anon key pelo JWT nao muda as linhas.
+  const client = getSupabaseClient();
   const uniqueIds = Array.from(new Set(idInts)).filter(Boolean);
   const mapping: Record<number, { id_cliente: number | null; cliente: string; id_faturado: number | null }> = {};
-  if (!config || uniqueIds.length === 0) return mapping;
+  if (!client || uniqueIds.length === 0) return mapping;
 
   const limit = 500;
   // Mesma logica de `fetchClientesInfo`: lotes disjuntos, contagem conhecida,
@@ -395,34 +405,25 @@ async function fetchFaturadoPorProposta(idInts: number[]) {
   }
 
   await mapComConcorrencia(lotes, LOTES_SIMULTANEOS, async (chunk) => {
-    const url = new URL(`${config.url}/rest/v1/propostas`);
-    url.searchParams.set("select", "id_int,id_cliente,cliente,id_faturado");
-    url.searchParams.set("id_int", `in.(${chunk.join(",")})`);
-
     try {
-      const response = await fetch(url.toString(), {
-        headers: {
-          apikey: config.anonKey,
-          authorization: `Bearer ${config.anonKey}`,
-          accept: "application/json",
-          "accept-profile": "public"
-        }
-      });
-      if (response.ok) {
-        const data = await response.json().catch(() => null);
-        if (Array.isArray(data)) {
-          data.forEach((row: { id_int: unknown; id_cliente: unknown; cliente: unknown; id_faturado: unknown }) => {
-            const idInt = Number(row.id_int);
-            if (!Number.isFinite(idInt)) return;
-            const idCliente = Number(row.id_cliente);
-            const idFaturado = Number(row.id_faturado);
-            mapping[idInt] = {
-              id_cliente: Number.isFinite(idCliente) ? idCliente : null,
-              cliente: String(row.cliente ?? "").trim(),
-              id_faturado: Number.isFinite(idFaturado) ? idFaturado : null
-            };
-          });
-        }
+      const { data, error } = await client
+        .from("propostas")
+        .select("id_int,id_cliente,cliente,id_faturado")
+        .in("id_int", chunk)
+        .returns<Array<{ id_int: unknown; id_cliente: unknown; cliente: unknown; id_faturado: unknown }>>();
+
+      if (!error && Array.isArray(data)) {
+        data.forEach((row) => {
+          const idInt = Number(row.id_int);
+          if (!Number.isFinite(idInt)) return;
+          const idCliente = Number(row.id_cliente);
+          const idFaturado = Number(row.id_faturado);
+          mapping[idInt] = {
+            id_cliente: Number.isFinite(idCliente) ? idCliente : null,
+            cliente: String(row.cliente ?? "").trim(),
+            id_faturado: Number.isFinite(idFaturado) ? idFaturado : null
+          };
+        });
       }
     } catch (err) {
       // Igual ao anterior: falha de um lote nao interrompe os demais.
