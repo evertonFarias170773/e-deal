@@ -372,6 +372,43 @@ export function DespacharModal({
    * Em modo edicao a lista e sempre vazia de proposito: o pedido ja saiu, e
    * exigir campo agora impediria corrigir o que existe.
    */
+  const nomeExibicao = useMemo(
+    () => (t: Transportadora) => t.fantasia || t.nome || `#${t.id_cliente}`,
+    []
+  );
+
+  /**
+   * O nome de transportadora que VAI PARA O BANCO — fonte única das três
+   * gravações (despachar, salvar sem despachar, prepostagem), do resumo de
+   * divergência e da checagem de campos mínimos.
+   *
+   * COM VÍNCULO, MANDA O CADASTRO. Era isto que faltava: o formulário tinha dois
+   * campos escrevendo no mesmo estado — o select da transportadora e um input
+   * rotulado "Serviço" —, e quem digitasse o serviço depois de escolher a
+   * transportadora apagava o nome dela. Foi o que aconteceu no pedido 21245:
+   * ficou `id_transportadora_cliente = 808` (SVT TRANSPORTES) com
+   * `transportadora_nome = 'ECOMM'`, e a etiqueta imprimiu ECOMM. O input de
+   * serviço saiu do formulário; enquanto não houver coluna própria para ele,
+   * serviço não se grava em lugar nenhum.
+   *
+   * SEM VÍNCULO, VALE O TEXTO LIVRE. A transportadora sem cadastro continua
+   * sendo nomeada à mão — são 3 dos 8 despachos de TRANSPORTADORA da base, e
+   * `camposMinimosDespacho` exige nome OU vínculo para despachar. Sem o campo
+   * livre, escolher "sem vínculo" viraria um beco sem saída.
+   *
+   * FALLBACK ENQUANTO A LISTA NÃO CHEGOU: sem o cadastro em mãos, cai no texto
+   * atual, que é o pré-preenchimento vindo do orçamento
+   * (`expedicao.service.ts`, já corrigido por `nomeTransporteEfetivo`). Nunca
+   * grava vazio por causa de uma consulta ainda em voo.
+   */
+  const nomeTransportadoraParaGravar = useMemo(() => {
+    if (idTransportadoraCliente !== null) {
+      const t = transportadoras.find((x) => x.id_cliente === idTransportadoraCliente);
+      if (t) return nomeExibicao(t);
+    }
+    return transportadoraNome.trim();
+  }, [idTransportadoraCliente, transportadoras, transportadoraNome, nomeExibicao]);
+
   const faltantes = useMemo(
     () =>
       camposMinimosDespacho(
@@ -381,7 +418,7 @@ export function DespacharModal({
           // O MESMO nome que o service vai gravar. Em MOTOBOY o campo esta
           // oculto e o valor e derivado la; sem espelhar aqui, a tela pediria
           // uma transportadora que ninguem tem como informar.
-          transportadoraNome: transportadoraDerivada(tipoFrete, transportadoraNome),
+          transportadoraNome: transportadoraDerivada(tipoFrete, nomeTransportadoraParaGravar),
           idTransportadoraCliente,
           pesoKg: parsePesoKg(pesoKg),
           qtdVolumes: parseQtdVolumes(qtdVolumes),
@@ -393,7 +430,7 @@ export function DespacharModal({
     [
       tipoEntrega,
       modalidade,
-      transportadoraNome,
+      nomeTransportadoraParaGravar,
       idTransportadoraCliente,
       pesoKg,
       qtdVolumes,
@@ -529,10 +566,6 @@ export function DespacharModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedido.idCliente]);
 
-  const nomeExibicao = useMemo(
-    () => (t: Transportadora) => t.fantasia || t.nome || `#${t.id_cliente}`,
-    []
-  );
 
   async function handleConfirmar() {
     if (salvando) return;
@@ -587,7 +620,7 @@ export function DespacharModal({
       tipoEntrega,
       modalidadeFrete: modalidade,
       tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
-      transportadoraNome: tipoEntrega === "RETIRADA" ? "Retira balcão" : transportadoraNome.trim(),
+      transportadoraNome: tipoEntrega === "RETIRADA" ? "Retira balcão" : nomeTransportadoraParaGravar,
       idTransportadoraCliente: tipoEntrega === "RETIRADA" ? null : idTransportadoraCliente,
       pesoKg: pesoNum,
       qtdVolumes: volNum,
@@ -649,7 +682,7 @@ export function DespacharModal({
     const res = await salvarDadosExpedicao(pedido.idInt, {
       modalidadeFrete: modalidade,
       tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
-      transportadoraNome: tipoEntrega === "RETIRADA" ? "Retira balcão" : transportadoraNome.trim(),
+      transportadoraNome: tipoEntrega === "RETIRADA" ? "Retira balcão" : nomeTransportadoraParaGravar,
       idTransportadoraCliente: tipoEntrega === "RETIRADA" ? null : idTransportadoraCliente,
       pesoKg: pesoNum,
       qtdVolumes: volNum,
@@ -737,7 +770,7 @@ export function DespacharModal({
     const salvo = await salvarDadosExpedicao(pedido.idInt, {
       modalidadeFrete: modalidade,
       tipoFrete,
-      transportadoraNome: transportadoraNome.trim(),
+      transportadoraNome: nomeTransportadoraParaGravar,
       idTransportadoraCliente,
       pesoKg: pesoNum,
       qtdVolumes: volNum,
@@ -845,7 +878,7 @@ export function DespacharModal({
                 {transportadoraDivergente && (
                   <li>
                     Transportadora: orçamento <strong>{nomeTransportadoraOrcamento}</strong> · despacho{" "}
-                    <strong>{transportadoraNome || "—"}</strong>
+                    <strong>{nomeTransportadoraParaGravar || "—"}</strong>
                   </li>
                 )}
               </ul>
@@ -954,15 +987,28 @@ export function DespacharModal({
                   </select>
                 </div>
                 )}
-                {tipoFrete === "TRANSPORTADORA" && (
+                {/* SÓ SEM VÍNCULO (27/08/2026). Este campo já foi rotulado
+                    "Serviço", com placeholder "Ex: Rodoviario, Ecomm, Aereo...",
+                    e escrevia no MESMO estado do select ao lado — digitar o
+                    serviço depois de escolher a transportadora apagava o nome
+                    dela. O pedido 21245 saiu assim: vínculo 808 (SVT
+                    TRANSPORTES) com `transportadora_nome = 'ECOMM'`, e a
+                    etiqueta imprimiu ECOMM.
+
+                    Não existe coluna para o serviço do despacho, então serviço
+                    deixou de ser perguntado — em vez de continuar gravado na
+                    coluna da transportadora. O campo livre sobrevive só no que
+                    sempre foi seu papel legítimo: nomear transportadora que não
+                    tem cadastro (3 dos 8 despachos de TRANSPORTADORA da base),
+                    caso em que `camposMinimosDespacho` exige o nome. Com
+                    cadastro escolhido ele some, e o nome vem de lá. */}
+                {tipoFrete === "TRANSPORTADORA" && idTransportadoraCliente === null && (
                 <div>
-                  {/* Com a transportadora escolhida no select ao lado, o que falta
-                      dizer e COMO ela leva — nao o nome dela outra vez. */}
-                  <label className={labelClass}>Serviço</label>
+                  <label className={labelClass}>Transportadora (sem cadastro)</label>
                   <input
                     value={transportadoraNome}
                     onChange={(e) => setTransportadoraNome(e.target.value)}
-                    placeholder="Ex: Rodoviario, Ecomm, Aereo..."
+                    placeholder="Nome da transportadora"
                     className={inputClass}
                   />
                 </div>

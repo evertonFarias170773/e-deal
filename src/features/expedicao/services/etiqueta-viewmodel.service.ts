@@ -97,7 +97,7 @@ export async function montarEtiquetaViewModel(
     supabase
       .from("expedicoes")
       .select(
-        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, data_despacho"
+        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, id_transportadora_cliente, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, data_despacho"
       )
       .eq("id_int", idInt)
       .maybeSingle(),
@@ -175,6 +175,37 @@ export async function montarEtiquetaViewModel(
    *     despacho. Gatea-los apagaria da etiqueta o que a Revisao registrou.
    */
   const expConfirmado = exp?.data_despacho ? exp : null;
+
+  /**
+   * O NOME DA TRANSPORTADORA SAI DO CADASTRO VINCULADO (27/08/2026).
+   *
+   * `transportadora_nome` era a única fonte, e não é confiável: até esta data o
+   * modal Despachar tinha um campo rotulado "Serviço" escrevendo nessa mesma
+   * coluna, então o serviço apagava o nome da transportadora. O pedido 21245
+   * tem `id_transportadora_cliente = 808` (SVT TRANSPORTES) com
+   * `transportadora_nome = 'ECOMM'` — e a etiqueta imprimia ECOMM.
+   *
+   * Havendo vínculo, o cadastro manda: ele é a escolha estruturada, e o texto
+   * livre é o que se degradou. Sem vínculo, cai em `transportadora_nome` como
+   * sempre — é lá que vive a transportadora sem cadastro, e é o que o campo
+   * livre do modal continua alimentando.
+   *
+   * NÃO HÁ BACKFILL: pedidos antigos sem vínculo seguem imprimindo o que está
+   * gravado, inclusive quando o que está gravado é um serviço.
+   *
+   * Continua sob o gate de `expConfirmado`, junto com rastreio e obs: rascunho
+   * de despacho não vai para a etiqueta. Só o endereço escapa do gate, e isso
+   * não muda aqui.
+   */
+  let nomeTransportadoraCadastro = "";
+  if (expConfirmado?.id_transportadora_cliente) {
+    const { data: transp } = await supabase
+      .from("clientes")
+      .select("nome, fantasia")
+      .eq("id_cliente", expConfirmado.id_transportadora_cliente)
+      .maybeSingle();
+    nomeTransportadoraCadastro = String(transp?.fantasia || transp?.nome || "").trim();
+  }
 
   /**
    * ENDERECO ESCOLHIDO TEM PRECEDENCIA ABSOLUTA (24/08/2026).
@@ -288,7 +319,7 @@ export async function montarEtiquetaViewModel(
     idInt,
     volumes,
     pesoKg,
-    transportadora: expConfirmado?.transportadora_nome || frete?.servico || "",
+    transportadora: nomeTransportadoraCadastro || expConfirmado?.transportadora_nome || frete?.servico || "",
     codigoRastreamento: expConfirmado?.codigo_rastreamento || os?.codigo_rastreamento || "",
     obs: expConfirmado?.obs || "",
     nfNumero: nfAutorizada?.numero_nf ? String(nfAutorizada.numero_nf) : "",
