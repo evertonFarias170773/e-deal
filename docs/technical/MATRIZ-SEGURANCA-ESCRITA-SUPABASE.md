@@ -199,9 +199,64 @@ Documento vivo para controlar o que está `LIBERADO`, `BLOQUEADO`, `FUTURO` ou `
 | `public.propostas` | `status_interno` — transições operadas pela Expedição (`EXPEDICAO` -> `A RETIRAR` \| `EM TRANSITO` -> `ENTREGUE`) | `UPDATE` | `LIBERADO` | Via módulo Expedição: transição feita com guarda de concorrência (`WHERE status_interno = <esperado>`) e log obrigatório em `os_status_log`. É mais uma via de escrita para o mesmo campo, ao lado da transição manual genérica (`EM TESTE`, seção "Propostas" acima) e da via QR (`FUTURO`, seção "QR de Produção (OS)"). | Crítico | Conferir `status_interno` por `id_int` e a linha correspondente em `public.os_status_log`. | `2026-08-15` / Expedição Fase 1 (decisão registrada) | A migration `20260815_expedicoes.sql` (Task 1) não altera policy de `public.propostas`; cria apenas `expedicoes` e a policy de `INSERT` em `os_status_log`. A chamada guardada de `UPDATE` em `status_interno` é implementada em task posterior do mesmo plano — esta linha registra a política já decidida para orientar essa implementação. Não usa RPC `SECURITY DEFINER`. |
 | `public.propostas` + `public.expedicoes` + `public.os_status_log` | Escrita do RECEIVER do webhook dos Correios (`/api/correios/webhook`, **service-role**): `status_interno` (`EXPEDICAO` -> `EM TRANSITO` em postagem/coleta; -> `ENTREGUE` em entrega ao destinatário), `expedicoes.correios_ultimo_evento(_em)`, `expedicoes.data_entrega`, log com `origem='CORREIOS_WEBHOOK'` e `ator_tipo='SISTEMA'` | `UPDATE`, `INSERT` (log) | `LIBERADO` | Quem chama é o servidor dos Correios (sem sessão): autenticidade por HMAC (`x-correios-signature` com `CORREIOS_WEBHOOK_SECRET`); escrita via `SUPABASE_SERVICE_ROLE_KEY`, mesmo padrão do QR público (`os-qr-token.server.ts`). Transições guardadas por status esperado; evento sem objeto/pedido correspondente é ignorado com `200`. | Crítico | `select status_interno from propostas where id_int=:id;` + `select correios_ultimo_evento, correios_ultimo_evento_em, data_entrega from expedicoes where id_int=:id;` + linha `origem='CORREIOS_WEBHOOK'` em `os_status_log`. | `2026-08-17` / Webhook Correios | Segunda via server-side de `status_interno` (a primeira é o QR via RPC). Eventos gatilho: `PO-*`/`CO-1|15|16`/`CMT-0` (trânsito) e `BDE|BDI|BDR-1|67|68|70` (entrega). Colunas novas: migration `20260817_expedicoes_webhook_correios.sql`. Assinatura gerida por `scripts/correios-webhook.mjs`. |
 
+## `public.pagamentos_v2` — privilégio é por COLUNA, não por tabela
+
+Regra vigente desde `20260721_conta_corrente_fase1a_aditiva.sql`. Registrada aqui em 28/08/2026, depois de um incidente que parou a criação de cobrança em produção.
+
+**`anon` e `authenticated` NÃO têm `INSERT` nem `UPDATE` de tabela nesta tabela.** A migration da Fase 1a revogou o grant de tabela de propósito (Seção C.1) e reconcedeu **coluna a coluna**, deixando cinco de fora:
+
+| Coluna | Via de escrita |
+|---|---|
+| `id_pendencia` | RPC `SECURITY DEFINER` (`cc_usar_pendencia`, `cc_encerrar_pendencia`) |
+| `valor_pendencia` | idem |
+| `reserva_estado` | idem |
+| `chave_reserva` | idem |
+| `chave_idempotencia` | RPC `pgv2_registrar_chave_idempotencia` |
+
+Essas cinco ficam **permanentemente fechadas** para `anon` e `authenticated`, na criação e depois. Não são um bug a corrigir: são a proteção da reserva de conta corrente e da idempotência.
+
+### Consequências práticas
+
+**1. Toda coluna nova nasce sem privilégio.** `ALTER TABLE ... ADD COLUMN` não herda grant. Enquanto nenhum código mencionar a coluna, nada quebra — o erro aparece só quando algum `INSERT`/`UPDATE` passa a incluí-la, e aí falha com `permission denied for table pagamentos_v2`, **mesmo que o valor enviado seja nulo**. A mensagem fala em *table*, o que despista: o que falta é privilégio de *coluna*.
+
+Toda migration que criar coluna aqui deve emitir, no mesmo arquivo:
+
+```sql
+GRANT INSERT (nome_da_coluna), UPDATE (nome_da_coluna)
+  ON public.pagamentos_v2 TO authenticated;
+```
+
+Salvo quando a coluna for deliberadamente protegida — e aí a decisão precisa estar escrita na migration.
+
+**2. `REVOKE` de tabela nunca deve ser usado nesta tabela.** `REVOKE INSERT, UPDATE ON TABLE ... FROM authenticated` remove **também** os grants de coluna, de uma vez. Durante o incidente de 28/08/2026 esse comando derrubou as 58 colunas legadas de `authenticated` e agravou a parada. Para corrigir privilégio aqui, use apenas `GRANT` de coluna.
+
+**3. Inspecione por `pg_attribute.attacl`, nunca por `information_schema.column_privileges`.** A view do `information_schema` filtra pelo usuário da conexão e **não expõe grants concedidos a outros papéis** — ela volta vazia mesmo com os grants existindo, induzindo à conclusão errada de que não há grant de coluna. Foi essa leitura equivocada que originou o incidente.
+
+```sql
+-- Estado real dos privilégios de coluna
+select a.attname, coalesce(a.attacl::text,'(sem grant de coluna)') as attacl
+  from pg_attribute a
+  join pg_class c on c.oid = a.attrelid
+  join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname='public' and c.relname='pagamentos_v2'
+   and a.attnum > 0 and not a.attisdropped
+ order by a.attnum;
+
+-- Quantas colunas cada papel consegue gravar (esperado: authenticated 59, anon 58, de 64)
+select count(*) filter (where has_column_privilege('authenticated','public.pagamentos_v2',a.attname,'INSERT')) as auth,
+       count(*) filter (where has_column_privilege('anon','public.pagamentos_v2',a.attname,'INSERT')) as anon
+  from pg_attribute a join pg_class c on c.oid=a.attrelid
+  join pg_namespace n on n.oid=c.relnamespace
+ where n.nspname='public' and c.relname='pagamentos_v2'
+   and a.attnum > 0 and not a.attisdropped;
+```
+
+O modelo de privilégios do Postgres é cumulativo (OR) entre tabela e coluna: um grant de tabela **anula** a proteção por coluna. Por isso conceder `INSERT` de tabela aqui, ainda que para destravar uma urgência, reabre as cinco colunas sensíveis.
+
 ## Observações de uso
 
 - Esta matriz não substitui o checklist técnico de cada mudança.
+- **Ao criar coluna em tabela com grant por coluna** (hoje: `public.pagamentos_v2`), conferir `pg_attribute.attacl` e emitir o `GRANT` de coluna na mesma migration. Ver a seção acima.
 - Antes de habilitar qualquer novo `UPDATE` ou `INSERT`, revisar:
   - RLS;
   - triggers;

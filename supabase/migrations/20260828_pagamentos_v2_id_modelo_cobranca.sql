@@ -74,13 +74,45 @@
 --   banco. Esta migration nao reativa trigger nenhuma -- so registra o fato.
 --
 -- RLS E GRANTS
---   Nenhuma alteracao necessaria, verificado em 28/08/2026:
---     - a policy de `pagamentos_v2` e `GERAL`, ALL, roles {public}, USING true —
---       nao enumera colunas;
---     - `information_schema.column_privileges` nao tem NENHUMA linha para
---       `pagamentos_v2`: os grants sao de TABELA, nao de coluna. Coluna nova
---       entra coberta automaticamente.
---   Esta migration nao emite GRANT nem toca em policy.
+--
+--   ATENCAO — ESTE BLOCO ESTAVA ERRADO E CAUSOU UM INCIDENTE EM 28/08/2026.
+--
+--   O texto original afirmava que "os grants sao de TABELA, nao de coluna" e que
+--   "coluna nova entra coberta automaticamente". As duas frases sao FALSAS, e a
+--   conclusao veio de consultar `information_schema.column_privileges`, que
+--   voltou vazia. Aquela view NAO expoe grants concedidos a OUTROS papeis: ela
+--   filtra pelo usuario da conexao. A fonte correta e `pg_attribute.attacl`.
+--
+--   A VERDADE:
+--     - a policy de RLS de `pagamentos_v2` e `GERAL`, ALL, roles {public},
+--       USING true — essa parte estava certa, ela nao enumera colunas;
+--     - mas `pagamentos_v2` NAO tem grant de INSERT/UPDATE de TABELA para anon
+--       nem para authenticated. A migration 20260721_conta_corrente_fase1a_aditiva
+--       revogou de proposito (Secao C.1) e reconcedeu COLUNA A COLUNA, deixando
+--       cinco de fora: id_pendencia, valor_pendencia, reserva_estado,
+--       chave_reserva, chave_idempotencia;
+--     - logo, TODA COLUNA NOVA NESTA TABELA NASCE SEM PRIVILEGIO. Assim que o
+--       codigo passa a incluir a coluna no INSERT, todo INSERT falha com
+--       `permission denied for table pagamentos_v2` — inclusive quando o valor
+--       enviado e nulo.
+--
+--   FOI EXATAMENTE O QUE ACONTECEU: esta migration criou a coluna sem grant, o
+--   commit seguinte passou a envia-la no INSERT, e a criacao de cobranca parou.
+--
+--   O GRANT que faltava, aplicado a mao em 28/08/2026 (nao esta neste arquivo
+--   porque a migration ja estava aplicada quando o erro apareceu):
+--
+--     GRANT INSERT (id_modelo_cobranca), UPDATE (id_modelo_cobranca)
+--       ON public.pagamentos_v2 TO authenticated;
+--
+--   NUNCA use REVOKE de tabela para "limpar" privilegio aqui: o REVOKE de tabela
+--   remove TAMBEM os grants de coluna. Tentar isso durante o incidente derrubou
+--   as 58 colunas legadas de authenticated de uma vez.
+--
+--   Regra completa e permanente em docs/technical/MATRIZ-SEGURANCA-ESCRITA-SUPABASE.md.
+--
+--   Esta migration nao emite GRANT nem toca em policy — e era justamente o que
+--   faltava nela.
 --
 -- NAO FAZ
 --   Nao altera `forma_fatu` nem nenhum campo existente. Nao faz backfill. Nao
