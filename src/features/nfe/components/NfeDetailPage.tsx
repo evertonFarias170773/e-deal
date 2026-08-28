@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -55,6 +55,7 @@ import {
   resolverDestinoFiscal,
   ufDaEmpresaEmitente,
   cfopDeVenda,
+  cfopDaNatureza,
   type DestinoFiscal,
   getNotaEventos,
   getBoletosAtivosDaProposta,
@@ -211,6 +212,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   // trigger implicita. Ela segue valendo para quem nao passa pelo app.
   const [dropNaturezaOp, setDropNaturezaOp] = useState("");
   const [naturezasCatalogo, setNaturezasCatalogo] = useState<NaturezaOperacaoNfe[]>([]);
+
+  // O CFOP DOS ITENS DERIVA DA NATUREZA DA NOTA — não é mais digitado, e não é
+  // mais calculado só por UF. A UF continua decidindo entre o par interno e o
+  // interestadual; quem escolhe o par é a natureza.
+  //
+  // `null` quando a natureza não casa com o catálogo (as notas antigas) ou
+  // quando falta UF: aí não há o que derivar e os itens ficam com o que têm.
+  const cfopDerivado = useMemo(
+    () =>
+      cfopDaNatureza(
+        dropNaturezaOp,
+        destinoFiscal?.uf ?? "",
+        ufEmitente,
+        naturezasCatalogo
+      ),
+    [dropNaturezaOp, destinoFiscal, ufEmitente, naturezasCatalogo]
+  );
   const [finalidadeEmissao, setFinalidadeEmissao] = useState(1);
   const [consumidorFinal, setConsumidorFinal] = useState(1);
   const [presencaComprador, setPresencaComprador] = useState(2);
@@ -272,7 +290,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   // New item states
   const [newItemDesc, setNewItemDesc] = useState("");
   const [newItemNcm, setNewItemNcm] = useState("49119900");
-  const [newItemCfop, setNewItemCfop] = useState("5101");
   const [newItemUn, setNewItemUn] = useState("UN");
   const [newItemQty, setNewItemQty] = useState(1);
   const [newItemPrice, setNewItemPrice] = useState(0);
@@ -1106,8 +1123,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         const qty = it.quantidade !== undefined ? Number(it.quantidade) : (orig?.quantidade || 0);
         const price = it.valor_unitario !== undefined ? Number(it.valor_unitario) : (orig?.valor_unitario || 0);
         const pesoUnit = it.peso_unitario_gramas !== undefined ? Number(it.peso_unitario_gramas) : (orig?.peso_unitario_gramas || 0);
+        // `cfop` sai do payload do item: quem grava e o passo 2b de
+        // `updateNfeDraft`, uma vez so para a nota inteira.
+        const { cfop: _cfopIgnorado, ...semCfop } = it;
+        void _cfopIgnorado;
         return {
-          ...it,
+          ...semCfop,
           valor_bruto: qty * price,
           quantidade_tributavel: qty,
           valor_unitario_tributavel: price,
@@ -1116,7 +1137,13 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         };
       });
 
-      const res = await updateNfeDraft(note.id, headerUpdates, itemsPayload, editedPagamentos);
+      const res = await updateNfeDraft(
+        note.id,
+        headerUpdates,
+        itemsPayload,
+        editedPagamentos,
+        cfopDerivado
+      );
       if (res.success) {
         showToast({ type: "success", title: "Rascunho salvo com sucesso!" });
 
@@ -1184,9 +1211,16 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     const proceed = async () => {
       setIsAddingItem(true);
       try {
-        // CFOP do destino apontado no pedido. Sem destino resolvido nao assume
-        // operacao interna: deixa vazio e a validacao fiscal cobra.
-        const cfopDefault = newItemCfop || (destinoFiscal && ufEmitente ? cfopDeVenda(destinoFiscal.uf, ufEmitente) : "");
+        // CFOP DA NOTA, nao do item. Nao ha mais campo para digitar: o item
+        // novo entra com o mesmo CFOP dos demais, por construcao.
+        //
+        // Ordem: a natureza manda; sem natureza reconhecida, acompanha os itens
+        // que ja estao na nota -- que sao uniformes -- para nao ser o unico
+        // fora do lugar; so entao cai no calculo por UF.
+        const cfopDefault =
+          cfopDerivado ||
+          items[0]?.cfop ||
+          (destinoFiscal && ufEmitente ? cfopDeVenda(destinoFiscal.uf, ufEmitente) : "");
         const nextItemNum = items.length + 1;
         const qty = Number(newItemQty) || 1;
         const price = Number(newItemPrice) || 0;
@@ -1354,7 +1388,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           quantidade_tributavel: qty,
           valor_unitario_tributavel: price,
           ncm: edited.ncm || "49119900",
-          cfop: edited.cfop || (destinoFiscal && ufEmitente ? cfopDeVenda(destinoFiscal.uf, ufEmitente) : ""),
+          // CFOP nao entra aqui: e da nota, escrito de uma vez em
+          // `updateNfeDraft`. Salvar um item nao pode mover o CFOP dele
+          // sozinho -- era por aqui que dois itens da mesma nota divergiam.
           peso_unitario_gramas: pesoUnit,
           peso_total_gramas: pesoTotal
         };
@@ -2077,6 +2113,19 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           setDropNaturezaOp(e.target.value);
                           // Os dois campos saem do catalogo, nunca de literal.
                           setNaturezaOperacao(escolhida ? escolhida.natureza : "");
+
+                          // O CFOP de TODOS os itens acompanha, na hora. Um
+                          // valor so, aplicado a lista inteira: nao ha como
+                          // sair daqui com itens discordando entre si.
+                          const novoCfop = cfopDaNatureza(
+                            e.target.value,
+                            destinoFiscal?.uf ?? "",
+                            ufEmitente,
+                            naturezasCatalogo
+                          );
+                          if (novoCfop) {
+                            setEditedItems((prev) => prev.map((it) => ({ ...it, cfop: novoCfop })));
+                          }
                         }}
                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                       >
@@ -2093,8 +2142,28 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                       </select>
                       <p className="text-[10px] text-slate-400 leading-relaxed">
                         Vai no campo <span className="font-mono">natOp</span> da NF-e como
-                        <strong className="text-slate-500"> {naturezaOperacao || "—"}</strong>. O CFOP dos
-                        itens não muda por aqui.
+                        <strong className="text-slate-500"> {naturezaOperacao || "—"}</strong>.
+                      </p>
+                      {/* O CFOP deixou de ser digitado: deriva daqui, e a UF
+                          decide entre o par interno e o interestadual. */}
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        CFOP dos itens:{" "}
+                        {cfopDerivado ? (
+                          <>
+                            <strong className="font-mono text-slate-700">{cfopDerivado}</strong>{" "}
+                            <span className="text-slate-400">
+                              ({destinoFiscal?.uf || "?"} → {ufEmitente || "?"},{" "}
+                              {destinoFiscal?.uf && ufEmitente && destinoFiscal.uf === ufEmitente
+                                ? "interna"
+                                : "interestadual"}
+                              )
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">
+                            sem natureza reconhecida no catálogo — os itens mantêm o CFOP atual
+                          </span>
+                        )}
                       </p>
                       {/* Aviso do FILTRO PROVISÓRIO. A lista mostra só as naturezas
                           de venda porque a tributação do item é fixa em CSOSN 102 —
@@ -2780,21 +2849,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                             className="w-full border border-slate-100 hover:border-slate-300 focus:border-[#0b2f4a] bg-slate-50/20 focus:bg-white rounded px-2 py-1.5 text-xs font-mono text-center outline-none transition font-medium"
                           />
                         </td>
+                        {/* CFOP NAO E DIGITAVEL. E da nota, deriva da natureza
+                            da operacao e e o mesmo em todos os itens. O `id`
+                            fica: `pendencias.ts` aponta para ele em
+                            ITEM_SEM_CFOP e o foco precisa achar o alvo. */}
                         <td className="px-3 py-2.5 align-middle">
-                          <input
-                            type="text"
-                            maxLength={4}
+                          <div
                             id={campoDoItem(item.id, "cfop")}
-                            value={edited?.cfop || ""}
-                            disabled={isReadOnly}
-                            onChange={(e) => {
-                              const value = e.target.value.replace(/\D/g, "");
-                              setEditedItems(prev =>
-                                prev.map(it => (it.id === item.id ? { ...it, cfop: value } : it))
-                              );
-                            }}
-                            className="w-full border border-slate-100 hover:border-slate-300 focus:border-[#0b2f4a] bg-slate-50/20 focus:bg-white rounded px-2 py-1.5 text-xs font-mono text-center outline-none transition font-medium"
-                          />
+                            title="Definido pela natureza da operação, no Resumo. Igual em todos os itens da nota."
+                            className="w-full rounded px-2 py-1.5 text-xs font-mono text-center font-medium text-slate-600 bg-slate-100/60 border border-transparent"
+                          >
+                            {edited?.cfop || "—"}
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 align-middle">
                           <input
@@ -2977,16 +3043,15 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     />
                   </div>
 
-                  {/* CFOP */}
+                  {/* CFOP — nao se digita mais. Nascia com "5101" fixo, e o
+                      campo preenchido vencia o calculo por UF: item manual em
+                      nota interestadual entrava 5101 ao lado de itens 6101. */}
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-slate-500">CFOP (4 dígitos)</label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      value={newItemCfop}
-                      onChange={(e) => setNewItemCfop(e.target.value.replace(/\D/g, ""))}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-white outline-none focus:border-[#0b2f4a] font-mono"
-                    />
+                    <label className="block text-xs font-semibold text-slate-500">CFOP</label>
+                    <div className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-slate-50 font-mono text-slate-600">
+                      {cfopDerivado || items[0]?.cfop || "—"}
+                    </div>
+                    <p className="text-[10px] text-slate-400">Vem da natureza da operação.</p>
                   </div>
 
                   {/* Peso Unitário */}

@@ -565,9 +565,75 @@ export async function resolverDestinoFiscal(idInt: number): Promise<DestinoFisca
   return { uf: principal.uf, idEndereco: principal.id, ehEntrega };
 }
 
-/** CFOP de venda conforme a operação seja interna ou interestadual. */
+/**
+ * CFOP de venda conforme a operação seja interna ou interestadual.
+ *
+ * SOBREVIVE como fallback: vale quando a nota tem natureza que não casa com o
+ * catálogo — o caso das notas antigas — e como default do rascunho novo. Quem
+ * tem natureza reconhecida usa `cfopDaNatureza`.
+ */
 export function cfopDeVenda(ufDestino: string, ufEmitente: string): string {
   return ufDestino.trim().toUpperCase() === ufEmitente.trim().toUpperCase() ? "5101" : "6101";
+}
+
+/**
+ * `INTERNA` ou `INTERESTADUAL`, na grafia que o catálogo usa em
+ * `destino_operacao`. `null` quando falta UF dos dois lados — sem as duas não há
+ * como saber se a operação cruza fronteira, e chutar seria escolher imposto.
+ */
+export function destinoDaOperacao(
+  ufDestino: string,
+  ufEmitente: string
+): "INTERNA" | "INTERESTADUAL" | null {
+  const destino = String(ufDestino ?? "").trim().toUpperCase();
+  const emitente = String(ufEmitente ?? "").trim().toUpperCase();
+  if (!destino || !emitente) return null;
+  return destino === emitente ? "INTERNA" : "INTERESTADUAL";
+}
+
+/**
+ * O CFOP que os itens da nota devem carregar, dado a natureza escolhida.
+ *
+ * O PAR INTERNO/INTERESTADUAL NÃO ESTÁ MODELADO NO CATÁLOGO, e a chave que
+ * pareceria natural não serve: `(tipo_operacao, destino_operacao)` não é única,
+ * porque VENDA tem duas linhas INTERNA (5101 e 5108) e duas INTERESTADUAL
+ * (6101 e 6108). Casar por ela devolveria 6108 como par de 5101 — outra
+ * operação.
+ *
+ * Então a convenção numérica da SEFAZ entra só para MONTAR A CHAVE, nunca para
+ * produzir o código: o primeiro dígito muda (5↔6 nas saídas, 1↔2 nas entradas) e
+ * os três últimos permanecem. A busca é por
+ * `(tipo_operacao, três últimos dígitos, destino_operacao)` — combinação única
+ * nas 8 linhas de NF-e — e o CFOP devolvido é sempre um que EXISTE na tabela.
+ *
+ * Nunca inventa código. Devolve `null` — e quem chama mantém o que já tem —
+ * quando a natureza não está no catálogo, quando falta UF, ou quando o par não
+ * foi cadastrado.
+ */
+export function cfopDaNatureza(
+  descricaoNatureza: string | null | undefined,
+  ufDestino: string,
+  ufEmitente: string,
+  catalogo: readonly NaturezaOperacaoNfe[]
+): string | null {
+  const descricao = String(descricaoNatureza ?? "").trim();
+  if (!descricao) return null;
+
+  const escolhida = (catalogo ?? []).find((linha) => linha.descricao === descricao);
+  if (!escolhida) return null; // natureza fora do catálogo: nada a derivar
+
+  const destino = destinoDaOperacao(ufDestino, ufEmitente);
+  if (!destino) return null;
+
+  const sufixo = escolhida.cfop.slice(-3);
+  const par = (catalogo ?? []).find(
+    (linha) =>
+      linha.tipoOperacao === escolhida.tipoOperacao &&
+      linha.cfop.slice(-3) === sufixo &&
+      linha.destinoOperacao === destino
+  );
+
+  return par ? par.cfop : null;
 }
 
 /**
@@ -703,7 +769,31 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   const ufDest = destino.uf;
   const operacaoInterna = ufDest === ufEmitente;
   const cfopDefault = cfopDeVenda(ufDest, ufEmitente);
-  const naturezaDefault = operacaoInterna ? "VENDA DE PRODUCAO PROPRIA" : "VENDA DE PRODUCAO PROPRIA DEST. OUTRO ESTADO";
+
+  // A NATUREZA DO RASCUNHO NOVO SAI DO CATÁLOGO, e os DOIS campos são gravados.
+  //
+  // Antes daqui saía um literal — `VENDA DE PRODUCAO PROPRIA` — e
+  // `drop_natureza_op` não era mandado. Isso funcionava enquanto a trigger
+  // `fn_defaults_rascunho_nfe` reescrevia os dois incondicionalmente. Ela deixou
+  // de reescrever em 28/08 (virou rede de segurança, só age com os dois vazios),
+  // e como o literal chega preenchido a trigger não age: o rascunho nasceria com
+  // `drop_natureza_op` NULO e uma quarta grafia de "venda de produção própria".
+  //
+  // Nota sem `drop_natureza_op` não casa com o catálogo — e sem casar não há
+  // CFOP a derivar, que é justamente o que esta rodada existe para fazer.
+  //
+  // O default de CFOP não muda: 5101 dentro do estado, 6101 fora.
+  const catalogoNaturezas = await getNaturezasOperacaoNfe();
+  const naturezaDoCatalogo = catalogoNaturezas.find((linha) => linha.cfop === cfopDefault) ?? null;
+  const naturezaDefault =
+    naturezaDoCatalogo?.natureza ??
+    (operacaoInterna ? "VENDA DE PRODUCAO PROPRIA" : "VENDA DE PRODUCAO PROPRIA DEST. OUTRO ESTADO");
+  const dropNaturezaDefault = naturezaDoCatalogo?.descricao ?? null;
+
+  // O CFOP dos itens deriva da natureza da nota. Catálogo fora do ar ou linha
+  // ausente cai no cálculo por UF, que é o comportamento de sempre.
+  const cfopDosItens =
+    cfopDaNatureza(dropNaturezaDefault, ufDest, ufEmitente, catalogoNaturezas) ?? cfopDefault;
 
   // ETAPA C — o destinatario da nota e o PAGADOR, nao o cliente da proposta.
   // O cliente encomenda; em parte dos casos e um agenciador com procuracao para
@@ -897,6 +987,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
     end_entrega: hasEndereco,
     endereco_entrega_observacao: enderecoStr,
     natureza_operacao: naturezaDefault,
+    drop_natureza_op: dropNaturezaDefault,
     tipo_documento: 1, // Saída
     finalidade_emissao: 1, // Normal
     consumidor_final: consumidorFinal,
@@ -986,7 +1077,7 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
         codigo_produto: String(item.produto?.id_produto || item.id_produto),
         descricao: item.nome || "Item sem descrição",
         ncm: item.produto?.ncm || "49119900",
-        cfop: cfopDefault,
+        cfop: cfopDosItens,
         unidade_comercial: "UN",
         unidade_tributavel: "UN",
         quantidade: item.quantidade,
@@ -1052,7 +1143,12 @@ export async function updateNfeDraft(
   id: string,
   updates: Partial<SupabaseNfeRow>,
   items: Partial<SupabaseNfeItemRow>[],
-  pagamentos: Partial<SupabaseNfePagamentoRow>[]
+  pagamentos: Partial<SupabaseNfePagamentoRow>[],
+  /**
+   * CFOP derivado da natureza da nota, ou `null` quando não há o que derivar.
+   * Não vem item a item de propósito: ver o bloco no passo 2b.
+   */
+  cfopDosItens?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: "Supabase client not initialized" };
@@ -1076,6 +1172,8 @@ export async function updateNfeDraft(
       delete itClone.id_nota_fiscal;
       delete itClone.ref;
       delete itClone.id_int;
+      // O CFOP NÃO VIAJA NO PAYLOAD DO ITEM. Ver o passo 2b.
+      delete itClone.cfop;
 
       const { error: itemError } = await client
         .from("notas_fiscais_itens")
@@ -1083,6 +1181,24 @@ export async function updateNfeDraft(
         .eq("id", it.id);
 
       if (itemError) throw itemError;
+    }
+
+    // 2b. CFOP: UM update, UM valor, TODOS os itens.
+    //
+    // O CFOP é da NOTA, não do item — ele deriva da natureza da operação, que é
+    // do cabeçalho. Gravar por item abria o caminho para itens discordarem entre
+    // si na mesma nota, que é exatamente o defeito que esta rodada fecha. Aqui
+    // não há esse caminho: a coluna é escrita uma vez, por `id_nota_fiscal`.
+    //
+    // `null` — natureza fora do catálogo, ou UF faltando — não escreve nada e os
+    // itens mantêm o CFOP que já têm.
+    if (cfopDosItens) {
+      const { error: cfopError } = await client
+        .from("notas_fiscais_itens")
+        .update({ cfop: cfopDosItens })
+        .eq("id_nota_fiscal", id);
+
+      if (cfopError) throw cfopError;
     }
 
     // 3. Atualizar pagamentos
@@ -1494,6 +1610,10 @@ export type NaturezaOperacaoNfe = {
   descricao: string;
   /** `descricao` sem o prefixo `NNNN - ` — é o que vai para `natureza_operacao`. */
   natureza: string;
+  /** `VENDA`, `OUTRA_SAIDA`, `DEVOLUCAO`. Metade da chave do par de CFOP. */
+  tipoOperacao: string;
+  /** `INTERNA` ou `INTERESTADUAL`. A outra metade. */
+  destinoOperacao: string;
 };
 
 /** Tira o prefixo de CFOP do rótulo. Mesma derivação de `fn_sync_natureza_operacao_nfe`. */
@@ -1543,7 +1663,9 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
 
   const { data, error } = await client
     .from("nfe_naturezas_operacao")
-    .select("id, cfop, descricao")
+    // `tipo_operacao` e `destino_operacao` alimentam `cfopDaNatureza`. Colunas
+    // que já existiam: nenhuma migration, nenhum campo novo.
+    .select("id, cfop, descricao, tipo_operacao, destino_operacao")
     .eq("modelo_fiscal", "NFE")
     .eq("ativo", true)
     // << FILTRO PROVISÓRIO >> ver o bloco no cabeçalho desta função.
@@ -1559,7 +1681,9 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
     id: Number(linha.id),
     cfop: String(linha.cfop ?? ""),
     descricao: String(linha.descricao ?? ""),
-    natureza: naturezaSemPrefixoCfop(String(linha.descricao ?? ""))
+    natureza: naturezaSemPrefixoCfop(String(linha.descricao ?? "")),
+    tipoOperacao: String(linha.tipo_operacao ?? ""),
+    destinoOperacao: String(linha.destino_operacao ?? "")
   }));
 }
 
