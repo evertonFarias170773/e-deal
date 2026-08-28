@@ -56,6 +56,7 @@ import {
   ufDaEmpresaEmitente,
   cfopDeVenda,
   cfopDaNatureza,
+  destinoDaOperacao,
   type DestinoFiscal,
   getNotaEventos,
   getBoletosAtivosDaProposta,
@@ -212,6 +213,39 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   // trigger implicita. Ela segue valendo para quem nao passa pelo app.
   const [dropNaturezaOp, setDropNaturezaOp] = useState("");
   const [naturezasCatalogo, setNaturezasCatalogo] = useState<NaturezaOperacaoNfe[]>([]);
+
+  // `INTERNA` ou `INTERESTADUAL` para ESTA nota. `null` enquanto as UFs não
+  // carregaram, ou quando o pedido não resolve um destino.
+  const destinoOperacaoNota = useMemo(
+    () => destinoDaOperacao(destinoFiscal?.uf ?? "", ufEmitente),
+    [destinoFiscal, ufEmitente]
+  );
+
+  // O SELECT SÓ OFERECE O QUE A UF PERMITE.
+  //
+  // Numa nota interna, escolher 6101 era escolha impossível: a derivação
+  // corrigia para 5101 e a tela passava a mostrar "6101" no select com
+  // "CFOP dos itens: 5101" logo abaixo — duas informações brigando no mesmo
+  // canto. A opção some em vez de ser corrigida pelas costas.
+  //
+  // SEM UF NÃO SE FILTRA. Enquanto `destinoFiscal` e `ufEmitente` não chegam —
+  // são assíncronos — não há como saber se a operação cruza fronteira, e
+  // esconder metade da lista por isso seria esconder por ignorância. O mesmo
+  // vale se o filtro não sobrar nada: melhor a lista inteira que um select
+  // vazio.
+  const naturezasDisponiveis = useMemo(() => {
+    if (!destinoOperacaoNota) return naturezasCatalogo;
+    const compativeis = naturezasCatalogo.filter(
+      (n) => n.destinoOperacao === destinoOperacaoNota
+    );
+    return compativeis.length > 0 ? compativeis : naturezasCatalogo;
+  }, [naturezasCatalogo, destinoOperacaoNota]);
+
+  // A natureza JÁ GRAVADA continua na lista mesmo quando não casa com a UF de
+  // hoje — nota antiga, ou endereço que mudou de estado depois. Sumir com ela
+  // trocaria a escolha do usuário sem ele pedir.
+  const naturezaGravadaForaDaLista =
+    dropNaturezaOp !== "" && !naturezasDisponiveis.some((n) => n.descricao === dropNaturezaOp);
 
   // O CFOP DOS ITENS DERIVA DA NATUREZA DA NOTA — não é mais digitado, e não é
   // mais calculado só por UF. A UF continua decidindo entre o par interno e o
@@ -2129,12 +2163,13 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                         }}
                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
                       >
-                        {!naturezasCatalogo.some((n) => n.descricao === dropNaturezaOp) && (
-                          <option value={dropNaturezaOp}>
-                            {dropNaturezaOp || "Selecionar natureza..."}
-                          </option>
+                        {dropNaturezaOp === "" && <option value="">Selecionar natureza...</option>}
+                        {/* A gravada fica, marcada como atual, ainda que a UF
+                            de hoje nao a ofereceria. */}
+                        {naturezaGravadaForaDaLista && (
+                          <option value={dropNaturezaOp}>{dropNaturezaOp} — atual</option>
                         )}
-                        {naturezasCatalogo.map((n) => (
+                        {naturezasDisponiveis.map((n) => (
                           <option key={n.id} value={n.descricao}>
                             {n.descricao}
                           </option>
@@ -2153,10 +2188,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                             <strong className="font-mono text-slate-700">{cfopDerivado}</strong>{" "}
                             <span className="text-slate-400">
                               ({destinoFiscal?.uf || "?"} → {ufEmitente || "?"},{" "}
-                              {destinoFiscal?.uf && ufEmitente && destinoFiscal.uf === ufEmitente
-                                ? "interna"
-                                : "interestadual"}
-                              )
+                              {destinoOperacaoNota === "INTERNA" ? "interna" : "interestadual"})
                             </span>
                           </>
                         ) : (
@@ -2165,6 +2197,13 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           </span>
                         )}
                       </p>
+                      {naturezaGravadaForaDaLista && destinoOperacaoNota && (
+                        <p className="text-[10px] text-slate-500 leading-relaxed">
+                          A natureza gravada não é das oferecidas para operação{" "}
+                          {destinoOperacaoNota === "INTERNA" ? "interna" : "interestadual"} — ela
+                          continua aí até você trocar.
+                        </p>
+                      )}
                       {/* Aviso do FILTRO PROVISÓRIO. A lista mostra só as naturezas
                           de venda porque a tributação do item é fixa em CSOSN 102 —
                           o porquê inteiro está no cabeçalho de `getNaturezasOperacaoNfe`.
