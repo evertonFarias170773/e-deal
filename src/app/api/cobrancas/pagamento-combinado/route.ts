@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
     vencimento,
     forma_pgto,
     forma_fatu,
+    idModeloCobranca,
     observacao,
     chaveIdempotencia
   } = body;
@@ -422,7 +423,11 @@ export async function POST(request: NextRequest) {
       vencimento: vencimento || new Date().toISOString().split("T")[0],
       token_publico: crypto.randomBytes(16).toString("hex"),
       forma_pgto: forma_pgto,
-      forma_fatu: forma_fatu
+      forma_fatu: forma_fatu,
+      // Condicao de pagamento por id, so quando o secundario e faturado. Os
+      // outros tipos nao passam por `modelos_cobranca` e ficam com a coluna
+      // nula. O texto continua em `forma_fatu`, inalterado.
+      id_modelo_cobranca: tipoSecundario === "E-FATURADO" ? (idModeloCobranca || null) : null
     };
 
     const { data: insertedSecundaria, error: errPagSecundaria } = await supabaseUser

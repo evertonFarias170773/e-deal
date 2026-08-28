@@ -1035,6 +1035,10 @@ export function PropostaCobrancaPanel({
         if (isCombined) {
             endpoint = "/api/cobrancas/pagamento-combinado";
             const valorSecundario = Math.round((roundedSaldoRestante - roundedValor) * 100) / 100;
+            // `condicaoSecundaria` passou a guardar o ID do modelo; o texto sai do
+            // proprio modelo, para `forma_fatu` continuar gravando o `resultado`.
+            const condicaoTextoSecundaria =
+              modelosCobranca.find((m) => String(m.id) === condicaoSecundaria)?.resultado ?? "";
             payload = {
                 idInt: proposta.id_int,
                 idCliente: proposta.cliente?.idCliente,
@@ -1046,8 +1050,13 @@ export function PropostaCobrancaPanel({
                 empresa: proposta.empresa || "Ideal Grafica",
                 idEmpresa: form.id_empresa || 1,
                 vencimento: getDefaultVencimento(0),
-                forma_pgto: tipoSecundario === "E-FATURADO" ? null : condicaoSecundaria,
-                forma_fatu: tipoSecundario === "E-FATURADO" ? condicaoSecundaria : null,
+                forma_pgto: tipoSecundario === "E-FATURADO" ? null : condicaoTextoSecundaria,
+                forma_fatu: tipoSecundario === "E-FATURADO" ? condicaoTextoSecundaria : null,
+                // O id da condicao viaja separado do texto. `forma_fatu` continua
+                // recebendo o `resultado`, exatamente como antes -- e o texto que o
+                // financeiro le. O id e o que permite casar a cobranca com o modelo
+                // depois, sem depender de comparacao de string.
+                idModeloCobranca: tipoSecundario === "E-FATURADO" ? condicaoSecundaria || null : null,
                 chaveIdempotencia
             };
         }
@@ -2272,7 +2281,7 @@ export function PropostaCobrancaPanel({
                             >
                               <option value="">Selecione...</option>
                               {modelosCobranca.map((m) => (
-                                <option key={m.id} value={m.resultado}>
+                                <option key={m.id} value={m.id}>
                                   {m.resultado}
                                 </option>
                               ))}

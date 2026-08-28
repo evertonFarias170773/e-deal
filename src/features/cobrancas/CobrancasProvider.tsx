@@ -772,6 +772,12 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
          confirmado: false,
          forma_fatu: isFaturadoType ? (values.forma_fatu || null) : null,
          forma_pgto: isFaturadoType ? (values.forma_fatu || null) : null,
+         // A condicao escolhida, por id. So faturado tem condicao: PIX, cartao,
+         // credito e boleto a vista nao passam por `modelos_cobranca`, e gravar
+         // um id neles daria a entender que houve condicao combinada.
+         // `forma_fatu` continua sendo gravado ao lado, inalterado -- o texto e
+         // o que o financeiro le; o id e o que o resto do sistema consegue casar.
+         id_modelo_cobranca: isFaturadoType ? (values.id_modelo_cobranca || null) : null,
          p_valor_entrada: isFaturadoType ? (values.p_valor_entrada ?? null) : null,
          p_qtd_parcelas: isFaturadoType ? (values.p_qtd_parcelas ?? null) : null,
          p_dias_pra_inicio: isFaturadoType ? (values.p_dias_pra_inicio ?? null) : null,
@@ -1853,9 +1859,11 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
       const cobranca = cobrancas.find((c) => c.id === id) || cobrancasStats.find((c) => c.id === id);
       if (!cobranca) return { success: false, errorMessage: "Cobrança não encontrada no front-end." };
 
+      // Só o AutorizarFaturamentoModal chama esta função, e ela só existe para
+      // cobrança faturada -- por isso o id entra sem condicional aqui.
       const payloadUpdate: any = {
         forma_pgto: novoModelo.resultado,
-        // id_modelo_cobranca: novoModelo.id, // TODO: Descomentar após migration
+        id_modelo_cobranca: novoModelo.id,
       };
 
       const { error } = await client
