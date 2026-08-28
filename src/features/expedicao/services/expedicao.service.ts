@@ -5,6 +5,7 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { normalizarTipoFrete } from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
+import { escolherNotaAutorizadaDoPedido, type NotaCandidata } from "@/lib/fiscal/nota-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
 import type {
   EtapaExpedicao,
@@ -14,6 +15,9 @@ import type {
   PedidoExpedicao,
   TipoFreteNormalizado
 } from "../types";
+
+/** Linha de `notas_fiscais` como a lista da Expedição a lê. */
+type NotaFiscalExpedicaoRow = NotaCandidata & { id_int: number | null };
 
 /**
  * Universo do painel: tudo que está aprovado para produção (is_prd_aprovado)
@@ -134,7 +138,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       .in("id_int", ids),
     client
       .from("notas_fiscais")
-      .select("id_int, status, numero_nf")
+      .select("id_int, status, numero_nf, data_autorizacao, created_at")
       .in("id_int", ids),
     client
       .from("expedicoes")
@@ -212,15 +216,39 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   for (const row of fretesRes.data ?? []) freteMap.set(Number(row.id_int), row);
 
   // NF: AUTORIZADA vence; senão qualquer nota não-cancelada conta como PENDENTE.
-  const nfMap = new Map<number, { status: NfStatusExpedicao; numero: string | null }>();
+  //
+  // Um pedido pode ter VÁRIAS notas — é o desenho do faturamento parcial, e o
+  // 20370 tem duas autorizadas. Antes, entre duas autorizadas a última lida
+  // sobrescrevia a anterior, então o número exibido dependia da ordem em que o
+  // Postgres devolvesse as linhas. Agora a escolha passa pelo mesmo critério da
+  // etiqueta (`escolherNotaAutorizadaDoPedido`), e as duas telas mostram a mesma
+  // nota.
+  //
+  // O ramo PENDENTE fica: `NfStatusExpedicao` tem esse estado, a lista o exibe
+  // como selo e o Despachar avisa quando o pedido não está AUTORIZADO. Aplicar o
+  // filtro estrito aqui apagaria esse aviso e faria pedido com rascunho parecer
+  // pedido sem nota nenhuma.
+  const notasPorPedido = new Map<number, NotaFiscalExpedicaoRow[]>();
   for (const row of nfsRes.data ?? []) {
     const idInt = Number(row.id_int);
-    const st = String(row.status ?? "").toUpperCase();
-    const atual = nfMap.get(idInt);
-    if (st === "AUTORIZADA") {
-      nfMap.set(idInt, { status: "AUTORIZADA", numero: row.numero_nf ? String(row.numero_nf) : null });
-    } else if (st !== "CANCELADA" && atual?.status !== "AUTORIZADA") {
-      nfMap.set(idInt, { status: "PENDENTE", numero: row.numero_nf ? String(row.numero_nf) : null });
+    if (!Number.isFinite(idInt)) continue;
+    const lista = notasPorPedido.get(idInt);
+    if (lista) lista.push(row as NotaFiscalExpedicaoRow);
+    else notasPorPedido.set(idInt, [row as NotaFiscalExpedicaoRow]);
+  }
+
+  const nfMap = new Map<number, { status: NfStatusExpedicao; numero: string | null }>();
+  for (const [idInt, notas] of notasPorPedido) {
+    const autorizada = escolherNotaAutorizadaDoPedido(notas);
+    if (autorizada) {
+      nfMap.set(idInt, { status: "AUTORIZADA", numero: String(autorizada.numero_nf ?? "") || null });
+      continue;
+    }
+
+    // Sem autorizada utilizável: vale qualquer nota viva como PENDENTE.
+    const viva = notas.find((nota) => String(nota.status ?? "").toUpperCase() !== "CANCELADA");
+    if (viva) {
+      nfMap.set(idInt, { status: "PENDENTE", numero: viva.numero_nf ? String(viva.numero_nf) : null });
     }
   }
 

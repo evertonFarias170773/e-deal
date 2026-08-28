@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
+import { escolherNotaAutorizadaDoPedido } from "@/lib/fiscal/nota-do-pedido";
 
 export type EtiquetaViewModel = {
   idInt: number;
@@ -119,39 +120,14 @@ export async function montarEtiquetaViewModel(
   ]);
 
   /**
-   * A nota que vai para a etiqueta.
+   * A nota que vai para a etiqueta. Critério em `@/lib/fiscal/nota-do-pedido`,
+   * compartilhado com a lista da Expedição e com o lançamento de boletos — os
+   * três precisam concordar sobre qual é "a nota do pedido".
    *
-   * SÓ AUTORIZADA — nota pendente ou cancelada impressa no volume induziria a
-   * conferência a erro. Isso já valia antes.
-   *
-   * SÓ COM NÚMERO. O pedido 20925 tem uma linha `AUTORIZADA` com `numero_nf`
-   * nulo: o número é justamente o que a conferência lê, e uma autorizada sem ele
-   * não serve para nada na doca. Sem este filtro, o `.find()` podia parar nela e
-   * esconder uma nota boa do mesmo pedido.
-   *
-   * MAIS RECENTE POR `data_autorizacao`, com `created_at` como desempate — nessa
-   * ordem porque o que importa é quando a SEFAZ autorizou, não quando o rascunho
-   * nasceu. Antes era `.find()` sobre uma query SEM `order`: com duas
-   * autorizadas o resultado dependia da ordem que o Postgres devolvesse, e podia
-   * mudar de uma impressão para outra. Existe caso real hoje — o pedido 20370
-   * tem a NF 1003 (22/08) e a NF 1005 (23/08), e a etiqueta tem de imprimir a
-   * 1005. Nota sem `data_autorizacao` vai para o fim da fila, nunca ganha de uma
-   * que tem data.
+   * Rascunho e nota cancelada nunca entram: impressas no volume, induziriam a
+   * conferência a erro.
    */
-  const nfAutorizada = (notas ?? [])
-    .filter(
-      (n) =>
-        String(n.status ?? "").toUpperCase() === "AUTORIZADA" &&
-        String(n.numero_nf ?? "").trim() !== ""
-    )
-    .sort((a, b) => {
-      const ta = Date.parse(String(a.data_autorizacao ?? "")) || 0;
-      const tb = Date.parse(String(b.data_autorizacao ?? "")) || 0;
-      if (ta !== tb) return tb - ta;
-      const ca = Date.parse(String(a.created_at ?? "")) || 0;
-      const cb = Date.parse(String(b.created_at ?? "")) || 0;
-      return cb - ca;
-    })[0];
+  const nfAutorizada = escolherNotaAutorizadaDoPedido(notas) ?? undefined;
 
   // Endereço: o escolhido no despacho > o que casa com o CEP cotado > o mais recente.
   const idCliente = proposta.id_cliente !== null ? Number(proposta.id_cliente) : null;

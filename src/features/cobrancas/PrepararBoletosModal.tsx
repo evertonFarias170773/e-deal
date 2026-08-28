@@ -9,6 +9,11 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import type { Cobranca, ModeloCobranca } from "@/features/cobrancas/types";
+import {
+  escolherNotaAutorizadaDoPedido,
+  COLUNAS_NOTA_DO_PEDIDO,
+  type NotaCandidata
+} from "@/lib/fiscal/nota-do-pedido";
 
 /** Uma linha ativa de `notas_fiscais_pagamentos`, do jeito que foi gravada. */
 export interface ParcelaFiscalOrigem {
@@ -250,17 +255,29 @@ export function PrepararBoletosModal({
         const client = getSupabaseClient();
         if (!client) return;
 
-        const { data: nfe, error } = await client
+        // Um pedido pode ter VARIAS notas — faturamento parcial e desenho, e o
+        // 20370 tem duas autorizadas. Antes isto era `order desc, limit 1` SEM
+        // filtro de status: pegava a mais recente qualquer que fosse, entao um
+        // rascunho ou uma nota com erro de autorizacao carimbava `n_nf` e
+        // `ext_reference` do boleto. Com NFS-e de servico mais NF-e de remessa
+        // no mesmo pedido, o boleto do servico sairia com o numero da remessa.
+        //
+        // Agora vale o mesmo criterio da etiqueta e da lista da Expedicao
+        // (`escolherNotaAutorizadaDoPedido`): so AUTORIZADA com numero, a mais
+        // recente por data_autorizacao. Nao havendo nenhuma, o modal se comporta
+        // como se nao houvesse nota e cai no fallback de referencia abaixo.
+        const { data: notasDoPedido, error } = await client
           .from("notas_fiscais")
-          .select("ref, numero_nf")
-          .eq("id_int", cobranca.id_int)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .select(`ref, ${COLUNAS_NOTA_DO_PEDIDO}`)
+          .eq("id_int", cobranca.id_int);
 
         if (error) {
           console.error("[PrepararBoletosModal] Erro ao buscar NF-e:", error);
         }
+
+        const nfe = escolherNotaAutorizadaDoPedido(
+          (notasDoPedido ?? []) as Array<NotaCandidata & { ref: string | null }>
+        );
 
         if (nfe) {
           setExtReference(nfe.ref || "");
