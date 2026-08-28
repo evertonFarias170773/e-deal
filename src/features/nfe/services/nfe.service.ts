@@ -1486,6 +1486,56 @@ export async function getBoletosAtivosDaProposta(idInt: number): Promise<BoletoA
     }));
 }
 
+/** Uma opção de natureza da operação, como o catálogo a guarda. */
+export type NaturezaOperacaoNfe = {
+  id: number;
+  cfop: string;
+  /** Rótulo com o CFOP na frente — vai inteiro para `drop_natureza_op`. */
+  descricao: string;
+  /** `descricao` sem o prefixo `NNNN - ` — é o que vai para `natureza_operacao`. */
+  natureza: string;
+};
+
+/** Tira o prefixo de CFOP do rótulo. Mesma derivação de `fn_sync_natureza_operacao_nfe`. */
+export function naturezaSemPrefixoCfop(descricao: string): string {
+  return String(descricao ?? "").replace(/^\s*\d{4}\s*-\s*/, "").trim();
+}
+
+/**
+ * As naturezas de operação disponíveis para NF-e.
+ *
+ * Fonte única: `nfe_naturezas_operacao`. O texto NÃO é literal no código — havia
+ * três grafias para a mesma ideia (o código, a trigger de defaults e o catálogo),
+ * e duas delas viviam fora da tabela feita para isso.
+ *
+ * `natureza` sai de `descricao` sem o prefixo, e não de `observacao`: naquela
+ * coluna, 5949 e 6949 guardam INSTRUÇÃO AO OPERADOR ("USAR SOMENTE QUANDO NÃO
+ * HOUVER CFOP MAIS ESPECÍFICO"), que não pode ir no campo natOp da nota.
+ */
+export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from("nfe_naturezas_operacao")
+    .select("id, cfop, descricao")
+    .eq("modelo_fiscal", "NFE")
+    .eq("ativo", true)
+    .order("cfop", { ascending: true });
+
+  if (error) {
+    console.error("[NfeService] Erro ao carregar naturezas de operacao:", error);
+    return [];
+  }
+
+  return (data ?? []).map((linha) => ({
+    id: Number(linha.id),
+    cfop: String(linha.cfop ?? ""),
+    descricao: String(linha.descricao ?? ""),
+    natureza: naturezaSemPrefixoCfop(String(linha.descricao ?? ""))
+  }));
+}
+
 export async function getTransportadoras() {
   const client = getSupabaseClient();
   if (!client) return [];

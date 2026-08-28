@@ -58,6 +58,8 @@ import {
   type DestinoFiscal,
   getNotaEventos,
   getBoletosAtivosDaProposta,
+  getNaturezasOperacaoNfe,
+  type NaturezaOperacaoNfe,
   type BoletoAtivoDaProposta,
   type SupabaseNotaEventoRow,
   type SimpleProduct
@@ -203,6 +205,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
   // Editable header fields state
   const [naturezaOperacao, setNaturezaOperacao] = useState("");
+  // Rotulo com o CFOP na frente, como o catalogo guarda. O app grava os DOIS
+  // campos: `fn_sync_natureza_operacao_nfe` so age quando natureza_operacao esta
+  // vazia, e depender dela aqui deixaria o resultado da tela na mao de uma
+  // trigger implicita. Ela segue valendo para quem nao passa pelo app.
+  const [dropNaturezaOp, setDropNaturezaOp] = useState("");
+  const [naturezasCatalogo, setNaturezasCatalogo] = useState<NaturezaOperacaoNfe[]>([]);
   const [finalidadeEmissao, setFinalidadeEmissao] = useState(1);
   const [consumidorFinal, setConsumidorFinal] = useState(1);
   const [presencaComprador, setPresencaComprador] = useState(2);
@@ -373,6 +381,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       }
       setNote(dbNote);
       setNaturezaOperacao(dbNote.natureza_operacao || "");
+      setDropNaturezaOp(dbNote.drop_natureza_op || "");
       setFinalidadeEmissao(dbNote.finalidade_emissao);
       setConsumidorFinal(dbNote.consumidor_final);
       setPresencaComprador(dbNote.presenca_comprador);
@@ -554,6 +563,16 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       // 5. Load transportadoras list
       const transportadorasData = await getTransportadoras();
       setTransportadoras(transportadorasData);
+
+      // 5b. Catalogo de naturezas de operacao (NF-e, ativas). Falha aqui nao
+      // derruba a tela: sem catalogo o select fica vazio e a nota mantem a
+      // natureza que ja tem.
+      try {
+        setNaturezasCatalogo(await getNaturezasOperacaoNfe());
+      } catch (err) {
+        console.warn("[NfeDetail] Falha ao carregar naturezas de operacao:", err);
+        setNaturezasCatalogo([]);
+      }
 
       // Initial validation from view
       const validation = await getNfeValidationGeral(dbNote.ref);
@@ -1063,6 +1082,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       const headerUpdates: Partial<SupabaseNfeRow> = {
         ref: note.ref, // necessary to trigger recalculate
         natureza_operacao: naturezaOperacao,
+        drop_natureza_op: dropNaturezaOp,
         finalidade_emissao: finalidadeEmissao,
         consumidor_final: consumidorFinal,
         presenca_comprador: presencaComprador,
@@ -1729,6 +1749,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
     const cabecalhoMudou =
       naturezaOperacao !== (note.natureza_operacao || "") ||
+      dropNaturezaOp !== (note.drop_natureza_op || "") ||
       finalidadeEmissao !== note.finalidade_emissao ||
       consumidorFinal !== note.consumidor_final ||
       presencaComprador !== note.presenca_comprador ||
@@ -1922,8 +1943,9 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       {/*
         Painel de pendências — a mesma conferência que roda ao preparar o envio,
         mostrada antes do clique. Cada linha leva ao lugar do conserto; as que
-        não têm campo na tela (natureza, finalidade, presença, status) aparecem
-        sem link, porque a lista precisa ser a verdade completa do que trava.
+        não têm campo na tela (finalidade, presença, status) aparecem sem link,
+        porque a lista precisa ser a verdade completa do que trava. A natureza
+        saiu dessa lista em 28/08/2026: agora tem select no bloco Resumo.
       */}
       {!isReadOnly && pendencias.length > 0 && (
         <section className="overflow-hidden rounded-3xl border border-[#d7e5e8] bg-white shadow-sm">
@@ -2035,6 +2057,48 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                 <p className="text-sm text-slate-600">Empresa: <strong>{getEmpresaName(note.id_empresa)}</strong></p>
                 <p className="text-sm text-slate-600">Ambiente: <span className="font-mono text-xs uppercase px-1.5 py-0.5 bg-blue-50 text-blue-800 rounded">{note.ambiente}</span></p>
                 <p className="text-sm text-slate-600">Modelo Nfe: <strong>{note.modelo}</strong></p>
+
+                {/* Natureza da operacao. Ate 28/08/2026 nao havia campo: a
+                    trigger de defaults gravava um de dois textos de venda e
+                    ninguem escolhia. Remessa, amostra, devolucao e venda de
+                    imobilizado saiam declaradas como venda de producao propria. */}
+                <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Natureza da operação
+                  </label>
+                  {isReadOnly ? (
+                    <p className="text-sm font-medium text-slate-800">{naturezaOperacao || "—"}</p>
+                  ) : (
+                    <>
+                      <select
+                        value={dropNaturezaOp}
+                        onChange={(e) => {
+                          const escolhida = naturezasCatalogo.find((n) => n.descricao === e.target.value);
+                          setDropNaturezaOp(e.target.value);
+                          // Os dois campos saem do catalogo, nunca de literal.
+                          setNaturezaOperacao(escolhida ? escolhida.natureza : "");
+                        }}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
+                      >
+                        {!naturezasCatalogo.some((n) => n.descricao === dropNaturezaOp) && (
+                          <option value={dropNaturezaOp}>
+                            {dropNaturezaOp || "Selecionar natureza..."}
+                          </option>
+                        )}
+                        {naturezasCatalogo.map((n) => (
+                          <option key={n.id} value={n.descricao}>
+                            {n.descricao}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">
+                        Vai no campo <span className="font-mono">natOp</span> da NF-e como
+                        <strong className="text-slate-500"> {naturezaOperacao || "—"}</strong>. O CFOP dos
+                        itens não muda por aqui.
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="border border-slate-100 p-5 rounded-2xl bg-slate-50/50 space-y-3">
