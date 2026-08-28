@@ -1511,6 +1511,31 @@ export function naturezaSemPrefixoCfop(descricao: string): string {
  * `natureza` sai de `descricao` sem o prefixo, e não de `observacao`: naquela
  * coluna, 5949 e 6949 guardam INSTRUÇÃO AO OPERADOR ("USAR SOMENTE QUANDO NÃO
  * HOUVER CFOP MAIS ESPECÍFICO"), que não pode ir no campo natOp da nota.
+ *
+ * ---------------------------------------------------------------------------
+ * FILTRO PROVISÓRIO: só `tipo_operacao = 'VENDA'` (28/08/2026)
+ *
+ * O catálogo tem 8 naturezas de NF-e; esta função devolve 4. Ficam de fora
+ * 5949/6949 (OUTRA_SAIDA) e 1202/2202 (DEVOLUCAO).
+ *
+ * POR QUÊ: a tributação dos itens é fixa no código — CSOSN `102`, PIS/COFINS
+ * `99`, origem `0`, em `createOrReuseNfeDraft` e em `NfeDetailPage`. Todos os
+ * itens do banco têm exatamente esses valores. CSOSN 102 é operação de VENDA
+ * tributada pelo Simples: emitir uma remessa ou uma devolução com ele declara
+ * como venda tributada algo que não é venda.
+ *
+ * A SEFAZ não valida CST contra CFOP nem contra natOp, então a nota seria
+ * ACEITA e ficaria errada — o que é pior que rejeitada, porque o conserto é
+ * carta de correção ou cancelamento. Oferecer a opção na tela seria oferecer
+ * esse erro.
+ *
+ * O CST correto de cada operação está com o contador e ainda não voltou.
+ *
+ * PARA REMOVER quando a definição fiscal chegar: apagar a linha marcada
+ * `<< FILTRO PROVISÓRIO >>` abaixo e o aviso em `NfeDetailPage` que aponta para
+ * este comentário. Nada mais depende dele — o catálogo nunca foi tocado, as
+ * 8 linhas seguem ativas no banco.
+ * ---------------------------------------------------------------------------
  */
 export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> {
   const client = getSupabaseClient();
@@ -1521,6 +1546,8 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
     .select("id, cfop, descricao")
     .eq("modelo_fiscal", "NFE")
     .eq("ativo", true)
+    // << FILTRO PROVISÓRIO >> ver o bloco no cabeçalho desta função.
+    .eq("tipo_operacao", "VENDA")
     .order("cfop", { ascending: true });
 
   if (error) {

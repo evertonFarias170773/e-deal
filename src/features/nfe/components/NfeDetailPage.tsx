@@ -2096,6 +2096,14 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                         <strong className="text-slate-500"> {naturezaOperacao || "—"}</strong>. O CFOP dos
                         itens não muda por aqui.
                       </p>
+                      {/* Aviso do FILTRO PROVISÓRIO. A lista mostra só as naturezas
+                          de venda porque a tributação do item é fixa em CSOSN 102 —
+                          o porquê inteiro está no cabeçalho de `getNaturezasOperacaoNfe`.
+                          Remover este bloco junto com o filtro de lá. */}
+                      <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-relaxed">
+                        Remessa, outra saída e devolução ainda não estão disponíveis: dependem de
+                        definição fiscal da tributação do item.
+                      </p>
                     </>
                   )}
                 </div>
