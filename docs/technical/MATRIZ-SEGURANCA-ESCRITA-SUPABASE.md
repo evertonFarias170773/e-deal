@@ -253,10 +253,80 @@ select count(*) filter (where has_column_privilege('authenticated','public.pagam
 
 O modelo de privilégios do Postgres é cumulativo (OR) entre tabela e coluna: um grant de tabela **anula** a proteção por coluna. Por isso conceder `INSERT` de tabela aqui, ainda que para destravar uma urgência, reabre as cinco colunas sensíveis.
 
+## Função e sequence novas nascem abertas para `anon` — `REVOKE FROM PUBLIC` não alcança
+
+Registrada em 29/08/2026, depois de uma migration cujas próprias verificações reprovaram.
+
+**Toda função criada em `public` nasce com `EXECUTE` para `anon`, `authenticated` e `service_role`. Toda sequence nasce com `USAGE`, `SELECT` e `UPDATE` para os três.** Não é herança da tabela nem descuido de quem escreveu: é `ALTER DEFAULT PRIVILEGES`, configurado neste schema por **dois** concedentes — `postgres` e `supabase_admin`.
+
+```sql
+select pg_get_userbyid(defaclrole) as concedente,
+       defaclobjtype as tipo,          -- 'f' = função, 'S' = sequence, 'r' = tabela
+       defaclacl::text as concede
+  from pg_default_acl d
+  join pg_namespace n on n.oid = d.defaclnamespace
+ where nspname = 'public';
+```
+
+### Por que `REVOKE ... FROM PUBLIC` não resolve
+
+`CREATE FUNCTION` concede `EXECUTE` a `PUBLIC` por padrão, e é natural supor que revogar de `PUBLIC` feche a porta. **Não fecha.** O grant que os default privileges criam é **NOMINAL** — sai `anon=X/postgres`, não `=X/postgres` — e nasce no mesmo instante do `CREATE`. `PUBLIC` nunca esteve envolvido nele.
+
+O raciocínio que falhou em 29/08/2026 foi: *"a função é nova, então `anon` nunca recebeu grant nominal"*. Ser nova é justamente o que garante o grant nominal.
+
+Para fechar de verdade, o `REVOKE` precisa ser nominal, e precisa cobrir **os dois objetos**:
+
+```sql
+revoke all    on function public.minha_funcao()   from public;
+revoke execute on function public.minha_funcao()  from anon;
+
+revoke all on sequence public.minha_sequence from anon;
+revoke all on sequence public.minha_sequence from authenticated;
+revoke all on sequence public.minha_sequence from service_role;
+```
+
+**Não altere os default privileges do schema para contornar isso.** Eles valem para tudo que for criado depois, no schema inteiro, e mudá-los quebraria funções que dependem de `anon` — o `pagamento-publico`, entre outras. Revogue no objeto.
+
+### A sequence é o ponto cego
+
+A função costuma ser lembrada; a sequence, não. Uma sequence aberta significa que `authenticated` — e `anon` — chamam `nextval` direto e **contornam a função `SECURITY DEFINER` que existia para validar o valor**. Foi o que aconteceu com `seq_nfe_avulsa_id_int`: a validação de sinal negativo estava na função, e a sequence ficou pública ao lado dela.
+
+`SECURITY DEFINER` roda como o **dono** da função, que conserva os privilégios. Então revogar a sequence de todas as roles do app — `service_role` inclusive — não quebra a função. Verificado: `fn_proximo_id_int_nfe_avulsa()` continuou devolvendo `-1` depois dos quatro revoke.
+
+### Inspecione por `aclexplode`, nunca pelo texto bruto
+
+No texto bruto, `anon=X/postgres` passa despercebido no meio de uma linha longa. Compare sempre o explodido:
+
+```sql
+-- Função
+select p.proacl::text as bruto,
+       (select array_agg(pg_get_userbyid(x.grantee) || ':' || x.privilege_type
+                         order by pg_get_userbyid(x.grantee), x.privilege_type)
+          from aclexplode(p.proacl) x) as detalhado,
+       (select count(*) from aclexplode(p.proacl) x where x.grantee = 0) as tem_public
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname = 'minha_funcao';
+
+-- Sequence
+select c.relacl::text as bruto,
+       (select array_agg(pg_get_userbyid(x.grantee) || ':' || x.privilege_type
+                         order by pg_get_userbyid(x.grantee), x.privilege_type)
+          from aclexplode(c.relacl) x) as detalhado
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relname = 'minha_sequence';
+```
+
+`grantee = 0` é `PUBLIC` — `pg_get_userbyid(0)` devolve `unknown (OID=0)`, que é fácil de ler errado como ruído.
+
+### O que isso NÃO significa
+
+As funções existentes do schema carregam `anon=X` e **ficam como estão**. A maioria é trigger ou leitura, e revogar em massa teria risco sem ganho. A regra vale para **função ou sequence nova cujo acesso você quer restringir** — tipicamente as que cunham identificador, gravam por privilégio elevado ou consomem recurso.
+
 ## Observações de uso
 
 - Esta matriz não substitui o checklist técnico de cada mudança.
 - **Ao criar coluna em tabela com grant por coluna** (hoje: `public.pagamentos_v2`), conferir `pg_attribute.attacl` e emitir o `GRANT` de coluna na mesma migration. Ver a seção acima.
+- **Ao criar função ou sequence** que não deva ser aberta a `anon`, emitir `REVOKE` **nominal** na mesma migration — de `PUBLIC` e de `anon`, e da sequence também para `authenticated` e `service_role`. `REVOKE FROM PUBLIC` sozinho não fecha nada. Ver a seção acima.
 - Antes de habilitar qualquer novo `UPDATE` ou `INSERT`, revisar:
   - RLS;
   - triggers;
