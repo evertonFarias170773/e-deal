@@ -1193,6 +1193,234 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   return freshNote || newNfe;
 }
 
+/* ------------------------------------------------------------------ *
+ * NF-e AVULSA — a nota que não nasce de proposta
+ * ------------------------------------------------------------------ */
+
+/** O que a criação da avulsa devolve. Erro é valor, não exceção. */
+export type RascunhoAvulsoResultado =
+  | { success: true; id: string; ref: string; idInt: number }
+  | { success: false; error: string };
+
+/**
+ * O próximo sufixo de `ref` para um `id_int`, olhando as notas que já existem.
+ *
+ * O sufixo é o ÚLTIMO segmento da ref, e isso vale nos dois formatos:
+ * `NFE-{id_int}-{seq}` do caminho com proposta e `NFE-AV-{n}-{seq}` da avulsa.
+ * Ler o último elemento é o que torna a reemissão indiferente ao formato.
+ *
+ * Na criação de uma avulsa o `id_int` acabou de sair da sequence e não tem
+ * irmãs, então isto devolve 1. A função existe para o caso de uma segunda nota
+ * no mesmo `id_int` — reemissão — continuar numerando certo.
+ *
+ * A lógica é gêmea da que vive dentro de `createOrReuseNfeDraft`, e a duplicação
+ * é deliberada: aquele caminho não é tocado. Se um dia as duas forem unificadas,
+ * é aqui que a versão reutilizável já está.
+ */
+export async function proximoSufixoRefNfe(idInt: number): Promise<number> {
+  const client = getSupabaseClient();
+  if (!client) return 1;
+
+  const { data } = await client.from("notas_fiscais").select("ref").eq("id_int", idInt);
+
+  let proximo = 1;
+  for (const linha of (data ?? []) as Array<{ ref: string | null }>) {
+    const partes = String(linha.ref ?? "").split("-");
+    const sufixo = parseInt(partes[partes.length - 1], 10);
+    if (!Number.isNaN(sufixo) && sufixo >= proximo) proximo = sufixo + 1;
+  }
+  return proximo;
+}
+
+/**
+ * Cria o rascunho de uma NF-e AVULSA: sem proposta, sem pedido, sem cobrança.
+ *
+ * POR QUE NÃO DÁ PARA REAPROVEITAR `createOrReuseNfeDraft`
+ *   Aquela função abre com `getPropostaDetailById(idInt)` e aborta se não achar.
+ *   Dali ela tira empresa emitente, destino fiscal, pagador, tipo de cobrança,
+ *   peso da expedição e os itens. Tudo o que ela faz depende da proposta. Esta
+ *   aqui parte de outro lugar: o destinatário é escolhido, e não deduzido.
+ *
+ * O `id_int` VEM DA RPC, SEMPRE
+ *   `fn_proximo_id_int_nfe_avulsa()` devolve negativo, é atômica, e é o único
+ *   caminho — a sequence é privada ao dono e nem `service_role` a alcança direto.
+ *   O negativo é o que mantém a avulsa invisível para tudo que agrupa nota por
+ *   pedido: Expedição, etiqueta, conferência de faturamento e a escolha da nota
+ *   do pedido filtram por `id_int` de proposta, e nenhuma proposta é negativa.
+ *
+ *   A RPC é chamada TARDE, depois de toda validação. Número queimado não volta,
+ *   e não há por que gastar um em cadastro incompleto. Buraco na numeração
+ *   interna não custa nada; repetido custaria caro.
+ *
+ * A NOTA NASCE SEM ITENS. Eles entram depois, um a um, pela aba Itens. Os
+ * triggers de total e de peso recalculam o cabeçalho a cada item que chega.
+ */
+export async function criarRascunhoNfeAvulsa(params: {
+  idCliente: number;
+  idEmpresa: number;
+}): Promise<RascunhoAvulsoResultado> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: "Supabase client not initialized" };
+
+  const idCliente = Number(params.idCliente);
+  const idEmpresa = Number(params.idEmpresa);
+  if (!Number.isFinite(idCliente) || idCliente <= 0) {
+    return { success: false, error: "Escolha o destinatário da nota." };
+  }
+  if (!Number.isFinite(idEmpresa) || idEmpresa <= 0) {
+    return { success: false, error: "Escolha a empresa emitente." };
+  }
+
+  try {
+    // 1. UF dos dois lados. Sem elas não há como decidir interna x
+    //    interestadual, e sem isso a natureza sairia no chute. Mesmas mensagens
+    //    do caminho com proposta, apontando onde se corrige.
+    const ufEmitente = await ufDaEmpresaEmitente(idEmpresa);
+    if (!ufEmitente) {
+      return {
+        success: false,
+        error: "A empresa emitente está sem UF cadastrada. Corrija em Empresas antes de emitir."
+      };
+    }
+
+    const enderecoDestino = await resolverEnderecoPrincipal(idCliente);
+    if (!enderecoDestino) {
+      return {
+        success: false,
+        error:
+          "O destinatário não tem endereço principal com UF. Corrija o cadastro antes de emitir nota avulsa."
+      };
+    }
+    const ufDestino = enderecoDestino.uf;
+
+    // 2. Natureza da operação, do CATÁLOGO, como o caminho com proposta faz.
+    //    A avulsa nasce em venda de produção própria — 5101 dentro do estado,
+    //    6101 fora. Quem for emitir remessa, devolução ou imobilizado troca no
+    //    select do Resumo, e o CFOP e a tributação dos itens acompanham.
+    //
+    //    Catálogo fora do ar deixa os dois campos nulos DE PROPÓSITO: aí
+    //    `fn_defaults_rascunho_nfe` age como rede de segurança e preenche pela
+    //    UF. Escrever um literal aqui criaria uma grafia que o catálogo não
+    //    conhece, e a nota não casaria com ele para derivar CFOP nem tributação.
+    const catalogo = await getNaturezasOperacaoNfe();
+    const linhaDoCatalogo =
+      catalogo.find((linha) => linha.cfop === cfopDeVenda(ufDestino, ufEmitente)) ?? null;
+
+    // 3. Consumidor final e tipo de contribuinte, do cadastro do destinatário —
+    //    mesma regra do caminho com proposta: CPF é sempre consumidor final, e o
+    //    tipo de contribuinte sai do cadastro, com o palpite por documento só
+    //    como rede quando o cadastro não tem valor traduzível.
+    const { data: cadastroRow } = await client
+      .from("clientes")
+      .select("documento,tipo_contribuinte")
+      .eq("id_cliente", idCliente)
+      .maybeSingle();
+    const cadastro = cadastroRow as {
+      documento?: string | null;
+      tipo_contribuinte?: string | null;
+    } | null;
+
+    const documento = String(cadastro?.documento ?? "");
+    const isCNPJ = documento.replace(/\D/g, "").length > 11;
+    const consumidorFinal = isCNPJ ? 0 : 1;
+    const tipoContribuinte = Number(
+      normalizarTipoContribuinte(cadastro?.tipo_contribuinte ?? null) ??
+        tipoContribuintePorDocumento(documento)
+    );
+
+    // 4. Só agora o número. Tudo que podia falhar já falhou.
+    const { data: idIntData, error: idIntError } = await client.rpc(
+      "fn_proximo_id_int_nfe_avulsa"
+    );
+    if (idIntError || idIntData === null || idIntData === undefined) {
+      console.error("[NfeService] fn_proximo_id_int_nfe_avulsa falhou:", idIntError);
+      return {
+        success: false,
+        error: "Não foi possível obter a numeração interna da nota avulsa. Tente novamente."
+      };
+    }
+
+    const idInt = Number(idIntData);
+    // A sequence é descendente com teto -1 e a RPC ainda checa o sinal, então
+    // isto é a terceira barreira. Um positivo aqui significaria nota avulsa com
+    // id_int de pedido — ela sumiria da Expedição e da etiqueta sem avisar.
+    if (!Number.isFinite(idInt) || idInt >= 0) {
+      console.error("[NfeService] id_int de avulsa nao negativo:", idIntData);
+      return {
+        success: false,
+        error: "A numeração interna da nota avulsa veio inválida. Nada foi gravado."
+      };
+    }
+
+    // 5. `NFE-AV-{n}-{seq}`, com `n` no valor absoluto — id_int -2 vira
+    //    `NFE-AV-2-001`. Não colide com `NFE-{id_int}-{seq}`: "AV" não é número
+    //    e são quatro segmentos contra três.
+    const sufixo = await proximoSufixoRefNfe(idInt);
+    const ref = `NFE-AV-${Math.abs(idInt)}-${String(sufixo).padStart(3, "0")}`;
+
+    const nfeInsert = {
+      id_int: idInt,
+      id_cliente: idCliente,
+      id_empresa: idEmpresa,
+      ref,
+      // Mesmo valor que o caminho com proposta grava. O envio sincroniza o
+      // ambiente com `empresas.ambiente_nfe` antes de transmitir, então divergir
+      // aqui só criaria duas regras para a mesma coisa.
+      ambiente: "homologacao",
+      modelo: "55",
+      status: "PENDENTE",
+      // Sem itens: os totais nascem zerados e os triggers os refazem a cada item.
+      valor_produtos: 0,
+      valor_desconto: 0,
+      valor_frete: 0,
+      valor_total_nf: 0,
+      // Documento fiscal puro: sem cobrança, sem contas a receber.
+      cond_pgto: false,
+      pgto_is_configurado: false,
+      end_entrega: false,
+      endereco_entrega_observacao: null,
+      natureza_operacao: linhaDoCatalogo?.natureza ?? null,
+      drop_natureza_op: linhaDoCatalogo?.descricao ?? null,
+      tipo_documento: 1,
+      finalidade_emissao: 1,
+      consumidor_final: consumidorFinal,
+      presenca_comprador: 2,
+      tipo_contribuinte: tipoContribuinte,
+      // 9 = sem ocorrência de transporte. É o certo para o caso comum da avulsa
+      // (venda não registrada, remessa, devolução) e continua editável na aba
+      // Transporte.
+      modalidade_frete: 9,
+      quantidade_volumes: 1,
+      especie_volumes: "CAIXA"
+    };
+
+    const { data: novaNota, error: insertError } = await client
+      .from("notas_fiscais")
+      .insert(nfeInsert)
+      .select("*")
+      .single();
+
+    if (insertError || !novaNota) {
+      console.error("[NfeService] Erro ao inserir nota avulsa:", insertError);
+      return {
+        success: false,
+        error: insertError?.message || "Falha ao criar o rascunho da nota avulsa."
+      };
+    }
+
+    const nota = novaNota as SupabaseNfeRow;
+    console.log(
+      `[NfeService] Rascunho avulso criado: ${nota.ref} (id_int ${idInt}, cliente ${idCliente}, empresa ${idEmpresa})`
+    );
+
+    return { success: true, id: String(nota.id), ref: String(nota.ref), idInt };
+  } catch (err) {
+    console.error("[NfeService] criarRascunhoNfeAvulsa error:", err);
+    const msg = err instanceof Error ? err.message : "Erro ao criar a nota avulsa.";
+    return { success: false, error: msg };
+  }
+}
+
 export async function updateNfeDraft(
   id: string,
   updates: Partial<SupabaseNfeRow>,
