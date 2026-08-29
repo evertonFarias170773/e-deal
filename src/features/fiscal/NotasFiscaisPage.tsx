@@ -5,9 +5,10 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { codecs } from "@/lib/url-state";
-import { AlertTriangle, Copy, ExternalLink, FileText, Play, Loader2, X } from "lucide-react";
+import { AlertTriangle, Copy, ExternalLink, FilePlus2, FileText, Play, Loader2, X } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { PageHeader } from "@/components/common/PageHeader";
+import { NovaNotaAvulsaModal } from "@/features/fiscal/components/NovaNotaAvulsaModal";
 import { ResponsiveList } from "@/components/common/ResponsiveList";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { useAppToast } from "@/components/common/AppToast";
@@ -222,6 +223,9 @@ function StatusDoPedido({ valor }: { valor?: string | null }) {
 
 export function NotasFiscaisPage() {
   const router = useRouter();
+
+  /** Modal da NF-e avulsa — a nota que nao nasce de pedido. */
+  const [novaAvulsaAberta, setNovaAvulsaAberta] = useState(false);
   const { showToast } = useAppToast();
   const { user } = useAuth();
   const canEmitNfe = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "fiscal.emit_nfe");
@@ -1694,6 +1698,16 @@ export function NotasFiscaisPage() {
         title="Notas fiscais"
         subtitle="Central de faturamento e consulta de notas de produto (NF-e) e serviços (NFS-e)."
         context="Fiscal / Emissão e Histórico"
+        action={
+          <button
+            type="button"
+            onClick={() => setNovaAvulsaAberta(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-bold text-white ring-1 ring-inset ring-white/25 backdrop-blur transition hover:bg-white/25"
+          >
+            <FilePlus2 className="h-4 w-4" />
+            Nova nota avulsa
+          </button>
+        }
       />
 
       {isMockActive && !isLoading ? (
@@ -2385,6 +2399,18 @@ export function NotasFiscaisPage() {
           <span>Notas fiscais atualizadas.</span>
         </section>
       ) : null}
+
+      {novaAvulsaAberta && (
+      <NovaNotaAvulsaModal
+        onFechar={() => setNovaAvulsaAberta(false)}
+        onCriada={(idNota) => {
+          setNovaAvulsaAberta(false);
+          // Leva direto para a nota: os itens, a natureza e o transporte se
+          // resolvem la, com as mesmas regras de qualquer outra.
+          router.push(`/notas-fiscais/${idNota}`);
+        }}
+      />
+      )}
 
       {conferenciaPendente && (
         <ConferenciaFaturamentoModal

@@ -879,6 +879,14 @@ export type VendedorOption = {
 export type SearchCadastroVinculoItem = {
   idCliente: number;
   nome: string;
+  /**
+   * Nome fantasia. Vem vazio quando o cadastro nao tem.
+   *
+   * Existe porque em boa parte da base o operador conhece o cliente pelo
+   * fantasia, nao pela razao social: quem procura "BUSLOG" nao adivinha
+   * "METAR LOGISTICA LTDA.".
+   */
+  fantasia: string;
   documento: string;
 };
 
@@ -2214,20 +2222,27 @@ export async function searchCadastrosParaVinculo(query: string): Promise<SearchC
 
   let request = client
     .from("clientes")
-    .select("id_cliente,nome,documento")
+    .select("id_cliente,nome,fantasia,documento")
     .order("id_cliente", { ascending: false })
     .limit(12);
 
+  // `fantasia` entra ao lado de nome e documento. Sem ela, procurar pelo nome
+  // que aparece na fachada nao acha o cadastro: "BUSLOG" e o fantasia de
+  // "METAR LOGISTICA LTDA.", e a busca voltava vazia.
   const digits = term.replace(/\D/g, "");
   if (digits) {
     request = request.or(
-      `id_cliente.eq.${digits},nome.ilike.%${term}%,documento.ilike.%${digits}%`
+      `id_cliente.eq.${digits},nome.ilike.%${term}%,fantasia.ilike.%${term}%,documento.ilike.%${digits}%`
     );
   } else {
-    request = request.or(`nome.ilike.%${term}%,documento.ilike.%${term}%`);
+    request = request.or(
+      `nome.ilike.%${term}%,fantasia.ilike.%${term}%,documento.ilike.%${term}%`
+    );
   }
 
-  const { data, error } = await request.returns<Array<Pick<SupabaseClienteRow, "id_cliente" | "nome" | "documento">>>();
+  const { data, error } = await request.returns<
+    Array<Pick<SupabaseClienteRow, "id_cliente" | "nome" | "fantasia" | "documento">>
+  >();
   if (error) {
     return [];
   }
@@ -2236,6 +2251,7 @@ export async function searchCadastrosParaVinculo(query: string): Promise<SearchC
     .map((item) => ({
       idCliente: Number(item.id_cliente) || 0,
       nome: toText(item.nome),
+      fantasia: toText(item.fantasia),
       documento: normalizeDocumento(item.documento)
     }))
     .filter((item) => item.idCliente > 0);
@@ -2251,7 +2267,7 @@ export async function searchCadastroVinculoByDocumento(documento: string): Promi
 
   const { data, error } = await client
     .from("clientes")
-    .select("id_cliente,nome,documento")
+    .select("id_cliente,nome,fantasia,documento")
     .or(`documento.eq.${digits},documento.eq.${documento}`) // fallback just in case database has masked documents
     .order("id_cliente", { ascending: false })
     .limit(1)
@@ -2264,6 +2280,7 @@ export async function searchCadastroVinculoByDocumento(documento: string): Promi
   return {
     idCliente: Number(data.id_cliente) || 0,
     nome: toText(data.nome),
+    fantasia: toText(data.fantasia),
     documento: normalizeDocumento(data.documento)
   };
 }
@@ -2281,7 +2298,7 @@ export async function getCadastroVinculoById(idCliente: number): Promise<SearchC
 
   const { data, error } = await client
     .from("clientes")
-    .select("id_cliente,nome,documento")
+    .select("id_cliente,nome,fantasia,documento")
     .eq("id_cliente", idCliente)
     .limit(1)
     .single();
@@ -2293,6 +2310,7 @@ export async function getCadastroVinculoById(idCliente: number): Promise<SearchC
   return {
     idCliente: Number(data.id_cliente) || 0,
     nome: toText(data.nome),
+    fantasia: toText(data.fantasia),
     documento: normalizeDocumento(data.documento)
   };
 }
