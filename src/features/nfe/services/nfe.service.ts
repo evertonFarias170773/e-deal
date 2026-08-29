@@ -636,6 +636,49 @@ export function cfopDaNatureza(
   return par ? par.cfop : null;
 }
 
+/** As tres situacoes tributarias do item, como o catalogo as guarda. */
+export type TributacaoDoItem = {
+  icms_situacao_tributaria: string | null;
+  pis_situacao_tributaria: string | null;
+  cofins_situacao_tributaria: string | null;
+};
+
+/**
+ * A tributação que os itens da nota devem carregar, dada a natureza escolhida.
+ *
+ * Irmã de `cfopDaNatureza`: mesma fonte, mesma linha do catálogo, mesma regra de
+ * casamento por `descricao`. Só não precisa da UF — tributação não muda por
+ * cruzar fronteira, o CFOP é que muda.
+ *
+ * DOIS NULOS DIFERENTES, e a diferença importa:
+ *
+ *   RETORNO `null` — a natureza não está no catálogo. Não há o que derivar, e
+ *   quem chama mantém o que já tem. Mesma semântica de `cfopDaNatureza`.
+ *
+ *   CAMPO `null` DENTRO DO RETORNO — o catálogo ENCONTROU a linha e ela diz que
+ *   não decide. É o caso de 5202 e 6202: devolução espelha a nota de origem, e
+ *   nenhum cadastro sabe qual é. O item nasce vazio de propósito, e
+ *   `levantarPendencias` barra a emissão até alguém informar.
+ *
+ * Nunca inventa valor. `icms_origem` não passa por aqui: continua fixo em 0.
+ */
+export function tributacaoDaNatureza(
+  descricaoNatureza: string | null | undefined,
+  catalogo: readonly NaturezaOperacaoNfe[]
+): TributacaoDoItem | null {
+  const descricao = String(descricaoNatureza ?? "").trim();
+  if (!descricao) return null;
+
+  const escolhida = (catalogo ?? []).find((linha) => linha.descricao === descricao);
+  if (!escolhida) return null;
+
+  return {
+    icms_situacao_tributaria: escolhida.icmsSituacaoTributaria,
+    pis_situacao_tributaria: escolhida.pisSituacaoTributaria,
+    cofins_situacao_tributaria: escolhida.cofinsSituacaoTributaria
+  };
+}
+
 /**
  * UF da empresa emitente, lida de `empresas`. Não é constante no código de
  * propósito: um mapa fixo aqui viraria uma quarta fonte, livre para divergir do
@@ -794,6 +837,16 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
   // ausente cai no cálculo por UF, que é o comportamento de sempre.
   const cfopDosItens =
     cfopDaNatureza(dropNaturezaDefault, ufDest, ufEmitente, catalogoNaturezas) ?? cfopDefault;
+
+  // A tributação sai da MESMA linha do catálogo. Para o rascunho novo, que
+  // nasce sempre em venda de produção própria, isso dá 102/99/99 — os mesmos
+  // valores que eram literais aqui.
+  //
+  // `null` só acontece com o catálogo fora do ar. Nesse caso o campo vai VAZIO
+  // e a decisão fica com `trg_autopreencher_fiscal_nfe_item`, que preenche pelo
+  // cadastro do produto. Repetir o literal aqui seria inventar tributação num
+  // momento em que o app admite não saber.
+  const tributacaoDosItens = tributacaoDaNatureza(dropNaturezaDefault, catalogoNaturezas);
 
   // ETAPA C — o destinatario da nota e o PAGADOR, nao o cliente da proposta.
   // O cliente encomenda; em parte dos casos e um agenciador com procuracao para
@@ -1085,10 +1138,11 @@ export async function createOrReuseNfeDraft(idInt: number): Promise<SupabaseNfeR
         valor_bruto: valorBruto,
         quantidade_tributavel: item.quantidade,
         valor_unitario_tributavel: valorUnitario,
+        // `icms_origem` continua fixo no código: não vem do catálogo.
         icms_origem: 0,
-        icms_situacao_tributaria: "102",
-        pis_situacao_tributaria: "99",
-        cofins_situacao_tributaria: "99",
+        icms_situacao_tributaria: tributacaoDosItens?.icms_situacao_tributaria ?? null,
+        pis_situacao_tributaria: tributacaoDosItens?.pis_situacao_tributaria ?? null,
+        cofins_situacao_tributaria: tributacaoDosItens?.cofins_situacao_tributaria ?? null,
         ativo: true,
         peso_unitario_gramas: pesoUnitario,
         peso_total_gramas: pesoTotal
@@ -1614,6 +1668,12 @@ export type NaturezaOperacaoNfe = {
   tipoOperacao: string;
   /** `INTERNA` ou `INTERESTADUAL`. A outra metade. */
   destinoOperacao: string;
+  /** CSOSN da operação. `null` quando o catálogo não decide — ver `tributacaoDaNatureza`. */
+  icmsSituacaoTributaria: string | null;
+  /** CST de PIS. `null` tem o mesmo sentido. */
+  pisSituacaoTributaria: string | null;
+  /** CST de COFINS. `null` tem o mesmo sentido. */
+  cofinsSituacaoTributaria: string | null;
 };
 
 /** Tira o prefixo de CFOP do rótulo. Mesma derivação de `fn_sync_natureza_operacao_nfe`. */
@@ -1631,31 +1691,6 @@ export function naturezaSemPrefixoCfop(descricao: string): string {
  * `natureza` sai de `descricao` sem o prefixo, e não de `observacao`: naquela
  * coluna, 5949 e 6949 guardam INSTRUÇÃO AO OPERADOR ("USAR SOMENTE QUANDO NÃO
  * HOUVER CFOP MAIS ESPECÍFICO"), que não pode ir no campo natOp da nota.
- *
- * ---------------------------------------------------------------------------
- * FILTRO PROVISÓRIO: só `tipo_operacao = 'VENDA'` (28/08/2026)
- *
- * O catálogo tem 8 naturezas de NF-e; esta função devolve 4. Ficam de fora
- * 5949/6949 (OUTRA_SAIDA) e 1202/2202 (DEVOLUCAO).
- *
- * POR QUÊ: a tributação dos itens é fixa no código — CSOSN `102`, PIS/COFINS
- * `99`, origem `0`, em `createOrReuseNfeDraft` e em `NfeDetailPage`. Todos os
- * itens do banco têm exatamente esses valores. CSOSN 102 é operação de VENDA
- * tributada pelo Simples: emitir uma remessa ou uma devolução com ele declara
- * como venda tributada algo que não é venda.
- *
- * A SEFAZ não valida CST contra CFOP nem contra natOp, então a nota seria
- * ACEITA e ficaria errada — o que é pior que rejeitada, porque o conserto é
- * carta de correção ou cancelamento. Oferecer a opção na tela seria oferecer
- * esse erro.
- *
- * O CST correto de cada operação está com o contador e ainda não voltou.
- *
- * PARA REMOVER quando a definição fiscal chegar: apagar a linha marcada
- * `<< FILTRO PROVISÓRIO >>` abaixo e o aviso em `NfeDetailPage` que aponta para
- * este comentário. Nada mais depende dele — o catálogo nunca foi tocado, as
- * 8 linhas seguem ativas no banco.
- * ---------------------------------------------------------------------------
  */
 export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> {
   const client = getSupabaseClient();
@@ -1663,13 +1698,11 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
 
   const { data, error } = await client
     .from("nfe_naturezas_operacao")
-    // `tipo_operacao` e `destino_operacao` alimentam `cfopDaNatureza`. Colunas
-    // que já existiam: nenhuma migration, nenhum campo novo.
-    .select("id, cfop, descricao, tipo_operacao, destino_operacao")
+    // `tipo_operacao` e `destino_operacao` alimentam `cfopDaNatureza`; as três
+    // de situação tributária alimentam `tributacaoDaNatureza`.
+    .select("id, cfop, descricao, tipo_operacao, destino_operacao, icms_situacao_tributaria, pis_situacao_tributaria, cofins_situacao_tributaria")
     .eq("modelo_fiscal", "NFE")
     .eq("ativo", true)
-    // << FILTRO PROVISÓRIO >> ver o bloco no cabeçalho desta função.
-    .eq("tipo_operacao", "VENDA")
     .order("cfop", { ascending: true });
 
   if (error) {
@@ -1683,7 +1716,12 @@ export async function getNaturezasOperacaoNfe(): Promise<NaturezaOperacaoNfe[]> 
     descricao: String(linha.descricao ?? ""),
     natureza: naturezaSemPrefixoCfop(String(linha.descricao ?? "")),
     tipoOperacao: String(linha.tipo_operacao ?? ""),
-    destinoOperacao: String(linha.destino_operacao ?? "")
+    destinoOperacao: String(linha.destino_operacao ?? ""),
+    // `null` PRESERVADO: é a resposta do catálogo para a devolução de saída,
+    // não um campo que ninguém preencheu. Virar "" aqui apagaria a distinção.
+    icmsSituacaoTributaria: linha.icms_situacao_tributaria ?? null,
+    pisSituacaoTributaria: linha.pis_situacao_tributaria ?? null,
+    cofinsSituacaoTributaria: linha.cofins_situacao_tributaria ?? null
   }));
 }
 

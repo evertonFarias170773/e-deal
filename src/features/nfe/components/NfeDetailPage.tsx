@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -56,6 +56,8 @@ import {
   ufDaEmpresaEmitente,
   cfopDeVenda,
   cfopDaNatureza,
+  tributacaoDaNatureza,
+  type TributacaoDoItem,
   destinoDaOperacao,
   type DestinoFiscal,
   getNotaEventos,
@@ -168,6 +170,19 @@ const BLOCOS_DA_NOTA: BlocoNfe[] = [
  */
 const BLOCOS_SEMPRE_ABERTOS: BlocoNfe[] = ["Itens", "Pagamentos"];
 
+/**
+ * Os três campos do painel de tributação do item.
+ *
+ * Os `id` são os que `pendencias.ts` já apontava em ITEM_SEM_ICMS_CST,
+ * ITEM_SEM_PIS_CST e ITEM_SEM_COFINS_CST — antes deste painel eles não existiam
+ * no DOM, e clicar na pendência abria a aba sem levar a lugar nenhum.
+ */
+const CAMPOS_TRIBUTACAO = [
+  { campo: "icms_situacao_tributaria", id: "icms-cst", rotulo: "CSOSN (ICMS)" },
+  { campo: "pis_situacao_tributaria", id: "pis-cst", rotulo: "CST PIS" },
+  { campo: "cofins_situacao_tributaria", id: "cofins-cst", rotulo: "CST COFINS" }
+] as const satisfies readonly { campo: keyof TributacaoDoItem; id: string; rotulo: string }[];
+
 export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -263,6 +278,45 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
       ),
     [dropNaturezaOp, destinoFiscal, ufEmitente, naturezasCatalogo]
   );
+
+  // A TRIBUTAÇÃO DOS ITENS TAMBÉM VEM DA NATUREZA — mesma linha do catálogo que
+  // deu o CFOP. Não depende de UF: imposto não muda por cruzar fronteira.
+  //
+  // `null` = natureza fora do catálogo, nada a derivar. Campos `null` DENTRO do
+  // retorno = o catálogo achou a linha e ela diz que não decide (5202/6202).
+  const tributacaoDerivada = useMemo(
+    () => tributacaoDaNatureza(dropNaturezaOp, naturezasCatalogo),
+    [dropNaturezaOp, naturezasCatalogo]
+  );
+
+  // A natureza escolhida é uma em que o catálogo NÃO decide a tributação. Aí os
+  // campos nascem vazios de propósito, não há divergência a marcar (não há
+  // padrão do qual divergir) e a emissão fica barrada até alguém informar.
+  const naturezaSemTributacaoPadrao = Boolean(
+    tributacaoDerivada &&
+      tributacaoDerivada.icms_situacao_tributaria === null &&
+      tributacaoDerivada.pis_situacao_tributaria === null &&
+      tributacaoDerivada.cofins_situacao_tributaria === null
+  );
+
+  /** Qual item está com o painel de tributação aberto. Fechado por padrão. */
+  const [itemTribAberto, setItemTribAberto] = useState<string | null>(null);
+
+  /**
+   * O valor difere do padrão da natureza?
+   *
+   * SEM PADRÃO, NÃO HÁ DIVERGÊNCIA. Vale para 5202/6202, onde o catálogo diz
+   * que não decide, e para natureza fora do catálogo. Marcar ali seria marcar
+   * sempre — o que esvazia a marcação em vez de informar.
+   */
+  const divergeDoPadrao = useCallback(
+    (campo: keyof TributacaoDoItem, valor: string | null | undefined): boolean => {
+      const padrao = tributacaoDerivada?.[campo] ?? null;
+      if (padrao === null) return false;
+      return String(valor ?? "").trim() !== padrao;
+    },
+    [tributacaoDerivada]
+  );
   const [finalidadeEmissao, setFinalidadeEmissao] = useState(1);
   const [consumidorFinal, setConsumidorFinal] = useState(1);
   const [presencaComprador, setPresencaComprador] = useState(2);
@@ -279,6 +333,17 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
 
   // Editable items state
   const [editedItems, setEditedItems] = useState<Partial<SupabaseNfeItemRow>[]>([]);
+
+  /** Algum dos três campos do item saiu do padrão — alimenta o ponto no botão. */
+  const itemTemDivergencia = useCallback(
+    (item: SupabaseNfeItemRow): boolean => {
+      const editado = editedItems.find((it) => it.id === item.id);
+      return CAMPOS_TRIBUTACAO.some(({ campo }) =>
+        divergeDoPadrao(campo, editado?.[campo] ?? item[campo])
+      );
+    },
+    [editedItems, divergeDoPadrao]
+  );
   // Editable payments state
   const [editedPagamentos, setEditedPagamentos] = useState<Partial<SupabaseNfePagamentoRow>[]>([]);
 
@@ -556,6 +621,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
         descricao: it.descricao,
         ncm: it.ncm,
         cfop: it.cfop,
+        // Sem estes três aqui, editar a tributação não teria onde morar — e o
+        // salvamento em lote não teria o que mandar.
+        icms_situacao_tributaria: it.icms_situacao_tributaria,
+        pis_situacao_tributaria: it.pis_situacao_tributaria,
+        cofins_situacao_tributaria: it.cofins_situacao_tributaria,
         unidade_comercial: it.unidade_comercial,
         quantidade: it.quantidade,
         valor_unitario: it.valor_unitario,
@@ -929,7 +999,8 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           valor_total_nf: note.valor_total_nf,
           peso_liquido: pesoLiquido,
           informacoes_complementares: infoComplementares,
-          created_at: note.created_at
+          created_at: note.created_at,
+          naturezaSemTributacaoPadrao
         },
         /*
           A conferência precisa do item INTEIRO. `editedItems` só carrega o que
@@ -1279,10 +1350,23 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           valor_bruto: valorBruto,
           quantidade_tributavel: qty,
           valor_unitario_tributavel: price,
+          // Tributacao da natureza da nota, nao mais literal. Sem natureza
+          // reconhecida, acompanha os itens que ja estao la -- mesma ordem de
+          // precedencia do CFOP, e pelo mesmo motivo: o item novo nao pode ser
+          // o unico fora do lugar. `icms_origem` segue fixo no codigo.
           icms_origem: 0,
-          icms_situacao_tributaria: "102",
-          pis_situacao_tributaria: "99",
-          cofins_situacao_tributaria: "99",
+          icms_situacao_tributaria:
+            tributacaoDerivada?.icms_situacao_tributaria ??
+            items[0]?.icms_situacao_tributaria ??
+            null,
+          pis_situacao_tributaria:
+            tributacaoDerivada?.pis_situacao_tributaria ??
+            items[0]?.pis_situacao_tributaria ??
+            null,
+          cofins_situacao_tributaria:
+            tributacaoDerivada?.cofins_situacao_tributaria ??
+            items[0]?.cofins_situacao_tributaria ??
+            null,
           ativo: true,
           peso_unitario_gramas: peso,
           peso_total_gramas: qty * peso,
@@ -1425,6 +1509,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           // CFOP nao entra aqui: e da nota, escrito de uma vez em
           // `updateNfeDraft`. Salvar um item nao pode mover o CFOP dele
           // sozinho -- era por aqui que dois itens da mesma nota divergiam.
+          //
+          // A TRIBUTACAO ENTRA, e a assimetria e proposital: o CFOP e unico por
+          // nota, a tributacao e por item e editavel. Sao regras diferentes
+          // para campos diferentes.
+          //
+          // `?? ""` e nao `|| padrao`: vazio aqui e um estado legitimo -- e o
+          // que a devolucao de saida guarda ate o usuario decidir -- e a
+          // pendencia e quem barra a emissao.
+          icms_situacao_tributaria: edited.icms_situacao_tributaria ?? orig.icms_situacao_tributaria ?? "",
+          pis_situacao_tributaria: edited.pis_situacao_tributaria ?? orig.pis_situacao_tributaria ?? "",
+          cofins_situacao_tributaria:
+            edited.cofins_situacao_tributaria ?? orig.cofins_situacao_tributaria ?? "",
           peso_unitario_gramas: pesoUnit,
           peso_total_gramas: pesoTotal
         };
@@ -1880,6 +1976,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
     // Abre o bloco e leva até ele; o campo, quando existe, recebe o foco.
     irParaBloco(pendencia.destino.bloco);
 
+    // Os três campos de tributação vivem num painel FECHADO por padrão — sem
+    // isto, o elemento não existe no DOM e o foco abaixo não acha nada. Era o
+    // que acontecia com ITEM_SEM_ICMS_CST e as duas irmãs antes deste painel:
+    // a aba abria e a navegação morria ali.
+    const campoAlvo = pendencia.destino.campo ?? "";
+    if (
+      pendencia.destino.idItem &&
+      CAMPOS_TRIBUTACAO.some(({ id }) => campoAlvo.endsWith(id))
+    ) {
+      setItemTribAberto(pendencia.destino.idItem);
+    }
+
     const campo = pendencia.destino.campo;
     if (!campo) return;
     // O conteúdo do bloco só existe no DOM depois do render seguinte.
@@ -2148,17 +2256,44 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           // Os dois campos saem do catalogo, nunca de literal.
                           setNaturezaOperacao(escolhida ? escolhida.natureza : "");
 
-                          // O CFOP de TODOS os itens acompanha, na hora. Um
-                          // valor so, aplicado a lista inteira: nao ha como
-                          // sair daqui com itens discordando entre si.
+                          // O CFOP e a TRIBUTACAO de TODOS os itens acompanham,
+                          // na hora. Um valor so, aplicado a lista inteira: nao
+                          // ha como sair daqui com itens discordando entre si.
+                          //
+                          // A tributacao precisa acompanhar, e nao so o CFOP:
+                          // trocar venda por devolucao e deixar 102 nos itens
+                          // manteria o campo preenchido, e o bloqueio de emissao
+                          // -- que so olha campo vazio -- nunca dispararia.
                           const novoCfop = cfopDaNatureza(
                             e.target.value,
                             destinoFiscal?.uf ?? "",
                             ufEmitente,
                             naturezasCatalogo
                           );
-                          if (novoCfop) {
-                            setEditedItems((prev) => prev.map((it) => ({ ...it, cfop: novoCfop })));
+                          const novaTributacao = tributacaoDaNatureza(
+                            e.target.value,
+                            naturezasCatalogo
+                          );
+                          if (novoCfop || novaTributacao) {
+                            setEditedItems((prev) =>
+                              prev.map((it) => ({
+                                ...it,
+                                ...(novoCfop ? { cfop: novoCfop } : {}),
+                                ...(novaTributacao
+                                  ? {
+                                      // `null` do catalogo vira "" na tela: e o
+                                      // campo em branco que o operador precisa
+                                      // preencher, e o que a pendencia enxerga.
+                                      icms_situacao_tributaria:
+                                        novaTributacao.icms_situacao_tributaria ?? "",
+                                      pis_situacao_tributaria:
+                                        novaTributacao.pis_situacao_tributaria ?? "",
+                                      cofins_situacao_tributaria:
+                                        novaTributacao.cofins_situacao_tributaria ?? ""
+                                    }
+                                  : {})
+                              }))
+                            );
                           }
                         }}
                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white outline-none focus:border-[#0b2f4a]"
@@ -2204,14 +2339,6 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           continua aí até você trocar.
                         </p>
                       )}
-                      {/* Aviso do FILTRO PROVISÓRIO. A lista mostra só as naturezas
-                          de venda porque a tributação do item é fixa em CSOSN 102 —
-                          o porquê inteiro está no cabeçalho de `getNaturezasOperacaoNfe`.
-                          Remover este bloco junto com o filtro de lá. */}
-                      <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-relaxed">
-                        Remessa, outra saída e devolução ainda não estão disponíveis: dependem de
-                        definição fiscal da tributação do item.
-                      </p>
                     </>
                   )}
                 </div>
@@ -2752,7 +2879,7 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     <th className="px-3 py-3 w-28 whitespace-nowrap align-middle text-center">NCM</th>
                     <th className="px-3 py-3 w-24 whitespace-nowrap align-middle text-center">CFOP</th>
                     <th className="px-3 py-3 w-32 whitespace-nowrap align-middle text-right">Peso total (g)</th>
-                    <th className="px-3 py-3 w-36 whitespace-nowrap align-middle text-center">Ações</th>
+                    <th className="px-3 py-3 w-52 whitespace-nowrap align-middle text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -2764,8 +2891,12 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                     const pesoTotal = edited?.peso_total_gramas !== undefined ? Number(edited.peso_total_gramas) : (qty * (item.peso_unitario_gramas || 0));
                     const isDirty = hasUnsavedChanges(item);
 
+                    const tribAberta = itemTribAberto === item.id;
+                    const tribDiverge = itemTemDivergencia(item);
+
                     return (
-                      <tr key={item.id} className={isDirty ? "bg-amber-55/40 hover:bg-amber-55/60 transition duration-150" : "hover:bg-slate-50/50 transition duration-150"}>
+                      <Fragment key={item.id}>
+                      <tr className={isDirty ? "bg-amber-55/40 hover:bg-amber-55/60 transition duration-150" : "hover:bg-slate-50/50 transition duration-150"}>
                         <td className="px-3 py-2.5 font-mono text-xs text-slate-500 align-middle text-center">{item.numero_item}</td>
                         <td className="px-3 py-2.5 align-middle">
                           <input
@@ -2926,8 +3057,31 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                           />
                         </td>
                         <td className="px-3 py-2.5 text-center align-middle whitespace-nowrap">
-                          {!isReadOnly ? (
-                            <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* Tributacao fica FORA da tabela: ela ja rola na
+                                horizontal, e o caso comum -- venda no padrao --
+                                nao precisa ver nada. Painel fechado, e o ponto
+                                ambar so aparece quando algo saiu do padrao. */}
+                            <button
+                              type="button"
+                              onClick={() => setItemTribAberto(tribAberta ? null : item.id)}
+                              title="Situação tributária do item"
+                              className={`relative inline-flex items-center rounded-lg border text-[11px] font-bold px-2.5 py-1.5 transition ${
+                                tribAberta
+                                  ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                                  : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                              }`}
+                            >
+                              CST
+                              {tribDiverge && (
+                                <span
+                                  aria-label="tributação alterada"
+                                  className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white"
+                                />
+                              )}
+                            </button>
+                            {!isReadOnly && (
+                              <>
                               <button
                                 type="button"
                                 onClick={() => handleSaveItem(item.id)}
@@ -2947,12 +3101,86 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
                               >
                                 Excluir
                               </button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-400 font-medium italic">Sem ações</span>
-                          )}
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
+
+                      {tribAberta && (
+                        <tr className="bg-slate-50/70">
+                          <td colSpan={10} className="px-4 py-4 border-b border-slate-100">
+                            <div className="flex flex-wrap items-start gap-6">
+                              <div className="min-w-[10rem]">
+                                <p className="text-xs font-bold text-slate-700">Situação tributária</p>
+                                <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5">
+                                  Item {item.numero_item}. Vem da natureza da operação; pode ser
+                                  ajustada aqui.
+                                </p>
+                              </div>
+
+                              {CAMPOS_TRIBUTACAO.map(({ campo, id, rotulo }) => {
+                                const editado = editedItems.find((it) => it.id === item.id);
+                                const valor = String(editado?.[campo] ?? item[campo] ?? "");
+                                const alterado = divergeDoPadrao(campo, valor);
+                                const padrao = tributacaoDerivada?.[campo] ?? null;
+
+                                return (
+                                  <div key={id} className="space-y-1">
+                                    <label
+                                      htmlFor={campoDoItem(item.id, id)}
+                                      className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider"
+                                    >
+                                      {rotulo}
+                                      {alterado && (
+                                        <span className="ml-1.5 normal-case tracking-normal text-amber-700 font-bold">
+                                          alterado
+                                        </span>
+                                      )}
+                                    </label>
+                                    {isReadOnly ? (
+                                      <p className="w-24 px-2 py-1.5 text-xs font-mono text-slate-700">
+                                        {valor || "—"}
+                                      </p>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        maxLength={4}
+                                        id={campoDoItem(item.id, id)}
+                                        value={valor}
+                                        onChange={(e) => {
+                                          const novo = e.target.value.replace(/\D/g, "");
+                                          setEditedItems((prev) =>
+                                            prev.map((it) =>
+                                              it.id === item.id ? { ...it, [campo]: novo } : it
+                                            )
+                                          );
+                                        }}
+                                        className={`w-24 rounded-lg px-2 py-1.5 text-xs font-mono text-center outline-none transition border ${
+                                          alterado
+                                            ? "border-amber-400 bg-amber-50 focus:border-amber-500"
+                                            : "border-slate-200 bg-white focus:border-[#0b2f4a]"
+                                        }`}
+                                      />
+                                    )}
+                                    <p className="text-[10px] text-slate-400 h-3">
+                                      {padrao !== null ? "padrão " + padrao : ""}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+
+                              {naturezaSemTributacaoPadrao && (
+                                <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-relaxed max-w-xs">
+                                  Devolução espelha a nota de origem: o catálogo não define a
+                                  tributação, e a emissão fica bloqueada até você informar.
+                                </p>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>

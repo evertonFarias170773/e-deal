@@ -91,6 +91,18 @@ export interface NotaParaPendencias {
   informacoes_complementares?: Texto;
   /** Data de emissão usada na conferência de vencimento (ISO). */
   created_at?: string | null;
+  /**
+   * A natureza escolhida é uma em que o CATÁLOGO NÃO DECIDE a tributação —
+   * hoje, a devolução de saída (5202/6202).
+   *
+   * Só muda o TEXTO das pendências de CST: o impeditivo é o mesmo, campo vazio
+   * continua barrando a emissão. Serve para o operador não procurar um erro de
+   * cadastro onde o que falta é uma decisão dele.
+   *
+   * Vem calculado de fora — este módulo não conhece o catálogo e não vai
+   * conhecer: ele confere um rascunho, não consulta tabela.
+   */
+  naturezaSemTributacaoPadrao?: boolean | null;
 }
 
 export interface ItemParaPendencias {
@@ -500,14 +512,23 @@ export function levantarPendencias(rascunho: RascunhoParaPendencias): Pendencia[
     if (vazio(item.icms_origem)) {
       impede("ITEM_SEM_ICMS_ORIGEM", "Itens", `${rotulo} sem origem do ICMS.`, destinoItem("icms-origem"));
     }
+    // Campo vazio barra a emissão do mesmo jeito nos dois casos. O que muda é o
+    // texto: na devolução o vazio é esperado, e o operador precisa saber que a
+    // resposta está na nota de origem, não no cadastro.
+    const espelhaOrigem = nota.naturezaSemTributacaoPadrao === true;
+    const faltaCst = (imposto: string) =>
+      espelhaOrigem
+        ? `${rotulo} sem ${imposto}. A devolução espelha a nota de origem: informe a situação tributária que consta nela.`
+        : `${rotulo} sem situação tributária do ${imposto}.`;
+
     if (vazio(item.icms_situacao_tributaria)) {
-      impede("ITEM_SEM_ICMS_CST", "Itens", `${rotulo} sem situação tributária do ICMS.`, destinoItem("icms-cst"));
+      impede("ITEM_SEM_ICMS_CST", "Itens", faltaCst("ICMS"), destinoItem("icms-cst"));
     }
     if (vazio(item.pis_situacao_tributaria)) {
-      impede("ITEM_SEM_PIS_CST", "Itens", `${rotulo} sem situação tributária do PIS.`, destinoItem("pis-cst"));
+      impede("ITEM_SEM_PIS_CST", "Itens", faltaCst("PIS"), destinoItem("pis-cst"));
     }
     if (vazio(item.cofins_situacao_tributaria)) {
-      impede("ITEM_SEM_COFINS_CST", "Itens", `${rotulo} sem situação tributária do COFINS.`, destinoItem("cofins-cst"));
+      impede("ITEM_SEM_COFINS_CST", "Itens", faltaCst("COFINS"), destinoItem("cofins-cst"));
     }
 
     // vw_nfe_itens_conferencia_valores: bruto x (qtd x unitário), comercial e tributável.
