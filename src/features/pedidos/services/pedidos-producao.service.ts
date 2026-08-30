@@ -137,11 +137,20 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
 
   // Itens do pedido + cadastro do produto: o setor de produção é do cadastro
   // (produtos.setor_pcp), e é ele que diz quantos setores a OS tem.
-  let itens: { id_int: number; id_produto: number | null; nome_produto: string | null; is_estoque: boolean | null }[] = [];
+  let itens: {
+    id_int: number;
+    id_produto: number | null;
+    nome_produto: string | null;
+    is_estoque: boolean | null;
+    status_item: string | null;
+  }[] = [];
   try {
     const { data: itensRows } = await client
       .from("produtos_proposta")
-      .select("id_int, id_produto, nome_produto, is_estoque")
+      // `status_item` entrou junto com o prazo (30/08/2026): o cálculo do prazo
+      // descarta item CANCELADO, exatamente como `calcularDataLimitePorProdutos`
+      // faz no boletim. Mesma consulta, nenhuma a mais.
+      .select("id_int, id_produto, nome_produto, is_estoque, status_item")
       .in("id_int", idInts);
     if (itensRows) itens = itensRows;
   } catch (error) {
@@ -153,16 +162,21 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
   );
   const setorPorProduto = new Map<number, string>();
   const estoquePorProduto = new Map<number, boolean>();
+  // Texto CRU de `produtos.prazo` — a mesma fonte que o boletim lê. Vai para a
+  // linha da lista para as acoes de impressao poderem derivar o prazo da OS que
+  // criam, sem consulta extra: `prazo` entrou no SELECT que ja existia.
+  const prazoPorProduto = new Map<number, string>();
   if (idsProduto.length > 0) {
     try {
       const { data: produtosRows } = await client
         .from("produtos")
-        .select("id_produto, setor_pcp, is_estoque")
+        .select("id_produto, setor_pcp, is_estoque, prazo")
         .in("id_produto", idsProduto);
       for (const linha of produtosRows ?? []) {
         const id = Number(linha.id_produto);
         if (linha.setor_pcp) setorPorProduto.set(id, String(linha.setor_pcp));
         estoquePorProduto.set(id, linha.is_estoque === true);
+        if (linha.prazo) prazoPorProduto.set(id, String(linha.prazo));
       }
     } catch (error) {
       console.warn("[pedidos-producao.service] Erro ao buscar setor dos produtos");
@@ -236,6 +250,18 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       };
     });
 
+    /**
+     * Textos de `produtos.prazo` dos itens ATIVOS desta proposta, na ordem em
+     * que aparecem. Cru, sem interpretar — quem interpreta e `prazo-producao.ts`.
+     * Item cancelado fora, igual ao filtro de `calcularDataLimitePorProdutos`;
+     * item sem produto de cadastro ou com prazo vazio simplesmente nao entra.
+     */
+    const prazosDosProdutos = itens
+      .filter((i) => i.id_int === idInt)
+      .filter((i) => String(i.status_item || "PENDENTE").toUpperCase() !== "CANCELADO")
+      .map((i) => (i.id_produto !== null ? prazoPorProduto.get(Number(i.id_produto)) : undefined))
+      .filter((texto): texto is string => Boolean(texto && texto.trim()));
+
     const osDestaProposta = osDados.find(o => o.id_int === idInt);
     const dataTermino = osDestaProposta && osDestaProposta.data_termino
       ? osDestaProposta.data_termino
@@ -264,6 +290,7 @@ export async function listarPedidosOperacionais(): Promise<PropostaOperacionalLi
       // Mesma regra do detalhe: sem promessa gravada, ausência — não string
       // vazia, que virava `new Date("")` e "Invalid Date" no Kanban e no painel.
       dataPrevistaEntrega: dataTermino,
+      prazosDosProdutos,
       valorTotal: Number(p.valor_total) || 0,
       urgente: false,
       produto_principal: nomeEvento,

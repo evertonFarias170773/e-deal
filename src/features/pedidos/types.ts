@@ -251,6 +251,18 @@ export interface PropostaOperacionalListItem {
    * imprimir.
    */
   hasPedidoOs: boolean;
+  /**
+   * Textos crus de `produtos.prazo` dos itens ativos da proposta.
+   *
+   * Existe para as ações de impressão poderem derivar `propostas_os.data_termino`
+   * quando CRIAM a OS — antes ela nascia sem prazo e a coluna DATA ENTREGA ficava
+   * vazia. Vem do mesmo SELECT em lote que a lista já fazia, sem consulta a mais.
+   *
+   * Cru de propósito: quem interpreta é `prazo-producao.ts`, a mesma regra do
+   * boletim. Vazio quando nenhum item tem produto de cadastro com prazo — e aí
+   * a OS nasce sem prazo, como hoje.
+   */
+  prazosDosProdutos: string[];
   isLegado: boolean;
   osId?: string;
   status_pedido?: PedidoStatus | string;

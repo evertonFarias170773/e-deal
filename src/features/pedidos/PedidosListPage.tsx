@@ -28,6 +28,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import { devolverPropostaParaRevisaoAtendente } from "@/features/orcamentos/services/orcamentos.service";
 import { DevolverRevisaoModal } from "./components/DevolverRevisaoModal";
 import { criarPedidoParaBoletim } from "./services/boletim-propostas.service";
+import { dataLimitePorPrazosOuNulo } from "./prazo-producao";
 
 import type { PropostaOperacionalListItem, SetorDoPedido } from "./types";
 import { useRouter } from "next/navigation";
@@ -146,16 +147,29 @@ export function PedidosListPage() {
      * BOLETIM_ELIGIBLE_STATUSES, e chamar sempre quebraria a impressão de
      * pedido já entregue/faturado — que hoje funciona.
      *
-     * Fica sem preencher o que não é derivável e nenhum default inventaria:
-     * prazo (`data_termino`), o boletim de setor (`propostas_os_setores`) e as
-     * orientações (`obs`). O PDF sai com prazo "-", sem filtro de setor e com
-     * os blocos de orientação vazios — tudo isso o boletim preenche depois.
+     * O PRAZO PASSOU A SER DERIVÁVEL (30/08/2026). Ele saía nulo aqui, e a OS
+     * nascia sem promessa: a coluna DATA ENTREGA ficava vazia até alguém abrir o
+     * boletim. Agora vem da MESMA regra que o boletim usa — `prazo-producao.ts`,
+     * extraído de `BoletimFormPage` justamente para os dois compartilharem uma
+     * conta só, sem duplicar o regex nem a regra de dias úteis. Os textos de
+     * `produtos.prazo` chegam na própria linha da lista, do SELECT em lote que
+     * já existia: nenhuma consulta a mais por clique.
+     *
+     * `dataLimitePorPrazosOuNulo`, e não `dataLimitePorPrazos`: sem prazo legível
+     * em nenhum item, grava NULL. O `hoje + 7` da irmã é o default do formulário,
+     * que o operador vê e corrige antes de salvar — aqui não há ninguém para
+     * conferir, e ele viraria promessa inventada.
+     *
+     * Segue sem preencher o que continua não sendo derivável: o boletim de setor
+     * (`propostas_os_setores`) e as orientações (`obs`). O PDF sai sem filtro de
+     * setor e com os blocos de orientação vazios — isso o boletim preenche depois.
      */
     if (!proposta.hasPedidoOs) {
       const criacao = await criarPedidoParaBoletim({
         id_int: proposta.id_int,
         descricao: `${proposta.clienteNome} - Boletim de entrada`,
-        obs: null
+        obs: null,
+        data_termino: dataLimitePorPrazosOuNulo(proposta.prazosDosProdutos) ?? undefined
       });
       if (!criacao.success) {
         setPrintingOsId(null);
