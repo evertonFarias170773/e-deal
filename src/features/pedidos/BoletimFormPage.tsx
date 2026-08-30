@@ -1590,10 +1590,30 @@ export function BoletimFormPage() {
         const avanco = await avancarStatusParaEmProducao(Number(idIntParam));
         if (avanco.statusInterno) setStatusProposta(avanco.statusInterno);
 
+        // VOLTA PARA A LISTA DE PRODUÇÃO (30/08/2026).
+        //
+        // Salvar era um beco: gravava e deixava o operador na mesma tela, sem
+        // sinal de que a OS já estava em ordem. O destino é `/pedidos` — a lista
+        // de OS da Produção, a mesma do link "Voltar" do cabeçalho e a mesma
+        // para onde a confirmação de revisão já leva.
+        //
+        // NÃO REDIRECIONA NA ABA REVISÃO. Ali o "Salvar Alterações" do cabeçalho
+        // continua visível, mas ele NÃO grava volume, tipo de volume nem peso
+        // bruto — esses campos só são persistidos por "Confirmar revisão e
+        // liberar para Expedição" (`salvarRevisaoGeral`). Sair da tela no save
+        // levaria embora o que foi digitado ali, sem chance de confirmar.
+        // Enquanto a aba existir, ela fica de fora do redirecionamento.
+        //
+        // O erro continua sem redirecionar: o `catch` abaixo mostra a mensagem e
+        // mantém o operador na tela com o que ele digitou.
+        const deveVoltarParaLista = !abaExpedicao;
+
         showToast({
           type: "success",
           title: "Boletim salvo",
-          description: "Orientações e especificações técnicas gravadas. Você continua nesta OS."
+          description: deveVoltarParaLista
+            ? "Orientações e especificações técnicas gravadas. Voltando para a lista de Produção."
+            : "Orientações e especificações técnicas gravadas. Você continua nesta OS."
         });
 
         // Recarrega os boletins para a aba recém-criada deixar de ser "a abrir".
@@ -1602,6 +1622,12 @@ export function BoletimFormPage() {
           setBoletins(atualizados);
           const desteSetor = atualizados.find((b) => normalizarSetor(b.setor) === normalizarSetor(setorEfetivo));
           if (desteSetor) setBoletimId(desteSetor.id);
+        }
+
+        // Mesmo compasso da confirmação de revisão: o toast aparece antes de a
+        // navegação trocar a tela.
+        if (deveVoltarParaLista) {
+          window.setTimeout(() => router.push("/pedidos"), 900);
         }
       } catch (error) {
         console.error("Erro ao processar atualização do boletim:", error);
@@ -1825,7 +1851,11 @@ export function BoletimFormPage() {
           type="submit"
           disabled={loadingDetails}
           title={isEditing ? "Salvar alterações desta OS" : "Salvar boletim"}
-          className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3.5 text-sm font-bold text-white shadow-xl shadow-emerald-700/25 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+          /* MAIOR PARA O CHÃO DE FÁBRICA (30/08/2026): px-5 py-3.5 text-sm →
+             px-8 py-5 text-base. A caixa cresce ~60% em área — a altura sai de
+             ~48px para ~64px e a largura ganha os 24px do padding —, sem trocar
+             cor, ícone, estados ou a posição flutuante. */
+          className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-2xl bg-emerald-600 px-8 py-5 text-base font-bold text-white shadow-xl shadow-emerald-700/25 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Save className="h-4 w-4" />
           {loadingDetails ? "Salvando..." : isEditing ? "Salvar Alterações" : "Salvar Boletim"}
