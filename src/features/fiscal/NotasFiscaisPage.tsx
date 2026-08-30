@@ -944,6 +944,16 @@ export function NotasFiscaisPage() {
     }
   }
 
+  /**
+   * A nota e AVULSA — nao nasceu de pedido.
+   *
+   * O sinal e o `id_int` negativo, que vem da sequence dedicada. Nenhuma
+   * proposta tem id_int negativo, entao o teste nao tem falso positivo.
+   */
+  function ehNotaAvulsa(idInt: number | null | undefined): boolean {
+    return Number(idInt) < 0;
+  }
+
   function getEmpresaName(id: number) {
     if (id === 1) return "INGRESSO IDEAL";
     if (id === 2) return "BIRÔ IDEAL";
@@ -2134,7 +2144,9 @@ export function NotasFiscaisPage() {
                 header: "Pedido",
                 cell: (item) => (
                   <div className="flex flex-col">
-                    <span className="font-medium text-slate-950">#{item.id_int}</span>
+                    <span className="font-medium text-slate-950">
+                      {ehNotaAvulsa(item.id_int) ? "Avulsa" : `#${item.id_int}`}
+                    </span>
                     <span className="text-xs text-slate-500 font-mono">{item.ref}</span>
                     <VendedorDoPedido valor={item.vendedor_pedido} />
                   </div>
@@ -2216,7 +2228,9 @@ export function NotasFiscaisPage() {
                       <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-lg text-slate-700">
                         Nº {item.numero_nf ?? "****"}
                       </span>
-                      <span className="text-xs text-slate-500 font-medium">Pedido #{item.id_int} • {item.ref}</span>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {ehNotaAvulsa(item.id_int) ? "Avulsa" : `Pedido #${item.id_int}`} • {item.ref}
+                      </span>
                     </div>
                     <div className="mt-2">
                       <ClienteComSocio

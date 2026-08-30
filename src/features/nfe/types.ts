@@ -89,7 +89,12 @@ export interface SupabaseNfeItemRow {
   ref: string;
   id_int: number;
   id_produtos_proposta: number | null;
-  id_produto: number;
+  /**
+   * `null` quando o item nao tem produto de cadastro por tras — item digitado
+   * a mao. A coluna sempre foi anulavel no banco; o tipo e que dizia o
+   * contrario.
+   */
+  id_produto: number | null;
   numero_item: number;
   codigo_produto: string;
   descricao: string;

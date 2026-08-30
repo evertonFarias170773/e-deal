@@ -1337,7 +1337,11 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           ref: note.ref,
           id_int: note.id_int,
           id_produtos_proposta: null,
-          id_produto: selectedProductId || 0,
+          // NULO quando nao ha produto escolhido. Antes ia `0`, que nao existe
+          // em `produtos` -- a busca da trigger nao achava nada e ela saia pelo
+          // "produto nao encontrado" em vez da porta da frente. Mesmo desfecho,
+          // mas por acidente.
+          id_produto: selectedProductId || null,
           numero_item: nextItemNum,
           codigo_produto: newItemCodigo || "MANUAL",
           descricao: newItemDesc,
@@ -1371,7 +1375,18 @@ export function NfeDetailPage({ noteId }: NfeDetailPageProps) {
           peso_unitario_gramas: peso,
           peso_total_gramas: qty * peso,
           observacao: newItemObs,
-          origem_item: null
+          // ORIGEM EXPLICITA QUANDO NAO HA PRODUTO -- e o insert dependia disso
+          // sem ninguem saber.
+          //
+          // `origem_item` e NOT NULL com default 'PROPOSTA', e NULL EXPLICITO
+          // nao aciona default: viola o NOT NULL. Quem salvava era a trigger
+          // `fn_autopreencher_fiscal_nfe_item`, que grava 'AVULSO' no fim --
+          // mas ela SAI CEDO quando nao acha o produto. Resultado: item manual
+          // COM produto entrava; item manual SEM produto quebrava o insert, com
+          // um toast generico de falha. E justamente o caso da nota avulsa.
+          //
+          // Com produto, segue vindo da trigger, como sempre veio.
+          origem_item: selectedProductId ? null : "AVULSO"
         };
 
         const res = await insertNfeItem(itemPayload);
