@@ -210,6 +210,33 @@ function generateUniqueId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
 }
 
+/**
+ * A aba "Revisão / pedido inteiro" saiu da interface em 30/08/2026: a revisão
+ * de expedição passou a ser tratada por outro sistema, com outro mantenedor.
+ *
+ * O QUE FOI DESLIGADO É SÓ A ABA. O bloco que ela renderizava (CONFERÊNCIA,
+ * VOLUME E PESO DO PEDIDO, pendências e "Confirmar revisão e liberar para
+ * Expedição") continua inteiro logo abaixo, sob `abaExpedicao`, e
+ * `revisao-expedicao.service.ts` também — inalcançáveis pela UI, não deletados.
+ * Nenhum dado gravado em `expedicoes` ou `propostas_os_setores` foi tocado, e
+ * quem lê peso e volumes (etiqueta, prepostagem dos Correios, recotação, NF-e)
+ * segue lendo.
+ *
+ * `abaExpedicao` nasce `false` e o ÚNICO `setAbaExpedicao(true)` do código é o
+ * botão desta aba — não há query param, deep link, atalho ou outra tela que o
+ * alcance. Com a aba oculta, o estado fica permanentemente falso.
+ *
+ * SAÍDA PARA A EXPEDIÇÃO NÃO DEPENDIA DAQUI: o botão "Marcar pronto" da tela de
+ * Expedição chama a mesma `marcarPronto`, e continua funcionando.
+ *
+ * Tipada como `boolean`, e não como o literal `false`, de propósito: mantém o
+ * JSX abaixo sob verificação de tipo em vez de virar código morto para o
+ * compilador. Voltar a exibir é trocar para `true` — e, se isso acontecer, o
+ * redirecionamento do "Salvar Alterações" precisa voltar a ser condicionado
+ * (ver o comentário em `handleSubmit`).
+ */
+const ABA_REVISAO_VISIVEL: boolean = false;
+
 export function BoletimFormPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1597,23 +1624,19 @@ export function BoletimFormPage() {
         // de OS da Produção, a mesma do link "Voltar" do cabeçalho e a mesma
         // para onde a confirmação de revisão já leva.
         //
-        // NÃO REDIRECIONA NA ABA REVISÃO. Ali o "Salvar Alterações" do cabeçalho
-        // continua visível, mas ele NÃO grava volume, tipo de volume nem peso
-        // bruto — esses campos só são persistidos por "Confirmar revisão e
-        // liberar para Expedição" (`salvarRevisaoGeral`). Sair da tela no save
-        // levaria embora o que foi digitado ali, sem chance de confirmar.
-        // Enquanto a aba existir, ela fica de fora do redirecionamento.
+        // SEMPRE. A ressalva anterior era a aba Revisão, onde o save do cabeçalho
+        // não gravava volume nem peso bruto e sair da tela descartaria o que
+        // tinha sido digitado. Com a aba desligada por `ABA_REVISAO_VISIVEL`
+        // (30/08/2026), `abaExpedicao` não tem mais como ficar verdadeiro e a
+        // condição virava sempre a mesma. Se a aba voltar, este guard volta com
+        // ela.
         //
         // O erro continua sem redirecionar: o `catch` abaixo mostra a mensagem e
         // mantém o operador na tela com o que ele digitou.
-        const deveVoltarParaLista = !abaExpedicao;
-
         showToast({
           type: "success",
           title: "Boletim salvo",
-          description: deveVoltarParaLista
-            ? "Orientações e especificações técnicas gravadas. Voltando para a lista de Produção."
-            : "Orientações e especificações técnicas gravadas. Você continua nesta OS."
+          description: "Orientações e especificações técnicas gravadas. Voltando para a lista de Produção."
         });
 
         // Recarrega os boletins para a aba recém-criada deixar de ser "a abrir".
@@ -1626,9 +1649,7 @@ export function BoletimFormPage() {
 
         // Mesmo compasso da confirmação de revisão: o toast aparece antes de a
         // navegação trocar a tela.
-        if (deveVoltarParaLista) {
-          window.setTimeout(() => router.push("/pedidos"), 900);
-        }
+        window.setTimeout(() => router.push("/pedidos"), 900);
       } catch (error) {
         console.error("Erro ao processar atualização do boletim:", error);
         showToast({
@@ -2220,7 +2241,10 @@ export function BoletimFormPage() {
                       {/* Revisão não é setor: confere o pedido inteiro e o libera para a Expedição. */}
                       {/* ...mas ela segue só na edição: libera o pedido para a Expedição,
                           e isso não é ação de quem está abrindo a OS. */}
-                      {isEditing && (
+                      {/* DESLIGADA EM 30/08/2026 por `ABA_REVISAO_VISIVEL` — ver o
+                          comentário da constante, no topo do arquivo. O botão fica
+                          aqui, apenas não é mais renderizado. */}
+                      {ABA_REVISAO_VISIVEL && isEditing && (
                       <button
                         type="button"
                         onClick={() => setAbaExpedicao(true)}
