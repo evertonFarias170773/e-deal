@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer } from "lucide-react";
+import { CalendarDays, CreditCard, FileText, Search, WalletCards, MessageSquare, Paperclip, Palette, Printer, Link as LinkIcon } from "lucide-react";
 import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -18,6 +18,7 @@ import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerra
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
+import { buscarEstagioArteDasPropostas, type EstagioArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import {
   gerarPDFProposta,
   duplicarProposta,
@@ -245,6 +246,29 @@ function ehLiberada(item: { status?: string | null }): boolean {
 
 function sumPropostaTotal(items: OrcamentoListItem[]) {
   return items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+}
+
+/**
+ * Cor do selo da coluna "Status Arte". Mesmo formato do `StatusBadge`, mas
+ * texto CRU: o estagio aparece exatamente como a regra o nomeia. Passar por
+ * `humanizeStatus` deixaria "Aguardando" e "Aprovado" traduzidos ao lado de
+ * "AGUARDANDO_APROVACAO" e "EM ALTERACAO", que nao estao no mapa dele.
+ */
+const ESTAGIO_ARTE_CLASSE: Record<EstagioArte, string> = {
+  AGUARDANDO: "border-sky-200 bg-sky-50 text-sky-800",
+  AGUARDANDO_APROVACAO: "border-orange-200 bg-orange-50 text-orange-700",
+  "EM ALTERACAO": "border-red-200 bg-red-50 text-red-700",
+  APROVADO: "border-teal-200 bg-teal-50 text-teal-700"
+};
+
+/**
+ * O botao de link so existe onde ha alguem para cobrar: a arte esta com o
+ * cliente (AGUARDANDO_APROVACAO) ou voltou com pedido de mudanca
+ * (EM ALTERACAO). Em AGUARDANDO nao ha o que abrir, e em APROVADO nao ha o que
+ * fazer.
+ */
+function temLinkDeArte(estagio: EstagioArte | null | undefined): boolean {
+  return estagio === "AGUARDANDO_APROVACAO" || estagio === "EM ALTERACAO";
 }
 
 function getStatusTone(status: string) {
@@ -659,6 +683,45 @@ export function OrcamentosListPageReal() {
       ativo = false;
     };
   }, [idsParaRastreio]);
+
+  /**
+   * Estagio da arte das linhas da pagina, para a coluna "Status Arte".
+   *
+   * Consulta a parte pelo mesmo motivo do rastreio: o estagio mora em
+   * `pedidos_modelos.status_arte` e nao ha FK para `propostas`, entao nem o
+   * select da lista nem um embed do PostgREST alcancam. Uma consulta por
+   * pagina, nunca por linha.
+   *
+   * Cobre a PAGINA INTEIRA, como `idsParaRastreio` e nao como `visibleIdInts`:
+   * a coluna renderiza em toda linha, e o corte em 100 do enriquecimento de
+   * chat deixaria a metade de baixo com celula vazia — que aqui significa
+   * "pedido sem modelo", uma informacao errada.
+   */
+  const idsParaEstagioArte = useMemo(
+    () => filteredPropostas.map((p) => p.id_int),
+    [filteredPropostas]
+  );
+  const [estagioArtePorId, setEstagioArtePorId] = useState<Record<number, EstagioArte>>({});
+  const fetchedEstagioArteIdsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const naoBuscados = idsParaEstagioArte.filter((id) => !fetchedEstagioArteIdsRef.current.has(id));
+    if (naoBuscados.length === 0) return;
+    let ativo = true;
+    void (async () => {
+      try {
+        const dados = await buscarEstagioArteDasPropostas(naoBuscados);
+        if (!ativo) return;
+        naoBuscados.forEach((id) => fetchedEstagioArteIdsRef.current.add(id));
+        setEstagioArtePorId((atual) => ({ ...atual, ...dados }));
+      } catch (err) {
+        console.error("[OrcamentosListPageReal] Erro ao buscar estagio da arte das propostas:", err);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsParaEstagioArte]);
 
   /**
    * Socio pagador das linhas da pagina. So entra quem tem `idFaturado`
@@ -1418,6 +1481,50 @@ Ela volta a aparecer nas listas operacionais.`
                 ) : null}
               </div>
             ),
+            align: "center"
+          },
+          {
+            /**
+             * Estagio real da arte, ao lado do Status e sem substitui-lo. O
+             * sufixo " / EM ARTE" do Status diz APENAS que ha arte pendente; em
+             * que pe ela esta — na fila, com o cliente, ou voltou para mudanca
+             * — so se descobria abrindo a proposta.
+             *
+             * Derivado de `pedidos_modelos.status_arte` pelo estagio mais
+             * atrasado do pedido, em `derivarEstagioArte`. NAO le
+             * `pedidos_artes.status`, que achata os tres casos num balde so.
+             */
+            header: "Status Arte",
+            cell: (proposta) => {
+              const estagio = estagioArtePorId[proposta.id_int];
+              // Pedido sem modelo nenhum: nao ha arte para estagiar. Celula
+              // vazia e nenhum botao — diferente de AGUARDANDO, que e "tem
+              // modelo e ele ainda nao andou".
+              if (!estagio) return null;
+
+              return (
+                <div className="flex items-center justify-center gap-1.5">
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${ESTAGIO_ARTE_CLASSE[estagio]}`}
+                  >
+                    {estagio}
+                  </span>
+                  {temLinkDeArte(estagio) ? (
+                    // TODO(link-arte): destino ainda NAO definido. O href fica
+                    // em "#" de proposito — inventar rota, token ou parametro
+                    // aqui produziria um link que leva a lugar nenhum e que
+                    // ninguem lembraria de trocar depois.
+                    <a
+                      href="#"
+                      title="Link da arte (destino ainda nao definido)"
+                      className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1.5 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                    >
+                      <LinkIcon className="h-3.5 w-3.5" />
+                    </a>
+                  ) : null}
+                </div>
+              );
+            },
             align: "center"
           },
           { header: "Valor total", cell: (proposta) => formatCurrency(proposta.total), align: "right" },
