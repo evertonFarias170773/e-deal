@@ -1,3 +1,4 @@
+import { fetchComSessao } from '@/lib/supabase/sessao';
 import type { AIProvider, AIRequest, AIResponse, AIProviderCapabilities } from './ai.types';
 
 // ---------------------------------------------------------------------------
@@ -68,7 +69,7 @@ export class OpenAIProvider implements AIProvider {
       const controller = new AbortController();
       const timeoutId  = setTimeout(() => controller.abort(), 9_000); // 9s > 8s do server
 
-      const response = await fetch('/api/maestro/generate', {
+      const response = await fetchComSessao('/api/maestro/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -56,6 +57,38 @@ async function fetchWithRetry(url: string, headers: HeadersInit, maxRetries = 3)
 }
 
 export async function POST(request: Request) {
+  // Autenticação JWT — o MESMO bloco de gerar-boleto, gerar-pix e gerar-cartao-asas.
+  //
+  // Esta rota consome credencial ou cota da empresa (OpenAI, cnpj.ws, CPFHub) e
+  // respondia sem sessão nenhuma: qualquer pessoa com a URL queimava dinheiro e
+  // cota do fornecedor. Só sessão, sem permissão nova — mesmo nível das rotas de
+  // cobrança. A checagem vem ANTES de qualquer chamada externa.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("[API][VerificacaoCpf] ENV AUSENTE");
+    return NextResponse.json(
+      { success: false, message: "Erro interno no servidor de banco de dados." },
+      { status: 500 }
+    );
+  }
+
+  const authHeader = request.headers.get("authorization") ?? "";
+  const tokenSessao = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!tokenSessao) {
+    return NextResponse.json({ success: false, message: "Sessão não encontrada." }, { status: 401 });
+  }
+
+  const supabaseSessao = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${tokenSessao}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabaseSessao.auth.getUser();
+  if (authError || !authData.user) {
+    return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
+  }
+
   try {
     const { cpf } = await request.json();
 

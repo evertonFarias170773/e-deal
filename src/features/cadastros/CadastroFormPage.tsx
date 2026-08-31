@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { fetchComSessao } from "@/lib/supabase/sessao";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -430,7 +431,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     if (form.tipoCliente !== "CNPJ" || !form.documento || !form.idCliente) return;
     setIsReconsultando(true);
     try {
-      const response = await fetch("/api/cadastros/consultar-documento", {
+      const response = await fetchComSessao("/api/cadastros/consultar-documento", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -738,7 +739,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     let consultaTone: FormMessage["tone"] = "info";
 
     try {
-      const response = await fetch("/api/cadastros/consultar-documento", {
+      const response = await fetchComSessao("/api/cadastros/consultar-documento", {
         method: "POST",
         headers: {
           "content-type": "application/json"

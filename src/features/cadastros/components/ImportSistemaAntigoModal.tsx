@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { X, Sparkles, Loader2, AlertTriangle, CheckCircle } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
+import { fetchComSessao } from "@/lib/supabase/sessao";
 import { validateCadastroInitialStep } from "@/features/cadastros/services/cadastros.service";
 import type { VendedorOption } from "@/features/cadastros/services/cadastros.service";
 
@@ -113,7 +114,7 @@ export function ImportSistemaAntigoModal({
     setConflictLink(null);
 
     try {
-      const response = await fetch("/api/cadastros/importar", {
+      const response = await fetchComSessao("/api/cadastros/importar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rawText: rawText.trim() })

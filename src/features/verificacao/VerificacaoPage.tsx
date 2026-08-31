@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { fetchComSessao } from "@/lib/supabase/sessao";
 import { PageHeader } from "@/components/common/PageHeader";
 import { useAppToast } from "@/components/common/AppToast";
 import { Search, FileText, CheckCircle, HelpCircle, ShieldAlert, ShieldCheck } from "lucide-react";
@@ -99,7 +100,7 @@ export function VerificacaoPage() {
       const endpoint = tipo === "CPF" ? "/api/verificacao/cpf" : "/api/verificacao";
       const bodyPayload = tipo === "CPF" ? { cpf: cleanDoc } : { tipo, documento };
 
-      const response = await fetch(endpoint, {
+      const response = await fetchComSessao(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bodyPayload)
