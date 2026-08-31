@@ -52,7 +52,10 @@ import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./ty
 const filterClass =
   "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200";
 
-type AlertaFiltro = "TODOS" | "ATRASADOS" | "HOJE" | "SEM_NF" | "FRETE_INDEFINIDO";
+// "Sem NF" e "Frete a definir" sairam da barra em 31/08/2026, a pedido do dono.
+// A coluna NF da tabela e o indicador de nota na linha continuam intactos: o que
+// saiu foi o atalho de filtro, nao a informacao.
+type AlertaFiltro = "TODOS" | "ATRASADOS" | "HOJE";
 
 /**
  * Filtro do card "Em fabricação" — o único que cobre mais de uma etapa.
@@ -97,10 +100,7 @@ const ETAPA_INICIAL = "PRONTO";
 const CASA_ALERTA: Record<Exclude<AlertaFiltro, "TODOS">, (p: PedidoExpedicao) => boolean> = {
   ATRASADOS: (p) => p.atrasadoDias > 0 && p.etapa !== "ENTREGUE",
   // `prometidoHoje` já nasce false para ENTREGUE no serviço, então não repete o corte.
-  HOJE: (p) => p.prometidoHoje,
-  // Sem NF só alerta do PRONTO em diante — em produção ainda é normal não ter nota.
-  SEM_NF: (p) => ["PRONTO", "A_RETIRAR", "EM_TRANSITO"].includes(p.etapa) && p.nfStatus !== "AUTORIZADA",
-  FRETE_INDEFINIDO: (p) => p.tipoFrete === "INDEFINIDO" && p.etapa !== "ENTREGUE"
+  HOJE: (p) => p.prometidoHoje
 };
 
 const ICONE_TIPO_FRETE: Record<TipoFreteNormalizado, typeof Truck> = {
@@ -550,9 +550,7 @@ export function ExpedicaoPage() {
   const alertas = useMemo(
     () => ({
       atrasados: semAlerta.filter(CASA_ALERTA.ATRASADOS).length,
-      hoje: semAlerta.filter(CASA_ALERTA.HOJE).length,
-      semNf: semAlerta.filter(CASA_ALERTA.SEM_NF).length,
-      freteIndefinido: semAlerta.filter(CASA_ALERTA.FRETE_INDEFINIDO).length
+      hoje: semAlerta.filter(CASA_ALERTA.HOJE).length
     }),
     [semAlerta]
   );
@@ -736,30 +734,6 @@ export function ExpedicaoPage() {
             }`}
           >
             <Clock className="h-3.5 w-3.5" /> Prometidos hoje ({alertas.hoje})
-          </button>
-          <button
-            type="button"
-            onClick={() => toggleAlerta("SEM_NF")}
-            disabled={chipVazio(alertas.semNf, "SEM_NF")}
-            className={`${chipBase} ${
-              filters.alerta === "SEM_NF"
-                ? "border-rose-600 bg-rose-600 text-white"
-                : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
-            }`}
-          >
-            Sem NF ({alertas.semNf})
-          </button>
-          <button
-            type="button"
-            onClick={() => toggleAlerta("FRETE_INDEFINIDO")}
-            disabled={chipVazio(alertas.freteIndefinido, "FRETE_INDEFINIDO")}
-            className={`${chipBase} ${
-              filters.alerta === "FRETE_INDEFINIDO"
-                ? "border-slate-700 bg-slate-700 text-white"
-                : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            }`}
-          >
-            Frete a definir ({alertas.freteIndefinido})
           </button>
           {/* Troca de VISÃO (não é filtro): tabela ⇄ colunas por transportadora. */}
           <button
