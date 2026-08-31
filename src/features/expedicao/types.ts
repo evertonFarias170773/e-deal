@@ -185,6 +185,17 @@ export interface PedidoExpedicao {
   freteCep: string | null;
   /** Nome resolvido: expedicoes.transportadora_nome > cotação. */
   transportadoraNome: string;
+  /**
+   * O que a coluna FRETE escreve. Só exibição — a regra e o porquê de cada
+   * degrau estão em `expedicao.service.ts`, onde ele é montado.
+   *
+   * Existe separado de `transportadoraNome` de propósito: aquele alimenta o
+   * agrupamento "Por transportadora", a busca textual e o pré-preenchimento do
+   * DespacharModal, e mudá-lo mexeria nos três.
+   *
+   * Nunca vazio: o último degrau é `labelTipoFrete`, que já devolve "A definir".
+   */
+  rotuloTransporte: string;
   freteValor: number | null;
   pesoKg: number | null;
   pesoOrigem: PesoOrigemInterna | null;

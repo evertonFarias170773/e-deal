@@ -3,7 +3,7 @@ import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo
 } from "@/features/orcamentos/lib/modalidade-frete";
-import { normalizarTipoFrete } from "../lib/tipo-frete";
+import { labelTipoFrete, normalizarTipoFrete } from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { escolherNotaAutorizadaDoPedido, type NotaCandidata } from "@/lib/fiscal/nota-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
@@ -445,6 +445,49 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
         expConfirmado?.transportadoraNome ||
         nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
         "",
+      /**
+       * O QUE A COLUNA FRETE ESCREVE (31/08/2026).
+       *
+       * Campo SÓ de exibição, criado porque a coluna decidia pela classificação
+       * do texto de `cotacao_frete.servico`: `tipoFrete === "INDEFINIDO"`
+       * imprimia "A definir" e DESCARTAVA o transportador, mesmo com
+       * `propostas.id_transportadora_cliente` preenchido. Foi o caso do 21202
+       * entre 27 e 31/08 — serviço "AÉREO ECONOMICO", fora do vocabulário de
+       * `normalizarTipoFrete`, com a SVT TRANSPORTES definida no orçamento e
+       * exibida sem dificuldade pelo modal Despachar.
+       *
+       * A ordem, e a razão de cada degrau:
+       *   1. despacho confirmado manda — `expedicoes.transportadora_nome` é o
+       *      que de fato levou a caixa, e esse comportamento fica intacto;
+       *   2. classificação FALHOU (`INDEFINIDO`) e existe vínculo? então o
+       *      cadastro responde. É exatamente o buraco relatado: o texto do
+       *      serviço não diz nada reconhecível, e a coluna preferia "A definir"
+       *      a olhar `propostas.id_transportadora_cliente`, que o modal
+       *      Despachar lê sem dificuldade;
+       *   3. o mesmo `nomeTransporteEfetivo` que a coluna já usava;
+       *   4. o vínculo de novo, para o caso de nem texto haver;
+       *   5. o rótulo do tipo — e `labelTipoFrete("INDEFINIDO")` já é
+       *      "A definir", que assim só sobra quando não há absolutamente nada.
+       *
+       * POR QUE O DEGRAU 2 É CONDICIONADO A `INDEFINIDO`, e não incondicional.
+       * Medido em 31/08/2026 sobre as 26 propostas com transportadora definida:
+       * pondo o cadastro acima do texto sem condição, DEZ linhas trocariam de
+       * rótulo — seis Correios passariam de "SEDEX" para "CORREIOS SEDE", e
+       * "SÃO MIGUEL" viraria "EXPRESSO SAO MIGUEL S/A". Nenhuma delas está
+       * errada hoje, e trocá-las não era o pedido. Condicionado, mudam só as
+       * duas linhas que exibiam "A definir" tendo transporte conhecido.
+       *
+       * `transportadoraNome` NÃO foi alterado: ele alimenta o agrupamento "Por
+       * transportadora", a busca textual e o pré-preenchimento do DespacharModal,
+       * e mexer nele mudaria os três de carona. Este campo é outro, e só a
+       * coluna o lê. `tipoFrete` também segue intocado — aqui ele é apenas LIDO.
+       */
+      rotuloTransporte:
+        expConfirmado?.transportadoraNome ||
+        (tipoFrete === "INDEFINIDO" ? transportadoraOrcamento : null) ||
+        nomeTransporteEfetivo(frete?.servico, modalidadeOrcamento, transportadoraOrcamento) ||
+        transportadoraOrcamento ||
+        labelTipoFrete(tipoFrete),
       freteValor: frete?.valor !== null && frete?.valor !== undefined ? Number(frete.valor) : null,
       pesoKg,
       pesoOrigem,

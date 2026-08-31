@@ -944,7 +944,7 @@ export function ExpedicaoPage() {
                 <div className="flex flex-col gap-0.5 text-sm">
                   <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
                     <Icone className="h-3.5 w-3.5 shrink-0" />
-                    {p.tipoFrete === "INDEFINIDO" ? "A definir" : p.transportadoraNome || labelTipoFrete(p.tipoFrete)}
+                    {p.rotuloTransporte}
                   </span>
                   <span className="text-[11px] text-slate-500">
                     {formatarPeso(p)}
@@ -1070,7 +1070,7 @@ export function ExpedicaoPage() {
               <div className="mt-3 space-y-1 text-sm text-slate-600 dark:text-slate-300">
                 <p className="inline-flex items-center gap-1.5">
                   <Icone className="h-3.5 w-3.5" />
-                  {p.tipoFrete === "INDEFINIDO" ? "Frete a definir" : p.transportadoraNome || labelTipoFrete(p.tipoFrete)}
+                  {p.tipoFrete === "INDEFINIDO" && p.rotuloTransporte === "A definir" ? "Frete a definir" : p.rotuloTransporte}
                 </p>
                 <p>
                   Promessa: <strong>{formatarPromessa(p.dataPromessa)}</strong>
