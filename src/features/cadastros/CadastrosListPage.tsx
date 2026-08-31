@@ -464,7 +464,12 @@ export function CadastrosListPage() {
                 items={[
                   { label: "Ver cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}`) },
                   { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
-                  { label: "Criar proposta", onClick: () => showPlaceholderActionToast("Criar proposta") },
+                  // Mesmo destino do detalhe do cadastro: a nova proposta abre
+                  // com este cadastro como cliente, e o campo segue editavel la.
+                  {
+                    label: "Criar proposta",
+                    onClick: () => router.push(`/orcamentos/novo?id_cliente=${cadastro.idCliente}`)
+                  },
                   ...(user?.isAdmin || user?.isSuperAdmin
                     ? [
                         {
@@ -540,7 +545,12 @@ export function CadastrosListPage() {
                 label="Mais"
                 items={[
                   { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
-                  { label: "Criar proposta", onClick: () => showPlaceholderActionToast("Criar proposta") },
+                  // Mesmo destino do detalhe do cadastro: a nova proposta abre
+                  // com este cadastro como cliente, e o campo segue editavel la.
+                  {
+                    label: "Criar proposta",
+                    onClick: () => router.push(`/orcamentos/novo?id_cliente=${cadastro.idCliente}`)
+                  },
                   ...(user?.isAdmin || user?.isSuperAdmin
                     ? [
                         {
