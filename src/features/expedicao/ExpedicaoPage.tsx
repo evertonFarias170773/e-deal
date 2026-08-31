@@ -81,6 +81,28 @@ const ETAPAS_FABRICACAO: EtapaExpedicao[] = ["PRODUCAO", "ACABAMENTO"];
  */
 const ETAPA_INICIAL = "PRONTO";
 
+/**
+ * O que cada chip de alerta seleciona — UMA definição, usada pelo filtro E pela
+ * contagem do chip.
+ *
+ * Antes eram duas: o filtro tinha a sua regra em `filtrados`, e o número no chip
+ * vinha de um `useMemo` separado que contava sobre a lista inteira. Com a tela
+ * abrindo recortada, as duas divergiram na cara do usuário: "Atrasados (2)" com
+ * o card "Pronto p/ expedir" ativo levava a "Nenhum pedido no recorte" — o
+ * número prometia 2 e a lista entregava 0.
+ *
+ * Duas regras para a mesma pergunta sempre voltam a divergir. Agora há uma só, e
+ * a contagem é, por construção, o tamanho da lista que o clique produz.
+ */
+const CASA_ALERTA: Record<Exclude<AlertaFiltro, "TODOS">, (p: PedidoExpedicao) => boolean> = {
+  ATRASADOS: (p) => p.atrasadoDias > 0 && p.etapa !== "ENTREGUE",
+  // `prometidoHoje` já nasce false para ENTREGUE no serviço, então não repete o corte.
+  HOJE: (p) => p.prometidoHoje,
+  // Sem NF só alerta do PRONTO em diante — em produção ainda é normal não ter nota.
+  SEM_NF: (p) => ["PRONTO", "A_RETIRAR", "EM_TRANSITO"].includes(p.etapa) && p.nfStatus !== "AUTORIZADA",
+  FRETE_INDEFINIDO: (p) => p.tipoFrete === "INDEFINIDO" && p.etapa !== "ENTREGUE"
+};
+
 const ICONE_TIPO_FRETE: Record<TipoFreteNormalizado, typeof Truck> = {
   CORREIOS: Send,
   MOTOBOY: Bike,
@@ -476,21 +498,15 @@ export function ExpedicaoPage() {
     };
   }, [pedidos]);
 
-  const alertas = useMemo(() => {
-    const abertos = pedidos.filter((p) => p.etapa !== "ENTREGUE");
-    return {
-      atrasados: abertos.filter((p) => p.atrasadoDias > 0).length,
-      hoje: abertos.filter((p) => p.prometidoHoje).length,
-      // Sem NF só alerta do PRONTO em diante — em produção ainda é normal não ter nota.
-      semNf: pedidos.filter(
-        (p) => ["PRONTO", "A_RETIRAR", "EM_TRANSITO"].includes(p.etapa) && p.nfStatus !== "AUTORIZADA"
-      ).length,
-      freteIndefinido: abertos.filter((p) => p.tipoFrete === "INDEFINIDO").length
-    };
-  }, [pedidos]);
-
   // ---- filtragem em memória ----
-  const filtrados = useMemo(() => {
+  /**
+   * Tudo que passa pelo recorte atual MENOS o alerta: etapa, frete, empresa e
+   * busca. É a base dos dois consumidores abaixo — a lista e os números dos
+   * chips —, e é justamente por sair do alerta que ela serve aos dois: o chip
+   * precisa saber quantos registros apareceriam SE fosse clicado, e o alerta
+   * ativo não pode zerar a contagem dos outros três.
+   */
+  const semAlerta = useMemo(() => {
     const q = search.trim().toLowerCase();
     return pedidos.filter((p) => {
       if (filters.etapa === "ATIVOS" && p.etapa === "ENTREGUE") return false;
@@ -503,16 +519,6 @@ export function ExpedicaoPage() {
         filters.etapa !== ETAPA_FABRICACAO &&
         p.etapa !== filters.etapa
       )
-        return false;
-
-      if (filters.alerta === "ATRASADOS" && !(p.atrasadoDias > 0 && p.etapa !== "ENTREGUE")) return false;
-      if (filters.alerta === "HOJE" && !p.prometidoHoje) return false;
-      if (
-        filters.alerta === "SEM_NF" &&
-        !(["PRONTO", "A_RETIRAR", "EM_TRANSITO"].includes(p.etapa) && p.nfStatus !== "AUTORIZADA")
-      )
-        return false;
-      if (filters.alerta === "FRETE_INDEFINIDO" && !(p.tipoFrete === "INDEFINIDO" && p.etapa !== "ENTREGUE"))
         return false;
 
       if (filters.frete !== "TODOS" && p.tipoFrete !== filters.frete) return false;
@@ -530,7 +536,31 @@ export function ExpedicaoPage() {
         p.transportadoraNome.toLowerCase().includes(q)
       );
     });
-  }, [pedidos, filters, search]);
+  }, [pedidos, filters.etapa, filters.frete, filters.emp, search]);
+
+  /**
+   * Número de cada chip = tamanho exato da lista que clicar nele produz. Sai da
+   * MESMA base da tabela e do MESMO predicado do filtro, então não há como
+   * voltar a divergir.
+   *
+   * Os cards de etapa continuam contando sobre o conjunto todo, de propósito:
+   * eles são a navegação do funil e precisam mostrar o que existe fora do
+   * recorte atual. Os chips são o oposto — refinam o que já está na tela.
+   */
+  const alertas = useMemo(
+    () => ({
+      atrasados: semAlerta.filter(CASA_ALERTA.ATRASADOS).length,
+      hoje: semAlerta.filter(CASA_ALERTA.HOJE).length,
+      semNf: semAlerta.filter(CASA_ALERTA.SEM_NF).length,
+      freteIndefinido: semAlerta.filter(CASA_ALERTA.FRETE_INDEFINIDO).length
+    }),
+    [semAlerta]
+  );
+
+  const filtrados = useMemo(() => {
+    const casa = CASA_ALERTA[filters.alerta as Exclude<AlertaFiltro, "TODOS">];
+    return casa ? semAlerta.filter(casa) : semAlerta;
+  }, [semAlerta, filters.alerta]);
 
   // Entregues ordenados por entrega mais recente quando o card Entregues está ativo.
   const listaExibida = useMemo(() => {
@@ -577,7 +607,18 @@ export function ExpedicaoPage() {
   }
 
   const chipBase =
-    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition";
+    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition " +
+    // Chip vazio não vira clique morto: `pointer-events-none` mata inclusive o
+    // hover, então ele nem parece clicável.
+    "disabled:pointer-events-none disabled:opacity-40";
+
+  /**
+   * Chip sem nada para mostrar fica desabilitado. O chip ATIVO nunca desabilita,
+   * mesmo zerado: é por ele que se desfaz o filtro que esvaziou a lista.
+   */
+  function chipVazio(contagem: number, alerta: AlertaFiltro): boolean {
+    return contagem === 0 && filters.alerta !== alerta;
+  }
 
   return (
     <div className="space-y-6 font-sans">
@@ -675,6 +716,7 @@ export function ExpedicaoPage() {
           <button
             type="button"
             onClick={() => toggleAlerta("ATRASADOS")}
+            disabled={chipVazio(alertas.atrasados, "ATRASADOS")}
             className={`${chipBase} ${
               filters.alerta === "ATRASADOS"
                 ? "border-red-600 bg-red-600 text-white"
@@ -686,6 +728,7 @@ export function ExpedicaoPage() {
           <button
             type="button"
             onClick={() => toggleAlerta("HOJE")}
+            disabled={chipVazio(alertas.hoje, "HOJE")}
             className={`${chipBase} ${
               filters.alerta === "HOJE"
                 ? "border-amber-500 bg-amber-500 text-white"
@@ -697,6 +740,7 @@ export function ExpedicaoPage() {
           <button
             type="button"
             onClick={() => toggleAlerta("SEM_NF")}
+            disabled={chipVazio(alertas.semNf, "SEM_NF")}
             className={`${chipBase} ${
               filters.alerta === "SEM_NF"
                 ? "border-rose-600 bg-rose-600 text-white"
@@ -708,6 +752,7 @@ export function ExpedicaoPage() {
           <button
             type="button"
             onClick={() => toggleAlerta("FRETE_INDEFINIDO")}
+            disabled={chipVazio(alertas.freteIndefinido, "FRETE_INDEFINIDO")}
             className={`${chipBase} ${
               filters.alerta === "FRETE_INDEFINIDO"
                 ? "border-slate-700 bg-slate-700 text-white"
