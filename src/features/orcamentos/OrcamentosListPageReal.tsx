@@ -221,6 +221,28 @@ function ehEmArte(item: { status?: string | null }): boolean {
   return (item.status ?? "").includes("EM ARTE");
 }
 
+/**
+ * A proposta esta LIBERADA? UMA definicao, usada pelo card, pelo clique no card
+ * e — por construcao — igual ao filtro do select.
+ *
+ * Le `item.status`, o status de EXIBICAO, e compara por IGUALDADE, que e
+ * exatamente o que o select faz (`item.status === status`, com status =
+ * "LIBERADO"). A igualdade e o ponto: ela EXCLUI as exibidas como
+ * "LIBERADO / EM ARTE", que aparecem no card "Em arte".
+ *
+ * Mesma raiz do bug do card "Em arte" (corrigido em d3b03b8): o card lia
+ * `normalizeProposalStatus(item.statusInterno)` — o texto CRU do banco, onde o
+ * sufixo nunca existe — e contava toda proposta LIBERADO, inclusive as em arte.
+ * Em Ago/26 isso dava 961 contra as 960 do filtro: uma proposta a mais, de
+ * R$ 362,77, que aparecia nos dois cards ao mesmo tempo.
+ *
+ * Nao ha caso ambiguo: nenhuma proposta tem "LIBERADO / EM ARTE" gravado direto
+ * em `status_interno` (a unica com sufixo cru e a 17823, "AGUARDANDO / EM ARTE").
+ */
+function ehLiberada(item: { status?: string | null }): boolean {
+  return (item.status ?? "") === "LIBERADO";
+}
+
 function sumPropostaTotal(items: OrcamentoListItem[]) {
   return items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
 }
@@ -521,7 +543,8 @@ export function OrcamentosListPageReal() {
           // Mesmo predicado do filtro do select — ver `ehEmArte`.
           matchesStatus = ehEmArte(item);
         } else if (activeCard === "LIBERADAS") {
-          matchesStatus = ["LIBERADO", "LIBERADO / EM ARTE"].includes(s);
+          // Mesmo predicado do filtro do select — ver `ehLiberada`.
+          matchesStatus = ehLiberada(item);
         } else if (activeCard === "REVISAO_ATENDENTE") {
           matchesStatus = s === "REVISAO ATENDENTE";
         } else if (activeCard === "EM_PRODUCAO") {
@@ -749,7 +772,8 @@ export function OrcamentosListPageReal() {
       if (ehEmArte(item)) {
         emArteCnt++; emArteTotal += v;
       }
-      if (["LIBERADO", "LIBERADO / EM ARTE"].includes(s)) {
+      // Mesmo predicado do filtro do select e do clique no card — ver `ehLiberada`.
+      if (ehLiberada(item)) {
         liberadasCnt++; liberadasTotal += v;
       }
       if (s === "REVISAO ATENDENTE") {
