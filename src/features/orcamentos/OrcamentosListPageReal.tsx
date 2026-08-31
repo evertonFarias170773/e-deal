@@ -197,6 +197,30 @@ function normalizeProposalStatus(status: string | null | undefined) {
   return String(status ?? "").trim().toUpperCase() || "SEM_STATUS";
 }
 
+/**
+ * A proposta esta EM ARTE? UMA definicao, usada pelo card, pelo clique no card e
+ * pelo filtro do select.
+ *
+ * Le `item.status` — o status de EXIBICAO, que ja passou por
+ * `composeStatusEmArte` e carrega o sufixo " / EM ARTE" quando
+ * `propostas.em_arte` e true. NAO le `item.statusInterno`, que e o texto cru do
+ * banco: la o sufixo nunca existe, porque ele nasce na montagem da exibicao.
+ *
+ * Era exatamente essa a divergencia (31/08/2026): o filtro do select olhava
+ * `item.status` e achava as propostas; o card e o clique olhavam
+ * `normalizeProposalStatus(item.statusInterno)` e comparavam com
+ * "NOVO / EM ARTE" e afins — combinacao que o status cru NUNCA produz. Resultado:
+ * card sempre 0 e R$ 0,00, e clicar nele devolvia lista vazia, enquanto o select
+ * trazia 11 propostas em Ago/26.
+ *
+ * `includes` em vez de lista fechada porque e o criterio do filtro, que e a
+ * referencia — e ele tambem pega a proposta cujo `status_interno` ja foi gravado
+ * como "AGUARDANDO / EM ARTE" no banco (existe uma, a 17823).
+ */
+function ehEmArte(item: { status?: string | null }): boolean {
+  return (item.status ?? "").includes("EM ARTE");
+}
+
 function sumPropostaTotal(items: OrcamentoListItem[]) {
   return items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
 }
@@ -494,7 +518,8 @@ export function OrcamentosListPageReal() {
       if (activeCard) {
         const s = idx.statusNorm;
         if (activeCard === "EM_ARTE") {
-          matchesStatus = ["NOVO / EM ARTE", "AGUARDANDO / EM ARTE", "LIBERADO / EM ARTE"].includes(s);
+          // Mesmo predicado do filtro do select — ver `ehEmArte`.
+          matchesStatus = ehEmArte(item);
         } else if (activeCard === "LIBERADAS") {
           matchesStatus = ["LIBERADO", "LIBERADO / EM ARTE"].includes(s);
         } else if (activeCard === "REVISAO_ATENDENTE") {
@@ -720,7 +745,8 @@ export function OrcamentosListPageReal() {
       orcTotal += v;
 
       const s = normalizeProposalStatus(item.statusInterno);
-      if (["NOVO / EM ARTE", "AGUARDANDO / EM ARTE", "LIBERADO / EM ARTE"].includes(s)) {
+      // Mesmo predicado do filtro do select e do clique no card — ver `ehEmArte`.
+      if (ehEmArte(item)) {
         emArteCnt++; emArteTotal += v;
       }
       if (["LIBERADO", "LIBERADO / EM ARTE"].includes(s)) {
