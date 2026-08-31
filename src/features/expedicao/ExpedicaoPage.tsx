@@ -65,6 +65,22 @@ type AlertaFiltro = "TODOS" | "ATRASADOS" | "HOJE" | "SEM_NF" | "FRETE_INDEFINID
 const ETAPA_FABRICACAO = "FABRICACAO";
 const ETAPAS_FABRICACAO: EtapaExpedicao[] = ["PRODUCAO", "ACABAMENTO"];
 
+/**
+ * Estado inicial do filtro de etapa — o painel ABRE já em "Pronto p/ expedir".
+ *
+ * É o único estado em que existe trabalho a fazer nesta tela: o pedido está na
+ * bancada esperando despacho. Abrir na lista inteira obrigava a filtrar antes de
+ * começar, todo dia. Os demais estados continuam a um clique, pelos cards.
+ *
+ * `ATIVOS` (tudo menos ENTREGUE) era o valor anterior e continua intacto: é para
+ * onde o chip "Ver funil ativo" leva, e ele não mudou. O que mudou é só de onde
+ * a tela PARTE.
+ *
+ * Isto é o alvo do "Limpar filtros" também — limpar devolve ao ponto de partida
+ * da tela, não à lista inteira.
+ */
+const ETAPA_INICIAL = "PRONTO";
+
 const ICONE_TIPO_FRETE: Record<TipoFreteNormalizado, typeof Truck> = {
   CORREIOS: Send,
   MOTOBOY: Bike,
@@ -415,7 +431,7 @@ export function ExpedicaoPage() {
   const filtrosSchema = useMemo(
     () => ({
       q: { codec: codecs.texto(), default: "" },
-      etapa: { codec: codecs.texto(), default: "ATIVOS" },
+      etapa: { codec: codecs.texto(), default: ETAPA_INICIAL },
       alerta: { codec: codecs.texto(), default: "TODOS" },
       frete: { codec: codecs.texto(), default: "TODOS" },
       emp: { codec: codecs.texto(), default: "TODOS" },
@@ -443,6 +459,10 @@ export function ExpedicaoPage() {
   const porEtapa = useMemo(() => {
     const contar = (etapas: EtapaExpedicao[]) => pedidos.filter((p) => etapas.includes(p.etapa)).length;
     return {
+      // Total geral do painel — a contagem do card da lista completa. Inclui
+      // ENTREGUE, ao contrário de `ATIVOS`, e é a única que não passa por
+      // `contar` porque não recorta etapa nenhuma.
+      total: pedidos.length,
       // "Em fabricação" reúne PRODUCAO e ACABAMENTO num card só (26/08/2026):
       // para a Expedição os dois são o mesmo estado — pedido que ainda não
       // chegou na bancada. A separação interessava à Produção, não a quem
@@ -525,8 +545,11 @@ export function ExpedicaoPage() {
     [pedidos]
   );
 
+  // Desmarcar um card volta ao ponto de partida da tela, não à lista inteira.
+  // Clicar no card já ativo de "Pronto p/ expedir" vira no-op de propósito: ele
+  // É o estado inicial, então não há para onde "desmarcar".
   function toggleEtapa(etapa: string) {
-    setFilter("etapa", filters.etapa === etapa ? "ATIVOS" : etapa);
+    setFilter("etapa", filters.etapa === etapa ? ETAPA_INICIAL : etapa);
   }
   function toggleAlerta(alerta: AlertaFiltro) {
     setFilter("alerta", filters.alerta === alerta ? "TODOS" : alerta);
@@ -586,7 +609,18 @@ export function ExpedicaoPage() {
 
       {/* Cards do funil (clicáveis = filtro de etapa) */}
       {isLoaded && (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+          {/* Lista completa: a saída para ver tudo, já que a tela abre filtrada
+              em "Pronto p/ expedir". Mostra TODAS as etapas, entregues inclusive. */}
+          <SummaryCard
+            title="Todos"
+            value={porEtapa.total.toString()}
+            description="Lista completa"
+            tone="info"
+            icon={Package}
+            onClick={() => toggleEtapa("TODAS")}
+            ativo={filters.etapa === "TODAS"}
+          />
           <SummaryCard
             title="Em fabricação"
             value={porEtapa.fabricacao.toString()}
@@ -694,6 +728,10 @@ export function ExpedicaoPage() {
           >
             <LayoutGrid className="h-3.5 w-3.5" /> Por transportadora
           </button>
+          {/* INTOCADO: continua levando a `ATIVOS` (tudo menos ENTREGUE). É o
+              atalho que mantém esse recorte acessível agora que ele deixou de
+              ser o estado inicial. Quem limpa os filtros volta para PRONTO; quem
+              quer o funil ativo inteiro clica aqui. */}
           {(filters.etapa !== "ATIVOS" || filters.alerta !== "TODOS") && (
             <button
               type="button"
@@ -739,8 +777,11 @@ export function ExpedicaoPage() {
 
           <button
             type="button"
+            // Limpar devolve ao ESTADO INICIAL da tela, não à lista inteira: o
+            // ponto de partida é "Pronto p/ expedir". Busca, frete e empresa
+            // continuam zerando como antes.
             onClick={() => {
-              setFilters({ q: "", etapa: "ATIVOS", alerta: "TODOS", frete: "TODOS", emp: "TODOS" });
+              setFilters({ q: "", etapa: ETAPA_INICIAL, alerta: "TODOS", frete: "TODOS", emp: "TODOS" });
               setSearch("");
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
