@@ -137,6 +137,18 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
 
   const totalPages = Math.max(1, Math.ceil(propostasTotalCount / PROPOSTAS_PAGE_SIZE));
 
+  /**
+   * Faixa da página atual para o rodapé: "Mostrando 6-10 de 328".
+   *
+   * O FIM sai de `propostas.length`, e não de `inicio + PROPOSTAS_PAGE_SIZE - 1`:
+   * é o número de linhas realmente renderizadas, então a última página — que vem
+   * incompleta — fecha exatamente no total, sem precisar de um `Math.min` contra
+   * `propostasTotalCount`. Vale igual quando um filtro de status deixa menos de
+   * uma página inteira.
+   */
+  const propostasFaixaInicio = propostasPageIndex * PROPOSTAS_PAGE_SIZE + 1;
+  const propostasFaixaFim = propostasFaixaInicio + propostas.length - 1;
+
   function getDescricaoProposta(item: CadastroPropostaListItem) {
     const descricao = item.proposta.trim();
     if (descricao) {
@@ -455,7 +467,11 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-sm text-slate-600">
-              Mostrando {propostas.length} de {propostasTotalCount} proposta(s) vinculada(s).
+              {/* Sem resultado não existe faixa: "1-0" não quer dizer nada. A
+                  página vazia continua dizendo o que dizia antes. */}
+              {propostas.length === 0
+                ? `Mostrando 0 de ${propostasTotalCount} proposta(s) vinculada(s).`
+                : `Mostrando ${propostasFaixaInicio}-${propostasFaixaFim} de ${propostasTotalCount} proposta(s) vinculada(s).`}
             </p>
             <div className="flex items-center gap-2">
               <button
