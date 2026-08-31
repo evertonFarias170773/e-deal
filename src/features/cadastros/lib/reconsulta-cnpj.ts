@@ -32,7 +32,9 @@ export type ConsultaDocumentoApiPayload = {
   insEstadual: string;
   tipoContribuinte: string;
   enderecoPreparado: {
-    id_cliente: number;
+    // `null` no cadastro automatico (o numero so existe apos o insert). A
+    // reconsulta, que e de edicao, sempre manda o id — este campo nao e lido.
+    id_cliente: number | null;
     cep: string;
     endereco: string;
     numero: string;

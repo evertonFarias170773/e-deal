@@ -60,6 +60,7 @@ import type {
   TipoClienteDocumento
 } from "@/features/cadastros/types";
 import { VinculosNotaFiscalCard } from "./components/VinculosNotaFiscalCard";
+import { CADASTRO_ID_AUTOMATICO } from "@/constants/featureFlags";
 import { ImportSistemaAntigoModal } from "./components/ImportSistemaAntigoModal";
 import type { ExtractedData } from "./components/ImportSistemaAntigoModal";
 
@@ -120,6 +121,31 @@ function validateEnderecos(enderecos: CadastroEndereco[]): { isValid: boolean; m
   return { isValid: true };
 }
 
+type IdClienteModo = "AUTOMATICO" | "MANUAL";
+
+/**
+ * Converte o campo da tela para o que o service espera.
+ *
+ * `null` SO no modo automatico: e a AUSENCIA da chave no insert que faz o
+ * DEFAULT da coluna (public.fn_proximo_id_cliente()) gerar o numero.
+ *
+ * No modo manual o campo vazio NAO vira null. `Number("")` devolve 0, e 0 e
+ * ENTRADA INVALIDA, nunca ausencia: cai nas validacoes do passo 1 e, se
+ * escapasse, o proprio createCadastro recusa sem gravar. Tratar vazio como
+ * ausencia aqui faria um cadastro digitado errado nascer com numero automatico,
+ * silenciosamente diferente do que o atendente viu na tela.
+ */
+function resolverIdClienteParaEnvio(
+  modo: IdClienteModo,
+  valorDoCampo: string
+): number | null {
+  if (modo === "AUTOMATICO") {
+    return null;
+  }
+
+  return Number(valorDoCampo);
+}
+
 export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroFormPageProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -164,6 +190,28 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
   const [isReconsultando, setIsReconsultando] = useState(false);
   const [isAplicandoReconsulta, setIsAplicandoReconsulta] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  // Automatico e o padrao ao ABRIR a tela de cadastro novo. Em edicao o campo e
+  // readOnly e o modo nao aparece — MANUAL ali significa apenas "o numero ja
+  // existe e vem do cadastro".
+  const [idClienteModo, setIdClienteModo] = useState<IdClienteModo>(
+    mode === "new" && CADASTRO_ID_AUTOMATICO ? "AUTOMATICO" : "MANUAL"
+  );
+
+  // Trocar de modo limpa o erro do campo e, ao ir para automatico, esvazia o que
+  // estava digitado: o numero passa a vir do banco, e deixar residuo na tela faria
+  // a StatusCard e o payload discordarem.
+  function handleChangeIdClienteModo(modo: IdClienteModo) {
+    setIdClienteModo(modo);
+    setErrorFields((atuais) => atuais.filter((campo) => campo !== "idCliente"));
+    setFieldErrors((atuais) => {
+      const proximos = { ...atuais };
+      delete proximos.idCliente;
+      return proximos;
+    });
+    if (modo === "AUTOMATICO") {
+      setForm((atual) => ({ ...atual, idCliente: "" }));
+    }
+  }
   const originalDocument = cadastro?.documento ?? "";
 
   const limparParamVinculo = useCallback(() => {
@@ -329,9 +377,16 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
       ? `${cleanCurrentObs}\n${importObs}`
       : importObs;
 
+    // O texto do sistema antigo TROUXE o numero de la: e esse que deve valer, e
+    // nao um numero novo gerado pelo Vibe. Sem isto o valor extraido seria
+    // descartado em silencio e os dois sistemas ficariam com numeros diferentes
+    // para o mesmo cliente.
+    const idClienteImportado = String(data.cliente.id_cliente ?? "").trim();
+    handleChangeIdClienteModo(idClienteImportado ? "MANUAL" : "AUTOMATICO");
+
     setForm((current) => ({
       ...current,
-      idCliente: data.cliente.id_cliente || "",
+      idCliente: idClienteImportado,
       tipoCliente: data.cliente.tipo_pessoa === "CPF" ? "CPF" : "CNPJ",
       documento: data.cliente.documento || "",
       nome: data.cliente.nome || "",
@@ -496,48 +551,55 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
   }
 
   async function handleInitialValidation() {
+    const idClienteParaEnvio = resolverIdClienteParaEnvio(idClienteModo, form.idCliente);
     setMessage(null);
     setFieldErrors({});
     setErrorFields([]);
     setHasImportedApiData(false);
     setValidatedDocumentoDigits(null);
 
-    if (!form.idCliente) {
-      setErrorFields(["idCliente"]);
-      setFieldErrors({
-        idCliente: "Informe o ID do cliente para continuar."
-      });
-      setMessage({
-        tone: "danger",
-        title: "Campos obrigatorios ausentes",
-        description: "Informe o ID do cliente para continuar."
-      });
-      showToast({
-        type: "error",
-        title: "Campos obrigatorios ausentes",
-        description: "Informe o ID do cliente para continuar."
-      });
-      return;
+    // No modo automatico nao ha numero para exigir nem validar: quem gera e o
+    // banco, no insert. Documento e atendente continuam obrigatorios.
+    if (idClienteModo === "MANUAL") {
+      if (!form.idCliente) {
+        setErrorFields(["idCliente"]);
+        setFieldErrors({
+          idCliente: "Informe o ID do cliente para continuar."
+        });
+        setMessage({
+          tone: "danger",
+          title: "Campos obrigatorios ausentes",
+          description: "Informe o ID do cliente para continuar."
+        });
+        showToast({
+          type: "error",
+          title: "Campos obrigatorios ausentes",
+          description: "Informe o ID do cliente para continuar."
+        });
+        return;
+      }
+
+      const idDigitado = Number(form.idCliente);
+      if (!Number.isInteger(idDigitado) || idDigitado <= 0) {
+        setErrorFields(["idCliente"]);
+        setFieldErrors({
+          idCliente: "O ID do cliente precisa ser um numero inteiro valido."
+        });
+        setMessage({
+          tone: "danger",
+          title: "ID do cliente invalido",
+          description: "Informe um numero inteiro valido para o ID do cliente."
+        });
+        showToast({
+          type: "error",
+          title: "ID do cliente invalido",
+          description: "Use um numero inteiro para continuar."
+        });
+        return;
+      }
     }
 
-    const idCliente = Number(form.idCliente);
-    if (!Number.isInteger(idCliente) || idCliente <= 0) {
-      setErrorFields(["idCliente"]);
-      setFieldErrors({
-        idCliente: "O ID do cliente precisa ser um numero inteiro valido."
-      });
-      setMessage({
-        tone: "danger",
-        title: "ID do cliente invalido",
-        description: "Informe um numero inteiro valido para o ID do cliente."
-      });
-      showToast({
-        type: "error",
-        title: "ID do cliente invalido",
-        description: "Use um numero inteiro para continuar."
-      });
-      return;
-    }
+    const idCliente = idClienteParaEnvio;
 
     if (!form.documento) {
       setErrorFields(["documento"]);
@@ -834,6 +896,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     setMessage(null);
     setErrorFields([]);
 
+    const idClienteParaEnvio = resolverIdClienteParaEnvio(idClienteModo, form.idCliente);
     const idCliente = Number(form.idCliente);
     const documentoDigits = normalizeDocumentDigits(form.documento);
     const inferredTipoPessoa = inferTipoPessoaFromDocumento(form.documento);
@@ -843,8 +906,10 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     const contactName = form.contatos[0]?.nome?.trim() || form.nome.trim();
 
     const missingFields = [
-      !form.idCliente ? "idCliente" : null,
-      !Number.isInteger(idCliente) || idCliente <= 0 ? "idCliente" : null,
+      idClienteModo === "MANUAL" && !form.idCliente ? "idCliente" : null,
+      idClienteModo === "MANUAL" && (!Number.isInteger(idCliente) || idCliente <= 0)
+        ? "idCliente"
+        : null,
       !form.categoria ? "categoria" : null,
       !form.nome.trim() ? "nome" : null,
       !documentoDigits ? "documento" : null,
@@ -971,7 +1036,9 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
     setIsSaving(true);
 
     const insertPayload: CadastroInsertPayload = {
-      id_cliente: idCliente,
+      // `null` no modo automatico: createCadastro OMITE a chave do insert e o
+      // DEFAULT da coluna gera o numero. Nunca 0 — ver resolverIdClienteParaEnvio.
+      id_cliente: idClienteParaEnvio,
       id_vendedor: selectedVendedor?.idVendedor ?? normalizeOptionalText(form.idVendedor),
       nome_vendedor: normalizeOptionalText(form.atendente),
       categoria: form.categoria,
@@ -1129,7 +1196,7 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
       description:
         relatedWarnings.length > 0
           ? relatedWarnings.join(" ")
-          : "Redirecionando para o detalhe do cadastro criado."
+          : `Cliente #${result.cadastro.idCliente} criado. Redirecionando para o detalhe.`
     });
     showToast({
       type: relatedWarnings.length > 0 ? "warning" : "success",
@@ -1418,6 +1485,9 @@ export function CadastroFormPage({ mode, cadastro, categoriaInicial }: CadastroF
           vendedorOptions={vendedorOptions}
           isLoadingVendedores={isLoadingVendedores}
           mode={mode}
+          idClienteModo={idClienteModo}
+          onChangeIdClienteModo={handleChangeIdClienteModo}
+          idAutomaticoDisponivel={CADASTRO_ID_AUTOMATICO}
         />
       ) : (
         <CompleteForm
@@ -1482,7 +1552,10 @@ function InitialStep({
   isChecking,
   vendedorOptions,
   isLoadingVendedores,
-  mode
+  mode,
+  idClienteModo,
+  onChangeIdClienteModo,
+  idAutomaticoDisponivel
 }: {
   form: CadastroFormState;
   formattedDocument: string;
@@ -1494,7 +1567,21 @@ function InitialStep({
   vendedorOptions: VendedorOption[];
   isLoadingVendedores: boolean;
   mode: "new" | "edit";
+  idClienteModo: IdClienteModo;
+  onChangeIdClienteModo: (modo: IdClienteModo) => void;
+  idAutomaticoDisponivel: boolean;
 }) {
+  // Aviso NAO bloqueante: abaixo de 70.000 e a faixa que o sistema antigo ainda
+  // numera (estava em 66.432 em 31/08/2026). Salvar continua permitido — pode ser
+  // exatamente o caso de repetir no Vibe um cadastro que nasceu la.
+  const idDigitado = Number(form.idCliente);
+  const mostrarAvisoFaixaAntiga =
+    idClienteModo === "MANUAL" &&
+    form.idCliente.trim() !== "" &&
+    Number.isInteger(idDigitado) &&
+    idDigitado > 0 &&
+    idDigitado < 70000;
+
   return (
     <section className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
       <div className="mb-5">
@@ -1508,14 +1595,54 @@ function InitialStep({
 
       <div className="grid gap-4 lg:grid-cols-5">
         <Field label="ID do cliente">
-          <input
-            type="number"
-            value={form.idCliente}
-            onChange={(event) => onUpdate("idCliente", event.target.value)}
-            className={getInputClass(errorFields.includes("idCliente"))}
-            placeholder="120018"
-          />
+          {idAutomaticoDisponivel ? (
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="modo-id-cliente"
+                  className="h-4 w-4 accent-sky-600"
+                  checked={idClienteModo === "AUTOMATICO"}
+                  onChange={() => onChangeIdClienteModo("AUTOMATICO")}
+                />
+                Automático
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="modo-id-cliente"
+                  className="h-4 w-4 accent-sky-600"
+                  checked={idClienteModo === "MANUAL"}
+                  onChange={() => onChangeIdClienteModo("MANUAL")}
+                />
+                Informar manualmente
+              </label>
+            </div>
+          ) : null}
+
+          {idClienteModo === "AUTOMATICO" ? (
+            // Sem previsao de numero: a tela nao promete um valor que pode mudar
+            // se outro atendente salvar antes. O numero real vem do insert.
+            <input
+              value="Será gerado ao salvar"
+              readOnly
+              className={`${inputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
+            />
+          ) : (
+            <input
+              type="number"
+              value={form.idCliente}
+              onChange={(event) => onUpdate("idCliente", event.target.value)}
+              className={getInputClass(errorFields.includes("idCliente"))}
+              placeholder="120018"
+            />
+          )}
           {fieldErrors.idCliente ? <FieldError message={fieldErrors.idCliente} /> : null}
+          {mostrarAvisoFaixaAntiga ? (
+            <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Abaixo de 70.000 é a faixa do sistema antigo. Confirme que este número é mesmo o de lá.
+            </p>
+          ) : null}
         </Field>
         <Field label="Tipo de cadastro">
           <select
@@ -1714,7 +1841,7 @@ function CompleteForm({
   return (
     <div className="space-y-6">
       <section className="grid gap-4 lg:grid-cols-4">
-        <StatusCard title="ID operacional" value={`#${form.idCliente}`} />
+        <StatusCard title="ID operacional" value={form.idCliente ? `#${form.idCliente}` : "a gerar"} />
         <StatusCard title="Tipo" value={categoriaLabel[form.categoria]} />
         <StatusCard title="Documento" value={formattedDocument || "Nao informado"} />
         <StatusCard title="Atendente" value={form.atendente || "Nao definido"} />

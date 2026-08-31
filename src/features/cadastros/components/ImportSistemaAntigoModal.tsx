@@ -144,8 +144,13 @@ export function ImportSistemaAntigoModal({
 
       if (idCliente || docDigits) {
         setIsValidating(true);
+        // Sem ID no texto colado, o cadastro sera automatico: nao ha numero para
+        // checar. Antes ia 999999 como fallback, o que validava duplicidade
+        // contra um ID inventado — nunca conflitava, e o resultado nao queria
+        // dizer nada. `null` faz validateCadastroInitialStep pular a consulta de
+        // ID e checar so o documento.
         const valRes = await validateCadastroInitialStep({
-          idCliente: idCliente || 999999, // fallback se não vier ID
+          idCliente: Number.isInteger(idCliente) && idCliente > 0 ? idCliente : null,
           documentoDigits: docDigits
         });
         setIsValidating(false);

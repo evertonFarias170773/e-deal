@@ -934,7 +934,8 @@ export type CadastroUpdateResult =
     };
 
 export type CadastroInitialValidationParams = {
-  idCliente: number;
+  /** `null` = cadastro automatico: nao ha numero para checar duplicidade. */
+  idCliente: number | null;
   documentoDigits: string;
 };
 
@@ -1159,13 +1160,18 @@ export async function validateCadastroInitialStep(
     };
   }
 
-  const existingId = await findCadastroByExactField("id_cliente", String(params.idCliente));
-  if (existingId) {
-    return {
-      success: false,
-      idConflict: mapConflictFromRow(existingId, "id_cliente", params.idCliente),
-      documentoConflict: null
-    };
+  // Sem ID informado (modo automatico) nao ha o que consultar: montar
+  // `id_cliente=eq.null` no PostgREST nao devolveria conflito nenhum e ainda
+  // gastaria uma requisicao. A duplicidade de DOCUMENTO continua valendo.
+  if (params.idCliente !== null) {
+    const existingId = await findCadastroByExactField("id_cliente", String(params.idCliente));
+    if (existingId) {
+      return {
+        success: false,
+        idConflict: mapConflictFromRow(existingId, "id_cliente", params.idCliente),
+        documentoConflict: null
+      };
+    }
   }
 
   const existingDocument = await findCadastroByDocumento(params.documentoDigits);
@@ -1173,7 +1179,7 @@ export async function validateCadastroInitialStep(
     return {
       success: false,
       idConflict: null,
-      documentoConflict: mapConflictFromRow(existingDocument, "documento", params.idCliente)
+      documentoConflict: mapConflictFromRow(existingDocument, "documento", params.idCliente ?? 0)
     };
   }
 

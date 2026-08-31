@@ -26,7 +26,10 @@ type DocumentoConsultaPayload = {
   insEstadual: string;
   tipoContribuinte: CodigoTipoContribuinte | "";
   enderecoPreparado: {
-    id_cliente: number;
+    // `null` no cadastro automatico: o numero ainda nao existe quando a consulta
+    // roda. Ninguem le este campo — quem grava o endereco usa o id devolvido pelo
+    // insert do cadastro (result.cadastro.idCliente), nao este.
+    id_cliente: number | null;
     cep: string;
     endereco: string;
     numero: string;
@@ -169,7 +172,7 @@ async function fetchJsonWithTimeout<T>(url: string, headers?: HeadersInit): Prom
   }
 }
 
-async function consultarCnpj(documentoDigits: string, idCliente: number): Promise<DocumentoConsultaPayload | null> {
+async function consultarCnpj(documentoDigits: string, idCliente: number | null): Promise<DocumentoConsultaPayload | null> {
   const result = await fetchJsonWithTimeout<CnpjApiResponse>(`https://publica.cnpj.ws/cnpj/${documentoDigits}`);
   if (!result.ok) {
     return null;
@@ -263,7 +266,15 @@ export async function POST(request: Request) {
 
   const tipoPessoa = parseTipoPessoa(body.tipoPessoa);
   const documento = normalizeDocumentDigits(toText(body.documento));
-  const idCliente = Number(body.idCliente);
+  // Cadastro automatico chega SEM idCliente (ausente ou null). A consulta a
+  // Receita e a checagem de documento nao dependem do numero — so a checagem de
+  // duplicidade por ID depende, e essa e pulada quando nao ha ID.
+  //
+  // `Number(undefined)` e NaN e `Number(null)` e 0: por isso a ausencia e
+  // detectada por identidade, antes de qualquer conversao.
+  const idClienteAusente =
+    body.idCliente === undefined || body.idCliente === null || body.idCliente === "";
+  const idCliente = idClienteAusente ? null : Number(body.idCliente);
 
   if (!tipoPessoa || !documento) {
     return NextResponse.json(
@@ -275,7 +286,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!Number.isInteger(idCliente) || idCliente <= 0) {
+  // Com ID informado o 400 continua exatamente como era.
+  if (idCliente !== null && (!Number.isInteger(idCliente) || idCliente <= 0)) {
     return NextResponse.json(
       {
         success: false,
