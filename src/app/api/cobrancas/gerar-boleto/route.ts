@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSupabaseClient } from "@/lib/supabase/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 const soDigitos = (valor: unknown): string => String(valor ?? "").replace(/\D/g, "");
 
@@ -40,16 +40,46 @@ export async function POST(request: Request) {
 
   const rotuloProvedor = isBiroInter ? "Inter (Biro)" : "C6";
 
-  // Inicializa o Supabase ANTES do webhook: a identidade do sacado precisa
-  // estar resolvida antes de a cobrança existir no provedor. Antes o cliente
-  // só era criado depois da emissão, para gravar a linha digitável.
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    console.error("[API][GerarBoleto] Nao foi possivel inicializar cliente Supabase no servidor.");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    console.error("[API][GerarBoleto] ENV AUSENTE");
     return NextResponse.json(
       { success: false, message: "Erro interno ao conectar ao banco de dados no servidor." },
       { status: 500 }
     );
+  }
+
+  // Autenticação JWT — o MESMO bloco de gerar-pix e gerar-cartao-asas.
+  //
+  // Antes daqui esta rota usava `getSupabaseClient()`, o client de NAVEGADOR,
+  // dentro do servidor: sem cookie e sem Bearer ele opera como `anon` puro.
+  // Somado à policy `GERAL` de pagamentos_v2 (USING true) e aos grants de coluna
+  // ainda concedidos ao anon, qualquer POST anônimo com um id de cobrança válido
+  // lia nome e CPF/CNPJ do sacado, disparava o webhook que EMITE BOLETO REAL no
+  // C6/Inter e gravava `boleto_enviadoo` e `linha_digitavel`. As rotas irmãs
+  // exigem Bearer desde sempre; esta ficou para trás.
+  //
+  // Sem checagem de permissão, de propósito: gerar-pix e gerar-cartao-asas também
+  // não fazem, e exigir `cobrancas.emitir_boleto` aqui BLOQUEARIA o perfil
+  // vendedor, que tem `cobrancas.create` mas não aquela. O contrato do fluxo
+  // autenticado fica byte a byte igual ao de antes.
+  const authHeader = request.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) {
+    return NextResponse.json({ success: false, message: "Sessão não encontrada." }, { status: 401 });
+  }
+
+  // Client com o Bearer do usuário e a anon key: toda query passa por RLS com a
+  // identidade certa, sem escalada acidental.
+  const supabase = createSupabaseClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    return NextResponse.json({ success: false, message: "Sessão inválida." }, { status: 401 });
   }
 
   // `cobrancaId` (UUID) é a chave preferida; `id_pagamento` fica como fallback

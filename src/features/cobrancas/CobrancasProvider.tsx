@@ -1751,10 +1751,14 @@ export function CobrancasProvider({ children }: { children: ReactNode }) {
         empresa: cobranca.empresa
       };
 
+      const sessionResponse = await client.auth.getSession();
+      const token = sessionResponse.data.session?.access_token || "";
+
       const response = await fetch("/api/cobrancas/gerar-boleto", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify(webhookPayload)
       });
