@@ -776,7 +776,9 @@ export type CadastroOperacionalUpdateResult =
     };
 
 export type CadastroInsertPayload = {
-  id_cliente: number;
+  // `null` = cadastro automatico: a chave e OMITIDA do insert para o DEFAULT da
+  // coluna (public.fn_proximo_id_cliente()) gerar o numero. Ver createCadastro.
+  id_cliente: number | null;
   id_vendedor?: string | number | null;
   nome_vendedor?: string | null;
   categoria: CadastroCategoria;
@@ -1321,8 +1323,30 @@ export async function createCadastro(
     };
   }
 
-  const idCliente = Number(payload.id_cliente);
-  if (!Number.isInteger(idCliente) || idCliente <= 0) {
+  // MODO AUTOMATICO x MODO MANUAL
+  //
+  // SO `null`/`undefined` significam "gerar automaticamente". Qualquer outro
+  // valor e tratado como numero informado pelo atendente e passa pelas mesmas
+  // validacoes de sempre.
+  //
+  // 0 e NaN sao ENTRADA INVALIDA, nunca ausencia. `Number("")` devolve 0 e
+  // `Number(undefined)` devolve NaN: um campo vazio convertido por falsy viraria
+  // um cadastro com id_cliente = 0, gravado de verdade. Por isso o teste e por
+  // identidade contra null/undefined, e nao por falsy — e por isso 0 cai na
+  // validacao abaixo e RETORNA ERRO, sem insert e sem consumir a sequence.
+  //
+  // A Etapa 4 (tela) deve converter campo vazio para `null` de forma EXPLICITA,
+  // sem depender de falsy: CadastroFormPage faz `Number(form.idCliente)` sobre
+  // uma string que e "" quando o campo esta vazio.
+  const idClienteInformado =
+    payload.id_cliente === null || payload.id_cliente === undefined
+      ? null
+      : Number(payload.id_cliente);
+
+  if (
+    idClienteInformado !== null &&
+    (!Number.isInteger(idClienteInformado) || idClienteInformado <= 0)
+  ) {
     return {
       success: false,
       errorMessage: "O ID do cliente precisa ser um numero inteiro valido."
@@ -1337,18 +1361,23 @@ export async function createCadastro(
     };
   }
 
-  const existingId = await findCadastroByExactField("id_cliente", String(idCliente));
-  if (existingId) {
-    return {
-      success: false,
-      errorMessage: `Já existe um cadastro com este ID: ${toText(existingId.id_cliente)} - ${toText(existingId.nome)}.`,
-      conflict: {
-        kind: "id_cliente",
-        idCliente: Number(existingId.id_cliente) || idCliente,
-        nome: toText(existingId.nome),
-        documento: normalizeDocumento(existingId.documento)
-      }
-    };
+  // No modo automatico nao ha numero para checar. A unicidade fica com a sequence
+  // (atomica, nao transacional) e com o indice clientes_id_cliente_key. No modo
+  // manual a checagem previa continua exatamente como era.
+  if (idClienteInformado !== null) {
+    const existingId = await findCadastroByExactField("id_cliente", String(idClienteInformado));
+    if (existingId) {
+      return {
+        success: false,
+        errorMessage: `Já existe um cadastro com este ID: ${toText(existingId.id_cliente)} - ${toText(existingId.nome)}.`,
+        conflict: {
+          kind: "id_cliente",
+          idCliente: Number(existingId.id_cliente) || idClienteInformado,
+          nome: toText(existingId.nome),
+          documento: normalizeDocumento(existingId.documento)
+        }
+      };
+    }
   }
 
   const existingDocument = await findCadastroByExactField("documento", documento);
@@ -1366,7 +1395,15 @@ export async function createCadastro(
   }
 
   const insertPayload = {
-    id_cliente: idCliente,
+    // A chave `id_cliente` so entra quando o atendente informou o numero. No modo
+    // automatico ela fica AUSENTE de proposito: e a AUSENCIA que faz o DEFAULT da
+    // coluna rodar. Mandar `id_cliente: null` aqui gravaria NULL em silencio — a
+    // coluna e nullable e o UNIQUE aceita multiplos NULL (ja ha 4 linhas assim).
+    // Comprovado em producao na migration 20260831162557_id_cliente_automatico_fase2.
+    //
+    // `normalizeClienteWritePayload` nao devolve id_cliente em nenhum ramo, entao
+    // o spread abaixo nao reintroduz a chave.
+    ...(idClienteInformado !== null ? { id_cliente: idClienteInformado } : {}),
     ...normalizeClienteWritePayload({
       ...payload,
       documento
@@ -1388,6 +1425,23 @@ export async function createCadastro(
     .single();
 
   if (error) {
+    // 23505 = unique_violation: o indice clientes_id_cliente_key barrando um numero
+    // que a checagem previa nao pegou porque SELECT e INSERT nao sao atomicos —
+    // outro atendente gravou o mesmo id no meio do caminho. Sem este ramo o texto
+    // cru do Postgres vaza para a tela.
+    //
+    // `error.code` do PostgREST e string; o `Number(error.code)` abaixo devolveria
+    // 23505 no campo `status`, como se fosse codigo HTTP.
+    if (error.code === "23505") {
+      return {
+        success: false,
+        errorMessage:
+          idClienteInformado !== null
+            ? `O ID ${idClienteInformado} acabou de ser usado por outro cadastro. Informe outro numero.`
+            : "Nao foi possivel reservar um numero para o cadastro. Tente salvar de novo."
+      };
+    }
+
     return {
       success: false,
       errorMessage: error.message || "Nao foi possivel criar o cadastro no Supabase.",
@@ -1402,11 +1456,27 @@ export async function createCadastro(
     };
   }
 
+  // O numero definitivo e SEMPRE o que o banco devolveu: no modo automatico ele
+  // nasceu do DEFAULT e nao existe em lugar nenhum antes desta linha. Endereco,
+  // contato e vinculo sao criados logo depois apontando para ele.
+  //
+  // Sem numero valido aqui o certo e FALHAR: cair para 0 penduraria as filhas no
+  // id_cliente 0 — a mesma classe de erro que deixou 346 enderecos orfaos na
+  // importacao. `enderecos` nao tem FK, entao nada no banco barraria.
+  const idClienteGerado = Number(data.id_cliente);
+  if (!Number.isInteger(idClienteGerado) || idClienteGerado <= 0) {
+    return {
+      success: false,
+      errorMessage:
+        "O cadastro foi criado, mas o Supabase nao devolveu o ID gerado. Confira na lista de cadastros antes de tentar de novo."
+    };
+  }
+
   return {
     success: true,
     cadastro: {
       id: toText(data.id),
-      idCliente: Number(data.id_cliente) || idCliente,
+      idCliente: idClienteGerado,
       nome: toText(data.nome),
       categoria: data.categoria as CadastroCategoria
     }
