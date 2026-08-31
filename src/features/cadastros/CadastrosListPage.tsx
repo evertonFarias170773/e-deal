@@ -397,9 +397,12 @@ export function CadastrosListPage() {
         getKey={(cadastro) => cadastro.id}
         emptyTitle="Nenhum cadastro encontrado"
         emptyDescription="Ajuste a busca ou limpe os filtros para localizar clientes."
-        // Clique (ou Enter/Espaço) na linha abre o cadastro. O menu de ações e os
-        // demais controles seguem funcionando — a navegação os ignora.
-        onRowClick={(cadastro) => router.push(`/cadastros/${cadastro.idCliente}`)}
+        // Clique (ou Enter/Espaço) na linha abre a EDIÇÃO do cadastro — é o que
+        // quem chega aqui quase sempre quer fazer. O detalhe continua a um clique,
+        // por "Ver cadastro" no menu de ações e pelo botão "Ver" no card mobile.
+        // O menu de ações e os demais controles seguem funcionando — a navegação
+        // os ignora.
+        onRowClick={(cadastro) => router.push(`/cadastros/${cadastro.idCliente}/editar`)}
         columns={[
           {
             header: "ID",

@@ -35,7 +35,16 @@ type CadastroDetailPageProps = {
   dataSource?: "supabase" | "mock";
 };
 
-const PROPOSTAS_PAGE_SIZE = 20;
+/**
+ * 5 por página: o bloco de propostas é UM dos vários do detalhe do cadastro, e
+ * com 20 ele virava uma lista longa que empurrava todo o resto da tela para
+ * baixo. Quem quer o histórico completo tem Anterior/Próxima logo abaixo.
+ *
+ * Tudo que depende de página deriva daqui — `totalPages`, o contador e o
+ * `pageSize` mandado ao serviço. Mudar este número é a única alteração
+ * necessária.
+ */
+const PROPOSTAS_PAGE_SIZE = 5;
 const filterClass =
   "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 
