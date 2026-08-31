@@ -272,9 +272,25 @@ begin
   end if;
 
   -- ------------------------------------------------------------------
-  -- 5. Devolve a constraint a NOT DEFERRABLE. Isto FORCA a checagem imediata
-  --    das pendencias: se alguma linha tivesse ficado orfa, morre aqui.
+  -- 5. Roda a checagem adiada e devolve a constraint a NOT DEFERRABLE.
+  --
+  --    A ORDEM AQUI E O QUE IMPORTA, e eu errei nela na 2a tentativa
+  --    (31/08/2026, 15:44):
+  --
+  --      ERROR 55006: cannot ALTER TABLE "clientes_socios" because it has
+  --      pending trigger events
+  --
+  --    Eu tinha escrito que o ALTER "forca a checagem imediata". E o
+  --    CONTRARIO: a checagem pendente e justamente o que IMPEDE o ALTER. O
+  --    Postgres recusa ALTER TABLE numa tabela com eventos de trigger na fila,
+  --    e as verificacoes de FK adiadas sao exatamente isso.
+  --
+  --    `SET CONSTRAINTS ... IMMEDIATE` executa as checagens pendentes AGORA,
+  --    aqui dentro. Se alguma linha tiver ficado orfa, aborta neste ponto — que
+  --    e a garantia que eu queria desde o inicio. Com a fila vazia, o ALTER
+  --    passa e a constraint volta ao estado original.
   -- ------------------------------------------------------------------
+  set constraints public.fk_cliente_socio immediate;
   execute 'alter table public.clientes_socios alter constraint fk_cliente_socio not deferrable';
 
   -- ------------------------------------------------------------------
@@ -355,6 +371,11 @@ begin
   if v_n <> 1 then
     raise exception 'ABORTADO: fk_cliente_socio NAO voltou para NOT DEFERRABLE.';
   end if;
+
+  -- Segunda rede: qualquer checagem de integridade que ainda esteja na fila —
+  -- desta ou de qualquer outra constraint adiavel — roda AQUI, e nao no commit.
+  -- Falhando, morre dentro do bloco, com o contexto ainda legivel.
+  set constraints all immediate;
 
   raise notice 'OK: % -> % concluido. 12 filhas + o cadastro migrados, PIX pago intacto, fk_cliente_socio NOT DEFERRABLE.', v_id_antigo, v_id_novo;
 end
