@@ -1,0 +1,138 @@
+-- =====================================================================
+-- id_cliente automatico — FASE 2: o DEFAULT na coluna
+-- =====================================================================
+--
+-- O QUE
+-- -----
+-- Liga a funcao criada na Fase 1 (20260831154520_id_cliente_automatico_fase1.sql)
+-- como DEFAULT de public.clientes.id_cliente:
+--
+--   alter table public.clientes
+--     alter column id_cliente set default public.fn_proximo_id_cliente();
+--
+-- Nada mais. A coluna continua `integer` e continua nullable; nenhuma linha e
+-- lida, escrita ou apagada; nenhuma FK, trigger, policy ou grant e tocado.
+--
+-- ESTA MIGRATION CONTINUA INERTE
+-- ------------------------------
+-- Em Postgres, valor explicito no INSERT sempre vence o DEFAULT. O unico ponto
+-- de escrita do sistema — `createCadastro` em
+-- src/features/cadastros/services/cadastros.service.ts — monta o payload com
+-- `id_cliente: idCliente` SEMPRE preenchido, entao o comportamento de hoje nao
+-- muda em nada ao aplicar isto.
+--
+-- O DEFAULT so passa a valer quando a Fase 3 fizer o service OMITIR a coluna.
+-- Ate la esta migration e observavel sem risco: da para conferir o catalogo,
+-- testar em transacao com rollback e conviver com ela em producao.
+--
+-- ARMADILHA: null EXPLICITO NAO ACIONA O DEFAULT
+-- ----------------------------------------------
+-- Esta e a nota mais importante deste arquivo, porque e o erro mais facil de
+-- cometer na Fase 3:
+--
+--   insert into clientes (nome)             values ('X');        -- usa o DEFAULT -> 70001
+--   insert into clientes (nome, id_cliente) values ('X', null);  -- grava NULL, sem DEFAULT
+--
+-- DEFAULT so entra quando a coluna esta AUSENTE da lista do INSERT. Mandar
+-- `null` e um valor explicito como qualquer outro, e a coluna e nullable — o
+-- banco aceita de bom grado e o cadastro nasce sem numero, silenciosamente.
+--
+-- Isso ja aconteceu 4 vezes nesta tabela (2 linhas vazias e 2 de teste, todas
+-- com id_cliente NULL). Como o indice UNIQUE clientes_id_cliente_key aceita
+-- multiplos NULL, nada barra a repeticao.
+--
+-- Consequencia pratica para a Fase 3: no modo automatico o service precisa
+-- montar o insertPayload SEM A CHAVE `id_cliente`, nunca com `id_cliente: null`.
+-- Atencao redobrada com `Number("")`, que devolve 0 e nao null.
+--
+-- SOBRE O LOCK
+-- ------------
+-- `SET DEFAULT` e alteracao de catalogo: NAO reescreve a tabela e nao varre as
+-- 65 mil linhas. Pega ACCESS EXCLUSIVE por um instante. O `lock_timeout` abaixo
+-- garante que, se houver transacao longa segurando a tabela, esta migration
+-- FALHA rapido em vez de enfileirar bloqueando os atendentes.
+--
+-- PERMISSAO
+-- ---------
+-- Quem inserir omitindo a coluna precisa de EXECUTE em fn_proximo_id_cliente().
+-- A Fase 1 concedeu a `authenticated` e `service_role`, e revogou de `anon`. O
+-- app usa createBrowserClient com a sessao do usuario, ou seja `authenticated`.
+-- Um INSERT anonimo que omita a coluna passa a falhar — nenhum fluxo atual faz
+-- isso, mas fica registrado.
+--
+-- O QUE ESTA MIGRATION NAO FAZ
+-- ----------------------------
+-- * nao altera codigo da aplicacao (Fase 3);
+-- * nao torna a coluna NOT NULL (as 4 linhas NULL existentes impediriam, e o
+--   assunto e separado);
+-- * nao insere, atualiza nem apaga nenhuma linha;
+-- * nao toca na sequence orfa clientes_id_cliente_seq (parada em 959595);
+-- * nao mexe nas 9 FKs, nos 3 triggers, nas policies nem nos grants de `clientes`.
+-- =====================================================================
+
+set local lock_timeout = '5s';
+
+alter table public.clientes
+  alter column id_cliente set default public.fn_proximo_id_cliente();
+
+
+-- =====================================================================
+-- VERIFICACOES APOS APLICAR (rodar como SELECT)
+-- =====================================================================
+--
+-- (a) o default esta no catalogo:
+--     select column_default, is_nullable from information_schema.columns
+--      where table_schema='public' and table_name='clientes' and column_name='id_cliente';
+--     -- esperado: fn_proximo_id_cliente() | YES
+--
+-- (b) nada consumiu a sequence so por aplicar a migration:
+--     select last_value, is_called from public.seq_id_cliente_vibe;
+--     -- esperado: 70000 | true
+--
+-- (c) teste NAO destrutivo do caminho automatico — o raise aborta a transacao,
+--     entao a linha nunca chega a existir:
+--     do $teste$
+--     declare v_uuid uuid; v_id integer;
+--     begin
+--       insert into public.clientes (nome, documento)
+--            values ('TESTE FASE2 - OMITINDO id_cliente', '00000000000')
+--         returning id, id_cliente into v_uuid, v_id;
+--       raise exception 'TESTE_OK omitindo a coluna -> id_cliente=% (uuid %)', v_id, v_uuid;
+--     end
+--     $teste$;
+--     -- esperado: erro TESTE_OK com o proximo numero livre. Nada e gravado.
+--
+-- (d) teste NAO destrutivo da armadilha do null explicito:
+--     do $teste$
+--     declare v_id integer;
+--     begin
+--       insert into public.clientes (nome, documento, id_cliente)
+--            values ('TESTE FASE2 - NULL EXPLICITO', '00000000001', null)
+--         returning id_cliente into v_id;
+--       raise exception 'TESTE_OK null explicito -> gravou %', coalesce(v_id::text, 'NULL');
+--     end
+--     $teste$;
+--     -- esperado: erro TESTE_OK dizendo NULL. Comprova que o DEFAULT nao entrou.
+--
+-- (e) nextval NAO volta com o rollback — devolver a sequence apos os testes:
+--     select setval('public.seq_id_cliente_vibe', 70000, true);
+--     select last_value, is_called from public.seq_id_cliente_vibe;
+--
+-- (f) nenhuma linha sobrou dos testes:
+--     select count(*) from public.clientes where id_cliente >= 70000;
+--     select count(*) from public.clientes where documento in ('00000000000','00000000001');
+--     -- esperado: a contagem de referencia do dia, e 0
+--
+--
+-- =====================================================================
+-- ROLLBACK
+-- =====================================================================
+-- Enquanto a Fase 3 nao existir, o codigo sempre envia o numero e o DEFAULT
+-- nunca e consultado: remove-lo nao muda comportamento nenhum.
+--
+--   -- alter table public.clientes alter column id_cliente drop default;
+--
+-- Depois da Fase 3, remover o DEFAULT ANTES de reverter o codigo faria o modo
+-- automatico gravar NULL (a coluna e nullable). A ordem correta e: reverter o
+-- codigo primeiro — ou baixar a flag de UI — e so entao dropar o default.
+-- =====================================================================
