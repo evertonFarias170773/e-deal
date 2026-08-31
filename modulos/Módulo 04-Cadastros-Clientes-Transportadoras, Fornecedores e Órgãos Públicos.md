@@ -433,6 +433,131 @@ Uso:
 
 Este é o ID que o usuário costuma reconhecer no sistema.
 
+#### Como o número é atribuído (desde 31/08/2026)
+
+Até agosto de 2026 todo cadastro novo nascia primeiro no sistema antigo da Ideal e o
+atendente repetia o `id_cliente` à mão no Vibe. O campo era obrigatório e digitado
+livre — foi assim que o cadastro MN LASER nasceu com `123133` em vez de `133`, por
+erro de digitação, e desfazer exigiu mover 12 linhas filhas em 6 tabelas.
+
+Hoje **o Vibe gera o número sozinho**, e a tela de cadastro novo oferece dois modos:
+
+| Modo | Padrão | Campo na tela | O que vai no `INSERT` |
+|---|---|---|---|
+| **Automático** | sim | readOnly, "Será gerado ao salvar" | a chave `id_cliente` é **omitida** |
+| **Informar manualmente** | não | input numérico, como antes | `id_cliente` com o valor digitado |
+
+O modo manual continua disponível para **todos** que já criam cadastro
+(`cadastros.create`) — não há restrição de perfil. Em edição o campo segue somente
+leitura: o número nunca muda depois de criado.
+
+**A regra que não pode ser quebrada: a chave é OMITIDA, nunca enviada como `null`.**
+
+```sql
+insert into clientes (nome)             values ('X');       -- usa o DEFAULT -> proximo livre
+insert into clientes (nome, id_cliente) values ('X', null); -- grava NULL, sem DEFAULT
+```
+
+Em Postgres o `DEFAULT` só entra quando a coluna está **ausente** da lista do
+`INSERT`. `null` é um valor explícito como outro qualquer, a coluna é nullable e o
+índice `UNIQUE` aceita vários `NULL` — o cadastro nasceria sem número, em silêncio.
+Já há 4 linhas assim na tabela. Pelo mesmo motivo, `0` e `NaN` são **entrada
+inválida, nunca ausência**: `Number("")` devolve `0` e `Number(undefined)` devolve
+`NaN`, então campo vazio convertido por *falsy* viraria um cadastro com
+`id_cliente = 0`. A conversão testa `null`/`undefined` por identidade.
+
+#### Como o próximo número é escolhido
+
+```
+public.seq_id_cliente_vibe      sequence integer, start 70000, minvalue 70000
+public.fn_proximo_id_cliente()  SECURITY DEFINER, laço com nextval que PULA os ocupados
+public.clientes.id_cliente      DEFAULT public.fn_proximo_id_cliente()
+```
+
+A numeração começa em **70.000**. Como o 70.000 já estava ocupado, o primeiro
+cadastro automático nasceu **70.001** (confirmado em produção em 31/08/2026).
+
+Duas escolhas que valem registro:
+
+- **Sequence, e não `max(id_cliente)+1`.** `nextval()` é atômico e não
+  transacional: dois atendentes salvando ao mesmo tempo nunca recebem o mesmo
+  número, mesmo antes do commit. A checagem de duplicidade da tela é um `SELECT`
+  antes do `INSERT` — não é atômica, e só o índice `UNIQUE` barra de verdade.
+- **Laço que pula ocupados.** Restam 42 valores ocupados acima do ponto atual do
+  gerador, criados fora de ordem nos meses de teste (80001 a 959595). O laço **dispensa reposicionar a sequence para
+  sempre**: se alguém cadastrar 70.050 no modo manual, a sequence segue onde está e
+  simplesmente pula o 70.050 quando chegar lá. Nunca é preciso `setval` de
+  manutenção.
+
+Há **10.000 números livres seguidos entre 70.001 e 80.000**. A ~150 cadastros por
+mês, o gerador leva mais de 5 anos para topar no primeiro ocupado (80.001).
+
+#### Faixas já ocupadas acima de 70.000
+
+A faixa **120001–120027 é de transportadoras**. É uma convenção que nunca foi
+escrita em lugar nenhum e só apareceu ao inspecionar os dados: dos 26 cadastros
+entre 120000 e 120028, **24 têm `categoria = 'TRANSPORTADORA'`** — as duas exceções
+são a CLARO (120000) e a SOME (120028), ambas `CLIENTE`. O gerador automático não
+chega perto dessa faixa tão cedo, mas quem for numerar transportadora à mão deve
+continuar ali.
+
+Os demais valores acima de 70.000 são esparsos (80001–80015, 85000, 90003–90100,
+91500, 95000, 123456 de teste, 959595). O laço da função cuida de todos.
+
+#### A sequence órfã que NÃO deve ser reaproveitada
+
+Existe em produção uma sequence **`public.clientes_id_cliente_seq`**, resto de
+quando a coluna foi `serial` na importação do sistema antigo:
+
+- **órfã** — `pg_depend` não a liga a nenhuma tabela ou coluna;
+- **parada em `last_value = 959595`**, `is_called = true`;
+- **sem uso** — nada no banco nem no código a referencia.
+
+Reaproveitá-la entregaria **959596** no próximo `nextval`, muito acima da faixa
+pretendida. Por isso a numeração usa uma sequence nova e explícita
+(`seq_id_cliente_vibe`). **Não reaproveitar a órfã.** Removê-la é decisão separada.
+
+#### Flag e ordem de reversão
+
+A tela é controlada por `CADASTRO_ID_AUTOMATICO` em `src/constants/featureFlags.ts`:
+
+- `true` — a tela abre em Automático, com os dois radios;
+- `false` — volta ao comportamento anterior: um único campo obrigatório, digitado
+  à mão, sem radios. Não exige deploy de banco.
+
+**A ordem da reversão importa.** Baixar a flag (ou reverter o código) **antes** de
+dropar o `DEFAULT`. Dropar o `DEFAULT` primeiro, com o código ainda em modo
+automático, faria o `INSERT` sem a chave gravar `NULL` — a coluna é nullable e nada
+barraria. Ou seja:
+
+```
+1. baixar CADASTRO_ID_AUTOMATICO para false (ou git revert do código)
+2. só então: alter table public.clientes alter column id_cliente drop default;
+```
+
+#### Vigilância: a folga do sistema antigo
+
+O sistema antigo ainda numera na faixa abaixo de 70.000. Se ele continuar
+cadastrando, um dia encosta na faixa do Vibe e passa a colidir. Consulta de
+acompanhamento:
+
+```sql
+select max(id_cliente) as maior_do_sistema_antigo,
+       70000 - max(id_cliente) as folga
+  from public.clientes
+ where id_cliente < 70000;
+```
+
+**Em 31/08/2026: maior = 66.433, folga = 3.567.** A ~150 cadastros/mês, isso dá
+cerca de dois anos — por volta de **agosto de 2028**.
+
+**Gatilho: quando a folga cair abaixo de 1.000**, decidir entre duas saídas:
+
+1. **congelar o sistema antigo**, se ele já não receber cadastro novo; ou
+2. **mover a faixa automática para cima**, com um `setval` na
+   `seq_id_cliente_vibe` para um patamar livre. Não é preciso mais nada: a função
+   continua pulando ocupados sozinha, então a faixa nova convive com o que já existe.
+
 ---
 
 ### `id_vendedor`
