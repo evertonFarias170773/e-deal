@@ -224,7 +224,13 @@ export function CadastroDetailPage({ cadastro, dataSource = "mock" }: CadastroDe
             <ActionsMenu
               items={[
                 { label: "Editar cadastro", onClick: () => router.push(`/cadastros/${cadastro.idCliente}/editar`) },
-                { label: "Criar proposta", onClick: () => showMockActionToast("Criar proposta") },
+                // Mesmo destino do botão "Criar proposta" do card de Propostas /
+                // Pedidos: a nova proposta já abre com este cadastro como
+                // cliente. O campo continua editável lá.
+                {
+                  label: "Criar proposta",
+                  onClick: () => router.push(`/orcamentos/novo?id_cliente=${cadastro.idCliente}`)
+                },
                 // Gate alinhado ao backend (RPC mc_ajuste_avulso_criar exige
                 // is_admin/is_super_adm via cc__assert_permissao '__ADMIN__') e à
                 // lista de cadastros. Antes usava a permissão "financeiro.ajuste_credito",

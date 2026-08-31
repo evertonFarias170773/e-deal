@@ -709,6 +709,73 @@ function OrcamentoFormInner({ mode, proposta, onReload }: { mode: "new" | "edit"
     // entra nas dependências sem criar disparo novo deste efeito.
   }, [searchParams, pendenciaRevisaoAberta, proposta, getCobrancasByProposta, setActiveFormTab]);
 
+  /**
+   * Cliente pré-selecionado por `?id_cliente=` — usado por quem cria a proposta
+   * de DENTRO do detalhe de um cadastro, onde o cliente já é conhecido.
+   *
+   * Só vale em `mode === "new"` e só quando o parâmetro vem na URL: sem ele,
+   * absolutamente nada muda e os demais caminhos continuam pedindo o cliente.
+   *
+   * Chama `selectCliente`, a MESMA função do clique manual na busca — de
+   * propósito. Ela é quem carrega endereços, contatos, vendedor padrão, empresa
+   * padrão e recalcula os itens pelo bônus do cliente. Um atalho que preenchesse
+   * só `form.clienteId` deixaria a proposta pela metade e divergiria do caminho
+   * normal na primeira mudança que alguém fizesse lá. Nenhuma validação é
+   * pulada: o campo continua editável e tudo que roda na seleção manual roda
+   * aqui também.
+   *
+   * O `ref` trava em uma execução: `searchParams` muda quando outra parte da
+   * tela mexe na query, e repetir a seleção sobrescreveria o que o usuário já
+   * tivesse preenchido.
+   */
+  const clientePreSelecionadoRef = useRef(false);
+  useEffect(() => {
+    if (mode !== "new" || clientePreSelecionadoRef.current) return;
+
+    const bruto = searchParams?.get("id_cliente");
+    const idCliente = Number(bruto);
+    if (!bruto || !Number.isFinite(idCliente) || idCliente <= 0) return;
+
+    clientePreSelecionadoRef.current = true;
+
+    /**
+     * Entra na conta de `inicializacoesPendentes`: o snapshot que decide se o
+     * formulário está "alterado" espera as escritas de abertura terminarem. Sem
+     * isto, a seleção chegaria DEPOIS do snapshot e a proposta abriria já suja —
+     * o usuário levaria o aviso de alterações não salvas sem ter tocado em nada.
+     */
+    inicializacoesPendentes.current += 1;
+
+    void (async () => {
+      try {
+        const { cadastro } = await getCadastroCompleto(idCliente);
+        if (!cadastro) {
+          // Cadastro inexistente ou sem acesso: a proposta abre normalmente e o
+          // usuário escolhe o cliente na mão. Nunca trava a tela.
+          showToast({
+            type: "warning",
+            title: "Cadastro não encontrado",
+            description: `Não foi possível carregar o cadastro #${idCliente}. Selecione o cliente manualmente.`
+          });
+          return;
+        }
+        await selectCliente(cadastro);
+      } catch (err) {
+        console.error("[OrcamentoFormPage] Falha ao pré-selecionar o cliente da URL:", err);
+        showToast({
+          type: "warning",
+          title: "Cliente não pré-selecionado",
+          description: "Escolha o cliente manualmente para continuar."
+        });
+      } finally {
+        inicializacoesPendentes.current -= 1;
+      }
+    })();
+    // `selectCliente` e `showToast` são estáveis dentro do ciclo de vida da tela
+    // e o `ref` já garante execução única — incluí-las só reintroduziria o risco
+    // de reexecutar e apagar o que o usuário digitou.
+  }, [mode, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // — Histórico de movimentos financeiros da proposta —
   const [historicoMovimentos, setHistoricoMovimentos] = useState<any[]>([]);
   const [loadingHistorico, setLoadingHistorico] = useState(false);
