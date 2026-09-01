@@ -28,13 +28,14 @@ import {
   updatePropostaStatusInterno,
   liberarPropostaParaProducao,
   retirarPropostaDaProducao,
+  PERIODO_ULTIMOS_15_DIAS,
   type PropostaChatResumo
 } from "@/features/orcamentos/services/orcamentos.service";
 import { useGlobalChat } from "@/features/chat/context/GlobalChatContext";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao, getDataScope, getNomeParaEscopo } from "@/features/auth/usuarios.service";
 import { useCobrancas } from "@/features/cobrancas/CobrancasProvider";
-import { codecs } from "@/lib/url-state";
+import { codecs, type ParamCodec } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { PropostaCobrancaPanel } from "@/features/cobrancas/PropostaCobrancaPanel";
@@ -176,6 +177,23 @@ function getPeriodValue(date: Date) {
   return `${year}-${month}`;
 }
 
+/**
+ * "Ultimos 15 dias (alterados)" — a primeira opcao do drop e o ponto de partida
+ * da tela.
+ *
+ * O rotulo diz "alterados" de proposito: este recorte le `propostas.updated_at`,
+ * nao `created_at` como os meses. Sao perguntas diferentes — "o que mexeu" contra
+ * "o que nasceu no mes" —, e sem o aviso no rotulo a diferenca ficaria invisivel
+ * para quem so olha o numero.
+ *
+ * Entra em `periodOptions` como qualquer outra opcao, entao
+ * `getSelectedPeriodLabel` ja resolve o rotulo dos cards sem nenhuma alteracao.
+ */
+const OPCAO_ULTIMOS_15_DIAS: PeriodOption = {
+  value: PERIODO_ULTIMOS_15_DIAS,
+  label: "Últimos 15 dias (alterados)"
+};
+
 function buildLastSixPeriodOptions() {
   const today = new Date();
   const periods = Array.from({ length: 6 }, (_, index) => {
@@ -187,7 +205,30 @@ function buildLastSixPeriodOptions() {
     } satisfies PeriodOption;
   });
 
-  return periods satisfies PeriodOption[];
+  // A janela movel na frente; os seis meses seguem exatamente como estavam.
+  return [OPCAO_ULTIMOS_15_DIAS, ...periods] satisfies PeriodOption[];
+}
+
+/**
+ * Codec do periodo: aceita "AAAA-MM" — a mesma regra de `codecs.mesIso()` — ou o
+ * sentinela da janela movel.
+ *
+ * Local, e nao uma mudanca em `codecs.mesIso()`, porque aquele codec descreve um
+ * MES ISO e passar a aceitar "ULT15" faria o nome mentir. Sem esta extensao, o
+ * valor novo seria rejeitado na leitura da URL e um link salvo apontando para ele
+ * cairia silenciosamente no padrao.
+ */
+function codecPeriodo(): ParamCodec<string> {
+  return {
+    parse: (bruto) => {
+      const valor = (bruto ?? "").trim();
+      if (valor === "") return undefined;
+      if (valor === PERIODO_ULTIMOS_15_DIAS) return valor;
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(valor)) return undefined;
+      return valor;
+    },
+    serialize: (valor) => (valor === "" ? null : valor)
+  };
 }
 
 function getSelectedPeriodLabel(periodo: string, periodOptions: PeriodOption[]) {
@@ -335,7 +376,10 @@ export function OrcamentosListPageReal() {
       cob: { codec: codecs.enumOf(TIPOS_COBRANCA), default: "TODOS" as TipoCobrancaFiltro },
       card: { codec: codecs.enumOpcional(CARDS_FILTRO), default: null as CardFiltro },
       periodo: {
-        codec: codecs.mesIso(),
+        // `periodOptions[0]` agora e a janela movel: a tela ABRE nela, e
+        // `clearFilters()` — que devolve tudo ao padrao do schema — volta para
+        // ela tambem, sem precisar de tratamento proprio.
+        codec: codecPeriodo(),
         default: periodOptions[0]?.value ?? getPeriodValue(new Date())
       },
       pag: { codec: codecs.numero({ min: 1 }), default: 1 }
@@ -598,6 +642,13 @@ export function OrcamentosListPageReal() {
       const matchesPeriodo =
         ignorarPeriodo ||
         periodo === "all" ||
+        // A janela movel NAO e reconferida aqui, de proposito. O corte depende
+        // de "agora", e o "agora" do navegador nao e o do banco: recalcular no
+        // cliente faria uma linha na borda sumir da lista que o servidor acabou
+        // de devolver. O servidor ja aplicou `updated_at >= inicio` e e a
+        // autoridade sobre esta janela — os meses, cujo corte e uma data fixa,
+        // seguem reconferidos exatamente como antes.
+        periodo === PERIODO_ULTIMOS_15_DIAS ||
         (() => {
           const target = new Date(item.createdAt);
           const [y, m] = periodo.split("-").map(Number);

@@ -217,10 +217,31 @@ function joinTiposCobranca(values: string[]) {
   return unique.length ? unique.join(" / ") : "Não gerada";
 }
 
+/**
+ * Sentinela do periodo "Ultimos 15 dias (alterados)".
+ *
+ * Nao e um mes: os demais valores de periodo sao "AAAA-MM" e recortam por
+ * `created_at`. Este recorta por `updated_at`, respondendo "o que MEXEU
+ * recentemente" em vez de "o que nasceu no mes".
+ *
+ * `updated_at` e carimbado por DOIS triggers BEFORE UPDATE de `propostas`
+ * (`propostas_set_timestamp` e `trg_set_updated_at`), os dois sem condicao: toda
+ * escrita na linha recarimba, inclusive a feita por outro trigger ou por
+ * migration. Medido em 01/09/2026: das 820 propostas no recorte, 78 tinham sido
+ * criadas antes dele — e 59 dessas por mudanca real de `status_interno`, ou
+ * seja, o pedido andou mesmo. O ruido conhecido e uma migration em massa, que
+ * joga tudo que ela tocar para dentro da janela; por isso as migrations desta
+ * base desarmam esses dois triggers durante backfill.
+ */
+export const PERIODO_ULTIMOS_15_DIAS = "ULT15";
+
 type OrcamentosPeriodoFilter = {
   periodoKey: string;
+  /** Coluna recortada. Os meses usam `created_at`; ULT15 usa `updated_at`. */
+  coluna: "created_at" | "updated_at";
   inicioIso: string;
-  fimExclusivoIso: string;
+  /** Nulo = janela aberta no fim. So ULT15 usa isso; os meses seguem fechados. */
+  fimExclusivoIso: string | null;
 };
 
 function getSaoPauloMidnightIso(year: number, month: number) {
@@ -230,6 +251,19 @@ function getSaoPauloMidnightIso(year: number, month: number) {
 function buildPeriodoFilter(periodo: string): OrcamentosPeriodoFilter | null {
   if (!periodo || periodo === "all") {
     return null;
+  }
+
+  // Janela movel de 15 dias sobre `updated_at`, aberta no fim: sem teto, uma
+  // proposta alterada durante a navegacao continua no recorte.
+  if (periodo === PERIODO_ULTIMOS_15_DIAS) {
+    const inicio = new Date();
+    inicio.setDate(inicio.getDate() - 15);
+    return {
+      periodoKey: PERIODO_ULTIMOS_15_DIAS,
+      coluna: "updated_at",
+      inicioIso: inicio.toISOString(),
+      fimExclusivoIso: null
+    };
   }
 
   const [yearText, monthText] = periodo.split("-");
@@ -245,6 +279,7 @@ function buildPeriodoFilter(periodo: string): OrcamentosPeriodoFilter | null {
 
   return {
     periodoKey: periodo,
+    coluna: "created_at",
     inicioIso,
     fimExclusivoIso: getSaoPauloMidnightIso(nextMonth.year, nextMonth.month)
   };
@@ -374,7 +409,12 @@ async function fetchPropostaRows(
       .select(columnsToSelect, { count: "exact" });
 
     if (periodoFilter) {
-      query = query.gte("created_at", periodoFilter.inicioIso).lt("created_at", periodoFilter.fimExclusivoIso);
+      // A coluna vem do proprio filtro: os meses seguem em `created_at`, exatamente
+      // como antes; so ULT15 recorta por `updated_at`. Teto so quando existe.
+      query = query.gte(periodoFilter.coluna, periodoFilter.inicioIso);
+      if (periodoFilter.fimExclusivoIso) {
+        query = query.lt(periodoFilter.coluna, periodoFilter.fimExclusivoIso);
+      }
     }
 
     if (filters?.vendedor && filters.vendedor !== "TODOS") {
