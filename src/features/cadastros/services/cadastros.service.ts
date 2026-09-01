@@ -10,6 +10,7 @@ import type {
   SupabaseUsuarioVendedorRow
 } from "@/features/cadastros/types.supabase";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { bearerDaSessao } from "@/lib/supabase/bearer";
 import {
   escolherEnderecoPrincipal,
   TIPO_ENDERECO_PRINCIPAL
@@ -159,32 +160,6 @@ function buildRestUrl(table: string, params: Record<string, string>) {
   }
 
   return url;
-}
-
-/**
- * Bearer das chamadas REST diretas deste arquivo.
- *
- * Elas montavam o header com a PROPRIA anon key — `Bearer <anonKey>` —, o que
- * faz o PostgREST resolver o papel como `anon` mesmo com o usuario logado. Ate
- * 01/09/2026 isso passava despercebido porque `anon` tinha GRANT em tudo. O
- * commit 93e0a9b revogou `clientes` e `enderecos`, e estas chamadas comecaram a
- * voltar 401 `permission denied for table clientes`.
- *
- * O `apikey` continua sendo a anon key — ele identifica o PROJETO e e
- * obrigatorio. O que muda e o `authorization`, que passa a levar o token da
- * sessao, resolvendo o papel como `authenticated`.
- *
- * Sem sessao cai de volta na anon key: o comportamento fica igual ao de antes
- * para as tabelas ainda abertas, e o erro segue explicito nas fechadas.
- */
-async function bearerDaSessao(anonKey: string): Promise<string> {
-  try {
-    const client = getSupabaseClient();
-    const token = client ? (await client.auth.getSession()).data.session?.access_token : null;
-    return token || anonKey;
-  } catch {
-    return anonKey;
-  }
 }
 
 async function selectSupabaseRows<T>(table: string, params: Record<string, string>): Promise<T[] | null> {

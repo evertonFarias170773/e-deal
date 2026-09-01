@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { bearerDaSessao } from "@/lib/supabase/bearer";
 import { clonePagamentosMock } from "@/lib/mocks/pagamentos.mock";
 import type { Cobranca } from "@/features/cobrancas/types";
 import type { SupabasePagamentoV2Row } from "@/features/cobrancas/types.supabase";
@@ -453,7 +454,7 @@ async function fetchBoletosPDFs(idsPagamento: string[]) {
       const response = await fetch(url.toString(), {
         headers: {
           apikey: config.anonKey,
-          authorization: `Bearer ${config.anonKey}`,
+          authorization: `Bearer ${await bearerDaSessao(config.anonKey)}`,
           accept: "application/json",
           "accept-profile": "public"
         }
@@ -687,7 +688,7 @@ export async function updatePagamentoV2Empresa(
     method: "PATCH",
     headers: {
       apikey: config.anonKey,
-      authorization: `Bearer ${config.anonKey}`,
+      authorization: `Bearer ${await bearerDaSessao(config.anonKey)}`,
       accept: "application/json",
       "accept-profile": "public",
       "content-type": "application/json",
@@ -843,7 +844,7 @@ export async function updatePagamentoV2StatusConfirmacao(
     method: "PATCH",
     headers: {
       apikey: config.anonKey,
-      authorization: `Bearer ${config.anonKey}`,
+      authorization: `Bearer ${await bearerDaSessao(config.anonKey)}`,
       accept: "application/json",
       "accept-profile": "public",
       "content-type": "application/json",

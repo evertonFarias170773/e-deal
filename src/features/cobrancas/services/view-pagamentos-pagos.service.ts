@@ -70,7 +70,7 @@ export async function fetchViewPagamentosPagos(
     const response = await fetch(url.toString(), {
       headers: {
         apikey: config.anonKey,
-        authorization: `Bearer ${config.anonKey}`,
+        authorization: `Bearer ${await bearerDaSessao(config.anonKey)}`,
         accept: "application/json",
       },
     });
@@ -158,3 +158,5 @@ export function calcFaturamentoPorEmpresa(
 
   return Array.from(groups.values()).sort((a, b) => a.id_empresa - b.id_empresa);
 }
+
+import { bearerDaSessao } from "@/lib/supabase/bearer";

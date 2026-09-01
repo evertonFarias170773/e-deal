@@ -1,4 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { bearerDaSessao } from "@/lib/supabase/bearer";
 import type { PropostaFrete } from "@/features/orcamentos/types";
 
 /**
@@ -329,7 +330,7 @@ export async function solicitarCotacaoTransportadoras(input: {
     headers: {
       "Content-Type": "application/json",
       "apikey": supabaseKey,
-      "Authorization": `Bearer ${supabaseKey}`
+      "Authorization": `Bearer ${await bearerDaSessao(supabaseKey)}`
     },
     body: JSON.stringify(payload)
   });
