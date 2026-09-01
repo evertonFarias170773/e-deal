@@ -494,7 +494,25 @@ export async function getCadastrosReadOnlyList(query: CadastrosListQuery): Promi
   }
 }
 
-export async function getCadastroDetailReadOnly(id: string | number): Promise<CadastroDetailReadResult> {
+/**
+ * `clientePronto` existe para quem chama do SERVIDOR.
+ *
+ * `getSupabaseClient()` e o cliente ANONIMO do navegador. Num Server Component
+ * ele roda sem a sessao do usuario e fala como `anon` — e desde 01/09/2026
+ * (commit 93e0a9b, que fechou o acesso anonimo a `clientes` e `enderecos`)
+ * `anon` nao tem mais SELECT nessas tabelas. As duas rotas de cadastro
+ * (`/cadastros/[id]` e `/cadastros/[id]/editar`) sao Server Components: a
+ * leitura passou a voltar vazia, elas caiam no `notFound()` e a tela dava 404.
+ *
+ * Quem passa o cliente de servidor (`@/lib/supabase/server`, que le os cookies
+ * da sessao) fala como `authenticated`, que tem grant e policy. Parametro
+ * OPCIONAL de proposito: sem ele nada muda, e todos os chamadores do navegador
+ * continuam exatamente como estavam.
+ */
+export async function getCadastroDetailReadOnly(
+  id: string | number,
+  clientePronto?: ReturnType<typeof getSupabaseClient>
+): Promise<CadastroDetailReadResult> {
   const idCliente = normalizeIdCliente(id);
 
   if (!idCliente) {
@@ -505,7 +523,7 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
     };
   }
 
-  const client = getSupabaseClient();
+  const client = clientePronto ?? getSupabaseClient();
   if (!client) {
     return {
       source: "supabase",
@@ -625,8 +643,11 @@ export async function getCadastroDetailReadOnly(id: string | number): Promise<Ca
   }
 }
 
-export async function getCadastroCompleto(idCliente: string | number): Promise<CadastroDetailReadResult> {
-  return getCadastroDetailReadOnly(idCliente);
+export async function getCadastroCompleto(
+  idCliente: string | number,
+  clientePronto?: ReturnType<typeof getSupabaseClient>
+): Promise<CadastroDetailReadResult> {
+  return getCadastroDetailReadOnly(idCliente, clientePronto);
 }
 
 function mapSupabasePropostaRowToListItem(row: SupabasePropostaRow): CadastroPropostaListItem {
