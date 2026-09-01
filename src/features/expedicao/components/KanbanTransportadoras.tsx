@@ -144,16 +144,30 @@ export function KanbanTransportadoras({
                 <article
                   key={p.idInt}
                   className={`rounded-xl border p-2.5 ${
-                    // Nesta visão a urgência fica nos chips ATRASADO/HOJE; o fundo
-                    // verde claro marca quem já tem etiqueta/rastreio gerado.
+                    // PROGRESSÃO VISUAL DA BANCADA: cinza → azul → verde.
                     //
-                    // ERA AZUL ATÉ 01/09/2026. O significado não mudou — só a
-                    // cor, para liberar o azul, que passará a marcar "pronto p/
-                    // expedir". `emerald` é o verde do sistema (o mesmo de
-                    // `CORES_FASE.CONCLUIDO`), no par 300/50 que o sky usava.
+                    //   cinza  ainda não chegou na bancada (produção, acabamento)
+                    //   azul   PRONTO p/ expedir, etiqueta ainda não impressa
+                    //   verde  etiqueta gerada — o volume está rotulado
+                    //
+                    // O VERDE VENCE quando as duas condições coincidem, e elas
+                    // coincidem o tempo todo: o pedido fica PRONTO, alguém
+                    // imprime a etiqueta e ele CONTINUA PRONTO até o despacho.
+                    // Se o azul vencesse, o verde praticamente não apareceria e
+                    // a etiqueta impressa deixaria de ter sinal na tela.
+                    //
+                    // Verde independe da etapa, de propósito: `A RETIRAR` com
+                    // etiqueta de retirada impressa também é volume rotulado,
+                    // esperando o cliente. É o caso do 21415.
+                    //
+                    // Tons do sistema, sem cor nova: `emerald` é o verde de
+                    // `CORES_FASE.CONCLUIDO` e `sky` era o azul que este mesmo
+                    // card usava até 01/09/2026 — os dois no par 300/50.
                     p.etiquetaGerada
                       ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
-                      : "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
+                      : p.etapa === "PRONTO"
+                        ? "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"
+                        : "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-1">
@@ -190,12 +204,16 @@ export function KanbanTransportadoras({
                   <p className="mt-1.5 text-[11px] text-slate-500">
                     {formatarPeso(p)}
                     {p.volumes !== null ? ` · ${p.volumes} vol` : ""}
-                    {/* Frete só quando há valor. Nulo é ausência de cotação e zero
-                        é frete grátis ou FOB — nenhum dos dois vira "R$ 0,00" no
-                        card, que leria como cobrança de zero em vez de "não se
-                        aplica". Vem de `cotacao_frete.valor`, o valor COTADO. */}
-                    {p.freteValor !== null && p.freteValor > 0
-                      ? ` · frete ${formatCurrency(p.freteValor)}`
+                    {/* Frete só quando há valor. Nulo é ausência e zero é frete
+                        grátis ou FOB — nenhum dos dois vira "R$ 0,00" no card,
+                        que leria como cobrança de zero em vez de "não se aplica".
+
+                        `freteCobrado` é `propostas.valor_frete`, o que a proposta
+                        COBRA — e não `freteValor`, que é o valor COTADO em
+                        `cotacao_frete` e não acompanha recotação. Os dois batem
+                        em toda a base hoje; divergem depois de uma recotação. */}
+                    {p.freteCobrado !== null && p.freteCobrado > 0
+                      ? ` · frete ${formatCurrency(p.freteCobrado)}`
                       : ""}
                   </p>
                 </article>

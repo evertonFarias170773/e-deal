@@ -79,7 +79,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   const { data: propostas, error: propError } = await client
     .from("propostas")
     .select(
-      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente"
+      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete"
     )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
@@ -489,6 +489,21 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
         transportadoraOrcamento ||
         labelTipoFrete(tipoFrete),
       freteValor: frete?.valor !== null && frete?.valor !== undefined ? Number(frete.valor) : null,
+      /**
+       * `propostas.valor_frete` — o que a proposta COBRA hoje.
+       *
+       * Distinto de `freteValor`, que e `cotacao_frete.valor`, o valor COTADO.
+       * Os dois nascem iguais no salvamento do orcamento e permanecem iguais na
+       * base inteira hoje (44 de 44 pedidos do painel em 01/09/2026), mas
+       * divergem por desenho depois de uma recotacao: aplicar recotacao grava
+       * `propostas.valor_frete` e NAO toca em `cotacao_frete`, que e imutavel
+       * para a Expedicao (tres triggers reescreveriam valor_total e
+       * status_interno).
+       *
+       * Veio na MESMA linha do select de `propostas` que ja rodava — nenhuma
+       * consulta a mais. Quem exibe "o frete do pedido" deve ler daqui.
+       */
+      freteCobrado: p.valor_frete !== null && p.valor_frete !== undefined ? Number(p.valor_frete) : null,
       pesoKg,
       pesoOrigem,
       pesoCotadoGramas: frete?.peso !== null && frete?.peso !== undefined ? Number(frete.peso) : null,

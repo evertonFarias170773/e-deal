@@ -197,6 +197,12 @@ export interface PedidoExpedicao {
    */
   rotuloTransporte: string;
   freteValor: number | null;
+  /**
+   * `propostas.valor_frete` — o que a proposta cobra hoje, e o que o card do
+   * Kanban exibe. `freteValor` acima e o valor COTADO (`cotacao_frete.valor`),
+   * que a recotacao nao atualiza. Ver o comentario em `expedicao.service.ts`.
+   */
+  freteCobrado: number | null;
   pesoKg: number | null;
   pesoOrigem: PesoOrigemInterna | null;
   /**
