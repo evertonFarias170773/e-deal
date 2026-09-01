@@ -155,7 +155,17 @@ function getPeriodKeyFromProposal(item: OrcamentoListItem) {
 
 type PeriodOption = {
   value: string;
+  /**
+   * Texto por extenso. E o que `getSelectedPeriodLabel` devolve, entao e o que
+   * aparece no rodape dos cards ("Soma em ..."), onde ha espaco e o leitor
+   * precisa do criterio inteiro.
+   */
   label: string;
+  /**
+   * Texto curto, so para o `<option>` do select, que e estreito. Ausente = o
+   * `label` serve para os dois (caso dos meses, "Ago/26", que ja e curto).
+   */
+  labelCurto?: string;
 };
 
 function formatPeriodLabel(date: Date) {
@@ -191,10 +201,15 @@ function getPeriodValue(date: Date) {
  */
 const OPCAO_ULTIMOS_15_DIAS: PeriodOption = {
   value: PERIODO_ULTIMOS_15_DIAS,
-  label: "Últimos 15 dias (alterados)"
+  label: "Últimos 15 dias (alterados)",
+  // O select nao comporta o texto inteiro. O criterio segue por extenso no
+  // rodape dos cards, que e onde ele importa para a leitura do numero.
+  labelCurto: "15 dias"
 };
 
-function buildLastSixPeriodOptions() {
+// Retorno anotado: sem isto o `satisfies` infere o tipo literal dos meses, que
+// nao tem `labelCurto`, e o campo some do array inteiro.
+function buildLastSixPeriodOptions(): PeriodOption[] {
   const today = new Date();
   const periods = Array.from({ length: 6 }, (_, index) => {
     const date = new Date(today.getFullYear(), today.getMonth() - index, 1);
@@ -1447,7 +1462,9 @@ Ela volta a aparecer nas listas operacionais.`
           <select value={periodo} onChange={(event) => setFilter("periodo", event.target.value)} className={filterClass}>
             {periodOptions.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {/* Curto quando existe; o `value` nao muda, e o rodape dos cards
+                    segue com o `label` por extenso. */}
+                {option.labelCurto ?? option.label}
               </option>
             ))}
           </select>
