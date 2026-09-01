@@ -5,6 +5,7 @@ import { ActionsMenu } from "@/components/common/ActionsMenu";
 import type { ActionMenuItem } from "@/components/common/ActionsMenu";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { formatCurrency } from "@/lib/formatters/currency";
 import type { PedidoExpedicao } from "../types";
 
 /**
@@ -48,6 +49,19 @@ function colunaDoPedido(p: PedidoExpedicao): { chave: string; titulo: string } {
   return { chave: COLUNA_OUTROS, titulo: "Outros / A definir" };
 }
 
+/**
+ * PRONTOS PRIMEIRO, dentro de cada coluna (01/09/2026).
+ *
+ * A coluna mistura o que ja esta na bancada esperando despacho (`PRONTO`) com o
+ * que ainda esta na fabrica, e quem opera precisa ver primeiro o que da para
+ * despachar agora. `sort` do JS e ESTAVEL, entao a ordem atual — a que vem da
+ * lista filtrada, por `id_int` desc — sobrevive como desempate dentro de cada
+ * grupo. Nenhum pedido troca de coluna.
+ */
+function prontosPrimeiro(pedidos: PedidoExpedicao[]): PedidoExpedicao[] {
+  return [...pedidos].sort((a, b) => Number(b.etapa === "PRONTO") - Number(a.etapa === "PRONTO"));
+}
+
 function agruparPorTransportadora(pedidos: PedidoExpedicao[]): ColunaKanban[] {
   const mapa = new Map<string, ColunaKanban>();
   for (const p of pedidos) {
@@ -56,6 +70,7 @@ function agruparPorTransportadora(pedidos: PedidoExpedicao[]): ColunaKanban[] {
     coluna.pedidos.push(p);
     mapa.set(chave, coluna);
   }
+  for (const coluna of mapa.values()) coluna.pedidos = prontosPrimeiro(coluna.pedidos);
 
   const ordemFixaInicio = ["RETIRA", "MOTOBOY", "CORREIOS"];
   const inicio = ordemFixaInicio
@@ -130,14 +145,28 @@ export function KanbanTransportadoras({
                   key={p.idInt}
                   className={`rounded-xl border p-2.5 ${
                     // Nesta visão a urgência fica nos chips ATRASADO/HOJE; o fundo
-                    // azul clarinho marca quem já tem etiqueta/rastreio gerado.
+                    // verde claro marca quem já tem etiqueta/rastreio gerado.
+                    //
+                    // ERA AZUL ATÉ 01/09/2026. O significado não mudou — só a
+                    // cor, para liberar o azul, que passará a marcar "pronto p/
+                    // expedir". `emerald` é o verde do sistema (o mesmo de
+                    // `CORES_FASE.CONCLUIDO`), no par 300/50 que o sky usava.
                     p.etiquetaGerada
-                      ? "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"
+                      ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
                       : "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-1">
-                    <span className="font-bold text-[#0b2f4a] dark:text-sky-400">#{p.idInt}</span>
+                    <span className="flex items-baseline gap-1.5">
+                      <span className="font-bold text-[#0b2f4a] dark:text-sky-400">#{p.idInt}</span>
+                      {/* Cadastro do cliente: a conferência de bancada casa o volume
+                          pelo número do cadastro, não pelo nome — homônimos existem. */}
+                      {p.idCliente !== null && (
+                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                          cli {p.idCliente}
+                        </span>
+                      )}
+                    </span>
                     <ActionsMenu items={acoes} />
                   </div>
                   <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100" title={p.cliente}>
@@ -161,6 +190,13 @@ export function KanbanTransportadoras({
                   <p className="mt-1.5 text-[11px] text-slate-500">
                     {formatarPeso(p)}
                     {p.volumes !== null ? ` · ${p.volumes} vol` : ""}
+                    {/* Frete só quando há valor. Nulo é ausência de cotação e zero
+                        é frete grátis ou FOB — nenhum dos dois vira "R$ 0,00" no
+                        card, que leria como cobrança de zero em vez de "não se
+                        aplica". Vem de `cotacao_frete.valor`, o valor COTADO. */}
+                    {p.freteValor !== null && p.freteValor > 0
+                      ? ` · frete ${formatCurrency(p.freteValor)}`
+                      : ""}
                   </p>
                 </article>
               );
