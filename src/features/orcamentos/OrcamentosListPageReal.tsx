@@ -1121,7 +1121,19 @@ export function OrcamentosListPageReal() {
   }
 
   async function handleRetirarProducao(item: OrcamentoListItem) {
-    const ok = window.confirm(`Deseja RETIRAR a proposta #${item.id_int} da fila de produção?`);
+    /**
+     * Texto reforçado em 01/09/2026. O anterior — "Deseja RETIRAR a proposta
+     * #N da fila de produção?" — era curto o bastante para ser confirmado no
+     * automático por quem achava estar repetindo a LIBERAÇÃO. Foi o que
+     * aconteceu com a 21330. Agora o diálogo diz o que se perde, e diz
+     * explicitamente que esta não é a ação de liberar.
+     */
+    const ok = window.confirm(
+      `RETIRAR a proposta #${item.id_int} da fila de produção?\n\n` +
+        `Ela sai da lista de Ordens de Serviço e a OS deixa de ser criada.\n` +
+        `O pedido volta a ficar parado, mesmo que o cliente já tenha pago.\n\n` +
+        `Esta NÃO é a ação de liberar. Se você acabou de liberar, a proposta já está na produção.`
+    );
     if (!ok) return;
 
     showToast({
@@ -1285,8 +1297,23 @@ Ela volta a aparecer nas listas operacionais.`
           setIsCancelPropostaModalOpen(true);
         }
       }] : []),
+      /**
+       * "Liberar para Produção" e, no lugar dela depois de liberada, um MARCADOR
+       * DE ESTADO desabilitado.
+       *
+       * Até 01/09/2026 "Retirar da Produção" ocupava esta posição assim que a
+       * flag virava true: liberar recarregava a lista, e quem reabria o menu e
+       * clicava no mesmo lugar disparava a ação OPOSTA. Aconteceu com a proposta
+       * 21330 — liberada e retirada em 9 segundos pelo mesmo usuário, e parada
+       * quatro dias com o cliente já tendo pago.
+       *
+       * O item desabilitado resolve as duas metades do problema de uma vez: o
+       * clique cego não cai em nada, e quem reabre o menu vê que a liberação
+       * funcionou — que era justamente a dúvida que levava ao segundo clique.
+       * "Retirar" foi para o fim do menu, junto das outras ações destrutivas.
+       */
       ...(!item.is_prd_aprovado && item.isAvulsoRaw !== true && item.statusInterno === "REVISAO ATENDENTE" ? [{ label: "Liberar para Produção", onClick: () => void handleLiberarProducao(item) }] : []),
-      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : []),
+      ...(item.is_prd_aprovado && item.isAvulsoRaw !== true ? [{ label: "✓ Liberada para produção", disabled: true }] : []),
       // Rastrear: so quando o frete e Correios E ha codigo gravado. Sem uma das
       // duas coisas o item nem aparece — botao que abre modal para dizer "sem
       // codigo" e ruido.
@@ -1307,7 +1334,16 @@ Ela volta a aparecer nas listas operacionais.`
               destructive: true,
               onClick: () => void handleEncerrarTeste(item, true)
             }
-      ] : [])
+      ] : []),
+      /**
+       * ULTIMO item do menu, de proposito. Estava logo abaixo de "Liberar para
+       * Producao" e herdava a posicao dela assim que a proposta era liberada —
+       * ver o comentario do marcador de estado, acima. Aqui no fim, junto das
+       * demais destrutivas, nenhum clique por memoria muscular a alcanca.
+       *
+       * Condicao, permissao e o que ela grava: tudo intocado.
+       */
+      ...(item.is_prd_aprovado && (user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "propostas.release_producao")) ? [{ label: "Retirar da Produção", destructive: true, onClick: () => void handleRetirarProducao(item) }] : [])
     ];
   }
 
