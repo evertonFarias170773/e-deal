@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   Clock,
   Copy,
-  Factory,
   LayoutGrid,
   MapPin,
   Package,
@@ -52,56 +51,53 @@ import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./ty
 const filterClass =
   "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200";
 
-// "Sem NF" e "Frete a definir" sairam da barra em 31/08/2026, a pedido do dono.
-// A coluna NF da tabela e o indicador de nota na linha continuam intactos: o que
-// saiu foi o atalho de filtro, nao a informacao.
-type AlertaFiltro = "TODOS" | "ATRASADOS" | "HOJE";
+/**
+ * OS CINCO CARDS SAO INDEPENDENTES (01/09/2026).
+ *
+ * Sairam os cards "Todos" e "Em fabricacao", sairam TODOS os chips de alerta, e
+ * o clique deixou de alternar: clicar no card ativo nao desfaz mais o filtro.
+ * Com isso morreram o filtro `alerta` da URL, o mapa `CASA_ALERTA`, as contagens
+ * dos chips e o valor de filtro `FABRICACAO`.
+ *
+ * O que NAO morreu foram os dois criterios dos chips "Atrasados" e "Prometidos
+ * hoje": eles viraram o card "Expedicao do dia". Os predicados abaixo sao os
+ * mesmos, sem uma virgula de diferenca — e por isso a contagem do card e, por
+ * construcao, a soma exata que os dois chips mostravam. Sem sobreposicao:
+ * `atrasadoDias > 0` exige promessa ANTES de hoje e `prometidoHoje` exige IGUAL
+ * a hoje, entao nenhum pedido conta duas vezes.
+ */
+
+/** Promessa vencida e pedido ainda em aberto. */
+function ehAtrasado(p: PedidoExpedicao): boolean {
+  return p.atrasadoDias > 0 && p.etapa !== "ENTREGUE";
+}
+
+/** `prometidoHoje` ja nasce false para ENTREGUE no servico, entao nao repete o corte. */
+function ehPrometidoHoje(p: PedidoExpedicao): boolean {
+  return p.prometidoHoje;
+}
 
 /**
- * Filtro do card "Em fabricação" — o único que cobre mais de uma etapa.
- *
- * Não é uma `EtapaExpedicao`: é um valor de FILTRO, que vive junto dos outros
- * (`ATIVOS`, `TODAS`) no estado da URL. As etapas continuam as mesmas, e o funil
- * de status não muda — só a leitura do painel, onde PRODUCAO e ACABAMENTO
- * significam a mesma coisa para quem despacha: ainda não chegou na bancada.
+ * O recorte do card "Expedicao do dia": `dataPromessa <= hoje`, em QUALQUER
+ * etapa — inclusive PRODUCAO e ACABAMENTO. Pedido atrasado que ainda esta na
+ * fabrica e problema do dia tanto quanto o que ja esta na bancada, e com o card
+ * "Em fabricacao" fora e por aqui que ele aparece.
  */
-const ETAPA_FABRICACAO = "FABRICACAO";
-const ETAPAS_FABRICACAO: EtapaExpedicao[] = ["PRODUCAO", "ACABAMENTO"];
+function ehExpedicaoDoDia(p: PedidoExpedicao): boolean {
+  return ehAtrasado(p) || ehPrometidoHoje(p);
+}
 
 /**
- * Estado inicial do filtro de etapa — o painel ABRE já em "Pronto p/ expedir".
+ * Valor de FILTRO do card "Expedicao do dia" — e o estado INICIAL da pagina, no
+ * lugar de "Pronto p/ expedir", e o alvo do "Limpar filtros".
  *
- * É o único estado em que existe trabalho a fazer nesta tela: o pedido está na
- * bancada esperando despacho. Abrir na lista inteira obrigava a filtrar antes de
- * começar, todo dia. Os demais estados continuam a um clique, pelos cards.
- *
- * `ATIVOS` (tudo menos ENTREGUE) era o valor anterior e continua intacto: é para
- * onde o chip "Ver funil ativo" leva, e ele não mudou. O que mudou é só de onde
- * a tela PARTE.
- *
- * Isto é o alvo do "Limpar filtros" também — limpar devolve ao ponto de partida
- * da tela, não à lista inteira.
+ * Nao e uma `EtapaExpedicao`: e recorte por PROMESSA, nao por etapa, e por isso
+ * atravessa o funil inteiro. Tomou o lugar do "Pronto p/ expedir" porque a
+ * pergunta que abre o dia nao e "o que esta na bancada", e sim "o que tem de
+ * sair hoje".
  */
-const ETAPA_INICIAL = "PRONTO";
-
-/**
- * O que cada chip de alerta seleciona — UMA definição, usada pelo filtro E pela
- * contagem do chip.
- *
- * Antes eram duas: o filtro tinha a sua regra em `filtrados`, e o número no chip
- * vinha de um `useMemo` separado que contava sobre a lista inteira. Com a tela
- * abrindo recortada, as duas divergiram na cara do usuário: "Atrasados (2)" com
- * o card "Pronto p/ expedir" ativo levava a "Nenhum pedido no recorte" — o
- * número prometia 2 e a lista entregava 0.
- *
- * Duas regras para a mesma pergunta sempre voltam a divergir. Agora há uma só, e
- * a contagem é, por construção, o tamanho da lista que o clique produz.
- */
-const CASA_ALERTA: Record<Exclude<AlertaFiltro, "TODOS">, (p: PedidoExpedicao) => boolean> = {
-  ATRASADOS: (p) => p.atrasadoDias > 0 && p.etapa !== "ENTREGUE",
-  // `prometidoHoje` já nasce false para ENTREGUE no serviço, então não repete o corte.
-  HOJE: (p) => p.prometidoHoje
-};
+const ETAPA_DIA = "DIA";
+const ETAPA_INICIAL = ETAPA_DIA;
 
 const ICONE_TIPO_FRETE: Record<TipoFreteNormalizado, typeof Truck> = {
   CORREIOS: Send,
@@ -454,7 +450,6 @@ export function ExpedicaoPage() {
     () => ({
       q: { codec: codecs.texto(), default: "" },
       etapa: { codec: codecs.texto(), default: ETAPA_INICIAL },
-      alerta: { codec: codecs.texto(), default: "TODOS" },
       frete: { codec: codecs.texto(), default: "TODOS" },
       emp: { codec: codecs.texto(), default: "TODOS" },
       // Visão da lista: "lista" (tabela/cards) ou "transportadoras" (colunas kanban).
@@ -481,16 +476,9 @@ export function ExpedicaoPage() {
   const porEtapa = useMemo(() => {
     const contar = (etapas: EtapaExpedicao[]) => pedidos.filter((p) => etapas.includes(p.etapa)).length;
     return {
-      // Total geral do painel — a contagem do card da lista completa. Inclui
-      // ENTREGUE, ao contrário de `ATIVOS`, e é a única que não passa por
-      // `contar` porque não recorta etapa nenhuma.
-      total: pedidos.length,
-      // "Em fabricação" reúne PRODUCAO e ACABAMENTO num card só (26/08/2026):
-      // para a Expedição os dois são o mesmo estado — pedido que ainda não
-      // chegou na bancada. A separação interessava à Produção, não a quem
-      // despacha. Os dois sempre contaram pelo MESMO critério (`p.etapa` sobre o
-      // conjunto todo), então a soma é exata, não uma aproximação.
-      fabricacao: contar(["PRODUCAO", "ACABAMENTO"]),
+      // "Expedicao do dia" nao passa por `contar`: ele nao recorta etapa, e sim
+      // promessa. Conta sobre o conjunto todo, como os demais.
+      dia: pedidos.filter(ehExpedicaoDoDia).length,
       pronto: contar(["PRONTO"]),
       aRetirar: contar(["A_RETIRAR"]),
       emTransito: contar(["EM_TRANSITO"]),
@@ -506,17 +494,18 @@ export function ExpedicaoPage() {
    * precisa saber quantos registros apareceriam SE fosse clicado, e o alerta
    * ativo não pode zerar a contagem dos outros três.
    */
-  const semAlerta = useMemo(() => {
+  const filtrados = useMemo(() => {
     const q = search.trim().toLowerCase();
     return pedidos.filter((p) => {
       if (filters.etapa === "ATIVOS" && p.etapa === "ENTREGUE") return false;
-      // `FABRICACAO` é o único filtro de card que cobre DUAS etapas — os demais
-      // continuam casando 1 para 1 com `p.etapa`.
-      if (filters.etapa === ETAPA_FABRICACAO && !ETAPAS_FABRICACAO.includes(p.etapa)) return false;
+      // `DIA` e o unico filtro de card que NAO recorta etapa: ele recorta
+      // promessa, e por isso atravessa o funil inteiro. Os demais continuam
+      // casando 1 para 1 com `p.etapa`.
+      if (filters.etapa === ETAPA_DIA && !ehExpedicaoDoDia(p)) return false;
       if (
         filters.etapa !== "ATIVOS" &&
         filters.etapa !== "TODAS" &&
-        filters.etapa !== ETAPA_FABRICACAO &&
+        filters.etapa !== ETAPA_DIA &&
         p.etapa !== filters.etapa
       )
         return false;
@@ -547,18 +536,6 @@ export function ExpedicaoPage() {
    * eles são a navegação do funil e precisam mostrar o que existe fora do
    * recorte atual. Os chips são o oposto — refinam o que já está na tela.
    */
-  const alertas = useMemo(
-    () => ({
-      atrasados: semAlerta.filter(CASA_ALERTA.ATRASADOS).length,
-      hoje: semAlerta.filter(CASA_ALERTA.HOJE).length
-    }),
-    [semAlerta]
-  );
-
-  const filtrados = useMemo(() => {
-    const casa = CASA_ALERTA[filters.alerta as Exclude<AlertaFiltro, "TODOS">];
-    return casa ? semAlerta.filter(casa) : semAlerta;
-  }, [semAlerta, filters.alerta]);
 
   // Entregues ordenados por entrega mais recente quando o card Entregues está ativo.
   const listaExibida = useMemo(() => {
@@ -576,11 +553,15 @@ export function ExpedicaoPage() {
   // Desmarcar um card volta ao ponto de partida da tela, não à lista inteira.
   // Clicar no card já ativo de "Pronto p/ expedir" vira no-op de propósito: ele
   // É o estado inicial, então não há para onde "desmarcar".
-  function toggleEtapa(etapa: string) {
-    setFilter("etapa", filters.etapa === etapa ? ETAPA_INICIAL : etapa);
-  }
-  function toggleAlerta(alerta: AlertaFiltro) {
-    setFilter("alerta", filters.alerta === alerta ? "TODOS" : alerta);
+  /**
+   * Cards INDEPENDENTES (01/09/2026): clicar no card ativo nao desfaz mais o
+   * filtro. Antes o segundo clique devolvia a `ETAPA_INICIAL`, e com cinco cards
+   * cobrindo o funil inteiro esse desfazer so confundia — o expedidor clicava
+   * duas vezes e a tela pulava para outro recorte. Voltar ao inicial agora e o
+   * proprio card "Expedicao do dia" ou o "Limpar filtros".
+   */
+  function selecionarEtapa(etapa: string) {
+    setFilter("etapa", etapa);
   }
 
   async function copiarRastreio(codigo: string) {
@@ -610,13 +591,6 @@ export function ExpedicaoPage() {
     // hover, então ele nem parece clicável.
     "disabled:pointer-events-none disabled:opacity-40";
 
-  /**
-   * Chip sem nada para mostrar fica desabilitado. O chip ATIVO nunca desabilita,
-   * mesmo zerado: é por ele que se desfaz o filtro que esvaziou a lista.
-   */
-  function chipVazio(contagem: number, alerta: AlertaFiltro): boolean {
-    return contagem === 0 && filters.alerta !== alerta;
-  }
 
   return (
     <div className="space-y-6 font-sans">
@@ -648,34 +622,26 @@ export function ExpedicaoPage() {
 
       {/* Cards do funil (clicáveis = filtro de etapa) */}
       {isLoaded && (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-          {/* Lista completa: a saída para ver tudo, já que a tela abre filtrada
-              em "Pronto p/ expedir". Mostra TODAS as etapas, entregues inclusive. */}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {/* O card que abre a tela: o que tem de sair hoje — atrasado ou
+              prometido para hoje —, em qualquer etapa do funil. Nao recorta
+              etapa de proposito: pedido atrasado ainda na fabrica conta. */}
           <SummaryCard
-            title="Todos"
-            value={porEtapa.total.toString()}
-            description="Lista completa"
-            tone="info"
-            icon={Package}
-            onClick={() => toggleEtapa("TODAS")}
-            ativo={filters.etapa === "TODAS"}
-          />
-          <SummaryCard
-            title="Em fabricação"
-            value={porEtapa.fabricacao.toString()}
-            description="Antes da expedição"
-            tone="neutral"
-            icon={Factory}
-            onClick={() => toggleEtapa(ETAPA_FABRICACAO)}
-            ativo={filters.etapa === ETAPA_FABRICACAO}
+            title="Expedição do dia"
+            value={porEtapa.dia.toString()}
+            description="Atrasados e prometidos hoje"
+            tone="warning"
+            icon={Clock}
+            onClick={() => selecionarEtapa(ETAPA_DIA)}
+            ativo={filters.etapa === ETAPA_DIA}
           />
           <SummaryCard
             title="Pronto p/ expedir"
             value={porEtapa.pronto.toString()}
             description="Aguardando despacho"
-            tone="warning"
+            tone="neutral"
             icon={PackageCheck}
-            onClick={() => toggleEtapa("PRONTO")}
+            onClick={() => selecionarEtapa("PRONTO")}
             ativo={filters.etapa === "PRONTO"}
           />
           <SummaryCard
@@ -684,7 +650,7 @@ export function ExpedicaoPage() {
             description="Cliente busca no balcão"
             tone="special"
             icon={MapPin}
-            onClick={() => toggleEtapa("A_RETIRAR")}
+            onClick={() => selecionarEtapa("A_RETIRAR")}
             ativo={filters.etapa === "A_RETIRAR"}
           />
           <SummaryCard
@@ -693,7 +659,7 @@ export function ExpedicaoPage() {
             description="Com a transportadora"
             tone="info"
             icon={Truck}
-            onClick={() => toggleEtapa("EM_TRANSITO")}
+            onClick={() => selecionarEtapa("EM_TRANSITO")}
             ativo={filters.etapa === "EM_TRANSITO"}
           />
           <SummaryCard
@@ -702,39 +668,19 @@ export function ExpedicaoPage() {
             description="Últimos 30 dias"
             tone="success"
             icon={CheckCircle2}
-            onClick={() => toggleEtapa("ENTREGUE")}
+            onClick={() => selecionarEtapa("ENTREGUE")}
             ativo={filters.etapa === "ENTREGUE"}
           />
         </section>
       )}
 
-      {/* Chips de alerta */}
+      {/* Barra de VISAO. Os chips de alerta sairam em 01/09/2026 — os dois
+          que filtravam (Atrasados, Prometidos hoje) viraram o card
+          "Expedicao do dia", e "Ver funil ativo" saiu junto. Sobrou o
+          alternador de visao, que NAO e filtro: e o unico caminho para o
+          Kanban por transportadora. */}
       {isLoaded && (
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => toggleAlerta("ATRASADOS")}
-            disabled={chipVazio(alertas.atrasados, "ATRASADOS")}
-            className={`${chipBase} ${
-              filters.alerta === "ATRASADOS"
-                ? "border-red-600 bg-red-600 text-white"
-                : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
-            }`}
-          >
-            <AlertCircle className="h-3.5 w-3.5" /> Atrasados ({alertas.atrasados})
-          </button>
-          <button
-            type="button"
-            onClick={() => toggleAlerta("HOJE")}
-            disabled={chipVazio(alertas.hoje, "HOJE")}
-            className={`${chipBase} ${
-              filters.alerta === "HOJE"
-                ? "border-amber-500 bg-amber-500 text-white"
-                : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
-            }`}
-          >
-            <Clock className="h-3.5 w-3.5" /> Prometidos hoje ({alertas.hoje})
-          </button>
           {/* Troca de VISÃO (não é filtro): tabela ⇄ colunas por transportadora. */}
           <button
             type="button"
@@ -747,19 +693,6 @@ export function ExpedicaoPage() {
           >
             <LayoutGrid className="h-3.5 w-3.5" /> Por transportadora
           </button>
-          {/* INTOCADO: continua levando a `ATIVOS` (tudo menos ENTREGUE). É o
-              atalho que mantém esse recorte acessível agora que ele deixou de
-              ser o estado inicial. Quem limpa os filtros volta para PRONTO; quem
-              quer o funil ativo inteiro clica aqui. */}
-          {(filters.etapa !== "ATIVOS" || filters.alerta !== "TODOS") && (
-            <button
-              type="button"
-              onClick={() => setFilters({ etapa: "ATIVOS", alerta: "TODOS" })}
-              className={`${chipBase} border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400`}
-            >
-              Ver funil ativo
-            </button>
-          )}
         </div>
       )}
 
@@ -800,7 +733,7 @@ export function ExpedicaoPage() {
             // ponto de partida é "Pronto p/ expedir". Busca, frete e empresa
             // continuam zerando como antes.
             onClick={() => {
-              setFilters({ q: "", etapa: ETAPA_INICIAL, alerta: "TODOS", frete: "TODOS", emp: "TODOS" });
+              setFilters({ q: "", etapa: ETAPA_INICIAL, frete: "TODOS", emp: "TODOS" });
               setSearch("");
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
