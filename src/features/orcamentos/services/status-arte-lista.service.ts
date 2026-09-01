@@ -132,3 +132,57 @@ export async function buscarEstagioArteDasPropostas(
   }
   return resultado;
 }
+
+/**
+ * Link do painel do cliente das propostas exibidas na lista de Orcamentos.
+ *
+ * A URL e ABSOLUTA e mora pronta em `pedidos_links_cliente.link` (todas as 77
+ * linhas apontam para https://ideal-imposition.vercel.app/cliente/<numero>-<token>).
+ * Nada de montar dominio aqui: o link e gerado por outro sistema, e remontar a
+ * URL neste lado significaria duplicar uma regra que nao e nossa.
+ *
+ * `ativo = false` E REVOGACAO. A coluna existe com default true e hoje as 77
+ * linhas estao true, mas o filtro fica: no dia em que alguem revogar um link, o
+ * botao tem de sumir junto — sem o filtro, a lista continuaria oferecendo um
+ * acesso que o negocio ja cortou. Nao ha coluna de validade/expiracao.
+ *
+ * `id_int` E TEXT nesta tabela (nas outras e integer), por isso o `.in` recebe
+ * os ids convertidos para string. Passar numero aqui devolve zero linhas em
+ * silencio.
+ *
+ * ACESSO: `authenticated` tem SELECT (relacl `authenticated=arw`) e a policy
+ * "painel logado usa a tabela" e `USING (true)`. `anon` NAO tem grant nenhum —
+ * e dai o 401 da requisicao anonima. Sem sessao a consulta falha, o mapa volta
+ * vazio e os botoes apenas nao aparecem; nenhuma linha quebra.
+ *
+ * SOMENTE LEITURA. Nao escreve, nao gera link e nao mexe em policy ou grant.
+ */
+export async function buscarLinksClienteDasPropostas(
+  idInts: number[]
+): Promise<Record<number, string>> {
+  const client = getSupabaseClient();
+  const ids = Array.from(new Set(idInts.filter((n) => Number.isFinite(n) && n > 0)));
+  if (!client || ids.length === 0) return {};
+
+  const { data, error } = await client
+    .from("pedidos_links_cliente")
+    .select("id_int, link")
+    .eq("ativo", true)
+    .in("id_int", ids.map(String));
+
+  if (error) {
+    // So a mensagem do erro. O payload nunca entra no log: ele carrega as URLs
+    // com token, e o console do navegador e um lugar por onde link vaza.
+    console.warn("[status-arte-lista] Erro ao ler pedidos_links_cliente:", error.message);
+    return {};
+  }
+
+  const resultado: Record<number, string> = {};
+  for (const linha of data ?? []) {
+    const id = Number(linha.id_int);
+    const link = String(linha.link ?? "").trim();
+    if (!Number.isFinite(id) || id <= 0 || !link) continue;
+    resultado[id] = link;
+  }
+  return resultado;
+}

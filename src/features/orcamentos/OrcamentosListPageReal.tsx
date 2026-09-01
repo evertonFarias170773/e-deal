@@ -18,7 +18,7 @@ import { encerrarTeste, reabrirTeste } from "@/features/pedidos/services/encerra
 import { buscarRastreioDasPropostas, type RastreioDaProposta } from "@/features/orcamentos/services/rastreio-lista.service";
 import { RastreioPropostaModal } from "@/features/orcamentos/components/RastreioPropostaModal";
 import { buscarNomesDosSocios } from "@/features/orcamentos/services/socio-pagador.service";
-import { buscarEstagioArteDasPropostas, type EstagioArte } from "@/features/orcamentos/services/status-arte-lista.service";
+import { buscarEstagioArteDasPropostas, buscarLinksClienteDasPropostas, type EstagioArte } from "@/features/orcamentos/services/status-arte-lista.service";
 import {
   gerarPDFProposta,
   duplicarProposta,
@@ -782,6 +782,42 @@ export function OrcamentosListPageReal() {
         setEstagioArtePorId((atual) => ({ ...atual, ...dados }));
       } catch (err) {
         console.error("[OrcamentosListPageReal] Erro ao buscar estagio da arte das propostas:", err);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, [idsParaEstagioArte]);
+
+  /**
+   * Link do painel do cliente das linhas da pagina, destino do botao da coluna
+   * "Status Arte".
+   *
+   * Consulta propria, no mesmo lote de ids do estagio: sao duas tabelas
+   * diferentes e `pedidos_links_cliente` tem grant so para `authenticated`,
+   * entao um erro de acesso nela nao pode derrubar a coluna inteira. Uma
+   * consulta por pagina, nunca por linha.
+   */
+  const [linkClientePorId, setLinkClientePorId] = useState<Record<number, string>>({});
+  const fetchedLinkClienteIdsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const naoBuscados = idsParaEstagioArte.filter((id) => !fetchedLinkClienteIdsRef.current.has(id));
+    if (naoBuscados.length === 0) return;
+    let ativo = true;
+    void (async () => {
+      try {
+        const dados = await buscarLinksClienteDasPropostas(naoBuscados);
+        if (!ativo) return;
+        naoBuscados.forEach((id) => fetchedLinkClienteIdsRef.current.add(id));
+        setLinkClientePorId((atual) => ({ ...atual, ...dados }));
+      } catch (err) {
+        // Sem o link o botao apenas nao aparece. Mensagem seca: o erro do
+        // Supabase carrega o payload, e o payload carrega URLs com token.
+        console.error(
+          "[OrcamentosListPageReal] Erro ao buscar links do cliente:",
+          err instanceof Error ? err.message : "erro desconhecido"
+        );
       }
     })();
     return () => {
@@ -1606,6 +1642,12 @@ Ela volta a aparecer nas listas operacionais.`
               // modelo e ele ainda nao andou".
               if (!estagio) return null;
 
+              const linkCliente = linkClientePorId[proposta.id_int];
+              // Link so aparece com estagio que o pede E linha ativa na tabela.
+              // Sem linha (ou com o link revogado) o botao SOME: um botao que
+              // nao leva a lugar nenhum custa mais que a ausencia dele.
+              const mostraLink = temLinkDeArte(estagio) && Boolean(linkCliente);
+
               return (
                 <div className="flex items-center justify-center gap-1.5">
                   <span
@@ -1613,14 +1655,12 @@ Ela volta a aparecer nas listas operacionais.`
                   >
                     {estagio}
                   </span>
-                  {temLinkDeArte(estagio) ? (
-                    // TODO(link-arte): destino ainda NAO definido. O href fica
-                    // em "#" de proposito — inventar rota, token ou parametro
-                    // aqui produziria um link que leva a lugar nenhum e que
-                    // ninguem lembraria de trocar depois.
+                  {mostraLink ? (
                     <a
-                      href="#"
-                      title="Link da arte (destino ainda nao definido)"
+                      href={linkCliente}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Abrir o painel do cliente em nova aba"
                       className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-100 p-1.5 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
                     >
                       <LinkIcon className="h-3.5 w-3.5" />
