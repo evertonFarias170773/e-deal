@@ -35,6 +35,37 @@ import { useRouter } from "next/navigation";
 
 const filterClass = "rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none";
 
+/**
+ * Pedido que AINDA NAO ENTROU na fabrica: esperando o gerente revisar e liberar.
+ *
+ * E a fila que trava o fluxo desta tela, e por isso ganha o topo da lista e um
+ * fundo proprio — o status sozinho, num badge no meio de dezenas de linhas
+ * iguais, passava batido. Mesmo tratamento que "REVISAO ATENDENTE" recebe na
+ * lista de Orcamentos.
+ *
+ * Compara normalizado porque `status_interno` chega da lista ja passado por
+ * `composeStatusEmArte`. Na pratica esse status nunca ganha o sufixo " / EM
+ * ARTE" (so NOVO, AGUARDANDO e LIBERADO ganham), mas comparar cru dependeria
+ * disso continuar verdade.
+ */
+function ehRevisaoProducao(item: PropostaOperacionalListItem): boolean {
+  return String(item.status_interno ?? "").trim().toUpperCase() === "REVISAO PRODUCAO";
+}
+
+/**
+ * Amarelo de atencao da linha em revisao de producao. `amber-50` e `amber-100`,
+ * o par de atencao ja usado no sistema (amber-50 e o tom mais frequente da base)
+ * — nenhuma cor nova.
+ *
+ * Vai em `style` inline porque e o contrato do `getRowHighlight` do
+ * ResponsiveList: o hover da linha tambem e inline e venceria qualquer classe,
+ * apagando o destaque assim que o mouse saisse.
+ *
+ * Tom claro de proposito: o texto (`--foreground`) e os badges de setor, que tem
+ * fundo proprio, seguem legiveis por cima sem precisar de ajuste.
+ */
+const DESTAQUE_REVISAO_PRODUCAO = { base: "#fffbeb", hover: "#fef3c7" };
+
 export function PedidosListPage() {
   const { openChat } = useGlobalChat();
   const { user } = useAuth();
@@ -290,7 +321,18 @@ export function PedidosListPage() {
     const matchesEmpresa = filterEmpresa === "TODOS" || p.empresa.toLowerCase().replace(" ", "") === filterEmpresa.toLowerCase().replace(" ", "");
 
     return matchesSearch && matchesStatus && matchesVendedor && matchesEmpresa;
-  });
+  })
+    /**
+     * REVISAO PRODUCAO sobe para o topo. O criterio de desempate e a ORDEM QUE JA
+     * ESTAVA: `Array.prototype.sort` e estavel, entao ordenar apenas pelo grupo
+     * preserva, dentro de cada um, o `id_int desc` que o servidor entregou.
+     * Nenhum segundo criterio foi inventado aqui.
+     *
+     * Nao ha ordenacao por coluna nesta tela (o ResponsiveList nao oferece), e a
+     * consulta nao pagina — traz o funil inteiro —, entao o agrupamento vale
+     * sobre a lista toda, e nao so sobre uma pagina.
+     */
+    .sort((a, b) => Number(ehRevisaoProducao(b)) - Number(ehRevisaoProducao(a)));
 
   // Derived options for filters
   const statusOptions = Array.from(new Set(pedidos.map(p => p.status_interno || p.statusPedido || ""))).filter(Boolean).sort();
@@ -529,6 +571,7 @@ export function PedidosListPage() {
         items={filteredPedidos}
         getKey={(proposta) => proposta.id_int.toString()}
         isLoading={!isLoaded}
+        getRowHighlight={(proposta) => (ehRevisaoProducao(proposta) ? DESTAQUE_REVISAO_PRODUCAO : null)}
         onRowClick={(proposta) => {
           // Segundo caminho para o boletim, além do menu de ações. Clique em
           // controle (chip de setor, menu, botão) não conta como clique na
@@ -739,7 +782,16 @@ export function PedidosListPage() {
           }
         ]}
         renderCard={(proposta) => (
-          <article key={proposta.id_int} className="rounded-3xl border border-[#d7e5e8] bg-white p-5 shadow-sm">
+          // O card do mobile nao passa pelo `getRowHighlight` (ele so vale para a
+          // tabela), entao o destaque e aplicado aqui, com o mesmo par de cores.
+          <article
+            key={proposta.id_int}
+            className={`rounded-3xl border p-5 shadow-sm ${
+              ehRevisaoProducao(proposta)
+                ? "border-amber-200 bg-amber-50"
+                : "border-[#d7e5e8] bg-white"
+            }`}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">N° {proposta.id_int}</p>
