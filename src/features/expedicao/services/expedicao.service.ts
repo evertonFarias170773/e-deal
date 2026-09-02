@@ -79,7 +79,10 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
   const { data: propostas, error: propError } = await client
     .from("propostas")
     .select(
-      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete"
+      // `id_endereco_ent` (02/09/2026): o endereço de entrega DEFINIDO NA
+      // PROPOSTA. Entrou na mesma linha que já vinha — zero consulta a mais
+      // aqui. É `text` na tabela, e aponta para `enderecos.id` (uuid).
+      "id_int, cliente, id_cliente, id_faturado, empresa, vendedor, status_interno, libera_nf, volume, modalidade_frete, id_transportadora_cliente, valor_frete, id_endereco_ent"
     )
     .eq("is_prd_aprovado", true)
     .in("status_interno", STATUS_FUNIL_EXPEDICAO)
@@ -314,6 +317,56 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     pesoTeoricoGramas.set(idInt, (pesoTeoricoGramas.get(idInt) ?? 0) + g);
   }
 
+  /**
+   * ENDEREÇOS DE ENTREGA, resolvidos numa consulta só (02/09/2026).
+   *
+   * Segunda onda, e não dentro do `Promise.all` acima, porque o conjunto de ids
+   * depende de `expedicoes`, que só chega ali: são os endereços da PROPOSTA
+   * (`id_endereco_ent`) MAIS os já gravados no despacho
+   * (`expedicoes.id_endereco_entrega`), que nos pedidos já despachados podem ser
+   * outro — e são, em 21229 e 21000.
+   *
+   * É um `in` por ids explícitos, não um `in` por `id_cliente`: `enderecos` não
+   * tem FK para `clientes`, e filtrar pelo dono traria linhas órfãs e deixaria
+   * de fora um endereço cujo `id_cliente` esteja errado. Uma ida ao banco para
+   * a lista inteira, nenhuma por linha.
+   */
+  const idsEndereco = Array.from(
+    new Set(
+      [
+        ...propostas.map((p) => String(p.id_endereco_ent ?? "").trim()),
+        ...Array.from(expMap.values()).map((e) => String(e.idEnderecoEntrega ?? "").trim())
+      ].filter((id) => id !== "")
+    )
+  );
+
+  const enderecoMap = new Map<string, { rotulo: string; cep: string | null }>();
+  if (idsEndereco.length > 0) {
+    const { data: enderecosData, error: enderecosErro } = await client
+      .from("enderecos")
+      .select("id, endereco, numero, complemento, bairro, cidade, uf, cep")
+      .in("id", idsEndereco);
+    if (enderecosErro) {
+      // Tolerante como os demais blocos: sem endereço o modal avisa e bloqueia,
+      // que é melhor do que derrubar o painel inteiro.
+      console.warn("[expedicao.service] Erro ao buscar enderecos de entrega:", enderecosErro);
+    }
+    for (const e of enderecosData ?? []) {
+      // MESMO formato do rótulo que `listarEnderecosCliente` monta, para o
+      // texto do modal não mudar de cara agora que ele não vem mais de lá.
+      const linha = [
+        [e.endereco, e.numero].filter(Boolean).join(", "),
+        e.complemento,
+        e.bairro,
+        [e.cidade, e.uf].filter(Boolean).join("/")
+      ]
+        .filter(Boolean)
+        .join(" - ");
+      const cep = e.cep ? String(e.cep) : null;
+      enderecoMap.set(String(e.id), { rotulo: `${linha}${cep ? ` (CEP ${cep})` : ""}`, cep });
+    }
+  }
+
   const hoje = hojeSaoPaulo();
   const resultado: PedidoExpedicao[] = [];
 
@@ -413,10 +466,28 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      */
     const nomeFantasia = String(cli?.fantasia ?? "").trim() || nomeRazao;
 
+    /**
+     * DESPACHO CONFIRMADO VENCE (ver `enderecoEntrega` em types.ts). Rascunho
+     * NÃO vence: sem `data_despacho` o que vale é a proposta, mesma lógica de
+     * `expConfirmado` que o transporte e a etiqueta já seguem.
+     */
+    const idEnderecoDespacho = String(expConfirmado?.idEnderecoEntrega ?? "").trim();
+    const idEnderecoProposta = String(p.id_endereco_ent ?? "").trim();
+    const idEnderecoVigente = idEnderecoDespacho || idEnderecoProposta;
+    const enderecoResolvido = idEnderecoVigente ? enderecoMap.get(idEnderecoVigente) : undefined;
+
     resultado.push({
       idInt,
       cliente: nomeRazao,
       clienteExibicao: nomeFantasia,
+      enderecoEntrega: enderecoResolvido
+        ? {
+            id: idEnderecoVigente,
+            rotulo: enderecoResolvido.rotulo,
+            cep: enderecoResolvido.cep,
+            origem: idEnderecoDespacho ? "DESPACHO" : "PROPOSTA"
+          }
+        : null,
       idCliente,
       // Pagador (24/08/2026): vem na MESMA linha que a lista ja lia, para o modal
       // Despachar poder oferecer os enderecos dele sem consulta extra.

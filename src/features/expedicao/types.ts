@@ -128,6 +128,32 @@ export interface PedidoExpedicao {
    * lista já fazia, ao lado de `nome` e `cidade_uf`.
    */
   clienteExibicao: string;
+  /**
+   * O ENDEREÇO DE ENTREGA QUE VALE, já resolvido (02/09/2026).
+   *
+   * Precedência, e o porquê de cada degrau:
+   *   1. despacho CONFIRMADO → `expedicoes.id_endereco_entrega`. O que já saiu
+   *      não se reescreve: é o endereço que foi para a etiqueta e para a
+   *      prepostagem, e o despacho é soberano no resto do módulo inteiro;
+   *   2. senão → `propostas.id_endereco_ent`, o endereço definido na PROPOSTA.
+   *
+   * `null` = a proposta não definiu endereço e não há despacho. O modal
+   * Despachar mostra aviso e bloqueia, coerente com `camposMinimosDespacho`,
+   * que já exigia `idEnderecoEntrega`.
+   *
+   * Resolvido no pipeline da lista, num `in` de `enderecos` — nenhuma consulta
+   * por linha. Substituiu o SELECT do modal, que listava também os endereços do
+   * pagador e deixava o expedidor escolher: trocar endereço é operação da
+   * proposta, não da expedição.
+   */
+  enderecoEntrega: {
+    id: string;
+    /** "Rua X, 123 - Bairro - Cidade/UF (CEP 00000-000)" — pronto para exibir. */
+    rotulo: string;
+    cep: string | null;
+    /** De onde veio, para a interface poder explicar. */
+    origem: "PROPOSTA" | "DESPACHO";
+  } | null;
   idCliente: number | null;
   /**
    * `propostas.id_faturado` — o PAGADOR, quando difere do cliente. Entrou em

@@ -10,7 +10,9 @@ import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
 import { despachar, salvarDadosExpedicao, transportadoraDerivada } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
-import { listarEnderecosCliente } from "../services/enderecos.service";
+// `listarEnderecosCliente` NÃO é mais importada: o endereço vem resolvido em
+// `pedido.enderecoEntrega`. A função segue intacta em `enderecos.service.ts`,
+// caso a escolha manual precise voltar.
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
 import { etiquetaDoPedido } from "../lib/etiqueta-do-pedido";
@@ -78,6 +80,10 @@ function transporteInicial(tipo: TipoFreteNormalizado): TipoFreteNormalizado {
  * A ordem nao mudou: CEP igual ao da cotacao > primeiro com tipo contendo
  * "ENTREG" > primeiro da lista (o mais recente).
  */
+// SEM CHAMADOR desde 02/09/2026, e mantida de propósito: o endereço agora vem
+// definido da proposta, e esta era a regra de default da escolha manual. Fica
+// aqui pronta para voltar se a escolha for reaberta.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function escolherEnderecoDefault(lista: EnderecoCliente[], freteCep: string | null): EnderecoCliente | null {
   if (lista.length === 0) return null;
   const cepAlvo = freteCep ? freteCep.replace(/\D/g, "") : "";
@@ -157,9 +163,18 @@ export function DespacharModal({
   const [tipoVolume, setTipoVolume] = useState(exp?.tipoVolume ?? "Pacote");
   const [codigoRastreamento, setCodigoRastreamento] = useState(pedido.codigoRastreamento);
   const [obs, setObs] = useState(exp?.obs ?? "");
-  const [idEnderecoEntrega, setIdEnderecoEntrega] = useState<string | null>(exp?.idEnderecoEntrega ?? null);
-
-  const [enderecos, setEnderecos] = useState<EnderecoCliente[]>([]);
+  /**
+   * ENDEREÇO DE ENTREGA: EXIBIÇÃO, NÃO ESCOLHA (02/09/2026).
+   *
+   * Deixou de ser estado. Vem resolvido de `pedido.enderecoEntrega`, que já
+   * aplica a precedência (despacho confirmado > endereço da proposta) no
+   * pipeline da lista. O `select` saiu: ele listava também os endereços do
+   * pagador e os de outras cidades, e trocar endereço é operação da PROPOSTA.
+   *
+   * O que ele grava não mudou — `expedicoes.id_endereco_entrega` continua
+   * recebendo este id, e etiqueta, declaração e prepostagem seguem lendo de lá.
+   */
+  const idEnderecoEntrega = pedido.enderecoEntrega?.id ?? null;
   const [transportadoras, setTransportadoras] = useState<Transportadora[]>([]);
   const [confirmaSemNf, setConfirmaSemNf] = useState(false);
   const [confirmaTrocaCorreios, setConfirmaTrocaCorreios] = useState(false);
@@ -453,10 +468,8 @@ export function DespacharModal({
    * Recalculado a cada mudanca de peso ou de endereco. INFORMA, nao bloqueia —
    * mesma regra da falta de NF-e.
    */
-  const cepDoEnderecoEscolhido = useMemo(
-    () => enderecos.find((e) => e.id === idEnderecoEntrega)?.cep ?? pedido.freteCep ?? null,
-    [enderecos, idEnderecoEntrega, pedido.freteCep]
-  );
+  // O CEP vem junto do endereço resolvido — não há mais lista local onde buscar.
+  const cepDoEnderecoEscolhido = pedido.enderecoEntrega?.cep ?? pedido.freteCep ?? null;
 
   /**
    * A "cotacao vigente" e a ULTIMA recotacao aplicada, quando houver — nao a
@@ -534,22 +547,9 @@ export function DespacharModal({
 
   useEffect(() => {
     let ativo = true;
-    if (pedido.idCliente !== null) {
-      // Uma consulta só para os dois cadastros — o pagador vem no próprio
-      // `pedido`, pelo pipeline da lista (24/08/2026).
-      void listarEnderecosCliente(pedido.idCliente, pedido.idFaturado).then((lista) => {
-        if (!ativo) return;
-        setEnderecos(lista);
-        // Default (só quando não há endereço já salvo — spec §4.6): CEP da
-        // cotação > tipo de entrega > único/mais recente. Restrito aos
-        // endereços DO CLIENTE: os do pagador são escolha manual.
-        if (!idEnderecoEntrega && lista.length > 0) {
-          const doCliente = lista.filter((e) => e.idCliente === pedido.idCliente);
-          const escolhido = escolherEnderecoDefault(doCliente, pedido.freteCep);
-          if (escolhido) setIdEnderecoEntrega(escolhido.id);
-        }
-      });
-    }
+    // A busca de endereços saiu daqui (02/09/2026): o endereço vem resolvido em
+    // `pedido.enderecoEntrega` e não há mais o que escolher. Uma consulta a
+    // menos por abertura do modal.
     void getTransportadoras().then((lista) => {
       if (!ativo) return;
       const transps = lista as Transportadora[];
@@ -1052,27 +1052,45 @@ export function DespacharModal({
                 </div>
                 )}
               </div>
+              {/* ENDEREÇO DE ENTREGA — TEXTO, não escolha (02/09/2026).
+                  O select listava todos os endereços do cliente E do pagador,
+                  inclusive de outras cidades, para um endereço que a proposta
+                  já tinha definido. A opção "— não informar —" saiu junto: ela
+                  gravava `null` e o próprio `camposMinimosDespacho` recusava o
+                  despacho em seguida. */}
               <div>
                 <label className={labelClass}>Endereço de entrega (vai para a etiqueta)</label>
-                <select
-                  value={idEnderecoEntrega ?? ""}
-                  onChange={(e) => {
-                    setIdEnderecoEntrega(e.target.value === "" ? null : e.target.value);
-                    limparRecotacao();
-                  }}
-                  className={inputClass}
-                >
-                  <option value="">— não informar —</option>
-                  {/* Sufixo de origem no mesmo padrão do `[TIPO]` que o rótulo
-                      já usa: o expedidor precisa saber de qual cadastro é cada
-                      endereço para não despachar para o lugar errado. */}
-                  {enderecos.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.rotulo}
-                      {e.idCliente !== pedido.idCliente ? ` [PAGADOR #${e.idCliente}]` : ""}
-                    </option>
-                  ))}
-                </select>
+                {pedido.enderecoEntrega ? (
+                  <>
+                    <p
+                      className="rounded-xl border px-3 py-2 text-sm"
+                      style={{
+                        background: "var(--card-hover)",
+                        borderColor: "var(--border)",
+                        color: "var(--foreground)"
+                      }}
+                    >
+                      {pedido.enderecoEntrega.rotulo}
+                    </p>
+                    <p className="mt-1 text-xs" style={{ color: "var(--muted-subtle)" }}>
+                      {pedido.enderecoEntrega.origem === "DESPACHO"
+                        ? "Endereço registrado no despacho deste pedido."
+                        : "Definido na proposta. Para trocar, altere o endereço de entrega na proposta."}
+                    </p>
+                  </>
+                ) : (
+                  <p
+                    className="rounded-xl border px-3 py-2 text-sm font-medium"
+                    style={{
+                      background: "color-mix(in srgb, var(--action-danger) 8%, transparent)",
+                      borderColor: "var(--action-danger)",
+                      color: "var(--action-danger)"
+                    }}
+                  >
+                    Esta proposta não tem endereço de entrega definido. Defina o endereço na
+                    proposta para poder despachar.
+                  </p>
+                )}
               </div>
 
               {/* EM NOME DE QUEM SAI A ETIQUETA — só quando ha pagador distinto.

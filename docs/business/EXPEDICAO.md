@@ -263,6 +263,49 @@ hoje a soma teórica dos itens (`nfe.service.ts`), não `peso_bruto_kg` — ver
 `PEDIDOS-PRODUCAO.md` §19.
 
 
+### Endereço de entrega: exibição, não escolha (02/09/2026)
+
+O campo **ENDEREÇO DE ENTREGA** do modal Despachar era um `select` com **todos**
+os endereços do cliente **e do pagador** — incluindo os de outras cidades — para
+um endereço que a proposta já tinha definido. Virou **texto**. Trocar endereço é
+operação da proposta, não da expedição.
+
+**Precedência**, resolvida no pipeline da lista e exposta em
+`PedidoExpedicao.enderecoEntrega`:
+
+1. **despacho confirmado** (`data_despacho` preenchida) →
+   `expedicoes.id_endereco_entrega`. O que já saiu não se reescreve: é o
+   endereço que foi para a etiqueta e para a prepostagem. Rascunho **não** vence
+   — mesma lógica de `expConfirmado` que o transporte já segue;
+2. senão → **`propostas.id_endereco_ent`**, o endereço definido na proposta;
+3. nenhum dos dois → o modal mostra aviso vermelho pedindo para definir o
+   endereço na proposta, e `camposMinimosDespacho` bloqueia o despacho — ele já
+   exigia `idEnderecoEntrega`. Em 02/09 são **0 de 45** nessa situação.
+
+A opção **"— não informar —"** saiu: ela gravava `null` e o próprio
+`camposMinimosDespacho` recusava o despacho em seguida.
+
+**Sem consulta nova por linha.** `id_endereco_ent` entrou na mesma linha do
+`select` de `propostas` que já rodava, e os endereços são resolvidos numa
+segunda onda com **um** `in` por ids explícitos — a união de
+`propostas.id_endereco_ent` com `expedicoes.id_endereco_entrega`, porque nos
+pedidos já despachados os dois podem divergir (é o caso de **21229** e
+**21000**). Filtrar por `id_cliente` não serviria: `enderecos` não tem FK para
+`clientes`. O modal, em troca, **deixou de fazer** a sua consulta de endereços
+por abertura.
+
+**O que corrigiu na prática.** O default anterior (`escolherEnderecoDefault`) só
+olhava endereços **do cliente**, enquanto `id_endereco_ent` aponta para o
+**pagador** em 17 dos 45 pedidos do painel. Cinco pedidos sem despacho —
+**21557, 21503, 21499, 21174 e 21074** — exibiam todos o mesmo endereço do
+cliente 8469 em Garanhuns/PE e passam a exibir o endereço real de cada
+destinatário (Barra do Garças/MT, Santarém/PA ×2, Passo Fundo/RS, Goiânia/GO).
+
+`listarEnderecosCliente` (em `enderecos.service.ts`) e `escolherEnderecoDefault`
+(no modal) **ficaram no código, sem chamadores**, caso a escolha manual precise
+voltar. `id_cliente_destinatario_etiqueta` é escolha **separada** e não mudou:
+a caixa pode ir para o endereço de um em nome do outro.
+
 ### `peso_kg` pode vir de rascunho (20/08/2026)
 
 Desde 20/08/2026 o modal Despachar tem **"Salvar sem despachar"**: o expedidor altera peso, endereço ou transporte, grava, e fecha o modal para pedir liberação de recotação a um admin — sem perder o que preencheu. A gravação usa `salvarDadosExpedicao`, o mesmo caminho do modo edição, e **não toca `data_despacho`**.
