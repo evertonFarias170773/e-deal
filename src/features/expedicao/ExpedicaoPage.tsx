@@ -32,7 +32,7 @@ import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
 import { listarPainelExpedicao } from "./services/expedicao.service";
 import { encerrarTeste } from "@/features/pedidos/services/encerrar-teste.client";
-import { marcarPronto, marcarEntregue } from "./services/expedicao-acoes.service";
+import { marcarPronto, marcarEntregue, confirmarColeta } from "./services/expedicao-acoes.service";
 import { marcarPrepostagemCancelada } from "./services/correios.client";
 import { liberarRecotacao, revogarRecotacao } from "./services/recotacao.client";
 import { abrirDeclaracaoConteudo } from "./services/etiqueta.client";
@@ -147,7 +147,7 @@ export function ExpedicaoPage() {
   /** Pedido cuja prepostagem esta sendo marcada como cancelada (trava o item). */
   const [marcandoCanceladaId, setMarcandoCanceladaId] = useState<number | null>(null);
   // Confirmação de mudança de status no modal do sistema, não no confirm() do navegador.
-  const [confirmacao, setConfirmacao] = useState<{ pedido: PedidoExpedicao; tipo: "PRONTO" | "ENTREGUE" } | null>(null);
+  const [confirmacao, setConfirmacao] = useState<{ pedido: PedidoExpedicao; tipo: "PRONTO" | "ENTREGUE" | "COLETA" } | null>(null);
 
   function atorAtual() {
     return {
@@ -166,6 +166,25 @@ export function ExpedicaoPage() {
       showToast({ type: "success", title: "Pedido pronto para expedir", description: `#${p.idInt} agora está na bancada da expedição.` });
     } else {
       showToast({ type: "error", title: "Não foi possível marcar pronto", description: res.error });
+    }
+    void recarregar();
+  }
+
+  /**
+   * AGUARDANDO COLETA -> EM TRANSITO (02/09/2026, Etapa 7). Espelha
+   * `handleMarcarPronto`: mesmo guard de concorrencia, mesmo toast, mesmo
+   * `recarregar`. `canOperar` ja e exigido em `acaoPrimaria`, que e o unico
+   * caminho ate aqui.
+   */
+  async function handleConfirmarColeta(p: PedidoExpedicao) {
+    if (salvandoAcao !== null) return;
+    setSalvandoAcao(p.idInt);
+    const res = await confirmarColeta(p.idInt, atorAtual());
+    setSalvandoAcao(null);
+    if (res.success) {
+      showToast({ type: "success", title: "Coleta confirmada", description: `#${p.idInt} saiu com a transportadora e está EM TRANSITO.` });
+    } else {
+      showToast({ type: "error", title: "Não foi possível confirmar a coleta", description: res.error });
     }
     void recarregar();
   }
@@ -190,7 +209,12 @@ export function ExpedicaoPage() {
       ? null
       : p.etapa === "PRODUCAO" || p.etapa === "ACABAMENTO"
         ? { rotulo: ocupado ? "Salvando..." : "Marcar pronto", acao: () => setConfirmacao({ pedido: p, tipo: "PRONTO" }) }
-        : p.etapa === "PRONTO"
+        : // AGUARDANDO COLETA vem ANTES de PRONTO: o pedido continua na etapa
+          // `PRONTO` (segue em EXPEDICAO), mas o que falta nele nao e despachar
+          // — ja foi despachado — e sim registrar que o carro passou.
+          p.aguardandoColeta
+          ? { rotulo: ocupado ? "Salvando..." : "Confirmar coleta", acao: () => setConfirmacao({ pedido: p, tipo: "COLETA" }) }
+          : p.etapa === "PRONTO"
           ? { rotulo: "Despachar", acao: () => setPedidoDespacho(p) }
           : p.etapa === "A_RETIRAR"
             ? { rotulo: "Confirmar retirada", acao: () => setPedidoRetirada(p) }
@@ -1018,24 +1042,39 @@ export function ExpedicaoPage() {
       )}
       {confirmacao && (
         <ConfirmarAcaoModal
-          titulo={confirmacao.tipo === "PRONTO" ? "Marcar como pronto" : "Confirmar entrega"}
+          titulo={
+            confirmacao.tipo === "PRONTO"
+              ? "Marcar como pronto"
+              : confirmacao.tipo === "COLETA"
+                ? "Confirmar coleta"
+                : "Confirmar entrega"
+          }
           descricao={
             confirmacao.tipo === "PRONTO"
               ? `O pedido #${confirmacao.pedido.idInt} (${confirmacao.pedido.cliente}) vai para a bancada da expedição, aguardando despacho.`
-              : `O pedido #${confirmacao.pedido.idInt} (${confirmacao.pedido.cliente}) será concluído como ENTREGUE.`
+              : confirmacao.tipo === "COLETA"
+                ? `A transportadora levou o volume do pedido #${confirmacao.pedido.idInt} (${confirmacao.pedido.cliente}). Ele passa a EM TRANSITO.`
+                : `O pedido #${confirmacao.pedido.idInt} (${confirmacao.pedido.cliente}) será concluído como ENTREGUE.`
           }
           detalhe={
             confirmacao.tipo === "ENTREGUE"
               ? "Último passo do fluxo. Para desfazer depois é preciso usar Voltar status, com motivo."
               : undefined
           }
-          rotuloConfirmar={confirmacao.tipo === "PRONTO" ? "Marcar pronto" : "Confirmar entrega"}
+          rotuloConfirmar={
+            confirmacao.tipo === "PRONTO"
+              ? "Marcar pronto"
+              : confirmacao.tipo === "COLETA"
+                ? "Confirmar coleta"
+                : "Confirmar entrega"
+          }
           salvando={salvandoAcao === confirmacao.pedido.idInt}
           onClose={() => setConfirmacao(null)}
           onConfirmar={() => {
             const { pedido, tipo } = confirmacao;
             setConfirmacao(null);
             if (tipo === "PRONTO") void handleMarcarPronto(pedido);
+            else if (tipo === "COLETA") void handleConfirmarColeta(pedido);
             else void handleMarcarEntregue(pedido);
           }}
         />

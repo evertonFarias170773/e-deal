@@ -266,6 +266,42 @@ hoje a soma teórica dos itens (`nfe.service.ts`), não `peso_bruto_kg` — ver
 `PEDIDOS-PRODUCAO.md` §19.
 
 
+### Aguardando coleta — Etapa 7 (02/09/2026)
+
+`expedicoes.coletado_em timestamptz NULL` **aplicada** (migration de `613961c`,
+asserções de entrada e saída passaram: coluna nulável sem default, 0 triggers,
+48 linhas todas nulas, 0 retroativos). **Sem status novo, sem card novo, sem
+backfill.**
+
+**"Aguardando coleta" é DERIVADO**, nunca declarado: `data_despacho` preenchida
++ `coletado_em` nula + etapa `PRONTO` (status `EXPEDICAO`) + transporte
+`TRANSPORTADORA`/`MOTOBOY`. Derivado **uma vez** no pipeline, em
+`PedidoExpedicao.aguardandoColeta`; cor do card e ação primária só leem.
+
+**`despachar` passou a ter três saídas:**
+
+| Transporte | Destino |
+|---|---|
+| RETIRADA | `A RETIRAR` — byte a byte como antes |
+| TRANSPORTADORA · MOTOBOY | **não transiciona** — segue em `EXPEDICAO` |
+| CORREIOS e o resto | `EM TRANSITO` — a postagem **é** a coleta |
+
+`confirmarColeta(idInt, ator)` fecha o passo: grava `coletado_em` e chama o
+**mesmo** `transicionar` de `marcarPronto`, com a mesma guarda de concorrência e
+a mesma trilha em `os_status_log`. Exige `canOperar`. `voltarStatus` zera
+`coletado_em` junto com `data_despacho` — sem isso o pedido voltaria a
+`EXPEDICAO` já marcado como coletado e sumiria da bancada.
+
+Esses pedidos ficam **dentro do card "Pronto p/ expedir"** (continuam em
+`EXPEDICAO`), pintam de **laranja** — que vence azul e verde — e a ação primária
+vira **"Confirmar coleta"**, na lista e no Kanban.
+
+**O atraso passou a congelar na SAÍDA da etapa de EXPEDICAO**, não mais em
+`data_despacho`. Os dois eventos deixaram de coincidir: aguardando coleta tem
+`data_despacho` e ainda está na casa, ainda é responsabilidade da bancada.
+Medido em 02/09: as duas regras dão o mesmo resultado em todos os pedidos, zero
+trocam de estado.
+
 ### O alerta de troca dos Correios (02/09/2026)
 
 O bloco âmbar *"Este pedido está definido para ir pelos Correios… Confirmar

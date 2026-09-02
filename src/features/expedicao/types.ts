@@ -102,6 +102,13 @@ export interface ExpedicaoRegistro {
   correiosCodigoObjetoAnterior: string | null;
   dataPronto: string | null;
   dataDespacho: string | null;
+  /**
+   * `expedicoes.coletado_em` — quando a transportadora/motoboy retirou o volume
+   * (02/09/2026). Nula com `data_despacho` preenchida, status `EXPEDICAO` e
+   * transporte `TRANSPORTADORA`/`MOTOBOY` significa **aguardando coleta**.
+   * Correios e retirada não usam: a postagem e a retirada já são a saída.
+   */
+  coletadoEm: string | null;
   dataEntrega: string | null;
   despachadoPor: string | null;
   retiradoPor: string | null;
@@ -272,6 +279,21 @@ export interface PedidoExpedicao {
    * etiqueta — la vale o estado confirmado.
    */
   despachoConfirmado: boolean;
+  /**
+   * AGUARDANDO COLETA — estado DERIVADO, não status (02/09/2026, Etapa 7).
+   *
+   * `data_despacho` preenchida + `coletado_em` nula + etapa `PRONTO` (status
+   * `EXPEDICAO`) + transporte `TRANSPORTADORA` ou `MOTOBOY`. O volume está
+   * rotulado, na casa, esperando o carro.
+   *
+   * Não existe `status_interno` novo: o pedido segue em `EXPEDICAO`, um status
+   * que as dez funções do banco já conhecem, e `confirmarColeta` o leva a
+   * `EM TRANSITO` pelo `transicionar` de sempre.
+   *
+   * Derivado UMA VEZ, aqui no pipeline: a cor do card, a ação primária e o card
+   * "Pronto p/ expedir" leem este campo, nunca recalculam a condição.
+   */
+  aguardandoColeta: boolean;
   volumes: number | null;
   /**
    * Liberacao ATIVA da recotacao de frete (Parte C). Null = bloqueado: o

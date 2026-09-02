@@ -113,38 +113,20 @@ const FASES_CARD_KANBAN = [FASE_FABRICA, FASE_BANCADA, FASE_COLETA, FASE_ROTULAD
 const ETAPAS_FORA_DA_BANCADA: EtapaExpedicao[] = ["A_RETIRAR", "EM_TRANSITO", "ENTREGUE"];
 
 /**
- * LARANJA — "aguardando coleta". PREVISTO na precedência, ainda SEM OCUPANTE.
+ * LARANJA — "aguardando coleta". NO AR DESDE 02/09/2026 (Etapa 7).
  *
- * O estado é DERIVADO (Desenho A da Etapa 7, commit 613961c): despacho
- * confirmado + `expedicoes.coletado_em` nula + etapa `PRONTO` + transporte
- * `TRANSPORTADORA` ou `MOTOBOY` — o volume saiu da bancada mas a transportadora
- * ainda não passou.
- *
- * `coletado_em` NÃO EXISTE no banco: a migration está escrita e não foi
- * aplicada, e este bloco não a aplica. Sem a coluna, a última condição não tem
- * como ser avaliada e o estado não pode ser distinguido de "ainda na bancada".
- *
- * A saída é uma flag ANOTADA COMO `boolean` — e não inferida como `false`, o
- * que tornaria o resto do corpo código morto para o compilador. Assim a
- * condição fica escrita, tipada e verificada pelo `tsc`, devolvendo `false`
- * para todo pedido até a coluna existir. Ligar é trocar a flag e ler
- * `coletado_em` no service; nada mais nesta precedência muda.
+ * A flag `COLETA_TEM_FONTE_NO_BANCO` saiu junto com a migration de `613961c`,
+ * que criou `expedicoes.coletado_em`. A condição também saiu daqui: ela é
+ * derivada UMA VEZ no pipeline da lista, em `PedidoExpedicao.aguardandoColeta`
+ * — despacho confirmado + `coletado_em` nula + etapa `PRONTO` + transporte
+ * `TRANSPORTADORA`/`MOTOBOY`. O card só lê o campo; a cor e a ação primária
+ * bebem da mesma fonte e não podem discordar.
  */
-const COLETA_TEM_FONTE_NO_BANCO: boolean = false;
-
-function aguardandoColeta(p: PedidoExpedicao): boolean {
-  return (
-    COLETA_TEM_FONTE_NO_BANCO &&
-    p.despachoConfirmado &&
-    p.etapa === "PRONTO" &&
-    (p.tipoFrete === "TRANSPORTADORA" || p.tipoFrete === "MOTOBOY")
-  );
-}
 
 /**
  * PRECEDÊNCIA DAS CORES — INVERTIDA em 02/09/2026.
  *
- *   1. laranja  aguardando coleta (previsto; ver `aguardandoColeta`)
+ *   1. laranja  aguardando coleta (`p.aguardandoColeta`, derivado no service)
  *   2. azul     em `EXPEDICAO`, etapa `PRONTO` — COM OU SEM etiqueta
  *   3. verde    etiqueta gerada em pedido que já saiu da bancada
  *   4. cinza    o resto
@@ -166,7 +148,7 @@ function aguardandoColeta(p: PedidoExpedicao): boolean {
  * leitura correta — ele não saiu de lugar nenhum.
  */
 function faseDoCard(p: PedidoExpedicao) {
-  if (aguardandoColeta(p)) return FASE_COLETA;
+  if (p.aguardandoColeta) return FASE_COLETA;
   if (p.etapa === "PRONTO") return FASE_BANCADA;
   if (p.etiquetaGerada && ETAPAS_FORA_DA_BANCADA.includes(p.etapa)) return FASE_ROTULADO;
   return FASE_FABRICA;

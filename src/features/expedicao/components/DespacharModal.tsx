@@ -724,10 +724,26 @@ export function DespacharModal({
     setSalvando(false);
 
     if (res.success) {
+      /**
+       * A MENSAGEM DIZ O DESFECHO REAL (02/09/2026, Etapa 7).
+       *
+       * `res.aguardandoColeta` vem de `despachar` e só é verdadeiro quando NÃO
+       * houve transição: TRANSPORTADORA e MOTOBOY seguem em `EXPEDICAO`
+       * esperando o carro. Anunciar "Pedido despachado" ali mandaria o
+       * expedidor parar de olhar para um volume que ainda está na casa.
+       */
       showToast({
         type: "success",
-        title: modoEdicao ? "Dados de expedição salvos" : tipoEntrega === "RETIRADA" ? "Pedido aguardando retirada" : "Pedido despachado",
-        description: `#${pedido.idInt} · ${pedido.cliente}`
+        title: modoEdicao
+          ? "Dados de expedição salvos"
+          : tipoEntrega === "RETIRADA"
+            ? "Pedido aguardando retirada"
+            : res.aguardandoColeta
+              ? "Despacho registrado — aguardando coleta"
+              : "Pedido despachado",
+        description: res.aguardandoColeta
+          ? `#${pedido.idInt} · ${pedido.cliente} — confirme a coleta quando a transportadora levar o volume.`
+          : `#${pedido.idInt} · ${pedido.cliente}`
       });
       onDone();
     } else {

@@ -147,7 +147,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
@@ -281,6 +281,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       correiosCodigoObjeto: row.correios_codigo_objeto ?? null,
       dataPronto: row.data_pronto ?? null,
       dataDespacho: row.data_despacho ?? null,
+      coletadoEm: row.coletado_em ?? null,
       dataEntrega: row.data_entrega ?? null,
       despachadoPor: row.despachado_por ?? null,
       retiradoPor: row.retirado_por ?? null,
@@ -398,36 +399,61 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     // Rascunho (dados gravados sem despachar) NAO vence a cotacao aqui: a lista,
     // a visao por transportadora e a etiqueta mostram o estado CONFIRMADO. Ver
     // `despachoConfirmado` em types.ts.
-    // Subiu para antes do atraso em 25/08/2026: o atraso passou a depender dele.
+    // Alimentava o atraso ate 02/09/2026; hoje quem congela o atraso e a SAIDA
+    // da etapa de EXPEDICAO, nao esta data. Ver `naEtapaDeExpedicao` abaixo.
     const despachoConfirmado = Boolean(exp?.dataDespacho);
 
+
     /**
-     * ATRASO CONGELA NO DESPACHO (25/08/2026).
+     * O ATRASO CONGELA AO SAIR DA ETAPA DE EXPEDICAO (02/09/2026, Etapa 7).
      *
-     * `data_termino` e a promessa de ENTREGA DA PRODUCAO — a data em que o
-     * pedido devia estar pronto para sair. Enquanto a comparacao era so contra
-     * `hoje`, um pedido despachado continuava contando: 20925, 20928 e 20481
-     * sairam em 20/08 para uma promessa de 21/08 — dentro do prazo — e o painel
-     * marcava os tres como "ATRASADO 4d" em 25/08, porque a conta nao tinha onde
-     * parar antes de `ENTREGUE`. O numero crescia sozinho todo dia, e a linha
-     * ficava vermelha por um atraso que nunca existiu.
+     * Era `!despachoConfirmado`, de 25/08/2026, quando confirmar o despacho e
+     * sair de `EXPEDICAO` eram o mesmo evento. Deixaram de ser: em
+     * TRANSPORTADORA e MOTOBOY o pedido agora FICA em `EXPEDICAO` aguardando
+     * coleta, com `data_despacho` preenchida. Pela regra antiga o relogio
+     * pararia ali — e o volume ainda esta na casa, ainda e responsabilidade da
+     * bancada, e ainda pode atrasar.
      *
-     * Com `data_despacho` preenchida a mercadoria ja saiu: o que a Expedicao
-     * devia fazer, fez. O que acontece do transporte em diante nao e atraso de
-     * producao — e prazo de transportadora, que este campo nao mede.
+     * O que congela e a SAIDA: `A RETIRAR`, `EM TRANSITO` e `ENTREGUE` sao
+     * prazo de transportadora ou de balcao, que `data_termino` nao mede.
+     *
+     * HISTORICO. Ate 25/08/2026 a conta nao tinha onde parar antes de
+     * `ENTREGUE`: 20925, 20928 e 20481 sairam em 20/08 para uma promessa de
+     * 21/08 — dentro do prazo — e o painel marcava os tres como "ATRASADO 4d",
+     * numero que crescia sozinho todo dia. `data_despacho` resolveu aquilo e
+     * hoje resolve menos, porque despachar deixou de significar sair.
      *
      * `prometidoHoje` fica INTOCADO de proposito: ele responde "o que promete
      * sair hoje", e um pedido que ja saiu hoje continua sendo verdade nesse
      * chip. So o atraso para.
+     *
+     * Medido em 02/09/2026 sobre o painel: as duas regras davam o MESMO
+     * resultado em todos os pedidos — zero trocam de estado.
      */
+    const naEtapaDeExpedicao = etapa === "PRODUCAO" || etapa === "ACABAMENTO" || etapa === "PRONTO";
     const atrasadoDias =
-      emAberto && !despachoConfirmado && promessaDia && promessaDia < hoje
-        ? diffDias(promessaDia, hoje)
-        : 0;
+      naEtapaDeExpedicao && promessaDia && promessaDia < hoje ? diffDias(promessaDia, hoje) : 0;
     const prometidoHoje = emAberto && promessaDia === hoje;
 
     const expConfirmado = despachoConfirmado ? exp : null;
     const tipoFrete: TipoFreteNormalizado = expConfirmado?.tipoFrete ?? normalizarTipoFrete(frete?.servico);
+    /**
+     * AGUARDANDO COLETA, derivado UMA VEZ (02/09/2026, Etapa 7).
+     *
+     * As quatro condicoes do Desenho A, e nenhuma a mais: despacho confirmado,
+     * coleta ainda nao registrada, pedido AINDA em `EXPEDICAO` (etapa `PRONTO`)
+     * e transporte que espera carro. Correios vai direto a `EM TRANSITO` — a
+     * postagem E a coleta — e retirada vai a `A RETIRAR`; nenhum dos dois entra.
+     *
+     * `tipoFrete` aqui ja e o resolvido acima: com despacho confirmado ele vem
+     * de `expedicoes.tipo_frete`, que e a declaracao do expedidor. E ela que
+     * decide, nao o texto da cotacao.
+     */
+    const aguardandoColeta =
+      despachoConfirmado &&
+      !exp?.coletadoEm &&
+      etapa === "PRONTO" &&
+      (tipoFrete === "TRANSPORTADORA" || tipoFrete === "MOTOBOY");
 
     const modalidadeOrcamento = (p.modalidade_frete as ModalidadeFrete | null) ?? null;
     const idTransportadoraOrcamento =
@@ -623,7 +649,8 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       expedicao: exp,
       liberacaoRecotacao: liberacaoMap.get(idInt) ?? null,
       recotacaoVigente: recotacaoMap.get(idInt) ?? null,
-      despachoConfirmado
+      despachoConfirmado,
+      aguardandoColeta
     });
   }
 

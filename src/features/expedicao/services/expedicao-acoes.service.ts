@@ -2,7 +2,17 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
 
 export type AtorExpedicao = { uid: string | null; nome: string | null };
-export type ResultadoAcao = { success: boolean; error?: string };
+export type ResultadoAcao = {
+  success: boolean;
+  error?: string;
+  /**
+   * Só em `despachar`: o pedido ficou em `EXPEDICAO` esperando a coleta, em vez
+   * de transicionar. Existe para a mensagem de sucesso do modal dizer o
+   * desfecho certo — anunciar "despachado" num volume que ainda está na casa
+   * mandaria o expedidor parar de olhar para ele.
+   */
+  aguardandoColeta?: boolean;
+};
 
 export type DespachoInput = {
   tipoEntrega: "TRANSPORTE" | "RETIRADA";
@@ -138,7 +148,30 @@ export async function despachar(
     return { success: false, error: `Antes de despachar, informe ${frasearFaltantes(faltantes)}.` };
   }
 
-  const destino = input.tipoEntrega === "RETIRADA" ? "A RETIRAR" : "EM TRANSITO";
+  /**
+   * TRÊS SAÍDAS DESDE 02/09/2026 (Etapa 7).
+   *
+   *   RETIRADA                  → `A RETIRAR`, byte a byte como antes;
+   *   TRANSPORTADORA / MOTOBOY  → NÃO TRANSICIONA. O pedido segue em
+   *                               `EXPEDICAO`, agora com `data_despacho`
+   *                               preenchida e `coletado_em` nula — é o estado
+   *                               derivado "aguardando coleta". O volume está
+   *                               rotulado, na casa, esperando o carro; dizer
+   *                               `EM TRANSITO` ali era mentira, ninguém
+   *                               transportou nada ainda. `confirmarColeta`
+   *                               fecha o passo;
+   *   demais (CORREIOS, e o que sobrar) → `EM TRANSITO`, como sempre. A
+   *                               postagem É a coleta.
+   *
+   * `null` = sem transição. Não há status novo: `EXPEDICAO` é o mesmo de
+   * sempre, e as dez funções do banco que conhecem o vocabulário não mudam.
+   */
+  const destino: string | null =
+    input.tipoEntrega === "RETIRADA"
+      ? "A RETIRAR"
+      : input.tipoFrete === "TRANSPORTADORA" || input.tipoFrete === "MOTOBOY"
+        ? null
+        : "EM TRANSITO";
 
   // Divergência bloqueante. A UI já barra, mas ela é só a UI: o despacho é
   // PostgREST direto do browser, sem rota de API que revalide (§3.5 do
@@ -217,14 +250,18 @@ export async function despachar(
     return { success: false, error: `Não foi possível gravar os dados do despacho (${up.error}). O pedido segue em EXPEDICAO.` };
   }
 
-  const t = await transicionar(idInt, "EXPEDICAO", destino, ator, null, "NATURAL");
-  if (!t.success) {
-    // Dados gravados, status não. É o lado seguro da inversão: o pedido continua
-    // no funil e os dados estão lá para conferência.
-    return {
-      success: false,
-      error: `${t.error} Os dados do despacho foram gravados e o pedido segue em EXPEDICAO.`
-    };
+  // Sem destino, não há transição a fazer: o pedido FICA em EXPEDICAO por
+  // desenho, e é a gravação acima que o coloca em "aguardando coleta".
+  if (destino !== null) {
+    const t = await transicionar(idInt, "EXPEDICAO", destino, ator, null, "NATURAL");
+    if (!t.success) {
+      // Dados gravados, status não. É o lado seguro da inversão: o pedido continua
+      // no funil e os dados estão lá para conferência.
+      return {
+        success: false,
+        error: `${t.error} Os dados do despacho foram gravados e o pedido segue em EXPEDICAO.`
+      };
+    }
   }
 
   // Espelho para as telas legadas que leem o rastreio na OS.
@@ -236,6 +273,30 @@ export async function despachar(
     if (osError) console.warn("[expedicao-acoes] Falha ao espelhar rastreio na OS:", osError);
   }
 
+  return { success: true, aguardandoColeta: destino === null };
+}
+
+/**
+ * AGUARDANDO COLETA → EM TRANSITO. O carro passou e levou o volume.
+ *
+ * Espelha `marcarPronto`: grava a data e chama o MESMO `transicionar`, com a
+ * mesma guarda de concorrência (`.eq("status_interno", "EXPEDICAO")` lá dentro)
+ * e a mesma trilha em `os_status_log`. Não há status novo nem caminho paralelo.
+ *
+ * A ORDEM É A DO DESPACHO: grava primeiro, transiciona depois. Falhando a
+ * escrita, o pedido fica exatamente onde estava; falhando a transição, a data
+ * de coleta fica gravada e o pedido segue em `EXPEDICAO` — o mesmo lado seguro
+ * que `despachar` escolheu em 20/08/2026, e um novo clique fecha o passo.
+ */
+export async function confirmarColeta(idInt: number, ator: AtorExpedicao): Promise<ResultadoAcao> {
+  const up = await upsertExpedicao(idInt, { coletado_em: new Date().toISOString() });
+  if (!up.success) {
+    return { success: false, error: `Não foi possível registrar a coleta (${up.error}). O pedido segue em EXPEDICAO.` };
+  }
+  const t = await transicionar(idInt, "EXPEDICAO", "EM TRANSITO", ator, null, "NATURAL");
+  if (!t.success) {
+    return { success: false, error: `${t.error} A coleta foi registrada e o pedido segue em EXPEDICAO.` };
+  }
   return { success: true };
 }
 
@@ -352,8 +413,12 @@ export async function voltarStatus(
 
   // Limpa a data correspondente ao passo desfeito.
   if (statusAtual === "ENTREGUE") return upsertExpedicao(idInt, { data_entrega: null, retirado_por: null });
+  // `coletado_em` sai junto com `data_despacho` (02/09/2026): desfazer o
+  // despacho tem de desfazer também a coleta, senão o pedido voltaria a
+  // EXPEDICAO já marcado como coletado e nunca mais apareceria como aguardando
+  // coleta — ficaria invisível para a bancada.
   if (statusAtual === "EM TRANSITO" || statusAtual === "A RETIRAR")
-    return upsertExpedicao(idInt, { data_despacho: null });
+    return upsertExpedicao(idInt, { data_despacho: null, coletado_em: null });
   return upsertExpedicao(idInt, { data_pronto: null });
 }
 
