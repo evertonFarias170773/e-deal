@@ -35,6 +35,7 @@ import type { FaturavelOrigem } from "./types";
 import { EmissaoNfeModal } from "./components/EmissaoNfeModal";
 import { ConferenciaFaturamentoModal } from "./components/ConferenciaFaturamentoModal";
 import { conferirFaturamento, type ResultadoConferencia } from "./services/conferencia-faturamento";
+import { resolverAmbienteFiscal } from "./services/ambiente-fiscal";
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 function parseFocusResponse(data: any): { success: boolean; message: string } {
@@ -1454,18 +1455,23 @@ export function NotasFiscaisPage() {
       const client = getSupabaseClient();
       if (!client) throw new Error("Sistema indisponível no momento. Tente novamente.");
 
-      // 1. Buscar ambiente atual da empresa
-      const { data: company, error: compErr } = await client
-        .from("empresas")
-        .select("ambiente_nfe")
-        .eq("id", item.id_empresa)
-        .single();
+      // 1. Ambiente atual da empresa — mesma regra que a rota de emissão usa,
+      //    pelo mesmo módulo. Antes havia aqui uma cópia da leitura e um palpite
+      //    (`id_empresa === 1 ? producao : homologacao`) para quando ela falhava;
+      //    o palpite saiu, porque errar o ambiente em silêncio é pior do que
+      //    recusar o reenvio.
+      const ambienteResolvido = await resolverAmbienteFiscal(client, item.id_empresa, "NFE");
 
-      if (compErr) {
-        console.warn("[Reenviar NFe] Erro ao buscar ambiente da empresa:", compErr);
+      if (!ambienteResolvido.ok) {
+        showToast({
+          type: "error",
+          title: "Ambiente da empresa não definido",
+          description: ambienteResolvido.mensagem
+        });
+        return;
       }
 
-      const activeEnv = company?.ambiente_nfe || (item.id_empresa === 1 ? "producao" : "homologacao");
+      const activeEnv = ambienteResolvido.ambiente;
 
       // 2. Se ambiente for diferente, ou se o payload_envio tiver o ambiente incorreto, atualizar no banco
       const needsEnvUpdate = activeEnv !== item.ambiente;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
+import { resolverAmbienteFiscal } from "@/features/fiscal/services/ambiente-fiscal";
 
 /**
  * Emissão de NF-e — porta de entrada no servidor.
@@ -32,6 +33,7 @@ type NotaParaEnvio = {
   numero_nf: string | null;
   chave_nfe: string | null;
   tentativas_envio: number | null;
+  id_empresa: number | null;
 };
 
 /** Extrai a mensagem real do webhook para que a recusa chegue à tela. */
@@ -120,7 +122,7 @@ export async function POST(request: Request) {
     // 4. Releitura da nota. Nada do corpo além da `ref` é usado.
     const { data: notaRow, error: fetchError } = await supabase
       .from("notas_fiscais")
-      .select("id, ref, status, numero_nf, chave_nfe, tentativas_envio")
+      .select("id, ref, status, numero_nf, chave_nfe, tentativas_envio, id_empresa")
       .eq("ref", ref)
       .maybeSingle();
 
@@ -167,7 +169,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. Trava de duplicidade — a parte que vale contra corrida.
+    // 6. Ambiente: sincronizado AQUI, na transmissão, e não na criação.
+    //
+    //    `notas_fiscais.ambiente` é NOT NULL DEFAULT 'homologacao' e ninguém
+    //    escrevia o valor real quando o rascunho nascia. Um rascunho de 26/08
+    //    emitido hoje tem que sair com o ambiente de hoje — por isso a leitura
+    //    é feita neste ponto, o último antes de o webhook transmitir.
+    //
+    //    O n8n executa `fn_preparar_envio_nfe` logo depois, e ela remonta o
+    //    `payload_envio` por `fn_montar_payload_nfe`, que lê `nf.ambiente`.
+    //    Como a coluna já estará correta quando isso rodar, o payload sai
+    //    correto sem precisarmos escrevê-lo aqui.
+    //
+    //    Sem valor padrão: empresa sem ambiente definido para a emissão em vez
+    //    de gravar um palpite.
+    const ambienteResolvido = await resolverAmbienteFiscal(
+      supabase,
+      nota.id_empresa,
+      "NFE"
+    );
+
+    if (!ambienteResolvido.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "AMBIENTE_NAO_DEFINIDO",
+          message: ambienteResolvido.mensagem,
+        },
+        { status: 422 }
+      );
+    }
+
+    // 7. Trava de duplicidade — a parte que vale contra corrida.
     //
     //    A checagem acima não basta: duas chamadas simultâneas leem o mesmo
     //    estado e passam as duas. Quem decide é este UPDATE condicional, que
@@ -178,11 +211,17 @@ export async function POST(request: Request) {
     //
     //    A repetição legítima depois de uma falha continua possível: o status
     //    permanece PRONTA_PARA_ENVIO e o contador apenas avança.
+    //
+    //    O `ambiente` viaja junto nesta mesma escrita: quem ganha a corrida
+    //    grava a reserva e o ambiente de uma vez, e quem perde não grava nada.
+    //    Duas escritas separadas deixariam a janela em que o ambiente muda mas
+    //    a emissão é recusada.
     const tentativasAntes = Number(nota.tentativas_envio ?? 0);
     const { data: reserva, error: reservaError } = await supabase
       .from("notas_fiscais")
       .update({
         tentativas_envio: tentativasAntes + 1,
+        ambiente: ambienteResolvido.ambiente,
         updated_at: new Date().toISOString(),
       })
       .eq("id", nota.id)
@@ -212,7 +251,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. O webhook do n8n, com o mesmo corpo de sempre.
+    // 8. O webhook do n8n, com o mesmo corpo de sempre.
     let response: Response;
     try {
       response = await fetch(WEBHOOK_EMITIR_NFE, {
