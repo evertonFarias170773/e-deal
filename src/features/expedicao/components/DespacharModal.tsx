@@ -517,6 +517,19 @@ export function DespacharModal({
     return transportadoraNome.trim();
   }, [idTransportadoraCliente, transportadoras, transportadoraNome, nomeExibicao]);
 
+  /**
+   * `faltantes` BLOQUEIA O QUE CONTRATA OU IMPRIME, nao o que corrige.
+   *
+   * Etiqueta e prepostagem exigem os campos minimos sempre que o pedido ainda
+   * nao saiu — imprimir rotulo ou contratar transporte de um envio que ninguem
+   * terminou de declarar e o erro que esta regra existe para impedir.
+   *
+   * SALVAR em modo edicao NAO passa por aqui: e uma gravacao PARCIAL, que nao
+   * transiciona status nem confirma despacho, e travar o `Salvar dados` deixaria
+   * um pedido ainda na fabrica sem como corrigir a observacao da etiqueta ou o
+   * rastreio. Hoje isso alcanca o 21409, que nao tem peso, volumes nem
+   * transportadora e continua editavel.
+   */
   const faltantes = useMemo(
     () =>
       camposMinimosDespacho(
@@ -533,7 +546,18 @@ export function DespacharModal({
           idEnderecoEntrega,
           tipoFrete
         },
-        modoEdicao ? "EDICAO" : "DESPACHO"
+        // O QUE DISPENSA A VALIDACAO E O PEDIDO JA TER SAIDO (02/09/2026).
+        //
+        // Era `modoEdicao`, e funcionava enquanto "Editar dados de expedicao" so
+        // existia depois do despacho: porta e estado eram a mesma coisa. Desde
+        // `e6abe36` a acao alcanca pedido AINDA NA BANCADA, e o gate por porta
+        // passou a dispensar a exigencia de quem nunca a cumpriu — dava para
+        // imprimir uma 10x15 sem peso, volumes, transportadora nem endereco.
+        //
+        // A justificativa de 20/08 continua valendo, com a redacao corrigida: o
+        // pedido JA SAIU, e obrigar o campo agora impediria corrigir o que
+        // existe. O que mudou e que agora e o estado que responde, nao a porta.
+        pedido.despachoConfirmado ? "EDICAO" : "DESPACHO"
       ),
     [
       tipoEntrega,
@@ -544,9 +568,15 @@ export function DespacharModal({
       qtdVolumes,
       idEnderecoEntrega,
       tipoFrete,
-      modoEdicao
+      pedido.despachoConfirmado
     ]
   );
+
+  /**
+   * O SALVAR so e barrado no DESPACHO. Em edicao a gravacao e parcial, nao
+   * transiciona status nem confirma despacho — ver o comentario de `faltantes`.
+   */
+  const faltamParaSalvar = !modoEdicao && faltantes.length > 0;
 
   /**
    * O envio que esta na tela ainda corresponde ao frete que a proposta cobra?
@@ -701,7 +731,7 @@ export function DespacharModal({
       showToast({ type: "warning", title: "Confirme o despacho sem NF", description: "Marque a caixa de confirmação para despachar sem nota autorizada." });
       return;
     }
-    if (faltantes.length > 0) {
+    if (faltamParaSalvar) {
       showToast({
         type: "warning",
         title: "Faltam dados para despachar",
@@ -1670,7 +1700,7 @@ export function DespacharModal({
               Salvar sem despachar
             </button>
           )}
-          {faltantes.length > 0 ? (
+          {faltamParaSalvar ? (
             <span className="text-xs font-medium text-amber-700 dark:text-amber-400">
               Falta informar {frasearFaltantes(faltantes)}
             </span>
@@ -1679,7 +1709,7 @@ export function DespacharModal({
               Bloqueado: {frasearMotivos(divergencia.motivosBloqueio)}
             </span>
           ) : null}
-          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltantes.length > 0 || divergencia.bloqueia} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => void handleConfirmar()} disabled={salvando || faltamParaSalvar || divergencia.bloqueia} className="rounded-2xl bg-[#0b2f4a] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#123f61] disabled:cursor-not-allowed disabled:opacity-50">
             {salvando ? "Salvando..." : modoEdicao ? "Salvar dados" : tipoEntrega === "RETIRADA" ? "Confirmar: aguardando retirada" : "Confirmar despacho"}
           </button>
         </div>
