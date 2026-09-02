@@ -5,6 +5,7 @@ import {
 } from "@/features/orcamentos/lib/modalidade-frete";
 import { labelTipoFrete, normalizarTipoFrete } from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
+import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { escolherNotaAutorizadaDoPedido, type NotaCandidata } from "@/lib/fiscal/nota-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
 import type {
@@ -471,21 +472,25 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
      * NÃO vence: sem `data_despacho` o que vale é a proposta, mesma lógica de
      * `expConfirmado` que o transporte e a etiqueta já seguem.
      */
-    const idEnderecoDespacho = String(expConfirmado?.idEnderecoEntrega ?? "").trim();
-    const idEnderecoProposta = String(p.id_endereco_ent ?? "").trim();
-    const idEnderecoVigente = idEnderecoDespacho || idEnderecoProposta;
-    const enderecoResolvido = idEnderecoVigente ? enderecoMap.get(idEnderecoVigente) : undefined;
+    const idEnderecoVigente = idEnderecoEntregaVigente({
+      despachoConfirmado,
+      idGravadoNoDespacho: exp?.idEnderecoEntrega,
+      idDefinidoNaProposta: p.id_endereco_ent as string | null | undefined
+    });
+    const enderecoResolvido = idEnderecoVigente ? enderecoMap.get(idEnderecoVigente) ?? null : null;
+    const origemEndereco =
+      despachoConfirmado && String(exp?.idEnderecoEntrega ?? "").trim() ? "DESPACHO" : "PROPOSTA";
 
     resultado.push({
       idInt,
       cliente: nomeRazao,
       clienteExibicao: nomeFantasia,
-      enderecoEntrega: enderecoResolvido
+      enderecoEntrega: enderecoResolvido && idEnderecoVigente
         ? {
             id: idEnderecoVigente,
             rotulo: enderecoResolvido.rotulo,
             cep: enderecoResolvido.cep,
-            origem: idEnderecoDespacho ? "DESPACHO" : "PROPOSTA"
+            origem: origemEndereco
           }
         : null,
       idCliente,

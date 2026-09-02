@@ -352,6 +352,23 @@ olhava endereços **do cliente**, enquanto `id_endereco_ent` aponta para o
 cliente 8469 em Garanhuns/PE e passam a exibir o endereço real de cada
 destinatário (Barra do Garças/MT, Santarém/PA ×2, Passo Fundo/RS, Goiânia/GO).
 
+**A regra vale para os documentos também** (02/09/2026, corrigido logo depois).
+`aafc0a6` mudou o modal e deixou etiqueta 10×15, Declaração de Conteúdo e
+prepostagem lendo só `expedicoes.id_endereco_entrega` — sem ele, os três caíam
+num palpite (CEP cotado, senão **o mais recente do cliente**). No 21503 a tela
+dizia *Santarém/PA* e o papel saía com *Garanhuns/PE*: o volume sairia rotulado
+para o lugar errado. A precedência virou função única,
+**`lib/endereco-entrega.ts` → `idEnderecoEntregaVigente`**, chamada pelos quatro
+(pipeline da lista, etiqueta, Declaração, prepostagem). O palpite continua, mas
+só como último recurso, depois do endereço da proposta. Cinco pedidos passaram a
+imprimir outro endereço — 21557, 21503, 21499, 21174 e 21074 — **todos sem
+despacho confirmado**; nenhum documento de pedido já despachado muda.
+
+**A etiqueta também deixou de carimbar "SEDEX"** em envio de transportadora. O
+campo caía em `cotacao_frete.servico` quando não havia despacho confirmado, e o
+resíduo FOB ia para o papel. Passou a usar `nomeTransporteEfetivo` — a mesma
+função da coluna FRETE da lista e do Kanban.
+
 `listarEnderecosCliente` (em `enderecos.service.ts`) e `escolherEnderecoDefault`
 (no modal) **ficaram no código, sem chamadores**, caso a escolha manual precise
 voltar. `id_cliente_destinatario_etiqueta` é escolha **separada** e não mudou:

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
+import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 
 export type ItemDeclaracao = {
   discriminacao: string;
@@ -58,7 +59,7 @@ export async function montarDeclaracaoViewModel(
 ): Promise<DeclaracaoViewModel | null> {
   const { data: proposta } = await supabase
     .from("propostas")
-    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep")
+    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep, id_endereco_ent")
     .eq("id_int", idInt)
     .maybeSingle();
   if (!proposta) return null;
@@ -94,32 +95,28 @@ export async function montarDeclaracaoViewModel(
   // rascunho. O peso segue a precedencia unica, que considera o rascunho.
 
   /**
-   * ENDERECO ESCOLHIDO TEM PRECEDENCIA ABSOLUTA (24/08/2026).
+   * PRECEDÊNCIA ÚNICA DO ENDEREÇO (02/09/2026) — `lib/endereco-entrega.ts`.
    *
-   * Mesma correcao aplicada na etiqueta 10x15, e pelo mesmo motivo: le
-   * `exp.id_endereco_entrega` direto, sem passar pelo gate de `data_despacho`.
-   * Sem ele, o endereco escolhido no despacho era descartado e a Declaracao
-   * imprimia o mais recente do cliente (casos 21000 e 21055).
+   * Substitui a regra de 24/08/2026, que lia `exp.id_endereco_entrega` fora do
+   * gate de `data_despacho` para não descartar a escolha do expedidor (casos
+   * 21000 e 21055). Aquela escolha manual não existe mais desde `aafc0a6`: o
+   * endereço vem da proposta. O que sobrou daquela regra — não descartar o
+   * endereço gravado — segue valendo, agora com despacho confirmado vencendo.
    *
-   * Alinha com `api/expedicao/correios/prepostagem/route.ts:74`, que sempre leu
-   * o campo sem gate.
-   *
-   * Sem escolha gravada, a cadeia de fallback abaixo continua identica: CEP
-   * cotado, depois o mais recente do cliente.
-   *
-   * NOTA SOBRE O GATE NESTE ARQUIVO
-   *   Diferente da etiqueta 10x15 — onde `expConfirmado` continua governando
-   *   transportadora, rastreio e obs —, aqui o endereco era o UNICO campo que
-   *   dependia dele. Com o endereco fora, a variavel ficaria sem uso, entao ela
-   *   sai junto. A Declaracao nao tem nenhum outro campo condicionado a
-   *   despacho confirmado. `data_despacho` continua no SELECT da linha 66, mas
-   *   deixa de influenciar qualquer campo deste documento.
+   * Sem esta correção a Declaração imprimia o MAIS RECENTE DO CLIENTE quando
+   * não havia nada gravado, divergindo do que o modal exibia. O palpite abaixo
+   * continua, mas só depois do endereço da proposta.
    */
-  if (exp?.id_endereco_entrega) {
+  const idEnderecoVigente = idEnderecoEntregaVigente({
+    despachoConfirmado: Boolean(exp?.data_despacho),
+    idGravadoNoDespacho: exp?.id_endereco_entrega as string | null | undefined,
+    idDefinidoNaProposta: proposta.id_endereco_ent as string | null | undefined
+  });
+  if (idEnderecoVigente) {
     const { data } = await supabase
       .from("enderecos")
       .select("endereco, numero, complemento, bairro, cidade, uf, cep")
-      .eq("id", exp.id_endereco_entrega)
+      .eq("id", idEnderecoVigente)
       .maybeSingle();
     endereco = data ?? null;
   }

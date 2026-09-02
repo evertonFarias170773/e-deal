@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
 import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
+import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
+import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
+import type { ModalidadeFrete } from "../types";
 import { escolherNotaAutorizadaDoPedido } from "@/lib/fiscal/nota-do-pedido";
 
 export type EtiquetaViewModel = {
@@ -89,7 +92,12 @@ export async function montarEtiquetaViewModel(
 ): Promise<EtiquetaViewModel | null> {
   const { data: proposta } = await supabase
     .from("propostas")
-    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep")
+    // `id_endereco_ent`, `modalidade_frete` e `id_transportadora_cliente`
+    // (02/09/2026): o endereço definido na proposta e o que decide o transporte
+    // real sob FOB. Mesma linha que já vinha — nenhuma consulta a mais.
+    .select(
+      "id_int, cliente, id_cliente, id_faturado, empresa, cep, id_endereco_ent, modalidade_frete, id_transportadora_cliente"
+    )
     .eq("id_int", idInt)
     .maybeSingle();
   if (!proposta) return null;
@@ -184,6 +192,27 @@ export async function montarEtiquetaViewModel(
   }
 
   /**
+   * TRANSPORTADORA DO ORÇAMENTO — só para não imprimir "SEDEX" (02/09/2026).
+   *
+   * Sem despacho confirmado, o campo caía em `frete?.servico`, e a etiqueta de
+   * um envio FOB pela SVT saía com **SEDEX** carimbado: o mesmo resíduo de
+   * cotação zerada que já contaminou o Kanban (`e1855ed`), o alerta (`dee4819`)
+   * e o formulário (`d87b61f`). Aqui ele ia para o PAPEL.
+   *
+   * Busca só acontece quando NÃO há despacho confirmado e a proposta tem
+   * vínculo — nos despachados o nome já veio do bloco acima e nada muda.
+   */
+  let nomeTransportadoraOrcamento = "";
+  if (!expConfirmado && proposta.id_transportadora_cliente) {
+    const { data: transpOrc } = await supabase
+      .from("clientes")
+      .select("nome, fantasia")
+      .eq("id_cliente", proposta.id_transportadora_cliente)
+      .maybeSingle();
+    nomeTransportadoraOrcamento = String(transpOrc?.fantasia || transpOrc?.nome || "").trim();
+  }
+
+  /**
    * ENDERECO ESCOLHIDO TEM PRECEDENCIA ABSOLUTA (24/08/2026).
    *
    * Le `exp.id_endereco_entrega` direto, FORA do gate `expConfirmado`. Antes a
@@ -205,11 +234,25 @@ export async function montarEtiquetaViewModel(
    * Sem escolha gravada, a cadeia de fallback abaixo continua identica: o
    * endereco que casa com o CEP cotado, e depois o mais recente do cliente.
    */
-  if (exp?.id_endereco_entrega) {
+  /**
+   * DESDE 02/09/2026 A PRECEDÊNCIA É A MESMA DO MODAL, e vem de
+   * `lib/endereco-entrega.ts` — regra única, sem cópia.
+   *
+   * Antes, sem `id_endereco_entrega` gravado, este documento pulava direto para
+   * o palpite abaixo e imprimia o endereço MAIS RECENTE DO CLIENTE. No 21503 a
+   * tela dizia Santarém/PA e o papel saía com Garanhuns/PE, do cadastro 8469.
+   * O palpite continua existindo, mas agora só como último recurso.
+   */
+  const idEnderecoVigente = idEnderecoEntregaVigente({
+    despachoConfirmado: Boolean(expConfirmado),
+    idGravadoNoDespacho: exp?.id_endereco_entrega as string | null | undefined,
+    idDefinidoNaProposta: proposta.id_endereco_ent as string | null | undefined
+  });
+  if (idEnderecoVigente) {
     const { data } = await supabase
       .from("enderecos")
       .select("endereco, numero, complemento, bairro, cidade, uf, cep, recebedor")
-      .eq("id", exp.id_endereco_entrega)
+      .eq("id", idEnderecoVigente)
       .maybeSingle();
     endereco = data ?? null;
   }
@@ -295,7 +338,22 @@ export async function montarEtiquetaViewModel(
     idInt,
     volumes,
     pesoKg,
-    transportadora: nomeTransportadoraCadastro || expConfirmado?.transportadora_nome || frete?.servico || "",
+    /**
+     * O último degrau deixou de ser o texto cru da cotação (02/09/2026):
+     * `nomeTransporteEfetivo` é a MESMA função que a coluna FRETE da lista e o
+     * Kanban usam, e sob FOB ela devolve o nome do cadastro em vez do "SEDEX"
+     * que ninguém contratou. Fora de FOB o comportamento é idêntico ao de
+     * antes — ela devolve o próprio serviço cotado.
+     */
+    transportadora:
+      nomeTransportadoraCadastro ||
+      expConfirmado?.transportadora_nome ||
+      nomeTransporteEfetivo(
+        frete?.servico as string | null | undefined,
+        proposta.modalidade_frete as ModalidadeFrete | null | undefined,
+        nomeTransportadoraOrcamento
+      ) ||
+      "",
     codigoRastreamento: expConfirmado?.codigo_rastreamento || os?.codigo_rastreamento || "",
     obs: expConfirmado?.obs || "",
     nfNumero: nfAutorizada?.numero_nf ? String(nfAutorizada.numero_nf) : "",

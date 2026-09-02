@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
 import { resolverIdDestinatarioEtiqueta } from "@/features/expedicao/lib/destinatario-etiqueta";
+import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
 import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "@/features/expedicao/lib/peso";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   // Dados do pedido: mesmas fontes da etiqueta interna.
   const { data: proposta } = await supabase
     .from("propostas")
-    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep")
+    .select("id_int, cliente, id_cliente, id_faturado, empresa, cep, id_endereco_ent")
     .eq("id_int", idInt)
     .maybeSingle();
   if (!proposta) return NextResponse.json({ success: false, message: "Pedido não encontrado." }, { status: 404 });
@@ -54,7 +55,9 @@ export async function POST(request: Request) {
     supabase
       .from("expedicoes")
       .select(
-        "peso_kg, peso_bruto_kg, id_endereco_entrega, id_cliente_destinatario_etiqueta, correios_id_prepostagem, correios_codigo_objeto, correios_id_prepostagem_anterior, prepostagem_cancelada_em"
+        // `data_despacho` (02/09/2026): a precedência do endereço precisa saber
+        // se o despacho já foi confirmado. Mesma linha, nenhuma consulta a mais.
+        "peso_kg, peso_bruto_kg, id_endereco_entrega, id_cliente_destinatario_etiqueta, correios_id_prepostagem, correios_codigo_objeto, correios_id_prepostagem_anterior, prepostagem_cancelada_em, data_despacho"
       )
       .eq("id_int", idInt)
       .maybeSingle(),
@@ -74,11 +77,19 @@ export async function POST(request: Request) {
   // Endereço do destinatário (o escolhido no despacho; senão por CEP; senão o mais novo)
   const idCliente = proposta.id_cliente !== null ? Number(proposta.id_cliente) : null;
   let endereco: Record<string, unknown> | null = null;
-  if (exp?.id_endereco_entrega) {
+  // 02/09/2026: mesma precedência do modal, da etiqueta e da Declaração, de
+  // `lib/endereco-entrega.ts`. O palpite abaixo (CEP cotado, depois o mais
+  // recente do cliente) continua, mas só depois do endereço da proposta.
+  const idEnderecoVigente = idEnderecoEntregaVigente({
+    despachoConfirmado: Boolean(exp?.data_despacho),
+    idGravadoNoDespacho: exp?.id_endereco_entrega as string | null | undefined,
+    idDefinidoNaProposta: proposta.id_endereco_ent as string | null | undefined
+  });
+  if (idEnderecoVigente) {
     const { data } = await supabase
       .from("enderecos")
       .select("endereco, numero, complemento, bairro, cidade, uf, cep")
-      .eq("id", exp.id_endereco_entrega)
+      .eq("id", idEnderecoVigente)
       .maybeSingle();
     endereco = data;
   }
