@@ -90,23 +90,23 @@ export function KanbanTransportadoras({
   itensMenu,
   formatarPeso
 }: KanbanTransportadorasProps) {
-  // Visão de BANCADA: só o que está fisicamente na expedição. Em trânsito e
-  // entregue já saíram — quem quiser vê-los usa a visão de lista.
-  const visiveis = useMemo(
-    () => pedidos.filter((p) => p.etapa !== "EM_TRANSITO" && p.etapa !== "ENTREGUE"),
-    [pedidos]
-  );
-  const colunas = useMemo(() => agruparPorTransportadora(visiveis), [visiveis]);
+  /**
+   * O KANBAN MOSTRA O QUE O RECORTE ENTREGAR (01/09/2026).
+   *
+   * Até aqui ele descartava EM_TRANSITO e ENTREGUE por conta própria — era a
+   * "visão de bancada", e fazia sentido enquanto o Kanban era o modo opcional.
+   * Com ele virando a visão inicial, esse filtro escondido passou a contradizer
+   * os cards do topo: clicar em "Em trânsito" ou "Entregues" abria um Kanban
+   * vazio, sem explicar por quê. Quem recorta agora são os cards e os filtros,
+   * e só eles.
+   */
+  const colunas = useMemo(() => agruparPorTransportadora(pedidos), [pedidos]);
 
-  if (visiveis.length === 0) {
+  if (pedidos.length === 0) {
     return (
       <EmptyState
-        title={pedidos.length > 0 ? "Nada na bancada neste recorte" : "Nenhum pedido no recorte"}
-        description={
-          pedidos.length > 0
-            ? "Em trânsito e entregues não aparecem na visão por transportadora — use a visão de lista para vê-los."
-            : "Ajuste os filtros ou confira se há pedidos aprovados para produção."
-        }
+        title="Nenhum pedido no recorte"
+        description="Ajuste os filtros ou confira se há pedidos aprovados para produção."
       />
     );
   }

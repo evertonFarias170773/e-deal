@@ -98,6 +98,18 @@ function ehExpedicaoDoDia(p: PedidoExpedicao): boolean {
 const ETAPA_DIA = "DIA";
 const ETAPA_INICIAL = ETAPA_DIA;
 
+/**
+ * Visão com que a página ABRE — o Kanban por transportadora, desde 01/09/2026.
+ *
+ * A bancada trabalha por transportadora: o que importa na hora de despachar é
+ * "o que sai pela SVT hoje", não uma tabela ordenada por número de pedido. A
+ * lista continua inteira, a um clique no alternador.
+ *
+ * É também o alvo do "Limpar filtros", junto com `ETAPA_INICIAL`: limpar devolve
+ * ao ponto de partida da tela, e a visão faz parte dele.
+ */
+const VISAO_INICIAL = "transportadoras";
+
 const ICONE_TIPO_FRETE: Record<TipoFreteNormalizado, typeof Truck> = {
   CORREIOS: Send,
   MOTOBOY: Bike,
@@ -390,8 +402,9 @@ export function ExpedicaoPage() {
       etapa: { codec: codecs.texto(), default: ETAPA_INICIAL },
       frete: { codec: codecs.texto(), default: "TODOS" },
       emp: { codec: codecs.texto(), default: "TODOS" },
-      // Visão da lista: "lista" (tabela/cards) ou "transportadoras" (colunas kanban).
-      visao: { codec: codecs.texto(), default: "lista" }
+      // Visão: "transportadoras" (colunas kanban) ou "lista" (tabela/cards).
+      // O KANBAN É O PADRÃO desde 01/09/2026 — ver VISAO_INICIAL.
+      visao: { codec: codecs.texto(), default: VISAO_INICIAL }
     }),
     []
   );
@@ -619,7 +632,10 @@ export function ExpedicaoPage() {
           Kanban por transportadora. */}
       {isLoaded && (
         <div className="flex flex-wrap items-center gap-2">
-          {/* Troca de VISÃO (não é filtro): tabela ⇄ colunas por transportadora. */}
+          {/* Troca de VISÃO (não é filtro): colunas por transportadora ⇄ tabela.
+              O rótulo diz PARA ONDE leva, não onde se está — desde 01/09/2026 a
+              página abre no Kanban, e um botão fixo em "Por transportadora"
+              pareceria um filtro já aplicado em vez de um caminho de volta. */}
           <button
             type="button"
             onClick={() => setFilter("visao", filters.visao === "transportadoras" ? "lista" : "transportadoras")}
@@ -629,7 +645,8 @@ export function ExpedicaoPage() {
                 : "border-dashed border-slate-400 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
             }`}
           >
-            <LayoutGrid className="h-3.5 w-3.5" /> Por transportadora
+            <LayoutGrid className="h-3.5 w-3.5" />
+            {filters.visao === "transportadoras" ? "Ver em lista" : "Ver por transportadora"}
           </button>
         </div>
       )}
@@ -671,7 +688,7 @@ export function ExpedicaoPage() {
             // ponto de partida é "Pronto p/ expedir". Busca, frete e empresa
             // continuam zerando como antes.
             onClick={() => {
-              setFilters({ q: "", etapa: ETAPA_INICIAL, frete: "TODOS", emp: "TODOS" });
+              setFilters({ q: "", etapa: ETAPA_INICIAL, frete: "TODOS", emp: "TODOS", visao: VISAO_INICIAL });
               setSearch("");
             }}
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
