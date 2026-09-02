@@ -115,9 +115,13 @@ export function LegendaCoresKanban() {
       {FASES_CARD_KANBAN.map((fase) => (
         <span
           key={fase.rotulo}
-          className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-600 dark:text-slate-400"
+          className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] font-medium text-slate-600 dark:text-slate-400"
         >
-          <span className={`h-3 w-3 shrink-0 rounded border ${fase.classe}`} aria-hidden="true" />
+          {/* 16 px (era 12): a 12 px o fundo quase não aparecia — sobrava a
+              borda e a legenda perdia a função. O rótulo sobe junto, de 11 para
+              12 px, para o par não ficar desequilibrado; `items-center` mantém
+              quadrado e texto alinhados. Classe de cor inalterada. */}
+          <span className={`h-4 w-4 shrink-0 rounded-[5px] border ${fase.classe}`} aria-hidden="true" />
           {fase.rotulo}
         </span>
       ))}
@@ -298,8 +302,43 @@ export function KanbanTransportadoras({
                   >
                     {p.cliente}
                   </p>
+                  {/* CONTEXTO DO PEDIDO (02/09/2026) — os mesmos campos da coluna
+                      "Cliente" da lista, lidos da MESMA fonte (`p.cidadeUf` e
+                      `p.pagador` do `PedidoExpedicao`), então card e lista não
+                      têm como divergir: é literalmente o mesmo objeto.
+
+                      Cores e rótulo da lista preservados — cidade em
+                      `slate-500`, pagador em `indigo-700` com o prefixo
+                      "Pagador:". Sem o prefixo ele leria como um segundo nome
+                      de cliente. O corpo sobe de 11 px para 13 px porque este
+                      card é ~30% maior que a célula da tabela.
+
+                      `p.pagador` já nasce vazio quando o pagador é o próprio
+                      cliente (regra `temPagadorDistinto`, no service), então a
+                      linha simplesmente não existe nesse caso — nunca aparece
+                      vazia. */}
+                  {(p.cidadeUf || p.pagador) && (
+                    <div className="mt-1 space-y-0.5">
+                      {p.cidadeUf && (
+                        <p
+                          className="truncate text-[13px] leading-snug text-slate-500 dark:text-slate-400"
+                          title={p.cidadeUf}
+                        >
+                          {p.cidadeUf}
+                        </p>
+                      )}
+                      {p.pagador && (
+                        <p
+                          className="truncate text-[13px] font-medium leading-snug text-indigo-700 dark:text-indigo-400"
+                          title={`Pagador: ${p.pagador}`}
+                        >
+                          Pagador: {p.pagador}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {(mostrarSelo || ehAtrasado || p.prometidoHoje) && (
-                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       {mostrarSelo && (
                         <StatusBadge
                           status={aguardandoTransportadora ? "AGUARDANDO TRANSPORTADORA" : p.statusInterno}
