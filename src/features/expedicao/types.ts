@@ -113,8 +113,25 @@ export interface ExpedicaoRegistro {
   despachadoPor: string | null;
   retiradoPor: string | null;
   obs: string | null;
+  /** `expedicoes.obs_etiqueta` — o texto IMPRESSO no volume. Distinto de `obs`. */
+  obsEtiqueta: string | null;
+  /** `expedicoes.nf_numero_manual` — fallback; `notas_fiscais.numero_nf` vence. */
+  nfNumeroManual: string | null;
   /** Última geração da etiqueta interna 10x15 (ISO) — gravada pela rota da etiqueta. */
   etiquetaImpressaEm: string | null;
+}
+
+/**
+ * CPF/CNPJ e telefone de um dos cadastros que podem receber o volume.
+ *
+ * Ambos já formatados para exibição — a máscara vive em `lib/formatters`, e
+ * quem consome só imprime. Strings vazias quando o cadastro não tem o dado.
+ */
+export interface ContatoDestinatario {
+  /** `clientes.documento`, mascarado como CPF ou CNPJ conforme o tamanho. */
+  documento: string;
+  /** `clientes.whatsapp_1` › `telefone_fixo`, mesma preferência da etiqueta. */
+  telefone: string;
 }
 
 /** Item do painel de Expedição (projeção sobre 6 tabelas — ver expedicao.service). */
@@ -178,6 +195,22 @@ export interface PedidoExpedicao {
    * a lista ja fazia — sem consulta a mais.
    */
   pagador: string;
+  /**
+   * Contato dos DOIS destinatários possíveis (02/09/2026).
+   *
+   * O modal Despachar exibe CPF/CNPJ e telefone ao lado do endereço, e quem
+   * recebe pode ser o cliente OU o pagador — a escolha é do drop "Em nome de
+   * quem sai a etiqueta" e muda sem recarregar. Por isso os dois vêm juntos:
+   * trocar o destinatário troca o contato exibido na hora, sem ida ao banco.
+   *
+   * `contatoPagador` é `null` quando não há pagador distinto — mesma condição
+   * de `temPagadorDistinto` que governa o drop.
+   *
+   * Zero consulta a mais: as três colunas entraram no `in` de `clientes` que a
+   * lista já fazia.
+   */
+  contatoCliente: ContatoDestinatario;
+  contatoPagador: ContatoDestinatario | null;
   cidadeUf: string;
   empresa: string;
   /**

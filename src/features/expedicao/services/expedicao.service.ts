@@ -1,4 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { formatDocument } from "@/lib/formatters/document";
+import { formatPhoneBR } from "@/lib/formatters/phone";
 import {
   nomeTransportadoraCadastro,
   nomeTransporteEfetivo
@@ -9,6 +11,7 @@ import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { escolherNotaAutorizadaDoPedido, type NotaCandidata } from "@/lib/fiscal/nota-do-pedido";
 import { resolverPesoExpedicao } from "../lib/peso";
 import type {
+  ContatoDestinatario,
   EtapaExpedicao,
   ExpedicaoRegistro,
   ModalidadeFrete,
@@ -67,6 +70,21 @@ function etapaDoStatus(status: string): EtapaExpedicao {
 function diffDias(a: string, b: string): number {
   const ms = Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`);
   return Math.round(ms / 86400000);
+}
+
+/**
+ * Contato de um cadastro de `clientes`, ja mascarado para exibicao.
+ *
+ * Telefone: `whatsapp_1` antes de `telefone_fixo`, a MESMA preferencia que a
+ * etiqueta 10x15 aplica — as duas telas mostram o mesmo numero.
+ */
+function contatoDoCadastro(
+  cadastro: { documento: string | null; whatsapp_1: string | null; telefone_fixo: string | null } | undefined
+): ContatoDestinatario {
+  return {
+    documento: cadastro?.documento ? formatDocument(String(cadastro.documento)) : "",
+    telefone: formatPhoneBR(cadastro?.whatsapp_1 || cadastro?.telefone_fixo)
+  };
 }
 
 export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
@@ -147,11 +165,18 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     client
       .from("expedicoes")
       .select(
-        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, etiqueta_impressa_em"
+        "id_int, modalidade_frete, tipo_frete, transportadora_nome, id_transportadora_cliente, peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, id_endereco_entrega, id_cliente_destinatario_etiqueta, codigo_rastreamento, correios_id_prepostagem, correios_codigo_objeto, prepostagem_cancelada_em, correios_id_prepostagem_anterior, correios_codigo_objeto_anterior, data_pronto, data_despacho, coletado_em, data_entrega, despachado_por, retirado_por, obs, obs_etiqueta, nf_numero_manual, etiqueta_impressa_em"
       )
       .in("id_int", ids),
     idsCliente.length > 0
-      ? client.from("clientes").select("id_cliente, nome, fantasia, cidade_uf").in("id_cliente", idsCliente)
+      ? client
+          .from("clientes")
+          // `documento`, `whatsapp_1` e `telefone_fixo` (02/09/2026): o modal
+          // Despachar passou a exibir CPF/CNPJ e telefone do destinatario, que
+          // pode ser o cliente OU o pagador — os dois ja estao neste `in`.
+          // Mesma linha que ja vinha, nenhuma consulta a mais.
+          .select("id_cliente, nome, fantasia, cidade_uf, documento, whatsapp_1, telefone_fixo")
+          .in("id_cliente", idsCliente)
       : Promise.resolve({ data: [], error: null } as const),
     client.from("produtos_proposta").select("id_int, peso_total").in("id_int", ids),
     // Liberacao ATIVA da recotacao (Parte C): quem autorizou e quando. Vem
@@ -286,11 +311,23 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       despachadoPor: row.despachado_por ?? null,
       retiradoPor: row.retirado_por ?? null,
       obs: row.obs ?? null,
+      obsEtiqueta: row.obs_etiqueta ?? null,
+      nfNumeroManual: row.nf_numero_manual ?? null,
       etiquetaImpressaEm: row.etiqueta_impressa_em ?? null
     });
   }
 
-  const clienteMap = new Map<number, { nome: string | null; fantasia: string | null; cidade_uf: string | null }>();
+  const clienteMap = new Map<
+    number,
+    {
+      nome: string | null;
+      fantasia: string | null;
+      cidade_uf: string | null;
+      documento: string | null;
+      whatsapp_1: string | null;
+      telefone_fixo: string | null;
+    }
+  >();
   for (const row of clientesRes.data ?? []) clienteMap.set(Number(row.id_cliente), row);
 
   /**
@@ -533,6 +570,12 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
         const cadastro = clienteMap.get(idPagador);
         return String(cadastro?.fantasia ?? "").trim() || String(cadastro?.nome ?? "").trim() || `#${idPagador}`;
       })(),
+      // Contato dos dois destinatarios possiveis. O do pagador so existe quando
+      // ele e distinto — mesma condicao do drop no modal.
+      contatoCliente: contatoDoCadastro(cli),
+      contatoPagador: temPagadorDistinto(idCliente, Number(p.id_faturado) || null)
+        ? contatoDoCadastro(clienteMap.get(Number(p.id_faturado)))
+        : null,
       cidadeUf: cli?.cidade_uf ?? "",
       empresa: p.empresa || "",
       vendedor: (p.vendedor as string | null) || "",

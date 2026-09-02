@@ -216,6 +216,23 @@ export function DespacharModal({
   const [codigoRastreamento, setCodigoRastreamento] = useState(pedido.codigoRastreamento);
   const [obs, setObs] = useState(exp?.obs ?? "");
   /**
+   * O TEXTO QUE VAI COLADO NO VOLUME (02/09/2026). Coluna propria
+   * (`expedicoes.obs_etiqueta`), separada da observacao logistica acima: aquela
+   * e recado interno da bancada e nao sai em documento nenhum.
+   */
+  const [obsEtiqueta, setObsEtiqueta] = useState(exp?.obsEtiqueta ?? "");
+  /**
+   * NUMERO DA NF — `notas_fiscais.numero_nf` SEMPRE VENCE.
+   *
+   * `pedido.nfNumero` ja vem resolvido pelo pipeline com
+   * `escolherNotaAutorizadaDoPedido`, o MESMO criterio que a etiqueta imprime:
+   * so AUTORIZADA, so com numero, mais recente por `data_autorizacao`. Havendo
+   * nota, o campo e somente leitura e este estado nem e enviado. So sem nota o
+   * expedidor digita, e ai grava em `expedicoes.nf_numero_manual`.
+   */
+  const [nfNumeroManual, setNfNumeroManual] = useState(exp?.nfNumeroManual ?? "");
+  const temNotaAutorizada = pedido.nfStatus === "AUTORIZADA" && Boolean(pedido.nfNumero);
+  /**
    * ENDEREÇO DE ENTREGA: EXIBIÇÃO, NÃO ESCOLHA (02/09/2026).
    *
    * Deixou de ser estado. Vem resolvido de `pedido.enderecoEntrega`, que já
@@ -444,6 +461,15 @@ export function DespacharModal({
    * da modalidade, em vez de ser um toggle próprio.
    */
   const tipoEntrega: "TRANSPORTE" | "RETIRADA" = modalidade === "RETIRA" ? "RETIRADA" : "TRANSPORTE";
+
+  /**
+   * Contato de quem RECEBE, seguindo o drop "Em nome de quem sai a etiqueta".
+   * Sem pagador distinto o drop nem existe e o contato e sempre o do cliente.
+   */
+  const contatoDestinatario =
+    idDestinatarioEtiqueta !== null && idDestinatarioEtiqueta === pedido.idFaturado && pedido.contatoPagador
+      ? pedido.contatoPagador
+      : pedido.contatoCliente;
 
   /**
    * O que ainda falta para despachar. O botao passa a olhar isto, e nao so o
@@ -714,7 +740,12 @@ export function DespacharModal({
       idEnderecoEntrega,
       idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
-      obs: obs.trim()
+      obs: obs.trim(),
+      obsEtiqueta: obsEtiqueta.trim(),
+      // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
+      // vence e o manual nem e enviado — nao ha como sobrescrever o
+      // numero de uma nota emitida.
+      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
     };
 
     setSalvando(true);
@@ -792,7 +823,12 @@ export function DespacharModal({
       idEnderecoEntrega,
       idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
-      obs: obs.trim()
+      obs: obs.trim(),
+      obsEtiqueta: obsEtiqueta.trim(),
+      // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
+      // vence e o manual nem e enviado — nao ha como sobrescrever o
+      // numero de uma nota emitida.
+      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
     });
     setSalvando(false);
 
@@ -880,7 +916,12 @@ export function DespacharModal({
       idEnderecoEntrega,
       idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
-      obs: obs.trim()
+      obs: obs.trim(),
+      obsEtiqueta: obsEtiqueta.trim(),
+      // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
+      // vence e o manual nem e enviado — nao ha como sobrescrever o
+      // numero de uma nota emitida.
+      nfNumeroManual: temNotaAutorizada ? "" : nfNumeroManual.trim()
     });
     if (!salvo.success) {
       setGerandoPrepostagem(false);
@@ -1146,47 +1187,6 @@ export function DespacharModal({
                 </div>
                 )}
               </div>
-              {/* ENDEREÇO DE ENTREGA — TEXTO, não escolha (02/09/2026).
-                  O select listava todos os endereços do cliente E do pagador,
-                  inclusive de outras cidades, para um endereço que a proposta
-                  já tinha definido. A opção "— não informar —" saiu junto: ela
-                  gravava `null` e o próprio `camposMinimosDespacho` recusava o
-                  despacho em seguida. */}
-              <div>
-                <label className={labelClass}>Endereço de entrega (vai para a etiqueta)</label>
-                {pedido.enderecoEntrega ? (
-                  <>
-                    <p
-                      className="rounded-xl border px-3 py-2 text-sm"
-                      style={{
-                        background: "var(--card-hover)",
-                        borderColor: "var(--border)",
-                        color: "var(--foreground)"
-                      }}
-                    >
-                      {pedido.enderecoEntrega.rotulo}
-                    </p>
-                    <p className="mt-1 text-xs" style={{ color: "var(--muted-subtle)" }}>
-                      {pedido.enderecoEntrega.origem === "DESPACHO"
-                        ? "Endereço registrado no despacho deste pedido."
-                        : "Definido na proposta. Para trocar, altere o endereço de entrega na proposta."}
-                    </p>
-                  </>
-                ) : (
-                  <p
-                    className="rounded-xl border px-3 py-2 text-sm font-medium"
-                    style={{
-                      background: "color-mix(in srgb, var(--action-danger) 8%, transparent)",
-                      borderColor: "var(--action-danger)",
-                      color: "var(--action-danger)"
-                    }}
-                  >
-                    Esta proposta não tem endereço de entrega definido. Defina o endereço na
-                    proposta para poder despachar.
-                  </p>
-                )}
-              </div>
-
               {/* EM NOME DE QUEM SAI A ETIQUETA — só quando ha pagador distinto.
                   Sem pagador distinto o campo nem aparece e nada muda: o
                   destinatario segue sendo o cliente da proposta, como sempre.
@@ -1212,6 +1212,58 @@ export function DespacharModal({
                   </p>
                 </div>
               )}
+
+              {/* ENDEREÇO DE ENTREGA — TEXTO, não escolha (02/09/2026).
+                  O select listava todos os endereços do cliente E do pagador,
+                  inclusive de outras cidades, para um endereço que a proposta
+                  já tinha definido. A opção "— não informar —" saiu junto: ela
+                  gravava `null` e o próprio `camposMinimosDespacho` recusava o
+                  despacho em seguida. */}
+              <div>
+                <label className={labelClass}>Endereço de entrega (vai para a etiqueta)</label>
+                {pedido.enderecoEntrega ? (
+                  <>
+                    <p
+                      className="rounded-xl border px-3 py-2 text-sm"
+                      style={{
+                        background: "var(--card-hover)",
+                        borderColor: "var(--border)",
+                        color: "var(--foreground)"
+                      }}
+                    >
+                      {pedido.enderecoEntrega.rotulo}
+                    </p>
+                    {/* CPF/CNPJ e telefone DO DESTINATARIO RESOLVIDO (02/09/2026).
+                        Seguem o drop acima: trocar quem recebe troca o contato na
+                        hora, sem ida ao banco — os dois cadastros vem no `pedido`.
+                        Sao dados de CONFERENCIA da bancada; o endereco continua
+                        vindo da proposta e nao muda por causa deles. */}
+                    {(contatoDestinatario.documento || contatoDestinatario.telefone) && (
+                      <p className="mt-1 text-xs font-medium" style={{ color: "var(--muted)" }}>
+                        {[contatoDestinatario.documento, contatoDestinatario.telefone].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs" style={{ color: "var(--muted-subtle)" }}>
+                      {pedido.enderecoEntrega.origem === "DESPACHO"
+                        ? "Endereço registrado no despacho deste pedido."
+                        : "Definido na proposta. Para trocar, altere o endereço de entrega na proposta."}
+                    </p>
+                  </>
+                ) : (
+                  <p
+                    className="rounded-xl border px-3 py-2 text-sm font-medium"
+                    style={{
+                      background: "color-mix(in srgb, var(--action-danger) 8%, transparent)",
+                      borderColor: "var(--action-danger)",
+                      color: "var(--action-danger)"
+                    }}
+                  >
+                    Esta proposta não tem endereço de entrega definido. Defina o endereço na
+                    proposta para poder despachar.
+                  </p>
+                )}
+              </div>
+
 
               {/* Recotação — SÓ CONSULTA. Fica embaixo do endereço porque é dele
                   que o resultado depende. Nada aqui grava nada. */}
@@ -1430,12 +1482,17 @@ export function DespacharModal({
 
                 O rotulo do botao vem da propria regra de escolha do modelo, e e
                 ele que avisa quando os Correios ainda nao tem prepostagem. */}
-            <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+            {/* BOTÃO 80% MAIOR E CENTRALIZADO (02/09/2026). Vale para as TRÊS
+                variantes — 10x15, Correios e retirada —, porque o rótulo e o
+                estado saem de `acaoEtiqueta` e o botão é um só. Corpo 12→22 px,
+                padding 16/8→29/14, borda 1→2 px: ~80% em cada eixo. É a ação que
+                a bancada mais repete e ela estava do tamanho de um link. */}
+            <div className="space-y-2 border-t border-slate-100 pt-3 text-center dark:border-slate-800">
               <button
                 type="button"
                 disabled={emitindoEtiqueta || acaoEtiqueta.bloqueada || faltantes.length > 0}
                 onClick={() => void handleEmitirEtiqueta()}
-                className="rounded-2xl border border-[#0b2f4a] px-4 py-2 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-slate-800"
+                className="mx-auto block rounded-2xl border-2 border-[#0b2f4a] px-[29px] py-3.5 text-[22px] font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-slate-800"
               >
                 {emitindoEtiqueta ? "Abrindo..." : acaoEtiqueta.label}
               </button>
@@ -1487,8 +1544,45 @@ export function DespacharModal({
           </div>
 
           <div>
-            <label className={labelClass}>Observação logística</label>
+            <label className={labelClass}>Observação logística (interna)</label>
             <textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} placeholder="Ex.: frágil, entregar no turno da manhã..." className={inputClass} />
+          </div>
+
+          {/* OS DOIS CAMPOS DA ETIQUETA (02/09/2026). Ficam juntos e separados
+              da observação logística acima de propósito: um é recado interno,
+              estes vão para o papel. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Nº da NF (vai na etiqueta)</label>
+              <input
+                // `?? ""` só para o TS: `temNotaAutorizada` já exige `nfNumero`
+                // preenchido, mas ele não narrowa através do ternário.
+                value={temNotaAutorizada ? pedido.nfNumero ?? "" : nfNumeroManual}
+                onChange={(e) => setNfNumeroManual(e.target.value)}
+                readOnly={temNotaAutorizada}
+                placeholder={temNotaAutorizada ? "" : "Sem nota — digite se houver"}
+                className={inputClass}
+                style={temNotaAutorizada ? { background: "var(--card-hover)", color: "var(--muted)" } : undefined}
+              />
+              <p className="mt-1 text-[11px]" style={{ color: "var(--muted-subtle)" }}>
+                {temNotaAutorizada
+                  ? "Vem da nota emitida (NF-e autorizada) — não é editável aqui."
+                  : "Este pedido não tem NF-e autorizada. O que for digitado aqui vale só para a etiqueta."}
+              </p>
+            </div>
+            <div>
+              <label className={labelClass}>Observações da etiqueta</label>
+              <textarea
+                value={obsEtiqueta}
+                onChange={(e) => setObsEtiqueta(e.target.value)}
+                rows={2}
+                placeholder="Ex.: PRODUTO FRÁGIL, RETIRA NO AEROPORTO ATÉ SEXTA"
+                className={inputClass}
+              />
+              <p className="mt-1 text-[11px]" style={{ color: "var(--muted-subtle)" }}>
+                Impressa no volume — lida pela transportadora e por quem recebe.
+              </p>
+            </div>
           </div>
 
           {precisaAvisoNf && (

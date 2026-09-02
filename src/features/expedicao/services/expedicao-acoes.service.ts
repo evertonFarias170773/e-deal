@@ -32,7 +32,25 @@ export type DespachoInput = {
    */
   idClienteDestinatarioEtiqueta?: number | null;
   codigoRastreamento: string;
+  /** `expedicoes.obs` — observacao LOGISTICA INTERNA. Nao sai em documento. */
   obs: string;
+  /**
+   * `expedicoes.obs_etiqueta` — o texto IMPRESSO no volume (02/09/2026).
+   *
+   * Distinto de `obs` acima, e de proposito: aquele e recado interno da bancada,
+   * este e lido pela transportadora e pelo destinatario. Ver o cabecalho da
+   * migration `20260902183633_expedicoes_obs_etiqueta.sql`.
+   */
+  obsEtiqueta?: string;
+  /**
+   * `expedicoes.nf_numero_manual` — numero de NF digitado a mao, FALLBACK.
+   *
+   * `notas_fiscais.numero_nf` SEMPRE VENCE. O modal so deixa digitar quando NAO
+   * ha nota autorizada; havendo, o campo e somente leitura e este valor sequer
+   * e enviado. A precedencia da EXIBICAO vive em quem le, nao aqui — esta
+   * camada apenas grava o que foi digitado.
+   */
+  nfNumeroManual?: string;
 };
 
 import { camposMinimosDespacho, frasearFaltantes } from "../lib/campos-minimos-despacho";
@@ -243,6 +261,10 @@ export async function despachar(
     id_cliente_destinatario_etiqueta: input.idClienteDestinatarioEtiqueta ?? null,
     codigo_rastreamento: input.codigoRastreamento || null,
     obs: input.obs || null,
+    // Campos da etiqueta, no MESMO upsert dos demais: uma escrita so, mesma
+    // transacao implicita, mesmo tratamento de erro.
+    obs_etiqueta: input.obsEtiqueta?.trim() || null,
+    nf_numero_manual: input.nfNumeroManual?.trim() || null,
     data_despacho: new Date().toISOString(),
     despachado_por: ator.nome
   });
@@ -450,5 +472,7 @@ export async function salvarDadosExpedicao(
     campos.id_cliente_destinatario_etiqueta = dados.idClienteDestinatarioEtiqueta;
   if (dados.codigoRastreamento !== undefined) campos.codigo_rastreamento = dados.codigoRastreamento || null;
   if (dados.obs !== undefined) campos.obs = dados.obs || null;
+  if (dados.obsEtiqueta !== undefined) campos.obs_etiqueta = dados.obsEtiqueta.trim() || null;
+  if (dados.nfNumeroManual !== undefined) campos.nf_numero_manual = dados.nfNumeroManual.trim() || null;
   return upsertExpedicao(idInt, campos);
 }
