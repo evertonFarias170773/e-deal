@@ -94,15 +94,42 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   como divergir. Em largura reduzida a legenda desce inteira para a linha
   seguinte (`flex-wrap` no container) e cada item é `whitespace-nowrap`, então
   nenhum rótulo se parte no meio.
-- **Progressão de fundo da bancada** — cinza → azul → verde:
-  - **cinza** ainda não chegou na bancada (produção, acabamento);
-  - **azul** (`sky-300/50`) `PRONTO` p/ expedir, etiqueta ainda não impressa;
-  - **verde** (`emerald-300/50`) `etiquetaGerada` (prepostagem Correios OU
-    `etiqueta_impressa_em` OU rastreio preenchido) — o volume está rotulado.
-  O verde vence quando as duas condições coincidem, e independe da etapa de
-  propósito: `A RETIRAR` com etiqueta impressa também é volume rotulado. Nesta
-  visão a urgência fica SÓ nos chips — o fundo vermelho/âmbar da tabela não se
-  aplica aos cards.
+- **Cor de fundo do card** — precedência INVERTIDA em 02/09/2026, avaliada de
+  cima para baixo em `faseDoCard`:
+  1. **laranja** (`amber-300/50`) aguardando coleta — PREVISTO, sem ocupante
+     possível ainda (ver abaixo);
+  2. **azul** (`sky-300/50`) etapa `PRONTO` (status `EXPEDICAO`), **com ou sem
+     etiqueta**;
+  3. **verde** (`emerald-300/50`) `etiquetaGerada` (prepostagem Correios OU
+     `etiqueta_impressa_em` OU rastreio) **e** etapa em `A_RETIRAR`,
+     `EM_TRANSITO` ou `ENTREGUE`;
+  4. **cinza** (`slate-200/50`) o resto.
+
+  **Por que inverteu.** Até 02/09 o verde vencia sempre e, como quase todo
+  pedido ganha etiqueta em algum momento, o painel virou monocromático: **33
+  verdes, 1 azul e 10 cinzas em 44**. O azul, que deveria marcar o que pede
+  ação, aparecia por uma janela de segundos — no 21487 durou **25 segundos**,
+  entre imprimir a etiqueta (09:31:44) e confirmar o despacho (09:32:09). A cor
+  tinha deixado de ajudar a achar trabalho.
+
+  **A leitura nova**: azul é o que ainda está na bancada e precisa de ação;
+  verde é o que já saiu, rotulado. Por isso o azul ignora a etiqueta —
+  imprimir etiqueta não tira o pedido da bancada, só o despacho tira — e o
+  verde exige ter saído, senão voltaria a roubar o azul. Efeito colateral
+  aceito: pedido ainda em produção com rastreio deixa de ser verde e vira
+  cinza (zero casos no painel de 02/09) — ele não saiu de lugar nenhum.
+
+  **O laranja não tem ocupante.** O estado é derivado (Desenho A da Etapa 7,
+  `613961c`): despacho confirmado + `expedicoes.coletado_em` nula + etapa
+  `PRONTO` + transporte `TRANSPORTADORA`/`MOTOBOY`. A coluna `coletado_em`
+  **não existe no banco** — a migration está escrita e não aplicada. A condição
+  fica escrita e tipada atrás da flag `COLETA_TEM_FONTE_NO_BANCO`, anotada como
+  `boolean` (e não inferida como `false`, que tornaria o corpo código morto para
+  o compilador); devolve `false` para todo pedido até a coluna existir. Ligar é
+  trocar a flag e ler `coletado_em` no service.
+
+  Nesta visão a urgência fica SÓ nos chips — o fundo vermelho/âmbar da tabela
+  não se aplica aos cards.
 - **Sub-estado visual "Aguardando transportadora"**: pedido `PRONTO` (status
   oficial `EXPEDICAO`) com etiqueta gerada e que não é retira-balcão exibe esse
   badge no lugar de "Na Expedição". NÃO é um status novo em

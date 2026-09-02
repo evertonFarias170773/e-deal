@@ -6,7 +6,7 @@ import type { ActionMenuItem } from "@/components/common/ActionsMenu";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
-import type { PedidoExpedicao } from "../types";
+import type { EtapaExpedicao, PedidoExpedicao } from "../types";
 
 /**
  * Visão "Por transportadora" da Expedição: a MESMA lista filtrada da tabela,
@@ -54,50 +54,97 @@ const COLUNA_OUTROS = "OUTROS";
  * marcador da legenda recebe LITERALMENTE a mesma string de classe do card, o
  * que torna a divergência impossível por construção.
  *
- * A PROGRESSÃO VISUAL DA BANCADA continua a mesma: cinza → azul → verde.
- * Tons do sistema, sem cor nova: `emerald` é o verde de `CORES_FASE.CONCLUIDO`
- * e `sky` era o azul que este mesmo card já usava.
+ * Tons do sistema, sem cor nova: `emerald`, `sky` e `slate` já eram os do card,
+ * e `amber` já vivia no chip `HOJE` logo abaixo. Todos no par 300/50.
  */
-const FASE_PRODUCAO = {
+const FASE_FABRICA = {
   rotulo: "ainda na fábrica",
   classe: "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
 } as const;
 
-const FASE_PRONTO = {
-  rotulo: "pronto p/ expedir",
+const FASE_BANCADA = {
+  rotulo: "na bancada, pede ação",
   classe: "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"
 } as const;
 
-const FASE_ETIQUETA = {
-  rotulo: "etiqueta gerada",
+const FASE_COLETA = {
+  rotulo: "aguardando coleta",
+  classe: "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30"
+} as const;
+
+const FASE_ROTULADO = {
+  rotulo: "já saiu, rotulado",
   classe: "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
 } as const;
 
 /**
- * Ordem de LEITURA da bancada, que é a ordem da legenda — NÃO a precedência.
- * A precedência (o verde vence) vive em `faseDoCard`, e não mudou.
+ * Ordem de LEITURA da legenda — o caminho físico do volume, que NÃO é a ordem
+ * de avaliação: fábrica → bancada → esperando a transportadora → saiu.
+ * A precedência vive em `faseDoCard`.
  */
-const FASES_CARD_KANBAN = [FASE_PRODUCAO, FASE_PRONTO, FASE_ETIQUETA];
+const FASES_CARD_KANBAN = [FASE_FABRICA, FASE_BANCADA, FASE_COLETA, FASE_ROTULADO];
+
+/** Etapas em que o volume JÁ SAIU da bancada — onde o verde passa a valer. */
+const ETAPAS_FORA_DA_BANCADA: EtapaExpedicao[] = ["A_RETIRAR", "EM_TRANSITO", "ENTREGUE"];
 
 /**
- * PRECEDÊNCIA DAS CORES — inalterada, só extraída do `className`.
+ * LARANJA — "aguardando coleta". PREVISTO na precedência, ainda SEM OCUPANTE.
  *
- *   cinza  ainda não chegou na bancada (produção, acabamento)
- *   azul   PRONTO p/ expedir, etiqueta ainda não impressa
- *   verde  etiqueta gerada — o volume está rotulado
+ * O estado é DERIVADO (Desenho A da Etapa 7, commit 613961c): despacho
+ * confirmado + `expedicoes.coletado_em` nula + etapa `PRONTO` + transporte
+ * `TRANSPORTADORA` ou `MOTOBOY` — o volume saiu da bancada mas a transportadora
+ * ainda não passou.
  *
- * O VERDE VENCE quando as duas condições coincidem, e elas coincidem o tempo
- * todo: o pedido fica PRONTO, alguém imprime a etiqueta e ele CONTINUA PRONTO
- * até o despacho. Se o azul vencesse, o verde praticamente não apareceria e a
- * etiqueta impressa deixaria de ter sinal na tela.
+ * `coletado_em` NÃO EXISTE no banco: a migration está escrita e não foi
+ * aplicada, e este bloco não a aplica. Sem a coluna, a última condição não tem
+ * como ser avaliada e o estado não pode ser distinguido de "ainda na bancada".
  *
- * Verde independe da etapa, de propósito: `A RETIRAR` com etiqueta de retirada
- * impressa também é volume rotulado, esperando o cliente. É o caso do 21415.
+ * A saída é uma flag ANOTADA COMO `boolean` — e não inferida como `false`, o
+ * que tornaria o resto do corpo código morto para o compilador. Assim a
+ * condição fica escrita, tipada e verificada pelo `tsc`, devolvendo `false`
+ * para todo pedido até a coluna existir. Ligar é trocar a flag e ler
+ * `coletado_em` no service; nada mais nesta precedência muda.
+ */
+const COLETA_TEM_FONTE_NO_BANCO: boolean = false;
+
+function aguardandoColeta(p: PedidoExpedicao): boolean {
+  return (
+    COLETA_TEM_FONTE_NO_BANCO &&
+    p.despachoConfirmado &&
+    p.etapa === "PRONTO" &&
+    (p.tipoFrete === "TRANSPORTADORA" || p.tipoFrete === "MOTOBOY")
+  );
+}
+
+/**
+ * PRECEDÊNCIA DAS CORES — INVERTIDA em 02/09/2026.
+ *
+ *   1. laranja  aguardando coleta (previsto; ver `aguardandoColeta`)
+ *   2. azul     em `EXPEDICAO`, etapa `PRONTO` — COM OU SEM etiqueta
+ *   3. verde    etiqueta gerada em pedido que já saiu da bancada
+ *   4. cinza    o resto
+ *
+ * POR QUE INVERTEU. Até aqui o verde vencia sempre, e como quase todo pedido
+ * tem etiqueta em algum momento, o painel virou monocromático: 33 verdes, 1
+ * azul e 10 cinzas em 44. O azul, que deveria marcar o que PEDE AÇÃO, aparecia
+ * por uma janela de segundos — no 21487 durou 25 segundos, entre imprimir a
+ * etiqueta e confirmar o despacho. A cor tinha deixado de ajudar a achar
+ * trabalho.
+ *
+ * A LEITURA NOVA: azul é o que ainda está na bancada e precisa de ação; verde é
+ * o que já saiu, rotulado. Por isso o azul agora IGNORA a etiqueta — imprimir a
+ * etiqueta não tira o pedido da bancada, só o despacho tira — e o verde passa a
+ * exigir `ETAPAS_FORA_DA_BANCADA`, senão ele voltaria a roubar o azul.
+ *
+ * Efeito colateral aceito: pedido ainda em produção/acabamento que já tenha
+ * rastreio deixa de ser verde e vira cinza. São zero no painel de hoje, e é a
+ * leitura correta — ele não saiu de lugar nenhum.
  */
 function faseDoCard(p: PedidoExpedicao) {
-  if (p.etiquetaGerada) return FASE_ETIQUETA;
-  if (p.etapa === "PRONTO") return FASE_PRONTO;
-  return FASE_PRODUCAO;
+  if (aguardandoColeta(p)) return FASE_COLETA;
+  if (p.etapa === "PRONTO") return FASE_BANCADA;
+  if (p.etiquetaGerada && ETAPAS_FORA_DA_BANCADA.includes(p.etapa)) return FASE_ROTULADO;
+  return FASE_FABRICA;
 }
 
 /**
