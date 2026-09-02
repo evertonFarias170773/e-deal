@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 import { resolverPesoExpedicao } from "../lib/peso";
-import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
+import { idDestinatarioEtiquetaVigente } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 
 export type ItemDeclaracao = {
@@ -146,11 +146,15 @@ export async function montarDeclaracaoViewModel(
    * pelo id resolvido, mais dois campos acrescentados a `SELECT`s existentes.
    * O REMETENTE nao e tocado — continua saindo de `resolverEmpresaRemetente`.
    */
-  const idDestinatario = resolverIdDestinatarioEtiqueta(
-    idCliente,
-    proposta.id_faturado !== null && proposta.id_faturado !== undefined ? Number(proposta.id_faturado) : null,
-    exp?.id_cliente_destinatario_etiqueta as number | null | undefined
-  );
+  const idDestinatario = idDestinatarioEtiquetaVigente({
+    despachoConfirmado: Boolean(exp?.data_despacho),
+    idClienteProposta: idCliente,
+    idFaturado:
+      proposta.id_faturado !== null && proposta.id_faturado !== undefined
+        ? Number(proposta.id_faturado)
+        : null,
+    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+  });
 
   const { data: cliente } = idDestinatario !== null
     ? await supabase

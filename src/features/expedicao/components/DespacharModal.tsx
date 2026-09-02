@@ -11,7 +11,7 @@ import {
   modalidadeInicialDoDespacho,
   normalizarTipoFrete
 } from "../lib/tipo-frete";
-import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
+import { idDestinatarioEtiquetaVigente, temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
 import { despachar, salvarDadosExpedicao, transportadoraDerivada } from "../services/expedicao-acoes.service";
 import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.service";
@@ -254,8 +254,15 @@ export function DespacharModal({
    * endereco de um em nome do outro.
    */
   const [idDestinatarioEtiqueta, setIdDestinatarioEtiqueta] = useState<number | null>(
-    exp?.idClienteDestinatarioEtiqueta ??
-      (temPagadorDistinto(pedido.idCliente, pedido.idFaturado) ? pedido.idFaturado : null)
+    // A regra saiu daqui para `lib/destinatario-etiqueta.ts` em 02/09/2026: era
+    // ela que o modal aplicava e os documentos não, e a tela dizia um nome
+    // enquanto o papel imprimia outro.
+    idDestinatarioEtiquetaVigente({
+      despachoConfirmado: pedido.despachoConfirmado,
+      idClienteProposta: pedido.idCliente,
+      idFaturado: pedido.idFaturado,
+      idGravadoNoDespacho: exp?.idClienteDestinatarioEtiqueta
+    })
   );
   /**
    * Transporte que a recotacao escolheu mas a modalidade atual nao oferece

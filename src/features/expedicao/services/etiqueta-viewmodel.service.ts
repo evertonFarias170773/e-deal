@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverPesoExpedicao } from "../lib/peso";
-import { resolverIdDestinatarioEtiqueta } from "../lib/destinatario-etiqueta";
+import { idDestinatarioEtiquetaVigente } from "../lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "../types";
@@ -282,11 +282,15 @@ export async function montarEtiquetaViewModel(
    * a caixa pode ir para um endereco do pagador em nome do cliente, e vice-versa.
    * Por isso o destinatario e um campo proprio, e nao deduzido do endereco.
    */
-  const idDestinatario = resolverIdDestinatarioEtiqueta(
-    idCliente,
-    proposta.id_faturado !== null && proposta.id_faturado !== undefined ? Number(proposta.id_faturado) : null,
-    exp?.id_cliente_destinatario_etiqueta as number | null | undefined
-  );
+  const idDestinatario = idDestinatarioEtiquetaVigente({
+    despachoConfirmado: Boolean(expConfirmado),
+    idClienteProposta: idCliente,
+    idFaturado:
+      proposta.id_faturado !== null && proposta.id_faturado !== undefined
+        ? Number(proposta.id_faturado)
+        : null,
+    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+  });
 
   const { data: cliente } = idDestinatario !== null
     ? await supabase

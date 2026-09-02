@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 import { verificarPermissaoServerSide } from "@/lib/auth/verificar-permissao";
-import { resolverIdDestinatarioEtiqueta } from "@/features/expedicao/lib/destinatario-etiqueta";
+import { idDestinatarioEtiquetaVigente } from "@/features/expedicao/lib/destinatario-etiqueta";
 import { idEnderecoEntregaVigente } from "@/features/expedicao/lib/endereco-entrega";
 import { criarPrepostagem, correiosConfigurado } from "@/lib/correios/cws";
 import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
@@ -128,11 +128,15 @@ export async function POST(request: Request) {
    * SO VALE ANTES DA PREPOSTAGEM. Depois que o objeto e criado, o nome congela do
    * lado dos Correios — trocar a escolha aqui nao altera objeto ja emitido.
    */
-  const idDestinatario = resolverIdDestinatarioEtiqueta(
-    idCliente,
-    proposta.id_faturado !== null && proposta.id_faturado !== undefined ? Number(proposta.id_faturado) : null,
-    exp?.id_cliente_destinatario_etiqueta as number | null | undefined
-  );
+  const idDestinatario = idDestinatarioEtiquetaVigente({
+    despachoConfirmado: Boolean(exp?.data_despacho),
+    idClienteProposta: idCliente,
+    idFaturado:
+      proposta.id_faturado !== null && proposta.id_faturado !== undefined
+        ? Number(proposta.id_faturado)
+        : null,
+    idGravadoNoDespacho: exp?.id_cliente_destinatario_etiqueta as number | null | undefined
+  });
 
   // O cadastro lido e o do DESTINATARIO — nome e telefone tem de sair do mesmo
   // lugar. Buscar pelo cliente e usar o nome do pagador misturaria os dois.

@@ -364,6 +364,28 @@ só como último recurso, depois do endereço da proposta. Cinco pedidos passara
 imprimir outro endereço — 21557, 21503, 21499, 21174 e 21074 — **todos sem
 despacho confirmado**; nenhum documento de pedido já despachado muda.
 
+**O NOME do destinatário tinha o mesmo defeito** (02/09/2026). O modal exibia o
+**PAGADOR** quando havia pagador distinto e nada gravado — default de
+24/08/2026, decisão do dono — e etiqueta, Declaração e prepostagem imprimiam o
+**CLIENTE**, porque `resolverIdDestinatarioEtiqueta` só valida um id já
+escolhido e devolve o cliente quando não há. No 21503 a tela dizia
+`PAGADOR #70004` e o papel saía com LISITON DOCUMENTOS SEGUROS. **O valor
+exibido nunca foi gravado — era default calculado na abertura do modal.**
+
+`idDestinatarioEtiquetaVigente` (em `lib/destinatario-etiqueta.ts`) passou a ser
+a regra única dos quatro: escolha gravada vence sempre › sem escolha **com
+despacho confirmado**, o cliente (é o que aquele documento já imprimiu) › sem
+escolha e sem despacho, o pagador. O degrau do meio protege o **1** pedido do
+painel nessa situação; o de baixo faz tela e papel convergirem nos **5** que
+divergiam. **Nome e endereço seguem independentes**: são funções irmãs e nenhuma
+consulta a outra.
+
+Fora dessa regra ficou a **etiqueta de retirada**, que segue em
+`resolverIdDestinatarioEtiqueta` — 0 pedidos de retirada hoje têm pagador
+distinto sem escolha gravada. E vale o aviso que o próprio modal dá: na etiqueta
+oficial dos Correios o nome **congela do lado deles** depois da prepostagem;
+trocar a escolha depois não altera objeto já emitido.
+
 **A etiqueta também deixou de carimbar "SEDEX"** em envio de transportadora. O
 campo caía em `cotacao_frete.servico` quando não havia despacho confirmado, e o
 resíduo FOB ia para o papel. Passou a usar `nomeTransporteEfetivo` — a mesma
