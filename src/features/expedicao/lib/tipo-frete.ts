@@ -1,4 +1,4 @@
-import type { ModalidadeFrete, TipoFreteNormalizado } from "../types";
+import type { ModalidadeFrete, PedidoExpedicao, TipoFreteNormalizado } from "../types";
 
 /** Ordem de exibição no select de filtro da tela. */
 export const TIPOS_FRETE: TipoFreteNormalizado[] = [
@@ -104,4 +104,36 @@ export function modalidadeInicialDoDespacho(
   if (doDespacho) return doDespacho;
   if (tipoFreteCotado === "RETIRA_BALCAO" && doOrcamento !== "FOB") return "RETIRA";
   return doOrcamento ?? null;
+}
+
+/**
+ * "CORREIOS" AQUI É RESÍDUO DE COTAÇÃO, NÃO TRANSPORTE (02/09/2026).
+ *
+ * Sob **FOB** os Correios não são transporte possível — `TRANSPORTES_POR_MODALIDADE.FOB`
+ * é `["TRANSPORTADORA", "MOTOBOY"]`, e a prepostagem sai pelo cartão da empresa,
+ * que em FOB não se usa. Ainda assim o pedido guarda uma `cotacao_frete` com
+ * serviço "SEDEX" e valor **zero**, gerada pelo Orçamento e nunca contratada.
+ * `normalizarTipoFrete` classifica esse texto como `CORREIOS`, e quem decide
+ * por `tipoFrete` acaba tratando o pedido como envio dos Correios.
+ *
+ * `despachoConfirmado` desliga a regra: com despacho confirmado, `tipoFrete` vem
+ * de `expedicoes.tipo_frete`, que é a declaração do expedidor e é soberana.
+ *
+ * NÃO alcança CIF, onde os Correios são transporte legítimo, nem MOTOBOY e
+ * RETIRA sob FOB, que são classificações válidas.
+ *
+ * NASCEU no agrupamento do Kanban (`e1855ed`) e subiu para cá quando o alerta de
+ * troca de transporte do `DespacharModal` precisou do MESMO critério — a regra
+ * mora num lugar só, e os dois chamadores leem daqui. **A lógica não mudou na
+ * mudança de casa.** Cada chamador acrescenta as suas próprias guardas: o modal,
+ * por exemplo, ainda exige que não haja prepostagem nem tipo declarado em
+ * rascunho antes de silenciar o aviso.
+ */
+export function correiosResiduoDeCotacaoFob(p: PedidoExpedicao): boolean {
+  return (
+    p.tipoFrete === "CORREIOS" &&
+    !p.despachoConfirmado &&
+    p.modalidadeOrcamento === "FOB" &&
+    p.idTransportadoraOrcamento !== null
+  );
 }

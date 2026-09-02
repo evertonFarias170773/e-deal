@@ -6,6 +6,7 @@ import type { ActionMenuItem } from "@/components/common/ActionsMenu";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { correiosResiduoDeCotacaoFob } from "../lib/tipo-frete";
 import type { EtapaExpedicao, PedidoExpedicao } from "../types";
 
 /**
@@ -201,37 +202,15 @@ export function LegendaCoresKanban() {
 }
 
 /**
- * "CORREIOS" AQUI É RESÍDUO DE COTAÇÃO, NÃO TRANSPORTE (02/09/2026).
+ * Chave e título da coluna de um pedido, a partir do tipo normalizado + nome
+ * resolvido.
  *
- * Sob **FOB** os Correios não são transporte possível — `TRANSPORTES_POR_MODALIDADE.FOB`
- * é `["TRANSPORTADORA", "MOTOBOY"]`, e a prepostagem sai pelo cartão da empresa,
- * que em FOB não se usa. Ainda assim o pedido guarda uma `cotacao_frete` com
- * serviço "SEDEX" e valor **zero**, gerada pelo Orçamento e nunca contratada.
- * `normalizarTipoFrete` classifica esse texto como `CORREIOS` e o agrupamento
- * fechava a coluna ali, antes de olhar `transportadoraNome` — que já trazia a
- * resposta certa. Eram 5 pedidos: 21557, 21503 e 21499 (SVT TRANSPORTES),
- * 21174 (EXPRESSO SÃO MIGUEL) e 21074 (BRASPRESS), todos com a coluna FRETE da
- * lista mostrando a transportadora correta desde a correção de 31/08 — o Kanban
- * é que tinha ficado para trás.
- *
- * `despachoConfirmado` desliga a regra: com despacho confirmado, `tipoFrete` vem
- * de `expedicoes.tipo_frete`, que é a declaração do expedidor e é soberana. Se
- * ele disse Correios, é Correios.
- *
- * NÃO alcança CIF: lá os Correios são transporte legítimo, e é o caso do 21413,
- * 21411 e 21111, com "CORREIOS SEDE" cadastrada como transportadora. Também não
- * mexe em MOTOBOY nem RETIRA sob FOB, que são classificações válidas.
+ * `correiosResiduoDeCotacaoFob` vem de `lib/tipo-frete.ts` — nasceu aqui em
+ * `e1855ed` e subiu para lá quando o alerta do `DespacharModal` precisou do
+ * mesmo critério. A regra mora num lugar só; a lógica é a mesma. Ela desviava
+ * 5 pedidos da coluna Correios: 21557, 21503 e 21499 (SVT TRANSPORTES), 21174
+ * (EXPRESSO SÃO MIGUEL) e 21074 (BRASPRESS).
  */
-function correiosResiduoDeCotacaoFob(p: PedidoExpedicao): boolean {
-  return (
-    p.tipoFrete === "CORREIOS" &&
-    !p.despachoConfirmado &&
-    p.modalidadeOrcamento === "FOB" &&
-    p.idTransportadoraOrcamento !== null
-  );
-}
-
-/** Chave e título da coluna de um pedido, a partir do tipo normalizado + nome resolvido. */
 function colunaDoPedido(p: PedidoExpedicao): { chave: string; titulo: string } {
   const residuoFob = correiosResiduoDeCotacaoFob(p);
 

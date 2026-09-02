@@ -5,7 +5,12 @@ import { AlertTriangle, X } from "lucide-react";
 import { useAppToast } from "@/components/common/AppToast";
 import { getTransportadoras } from "@/features/nfe/services/nfe.service";
 import { formatCurrency } from "@/lib/formatters/currency";
-import { labelTipoFrete, modalidadeInicialDoDespacho, normalizarTipoFrete } from "../lib/tipo-frete";
+import {
+  correiosResiduoDeCotacaoFob,
+  labelTipoFrete,
+  modalidadeInicialDoDespacho,
+  normalizarTipoFrete
+} from "../lib/tipo-frete";
 import { temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
 import { despachar, salvarDadosExpedicao, transportadoraDerivada } from "../services/expedicao-acoes.service";
@@ -514,8 +519,27 @@ export function DespacharModal({
    * prepostagem, o código de objeto e o rastreio NÃO são apagados em nenhum
    * caso; só o rótulo do transporte muda.
    */
-  const gravadoComoCorreios = tipoInicial === "CORREIOS";
   const prepostagemCorreios = exp?.correiosCodigoObjeto ?? exp?.correiosIdPrepostagem ?? null;
+  /**
+   * NINGUÉM DISSE CORREIOS — só o texto da cotação (02/09/2026).
+   *
+   * O aviso acusava "definido para ir pelos Correios" em pedido FOB com
+   * transportadora definida, onde o único sinal de Correios é um `SEDEX` de
+   * cotação zerada que ninguém contratou. Mesma causa já corrigida no
+   * agrupamento do Kanban (`e1855ed`), e o predicado é literalmente o mesmo,
+   * importado de `lib/tipo-frete` — a regra não está duplicada.
+   *
+   * DUAS GUARDAS a mais, porque aqui o aviso protege coisa que o Kanban não
+   * protegia, e silenciá-lo por engano é pior do que mostrá-lo à toa:
+   *   - `prepostagemCorreios`: existindo prepostagem ou código de objeto, o
+   *     envio EXISTE nos Correios e o aviso continua — é o caso do pedido
+   *     legado, e rebaixar o transporte sem confirmação perderia o rastro;
+   *   - `exp?.tipoFrete`: se o expedidor já declarou o transporte em rascunho,
+   *     vale a declaração dele, não a classificação do texto.
+   */
+  const correiosSoNoTextoDaCotacao =
+    correiosResiduoDeCotacaoFob(pedido) && prepostagemCorreios === null && (exp?.tipoFrete ?? null) === null;
+  const gravadoComoCorreios = tipoInicial === "CORREIOS" && !correiosSoNoTextoDaCotacao;
   /**
    * Geracao anterior, a que sera SOBRESCRITA na proxima. So existe uma vaga: e o
    * ultimo momento em que este codigo aparece para o operador, e por isso a

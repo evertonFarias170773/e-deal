@@ -85,6 +85,9 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
     legítimo (21413, 21411, 21111, com `CORREIOS SEDE` cadastrada), e desliga
     com `despachoConfirmado`, porque aí `tipoFrete` é a declaração do expedidor
     e é soberana. `normalizarTipoFrete` e seu vocabulário ficaram intocados.
+    O predicado **mora em `lib/tipo-frete.ts`** desde 02/09/2026, quando o
+    alerta do `DespacharModal` passou a precisar do mesmo critério — ver
+    "O alerta de troca dos Correios" na seção 4.
     `transportadoraNome` é apenas **lido**: a busca textual
     ([ExpedicaoPage.tsx:476](../../src/features/expedicao/ExpedicaoPage.tsx))
     e o pré-preenchimento do `DespacharModal` seguem com o mesmo valor.
@@ -262,6 +265,33 @@ O peso bruto na **NF-e** segue pendente e é tarefa do módulo fiscal: a nota us
 hoje a soma teórica dos itens (`nfe.service.ts`), não `peso_bruto_kg` — ver
 `PEDIDOS-PRODUCAO.md` §19.
 
+
+### O alerta de troca dos Correios (02/09/2026)
+
+O bloco âmbar *"Este pedido está definido para ir pelos Correios… Confirmar
+troca o transporte para transportadora"* aparecia em pedido **FOB com
+transportadora definida**, onde o único sinal de Correios é um `SEDEX` de
+cotação **zerada** que ninguém contratou — a mesma causa já corrigida no
+agrupamento do Kanban em `e1855ed`. Eram **5** pedidos (21557, 21503, 21499,
+21174, 21074); passaram a **0**.
+
+O critério é **o mesmo predicado**, `correiosResiduoDeCotacaoFob`, que subiu de
+`KanbanTransportadoras.tsx` para **`lib/tipo-frete.ts`** — a regra mora num
+lugar só e os dois chamadores leem de lá. A lógica não mudou na mudança de casa.
+
+**O alerta cobria DOIS casos, e só um era indevido.** Quando existe
+`correios_id_prepostagem` ou `correios_codigo_objeto`, o envio **existe** nos
+Correios: é o pedido legado da seção 5.2, e rebaixar o transporte sem
+confirmação perderia o rastro. Por isso o modal acrescenta duas guardas próprias
+antes de silenciar:
+
+- **há prepostagem ou código de objeto** → o aviso continua (0 pedidos hoje; a
+  guarda é preventiva);
+- **`expedicoes.tipo_frete` já declarado em rascunho** → vale a declaração do
+  expedidor, não a classificação do texto.
+
+O aviso segue igual nos casos legítimos, e o de **NF-e não autorizada** não foi
+tocado.
 
 ### Endereço de entrega: exibição, não escolha (02/09/2026)
 
