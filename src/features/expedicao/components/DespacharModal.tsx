@@ -214,7 +214,6 @@ export function DespacharModal({
   const [qtdVolumes, setQtdVolumes] = useState(exp?.qtdVolumes?.toString() ?? pedido.volumes?.toString() ?? "1");
   const [tipoVolume, setTipoVolume] = useState(exp?.tipoVolume ?? "Pacote");
   const [codigoRastreamento, setCodigoRastreamento] = useState(pedido.codigoRastreamento);
-  const [obs, setObs] = useState(exp?.obs ?? "");
   /**
    * O TEXTO QUE VAI COLADO NO VOLUME (02/09/2026). Coluna propria
    * (`expedicoes.obs_etiqueta`), separada da observacao logistica acima: aquela
@@ -770,7 +769,6 @@ export function DespacharModal({
       idEnderecoEntrega,
       idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
-      obs: obs.trim(),
       obsEtiqueta: obsEtiqueta.trim(),
       // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
       // vence e o manual nem e enviado — nao ha como sobrescrever o
@@ -853,7 +851,6 @@ export function DespacharModal({
       idEnderecoEntrega,
       idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
-      obs: obs.trim(),
       obsEtiqueta: obsEtiqueta.trim(),
       // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
       // vence e o manual nem e enviado — nao ha como sobrescrever o
@@ -946,7 +943,6 @@ export function DespacharModal({
       idEnderecoEntrega,
       idClienteDestinatarioEtiqueta: idDestinatarioEtiqueta,
       codigoRastreamento: codigoRastreamento.trim(),
-      obs: obs.trim(),
       obsEtiqueta: obsEtiqueta.trim(),
       // Sem nota autorizada o expedidor digita; havendo, `notas_fiscais`
       // vence e o manual nem e enviado — nao ha como sobrescrever o
@@ -1573,14 +1569,16 @@ export function DespacharModal({
             </div>
           </div>
 
-          <div>
-            <label className={labelClass}>Observação logística (interna)</label>
-            <textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} placeholder="Ex.: frágil, entregar no turno da manhã..." className={inputClass} />
-          </div>
+          {/* OS DOIS CAMPOS DA ETIQUETA (02/09/2026).
 
-          {/* OS DOIS CAMPOS DA ETIQUETA (02/09/2026). Ficam juntos e separados
-              da observação logística acima de propósito: um é recado interno,
-              estes vão para o papel. */}
+              A "Observação logística (interna)" que ficava logo acima SAIU da
+              tela: dois campos de observação confundiam o expedidor, e só um
+              deles chegava a algum lugar — o outro gravava em `expedicoes.obs`
+              e não era impresso em documento nenhum.
+
+              A COLUNA CONTINUA NO BANCO, com o que já estava gravado. O modal
+              simplesmente parou de enviá-la: `despachar` e `salvarDadosExpedicao`
+              só escrevem o que recebem, então não há como apagar o que existe. */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className={labelClass}>Nº da NF (vai na etiqueta)</label>
@@ -1601,7 +1599,7 @@ export function DespacharModal({
               </p>
             </div>
             <div>
-              <label className={labelClass}>Observações da etiqueta</label>
+              <label className={labelClass}>Observações (vão na etiqueta)</label>
               <textarea
                 value={obsEtiqueta}
                 onChange={(e) => setObsEtiqueta(e.target.value)}

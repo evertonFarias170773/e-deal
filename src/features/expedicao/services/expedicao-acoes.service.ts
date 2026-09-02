@@ -32,8 +32,15 @@ export type DespachoInput = {
    */
   idClienteDestinatarioEtiqueta?: number | null;
   codigoRastreamento: string;
-  /** `expedicoes.obs` — observacao LOGISTICA INTERNA. Nao sai em documento. */
-  obs: string;
+  /**
+   * `expedicoes.obs` — observacao LOGISTICA INTERNA. Nao sai em documento.
+   *
+   * OPCIONAL desde 02/09/2026: o modal Despachar removeu o campo da tela (dois
+   * campos de observacao confundiam, e so `obs_etiqueta` chega ao papel) e
+   * deixou de enviar este. A coluna CONTINUA no banco com o que ja estava
+   * gravado — `undefined` significa "nao mexa", nunca "apague".
+   */
+  obs?: string;
   /**
    * `expedicoes.obs_etiqueta` — o texto IMPRESSO no volume (02/09/2026).
    *
@@ -260,7 +267,9 @@ export async function despachar(
     id_endereco_entrega: input.idEnderecoEntrega,
     id_cliente_destinatario_etiqueta: input.idClienteDestinatarioEtiqueta ?? null,
     codigo_rastreamento: input.codigoRastreamento || null,
-    obs: input.obs || null,
+    // `undefined` NAO entra no upsert: o modal parou de enviar `obs` e escrever
+    // `null` aqui apagaria o recado interno de quem ainda o tem gravado.
+    ...(input.obs !== undefined ? { obs: input.obs || null } : {}),
     // Campos da etiqueta, no MESMO upsert dos demais: uma escrita so, mesma
     // transacao implicita, mesmo tratamento de erro.
     obs_etiqueta: input.obsEtiqueta?.trim() || null,
