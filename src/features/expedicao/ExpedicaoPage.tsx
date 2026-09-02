@@ -613,7 +613,13 @@ export function ExpedicaoPage() {
           <SummaryCard
             title="Pronto p/ expedir"
             value={porEtapa.pronto.toString()}
-            description="Aguardando despacho"
+            // Dois estados desde a Etapa 7 (02/09/2026): o que ainda vai ser
+            // despachado e o que já foi e espera o carro — os dois seguem em
+            // `EXPEDICAO`, então os dois contam aqui. "Aguardando despacho"
+            // descrevia só o primeiro. Mesma forma enumerada do card do dia
+            // ("Atrasados e prometidos hoje"). Título, contagem e critério
+            // intocados.
+            description="A despachar e aguardando coleta"
             tone="neutral"
             icon={PackageCheck}
             onClick={() => selecionarEtapa("PRONTO")}
