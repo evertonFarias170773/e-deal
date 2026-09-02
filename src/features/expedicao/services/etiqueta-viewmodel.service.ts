@@ -5,6 +5,7 @@ import { idEnderecoEntregaVigente } from "../lib/endereco-entrega";
 import { nomeTransporteEfetivo } from "@/features/orcamentos/lib/modalidade-frete";
 import type { ModalidadeFrete } from "../types";
 import { escolherNotaAutorizadaDoPedido } from "@/lib/fiscal/nota-do-pedido";
+import { resolverEmpresaRemetente } from "@/lib/correios/empresa-remetente";
 
 export type EtiquetaViewModel = {
   idInt: number;
@@ -17,8 +18,33 @@ export type EtiquetaViewModel = {
   nfNumero: string;
   /** Embalagem declarada no despacho (Pacote, Caixa, Envelope…). */
   tipoVolume: string;
-  /** Remetente em uma linha — vai no rodapé: quem manuseia o volume lê o destino. */
+  /** Remetente em uma linha — mantido para compatibilidade de leitura. */
   remetenteRodape: string;
+  /**
+   * REMETENTE COMPLETO, do cadastro em `empresas` (02/09/2026).
+   *
+   * O layout novo imprime o bloco inteiro; antes so o nome saia, e vinha de
+   * `propostas.empresa` como texto. `resolverEmpresaRemetente` e a MESMA funcao
+   * que a Declaracao de Conteudo e a prepostagem ja usam.
+   */
+  remetente: {
+    /** `nome_fantasia` do cadastro — ou "DSEG BRASIL" na regra do 8469. */
+    nome: string;
+    /** "RUA FELIZARDO DE FARIAS, 81" */
+    logradouro: string;
+    /** "BAIRRO MEDIANEIRA, PORTO ALEGRE/RS" */
+    bairroCidadeUf: string;
+  };
+  /**
+   * `expedicoes.obs_etiqueta` — o texto IMPRESSO no volume.
+   *
+   * NAO e `obs` acima, que e a observacao logistica INTERNA e continua sem sair
+   * em documento nenhum. Ver o cabecalho da migration
+   * `20260902183633_expedicoes_obs_etiqueta.sql`.
+   */
+  obsEtiqueta: string;
+  /** Data de envio ja formatada em dd/mm/aaaa. */
+  dataEnvio: string;
   destinatario: {
     nome: string;
     recebedor: string;
@@ -106,7 +132,7 @@ export async function montarEtiquetaViewModel(
     supabase
       .from("expedicoes")
       .select(
-        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, id_transportadora_cliente, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, data_despacho"
+        "peso_kg, peso_bruto_kg, qtd_volumes, tipo_volume, transportadora_nome, id_transportadora_cliente, codigo_rastreamento, id_endereco_entrega, id_cliente_destinatario_etiqueta, obs, obs_etiqueta, nf_numero_manual, data_despacho"
       )
       .eq("id_int", idInt)
       .maybeSingle(),
@@ -300,29 +326,35 @@ export async function montarEtiquetaViewModel(
         .maybeSingle()
     : { data: null };
 
-  // Remetente: empresas casada por nome com propostas.empresa; fallback = 1ª linha.
-  let empresaRow:
-    | { nome_fantasia: string | null; razao_social: string | null; municipio: string | null; uf: string | null }
-    | null = null;
+  /**
+   * REMETENTE, do cadastro (02/09/2026).
+   *
+   * Passou a usar `resolverEmpresaRemetente` — a MESMA funcao da Declaracao de
+   * Conteudo e da prepostagem —, no lugar da consulta local que existia aqui.
+   * Motivo: o layout novo imprime o BLOCO inteiro (nome, logradouro, numero,
+   * bairro, municipio, UF), e nao so o nome; manter uma segunda consulta com
+   * outro `select` seria manter uma segunda verdade sobre o mesmo cadastro.
+   *
+   * A REGRA DO 8469 CONTINUA, e so sobre o NOME (decisao do dono, 02/09/2026):
+   * os 20 pedidos do cliente 8469 sao emitidos pela E3 Brindes e o volume sai
+   * em nome de DSEG BRASIL — e white-label, o destinatario final nao ve a
+   * grafica. O ENDERECO vem do cadastro normalmente, porque e para la que a
+   * transportadora devolve o que nao entrega.
+   */
   const nomeEmpresa = String(proposta.empresa ?? "").trim();
-  if (nomeEmpresa) {
-    const { data } = await supabase
-      .from("empresas")
-      .select("nome_fantasia, razao_social, municipio, uf, empresa")
-      .or(`empresa.ilike."${nomeEmpresa}",nome_fantasia.ilike."${nomeEmpresa}",razao_social.ilike."${nomeEmpresa}"`)
-      .limit(1)
-      .maybeSingle();
-    empresaRow = data ?? null;
-  }
-  if (!empresaRow) {
-    const { data } = await supabase
-      .from("empresas")
-      .select("nome_fantasia, razao_social, municipio, uf")
-      .order("id", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    empresaRow = data ?? null;
-  }
+  const empresaRow = await resolverEmpresaRemetente(supabase, nomeEmpresa);
+
+  const remetenteNome = nomeRemetenteExibido(
+    idCliente,
+    empresaRow?.nome_fantasia || empresaRow?.razao_social || nomeEmpresa
+  );
+  const remetenteLogradouro = [empresaRow?.logradouro, empresaRow?.numero].filter(Boolean).join(", ");
+  const remetenteBairroCidadeUf = [
+    empresaRow?.bairro ? `BAIRRO ${empresaRow.bairro}` : "",
+    [empresaRow?.municipio, empresaRow?.uf].filter(Boolean).join("/")
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   const volumes = Math.max(1, Number(exp?.qtd_volumes) || 1);
   // Precedência única (lib/peso.ts): aferido > bruto da revisão > cotado.
@@ -360,12 +392,43 @@ export async function montarEtiquetaViewModel(
       "",
     codigoRastreamento: expConfirmado?.codigo_rastreamento || os?.codigo_rastreamento || "",
     obs: expConfirmado?.obs || "",
-    nfNumero: nfAutorizada?.numero_nf ? String(nfAutorizada.numero_nf) : "",
+    /**
+     * NUMERO DA NF: `notas_fiscais` SEMPRE VENCE, `nf_numero_manual` e fallback.
+     *
+     * A nota autorizada e escolhida por `escolherNotaAutorizadaDoPedido`, o
+     * mesmo criterio da lista e do modal. So quando NAO ha nenhuma o campo
+     * digitado a mao responde — remessa sem NF, devolucao, brinde. O manual nao
+     * passa pelo gate de `expConfirmado`: a etiqueta costuma sair antes do
+     * despacho, e segurar o numero ate la deixaria o rodape vazio justamente
+     * nesses casos.
+     */
+    nfNumero: nfAutorizada?.numero_nf
+      ? String(nfAutorizada.numero_nf)
+      : String(exp?.nf_numero_manual ?? "").trim(),
     tipoVolume: exp?.tipo_volume || "",
-    remetenteRodape: [
-      nomeRemetenteExibido(idCliente, empresaRow?.nome_fantasia || empresaRow?.razao_social || nomeEmpresa),
-      [empresaRow?.municipio, empresaRow?.uf].filter(Boolean).join(" - ")
-    ]
+    /**
+     * `obs_etiqueta`, NAO `obs`. Sem gate de `expConfirmado` pelo mesmo motivo
+     * do endereco: a etiqueta e impressa antes do despacho, e a observacao
+     * existe justamente para acompanhar o volume desde ali.
+     */
+    obsEtiqueta: String(exp?.obs_etiqueta ?? "").trim(),
+    /**
+     * DATA DE ENVIO: `data_despacho` quando ja houve despacho; senao HOJE.
+     *
+     * Reimprimir a etiqueta de um pedido despachado tem de repetir a data que
+     * saiu no papel anterior — por isso o despacho vence. Antes do despacho nao
+     * existe data nenhuma, e a etiqueta e impressa para colar no volume agora:
+     * a data de hoje e a informacao verdadeira nesse momento.
+     */
+    dataEnvio: new Date(exp?.data_despacho ?? Date.now()).toLocaleDateString("pt-BR", {
+      timeZone: "America/Sao_Paulo"
+    }),
+    remetente: {
+      nome: remetenteNome,
+      logradouro: remetenteLogradouro,
+      bairroCidadeUf: remetenteBairroCidadeUf
+    },
+    remetenteRodape: [remetenteNome, [empresaRow?.municipio, empresaRow?.uf].filter(Boolean).join(" - ")]
       .filter(Boolean)
       .join("  ·  "),
     destinatario: {

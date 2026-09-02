@@ -63,8 +63,16 @@ export async function GET(request: Request) {
   // QR: link do pedido no ERP (conferência interna escaneia e acha o pedido).
   let qrDataUrl: string | null = null;
   try {
-    const base = (process.env.APP_URL || "").trim() || new URL(request.url).origin;
-    qrDataUrl = await QRCode.toDataURL(`${base}/orcamentos/${idInt}`, { margin: 0, width: 256 });
+    /**
+     * SITE FIXO (02/09/2026), não mais a URL interna do pedido.
+     *
+     * O QR já era gerado aqui e descartado pelo componente. Agora ele é
+     * desenhado, e a etiqueta viaja colada no volume: quem escaneia é o
+     * destinatário ou quem manuseia a carga, não alguém com sessão no ERP.
+     * Apontar para `/orcamentos/{id}` daria uma tela de login a um estranho e
+     * ainda exporia o número do pedido de quem não deveria vê-lo.
+     */
+    qrDataUrl = await QRCode.toDataURL("https://www.ingressoideal.com.br", { margin: 0, width: 256 });
   } catch {
     qrDataUrl = null; // etiqueta sai sem QR — não é bloqueante
   }
