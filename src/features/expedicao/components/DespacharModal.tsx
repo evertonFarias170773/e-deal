@@ -13,6 +13,7 @@ import type { AtorExpedicao, DespachoInput } from "../services/expedicao-acoes.s
 import { listarEnderecosCliente } from "../services/enderecos.service";
 import type { EnderecoCliente } from "../services/enderecos.service";
 import { correiosStatus, gerarPrepostagem } from "../services/correios.client";
+import { etiquetaDoPedido } from "../lib/etiqueta-do-pedido";
 import { ConfirmarAcaoModal } from "./ConfirmarAcaoModal";
 import {
   camposMinimosDespacho,
@@ -165,6 +166,13 @@ export function DespacharModal({
   const [salvando, setSalvando] = useState(false);
   const [correiosOk, setCorreiosOk] = useState(false);
   const [gerandoPrepostagem, setGerandoPrepostagem] = useState(false);
+  /**
+   * Prepostagem criada NESTA sessao do modal. `pedido.expedicao` e a foto que a
+   * lista carregou e nao se atualiza aqui — sem isto, gerar a prepostagem e
+   * tentar imprimir em seguida ainda diria "gere a prepostagem".
+   */
+  const [prepostagemGeradaAgora, setPrepostagemGeradaAgora] = useState(false);
+  const [emitindoEtiqueta, setEmitindoEtiqueta] = useState(false);
   /** Servico aguardando confirmacao de regeracao; null = nenhum dialogo aberto. */
   const [confirmarRegeracao, setConfirmarRegeracao] = useState<"SEDEX" | "PAC" | null>(null);
   /**
@@ -790,9 +798,39 @@ export function DespacharModal({
     setGerandoPrepostagem(false);
     if (res.success && res.codigoObjeto) {
       setCodigoRastreamento(res.codigoObjeto);
+      setPrepostagemGeradaAgora(true);
       showToast({ type: "success", title: "Prepostagem criada", description: `Rastreio ${res.codigoObjeto} preenchido.` });
     } else {
       showToast({ type: "error", title: "Correios recusaram a prepostagem", description: res.errorMessage });
+    }
+  }
+
+  /**
+   * A etiqueta deste envio, resolvida pelos valores CORRENTES do formulario.
+   *
+   * Nao le `pedido.*`: o expedidor pode ter acabado de trocar a modalidade, o
+   * transporte ou os volumes, e o rotulo tem de sair com o que ele declarou
+   * agora. `tipoEntrega === "RETIRADA"` entra como `RETIRA` porque e assim que o
+   * submit grava — o mesmo `tipoFrete: "RETIRA_BALCAO"` de `handleConfirmar`.
+   */
+  const acaoEtiqueta = etiquetaDoPedido({
+    idInt: pedido.idInt,
+    modalidadeFrete: tipoEntrega === "RETIRADA" ? "RETIRA" : modalidade,
+    tipoFrete: tipoEntrega === "RETIRADA" ? "RETIRA_BALCAO" : tipoFrete,
+    volumes: parseQtdVolumes(qtdVolumes),
+    correiosIdPrepostagem: prepostagemGeradaAgora
+      ? "GERADA_NESTA_SESSAO"
+      : exp?.correiosIdPrepostagem ?? null,
+    prepostagemCanceladaEm: prepostagemGeradaAgora ? null : exp?.prepostagemCanceladaEm ?? null
+  });
+
+  async function handleEmitirEtiqueta() {
+    if (emitindoEtiqueta || acaoEtiqueta.bloqueada || faltantes.length > 0) return;
+    setEmitindoEtiqueta(true);
+    const res = await acaoEtiqueta.abrir();
+    setEmitindoEtiqueta(false);
+    if (!res.success) {
+      showToast({ type: "error", title: "Erro na etiqueta", description: res.errorMessage });
     }
   }
 
@@ -1261,8 +1299,44 @@ export function DespacharModal({
                   ) : null}
                 </div>
               )}
+
             </>
           )}
+
+            {/* ETIQUETA (01/09/2026): saiu do menu de acoes da lista e passou a
+                viver aqui, junto do despacho que ela documenta.
+
+                So habilita com os campos minimos preenchidos — os MESMOS que o
+                "Confirmar despacho" exige, por `camposMinimosDespacho`. Antes
+                dava para imprimir o rotulo de um envio que ninguem tinha
+                terminado de declarar: peso, volumes, transportadora e endereco
+                em branco, e a etiqueta saindo assim mesmo.
+
+                Em modo EDICAO `faltantes` e sempre vazio, entao o botao nasce
+                habilitado — e por aqui que se reimprime a etiqueta de um pedido
+                ja despachado.
+
+                O rotulo do botao vem da propria regra de escolha do modelo, e e
+                ele que avisa quando os Correios ainda nao tem prepostagem. */}
+            <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+              <button
+                type="button"
+                disabled={emitindoEtiqueta || acaoEtiqueta.bloqueada || faltantes.length > 0}
+                onClick={() => void handleEmitirEtiqueta()}
+                className="rounded-2xl border border-[#0b2f4a] px-4 py-2 text-xs font-bold text-[#0b2f4a] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-slate-800"
+              >
+                {emitindoEtiqueta ? "Abrindo..." : acaoEtiqueta.label}
+              </button>
+              {faltantes.length > 0 ? (
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Falta informar {frasearFaltantes(faltantes)} para emitir a etiqueta.
+                </p>
+              ) : acaoEtiqueta.bloqueada ? (
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  O rótulo oficial dos Correios só existe depois da prepostagem — gere-a acima.
+                </p>
+              ) : null}
+            </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div>

@@ -35,8 +35,7 @@ import { encerrarTeste } from "@/features/pedidos/services/encerrar-teste.client
 import { marcarPronto, marcarEntregue } from "./services/expedicao-acoes.service";
 import { marcarPrepostagemCancelada } from "./services/correios.client";
 import { liberarRecotacao, revogarRecotacao } from "./services/recotacao.client";
-import { abrirDeclaracaoConteudo, abrirEtiqueta, abrirEtiquetaRetirada } from "./services/etiqueta.client";
-import { abrirEtiquetaCorreios } from "./services/correios.client";
+import { abrirDeclaracaoConteudo } from "./services/etiqueta.client";
 import { ConfirmarAcaoModal } from "./components/ConfirmarAcaoModal";
 import { labelTipoFrete, TIPOS_FRETE } from "./lib/tipo-frete";
 import { rotuloClienteComNumero } from "./lib/cliente-rotulo";
@@ -279,71 +278,6 @@ export function ExpedicaoPage() {
     }
   }
 
-  /**
-   * A ÚNICA entrada de etiqueta do menu, resolvida pelo transporte do pedido.
-   *
-   * Antes eram duas — "Imprimir etiqueta 10x15" e "Etiqueta Correios (oficial)"
-   * — e o expedidor escolhia; um envio dos Correios saía com o papel errado sem
-   * o sistema dizer nada. Quem decide o formato é `p.tipoFrete`, que já é o
-   * transporte DECLARADO no despacho (`expedicoes.tipo_frete`) com a cotação
-   * normalizada como reserva. Todos os outros transportes usam a 10x15.
-   *
-   * O rótulo oficial dos Correios só existe DEPOIS da prepostagem — a rota
-   * responde 422 sem `correios_id_prepostagem`. Nesse intervalo a entrada fica
-   * desabilitada dizendo o que fazer, em vez de sumir (o expedidor ficava sem
-   * affordance e sem explicação) ou de cair na 10x15 (voltaria a imprimir o
-   * papel errado, agora sem ninguém ter escolhido).
-   */
-  function etiquetaDoPedido(p: PedidoExpedicao) {
-    // RETIRA NO BALCAO tem etiqueta propria: a 10x15 e documento de envio e
-    // imprimia endereco, transportadora e rastreio para um volume que ninguem
-    // vai despachar. A modalidade e a fonte — e ela que decide o fluxo de
-    // retirada no despacho; `tipo_frete = RETIRA_BALCAO` e consequencia dela,
-    // e por isso os dois valem como sinal.
-    if (p.expedicao?.modalidadeFrete === "RETIRA" || p.tipoFrete === "RETIRA_BALCAO") {
-      return {
-        label: "Etiqueta de retirada",
-        onClick: () => {
-          void abrirEtiquetaRetirada(p.idInt, p.volumes).then((res) => {
-            if (!res.success) {
-              showToast({ type: "error", title: "Erro na etiqueta", description: res.errorMessage });
-            }
-          });
-        }
-      };
-    }
-    if (p.tipoFrete === "CORREIOS") {
-      // Prepostagem cancelada no portal: o rotulo oficial daquele objeto nao
-      // vale mais, e a rota dos Correios ainda o entregaria. Enquanto nao houver
-      // prepostagem nova, cai na 10x15 — que independe do objeto.
-      if (!p.expedicao?.correiosIdPrepostagem || p.expedicao?.prepostagemCanceladaEm) {
-        return {
-          label: "Etiqueta Correios — gere a prepostagem",
-          disabled: true,
-          onClick: () => {}
-        };
-      }
-      return {
-        label: "Etiqueta Correios (oficial)",
-        onClick: () => {
-          void abrirEtiquetaCorreios(p.idInt).then((res) => {
-            if (!res.success) showToast({ type: "error", title: "Erro no rótulo", description: res.errorMessage });
-          });
-        }
-      };
-    }
-    return {
-      label: "Imprimir etiqueta 10x15",
-      onClick: () => {
-        void abrirEtiqueta(p.idInt, p.volumes).then((res) => {
-          if (!res.success) {
-            showToast({ type: "error", title: "Erro na etiqueta", description: res.errorMessage });
-          }
-        });
-      }
-    };
-  }
-
   /** Itens do menu "⋯" contextual — compartilhado entre a coluna "Ações" e o card mobile. */
   function itensMenu(p: PedidoExpedicao) {
     return [
@@ -370,9 +304,13 @@ export function ExpedicaoPage() {
       ...(canOperar && ["A_RETIRAR", "EM_TRANSITO", "ENTREGUE"].includes(p.etapa)
         ? [{ label: "Editar dados de expedição", onClick: () => setPedidoDespacho(p) }]
         : []),
-      // UMA entrada de etiqueta, nunca duas: o formato sai do transporte do
-      // pedido, não da escolha do expedidor. Ver `etiquetaDoPedido`.
-      ...(p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO" ? [etiquetaDoPedido(p)] : []),
+      // A ETIQUETA SAIU DAQUI EM 01/09/2026. Passou a viver dentro do
+      // DespacharModal, junto do despacho que ela documenta, e so habilita depois
+      // dos campos minimos — antes dava para imprimir o rotulo de um envio que
+      // ninguem tinha terminado de declarar. Reimpressao de pedido ja despachado
+      // continua possivel por "Editar dados de expedicao", logo acima: abre o
+      // MESMO modal em modo edicao, onde os campos minimos nao sao exigidos.
+      // A regra de escolha do modelo vive em `lib/etiqueta-do-pedido.ts`.
       // Sem NF-e autorizada, a remessa viaja com declaração de conteúdo. O rótulo
       // dos Correios traz só a etiqueta — este é o papel que vai no volume.
       ...(p.etapa !== "PRODUCAO" && p.etapa !== "ACABAMENTO" && p.nfStatus !== "AUTORIZADA"
