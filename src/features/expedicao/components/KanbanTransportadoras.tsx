@@ -397,11 +397,17 @@ export function KanbanTransportadoras({
                       `p.pagador` do `PedidoExpedicao`), então card e lista não
                       têm como divergir: é literalmente o mesmo objeto.
 
-                      Cores e rótulo da lista preservados — cidade em
-                      `slate-500`, pagador em `indigo-700` com o prefixo
-                      "Pagador:". Sem o prefixo ele leria como um segundo nome
-                      de cliente. O corpo sobe de 11 px para 13 px porque este
-                      card é ~30% maior que a célula da tabela.
+                      Cores da lista preservadas — cidade em `slate-500`,
+                      pagador em `indigo-700`. O corpo sobe de 11 px para 13 px
+                      porque este card é ~30% maior que a célula da tabela.
+
+                      O PREFIXO "Pagador:" SAIU do texto visível (02/09/2026):
+                      quem separa a linha do nome do cliente e da cidade é a
+                      COR, que continua sendo o indigo e é exclusiva dela no
+                      card. O prefixo fica só no `title`, onde ainda explica o
+                      que aquela linha é para quem passa o mouse. A LISTA
+                      mantém o prefixo — lá a coluna é estreita, o texto é
+                      menor e não há cor que a distinga tão bem.
 
                       `p.pagador` já nasce vazio quando o pagador é o próprio
                       cliente (regra `temPagadorDistinto`, no service), então a
@@ -422,7 +428,7 @@ export function KanbanTransportadoras({
                           className="truncate text-[13px] font-medium leading-snug text-indigo-700 dark:text-indigo-400"
                           title={`Pagador: ${p.pagador}`}
                         >
-                          Pagador: {p.pagador}
+                          {p.pagador}
                         </p>
                       )}
                     </div>
