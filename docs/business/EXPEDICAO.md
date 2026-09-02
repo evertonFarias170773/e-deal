@@ -72,8 +72,21 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   `shadow-sm`, e a separação vem do `gap-6` entre colunas e do `space-y-4`
   (16 px) entre cards.
 - Card, de cima para baixo: linha de identidade (nº · `cli <id_cliente>` · menu
-  `⋯`), nome do cliente em até duas linhas, linha de selos e, separado por fio,
-  o rodapé de números — peso · volumes à esquerda, frete à direita.
+  `⋯`), nome do cliente em até duas linhas, cidade e pagador, linha de selos com
+  a data prevista à direita e, separado por fio, o rodapé de números — peso ·
+  volumes à esquerda, frete à direita.
+  - **Nome = fantasia** (02/09/2026). O card usa `clienteExibicao`
+    (`clientes.fantasia` > razão), com a razão no `title`. A **lista continua na
+    razão** (`propostas.cliente`), e as duas convivem de propósito: razão é o
+    nome do documento, fantasia é o nome pelo qual a bancada conhece o cliente.
+    Sem consulta nova — `fantasia` já vinha no `in` de `clientes`. Em 02/09,
+    5 dos 24 clientes do painel não têm fantasia e caem na razão.
+  - **Data prevista** curta (`03/09`), à direita da linha de selos. Vem de
+    `dataPromessa` (= `propostas_os.data_termino`), a MESMA leitura que decide
+    `atrasadoDias` e `prometidoHoje` — nunca `expedicoes.data_entrega`, que é a
+    entrega efetiva. Formatada por `slice(0, 10)` da string, nunca por `Date`:
+    `data_termino` é `timestamp` sem timezone e converter fuso erraria o dia.
+    Sem promessa, nada é exibido (16 dos 44 cards em 02/09).
   - O menu usa `ActionsMenu variant="icone"`: só o `⋯`, 36 px. O gatilho com
     rótulo (~112 px) ocupava metade da largura útil do card e quebrava a linha
     do número. Os rótulos das ações continuam por extenso DENTRO do menu, e a
@@ -103,7 +116,13 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   3. **verde** (`emerald-300/50`) `etiquetaGerada` (prepostagem Correios OU
      `etiqueta_impressa_em` OU rastreio) **e** etapa em `A_RETIRAR`,
      `EM_TRANSITO` ou `ENTREGUE`;
-  4. **cinza** (`slate-200/50`) o resto.
+  4. **branco** (`bg-white`, borda `slate-300`) o resto — era `slate-50/50` até
+     02/09/2026. Sobre o fundo da página (`#e8edf2`) o cinza translúcido
+     resolvia em `#f0f4f7`, praticamente o próprio fundo, e o card sumia desde
+     que a coluna perdeu a moldura branca. A borda subiu de `slate-200`
+     (mais claro que o fundo, sem contorno visível) para `slate-300`, alinhando
+     com o `300` que as outras três fases já usam. O rótulo da legenda não
+     mudou: "ainda na fábrica" continua descrevendo o estado.
 
   **Por que inverteu.** Até 02/09 o verde vencia sempre e, como quase todo
   pedido ganha etiqueta em algum momento, o painel virou monocromático: **33

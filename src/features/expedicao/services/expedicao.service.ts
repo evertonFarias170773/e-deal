@@ -398,9 +398,25 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
       pesoTeoricoGramas: pesoTeoricoGramas.get(idInt)
     });
 
+    /**
+     * RAZAO — o nome de sempre. `propostas.cliente` e o nome gravado NA
+     * PROPOSTA; o cadastro so entra como rede de seguranca quando ele vier
+     * vazio. Continua sendo o que a lista, a busca e os documentos usam.
+     */
+    const nomeRazao = p.cliente || cli?.nome || cli?.fantasia || `Proposta #${idInt}`;
+    /**
+     * FANTASIA primeiro — so para exibicao no card do Kanban (ver
+     * `clienteExibicao` em types.ts). Cai na razao quando o cadastro nao tem
+     * fantasia: sao 5 dos 24 clientes do painel em 02/09/2026, quase todos
+     * pessoa fisica, onde razao e fantasia seriam o mesmo nome de qualquer
+     * forma. Sem consulta nova — `fantasia` ja vem no `in` de `clientes`.
+     */
+    const nomeFantasia = String(cli?.fantasia ?? "").trim() || nomeRazao;
+
     resultado.push({
       idInt,
-      cliente: p.cliente || cli?.nome || cli?.fantasia || `Proposta #${idInt}`,
+      cliente: nomeRazao,
+      clienteExibicao: nomeFantasia,
       idCliente,
       // Pagador (24/08/2026): vem na MESMA linha que a lista ja lia, para o modal
       // Despachar poder oferecer os enderecos dele sem consulta extra.

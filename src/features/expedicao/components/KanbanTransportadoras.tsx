@@ -45,6 +45,24 @@ type ColunaKanban = {
 const COLUNA_OUTROS = "OUTROS";
 
 /**
+ * Data-calendário curta (`03/09`) da promessa de entrega.
+ *
+ * FATIA A STRING, não constrói `Date`: `propostas_os.data_termino` é
+ * `timestamp` SEM timezone, e o service alerta explicitamente que converter
+ * fuso aqui erra o dia. Este `slice(0, 10)` é a MESMA leitura que `promessaDia`
+ * faz lá para calcular atraso e `prometidoHoje` — então o dia que o card mostra
+ * é exatamente o dia que decide se o chip `ATRASADO` acende.
+ *
+ * Devolve string vazia quando não há promessa: 16 dos 44 cards do painel em
+ * 02/09/2026 estão nessa situação, e a linha simplesmente não aparece.
+ */
+function dataPrevistaCurta(iso: string | null): string {
+  if (!iso) return "";
+  const [ano, mes, dia] = iso.slice(0, 10).split("-");
+  return ano && mes && dia ? `${dia}/${mes}` : "";
+}
+
+/**
  * FONTE ÚNICA das cores de fundo do card — o card pinta daqui e a LEGENDA lê
  * daqui (02/09/2026).
  *
@@ -59,7 +77,13 @@ const COLUNA_OUTROS = "OUTROS";
  */
 const FASE_FABRICA = {
   rotulo: "ainda na fábrica",
-  classe: "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
+  // BRANCO (02/09/2026), não mais `slate-50/50`. Sobre o fundo da página
+  // (`--background`, #e8edf2) o cinza translúcido resolvia em #f0f4f7 — quase o
+  // próprio fundo, e o card sumia desde que a coluna perdeu a moldura branca.
+  // A borda sobe de `slate-200` para `slate-300` pelo mesmo motivo: `slate-200`
+  // (#e2e8f0) é mais claro que o fundo e não desenhava contorno nenhum. O 300
+  // alinha com `sky/emerald/amber-300` que as outras fases já usam.
+  classe: "border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900"
 } as const;
 
 const FASE_BANCADA = {
@@ -306,6 +330,9 @@ export function KanbanTransportadoras({
                * etapa e não existe como filtro no topo.
                */
               const mostrarSelo = aguardandoTransportadora || p.etapa !== etapaFiltro;
+              // Promessa de entrega, curta. Vazia = pedido sem `data_termino`,
+              // e aí nada é exibido — nem rótulo, nem travessão.
+              const prevista = dataPrevistaCurta(p.dataPromessa);
               const primario = acaoPrimaria(p);
               // Ação primária vira o primeiro item do ⋯ — mantém o card limpo e a visão operável.
               const acoes: ActionMenuItem[] = [
@@ -332,8 +359,12 @@ export function KanbanTransportadoras({
                       </span>
                       {/* Cadastro do cliente: a conferência de bancada casa o volume
                           pelo número do cadastro, não pelo nome — homônimos existem. */}
+                      {/* Mesmo corpo do `#id`, sem negrito: o cadastro é tão
+                          identificador quanto o número do pedido na conferência
+                          de bancada, e a hierarquia entre os dois fica só no
+                          peso e na cor, não no tamanho. */}
                       {p.idCliente !== null && (
-                        <span className="whitespace-nowrap text-[13px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span className="whitespace-nowrap text-[17px] font-normal text-slate-500 dark:text-slate-400">
                           cli {p.idCliente}
                         </span>
                       )}
@@ -343,11 +374,17 @@ export function KanbanTransportadoras({
                   {/* Duas linhas, não uma: "LISITON DOCUMENTOS SEGUROS LTDA" e
                       "LISITON DOCUMENTOS SEGUROS ME" truncavam idênticos em uma
                       linha só. O `title` continua entregando o nome inteiro. */}
+                  {/* FANTASIA, com a razão no `title` (02/09/2026). É o nome
+                      pelo qual a bancada conhece o cliente: "DSEG IMPRESSOS"
+                      cabe em meia linha onde "LISITON DOCUMENTOS SEGUROS LTDA"
+                      ocupava as duas. Cai na razão quando não há fantasia — 5
+                      dos 24 clientes do painel, quase todos pessoa física.
+                      A LISTA segue mostrando a razão: `p.cliente` não mudou. */}
                   <p
                     className="mt-1.5 line-clamp-2 text-[16px] font-semibold leading-[1.3] text-slate-900 dark:text-slate-100"
                     title={p.cliente}
                   >
-                    {p.cliente}
+                    {p.clienteExibicao}
                   </p>
                   {/* CONTEXTO DO PEDIDO (02/09/2026) — os mesmos campos da coluna
                       "Cliente" da lista, lidos da MESMA fonte (`p.cidadeUf` e
@@ -384,7 +421,7 @@ export function KanbanTransportadoras({
                       )}
                     </div>
                   )}
-                  {(mostrarSelo || ehAtrasado || p.prometidoHoje) && (
+                  {(mostrarSelo || ehAtrasado || p.prometidoHoje || prevista) && (
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       {mostrarSelo && (
                         <StatusBadge
@@ -399,6 +436,17 @@ export function KanbanTransportadoras({
                       {p.prometidoHoje && (
                         <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-black text-white">
                           HOJE
+                        </span>
+                      )}
+                      {/* Data prevista, encostada à direita da MESMA linha dos
+                          selos: é a informação que decide urgência, e fica ao
+                          lado de quem já a traduziu em ATRASADO/HOJE. Texto
+                          discreto, não chip — um chip a mais competiria com as
+                          cores que significam status. */}
+                      {prevista && (
+                        <span className="ml-auto whitespace-nowrap text-[13px] font-semibold text-slate-600 dark:text-slate-400">
+                          <span className="text-[10px] font-medium text-slate-500 dark:text-slate-500">prev </span>
+                          {prevista}
                         </span>
                       )}
                     </div>

@@ -114,6 +114,20 @@ export interface ExpedicaoRegistro {
 export interface PedidoExpedicao {
   idInt: number;
   cliente: string;
+  /**
+   * Nome CURTO do cliente — `clientes.fantasia` quando existe, senão o mesmo
+   * `cliente` acima (02/09/2026).
+   *
+   * Existe separado de `cliente` de propósito: aquele é a RAZÃO gravada em
+   * `propostas.cliente`, que a lista, a busca e os documentos continuam usando.
+   * Este é só EXIBIÇÃO, para o card do Kanban, onde "LISITON DOCUMENTOS
+   * SEGUROS LTDA" ocupa duas linhas e "DSEG IMPRESSOS" ocupa meia — e é o nome
+   * pelo qual a bancada conhece o cliente.
+   *
+   * Zero consulta a mais: `fantasia` já vem no MESMO `in` de `clientes` que a
+   * lista já fazia, ao lado de `nome` e `cidade_uf`.
+   */
+  clienteExibicao: string;
   idCliente: number | null;
   /**
    * `propostas.id_faturado` — o PAGADOR, quando difere do cliente. Entrou em
