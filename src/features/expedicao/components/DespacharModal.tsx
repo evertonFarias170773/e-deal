@@ -70,8 +70,47 @@ function parseQtdVolumes(valor: string): number | null {
  * cotação legada; o último vem da modalidade), então o form abre em
  * TRANSPORTADORA e o expedidor confirma o que de fato vai acontecer.
  */
-function transporteInicial(tipo: TipoFreteNormalizado): TipoFreteNormalizado {
-  return tipo === "CORREIOS" || tipo === "MOTOBOY" || tipo === "TRANSPORTADORA" ? tipo : "TRANSPORTADORA";
+function transporteInicial(
+  pedido: PedidoExpedicao,
+  tipo: TipoFreteNormalizado,
+  modalidade: ModalidadeFrete | null
+): TipoFreteNormalizado {
+  /**
+   * DEGRAU 1 — o resíduo SEDEX não semeia o formulário (02/09/2026).
+   *
+   * Terceiro ponto contaminado pela mesma cotação zerada: o Kanban agrupava o
+   * pedido em Correios (`e1855ed`), o alerta acusava troca de transporte
+   * (`dee4819`), e aqui o formulário ABRIA em `CORREIOS`. Mesmo predicado dos
+   * outros dois, importado de `lib/tipo-frete` — a regra não está duplicada, e
+   * ela já se desliga sozinha em despacho confirmado e em CIF.
+   */
+  const base = correiosResiduoDeCotacaoFob(pedido) ? "TRANSPORTADORA" : tipo;
+
+  /**
+   * DEGRAU 2 — O SELECT NUNCA MENTE, em nenhum caso.
+   *
+   * O `<select value={tipoFrete}>` do "Como vai" só lista
+   * `TRANSPORTES_POR_MODALIDADE[modalidade]`. Um `select` cujo `value` não está
+   * entre as `option` exibe a PRIMEIRA delas — a tela dizia "Transportadora"
+   * enquanto o estado era `CORREIOS`, e o botão de etiqueta, que lê o estado,
+   * oferecia prepostagem dos Correios num envio de transportadora.
+   *
+   * Esta guarda é estrutural, não é sobre os cinco pedidos: garante que o
+   * estado inicial SEMPRE seja uma das opções que o select mostra. Quando não
+   * for, vence o que está na tela — é o que o expedidor vê e o que ele
+   * submeteria sem tocar em nada.
+   *
+   * Em CIF nada muda: `CORREIOS` está na lista de lá.
+   */
+  if (modalidade === "FOB" || modalidade === "CIF") {
+    const opcoes = TRANSPORTES_POR_MODALIDADE[modalidade];
+    return opcoes.includes(base) ? base : opcoes[0];
+  }
+
+  // RETIRA e modalidade nula não renderizam o select — vale a normalização de
+  // sempre: `SEM_CUSTO` e `INDEFINIDO` são leitura de cotação legada, não
+  // transporte, e o expedidor confirma o que de fato vai acontecer.
+  return base === "CORREIOS" || base === "MOTOBOY" || base === "TRANSPORTADORA" ? base : "TRANSPORTADORA";
 }
 
 /**
@@ -128,10 +167,18 @@ export function DespacharModal({
    * Discordar da sugestão continua livre e não altera a proposta; a divergência
    * aparece no aviso abaixo e informa, não trava.
    */
-  const [modalidade, setModalidade] = useState<ModalidadeFrete | null>(
-    modalidadeInicialDoDespacho(exp?.modalidadeFrete, pedido.modalidadeOrcamento, tipoInicial)
+  // Calculada FORA do `useState` porque `transporteInicial` também precisa dela:
+  // o transporte de abertura tem de ser uma das opções que ESTA modalidade
+  // oferece, senão o select abre exibindo uma coisa e o estado guarda outra.
+  const modalidadeInicial = modalidadeInicialDoDespacho(
+    exp?.modalidadeFrete,
+    pedido.modalidadeOrcamento,
+    tipoInicial
   );
-  const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(transporteInicial(tipoInicial));
+  const [modalidade, setModalidade] = useState<ModalidadeFrete | null>(modalidadeInicial);
+  const [tipoFrete, setTipoFrete] = useState<TipoFreteNormalizado>(
+    transporteInicial(pedido, tipoInicial, modalidadeInicial)
+  );
   const [transportadoraNome, setTransportadoraNome] = useState(
     exp?.transportadoraNome ?? (pedido.tipoFrete === "INDEFINIDO" ? "" : pedido.transportadoraNome)
   );

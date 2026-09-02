@@ -293,6 +293,27 @@ antes de silenciar:
 O aviso segue igual nos casos legítimos, e o de **NF-e não autorizada** não foi
 tocado.
 
+**Terceiro ponto da mesma raiz: o transporte com que o formulário abre.**
+`tipoInicial` (`exp?.tipoFrete ?? pedido.tipoFrete`) trazia `CORREIOS` do
+resíduo, e o `<select>` do "Como vai" só lista
+`TRANSPORTES_POR_MODALIDADE[modalidade]` — sob FOB, `["TRANSPORTADORA","MOTOBOY"]`.
+Um `select` cujo `value` não está entre as `option` **exibe a primeira**: a tela
+dizia "Transportadora" e o estado era `CORREIOS`, e o botão de etiqueta, que lê
+o estado, oferecia **"Etiqueta Correios — gere a prepostagem"** (bloqueada) num
+envio de transportadora. `transporteInicial` ganhou dois degraus:
+
+1. o mesmo predicado — resíduo abre em `TRANSPORTADORA`;
+2. uma **guarda estrutural**: o transporte inicial é sempre uma das opções que a
+   modalidade oferece; não sendo, vence a primeira, que é o que a tela mostra e
+   o que seria submetido sem ninguém tocar em nada. Em CIF nada muda, porque
+   `CORREIOS` está na lista de lá.
+
+**Mesmo risco em outros `select` do modal**, hoje sem nenhum caso: o de
+transportadora (`value` é um `id_cliente` que sai da lista se o cadastro for
+desativado ou perder a categoria) e o de tipo de volume (`TIPOS_VOLUME` tem 4
+itens fixos e `expedicoes.tipo_volume` é texto livre). Medidos em 02/09/2026:
+**0 e 0**. Não foram alterados.
+
 ### Endereço de entrega: exibição, não escolha (02/09/2026)
 
 O campo **ENDEREÇO DE ENTREGA** do modal Despachar era um `select` com **todos**
