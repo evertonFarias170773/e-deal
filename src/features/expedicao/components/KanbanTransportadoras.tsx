@@ -44,6 +44,87 @@ type ColunaKanban = {
 
 const COLUNA_OUTROS = "OUTROS";
 
+/**
+ * FONTE ÚNICA das cores de fundo do card — o card pinta daqui e a LEGENDA lê
+ * daqui (02/09/2026).
+ *
+ * Antes as classes viviam soltas no `className` do `<article>`. Uma legenda que
+ * repetisse esses tons teria virado uma segunda verdade sobre a mesma cor,
+ * livre para divergir na primeira vez que alguém trocasse um `sky-300`. Aqui o
+ * marcador da legenda recebe LITERALMENTE a mesma string de classe do card, o
+ * que torna a divergência impossível por construção.
+ *
+ * A PROGRESSÃO VISUAL DA BANCADA continua a mesma: cinza → azul → verde.
+ * Tons do sistema, sem cor nova: `emerald` é o verde de `CORES_FASE.CONCLUIDO`
+ * e `sky` era o azul que este mesmo card já usava.
+ */
+const FASE_PRODUCAO = {
+  rotulo: "ainda na fábrica",
+  classe: "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
+} as const;
+
+const FASE_PRONTO = {
+  rotulo: "pronto p/ expedir",
+  classe: "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"
+} as const;
+
+const FASE_ETIQUETA = {
+  rotulo: "etiqueta gerada",
+  classe: "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+} as const;
+
+/**
+ * Ordem de LEITURA da bancada, que é a ordem da legenda — NÃO a precedência.
+ * A precedência (o verde vence) vive em `faseDoCard`, e não mudou.
+ */
+const FASES_CARD_KANBAN = [FASE_PRODUCAO, FASE_PRONTO, FASE_ETIQUETA];
+
+/**
+ * PRECEDÊNCIA DAS CORES — inalterada, só extraída do `className`.
+ *
+ *   cinza  ainda não chegou na bancada (produção, acabamento)
+ *   azul   PRONTO p/ expedir, etiqueta ainda não impressa
+ *   verde  etiqueta gerada — o volume está rotulado
+ *
+ * O VERDE VENCE quando as duas condições coincidem, e elas coincidem o tempo
+ * todo: o pedido fica PRONTO, alguém imprime a etiqueta e ele CONTINUA PRONTO
+ * até o despacho. Se o azul vencesse, o verde praticamente não apareceria e a
+ * etiqueta impressa deixaria de ter sinal na tela.
+ *
+ * Verde independe da etapa, de propósito: `A RETIRAR` com etiqueta de retirada
+ * impressa também é volume rotulado, esperando o cliente. É o caso do 21415.
+ */
+function faseDoCard(p: PedidoExpedicao) {
+  if (p.etiquetaGerada) return FASE_ETIQUETA;
+  if (p.etapa === "PRONTO") return FASE_PRONTO;
+  return FASE_PRODUCAO;
+}
+
+/**
+ * Legenda das cores do card. Vive ao lado do alternador de visão e só aparece
+ * no Kanban — na lista os fundos não existem, e uma legenda sem referente é
+ * ruído.
+ *
+ * O marcador é um quadradinho arredondado, não um círculo: ele repete
+ * `fase.classe` inteira (borda + fundo), então lê como um card em miniatura, e
+ * é a MESMA cor que está na tela, não uma aproximação.
+ */
+export function LegendaCoresKanban() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {FASES_CARD_KANBAN.map((fase) => (
+        <span
+          key={fase.rotulo}
+          className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-600 dark:text-slate-400"
+        >
+          <span className={`h-3 w-3 shrink-0 rounded border ${fase.classe}`} aria-hidden="true" />
+          {fase.rotulo}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Chave e título da coluna de um pedido, a partir do tipo normalizado + nome resolvido. */
 function colunaDoPedido(p: PedidoExpedicao): { chave: string; titulo: string } {
   if (p.tipoFrete === "RETIRA_BALCAO") return { chave: "RETIRA", titulo: "Retira balcão" };
@@ -185,32 +266,9 @@ export function KanbanTransportadoras({
                   key={p.idInt}
                   // `shadow-sm`: sem a caixa branca da coluna, é a sombra que
                   // levanta o card do fundo da página.
-                  className={`rounded-2xl border p-3.5 shadow-sm ${
-                    // PROGRESSÃO VISUAL DA BANCADA: cinza → azul → verde.
-                    //
-                    //   cinza  ainda não chegou na bancada (produção, acabamento)
-                    //   azul   PRONTO p/ expedir, etiqueta ainda não impressa
-                    //   verde  etiqueta gerada — o volume está rotulado
-                    //
-                    // O VERDE VENCE quando as duas condições coincidem, e elas
-                    // coincidem o tempo todo: o pedido fica PRONTO, alguém
-                    // imprime a etiqueta e ele CONTINUA PRONTO até o despacho.
-                    // Se o azul vencesse, o verde praticamente não apareceria e
-                    // a etiqueta impressa deixaria de ter sinal na tela.
-                    //
-                    // Verde independe da etapa, de propósito: `A RETIRAR` com
-                    // etiqueta de retirada impressa também é volume rotulado,
-                    // esperando o cliente. É o caso do 21415.
-                    //
-                    // Tons do sistema, sem cor nova: `emerald` é o verde de
-                    // `CORES_FASE.CONCLUIDO` e `sky` era o azul que este mesmo
-                    // card usava até 01/09/2026 — os dois no par 300/50.
-                    p.etiquetaGerada
-                      ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
-                      : p.etapa === "PRONTO"
-                        ? "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"
-                        : "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
-                  }`}
+                  // A cor sai de `faseDoCard` (precedência) + `fase.classe`
+                  // (tons) — a MESMA string que a legenda pinta no marcador.
+                  className={`rounded-2xl border p-3.5 shadow-sm ${faseDoCard(p).classe}`}
                 >
                   {/* Linha de identidade: número, cadastro e o menu, tudo em 36 px
                       de altura. O gatilho do menu é ICONE aqui — o botão com

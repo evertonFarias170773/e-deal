@@ -44,7 +44,7 @@ import { RetiradaModal } from "./components/RetiradaModal";
 import { VoltarStatusModal } from "./components/VoltarStatusModal";
 import { TransportadorasModal } from "./components/TransportadorasModal";
 import { RastreioModal } from "./components/RastreioModal";
-import { KanbanTransportadoras } from "./components/KanbanTransportadoras";
+import { KanbanTransportadoras, LegendaCoresKanban } from "./components/KanbanTransportadoras";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
 
 const filterClass =
@@ -648,6 +648,17 @@ export function ExpedicaoPage() {
             <LayoutGrid className="h-3.5 w-3.5" />
             {filters.visao === "transportadoras" ? "Ver em lista" : "Ver por transportadora"}
           </button>
+
+          {/* Legenda das cores do card, à direita do alternador. Só no Kanban:
+              na lista os fundos coloridos não existem e ela viraria ruído.
+              As cores vêm de `FASES_CARD_KANBAN`, a mesma fonte que pinta o
+              card — não há como divergir do que está na tela.
+
+              Largura reduzida: o container já é `flex-wrap`, então a legenda
+              desce inteira para a linha de baixo em vez de espremer o botão.
+              Cada item é `whitespace-nowrap`, então nenhum rótulo se parte no
+              meio. */}
+          {filters.visao === "transportadoras" && <LegendaCoresKanban />}
         </div>
       )}
 

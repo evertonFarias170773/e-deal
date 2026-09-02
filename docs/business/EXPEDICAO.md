@@ -86,6 +86,14 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   - Frete **sempre** ocupa o canto direito do rodapé, com `—` quando não há
     valor, para as linhas alinharem entre cards. Regra do valor inalterada:
     nulo e zero não viram `R$ 0,00`.
+- **Legenda das cores** (02/09/2026), na mesma linha do alternador de visão e à
+  direita dele, só quando `visao=transportadoras` — na lista os fundos não
+  existem. Os marcadores recebem LITERALMENTE a mesma string de classe que
+  pinta o card (`FASES_CARD_KANBAN` em `KanbanTransportadoras.tsx` é fonte
+  única: cada tom aparece uma vez só no arquivo), então legenda e card não têm
+  como divergir. Em largura reduzida a legenda desce inteira para a linha
+  seguinte (`flex-wrap` no container) e cada item é `whitespace-nowrap`, então
+  nenhum rótulo se parte no meio.
 - **Progressão de fundo da bancada** — cinza → azul → verde:
   - **cinza** ainda não chegou na bancada (produção, acabamento);
   - **azul** (`sky-300/50`) `PRONTO` p/ expedir, etiqueta ainda não impressa;
