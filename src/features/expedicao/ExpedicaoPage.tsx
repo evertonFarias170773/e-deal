@@ -138,7 +138,19 @@ export function ExpedicaoPage() {
   const [pedidos, setPedidos] = useState<PedidoExpedicao[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const canOperar = user?.isSuperAdmin || user?.isAdmin || hasPermissao(user, "expedicao.processar");
-  const [pedidoDespacho, setPedidoDespacho] = useState<PedidoExpedicao | null>(null);
+  /**
+   * O MODO DO MODAL E SINAL EXPLICITO, NAO DERIVADO DA ETAPA (02/09/2026).
+   *
+   * Era `modoEdicao={pedidoDespacho.etapa !== "PRONTO"}`: enquanto "Editar
+   * dados de expedicao" so aparecia depois do despacho, etapa e modo eram a
+   * mesma coisa. Deixaram de ser — a acao passou a aparecer sempre que ha
+   * etiqueta gerada, inclusive em `PRONTO`, onde ela precisa abrir em EDICAO
+   * enquanto "Despachar" abre em DESPACHO. Duas portas, o mesmo pedido, modos
+   * diferentes: quem abre e que diz qual.
+   */
+  const [pedidoDespacho, setPedidoDespacho] = useState<
+    { pedido: PedidoExpedicao; modo: "DESPACHO" | "EDICAO" } | null
+  >(null);
   const [pedidoRetirada, setPedidoRetirada] = useState<PedidoExpedicao | null>(null);
   const [pedidoVoltar, setPedidoVoltar] = useState<PedidoExpedicao | null>(null);
   const [pedidoRastreio, setPedidoRastreio] = useState<PedidoExpedicao | null>(null);
@@ -215,7 +227,7 @@ export function ExpedicaoPage() {
           p.aguardandoColeta
           ? { rotulo: ocupado ? "Salvando..." : "Confirmar coleta", acao: () => setConfirmacao({ pedido: p, tipo: "COLETA" }) }
           : p.etapa === "PRONTO"
-          ? { rotulo: "Despachar", acao: () => setPedidoDespacho(p) }
+          ? { rotulo: "Despachar", acao: () => setPedidoDespacho({ pedido: p, modo: "DESPACHO" }) }
           : p.etapa === "A_RETIRAR"
             ? { rotulo: "Confirmar retirada", acao: () => setPedidoRetirada(p) }
             : p.etapa === "EM_TRANSITO"
@@ -337,8 +349,21 @@ export function ExpedicaoPage() {
         : []),
       // Só aparece quando não é redundante com o botão primário: PRODUCAO/ACABAMENTO
       // ainda não têm dados de expedição para editar e PRONTO já tem "Despachar".
-      ...(canOperar && ["A_RETIRAR", "EM_TRANSITO", "ENTREGUE"].includes(p.etapa)
-        ? [{ label: "Editar dados de expedição", onClick: () => setPedidoDespacho(p) }]
+      // ETIQUETA GERADA BASTA (02/09/2026). Antes a acao so existia depois do
+      // despacho, e reimprimir ou corrigir a observacao de um pedido AINDA na
+      // bancada era impossivel — a unica porta era "Despachar", que confirma o
+      // despacho. Agora as duas coexistem em `PRONTO`: esta so edita e
+      // reimprime, e abre em EDICAO por sinal explicito.
+      //
+      // Os estados que ja tinham a acao seguem com ela: a condicao e OU, nao
+      // substituicao. `canOperar` continua sendo o gate.
+      ...(canOperar && (p.etiquetaGerada || ["A_RETIRAR", "EM_TRANSITO", "ENTREGUE"].includes(p.etapa))
+        ? [
+            {
+              label: "Editar dados de expedição",
+              onClick: () => setPedidoDespacho({ pedido: p, modo: "EDICAO" })
+            }
+          ]
         : []),
       // A ETIQUETA SAIU DAQUI EM 01/09/2026. Passou a viver dentro do
       // DespacharModal, junto do despacho que ela documenta, e so habilita depois
@@ -1015,8 +1040,8 @@ export function ExpedicaoPage() {
 
       {pedidoDespacho && (
         <DespacharModal
-          pedido={pedidoDespacho}
-          modoEdicao={pedidoDespacho.etapa !== "PRONTO"}
+          pedido={pedidoDespacho.pedido}
+          modoEdicao={pedidoDespacho.modo === "EDICAO"}
           ator={atorAtual()}
           onClose={() => setPedidoDespacho(null)}
           onDone={() => { setPedidoDespacho(null); void recarregar(); }}
