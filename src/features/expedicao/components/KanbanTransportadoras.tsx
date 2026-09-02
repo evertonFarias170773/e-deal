@@ -25,6 +25,15 @@ type KanbanTransportadorasProps = {
   acaoPrimaria: (p: PedidoExpedicao) => AcaoPrimaria;
   itensMenu: (p: PedidoExpedicao) => ActionMenuItem[];
   formatarPeso: (p: PedidoExpedicao) => string;
+  /**
+   * O recorte ativo nos cards do topo (`filters.etapa`). Só para NÃO repetir no
+   * selo de cada card o que o filtro já disse — ver `mostrarSelo` abaixo.
+   *
+   * É `string`, e não `EtapaExpedicao`, porque os recortes que atravessam o
+   * funil (`DIA`, `ATIVOS`, `TODAS`) não são etapas — e é justamente neles que
+   * o selo precisa continuar aparecendo.
+   */
+  etapaFiltro: string;
 };
 
 type ColunaKanban = {
@@ -88,7 +97,8 @@ export function KanbanTransportadoras({
   pedidos,
   acaoPrimaria,
   itensMenu,
-  formatarPeso
+  formatarPeso,
+  etapaFiltro
 }: KanbanTransportadorasProps) {
   /**
    * O KANBAN MOSTRA O QUE O RECORTE ENTREGAR (01/09/2026).
@@ -112,28 +122,58 @@ export function KanbanTransportadoras({
   }
 
   return (
-    <div className="flex items-start gap-3 overflow-x-auto pb-2">
+    // `pb-4` e não `pb-2`: sem a caixa da coluna, quem separa card de fundo é a
+    // sombra — e ela precisa de folga embaixo para não ser cortada pelo scroll.
+    <div className="flex items-start gap-6 overflow-x-auto pb-4">
       {colunas.map((coluna) => (
         <section
           key={coluna.chave}
-          className="w-[250px] shrink-0 rounded-2xl border border-[#d7e5e8] bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          /**
+           * COLUNA SEM MOLDURA (02/09/2026).
+           *
+           * A caixa branca com borda e sombra desenhava DUAS bordas em volta de
+           * cada pedido — a da coluna e a do card. Agora a coluna é só largura e
+           * um rótulo: os cards ficam soltos sobre o fundo da página e a
+           * separação entre transportadoras vem do `gap-6` e do título.
+           *
+           * 344 px, ~30% acima dos 288 anteriores: o card ocupa a coluna inteira
+           * (não há mais padding de coluna), e o nome do cliente cabe sem cortar.
+           */
+          className="w-[344px] shrink-0"
         >
-          <header className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2 dark:border-slate-800">
-            <h3 className="truncate text-sm font-bold text-slate-900 dark:text-slate-100" title={coluna.titulo}>
+          <header className="mb-3 flex items-center justify-between gap-2 px-1">
+            <h3 className="truncate text-[15px] font-bold text-slate-900 dark:text-slate-100" title={coluna.titulo}>
               {coluna.titulo}
             </h3>
-            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[13px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               {coluna.pedidos.length}
             </span>
           </header>
 
-          <div className="space-y-2">
+          {/* 16 px entre cards (era 8): com a moldura fora, o espaçamento é o
+              que agrupa a coluna — apertado demais ele vira uma massa só. */}
+          <div className="space-y-4">
             {coluna.pedidos.map((p) => {
               const ehAtrasado = p.atrasadoDias > 0 && p.etapa !== "ENTREGUE";
               // Sub-estado visual: PRONTO com etiqueta gerada = pacote na bancada
               // aguardando coleta. O status oficial só muda no Despachar.
               const aguardandoTransportadora =
                 p.etapa === "PRONTO" && p.etiquetaGerada && p.tipoFrete !== "RETIRA_BALCAO";
+              /**
+               * O SELO SOME QUANDO SÓ REPETE O RECORTE (01/09/2026).
+               *
+               * Com o card "Em trânsito" ativo, TODO card da tela dizia "Em
+               * Trânsito": uma linha inteira gasta para repetir o filtro, e o
+               * que era exceção (atrasado, prometido hoje) competia com ela.
+               * Nos recortes que atravessam etapas — `DIA`, `ATIVOS`, `TODAS` —
+               * a etapa varia de card para card e o selo volta sozinho, porque
+               * nenhum deles é igual a uma `EtapaExpedicao`.
+               *
+               * "Aguardando transportadora" NUNCA some: é sub-estado visual
+               * (etiqueta impressa, volume esperando coleta), diz mais do que a
+               * etapa e não existe como filtro no topo.
+               */
+              const mostrarSelo = aguardandoTransportadora || p.etapa !== etapaFiltro;
               const primario = acaoPrimaria(p);
               // Ação primária vira o primeiro item do ⋯ — mantém o card limpo e a visão operável.
               const acoes: ActionMenuItem[] = [
@@ -143,7 +183,9 @@ export function KanbanTransportadoras({
               return (
                 <article
                   key={p.idInt}
-                  className={`rounded-xl border p-2.5 ${
+                  // `shadow-sm`: sem a caixa branca da coluna, é a sombra que
+                  // levanta o card do fundo da página.
+                  className={`rounded-2xl border p-3.5 shadow-sm ${
                     // PROGRESSÃO VISUAL DA BANCADA: cinza → azul → verde.
                     //
                     //   cinza  ainda não chegou na bancada (produção, acabamento)
@@ -170,40 +212,66 @@ export function KanbanTransportadoras({
                         : "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/40"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-1">
-                    <span className="flex items-baseline gap-1.5">
-                      <span className="font-bold text-[#0b2f4a] dark:text-sky-400">#{p.idInt}</span>
+                  {/* Linha de identidade: número, cadastro e o menu, tudo em 36 px
+                      de altura. O gatilho do menu é ICONE aqui — o botão com
+                      rótulo tem ~112 px e sozinho empurrava o "cli" para duas
+                      linhas neste card. */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="text-[17px] font-bold tracking-tight text-[#0b2f4a] dark:text-sky-400">
+                        #{p.idInt}
+                      </span>
                       {/* Cadastro do cliente: a conferência de bancada casa o volume
                           pelo número do cadastro, não pelo nome — homônimos existem. */}
                       {p.idCliente !== null && (
-                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                        <span className="whitespace-nowrap text-[13px] font-semibold text-slate-500 dark:text-slate-400">
                           cli {p.idCliente}
                         </span>
                       )}
                     </span>
-                    <ActionsMenu items={acoes} />
+                    <ActionsMenu items={acoes} label="Ações" variant="icone" />
                   </div>
-                  <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100" title={p.cliente}>
+                  {/* Duas linhas, não uma: "LISITON DOCUMENTOS SEGUROS LTDA" e
+                      "LISITON DOCUMENTOS SEGUROS ME" truncavam idênticos em uma
+                      linha só. O `title` continua entregando o nome inteiro. */}
+                  <p
+                    className="mt-1.5 line-clamp-2 text-[16px] font-semibold leading-[1.3] text-slate-900 dark:text-slate-100"
+                    title={p.cliente}
+                  >
                     {p.cliente}
                   </p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <StatusBadge
-                      status={aguardandoTransportadora ? "AGUARDANDO TRANSPORTADORA" : p.statusInterno}
-                    />
-                    {ehAtrasado && (
-                      <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-black text-white">
-                        ATRASADO {p.atrasadoDias}d
-                      </span>
-                    )}
-                    {p.prometidoHoje && (
-                      <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-black text-white">
-                        HOJE
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1.5 text-[11px] text-slate-500">
-                    {formatarPeso(p)}
-                    {p.volumes !== null ? ` · ${p.volumes} vol` : ""}
+                  {(mostrarSelo || ehAtrasado || p.prometidoHoje) && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      {mostrarSelo && (
+                        <StatusBadge
+                          status={aguardandoTransportadora ? "AGUARDANDO TRANSPORTADORA" : p.statusInterno}
+                        />
+                      )}
+                      {ehAtrasado && (
+                        <span className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-black text-white">
+                          ATRASADO {p.atrasadoDias}d
+                        </span>
+                      )}
+                      {p.prometidoHoje && (
+                        <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-black text-white">
+                          HOJE
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* Rodapé de números, separado por fio: peso à esquerda, frete
+                      SEMPRE à direita. O frete aparecia só em alguns cards e a
+                      linha ficava com comprimento diferente em cada um; com o
+                      "—" no lugar do ausente, as duas colunas alinham entre
+                      cards e a coluna inteira fica legível na vertical.
+
+                      `slate-600`, não `slate-500`: sobre o verde e o azul do card
+                      o cinza anterior ficava em ~4,5:1, no limite do AA. */}
+                  <div className="mt-3 flex items-baseline justify-between gap-2 border-t border-slate-900/10 pt-2.5 dark:border-slate-100/10">
+                    <span className="truncate text-[14px] font-semibold text-slate-600 dark:text-slate-400">
+                      {formatarPeso(p)}
+                      {p.volumes !== null ? ` · ${p.volumes} vol` : ""}
+                    </span>
                     {/* Frete só quando há valor. Nulo é ausência e zero é frete
                         grátis ou FOB — nenhum dos dois vira "R$ 0,00" no card,
                         que leria como cobrança de zero em vez de "não se aplica".
@@ -212,10 +280,17 @@ export function KanbanTransportadoras({
                         COBRA — e não `freteValor`, que é o valor COTADO em
                         `cotacao_frete` e não acompanha recotação. Os dois batem
                         em toda a base hoje; divergem depois de uma recotação. */}
-                    {p.freteCobrado !== null && p.freteCobrado > 0
-                      ? ` · frete ${formatCurrency(p.freteCobrado)}`
-                      : ""}
-                  </p>
+                    <span className="shrink-0 text-[14px] font-semibold text-slate-600 dark:text-slate-400">
+                      {p.freteCobrado !== null && p.freteCobrado > 0 ? (
+                        <>
+                          <span className="text-[11px] font-medium text-slate-500 dark:text-slate-500">frete </span>
+                          {formatCurrency(p.freteCobrado)}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </span>
+                  </div>
                 </article>
               );
             })}

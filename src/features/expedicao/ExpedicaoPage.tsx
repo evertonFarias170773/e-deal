@@ -704,6 +704,7 @@ export function ExpedicaoPage() {
           acaoPrimaria={acaoPrimaria}
           itensMenu={itensMenu}
           formatarPeso={formatarPeso}
+          etapaFiltro={filters.etapa}
         />
       ) : (
       <ResponsiveList<PedidoExpedicao>

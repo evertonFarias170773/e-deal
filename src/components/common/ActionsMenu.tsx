@@ -15,6 +15,14 @@ export type ActionMenuItem = {
 type ActionsMenuProps = {
   items: ActionMenuItem[];
   label?: string;
+  /**
+   * Forma do GATILHO. Os itens do menu não mudam nunca.
+   *
+   * `botao` (padrão) é o das tabelas: `⋯ Acoes ⌄`, ~112×36 px.
+   * `icone` é só o `⋯`, para onde não cabe o rótulo — hoje o card do Kanban da
+   * Expedição, que tem ~206 px úteis e perdia metade da linha para o gatilho.
+   */
+  variant?: "botao" | "icone";
 };
 
 type MenuPosition = {
@@ -27,7 +35,16 @@ const DESKTOP_MENU_WIDTH = 240;
 const VIEWPORT_MARGIN = 12;
 const ACTIONS_MENU_OPEN_EVENT = "erp-ideal-actions-menu-open";
 
-export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
+export function ActionsMenu({ items, label = "Acoes", variant = "botao" }: ActionsMenuProps) {
+  /**
+   * Sem rótulo visível, o nome da ação vive em `title` + `aria-label`.
+   *
+   * A regra de listagens proíbe depender de ícone sem texto em AÇÃO CRÍTICA —
+   * e nenhuma ação some aqui: o `⋯` só ABRE o menu, e lá dentro cada item
+   * continua com o rótulo por extenso ("Despachar", "Marcar entregue",
+   * "Rastrear objeto"). O que muda é o tamanho do gatilho.
+   */
+  const ehIcone = variant === "icone";
   const menuId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
@@ -134,27 +151,47 @@ export function ActionsMenu({ items, label = "Acoes" }: ActionsMenuProps) {
         ref={buttonRef}
         type="button"
         onClick={toggleMenu}
-        className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition"
-        style={{
-          background: "var(--card)",
-          borderColor: "var(--border)",
-          color: "var(--muted)"
-        }}
+        title={ehIcone ? label : undefined}
+        aria-label={ehIcone ? label : undefined}
+        className={cn(
+          "inline-flex items-center transition",
+          ehIcone
+            ? "h-9 w-9 shrink-0 justify-center rounded-lg"
+            : "gap-2 rounded-xl border px-3 py-2 text-sm font-medium shadow-sm"
+        )}
+        style={
+          ehIcone
+            ? { background: "transparent", color: "var(--muted)" }
+            : {
+                background: "var(--card)",
+                borderColor: "var(--border)",
+                color: "var(--muted)"
+              }
+        }
         aria-expanded={isOpen}
         onMouseEnter={(e) => {
           const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = "var(--card-hover)";
+          // No `icone` o fundo é tinta translúcida, não `--card-hover`: o card do
+          // Kanban tem fundo próprio (verde/azul/cinza) e um cinza opaco viraria
+          // uma mancha em cima dele.
+          el.style.background = ehIcone
+            ? "color-mix(in srgb, var(--foreground) 8%, transparent)"
+            : "var(--card-hover)";
           el.style.color = "var(--foreground)";
         }}
         onMouseLeave={(e) => {
           const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = "var(--card)";
+          el.style.background = ehIcone ? "transparent" : "var(--card)";
           el.style.color = "var(--muted)";
         }}
       >
-        <MoreHorizontal className="h-4 w-4" />
-        <span className="hidden sm:inline">{label}</span>
-        <ChevronDown className="h-4 w-4" />
+        <MoreHorizontal className={ehIcone ? "h-5 w-5" : "h-4 w-4"} />
+        {!ehIcone && (
+          <>
+            <span className="hidden sm:inline">{label}</span>
+            <ChevronDown className="h-4 w-4" />
+          </>
+        )}
       </button>
 
       {isOpen ? (

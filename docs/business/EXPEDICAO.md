@@ -57,18 +57,44 @@ colunas estilo kanban (`KanbanTransportadoras.tsx`), sem arrastar — trocar a
 transportadora continua no modal Despachar/Editar. A visão consome a MESMA lista
 filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
 
-- É visão de BANCADA: `EM_TRANSITO` e `ENTREGUE` nunca aparecem nela (já saíram
-  fisicamente da expedição) — para esses, a visão de lista. Pedido dos Correios
-  com etiqueta gerada continua na bancada ("Aguardando transportadora") até o
-  expedidor confirmar o despacho, que é quando o status vira `EM TRANSITO`.
-- Colunas, só as não-vazias: `Retira balcão` · `Motoboy` · `Correios` · uma por
-  transportadora (nome resolvido, ordem alfabética) · `Outros / A definir`
-  (sem custo, frete incluso, sem nome) por último.
-- Card compacto: nº, cliente, badge de status, chips `ATRASADO Xd`/`HOJE`,
-  peso · volumes e o menu `⋯` (com a ação primária como primeiro item).
-- **Fundo azul clarinho** = `etiquetaGerada` (prepostagem Correios OU
-  `etiqueta_impressa_em` OU rastreio preenchido). Nesta visão a urgência fica
-  SÓ nos chips — o fundo vermelho/âmbar da tabela não se aplica aos cards.
+- O Kanban MOSTRA O QUE O RECORTE ENTREGAR (01/09/2026). Até virar a visão
+  inicial ele descartava `EM_TRANSITO` e `ENTREGUE` por conta própria, e clicar
+  nesses cards do topo abria um Kanban vazio sem explicar por quê. Quem recorta
+  agora são os cards e os filtros, e só eles. Pedido dos Correios com etiqueta
+  gerada continua na bancada ("Aguardando transportadora") até o expedidor
+  confirmar o despacho, que é quando o status vira `EM TRANSITO`.
+- Colunas de **344 px SEM moldura** (02/09/2026), só as não-vazias:
+  `Retira balcão` · `Motoboy` · `Correios` · uma por transportadora (nome
+  resolvido, ordem alfabética) · `Outros / A definir` (sem custo, frete
+  incluso, sem nome) por último. A caixa branca com borda e sombra saiu: ela
+  desenhava duas bordas em volta de cada pedido. A coluna virou largura +
+  rótulo (título e contagem), os cards ficam soltos sobre o fundo da página com
+  `shadow-sm`, e a separação vem do `gap-6` entre colunas e do `space-y-4`
+  (16 px) entre cards.
+- Card, de cima para baixo: linha de identidade (nº · `cli <id_cliente>` · menu
+  `⋯`), nome do cliente em até duas linhas, linha de selos e, separado por fio,
+  o rodapé de números — peso · volumes à esquerda, frete à direita.
+  - O menu usa `ActionsMenu variant="icone"`: só o `⋯`, 36 px. O gatilho com
+    rótulo (~112 px) ocupava metade da largura útil do card e quebrava a linha
+    do número. Os rótulos das ações continuam por extenso DENTRO do menu, e a
+    ação primária segue como primeiro item.
+  - O **selo de status some quando só repete o recorte** (`p.etapa === filters.etapa`):
+    com "Em trânsito" ativo, todo card dizia "Em Trânsito". Nos recortes que
+    atravessam etapas (`DIA`, `ATIVOS`, `TODAS`) ele volta sozinho. Os chips
+    `ATRASADO Xd` / `HOJE` e o sub-estado "Aguardando transportadora" nunca
+    somem.
+  - Frete **sempre** ocupa o canto direito do rodapé, com `—` quando não há
+    valor, para as linhas alinharem entre cards. Regra do valor inalterada:
+    nulo e zero não viram `R$ 0,00`.
+- **Progressão de fundo da bancada** — cinza → azul → verde:
+  - **cinza** ainda não chegou na bancada (produção, acabamento);
+  - **azul** (`sky-300/50`) `PRONTO` p/ expedir, etiqueta ainda não impressa;
+  - **verde** (`emerald-300/50`) `etiquetaGerada` (prepostagem Correios OU
+    `etiqueta_impressa_em` OU rastreio preenchido) — o volume está rotulado.
+  O verde vence quando as duas condições coincidem, e independe da etapa de
+  propósito: `A RETIRAR` com etiqueta impressa também é volume rotulado. Nesta
+  visão a urgência fica SÓ nos chips — o fundo vermelho/âmbar da tabela não se
+  aplica aos cards.
 - **Sub-estado visual "Aguardando transportadora"**: pedido `PRONTO` (status
   oficial `EXPEDICAO`) com etiqueta gerada e que não é retira-balcão exibe esse
   badge no lugar de "Na Expedição". NÃO é um status novo em
