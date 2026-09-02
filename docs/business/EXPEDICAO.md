@@ -71,6 +71,23 @@ filtrada da tabela (busca, cards, alertas, frete, empresa continuam valendo).
   rótulo (título e contagem), os cards ficam soltos sobre o fundo da página com
   `shadow-sm`, e a separação vem do `gap-6` entre colunas e do `space-y-4`
   (16 px) entre cards.
+  - **Correios sob FOB é resíduo de cotação, não transporte** (02/09/2026).
+    `colunaDoPedido` decidia só por `tipoFrete` e fechava em `Correios` antes de
+    olhar `transportadoraNome`. Sob **FOB** os Correios não são transporte
+    possível (`TRANSPORTES_POR_MODALIDADE.FOB` = `TRANSPORTADORA`/`MOTOBOY`),
+    mas o pedido guarda uma `cotacao_frete` "SEDEX" de valor **zero**, nunca
+    contratada, que `normalizarTipoFrete` classifica como `CORREIOS`. Eram 5
+    pedidos na coluna errada — 21557, 21503, 21499 (SVT TRANSPORTES), 21174
+    (EXPRESSO SÃO MIGUEL) e 21074 (BRASPRESS) — enquanto a coluna FRETE da
+    lista, corrigida em 31/08, já mostrava a transportadora certa.
+    `correiosResiduoDeCotacaoFob` desvia esses pedidos para a coluna da
+    transportadora. **Não alcança CIF**, onde os Correios são transporte
+    legítimo (21413, 21411, 21111, com `CORREIOS SEDE` cadastrada), e desliga
+    com `despachoConfirmado`, porque aí `tipoFrete` é a declaração do expedidor
+    e é soberana. `normalizarTipoFrete` e seu vocabulário ficaram intocados.
+    `transportadoraNome` é apenas **lido**: a busca textual
+    ([ExpedicaoPage.tsx:476](../../src/features/expedicao/ExpedicaoPage.tsx))
+    e o pré-preenchimento do `DespacharModal` seguem com o mesmo valor.
 - Card, de cima para baixo: linha de identidade (nº · `cli <id_cliente>` · menu
   `⋯`), nome do cliente em até duas linhas, cidade e pagador, linha de selos com
   a data prevista à direita e, separado por fio, o rodapé de números — peso ·

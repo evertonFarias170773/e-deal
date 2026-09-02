@@ -200,13 +200,58 @@ export function LegendaCoresKanban() {
   );
 }
 
+/**
+ * "CORREIOS" AQUI É RESÍDUO DE COTAÇÃO, NÃO TRANSPORTE (02/09/2026).
+ *
+ * Sob **FOB** os Correios não são transporte possível — `TRANSPORTES_POR_MODALIDADE.FOB`
+ * é `["TRANSPORTADORA", "MOTOBOY"]`, e a prepostagem sai pelo cartão da empresa,
+ * que em FOB não se usa. Ainda assim o pedido guarda uma `cotacao_frete` com
+ * serviço "SEDEX" e valor **zero**, gerada pelo Orçamento e nunca contratada.
+ * `normalizarTipoFrete` classifica esse texto como `CORREIOS` e o agrupamento
+ * fechava a coluna ali, antes de olhar `transportadoraNome` — que já trazia a
+ * resposta certa. Eram 5 pedidos: 21557, 21503 e 21499 (SVT TRANSPORTES),
+ * 21174 (EXPRESSO SÃO MIGUEL) e 21074 (BRASPRESS), todos com a coluna FRETE da
+ * lista mostrando a transportadora correta desde a correção de 31/08 — o Kanban
+ * é que tinha ficado para trás.
+ *
+ * `despachoConfirmado` desliga a regra: com despacho confirmado, `tipoFrete` vem
+ * de `expedicoes.tipo_frete`, que é a declaração do expedidor e é soberana. Se
+ * ele disse Correios, é Correios.
+ *
+ * NÃO alcança CIF: lá os Correios são transporte legítimo, e é o caso do 21413,
+ * 21411 e 21111, com "CORREIOS SEDE" cadastrada como transportadora. Também não
+ * mexe em MOTOBOY nem RETIRA sob FOB, que são classificações válidas.
+ */
+function correiosResiduoDeCotacaoFob(p: PedidoExpedicao): boolean {
+  return (
+    p.tipoFrete === "CORREIOS" &&
+    !p.despachoConfirmado &&
+    p.modalidadeOrcamento === "FOB" &&
+    p.idTransportadoraOrcamento !== null
+  );
+}
+
 /** Chave e título da coluna de um pedido, a partir do tipo normalizado + nome resolvido. */
 function colunaDoPedido(p: PedidoExpedicao): { chave: string; titulo: string } {
+  const residuoFob = correiosResiduoDeCotacaoFob(p);
+
   if (p.tipoFrete === "RETIRA_BALCAO") return { chave: "RETIRA", titulo: "Retira balcão" };
   if (p.tipoFrete === "MOTOBOY") return { chave: "MOTOBOY", titulo: "Motoboy" };
-  if (p.tipoFrete === "CORREIOS") return { chave: "CORREIOS", titulo: "Correios" };
-  if (p.tipoFrete === "TRANSPORTADORA") {
-    const nome = (p.transportadoraNome || p.freteServico).trim();
+  if (p.tipoFrete === "CORREIOS" && !residuoFob) return { chave: "CORREIOS", titulo: "Correios" };
+  if (p.tipoFrete === "TRANSPORTADORA" || residuoFob) {
+    /**
+     * FONTE ÚNICA com o rótulo da lista: `transportadoraNome` é o MESMO
+     * `nomeTransporteEfetivo(servico, modalidade, transportadoraOrcamento)` que
+     * `rotuloTransporte` usa, e sob FOB ele já devolve o nome do cadastro. Nada
+     * de regra nova aqui — o agrupamento só passou a alcançar o campo que já
+     * existia. `transportadoraNome` fica INTOCADO: a busca textual e o
+     * pré-preenchimento do DespacharModal continuam lendo exatamente o mesmo
+     * valor de antes.
+     *
+     * No resíduo FOB o texto da cotação NÃO entra como reserva: ele é
+     * justamente o "SEDEX" que não vale, e criaria uma coluna "SEDEX".
+     */
+    const nome = (residuoFob ? p.transportadoraNome : p.transportadoraNome || p.freteServico).trim();
     if (nome === "") return { chave: COLUNA_OUTROS, titulo: "Outros / A definir" };
     return { chave: `T:${nome.toUpperCase()}`, titulo: nome };
   }
