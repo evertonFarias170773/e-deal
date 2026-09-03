@@ -520,6 +520,24 @@ export function ExpedicaoPage() {
       if (q === "") return true;
       return (
         String(p.idInt).includes(q) ||
+        /**
+         * O CADASTRO TAMBÉM ACHA (02/09/2026).
+         *
+         * O card do Kanban exibe `cli 8469` em destaque, e é por esse número que
+         * a bancada casa volume com cadastro — homônimos existem, o número não.
+         * A busca não o alcançava.
+         *
+         * `includes`, e não igualdade, pelo mesmo critério que `idInt` já usa:
+         * quem lembra só do começo do número acha assim.
+         *
+         * COLISÃO COM O NÚMERO DO PEDIDO: medida, e não existe hoje. As faixas
+         * não se cruzam (pedidos 20481..21599, e nenhum cadastro do painel cai
+         * nessa janela), nenhum `id_int` é igual a um `id_cliente`, e cruzando
+         * TODOS os ids do painel como termo de busca o resultado foi zero
+         * sobreposição. Digitar "8469" traz os 20 pedidos do cadastro e nenhum
+         * pedido por número.
+         */
+        (p.idCliente !== null && String(p.idCliente).includes(q)) ||
         p.cliente.toLowerCase().includes(q) ||
         /**
          * A FANTASIA TAMBÉM ACHA (02/09/2026).
@@ -745,7 +763,10 @@ export function ExpedicaoPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               className="w-full bg-transparent text-sm text-slate-900 outline-none dark:text-slate-100"
-              placeholder="Buscar por nº, cliente, rastreio ou transportadora..."
+              // Anuncia o que a busca de fato cobre: "cadastro" entrou em
+              // 02/09/2026, junto com o `id_cliente`, e "cliente" agora vale
+              // tanto para a razão quanto para o nome fantasia.
+              placeholder="Buscar por nº do pedido, cadastro, cliente, rastreio ou transportadora..."
             />
           </label>
 
