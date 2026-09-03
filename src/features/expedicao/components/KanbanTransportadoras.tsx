@@ -88,17 +88,17 @@ const FASE_FABRICA = {
 } as const;
 
 const FASE_BANCADA = {
-  rotulo: "na bancada, pede ação",
+  rotulo: "na bancada, a despachar",
   classe: "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"
 } as const;
 
 const FASE_COLETA = {
-  rotulo: "aguardando coleta",
+  rotulo: "despachado, aguardando coleta",
   classe: "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30"
 } as const;
 
-const FASE_ROTULADO = {
-  rotulo: "já saiu, rotulado",
+const FASE_SAIU = {
+  rotulo: "já saiu",
   classe: "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
 } as const;
 
@@ -107,7 +107,7 @@ const FASE_ROTULADO = {
  * de avaliação: fábrica → bancada → esperando a transportadora → saiu.
  * A precedência vive em `faseDoCard`.
  */
-const FASES_CARD_KANBAN = [FASE_FABRICA, FASE_BANCADA, FASE_COLETA, FASE_ROTULADO];
+const FASES_CARD_KANBAN = [FASE_FABRICA, FASE_BANCADA, FASE_COLETA, FASE_SAIU];
 
 /** Etapas em que o volume JÁ SAIU da bancada — onde o verde passa a valer. */
 const ETAPAS_FORA_DA_BANCADA: EtapaExpedicao[] = ["A_RETIRAR", "EM_TRANSITO", "ENTREGUE"];
@@ -128,8 +128,8 @@ const ETAPAS_FORA_DA_BANCADA: EtapaExpedicao[] = ["A_RETIRAR", "EM_TRANSITO", "E
  *
  *   1. laranja  aguardando coleta (`p.aguardandoColeta`, derivado no service)
  *   2. azul     em `EXPEDICAO`, etapa `PRONTO` — COM OU SEM etiqueta
- *   3. verde    etiqueta gerada em pedido que já saiu da bancada
- *   4. cinza    o resto
+ *   3. verde    pedido que já saiu da bancada
+ *   4. branco   o resto
  *
  * POR QUE INVERTEU. Até aqui o verde vencia sempre, e como quase todo pedido
  * tem etiqueta em algum momento, o painel virou monocromático: 33 verdes, 1
@@ -139,18 +139,27 @@ const ETAPAS_FORA_DA_BANCADA: EtapaExpedicao[] = ["A_RETIRAR", "EM_TRANSITO", "E
  * trabalho.
  *
  * A LEITURA NOVA: azul é o que ainda está na bancada e precisa de ação; verde é
- * o que já saiu, rotulado. Por isso o azul agora IGNORA a etiqueta — imprimir a
- * etiqueta não tira o pedido da bancada, só o despacho tira — e o verde passa a
- * exigir `ETAPAS_FORA_DA_BANCADA`, senão ele voltaria a roubar o azul.
+ * o que já saiu. Por isso o azul agora IGNORA a etiqueta — imprimir a etiqueta
+ * não tira o pedido da bancada, só o despacho tira — e o verde passa a exigir
+ * `ETAPAS_FORA_DA_BANCADA`, senão ele voltaria a roubar o azul.
  *
  * Efeito colateral aceito: pedido ainda em produção/acabamento que já tenha
- * rastreio deixa de ser verde e vira cinza. São zero no painel de hoje, e é a
+ * rastreio deixa de ser verde e vira branco. São zero no painel de hoje, e é a
  * leitura correta — ele não saiu de lugar nenhum.
+ *
+ * O VERDE PAROU DE EXIGIR ETIQUETA (03/09/2026). O despacho é o único divisor
+ * de estado da Expedição, e a etiqueta não muda estado nenhum — então ela não
+ * podia continuar decidindo uma cor. `p.etiquetaGerada &&` na terceira linha
+ * jogava em BRANCO pedido que já tinha saído sem etiqueta impressa, e branco é
+ * "ainda na fábrica": a cor dizia o contrário do fato. Medido em 03/09/2026,
+ * são 3 no painel — 20961 (EM TRANSITO), 21244 e 21557 (ENTREGUE), os três sem
+ * etiqueta, sem prepostagem e sem rastreio. Passam a verde, que é onde sempre
+ * deveriam estar. Nenhum pedido troca de cor em qualquer outra direção.
  */
 function faseDoCard(p: PedidoExpedicao) {
   if (p.aguardandoColeta) return FASE_COLETA;
   if (p.etapa === "PRONTO") return FASE_BANCADA;
-  if (p.etiquetaGerada && ETAPAS_FORA_DA_BANCADA.includes(p.etapa)) return FASE_ROTULADO;
+  if (ETAPAS_FORA_DA_BANCADA.includes(p.etapa)) return FASE_SAIU;
   return FASE_FABRICA;
 }
 
@@ -345,23 +354,6 @@ export function KanbanTransportadoras({
             {coluna.pedidos.map((p) => {
               const ehAtrasado = p.atrasadoDias > 0 && p.etapa !== "ENTREGUE";
               /**
-               * Selo "Aguardando transportadora": PRONTO + etiqueta gerada +
-               * não é retira-balcão. O volume está ROTULADO NA BANCADA e ainda
-               * NÃO foi despachado — o status oficial só muda no Despachar.
-               *
-               * NÃO CONFUNDIR com o estado "aguardando coleta" da Etapa 7, que
-               * é o passo SEGUINTE: lá o despacho já foi confirmado
-               * (`data_despacho` preenchida) e o volume espera o carro passar.
-               * O comentário antigo daqui dizia "aguardando coleta" e virou
-               * ambíguo em 02/09/2026, quando o estado nasceu com esse nome.
-               *
-               * São consecutivos, nunca simultâneos: medido em 03/09/2026, 1
-               * pedido tem só o selo (21409, etiqueta impressa e não despachado)
-               * e 1 tem só o estado (21557), nenhum tem os dois.
-               */
-              const aguardandoTransportadora =
-                p.etapa === "PRONTO" && p.etiquetaGerada && p.tipoFrete !== "RETIRA_BALCAO";
-              /**
                * O SELO SOME QUANDO SÓ REPETE O RECORTE (01/09/2026).
                *
                * Com o card "Em trânsito" ativo, TODO card da tela dizia "Em
@@ -371,11 +363,20 @@ export function KanbanTransportadoras({
                * a etapa varia de card para card e o selo volta sozinho, porque
                * nenhum deles é igual a uma `EtapaExpedicao`.
                *
-               * "Aguardando transportadora" NUNCA some: é sub-estado visual
-               * (etiqueta impressa, volume esperando coleta), diz mais do que a
-               * etapa e não existe como filtro no topo.
+               * O SUB-ESTADO "Aguardando transportadora" SAIU EM 03/09/2026.
+               * Ele era `PRONTO` + etiqueta gerada + não-balcão, e forçava o
+               * selo a aparecer sempre. Prometia uma mudança de estado que não
+               * existe: imprimir a etiqueta não move o pedido de lugar nenhum —
+               * só o despacho move. Além disso a lista, que sempre imprimiu
+               * `p.statusInterno` cru, dizia "Na Expedição" no mesmo pedido em
+               * que o card dizia "Aguardando transportadora". As duas telas
+               * agora leem o mesmo campo.
+               *
+               * A ação que falta não se perdeu junto: o card continua AZUL ("na
+               * bancada, a despachar") e `acaoPrimaria` — que nunca leu o selo —
+               * segue abrindo o ⋯ com "Despachar" no topo.
                */
-              const mostrarSelo = aguardandoTransportadora || p.etapa !== etapaFiltro;
+              const mostrarSelo = p.etapa !== etapaFiltro;
               // Promessa de entrega, curta. Vazia = pedido sem `data_termino`,
               // e aí nada é exibido — nem rótulo, nem travessão.
               const prevista = dataPrevistaCurta(p.dataPromessa);
@@ -485,11 +486,7 @@ export function KanbanTransportadoras({
                   )}
                   {(mostrarSelo || ehAtrasado || p.prometidoHoje || prevista) && (
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      {mostrarSelo && (
-                        <StatusBadge
-                          status={aguardandoTransportadora ? "AGUARDANDO TRANSPORTADORA" : p.statusInterno}
-                        />
-                      )}
+                      {mostrarSelo && <StatusBadge status={p.statusInterno} />}
                       {ehAtrasado && (
                         <span className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-black text-white">
                           ATRASADO {p.atrasadoDias}d

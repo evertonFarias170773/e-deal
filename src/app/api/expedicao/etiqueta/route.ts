@@ -79,7 +79,11 @@ export async function GET(request: Request) {
 
   const pdf = await renderToBuffer(criarEtiquetaElement(vm, qrDataUrl));
 
-  // Registra a geração (sub-estado "Aguardando transportadora" no painel).
+  // Registra a geração. O carimbo continua sendo gravado e lido (o menu usa
+  // `etiquetaGerada` para oferecer reimpressão), mas desde 03/09/2026 ele NÃO
+  // pinta nem rotula nada no painel: o despacho é o único divisor de estado da
+  // Expedição, e o sub-estado "Aguardando transportadora" que este comentário
+  // citava saiu do card.
   // Falha aqui não bloqueia a etiqueta — o PDF já está pronto.
   const { error: marcaErr } = await supabase.from("expedicoes").upsert(
     { id_int: idInt, etiqueta_impressa_em: new Date().toISOString(), updated_at: new Date().toISOString() },
