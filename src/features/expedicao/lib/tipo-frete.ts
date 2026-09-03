@@ -106,6 +106,37 @@ export function modalidadeInicialDoDespacho(
   return doOrcamento ?? null;
 }
 
+/** De onde saiu a modalidade que o modal exibe. */
+export type OrigemModalidade = "DESPACHO" | "COTACAO_BALCAO" | "ORCAMENTO";
+
+/**
+ * Qual dos degraus de `modalidadeInicialDoDespacho` respondeu.
+ *
+ * Existe porque o modal parou de OFERECER a modalidade e passou a EXIBI-LA
+ * (03/09/2026): mostrar "CIF" sem dizer quem decidiu deixaria o expedidor sem
+ * saber onde reclamar. `null` quando ninguém decidiu — e aí, só aí, a tela
+ * volta a oferecer os botões.
+ *
+ * NÃO REESCREVE A PRECEDÊNCIA: chama `modalidadeInicialDoDespacho` e apenas lê
+ * de volta qual entrada bate com a saída. As fontes são três e só três, então a
+ * leitura é exata — se a regra lá em cima mudar, esta função acompanha sozinha,
+ * que é justamente o que duplicar os `if` não daria.
+ *
+ * Orçamento e cotação de balcão concordando (`RETIRA` nos dois) é creditado ao
+ * ORÇAMENTO de propósito: quando as duas dizem o mesmo, a declaração do vendedor
+ * é a atribuição útil para quem lê a tela.
+ */
+export function origemDaModalidadeInicial(
+  doDespacho: ModalidadeFrete | null | undefined,
+  doOrcamento: ModalidadeFrete | null | undefined,
+  tipoFreteCotado: TipoFreteNormalizado
+): OrigemModalidade | null {
+  const escolhida = modalidadeInicialDoDespacho(doDespacho, doOrcamento, tipoFreteCotado);
+  if (escolhida === null) return null;
+  if (doDespacho) return "DESPACHO";
+  return escolhida === doOrcamento ? "ORCAMENTO" : "COTACAO_BALCAO";
+}
+
 /**
  * "CORREIOS" AQUI É RESÍDUO DE COTAÇÃO, NÃO TRANSPORTE (02/09/2026).
  *

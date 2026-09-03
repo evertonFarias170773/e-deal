@@ -9,7 +9,8 @@ import {
   correiosResiduoDeCotacaoFob,
   labelTipoFrete,
   modalidadeInicialDoDespacho,
-  normalizarTipoFrete
+  normalizarTipoFrete,
+  origemDaModalidadeInicial
 } from "../lib/tipo-frete";
 import { idDestinatarioEtiquetaVigente, temPagadorDistinto } from "../lib/destinatario-etiqueta";
 import { rotuloClienteComNumero } from "../lib/cliente-rotulo";
@@ -171,6 +172,31 @@ export function DespacharModal({
   // o transporte de abertura tem de ser uma das opções que ESTA modalidade
   // oferece, senão o select abre exibindo uma coisa e o estado guarda outra.
   const modalidadeInicial = modalidadeInicialDoDespacho(
+    exp?.modalidadeFrete,
+    pedido.modalidadeOrcamento,
+    tipoInicial
+  );
+  /**
+   * A MODALIDADE VIRA LEITURA QUANDO ALGUÉM JÁ DECIDIU (03/09/2026).
+   *
+   * Quem paga o frete é decisão do ORÇAMENTO, não da bancada: o expedidor
+   * declara o que saiu pela porta, não quem banca a conta. Com a modalidade
+   * resolvida, a tela a exibe e diz onde se troca.
+   *
+   * OS BOTÕES CONTINUAM quando ela é nula — e aí não é luxo, é a única saída:
+   * `handleConfirmar` barra com "Escolha a modalidade do frete", e sem os botões
+   * o pedido ficaria impossível de despachar. Medido em 03/09/2026: 4 pedidos
+   * abertos no painel (20413, 20517, 20678, 20890) e 8.233 propostas no
+   * histórico não têm modalidade em lugar nenhum, e nenhum dos 4 cai no degrau
+   * da cotação de balcão. A proposta também não os resolve:
+   * `podeEditarModalidade` congela o campo a partir de LIBERADO.
+   *
+   * LÊ `modalidadeInicial`, NÃO `modalidade`: precisa ser constante durante a
+   * vida do modal. Com o estado vivo, os botões sumiriam no primeiro clique e
+   * prenderiam quem errasse a escolha.
+   */
+  const modalidadeTravada = modalidadeInicial !== null;
+  const origemModalidade = origemDaModalidadeInicial(
     exp?.modalidadeFrete,
     pedido.modalidadeOrcamento,
     tipoInicial
@@ -1035,49 +1061,72 @@ export function DespacharModal({
           </p>
 
           {/* PASSO 1 — Modalidade: quem paga o transporte. Comanda o resto do
-              modal e é editável também em modo edição, porque é informação nova:
-              pedido despachado antes de 18/08/2026 não tem modalidade e precisa
-              poder ganhar uma. */}
+              modal, mas NÃO é mais escolha da bancada: com modalidade resolvida a
+              tela exibe e manda trocar na proposta. Os botões sobrevivem só no
+              caso nulo — o raciocínio inteiro está em `modalidadeTravada`. */}
           <div>
             <span className={labelClass}>Modalidade do frete</span>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {MODALIDADES_OFERECIDAS.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    setModalidade(m);
-                    // Sair do FOB desfaz exatamente o que a confirmação fez:
-                    // devolve o transporte gravado e volta a exigir confirmação.
-                    if (m !== "FOB" && confirmaTrocaCorreios) {
-                      setConfirmaTrocaCorreios(false);
-                      setTipoFrete("CORREIOS");
-                    }
-                  }}
-                  className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
-                    modalidade === m
-                      ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
-                      : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  }`}
-                >
-                  {LABEL_MODALIDADE[m]}
-                </button>
-              ))}
-            </div>
-            {modalidade === null && (
-              <p className="mt-1.5 text-xs text-slate-500">
-                Escolha a modalidade para liberar as opções de transportadora.
-              </p>
+            {modalidadeInicial !== null ? (
+              <>
+                <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                  {LABEL_MODALIDADE[modalidadeInicial]}
+                </p>
+                {/* LINHA FUNDIDA: a antiga "Veio do orçamento" repetia a
+                    modalidade que o campo acima passou a dizer. Sobrou o que ela
+                    tinha de único — a origem, a transportadora do orçamento e
+                    onde se troca. */}
+                <p className="mt-1.5 text-xs text-slate-500">
+                  {origemModalidade === "DESPACHO"
+                    ? "Declarada neste despacho"
+                    : origemModalidade === "COTACAO_BALCAO"
+                      ? "Deduzida da cotação de balcão"
+                      : "Veio do orçamento"}
+                  {origemModalidade === "ORCAMENTO" && nomeTransportadoraOrcamento
+                    ? ` · ${nomeTransportadoraOrcamento}`
+                    : ""}
+                  . Quem paga o frete se decide na proposta — aqui é só leitura.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {MODALIDADES_OFERECIDAS.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setModalidade(m);
+                        // Sair do FOB desfaz exatamente o que a confirmação fez:
+                        // devolve o transporte gravado e volta a exigir confirmação.
+                        if (m !== "FOB" && confirmaTrocaCorreios) {
+                          setConfirmaTrocaCorreios(false);
+                          setTipoFrete("CORREIOS");
+                        }
+                      }}
+                      className={`flex-1 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
+                        modalidade === m
+                          ? "border-[#0b2f4a] bg-[#0b2f4a] text-white"
+                          : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      {LABEL_MODALIDADE[m]}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Este pedido chegou sem modalidade declarada — o normal é ela vir da proposta. Escolher aqui é
+                  exceção, serve para destravar o despacho e não altera a proposta.
+                </p>
+                {modalidade === null && (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Escolha a modalidade para liberar as opções de transportadora.
+                  </p>
+                )}
+              </>
             )}
             {modalidade === "CIF" && (
               <p className="mt-1.5 text-xs text-slate-500">
                 CIF aqui é só o registro de quem paga: não cota, não altera o valor da proposta e não lança nada na Conta Corrente.
-              </p>
-            )}
-            {pedido.modalidadeOrcamento !== null && !modalidadeDivergente && (
-              <p className="mt-1.5 text-xs text-slate-500">
-                Veio do orçamento: {LABEL_MODALIDADE[pedido.modalidadeOrcamento]}
-                {nomeTransportadoraOrcamento ? ` · ${nomeTransportadoraOrcamento}` : ""}.
               </p>
             )}
           </div>
@@ -1123,7 +1172,15 @@ export function DespacharModal({
                 {prepostagemCorreios
                   ? " A prepostagem, o código de rastreio e a etiqueta oficial continuam gravados."
                   : ""}{" "}
-                Se o envio realmente vai pelos Correios, escolha CIF.
+                {/* A saída "escolha CIF" só existe enquanto a modalidade for
+                    escolhível AQUI. Travada, mandar escolher CIF orientaria um
+                    clique que não existe mais — e a proposta também não resolve
+                    depois de LIBERADO (`podeEditarModalidade`), então o texto diz
+                    a verdade inteira em vez de empurrar o expedidor para uma
+                    tela que vai recusar. */}
+                {modalidadeTravada
+                  ? "Se o envio realmente vai pelos Correios, quem está errada é a modalidade — e ela se corrige na proposta, só até o status LIBERADO. Passado esse ponto, confirmar aqui é o caminho, e a diferença fica registrada nas duas pontas."
+                  : "Se o envio realmente vai pelos Correios, escolha CIF."}
               </p>
               <label className="mt-2 flex items-center gap-2 font-semibold">
                 <input
@@ -1156,8 +1213,9 @@ export function DespacharModal({
                     transportes: em MOTOBOY, Correios nao esta em jogo. */}
                 {modalidade === "FOB" && tipoFrete !== "MOTOBOY" && (
                   <p className="mt-1.5 text-xs text-slate-500">
-                    Correios não entra em FOB: a prepostagem sai pelo cartão de postagem da empresa. Para enviar pelos
-                    Correios, marque CIF.
+                    Correios não entra em FOB: a prepostagem sai pelo cartão de postagem da empresa. Para enviar
+                    pelos Correios, o pedido precisaria ser CIF
+                    {modalidadeTravada ? " — e isso se decide na proposta." : ": marque CIF acima."}
                   </p>
                 )}
                 {TRANSPORTES_QUE_EXIGEM_TRANSPORTADORA.includes(pedido.tipoFrete) && (
@@ -1170,7 +1228,9 @@ export function DespacharModal({
                 {transporteRecotadoForaDaModalidade && (
                   <p className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-900">
                     A recotação aplicada é por {transporteRecotadoForaDaModalidade}, que esta modalidade não oferece.
-                    Ajuste a modalidade antes de confirmar, ou escolha aqui como o pedido vai de fato.
+                    {modalidadeTravada
+                      ? " Escolha aqui como o pedido vai de fato — a modalidade não se troca nesta tela."
+                      : " Ajuste a modalidade antes de confirmar, ou escolha aqui como o pedido vai de fato."}
                   </p>
                 )}
               </div>
