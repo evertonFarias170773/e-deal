@@ -646,8 +646,9 @@ export function DespacharModal({
    *   - `exp?.tipoFrete`: se o expedidor já declarou o transporte em rascunho,
    *     vale a declaração dele, não a classificação do texto.
    */
+  const residuoSedexFob = correiosResiduoDeCotacaoFob(pedido);
   const correiosSoNoTextoDaCotacao =
-    correiosResiduoDeCotacaoFob(pedido) && prepostagemCorreios === null && (exp?.tipoFrete ?? null) === null;
+    residuoSedexFob && prepostagemCorreios === null && (exp?.tipoFrete ?? null) === null;
   const gravadoComoCorreios = tipoInicial === "CORREIOS" && !correiosSoNoTextoDaCotacao;
   /**
    * Geracao anterior, a que sera SOBRESCRITA na proxima. So existe uma vaga: e o
@@ -1018,9 +1019,19 @@ export function DespacharModal({
               `idEnderecoEntregaVigente`. Sem fallback para o cadastro: cair
               nele reintroduz o erro. */}
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            {pedido.cliente}
-            {pedido.enderecoEntrega?.cidadeUf ? ` · ${pedido.enderecoEntrega.cidadeUf}` : ""} · frete cotado:{" "}
-            {pedido.freteServico || "—"}
+            {pedido.clienteExibicao}
+            {pedido.enderecoEntrega?.cidadeUf ? ` · ${pedido.enderecoEntrega.cidadeUf}` : ""}
+            {/* SOB FOB, "frete cotado: SEDEX" é resíduo, não transporte (03/09/2026).
+                Mesmo `correiosResiduoDeCotacaoFob` do agrupamento do Kanban e do
+                alerta de troca — uma chamada só, guardada acima, lida pelos dois
+                consumidores desta tela. Quando o predicado acusa resíduo o
+                cabeçalho troca o texto CRU da cotação pelo `rotuloTransporte`, o
+                MESMO campo que a coluna FRETE da lista escreve — nada de regra
+                nova aqui. `freteServico` continua intocado no pipeline: ele é a
+                evidência de com o que o frete foi calculado. */}
+            {residuoSedexFob
+              ? ` · transporte: ${pedido.rotuloTransporte}`
+              : ` · frete cotado: ${pedido.freteServico || "—"}`}
           </p>
 
           {/* PASSO 1 — Modalidade: quem paga o transporte. Comanda o resto do
