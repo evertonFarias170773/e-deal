@@ -344,8 +344,21 @@ export function KanbanTransportadoras({
           <div className="space-y-4">
             {coluna.pedidos.map((p) => {
               const ehAtrasado = p.atrasadoDias > 0 && p.etapa !== "ENTREGUE";
-              // Sub-estado visual: PRONTO com etiqueta gerada = pacote na bancada
-              // aguardando coleta. O status oficial só muda no Despachar.
+              /**
+               * Selo "Aguardando transportadora": PRONTO + etiqueta gerada +
+               * não é retira-balcão. O volume está ROTULADO NA BANCADA e ainda
+               * NÃO foi despachado — o status oficial só muda no Despachar.
+               *
+               * NÃO CONFUNDIR com o estado "aguardando coleta" da Etapa 7, que
+               * é o passo SEGUINTE: lá o despacho já foi confirmado
+               * (`data_despacho` preenchida) e o volume espera o carro passar.
+               * O comentário antigo daqui dizia "aguardando coleta" e virou
+               * ambíguo em 02/09/2026, quando o estado nasceu com esse nome.
+               *
+               * São consecutivos, nunca simultâneos: medido em 03/09/2026, 1
+               * pedido tem só o selo (21409, etiqueta impressa e não despachado)
+               * e 1 tem só o estado (21557), nenhum tem os dois.
+               */
               const aguardandoTransportadora =
                 p.etapa === "PRONTO" && p.etiquetaGerada && p.tipoFrete !== "RETIRA_BALCAO";
               /**
@@ -419,10 +432,20 @@ export function KanbanTransportadoras({
                   >
                     {p.clienteExibicao}
                   </p>
-                  {/* CONTEXTO DO PEDIDO (02/09/2026) — os mesmos campos da coluna
-                      "Cliente" da lista, lidos da MESMA fonte (`p.cidadeUf` e
-                      `p.pagador` do `PedidoExpedicao`), então card e lista não
-                      têm como divergir: é literalmente o mesmo objeto.
+                  {/* CONTEXTO DO PEDIDO (02/09/2026).
+
+                      A CIDADE É A DO ENDEREÇO DE ENTREGA (03/09/2026), não a do
+                      cadastro do cliente. Vinha de `p.cidadeUf`, que é
+                      `clientes.cidade_uf` — e nos 18 pedidos do 8469 isso dizia
+                      "Santa Cruz do Sul" enquanto o volume ia para Santarém/PA,
+                      Goiânia/GO, Porto Velho/RO. O card mostrava uma cidade e a
+                      etiqueta imprimia outra.
+
+                      Agora sai de `p.enderecoEntrega.cidadeUf`, resolvido por
+                      `idEnderecoEntregaVigente` — a MESMA função e o MESMO
+                      endereço que a etiqueta, a Declaração e o modal usam. Sem
+                      fallback para o cadastro de propósito: sem endereço, sem
+                      linha; cair no cadastro reintroduziria justamente o erro.
 
                       Cores da lista preservadas — cidade em `slate-500`,
                       pagador em `indigo-700`. O corpo sobe de 11 px para 13 px
@@ -440,14 +463,14 @@ export function KanbanTransportadoras({
                       cliente (regra `temPagadorDistinto`, no service), então a
                       linha simplesmente não existe nesse caso — nunca aparece
                       vazia. */}
-                  {(p.cidadeUf || p.pagador) && (
+                  {(p.enderecoEntrega?.cidadeUf || p.pagador) && (
                     <div className="mt-1 space-y-0.5">
-                      {p.cidadeUf && (
+                      {p.enderecoEntrega?.cidadeUf && (
                         <p
                           className="truncate text-[13px] leading-snug text-slate-500 dark:text-slate-400"
-                          title={p.cidadeUf}
+                          title={p.enderecoEntrega.rotulo}
                         >
-                          {p.cidadeUf}
+                          {p.enderecoEntrega.cidadeUf}
                         </p>
                       )}
                       {p.pagador && (

@@ -379,7 +379,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
     )
   );
 
-  const enderecoMap = new Map<string, { rotulo: string; cep: string | null }>();
+  const enderecoMap = new Map<string, { rotulo: string; cep: string | null; cidadeUf: string }>();
   if (idsEndereco.length > 0) {
     const { data: enderecosData, error: enderecosErro } = await client
       .from("enderecos")
@@ -402,7 +402,14 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
         .filter(Boolean)
         .join(" - ");
       const cep = e.cep ? String(e.cep) : null;
-      enderecoMap.set(String(e.id), { rotulo: `${linha}${cep ? ` (CEP ${cep})` : ""}`, cep });
+      // `cidadeUf` sai da MESMA linha que já vinha (03/09/2026): `cidade` e `uf`
+      // já eram lidas para montar o rótulo acima, e agora ficam disponíveis
+      // separadas — o card precisa da cidade de ENTREGA, não a do cadastro.
+      enderecoMap.set(String(e.id), {
+        rotulo: `${linha}${cep ? ` (CEP ${cep})` : ""}`,
+        cep,
+        cidadeUf: [e.cidade, e.uf].filter(Boolean).join("/")
+      });
     }
   }
 
@@ -553,6 +560,7 @@ export async function listarPainelExpedicao(): Promise<PedidoExpedicao[]> {
             id: idEnderecoVigente,
             rotulo: enderecoResolvido.rotulo,
             cep: enderecoResolvido.cep,
+            cidadeUf: enderecoResolvido.cidadeUf,
             origem: origemEndereco
           }
         : null,

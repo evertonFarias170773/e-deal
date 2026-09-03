@@ -175,6 +175,18 @@ export interface PedidoExpedicao {
     /** "Rua X, 123 - Bairro - Cidade/UF (CEP 00000-000)" — pronto para exibir. */
     rotulo: string;
     cep: string | null;
+    /**
+     * "Santarém/PA" — a cidade PARA ONDE O VOLUME VAI (03/09/2026).
+     *
+     * Distinta de `cidadeUf` do pedido, que é do CADASTRO do cliente. Nos 18
+     * pedidos do 8469 o cadastro diz "Santa Cruz do Sul - RS" e a entrega vai
+     * para Santarém/PA, Goiânia/GO, Porto Velho/RO — o card mostrava a primeira
+     * e a etiqueta imprimia a segunda.
+     *
+     * Zero consulta a mais: `cidade` e `uf` já vinham no `in` de `enderecos`,
+     * consumidas só para montar o `rotulo` acima.
+     */
+    cidadeUf: string;
     /** De onde veio, para a interface poder explicar. */
     origem: "PROPOSTA" | "DESPACHO";
   } | null;
