@@ -78,8 +78,13 @@ function separarCidadeUf(cidadeUf: string): { cidade: string; uf: string } {
  * Observação cortada para caber nas TRÊS LINHAS que o layout reserva.
  *
  * `maxLines` do react-pdf não existe nesta versão dos tipos, então o limite é
- * imposto aqui, em caracteres: numa 10x15, com 9pt bold e ~245pt de largura
- * útil, cabem ~45 caracteres por linha. 140 é o teto das três com folga.
+ * imposto aqui, em caracteres: com 8,5pt bold e ~245pt de largura útil cabem
+ * ~52 caracteres por linha, e 105 é o teto de DUAS linhas.
+ *
+ * Caiu de 140 (três linhas) para 105 em 02/09/2026, junto do reaperto do
+ * layout: o bloco do destinatário podia crescer mais do que a conta previa e a
+ * etiqueta quebrava para uma segunda página. Duas linhas de observação deixam
+ * folga para um endereço de duas linhas com A/C.
  *
  * POR QUE CORTAR, E NÃO DEIXAR FLUIR
  *   A moldura tem altura FIXA. Uma observação longa empurraria REMETENTE, QR,
@@ -89,7 +94,7 @@ function separarCidadeUf(cidadeUf: string): { cidade: string; uf: string } {
  * O corte cai no último espaço antes do limite, para não partir palavra ao
  * meio, e marca o que ficou de fora com reticências.
  */
-const LIMITE_OBSERVACAO = 140;
+const LIMITE_OBSERVACAO = 105;
 
 function cortarObservacao(texto: string): string {
   const limpo = texto.trim();
@@ -143,48 +148,53 @@ const styles = StyleSheet.create({
     borderColor: "#000000",
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 7,
     overflow: "hidden"
   },
 
   /** Rótulo de seção: pequeno, preto, caixa alta. */
   rotulo: { fontSize: 7, fontFamily: "Helvetica-Bold", letterSpacing: 0.6 },
   /** Régua entre blocos — 1.5pt lê bem em térmica sem borrar. */
-  regua: { borderBottomWidth: 1.5, borderBottomColor: "#000000", marginVertical: 5 },
+  regua: { borderBottomWidth: 1.5, borderBottomColor: "#000000", marginVertical: 3.5 },
 
   pedidoLinha: { flexDirection: "row", alignItems: "flex-start" },
   pedidoNumero: {
     flexGrow: 1,
     textAlign: "center",
-    fontSize: 46,
+    fontSize: 36,
     fontFamily: "Helvetica-Bold",
     letterSpacing: -1
   },
 
-  destNome: { fontSize: 13, fontFamily: "Helvetica-Bold", marginTop: 2 },
-  destLinha: { fontSize: 10.5, marginTop: 1.5 },
+  destNome: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 1.5 },
+  destLinha: { fontSize: 9.5, marginTop: 1 },
 
-  grande: { fontSize: 20, fontFamily: "Helvetica-Bold", marginTop: 1 },
-  envio: { fontSize: 13, fontFamily: "Helvetica-Bold", marginTop: 2 },
+  grande: { fontSize: 17, fontFamily: "Helvetica-Bold", marginTop: 1 },
+  envio: { fontSize: 12, fontFamily: "Helvetica-Bold", marginTop: 2 },
 
   obsTexto: {
-    fontSize: 9,
+    fontSize: 8.5,
     fontFamily: "Helvetica-Bold",
     marginTop: 2,
-    lineHeight: 1.25,
+    lineHeight: 1.2,
     // Teto de altura junto do corte por caracteres: se a medição de
     // texto do react-pdf discordar da minha conta, o layout ainda segura.
-    maxHeight: 36,
+    maxHeight: 24,
     overflow: "hidden"
   },
 
-  remLinha: { fontSize: 9, marginTop: 1.5 },
+  remLinha: { fontSize: 8.5, marginTop: 1 },
 
-  rodape: { flexDirection: "row", alignItems: "flex-end", marginTop: "auto" },
+  /**
+   * `marginTop: auto` encosta o rodape no pe da moldura e `flexShrink: 0`
+   * impede que ele seja espremido quando o conteudo acima cresce — sem os dois,
+   * ele e o primeiro a ceder e foi o que quebrou para a segunda pagina.
+   */
+  rodape: { flexDirection: "row", alignItems: "flex-end", marginTop: "auto", flexShrink: 0 },
   rodapeColuna: { flexDirection: "column" },
-  qr: { width: 46, height: 46, marginTop: 3 },
-  dataValor: { fontSize: 15, fontFamily: "Helvetica-Bold", marginTop: 3 },
-  volumeValor: { fontSize: 26, fontFamily: "Helvetica-Bold", textAlign: "right" }
+  qr: { width: 38, height: 38, marginTop: 2 },
+  dataValor: { fontSize: 14, fontFamily: "Helvetica-Bold", marginTop: 2 },
+  volumeValor: { fontSize: 24, fontFamily: "Helvetica-Bold", textAlign: "right" }
 });
 
 export function EtiquetaPdfDocument({
@@ -202,40 +212,57 @@ export function EtiquetaPdfDocument({
 
   return (
     <Document title={`Etiqueta ${vm.idInt}`}>
+      {/* `wrap={false}` na Page E A GARANTIA ESTRUTURAL: sem ele o react-pdf
+          PAGINA o conteudo que excede a altura util, e foi o que aconteceu no
+          21503 — os rotulos SITE/DATA/VOLUME ficaram na primeira folha e os
+          valores na segunda, num pedido de volume 1/1. Nao havia `<Page>` a
+          mais: era UMA pagina cujo conteudo quebrou. Com a flag, o excedente e
+          recortado dentro da moldura em vez de virar folha nova, e a promessa
+          "uma pagina por volume" passa a valer com qualquer conteudo. */}
       {paginas.map((n) => (
-        <Page key={n} size={{ width: LARGURA, height: ALTURA }} style={styles.pagina}>
+        <Page key={n} size={{ width: LARGURA, height: ALTURA }} style={styles.pagina} wrap={false}>
           <View style={styles.moldura}>
-            {/* PEDIDO — o maior elemento da etiqueta, de propósito. */}
-            <View style={styles.pedidoLinha}>
+            {/* CADA BLOCO E UM `View wrap={false}`: assim um rotulo nunca se
+                separa do seu valor, nem entre si nem do resto. Era exatamente o
+                sintoma do 21503 no rodape. */}
+            <View wrap={false} style={styles.pedidoLinha}>
               <Text style={styles.rotulo}>PEDIDO:</Text>
               <Text style={styles.pedidoNumero}>{vm.idInt}</Text>
             </View>
             <View style={styles.regua} />
 
-            <Text style={styles.rotulo}>DESTINATÁRIO:</Text>
-            <Text style={styles.destNome}>{vm.destinatario.nome}</Text>
-            {vm.destinatario.recebedor ? (
-              <Text style={styles.destLinha}>A/C: {vm.destinatario.recebedor}</Text>
-            ) : null}
-            {vm.destinatario.endereco ? (
-              <Text style={styles.destLinha}>{vm.destinatario.endereco}</Text>
-            ) : null}
-            {vm.destinatario.bairro ? (
-              <Text style={styles.destLinha}>BAIRRO: {vm.destinatario.bairro}</Text>
-            ) : null}
-            {telefone ? <Text style={styles.destLinha}>{telefone}</Text> : null}
+            <View wrap={false}>
+              <Text style={styles.rotulo}>DESTINATÁRIO:</Text>
+              <Text style={styles.destNome}>{vm.destinatario.nome}</Text>
+              {vm.destinatario.recebedor ? (
+                <Text style={styles.destLinha}>A/C: {vm.destinatario.recebedor}</Text>
+              ) : null}
+              {vm.destinatario.endereco ? (
+                <Text style={styles.destLinha}>{vm.destinatario.endereco}</Text>
+              ) : null}
+              {vm.destinatario.bairro ? (
+                <Text style={styles.destLinha}>BAIRRO: {vm.destinatario.bairro}</Text>
+              ) : null}
+              {telefone ? <Text style={styles.destLinha}>{telefone}</Text> : null}
+            </View>
             <View style={styles.regua} />
 
-            <Text style={styles.rotulo}>CEP:</Text>
-            <Text style={styles.grande}>{vm.destinatario.cep || "—"}</Text>
+            <View wrap={false}>
+              <Text style={styles.rotulo}>CEP:</Text>
+              <Text style={styles.grande}>{vm.destinatario.cep || "—"}</Text>
+            </View>
             <View style={styles.regua} />
 
-            <Text style={styles.rotulo}>CIDADE/UF:</Text>
-            <Text style={styles.grande}>{cidadeUfLinha || "—"}</Text>
+            <View wrap={false}>
+              <Text style={styles.rotulo}>CIDADE/UF:</Text>
+              <Text style={styles.grande}>{cidadeUfLinha || "—"}</Text>
+            </View>
             <View style={styles.regua} />
 
-            <Text style={styles.rotulo}>FORMA DE ENVIO:</Text>
-            <Text style={styles.envio}>{transportadoraExibida}</Text>
+            <View wrap={false}>
+              <Text style={styles.rotulo}>FORMA DE ENVIO:</Text>
+              <Text style={styles.envio}>{transportadoraExibida}</Text>
+            </View>
             <View style={styles.regua} />
 
             {/* OBSERVAÇÕES — `obs_etiqueta`, o campo do modal que é IMPRESSO.
@@ -247,25 +274,29 @@ export function EtiquetaPdfDocument({
                 CONGONHAS, ATÉ MEIO DIA DE SEXTA DIA 04/09") com folga. */}
             {vm.obsEtiqueta ? (
               <>
-                <Text style={styles.rotulo}>OBSERVAÇÕES:</Text>
-                <Text style={styles.obsTexto}>{cortarObservacao(vm.obsEtiqueta).toUpperCase()}</Text>
+                <View wrap={false}>
+                  <Text style={styles.rotulo}>OBSERVAÇÕES:</Text>
+                  <Text style={styles.obsTexto}>{cortarObservacao(vm.obsEtiqueta).toUpperCase()}</Text>
+                </View>
                 <View style={styles.regua} />
               </>
             ) : null}
 
-            <Text style={styles.rotulo}>REMETENTE:</Text>
-            <Text style={styles.remLinha}>{vm.remetente.nome}</Text>
-            {vm.remetente.logradouro ? (
-              <Text style={styles.remLinha}>{vm.remetente.logradouro}</Text>
-            ) : null}
-            {vm.remetente.bairroCidadeUf ? (
-              <Text style={styles.remLinha}>{vm.remetente.bairroCidadeUf}</Text>
-            ) : null}
+            <View wrap={false}>
+              <Text style={styles.rotulo}>REMETENTE:</Text>
+              <Text style={styles.remLinha}>{vm.remetente.nome}</Text>
+              {vm.remetente.logradouro ? (
+                <Text style={styles.remLinha}>{vm.remetente.logradouro}</Text>
+              ) : null}
+              {vm.remetente.bairroCidadeUf ? (
+                <Text style={styles.remLinha}>{vm.remetente.bairroCidadeUf}</Text>
+              ) : null}
+            </View>
 
             {/* RODAPÉ — SITE (QR), DATA DE ENVIO e VOLUME.
                 `marginTop: auto` encosta no fundo da moldura: sobra de altura em
                 etiqueta sem observação vira respiro, não buraco no meio. */}
-            <View style={styles.rodape}>
+            <View wrap={false} style={styles.rodape}>
               <View style={[styles.rodapeColuna, { width: 60 }]}>
                 <Text style={styles.rotulo}>SITE:</Text>
                 {/* `Image` aqui é o do `@react-pdf/renderer`, não um `<img>`:
