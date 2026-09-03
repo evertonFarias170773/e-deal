@@ -1766,7 +1766,22 @@ export async function saveProposta(
           errorMessage: "Nenhum cliente selecionado. Escolha o cliente da proposta antes de salvar."
         };
       }
-      const fetched = await getCadastroCompleto(formState.clienteId);
+      /**
+       * `client` REPASSADO, e nao o default.
+       *
+       * `saveProposta` tambem roda no SERVIDOR: `/api/orcamentos/editar-paga` a
+       * chama para toda proposta com pagamento confirmado. Sem o segundo
+       * argumento, `getCadastroCompleto` cai em `getSupabaseClient()` — o cliente
+       * do NAVEGADOR — que ali nao tem cookies nem sessao e fala como `anon`.
+       * Desde 93e0a9b `anon` perdeu SELECT em `clientes`: a consulta voltava
+       * vazia, o cadastro vinha nulo e a rota devolvia 500 com "Cliente e
+       * obrigatorio".
+       *
+       * `client` aqui e o injetado pela rota (autenticado) ou, no navegador, o
+       * de sessao — os dois falam como `authenticated`. O parametro existe desde
+       * a31354e; faltava usa-lo neste ponto.
+       */
+      const fetched = await getCadastroCompleto(formState.clienteId, client);
       cadastro = fetched.cadastro;
       if (!cadastro) {
         return {

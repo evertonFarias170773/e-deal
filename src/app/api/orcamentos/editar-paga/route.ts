@@ -590,9 +590,26 @@ export async function POST(request: NextRequest) {
   );
 
   if (!saveResult.success) {
+    /**
+     * 400, e nao 500: o que chega aqui e a RECUSA do `saveProposta` — cliente
+     * ausente, proposta sem produto, quantidade zerada. Sao validacoes, nao
+     * falha do servidor.
+     *
+     * O 500 antigo custou caro: em 03/09/2026 a tela mostrava "Cliente e
+     * obrigatorio" com 500 no Network, e a investigacao foi duas vezes para o
+     * lado errado — procurando erro interno, quando a rota so estava repassando
+     * uma mensagem de validacao.
+     *
+     * O corpo nao muda: `success: false` e o mesmo `error`. A tela trata por
+     * `!apiResponse.ok || !apiResult.success` e so distingue 403 e 409, entao
+     * este caso segue caindo no mesmo ramo de antes.
+     *
+     * As demais saidas 500 desta rota continuam 500 — aquelas sao falha de
+     * leitura ou de gravacao de verdade, nao recusa.
+     */
     return NextResponse.json(
       { success: false, error: saveResult.errorMessage ?? "Erro ao salvar proposta." },
-      { status: 500 }
+      { status: 400 }
     );
   }
 
