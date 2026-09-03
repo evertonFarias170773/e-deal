@@ -1009,9 +1009,18 @@ export function DespacharModal({
         </div>
 
         <div className="space-y-4 p-6">
+          {/* CIDADE DE ENTREGA, não a do cadastro (03/09/2026).
+              Era `pedido.cidadeUf` (`clientes.cidade_uf`): no 21503 o topo dizia
+              "Santa Cruz do Sul" e o endereço, poucas linhas abaixo, dizia
+              Santarém/PA — duas cidades na mesma tela, num modal que trata
+              justamente do endereço de entrega. Agora é o MESMO campo que o
+              card, a lista e a etiqueta leem, resolvido por
+              `idEnderecoEntregaVigente`. Sem fallback para o cadastro: cair
+              nele reintroduz o erro. */}
           <p className="text-sm text-slate-600 dark:text-slate-300">
             {pedido.cliente}
-            {pedido.cidadeUf ? ` · ${pedido.cidadeUf}` : ""} · frete cotado: {pedido.freteServico || "—"}
+            {pedido.enderecoEntrega?.cidadeUf ? ` · ${pedido.enderecoEntrega.cidadeUf}` : ""} · frete cotado:{" "}
+            {pedido.freteServico || "—"}
           </p>
 
           {/* PASSO 1 — Modalidade: quem paga o transporte. Comanda o resto do
