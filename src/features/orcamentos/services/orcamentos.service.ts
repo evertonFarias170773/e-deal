@@ -1748,13 +1748,33 @@ export async function saveProposta(
       }
       clienteNome = formState.nomeClienteLivre!;
     } else {
+      /**
+       * DUAS causas opostas, DUAS mensagens (03/09/2026).
+       *
+       * As duas diziam "Cliente é obrigatório e deve possuir cadastro válido",
+       * e por isso o relato de erro nao distinguia um formulario sem cliente
+       * selecionado de um cadastro que o banco nao devolveu — problemas de
+       * lugares diferentes, com investigacoes diferentes. Agora cada uma diz o
+       * que de fato aconteceu, e a segunda leva o numero do cadastro.
+       *
+       * O `console.warn` de `getCadastroDetailReadOnly` continua onde estava:
+       * ele traz o erro tecnico do banco, que nao cabe na tela.
+       */
       if (!isNonEmpty(formState.clienteId)) {
-        return { success: false, errorMessage: "Cliente é obrigatório e deve possuir cadastro válido." };
+        return {
+          success: false,
+          errorMessage: "Nenhum cliente selecionado. Escolha o cliente da proposta antes de salvar."
+        };
       }
       const fetched = await getCadastroCompleto(formState.clienteId);
       cadastro = fetched.cadastro;
       if (!cadastro) {
-        return { success: false, errorMessage: "Cliente é obrigatório e deve possuir cadastro válido." };
+        return {
+          success: false,
+          errorMessage:
+            `Cadastro do cliente #${formState.clienteId} nao foi encontrado. ` +
+            `Confira se ele existe e se voce tem acesso a ele.`
+        };
       }
       clienteNome = cadastro.nome;
     }

@@ -159,7 +159,7 @@ export async function POST(request: Request) {
     // Status ANTES, para provar que o UPDATE mirado não rebaixa.
     const { data: antesRow, error: antesError } = await supabase
       .from("propostas")
-      .select("id_int, status_interno, id_transportadora_cliente")
+      .select("id_int, status_interno, id_transportadora_cliente, modalidade_frete")
       .eq("id_int", idInt)
       .maybeSingle();
 
@@ -175,6 +175,53 @@ export async function POST(request: Request) {
     }
 
     const statusAntes = String((antesRow as { status_interno?: string | null }).status_interno ?? "");
+
+    /**
+     * GUARDAS DE COERENCIA (03/09/2026).
+     *
+     * A rota validava o CADASTRO escolhido (categoria TRANSPORTADORA, ativo) mas
+     * nunca olhava o estado da PROPOSTA. Gravou a SVT numa proposta RETIRA
+     * (a 21000), e a mesma porta aceitava pedido ja entregue ou cancelado.
+     *
+     * As duas guardas valem SO ao DEFINIR uma transportadora. REMOVER
+     * (idTransportadora === null) continua liberado em qualquer estado — e
+     * justamente assim que se desfaz um vinculo indevido como o da 21000, e
+     * bloquear a limpeza deixaria o dado incoerente preso.
+     *
+     * Medido antes de escrever: das 5 correcoes que esta rota ja fez, NENHUMA
+     * seria recusada. Todas foram em pedido ativo (EXPEDICAO ou EM TRANSITO) —
+     * as duas que hoje aparecem como ENTREGUE foram corrigidas antes de sair.
+     */
+    if (idTransportadora !== null) {
+      const modalidade = String(
+        (antesRow as { modalidade_frete?: string | null }).modalidade_frete ?? ""
+      ).trim().toUpperCase();
+
+      if (modalidade === "RETIRA") {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              `Pedido #${idInt} e RETIRA no balcao, e retirada de balcao nao tem transportadora. ` +
+              `Para despachar por transportadora, a modalidade do frete precisa mudar no orcamento.`
+          },
+          { status: 409 }
+        );
+      }
+
+      const statusNormalizado = statusAntes.trim().toUpperCase();
+      if (statusNormalizado === "ENTREGUE" || statusNormalizado === "CANCELADO") {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              `Pedido #${idInt} esta ${statusNormalizado} e nao aceita definicao de transportadora: ` +
+              `o transporte ja terminou. Remover o vinculo continua permitido.`
+          },
+          { status: 409 }
+        );
+      }
+    }
 
     // UMA coluna. Nada de cotacao_frete, modalidade ou valor.
     const { data: depoisRows, error: updateError } = await supabase
