@@ -27,6 +27,7 @@ import { ActionsMenu } from "@/components/common/ActionsMenu";
 import { useAppToast } from "@/components/common/AppToast";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { hasPermissao } from "@/features/auth/usuarios.service";
+import { formatCurrency } from "@/lib/formatters/currency";
 import { codecs } from "@/lib/url-state";
 import { useUrlFilters } from "@/hooks/useUrlFilters";
 import { useDebouncedInput } from "@/hooks/useDebouncedValue";
@@ -44,7 +45,7 @@ import { RetiradaModal } from "./components/RetiradaModal";
 import { VoltarStatusModal } from "./components/VoltarStatusModal";
 import { TransportadorasModal } from "./components/TransportadorasModal";
 import { RastreioModal } from "./components/RastreioModal";
-import { KanbanTransportadoras, LegendaCoresKanban } from "./components/KanbanTransportadoras";
+import { KanbanTransportadoras, LegendaCoresKanban, PontoEstadoKanban } from "./components/KanbanTransportadoras";
 import type { EtapaExpedicao, PedidoExpedicao, TipoFreteNormalizado } from "./types";
 
 const filterClass =
@@ -741,16 +742,17 @@ export function ExpedicaoPage() {
             {filters.visao === "transportadoras" ? "Ver em lista" : "Ver por transportadora"}
           </button>
 
-          {/* Legenda das cores do card, à direita do alternador. Só no Kanban:
-              na lista os fundos coloridos não existem e ela viraria ruído.
+          {/* Legenda das cores, à direita do alternador. Vale nas DUAS visões
+              desde 02/09/2026: no Kanban explica o fundo do card, na lista
+              explica o ponto de estado da coluna Status. Um componente só.
               As cores vêm de `FASES_CARD_KANBAN`, a mesma fonte que pinta o
-              card — não há como divergir do que está na tela.
+              card e o ponto — não há como divergir do que está na tela.
 
               Largura reduzida: o container já é `flex-wrap`, então a legenda
               desce inteira para a linha de baixo em vez de espremer o botão.
               Cada item é `whitespace-nowrap`, então nenhum rótulo se parte no
               meio. */}
-          {filters.visao === "transportadoras" && <LegendaCoresKanban />}
+          <LegendaCoresKanban />
         </div>
       )}
 
@@ -840,20 +842,26 @@ export function ExpedicaoPage() {
             header: "Cliente",
             cell: (p) => (
               <div className="flex max-w-[190px] flex-col">
+                {/* FANTASIA desde 02/09/2026, com a razao no `title` — mesmo
+                    criterio do card. O numero do cadastro continua prefixado,
+                    e a busca casa razao, fantasia e id_cliente. */}
                 <span
                   className="truncate font-medium text-slate-900 dark:text-slate-100"
                   title={rotuloClienteComNumero(p.idCliente, p.cliente)}
                 >
-                  {rotuloClienteComNumero(p.idCliente, p.cliente)}
+                  {rotuloClienteComNumero(p.idCliente, p.clienteExibicao)}
                 </span>
                 {/* Pagador: quem paga e recebe o documento fiscal, quando nao e
                     o cliente do pedido. Entra ENTRE o nome e a cidade, com
                     rotulo e cor propria — sem o rotulo, leria como um segundo
                     nome do cliente. Sem pagador distinto, a coluna fica
                     exatamente como estava. */}
+                {/* Sem o prefixo "Pagador:" desde 02/09/2026: quem separa esta
+                    linha do nome do cliente e da cidade e a COR, exclusiva dela
+                    na coluna. O prefixo fica no `title`. */}
                 {p.pagador && (
                   <span className="truncate text-[11px] font-medium text-indigo-700" title={`Pagador: ${p.pagador}`}>
-                    Pagador: {p.pagador}
+                    {p.pagador}
                   </span>
                 )}
                 {p.cidadeUf && <span className="text-[11px] text-slate-500">{p.cidadeUf}</span>}
@@ -876,7 +884,15 @@ export function ExpedicaoPage() {
           },
           {
             header: "Status",
-            cell: (p) => <StatusBadge status={p.statusInterno} />
+            // O PONTO diz o ESTADO do volume; o badge diz o status oficial; o
+            // fundo da linha diz a URGENCIA. Tres eixos, tres lugares — nenhum
+            // disputa o outro. O ponto le `faseDoCard`, a mesma fonte do card.
+            cell: (p) => (
+              <span className="inline-flex items-center gap-2">
+                <PontoEstadoKanban pedido={p} />
+                <StatusBadge status={p.statusInterno} />
+              </span>
+            )
           },
           {
             header: "Promessa",
@@ -915,9 +931,16 @@ export function ExpedicaoPage() {
                     <Icone className="h-3.5 w-3.5 shrink-0" />
                     {p.rotuloTransporte}
                   </span>
+                  {/* Valor ao lado de peso e volumes. `freteCobrado` e
+                      `propostas.valor_frete`, o que a proposta COBRA — nulo e
+                      zero nao viram "R$ 0,00", que leria como cobranca de zero
+                      em vez de "nao se aplica". Mesma regra do card. */}
                   <span className="text-[11px] text-slate-500">
                     {formatarPeso(p)}
                     {p.volumes !== null ? ` · ${p.volumes} vol` : ""}
+                    {p.freteCobrado !== null && p.freteCobrado > 0
+                      ? ` · ${formatCurrency(p.freteCobrado)}`
+                      : ""}
                   </span>
                 </div>
               );
@@ -1006,11 +1029,15 @@ export function ExpedicaoPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     #{p.idInt} · {p.empresa}
                   </p>
-                  <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-100">
-                    {rotuloClienteComNumero(p.idCliente, p.cliente)}
+                  <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-100" title={p.cliente}>
+                    {rotuloClienteComNumero(p.idCliente, p.clienteExibicao)}
                   </h3>
                   {/* Mesma leitura do desktop: pagador entre o nome e a cidade. */}
-                  {p.pagador && <p className="text-xs font-medium text-indigo-700">Pagador: {p.pagador}</p>}
+                  {p.pagador && (
+                    <p className="text-xs font-medium text-indigo-700" title={`Pagador: ${p.pagador}`}>
+                      {p.pagador}
+                    </p>
+                  )}
                   {p.cidadeUf && <p className="text-xs text-slate-500">{p.cidadeUf}</p>}
                   {p.vendedor && <p className="text-xs text-slate-500">Vendedor: {p.vendedor}</p>}
                 </div>

@@ -155,9 +155,36 @@ function faseDoCard(p: PedidoExpedicao) {
 }
 
 /**
- * Legenda das cores do card. Vive ao lado do alternador de visão e só aparece
- * no Kanban — na lista os fundos não existem, e uma legenda sem referente é
- * ruído.
+ * PONTO DE ESTADO — o mesmo sistema de cores, para a VISÃO DE LISTA (02/09/2026).
+ *
+ * A lista não pode pintar o fundo da linha: ele já é do realce de URGÊNCIA
+ * (vermelho para atrasado, âmbar para prometido hoje), que é informação mais
+ * escassa e não pode ser disputada. O estado entra como um ponto de 8 px antes
+ * do badge de Status — mesma precedência, mesmas quatro cores, mesma fonte:
+ * `faseDoCard` e `fase.classe`, exatamente o que o card pinta. Não há como
+ * divergirem.
+ *
+ * O `ring` translúcido não é cor nova: é a mesma tinta neutra do fio do rodapé
+ * do card. Existe porque um ponto laranja (`amber-50`) sobre uma linha realçada
+ * de âmbar quase some — é o caso real do 21503, que hoje é aguardando coleta E
+ * prometido hoje. O anel dá a borda que o realce come.
+ */
+export function PontoEstadoKanban({ pedido }: { pedido: PedidoExpedicao }) {
+  const fase = faseDoCard(pedido);
+  return (
+    <span
+      className={`inline-block h-2 w-2 shrink-0 rounded-full border ring-1 ring-slate-900/15 dark:ring-slate-100/20 ${fase.classe}`}
+      title={fase.rotulo}
+      aria-hidden="true"
+    />
+  );
+}
+
+/**
+ * Legenda das cores. Vive ao lado do alternador de visão e vale nas DUAS: no
+ * Kanban explica o fundo do card, na lista explica o ponto de estado
+ * (`PontoEstadoKanban`). Um componente só, sem cópia — os marcadores leem
+ * `fase.classe`, a mesma string que o card e o ponto pintam.
  *
  * O marcador é um quadradinho arredondado, não um círculo: ele repete
  * `fase.classe` inteira (borda + fundo), então lê como um card em miniatura, e
