@@ -8,6 +8,27 @@ import type { EtiquetaViewModel } from "../services/etiqueta-viewmodel.service";
 const LARGURA = 283.46;
 const ALTURA = 425.2;
 
+/** Margem de impressão da página, nos quatro lados. */
+const PADDING_PAGINA = 8;
+
+/**
+ * ALTURA EXPLÍCITA DA MOLDURA — o que garante que ela vá até o pé (03/09/2026).
+ *
+ * Era `flexGrow: 1` sem altura, e não funcionava: `flexGrow` reparte o espaço
+ * LIVRE do container, e a `Page` com `wrap={false}` não oferece uma altura
+ * definida para repartir. Sem espaço livre para distribuir, a moldura encolhia
+ * até o conteúdo — no 21409, que não tem observação, ela fechava a ~83% da área
+ * e deixava a faixa branca embaixo. E o `espacador` lá dentro herdava o mesmo
+ * problema: dentro de uma caixa que já era do tamanho do conteúdo, não havia
+ * folga alguma para ele absorver.
+ *
+ * Com a altura em pontos absolutos — não porcentagem, que esta versão do
+ * react-pdf não resolve de forma confiável — a moldura passa a ter uma altura
+ * DEFINIDA, o `espacador` ganha folga real para comer, e o rodapé encosta no pé
+ * em qualquer cenário.
+ */
+const ALTURA_MOLDURA = ALTURA - 2 * PADDING_PAGINA;
+
 /**
  * Documento do destinatário com os extremos escondidos: `***.559.859-**`.
  *
@@ -138,12 +159,14 @@ const styles = StyleSheet.create({
   pagina: {
     width: LARGURA,
     height: ALTURA,
-    padding: 8,
+    padding: PADDING_PAGINA,
     fontFamily: "Helvetica",
     color: "#000000"
   },
   moldura: {
-    flexGrow: 1,
+    // Altura DEFINIDA, não `flexGrow` — ver `ALTURA_MOLDURA`. É o que dá ao
+    // `espacador` uma folga real para absorver e ao rodapé um pé onde encostar.
+    height: ALTURA_MOLDURA,
     borderWidth: 2,
     borderColor: "#000000",
     borderRadius: 8,
