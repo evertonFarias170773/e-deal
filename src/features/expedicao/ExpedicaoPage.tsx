@@ -864,7 +864,21 @@ export function ExpedicaoPage() {
                     {p.pagador}
                   </span>
                 )}
-                {p.cidadeUf && <span className="text-[11px] text-slate-500">{p.cidadeUf}</span>}
+                {/* CIDADE DO ENDERECO DE ENTREGA (03/09/2026), nao a do cadastro.
+                    Mesma correcao que o card recebeu em 60d771a, pela mesma
+                    fonte: `idEnderecoEntregaVigente`, ja resolvida no pipeline.
+                    Vinha de `p.cidadeUf` (`clientes.cidade_uf`), e nos 18
+                    pedidos do 8469 dizia "Santa Cruz do Sul" enquanto o volume
+                    ia para Santarem/PA e outras doze cidades.
+
+                    Sem fallback para o cadastro, pelo mesmo motivo do card:
+                    cair nele reintroduz o erro. Medido em 03/09: ZERO pedidos
+                    do painel ficam sem a linha. */}
+                {p.enderecoEntrega?.cidadeUf && (
+                  <span className="text-[11px] text-slate-500" title={p.enderecoEntrega.rotulo}>
+                    {p.enderecoEntrega.cidadeUf}
+                  </span>
+                )}
               </div>
             )
           },
@@ -1038,7 +1052,12 @@ export function ExpedicaoPage() {
                       {p.pagador}
                     </p>
                   )}
-                  {p.cidadeUf && <p className="text-xs text-slate-500">{p.cidadeUf}</p>}
+                  {/* Mesma fonte do desktop: a cidade de ENTREGA. */}
+                  {p.enderecoEntrega?.cidadeUf && (
+                    <p className="text-xs text-slate-500" title={p.enderecoEntrega.rotulo}>
+                      {p.enderecoEntrega.cidadeUf}
+                    </p>
+                  )}
                   {p.vendedor && <p className="text-xs text-slate-500">Vendedor: {p.vendedor}</p>}
                 </div>
                 <StatusBadge status={p.statusInterno} />
